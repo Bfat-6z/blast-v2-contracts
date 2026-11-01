@@ -291,40 +291,28 @@ impl World {
             vec![config_arg, version_arg, listing_admin, quote_allowed],
         );
         let witness = parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?;
-        let allowed = builder.pure(true)?;
-        call(
-            &mut builder,
-            blast,
-            "launch_config",
-            "set_migration_witness_allowed",
-            vec![witness],
-            vec![config_arg, version_arg, adapter_admin, allowed],
-        );
+
+        let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut builder, blast, "launch_config", "schedule_migration_witness", vec![witness], vec![config_arg, version_arg, adapter_admin, admin_clock]);
         let fee = w.bps(&mut builder, 100)?;
-        call(
-            &mut builder,
-            blast,
-            "launch_config",
-            "set_trade_fees",
-            vec![],
-            vec![config_arg, version_arg, fee_admin, fee, fee],
-        );
+        let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee_admin, fee, fee, admin_clock]);
         // `LaunchConfig` starts with a zero protocol allocation and its setter rejects an unchanged
         // value, so only a nonzero allocation is set.
         if protocol != [0, 0] {
             let [meme_bps, quote_bps] = protocol;
             let meme_bps = w.bps(&mut builder, meme_bps)?;
             let quote_bps = w.bps(&mut builder, quote_bps)?;
-            call(
-                &mut builder,
-                blast,
-                "launch_config",
-                "set_protocol_allocation",
-                vec![],
-                vec![config_arg, version_arg, treasury_admin, meme_bps, quote_bps],
-            );
+            let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_admin, meme_bps, quote_bps, admin_clock]);
         }
         w.h.execute(builder.finish())?.assert_success();
+        let mut changes = vec![
+            (blast, "launch_config", "apply_migration_witness", vec![parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?], config, version),
+            (blast, "launch_config", "apply_trade_fees", vec![], config, version),
+        ];
+        if protocol != [0, 0] { changes.push((blast, "launch_config", "apply_protocol_allocation", vec![], config, version)); }
+        blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, changes)?;
 
         Ok(w)
     }

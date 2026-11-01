@@ -19,3 +19,6 @@ IntegerLibrary = { git = "https://github.com/fireflyprotocol/integer-library.git
 
 [addresses]
 blast_presale = "0x0"
+
+# Must be set to the intended treasury before fresh publication.
+blast_treasury = "0x0"

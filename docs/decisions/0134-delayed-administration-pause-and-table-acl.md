@@ -1,8 +1,8 @@
 # 0134: Delayed administration, pause, and a Table-backed ACL
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-31
-- Amends: [0007](0007-acl-pause-and-versioning.md) (pause),
+- Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability), [0007](0007-acl-pause-and-versioning.md) (pause),
   [0032](0032-admin-authorized-upgrade-cap-custody.md) and
   [0034](0034-remove-premature-governance-cutover.md) (upgrades),
   [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage)
@@ -156,7 +156,7 @@ public struct LpFeePolicy has key {
     id: UID,
     destination: Delayed<address>,                        // TreasuryAdmin
     defaults: Delayed<SharePair>,                         // FeeAdmin
-    coins: Table<TypeName, Delayed<SharePair>>,           // FeeAdmin
+    coins: Table<TypeName, Delayed<Option<SharePair>>>,           // FeeAdmin
 }
 ```
 
@@ -165,6 +165,11 @@ Revoking the claim signer (an empty key) and removing an adapter use
 
 `blast_presale::set_protocol_fees` stays immediate before a sale starts, but
 may only set rates at or below the in-force `FeePolicy` rates.
+
+Clearing a per-coin LP-fee override is also delayed: restoring live defaults can
+increase fees. `None` denotes fallback to those defaults, and the table entry
+remains available for subsequent schedules. Adapter removal and signer revocation
+also cancel any pending replacement so it cannot restore revoked authority.
 
 ### Upgrades
 
@@ -213,7 +218,7 @@ The current cap holder can still claim curve fees during the 48 hours.
 
 ### Partners
 
-`blast_partners::register` keeps its signature. A new partner starts at
+`blast_partners::register` takes a `Clock` (owner-approved implementation correction, 2026-11-01). A new partner starts at
 0 bps and its requested share is scheduled with the package's existing 7-day
 partner delay, so a new partner can never take a fee share at once.
 

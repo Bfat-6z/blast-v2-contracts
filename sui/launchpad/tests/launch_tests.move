@@ -99,6 +99,22 @@ public struct LaunchFixture {
 
 // === Tests ===
 
+#[test]
+#[expected_failure(abort_code = blast_fun::blast_fun::EPaused, location = blast_fun::blast_fun)]
+fun buy_pause_blocks_a_live_launch_before_coin_validation() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        f.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+        let (meme, refund) = f.buy(&mut launch, 0, 0);
+        destroy(meme);
+        destroy(refund);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+
 // --- Construction ---
 
 #[test]
@@ -175,7 +191,7 @@ fun launch_snapshot_does_not_follow_later_config_updates() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let launch = f.new_default_launch(CREATOR);
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &listing_admin(), false);
-        f.config.set_trade_fees(&f.package_version, &fee_admin(), bps::new(0), bps::new(0));
+        f.config.set_trade_fees_for_testing(&f.package_version, &fee_admin(), bps::new(0), bps::new(0), f.ctx!());
 
         launch.assert_snapshot();
 
@@ -1087,7 +1103,7 @@ fun designated_creator_claims_both_caps() {
         );
 
         let admin_witness = creator_admin();
-        launch.reassign_metadata_cap(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
+        launch.reassign_metadata_cap_for_testing(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
         let reassigned_id = launch.blast_metadata_cap_id_for_testing().destroy_some();
         assert!(reassigned_id != object::id(&metadata_cap));
         assert!(reassigned_id != native_metadata_cap_id);
@@ -1198,7 +1214,7 @@ fun admin_reassigns_claimed_creator_and_the_new_cap_claims_prior_fees() {
         let admin_witness = creator_admin();
         let retired_cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
 
-        launch.reassign_curve_fee_cap(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
+        launch.reassign_curve_fee_cap_for_testing(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
 
         let cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
         assert!(cap_id != retired_cap_id);
@@ -1243,7 +1259,7 @@ fun retired_creator_cap_is_rejected_before_the_empty_fee_ledger_check() {
         let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
         let admin_witness = creator_admin();
 
-        launch.reassign_curve_fee_cap(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
+        launch.reassign_curve_fee_cap_for_testing(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
         let (meme_fees, quote_fees) = launch.claim_creator_fees(
             &f.package_version,
             &curve_fee_cap,
@@ -1269,7 +1285,7 @@ fun admin_reassigns_an_unclaimed_creator_and_removes_the_pending_claim() {
         let mut launch = f.open_launch(launch);
         let admin_witness = creator_admin();
 
-        launch.reassign_curve_fee_cap(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
+        launch.reassign_curve_fee_cap_for_testing(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
 
         let cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
         assert!(!launch.has_creator_authority_for_testing());
@@ -1295,7 +1311,7 @@ fun reassignment_prevents_the_original_recipient_from_claiming() {
         let mut launch = f.open_launch(launch);
         let admin_witness = creator_admin();
 
-        launch.reassign_curve_fee_cap(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
+        launch.reassign_curve_fee_cap_for_testing(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
         let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
 
         destroy(curve_fee_cap);
@@ -1315,7 +1331,7 @@ fun reassignment_rejects_the_zero_recipient() {
         let mut launch = f.open_launch(launch);
         let admin_witness = creator_admin();
 
-        launch.reassign_curve_fee_cap(&f.package_version, &admin_witness, @0x0, f.ctx!());
+        launch.reassign_curve_fee_cap_for_testing(&f.package_version, &admin_witness, @0x0, f.ctx!());
 
         destroy(launch);
     });
@@ -1423,7 +1439,7 @@ fun retired_metadata_cap_is_rejected_before_unchanged_metadata() {
         let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
         let admin_witness = creator_admin();
 
-        launch.reassign_metadata_cap(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
+        launch.reassign_metadata_cap_for_testing(&f.package_version, &admin_witness, NEW_CREATOR, f.ctx!());
         launch.set_name(
             &f.package_version,
             &metadata_cap,
@@ -1694,7 +1710,7 @@ fun zero_launch_trade_fees_sell_all_bought_meme_without_fee_balances() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = fee_admin();
-        f.config.set_trade_fees(&f.package_version, &admin_witness, bps::new(0), bps::new(0));
+        f.config.set_trade_fees_for_testing(&f.package_version, &admin_witness, bps::new(0), bps::new(0), f.ctx!());
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         let (meme, refund) = f.buy(&mut launch, 10_000_000, 1);
@@ -1723,7 +1739,7 @@ fun anyone_claims_blasts_trade_fees_for_the_treasury() {
     fixture.next_tx!(BOB, |f| {
         f
             .runtime_config
-            .set_protocol_fee_share(&f.package_version, &fee_admin(), bps::new(2_500));
+            .set_protocol_fee_share_for_testing(&f.package_version, &fee_admin(), bps::new(2_500), f.ctx!());
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         let (meme, refund) = f.buy(&mut launch, 10_000_000, 1);
@@ -1735,6 +1751,7 @@ fun anyone_claims_blasts_trade_fees_for_the_treasury() {
         assert!(protocol_quote > 0);
         assert!(creator_quote > protocol_quote);
 
+        f.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 15);
         launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
 
         let (protocol_meme_left, creator_meme_left, protocol_quote_left, creator_quote_left) = launch
@@ -1776,14 +1793,14 @@ fun a_rotated_treasury_receives_every_later_claim() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f
             .runtime_config
-            .set_protocol_fee_share(&f.package_version, &fee_admin(), bps::new(2_500));
-        f.set_creation_fee(CREATION_FEE);
+            .set_protocol_fee_share_for_testing(&f.package_version, &fee_admin(), bps::new(2_500), f.ctx!());
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         let launch_id = object::id(&launch);
 
         launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
-        f.runtime_config.set_treasury(&f.package_version, &treasury_admin(), ALICE);
+        f.runtime_config.set_treasury_for_testing(&f.package_version, &treasury_admin(), ALICE, f.ctx!());
         let (meme, refund) = f.buy(&mut launch, 10_000_000, 1);
         let (protocol_meme, _, protocol_quote, _) = launch.fee_totals_for_testing();
         launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
@@ -1825,7 +1842,7 @@ fun finalize_holds_the_creation_fee_for_blasts_claim() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creation_fee(CREATION_FEE);
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let ticket = f.new_ticket(CREATOR);
         let ticket_id = object::id(&ticket);
         let mut launch = f.intake<TEST_QUOTE, _>(
@@ -1869,7 +1886,7 @@ fun finalize_rejects_a_creation_fee_other_than_the_configured_one() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
-        f.set_creation_fee(CREATION_FEE);
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let ticket = f.new_ticket(CREATOR);
         let initializer = f.configured_initializer(ticket);
         let mut currency = f.take_currency();
@@ -1889,7 +1906,7 @@ fun set_partner_binds_the_partner_at_creation() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
-        f.set_creation_fee(CREATION_FEE);
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = f.accepted_partner();
         let partner_id = object::id(&partner);
         let ticket = f.new_ticket(CREATOR);
@@ -1941,8 +1958,8 @@ fun claim_protocol_fees_with_partner_pays_the_partner_its_share() {
     fixture.next_tx!(PARTNER, |f| {
         f
             .runtime_config
-            .set_protocol_fee_share(&f.package_version, &fee_admin(), bps::new(2_500));
-        f.set_creation_fee(CREATION_FEE);
+            .set_protocol_fee_share_for_testing(&f.package_version, &fee_admin(), bps::new(2_500), f.ctx!());
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = f.accepted_partner();
         let partner_id = object::id(&partner);
         let ticket = f.new_ticket(CREATOR);
@@ -2026,8 +2043,8 @@ fun claim_protocol_fees_with_partner_includes_migration_fees() {
     fixture.next_tx!(BOB, |f| {
         f
             .runtime_config
-            .set_protocol_fee_share(&f.package_version, &fee_admin(), bps::new(2_500));
-        f.set_creation_fee(CREATION_FEE);
+            .set_protocol_fee_share_for_testing(&f.package_version, &fee_admin(), bps::new(2_500), f.ctx!());
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = f.accepted_partner();
         let partner_id = object::id(&partner);
         let ticket = f.new_ticket(CREATOR);
@@ -2098,8 +2115,8 @@ fun claim_protocol_fees_with_a_zero_share_partner_pays_nothing() {
     fixture.next_tx!(BOB, |f| {
         f
             .runtime_config
-            .set_protocol_fee_share(&f.package_version, &fee_admin(), bps::new(2_500));
-        f.set_creation_fee(CREATION_FEE);
+            .set_protocol_fee_share_for_testing(&f.package_version, &fee_admin(), bps::new(2_500), f.ctx!());
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = partners::new_for_testing(PARTNER, 0, f.ctx!());
         f.config.add_partner(&f.package_version, &fee_admin(), &partner);
         let ticket = f.new_ticket(CREATOR);
@@ -2148,7 +2165,7 @@ fun claim_protocol_fees_checks_the_version_before_the_partner() {
     let mut fixture = start();
 
     fixture.next_tx!(BOB, |f| {
-        f.set_creation_fee(CREATION_FEE);
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = f.accepted_partner();
         let ticket = f.new_ticket(CREATOR);
         let mut launch = f.intake_with_partner(ticket, &partner);
@@ -2169,7 +2186,7 @@ fun claim_protocol_fees_with_partner_checks_the_version_before_the_partner() {
     let mut fixture = start();
 
     fixture.next_tx!(BOB, |f| {
-        f.set_creation_fee(CREATION_FEE);
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = f.accepted_partner();
         let other = f.accepted_partner();
         let ticket = f.new_ticket(CREATOR);
@@ -2225,7 +2242,7 @@ fun claim_protocol_fees_rejects_a_launch_that_names_a_partner() {
     let mut fixture = start();
 
     fixture.next_tx!(BOB, |f| {
-        f.set_creation_fee(CREATION_FEE);
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = f.accepted_partner();
         let ticket = f.new_ticket(CREATOR);
         let mut launch = f.intake_with_partner(ticket, &partner);
@@ -2244,7 +2261,7 @@ fun claim_protocol_fees_with_partner_rejects_another_partner() {
     let mut fixture = start();
 
     fixture.next_tx!(BOB, |f| {
-        f.set_creation_fee(CREATION_FEE);
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = f.accepted_partner();
         let other = f.accepted_partner();
         let ticket = f.new_ticket(CREATOR);
@@ -2271,7 +2288,7 @@ fun claim_protocol_fees_with_partner_rejects_a_launch_without_one() {
     let mut fixture = start();
 
     fixture.next_tx!(BOB, |f| {
-        f.set_creation_fee(CREATION_FEE);
+        f.set_creation_fee_for_testing(CREATION_FEE);
         let partner = f.accepted_partner();
         let mut launch = f.new_default_launch(CREATOR);
 
@@ -2770,12 +2787,12 @@ fun start(): LaunchFixture {
 
     f
         .config
-        .set_protocol_allocation(
+        .set_protocol_allocation_for_testing(
             &f.package_version,
             &treasury_admin(),
             bps::new(PROTOCOL_MEME_BPS),
             bps::new(PROTOCOL_QUOTE_BPS),
-        );
+         &mut sui::tx_context::dummy());
 
     fixture
 }
@@ -2791,20 +2808,20 @@ fun start_with_zero_protocol_allocation(): LaunchFixture {
     scenario.next_tx(PROTOCOL_ADMIN);
     let mut config = scenario.take_shared<launch_config::LaunchConfig>();
 
-    runtime_config.set_treasury(&package_version, &treasury_admin(), TREASURY);
+    runtime_config.set_treasury_for_testing(&package_version, &treasury_admin(), TREASURY, scenario.ctx());
 
     config.set_quote_allowed<TEST_QUOTE>(&package_version, &listing_admin(), true);
-    config.set_migration_witness_allowed<TEST_MIGRATION_WITNESS>(
+    config.set_migration_witness_allowed_for_testing<TEST_MIGRATION_WITNESS>(
         &package_version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
         true,
-    );
-    config.set_trade_fees(
+     scenario.ctx());
+    config.set_trade_fees_for_testing(
         &package_version,
         &fee_admin(),
         bps::new(QUOTE_FEE_BPS),
         bps::new(MEME_FEE_BPS),
-    );
+     scenario.ctx());
 
     LaunchFixture {
         scenario,
@@ -2952,7 +2969,7 @@ fun launch_new_ticket_with(
         creator_authority::new_address(creator),
         burnable,
         SELL_BURN_BPS,
-        self.scenario.ctx(),
+        self.ctx!(),
     )
 }
 
@@ -3024,8 +3041,8 @@ fun launch_finalize<Quote>(
     initializer: LaunchInitializer<LAUNCH_TESTS, Quote>,
 ): Launch<LAUNCH_TESTS, Quote> {
     let mut currency = self.take_currency();
-    let creation_fee = coin::mint_for_testing<SUI>(self.config.creation_fee(), self.scenario.ctx());
-    let launch = initializer.finalize(&self.package_version, &mut currency, &self.config, creation_fee, self.scenario.ctx());
+    let creation_fee = coin::mint_for_testing<SUI>(self.config.creation_fee(), self.ctx!());
+    let launch = initializer.finalize(&self.package_version, &mut currency, &self.config, creation_fee, self.ctx!());
     test_scenario::return_to_address(COIN_REGISTRY, currency);
 
     launch
@@ -3057,13 +3074,13 @@ fun launch_intake_with_partner(
 
 /// A partner paid `PARTNER_SHARE_BPS` of Blast's fees, which new launches may name.
 fun launch_accepted_partner(self: &mut LaunchFixture): Partner {
-    let partner = partners::new_for_testing(PARTNER, PARTNER_SHARE_BPS, self.scenario.ctx());
+    let partner = partners::new_for_testing(PARTNER, PARTNER_SHARE_BPS, self.ctx!());
     self.config.add_partner(&self.package_version, &fee_admin(), &partner);
     partner
 }
 
 fun launch_set_creation_fee(self: &mut LaunchFixture, creation_fee: u64) {
-    self.config.set_creation_fee(&self.package_version, &fee_admin(), creation_fee);
+    self.config.set_creation_fee_for_testing(&self.package_version, &fee_admin(), creation_fee, self.ctx!());
 }
 
 /// Mints one extra unit through the lent treasury cap, then finalizes.
@@ -3089,7 +3106,7 @@ fun open_launch(
     self: &mut LaunchFixture,
     launch: Launch<LAUNCH_TESTS, TEST_QUOTE>,
 ): Launch<LAUNCH_TESTS, TEST_QUOTE> {
-    let sender = self.scenario.ctx().sender();
+    let sender = self.ctx!().sender();
     self.share_launch(launch);
     self.scenario.next_tx(sender);
     self.take_launch()
@@ -3169,13 +3186,13 @@ fun launch_buy(
     amount: u64,
     min_meme_out: u64,
 ): (Coin<LAUNCH_TESTS>, Coin<TEST_QUOTE>) {
-    let quote = coin::mint_for_testing<TEST_QUOTE>(amount, self.scenario.ctx());
+    let quote = coin::mint_for_testing<TEST_QUOTE>(amount, self.ctx!());
     launch.buy(
         &self.package_version,
         &self.runtime_config,
         quote,
         min_meme_out,
-        self.scenario.ctx(),
+        self.ctx!(),
     )
 }
 
@@ -3198,7 +3215,7 @@ fun reach_migration_after_sell(
         &self.runtime_config,
         meme,
         1,
-        self.scenario.ctx(),
+        self.ctx!(),
     );
     let (_, _, pending_burn_after_sell, _) = launch.balances_for_testing();
     destroy(refund);
@@ -3223,7 +3240,7 @@ fun launch_claim(
         &self.runtime_config,
         option::none(),
         &self.clock,
-        self.scenario.ctx(),
+        self.ctx!(),
     )
 }
 
@@ -3236,7 +3253,7 @@ fun migrate(self: &mut LaunchFixture, launch: &mut Launch<LAUNCH_TESTS, TEST_QUO
         &self.package_version,
         &mut currency,
         TEST_MIGRATION_WITNESS(),
-        self.scenario.ctx(),
+        self.ctx!(),
     );
     destroy(meme);
     destroy(quote);
@@ -3492,7 +3509,7 @@ use fun launch_intake_with_partner as LaunchFixture.intake_with_partner;
 
 use fun launch_accepted_partner as LaunchFixture.accepted_partner;
 
-use fun launch_set_creation_fee as LaunchFixture.set_creation_fee;
+use fun launch_set_creation_fee as LaunchFixture.set_creation_fee_for_testing;
 
 use fun launch_mint_extra_supply_and_finalize as LaunchFixture.mint_extra_supply_and_finalize;
 

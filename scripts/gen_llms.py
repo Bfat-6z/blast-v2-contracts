@@ -219,12 +219,28 @@ def build_summaries(out: Path) -> None:
 def load_package(path: str, title: str, summaries: Path) -> Package:
     name = package_name(path)
     pkg = Package(path=path, title=title, name=name)
-    summary_dir = summaries / name / name
-    if not summary_dir.is_dir():
-        sys.exit(f"no summary for {name} under {summaries / name}")
-    for file in sorted(summary_dir.glob("*.json")):
-        module = json.loads(file.read_text())
-        pkg.modules[module["id"]["name"]] = module
+    summary_root = summaries / name
+    addresses = json.loads((summary_root / "address_mapping.json").read_text())
+    # The compiler may label the root modules with a genesis-recipient alias when
+    # both addresses are 0x0. Resolve identity by address, then restore the source name.
+    aliases = {alias for alias, address in addresses.items() if address == addresses[name]}
+    summary_dirs = [summary_root / alias for alias in sorted(aliases)
+                    if (summary_root / alias).is_dir()]
+    if not summary_dirs:
+        sys.exit(f"no summary for {name} under {summary_root}")
+
+    def canonicalize(value):
+        if isinstance(value, list):
+            return [canonicalize(item) for item in value]
+        if isinstance(value, dict):
+            return {key: name if key == "address" and isinstance(item, str) and item in aliases
+                    else canonicalize(item) for key, item in value.items()}
+        return value
+
+    for directory in summary_dirs:
+        for file in sorted(directory.glob("*.json")):
+            module = canonicalize(json.loads(file.read_text()))
+            pkg.modules[module["id"]["name"]] = module
     for file in sorted((ROOT / path / "sources").rglob("*.move")):
         match = re.search(rf"^module\s+{name}::(\w+)", file.read_text(), re.M)
         if match:

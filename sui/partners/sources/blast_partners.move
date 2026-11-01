@@ -49,24 +49,26 @@ public fun new_cap(ctx: &mut TxContext): PartnerCap {
 }
 
 /// Registers and shares a partner managed by the cap `cap_id`, with its share
-/// and cap in force at once. Every later change to either waits `PARTNER_CHANGE_DELAY_MS`.
+/// scheduled after seven days; the cap is in force immediately.
 public fun register(
     _: &AdminWitness<PartnerAdmin>,
     cap_id: ID,
     recipient: address,
     share_bps: u64,
+    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert!(recipient != @0x0, EInvalidRecipient);
     assert!(share_bps <= MAX_SHARE_BPS, EShareAboveMax);
 
-    let partner = Partner {
+    let mut partner = Partner {
         id: object::new(ctx),
         recipient,
-        share_bps: timelock::new(share_bps, PARTNER_CHANGE_DELAY_MS),
+        share_bps: timelock::new(0, PARTNER_CHANGE_DELAY_MS),
         cap_id: timelock::new(cap_id, PARTNER_CHANGE_DELAY_MS),
     };
 
+    partner.share_bps.schedule(share_bps, clock);
     partner.emit_updated();
 
     transfer::share_object(partner);

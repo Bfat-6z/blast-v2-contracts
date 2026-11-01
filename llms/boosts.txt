@@ -23,8 +23,8 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | `blast_boosts_core` | Boosts core | live; source has changed since | `0xac10e88ff25bd98a841f60cfcdc4006b4ad3d3afb577b5024043798ff7f4cafe` | `0xac10e88ff25bd98a841f60cfcdc4006b4ad3d3afb577b5024043798ff7f4cafe` |
 | `blast_boosts_products` | Boost product tags | live; source has changed since | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` |
 | `blast_boosts_aftermath` | Boosts Aftermath adapter | not yet published | — | — |
-| `blast_partners` | Partner codes | live | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
-| `blast_admin` | Administration | live | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
+| `blast_partners` | Partner codes | live; source has changed since | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
+| `blast_admin` | Administration | live; source has changed since | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
 
 ## Calling Blast contracts
 
@@ -1306,7 +1306,7 @@ Boost down so holders can claim what remains.
 
 ## Partner codes
 
-> **Deployment status:** `blast_partners` is live on mainnet.
+> **Deployment status:** `blast_partners` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
 
 ### What it is
 
@@ -1364,8 +1364,7 @@ destroying a live cap leaves its partners with no working cap until a cap Blast
 schedules with `blast_partners::schedule_cap` takes effect, seven days later.
 
 **Partner.** `blast_partners::blast_partners::register` creates and shares the
-partner with its share and cap in force immediately (`before == after`,
-`at_ms == 0`). From then on:
+partner with a zero share and the cap in force immediately. Registration takes the canonical `Clock` and schedules the requested share seven days later. From then on:
 
 1. Blast schedules a new share or cap; the old value stays in force for seven
    days.
@@ -1402,7 +1401,7 @@ accepted for seven more days. A partner is accepted while the field exists and
 2. Give Blast the cap's object ID, the recipient address, and the agreed share.
 3. Blast's partner admin, in one PTB: `blast_acl::sign_in` with type argument
    `blast_partners::blast_partners::PartnerAdmin`, passing the shared `ACL` and
-   its owned `AdminCap`; then `blast_partners::blast_partners::register` with a
+   its owned `AdminCap`; then `blast_partners::blast_partners::register` with `Clock` and a
    reference to that `AdminWitness<PartnerAdmin>`, your cap ID, the recipient,
    and the share. The new `Partner` is shared; its ID is in the `PartnerUpdated`
    event and the transaction's created objects.
@@ -3795,7 +3794,7 @@ public struct VenueAccount has store {
 
 ## API reference: `blast_partners` (Partner codes)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -3837,12 +3836,13 @@ public struct PartnerCap has key, store {
 public fun new_cap(ctx: &mut TxContext): PartnerCap
 
 /// Registers and shares a partner managed by the cap `cap_id`, with its share
-/// and cap in force at once. Every later change to either waits `PARTNER_CHANGE_DELAY_MS`.
+/// scheduled after seven days; the cap is in force immediately.
 public fun register(
     _: &blast_admin::blast_acl::AdminWitness<PartnerAdmin>,
     cap_id: ID,
     recipient: address,
     share_bps: u64,
+    clock: &Clock,
     ctx: &mut TxContext,
 )
 
@@ -3919,7 +3919,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 ## API reference: `blast_admin` (Administration)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -3930,24 +3930,23 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 0 | `EInvalidSuperAdminCap` |  |
 | 1 | `EInvalidAdminCap` |  |
 | 2 | `EInvalidAdminRecipient` |  |
-| 3 | `EAdminCapacityReached` |  |
-| 4 | `EAdminRoleCapacityReached` |  |
-| 5 | `EAdminRoleAlreadyGranted` |  |
-| 6 | `EAdminRoleNotGranted` |  |
-| 7 | `EInvalidSuperAdminRecipient` |  |
-| 8 | `ESuperAdminTransferUnchanged` |  |
-| 9 | `ENoPendingSuperAdminTransfer` |  |
-| 10 | `ENotPendingSuperAdminRecipient` |  |
-| 11 | `ESuperAdminTransferNotReady` |  |
-| 12 | `ESuperAdminCapStillActive` |  |
-| 13 | `EOperationalVersionMismatch` |  |
-| 14 | `EOperationalVersionOverflow` |  |
-| 15 | `EInvalidPackagePublisher` |  |
-| 16 | `EInvalidUpgradeCap` |  |
-| 17 | `EInvalidPackageDigest` |  |
-| 18 | `EUpgradeCapUnavailable` |  |
-| 19 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 20 | `EInvalidPackageMarker` |  |
+| 3 | `EAdminRoleCapacityReached` |  |
+| 4 | `EAdminRoleAlreadyGranted` |  |
+| 5 | `EAdminRoleNotGranted` |  |
+| 6 | `EInvalidSuperAdminRecipient` |  |
+| 7 | `ESuperAdminTransferUnchanged` |  |
+| 8 | `ENoPendingSuperAdminTransfer` |  |
+| 9 | `ENotPendingSuperAdminRecipient` |  |
+| 10 | `ESuperAdminTransferNotReady` |  |
+| 11 | `ESuperAdminCapStillActive` |  |
+| 12 | `EOperationalVersionMismatch` |  |
+| 13 | `EOperationalVersionOverflow` |  |
+| 14 | `EInvalidPackagePublisher` |  |
+| 15 | `EInvalidUpgradeCap` |  |
+| 16 | `EInvalidPackageDigest` |  |
+| 17 | `EUpgradeCapUnavailable` |  |
+| 18 | `EUpgradePolicyNotMoreRestrictive` |  |
+| 19 | `EInvalidPackageMarker` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -3962,7 +3961,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
-    admins: VecMap<ID, VecSet<TypeName>>,
+    admins: Table<ID, VecSet<TypeName>>,
     /// The nominated next super admin: none until the transfer delay passes.
     pending_super_admin: blast_fun_timelock::Timelocked<Option<address>>,
 }
@@ -4029,7 +4028,6 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role>
 
 #### Constants
 
-- `MAX_ADMINS: u64 = 32`
 - `MAX_ROLES_PER_ADMIN: u64 = 32`
 - `SUPER_ADMIN_TRANSFER_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The wait before a nominated super admin may accept the root.
 
@@ -4141,6 +4139,80 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     final_policy: u8,
 }
 ```
+
+### `blast_admin::delayed`
+
+Explicitly applied administrative changes with an immutable 48-hour notice.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
+
+#### Types
+
+```move
+/// Applied value with at most one replacement; readers never need a Clock.
+public struct Delayed<T: copy + drop + store> has store {
+    value: T,
+    pending: Option<Pending<T>>,
+}
+
+/// A value bound to a Unix millisecond execution threshold.
+public struct Pending<T: copy + drop + store> has copy, drop, store {
+    value: T,
+    ready_at_ms: u64,
+}
+```
+
+#### Functions
+
+```move
+/// Initializes publication policy, with no scheduled change.
+public fun new<T: copy + drop + store>(value: T): Delayed<T>
+
+/// Returns the explicitly applied value.
+public fun value<T: copy + drop + store>(self: &Delayed<T>): T
+
+/// Borrows the applied value for internal consumers such as signature verification.
+public fun borrow<T: copy + drop + store>(self: &Delayed<T>): &T
+
+/// Returns the current schedule, if any.
+public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
+
+/// Replaces any pending change and restarts the entire delay.
+public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, clock: &Clock): u64
+
+/// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
+public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
+
+/// Cancels even a ready change and returns the cancelled value.
+public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
+
+/// Only the enclosing module's authority-reducing paths may expose this operation.
+/// Revocation also clears a pending replacement so it cannot restore revoked authority.
+public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
+
+/// Starts the immutable administrative notice period.
+public fun new_pending<T: copy + drop + store>(value: T, clock: &Clock): Pending<T>
+
+/// Returns a scheduled value only at or after its threshold.
+public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
+
+/// Returns the proposed value for cancellation events and diagnostics.
+public fun proposed<T: copy + drop + store>(self: &Pending<T>): T
+
+/// Returns the Unix millisecond threshold for a scheduling event.
+public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
+```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `ENotReady` | 0 | The full administrative delay must pass before applying a change. |
+| `ENoPending` | 1 | There is no scheduled administrative change. |
+
+#### Constants
+
+- `DELAY_MS: u64 = 48 * 60 * 60 * 1_000`
 
 ### `blast_admin::operational_version`
 

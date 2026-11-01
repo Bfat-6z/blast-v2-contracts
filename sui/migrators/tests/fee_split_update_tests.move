@@ -408,7 +408,7 @@ fun start(fee_split: FeeSplit): FeeSplitFixture {
     let mut config = launch_config::new_for_testing(scenario.ctx());
 
     scenario.next_tx(ADMIN);
-    config.admit<QUOTE, Venue>(&version);
+    config.admit<QUOTE, Venue>(&version, scenario.ctx());
     let (launch, currency) = scenario.open_launch<_, QUOTE, _>(
         test_utils::create_one_time_witness<FEE_SPLIT_UPDATE_TESTS>(),
         &version,
@@ -473,7 +473,7 @@ fun reassign_curve_fee_cap(self: &mut FeeSplitFixture) {
     self.scenario.next_tx(ADMIN);
     let admin = blast_acl::witness_for_testing<CreatorAdmin>();
     let mut launch = self.take_launch();
-    launch.reassign_curve_fee_cap(
+    launch.reassign_curve_fee_cap_for_testing(
         &self.version,
         &admin,
         launch_fixture::creator(),

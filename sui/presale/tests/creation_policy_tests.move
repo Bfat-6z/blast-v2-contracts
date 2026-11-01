@@ -51,7 +51,7 @@ fun the_admin_allows_a_quote_and_a_migrator() {
     let mut policy = allowing_nothing();
 
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
-    policy.set_migration_witness_allowed<MIGRATOR>(&package_version, &adapter_admin(), true);
+    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(&package_version, &adapter_admin(), true, &mut sui::tx_context::dummy());
 
     policy.assert_allowed<QUOTE, MIGRATOR>();
     let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
@@ -133,7 +133,7 @@ fun disallowing_a_migrator_stops_later_creations() {
     );
     let mut policy = allowing<QUOTE, MIGRATOR>();
 
-    policy.set_migration_witness_allowed<MIGRATOR>(&package_version, &adapter_admin(), false);
+    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(&package_version, &adapter_admin(), false, &mut sui::tx_context::dummy());
 
     let (migration_witness, allowed) = last_event<
         MigrationWitnessSet,
@@ -188,7 +188,7 @@ fun an_allowed_migrator_cannot_be_allowed_again() {
     );
     let mut policy = allowing<QUOTE, MIGRATOR>();
 
-    policy.set_migration_witness_allowed<MIGRATOR>(&package_version, &adapter_admin(), true);
+    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(&package_version, &adapter_admin(), true, &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -204,7 +204,7 @@ fun an_unlisted_migrator_cannot_be_disallowed() {
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed<MIGRATOR>(&package_version, &adapter_admin(), false);
+    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(&package_version, &adapter_admin(), false, &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -221,7 +221,7 @@ fun a_primitive_cannot_be_allowed_as_a_migrator() {
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed<u64>(&package_version, &adapter_admin(), true);
+    policy.set_migration_witness_allowed_for_testing<u64>(&package_version, &adapter_admin(), true, &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -238,11 +238,11 @@ fun a_vector_cannot_be_allowed_as_a_migrator() {
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed<vector<MIGRATOR>>(
+    policy.set_migration_witness_allowed_for_testing<vector<MIGRATOR>>(
         &package_version,
         &adapter_admin(),
         true,
-    );
+     &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -259,7 +259,7 @@ fun a_stdlib_type_cannot_be_allowed_as_a_migrator() {
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed<TypeName>(&package_version, &adapter_admin(), true);
+    policy.set_migration_witness_allowed_for_testing<TypeName>(&package_version, &adapter_admin(), true, &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -277,11 +277,11 @@ fun an_option_of_a_witness_cannot_be_allowed_as_a_migrator() {
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed<Option<MIGRATOR>>(
+    policy.set_migration_witness_allowed_for_testing<Option<MIGRATOR>>(
         &package_version,
         &adapter_admin(),
         true,
-    );
+     &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -298,7 +298,7 @@ fun a_sui_framework_type_cannot_be_allowed_as_a_migrator() {
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed<ID>(&package_version, &adapter_admin(), true);
+    policy.set_migration_witness_allowed_for_testing<ID>(&package_version, &adapter_admin(), true, &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -315,7 +315,7 @@ fun disallowing_a_primitive_is_an_unchanged_allowance() {
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed<u64>(&package_version, &adapter_admin(), false);
+    policy.set_migration_witness_allowed_for_testing<u64>(&package_version, &adapter_admin(), false, &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -486,7 +486,7 @@ fun stale_version_cannot_allow_quotes() {
 
     package_version.set_for_testing(2);
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
-    policy.set_migration_witness_allowed<MIGRATOR>(&package_version, &adapter_admin(), true);
+    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(&package_version, &adapter_admin(), true, &mut sui::tx_context::dummy());
 
     policy.assert_allowed<QUOTE, MIGRATOR>();
     let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();

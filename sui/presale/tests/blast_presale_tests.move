@@ -107,6 +107,42 @@ public struct HardCapTerms has copy, drop {
 // === Tests ===
 
 #[test]
+fun pause_keeps_settlement_and_refunds_open() {
+    let mut fixture = start_sale(presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2));
+    fixture.commit_open(ALICE, 500);
+    fixture.set_time(COMMITMENT_ENDS_AT_MS);
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 11);
+    fixture.next_tx!(KEEPER, |f| {
+        let mut sale = f.take_presale();
+        sale.settle(&version, &f.clock);
+        sale.claim(&version, ALICE, &f.clock, f.ctx!());
+        f.return_presale(sale);
+    });
+    fixture.take_quote(ALICE, 500);
+    fixture.destroy_cancelled_cap();
+    fixture.end();
+    destroy(version);
+}
+
+
+#[test]
+#[expected_failure(abort_code = presale::EAboveFeePolicy, location = blast_presale::blast_presale)]
+fun a_pending_policy_increase_does_not_raise_the_sales_immediate_fee_ceiling() {
+    let mut fixture = schedule_with_protocol_fees(vector[], PROTOCOL_RAISE_BPS, PROTOCOL_TOKEN_BPS, FEE_PAYING_RECIPIENT_B_BPS);
+    let version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
+    let notice_clock = sui::clock::create_for_testing(fixture.scenario.ctx());
+    fixture.fee_policy.schedule_fees(&version, &fee_admin(), bps::new(1_000), bps::new(PROTOCOL_TOKEN_BPS), bps::new(0), bps::new(0), &notice_clock);
+    fixture.next_tx!(ADMIN, |f| {
+        let mut sale = f.take_presale();
+        sale.set_protocol_fees(&version, &fee_admin(), &f.fee_policy, bps::new(1_000), bps::new(PROTOCOL_TOKEN_BPS), bps::new(0), bps::new(0), &f.clock);
+        f.return_presale(sale);
+    });
+    abort
+}
+
+
+#[test]
 /// Every wallet gets the same fill rate regardless of commitment size or claim order.
 fun oversubscription_uses_one_fill_rate_and_refunds_the_rest() {
     let mut fixture = start_sale(presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2));
@@ -1402,15 +1438,15 @@ fun migration_pays_blast_its_snapshotted_shares_at_the_current_destination() {
 
     fixture
         .fee_policy
-        .set_fees(
+        .set_fees_for_testing(
             &package_version,
             &fee_admin(),
             bps::new(0),
             bps::new(0),
             bps::new(0),
             bps::new(0),
-        );
-    fixture.fee_policy.set_destination(&package_version, &treasury_admin(), NEW_TREASURY);
+         fixture.scenario.ctx());
+    fixture.fee_policy.set_destination_for_testing(&package_version, &treasury_admin(), NEW_TREASURY, fixture.scenario.ctx());
 
     assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 767]);
 
@@ -1585,7 +1621,7 @@ fun an_unshared_sales_rates_can_change_before_its_share() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let mut fee_policy = fee_policy::new_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let (mut sale, cap) = new_presale<QUOTE>(
         treasury_cap,
@@ -1597,9 +1633,11 @@ fun an_unshared_sales_rates_can_change_before_its_share() {
     );
     let presale_id = object::id(&sale);
 
+    fee_policy.set_fees_for_testing(&package_version, &fee_admin(), bps::new(1_000), bps::new(500), bps::new(100), bps::new(200), &mut ctx);
     sale.set_protocol_fees(
         &package_version,
         &fee_admin(),
+        &fee_policy,
         bps::new(1_000),
         bps::new(500),
         bps::new(100),
@@ -3057,16 +3095,16 @@ fun treasury_fee_policy(
     let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
     let result = {
         let mut fee_policy = fee_policy::new_for_testing(ctx);
-        fee_policy.set_destination(&package_version, &treasury_admin(), TREASURY);
+        fee_policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, ctx);
         if (protocol_raise_bps > 0 || protocol_token_bps > 0)
-            fee_policy.set_fees(
+            fee_policy.set_fees_for_testing(
                 &package_version,
                 &fee_admin(),
                 bps::new(protocol_raise_bps),
                 bps::new(protocol_token_bps),
                 bps::new(0),
                 bps::new(0),
-            );
+             ctx);
 
         fee_policy
     };
@@ -3726,11 +3764,13 @@ fun set_protocol_fees(self: &mut Fixture, rates: vector<u64>) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(self
         .scenario
         .ctx());
+    self.fee_policy.set_fees_for_testing(&package_version, &fee_admin(), bps::new(9_999), bps::new(9_998), bps::new(10_000), bps::new(10_000), self.scenario.ctx());
     self.next_tx!(ADMIN, |fixture| {
         let mut sale = fixture.take_presale();
         sale.set_protocol_fees(
             &package_version,
             &fee_admin(),
+            &fixture.fee_policy,
             bps::new(rates[0]),
             bps::new(rates[1]),
             bps::new(rates[2]),

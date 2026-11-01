@@ -56,7 +56,7 @@ fun wrapping_enables_guarded_mutations_and_consumes_bootstrap() {
     fixture.next_tx!(PUBLISHER, |f| {
         f
             .runtime
-            .set_destination(&f.package_version, &blast_acl::witness_for_testing(), PROTOCOL_ADMIN);
+            .set_destination_for_testing(&f.package_version, &blast_acl::witness_for_testing(), PROTOCOL_ADMIN, f.scenario.ctx());
 
         assert_eq!(f.runtime.destination(), PROTOCOL_ADMIN);
         assert_eq!(f.package_version.version_for_testing(), 1);
@@ -214,8 +214,8 @@ fun commit_rejects_a_skipped_generation_before_the_native_cap_is_touched() {
 
 #[test]
 #[expected_failure(
-    abort_code = errors::EInvalidPackageDigest,
-    location = blast_admin::upgrade_custody,
+    abort_code = package_admin::EInvalidDigest,
+    location = blast_presale::package_admin,
 )]
 fun authorization_rejects_non_digest_length() {
     let mut fixture = start();
@@ -225,11 +225,11 @@ fun authorization_rejects_non_digest_length() {
 
         let ticket = f
             .package_admin
-            .authorize_upgrade(
+            .authorize_upgrade_for_testing(
                 &f.package_version,
                 &admin_witness,
                 x"11223344556677889900aabbccddeeffffeeddccbbaa009988776655443322",
-            );
+             f.scenario.ctx());
 
         destroy(ticket);
     });
@@ -251,11 +251,11 @@ fun stale_generation_rejects_package_admin_before_digest_validation() {
 
         let ticket = f
             .package_admin
-            .authorize_upgrade(
+            .authorize_upgrade_for_testing(
                 &f.package_version,
                 &admin_witness,
                 vector[],
-            );
+             f.scenario.ctx());
 
         destroy(ticket);
     });
@@ -269,11 +269,11 @@ fun compatible_upgrade_commits_and_advances_together() {
     let fixture = &mut owned;
     let ticket = fixture
         .package_admin
-        .authorize_upgrade(
+        .authorize_upgrade_for_testing(
             &fixture.package_version,
             &upgrade_admin(),
             package_digest(),
-        );
+         &mut sui::tx_context::dummy());
     assert_eq!(ticket.ticket_policy(), package::compatible_policy());
     let receipt = ticket.test_upgrade();
     fixture
@@ -314,11 +314,11 @@ fun committed_upgrade_disables_old_bytecode() {
     let fixture = &mut owned;
     let ticket = fixture
         .package_admin
-        .authorize_upgrade(
+        .authorize_upgrade_for_testing(
             &fixture.package_version,
             &upgrade_admin(),
             package_digest(),
-        );
+         &mut sui::tx_context::dummy());
     let receipt = ticket.test_upgrade();
     fixture
         .package_admin
@@ -329,11 +329,11 @@ fun committed_upgrade_disables_old_bytecode() {
         );
     fixture
         .runtime
-        .set_destination(
+        .set_destination_for_testing(
             &fixture.package_version,
             &blast_acl::witness_for_testing(),
             PROTOCOL_ADMIN,
-        );
+         &mut sui::tx_context::dummy());
     destroy(owned);
 }
 

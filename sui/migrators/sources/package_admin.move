@@ -9,15 +9,56 @@
 /// its own generation.
 module blast_fun_migrators::package_admin;
 
+// === Errors ===
+
+#[error(code = 0)]
+const EWrongUpgradeAction: vector<u8> = b"The ready action must match the requested upgrade digest or immutability.";
+#[error(code = 1)]
+const ENoPendingAction: vector<u8> = b"No upgrade action is scheduled.";
+#[error(code = 2)]
+const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
+
 // === Public Types ===
+
+/// The exact code digest or irreversible end of upgrades approved for execution.
+public enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable }
 
 /// Shared custody for this package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: UpgradeCustody<BLAST_FUN_MIGRATORS>,
+    pending: Option<Pending<UpgradeAction>>,
 }
 
 // === Public Functions ===
+
+/// Schedules one exact code digest, replacing any previous action.
+public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock) {
+    package_version.assert_current();
+    assert!(digest.length() == 32, EInvalidDigest);
+    let action = UpgradeAction::Upgrade(digest);
+    let pending = delayed::new_pending(action, clock);
+    self.pending = option::some(pending);
+    blast_events::upgrade_action_scheduled(option::some(digest), pending.ready_at_ms());
+}
+
+/// Schedules the irreversible destruction of upgrade authority after public notice.
+public fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
+    package_version.assert_current();
+    let action = UpgradeAction::MakeImmutable;
+    let pending = delayed::new_pending(action, clock);
+    self.pending = option::some(pending);
+    blast_events::upgrade_action_scheduled(option::none(), pending.ready_at_ms());
+}
+
+/// Cancels any scheduled action, even after its execution threshold.
+public fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+    package_version.assert_current();
+    assert!(self.pending.is_some(), ENoPendingAction);
+    let action = self.pending.extract().proposed();
+    let digest = match (action) { UpgradeAction::Upgrade(digest) => option::some(digest), UpgradeAction::MakeImmutable => option::none() };
+    blast_events::upgrade_action_cancelled(digest);
+}
 
 /// Validates and permanently seals the migrators Publisher and raw UpgradeCap.
 ///
@@ -28,7 +69,7 @@ public fun wrap(publisher: Publisher, upgrade_cap: UpgradeCap, ctx: &mut TxConte
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN_MIGRATORS>(id.to_inner(), publisher, upgrade_cap);
 
-    transfer::share_object(PackageAdmin { id, custody });
+    transfer::share_object(PackageAdmin { id, custody, pending: option::none() });
 }
 
 /// Authorizes the exact package digest under the sealed cap's compatible policy.
@@ -40,10 +81,14 @@ public fun authorize_upgrade(
     package_version: &PackageVersion,
     _: &AdminWitness<UpgradeAdmin>,
     digest: vector<u8>,
+    clock: &Clock,
 ): UpgradeTicket {
     package_version.assert_current();
     let custodian_id = self.id.to_inner();
 
+    assert!(self.pending.is_some(), ENoPendingAction);
+    assert!(self.pending.destroy_some().take_ready(clock) == UpgradeAction::Upgrade(digest), EWrongUpgradeAction);
+    self.pending = option::none();
     self.custody.authorize_upgrade(custodian_id, digest)
 }
 
@@ -65,7 +110,40 @@ public fun commit_upgrade_and_advance(
     package_version.advance();
 }
 
+/// Executes a ready immutability decision under the live upgrade role.
+public fun make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
+    package_version.assert_current();
+    assert!(self.pending.is_some(), ENoPendingAction);
+    assert!(self.pending.destroy_some().take_ready(clock) == UpgradeAction::MakeImmutable, EWrongUpgradeAction);
+    self.pending = option::none();
+    self.custody.make_immutable(self.id.to_inner());
+}
+
 // === Test-Only Functions ===
+
+#[test_only]
+/// Fixture helper exercising both public phases with a synthetic 48-hour advance.
+public fun authorize_upgrade_for_testing(self: &mut PackageAdmin, package_version: &PackageVersion, admin: &AdminWitness<UpgradeAdmin>, digest: vector<u8>,
+    ctx: &mut TxContext,
+): UpgradeTicket {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    self.schedule_upgrade(package_version, admin, digest, &clock);
+    clock.set_for_testing(172_800_000);
+    let ticket = self.authorize_upgrade(package_version, admin, digest, &clock);
+    clock.destroy_for_testing();
+    ticket
+}
+
+#[test_only]
+public fun make_immutable_for_testing(self: &mut PackageAdmin, package_version: &PackageVersion, admin: &AdminWitness<UpgradeAdmin>,
+    ctx: &mut TxContext,
+) {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    self.schedule_make_immutable(package_version, admin, &clock);
+    clock.set_for_testing(172_800_000);
+    self.make_immutable(package_version, admin, &clock);
+    clock.destroy_for_testing();
+}
 
 #[test_only]
 /// Seals this package's test Publisher and a unit-test UpgradeCap, left unshared.
@@ -80,18 +158,25 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    PackageAdmin { id, custody }
+    PackageAdmin { id, custody, pending: option::none() }
 }
 
 // === Imports ===
 
+use blast_fun_migrators::{
+    blast_events,
+    blast_fun_migrators::{BLAST_FUN_MIGRATORS, PackageVersion},
+};
+
 use blast_admin::{
     blast_acl::AdminWitness,
+    delayed::{Self, Pending},
     upgrade_custody::{Self, UpgradeCustody},
 };
 
-use blast_fun::blast_fun_domain::UpgradeAdmin;
+use blast_fun::blast_fun_domain::{CancelAdmin, UpgradeAdmin};
 
-use blast_fun_migrators::blast_fun_migrators::{BLAST_FUN_MIGRATORS, PackageVersion};
-
-use sui::package::{Publisher, UpgradeCap, UpgradeReceipt, UpgradeTicket};
+use sui::{
+    clock::Clock,
+    package::{Publisher, UpgradeCap, UpgradeReceipt, UpgradeTicket},
+};

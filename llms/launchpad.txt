@@ -20,10 +20,10 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
-| `blast_fun` | Launchpad | live | `0x079a1b44c551613cbc63cc0406f8ff8d717407378dd6f17d43d9e1b3fd63a573` | `0x079a1b44c551613cbc63cc0406f8ff8d717407378dd6f17d43d9e1b3fd63a573` |
-| `blast_fun_migrators` | Migration and LP vaults | live | `0x4a5d11d8443e965d62abb3ff032e9b020d10aeaf4dfbc3bc59775b44a8af1f53` | `0x4a5d11d8443e965d62abb3ff032e9b020d10aeaf4dfbc3bc59775b44a8af1f53` |
-| `blast_partners` | Partner codes | live | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
-| `blast_admin` | Administration | live | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
+| `blast_fun` | Launchpad | live; source has changed since | `0x079a1b44c551613cbc63cc0406f8ff8d717407378dd6f17d43d9e1b3fd63a573` | `0x079a1b44c551613cbc63cc0406f8ff8d717407378dd6f17d43d9e1b3fd63a573` |
+| `blast_fun_migrators` | Migration and LP vaults | live; source has changed since | `0x4a5d11d8443e965d62abb3ff032e9b020d10aeaf4dfbc3bc59775b44a8af1f53` | `0x4a5d11d8443e965d62abb3ff032e9b020d10aeaf4dfbc3bc59775b44a8af1f53` |
+| `blast_partners` | Partner codes | live; source has changed since | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
+| `blast_admin` | Administration | live; source has changed since | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
 
 ## Calling Blast contracts
 
@@ -173,7 +173,7 @@ run) before signing it.
 
 ## Launchpad
 
-> **Deployment status:** `blast_fun` is live on mainnet.
+> **Deployment status:** `blast_fun` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
 
 ### What it is
 
@@ -275,13 +275,16 @@ role authorizes only the functions that name it. The roles are types in `blast_f
 
 | Role | Launchpad functions it authorizes |
 | --- | --- |
+| `blast_fun_domain::PauseAdmin` | `blast_fun::pause` |
+| `blast_fun_domain::UnpauseAdmin` | `blast_fun::unpause` |
+| `blast_fun_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_fun_domain::UpgradeAdmin` | `blast_fun::package_admin::authorize_upgrade`, `blast_fun::package_admin::commit_upgrade_and_advance`, `blast_fun::package_admin::make_immutable` |
-| `blast_fun_domain::CreatorAdmin` | `launch::reassign_curve_fee_cap`, `launch::reassign_metadata_cap` |
-| `blast_fun_domain::TreasuryAdmin` | `launch_config::set_protocol_allocation`, `runtime_config::set_treasury` |
-| `blast_fun_domain::FeeAdmin` | `launch_config::set_trade_fees`, `launch_config::set_creation_fee`, `launch_config::add_partner`, `launch_config::remove_partner`, `runtime_config::set_protocol_fee_share` |
+| `blast_fun_domain::CreatorAdmin` | `launch::schedule_curve_fee_cap_reassignment`, `launch::schedule_metadata_cap_reassignment` |
+| `blast_fun_domain::TreasuryAdmin` | `launch_config::schedule_protocol_allocation`, `runtime_config::schedule_treasury` |
+| `blast_fun_domain::FeeAdmin` | `launch_config::schedule_trade_fees`, `launch_config::schedule_creation_fee`, `launch_config::add_partner`, `launch_config::remove_partner`, `runtime_config::schedule_protocol_fee_share` |
 | `blast_fun_domain::ListingAdmin` | `launch_config::set_meme_decimals_allowed`, `launch_config::set_quote_allowed` |
-| `blast_fun_domain::AdapterAdmin` | `launch_config::set_migration_witness_allowed` |
-| `blast_fun_domain::ClaimSignerAdmin` | `runtime_config::set_creator_claim_signer` |
+| `blast_fun_domain::AdapterAdmin` | `launch_config::schedule_migration_witness`, `launch_config::remove_migration_witness` |
+| `blast_fun_domain::ClaimSignerAdmin` | `runtime_config::schedule_creator_claim_signer`, `runtime_config::revoke_creator_claim_signer` |
 | `blast_fun_domain::BuybackAdmin`, `blast_fun_domain::RewardsAdmin` | migrators only (buyback, holder-reward rounds) |
 
 Integrators cannot call these. What each setter changes is under "Admin operations".
@@ -540,30 +543,28 @@ allow/remove toggles for Quotes, decimals, and adapters instead abort inside the
   a Quote for new launches; existing launches keep trading. Emits `blast_fun::events::QuoteSet`.
 - `launch_config::set_meme_decimals_allowed` (ListingAdmin), with `decimals: u8` and `allowed`.
   Emits `blast_fun::events::MemeDecimalsSet`.
-- `launch_config::set_migration_witness_allowed<Witness>` (AdapterAdmin), with `allowed`: admits or
-  removes an adapter; rejects types defined at `0x1` or `0x2`. Existing launches keep their adapter.
-  Emits `blast_fun::events::MigrationWitnessSet`.
-- `launch_config::set_trade_fees` (FeeAdmin), with Quote and Meme fee `Bps`, each at most 1,000;
-  only launches started afterward use them. Emits `blast_fun::events::LaunchTradeFeesChanged`.
-- `launch_config::set_creation_fee` (FeeAdmin), with an amount in MIST. Emits
+- `launch_config::schedule_migration_witness<Witness>` (AdapterAdmin), with `Clock`: schedules admission; rejects types defined at `0x1` or `0x2`. `apply_migration_witness` admits it after 48 hours. `remove_migration_witness` removes it immediately and cancels pending admission. Existing launches keep their adapter.
+- `launch_config::schedule_trade_fees` (FeeAdmin), with Quote and Meme fee `Bps`, each at most 1,000;
+  only launches started afterward use them. Application emits `blast_fun::events::LaunchTradeFeesChanged`.
+- `launch_config::schedule_creation_fee` (FeeAdmin), with an amount in MIST. Emits
   `blast_fun::events::CreationFeeChanged`.
-- `launch_config::set_protocol_allocation` (TreasuryAdmin), with Meme and Quote `Bps`: Blast's
+- `launch_config::schedule_protocol_allocation` (TreasuryAdmin), with Meme and Quote `Bps`: Blast's
   one-time share for launches finalized afterward; Meme at most 9,998 and Quote at most 9,999.
-  Emits `blast_fun::events::ProtocolAllocationSet`.
+  Application emits `blast_fun::events::ProtocolAllocationSet`.
 - `launch_config::add_partner` (FeeAdmin), with a `Partner`: new launches may name it at once;
   cancels a pending removal. Emits `blast_fun::events::PartnerAdded`.
 - `launch_config::remove_partner` (FeeAdmin), with a `Partner` and `Clock`: new launches may still
   name it for `blast_partners::blast_partners::delay_ms` (seven days); launches that already name it
   keep paying it. Aborts with `EPartnerNotAccepted` when it is not accepted now. Emits
   `blast_fun::events::PartnerRemoved`.
-- `runtime_config::set_protocol_fee_share` (FeeAdmin), with a `Bps`: Blast's share of every trade
-  fee on every launch, from the next trade. Emits `blast_fun::events::ProtocolFeeShareChanged`.
-- `runtime_config::set_treasury` (TreasuryAdmin), with a non-zero address: every later Blast fee
-  claim on every launch pays it. Emits `blast_fun::events::TreasuryChanged`.
-- `runtime_config::set_creator_claim_signer` (ClaimSignerAdmin), with a 32-byte Ed25519 public key,
-  or empty bytes to stop all account claims. Emits `blast_fun::events::CreatorClaimSignerSet`.
-- `launch::reassign_curve_fee_cap` and `launch::reassign_metadata_cap` (CreatorAdmin), with a
-  non-zero recipient: mint a fresh cap, record it as the live one, send it to the recipient, and
+- `runtime_config::schedule_protocol_fee_share` (FeeAdmin), with a `Bps`: Blast's share of every trade
+  fee on every launch, from the next trade. Application emits `blast_fun::events::ProtocolFeeShareChanged`.
+- `runtime_config::schedule_treasury` (TreasuryAdmin), with a non-zero address: every later Blast fee
+  claim on every launch pays it. Application emits `blast_fun::events::TreasuryChanged`.
+- `runtime_config::schedule_creator_claim_signer` (ClaimSignerAdmin), with a 32-byte Ed25519 public key,
+  with immediate revocation handled by the separate revoke operation. Application emits `blast_fun::events::CreatorClaimSignerSet`.
+- `launch::reassign_curve_fee_cap` and `launch::reassign_metadata_cap` (anyone after the delay), using the
+  scheduled non-zero recipient: mint a fresh cap, record it as the live one, send it to the recipient, and
   cancel any unclaimed creator claim. The old cap stops working; unclaimed curve fees follow the
   new cap. Emit `blast_fun::events::CurveFeeCapReassigned` or
   `blast_fun::events::MetadataCapReassigned`.
@@ -572,6 +573,45 @@ allow/remove toggles for Quotes, decimals, and adapters instead abort inside the
   `blast_fun::package_admin::commit_upgrade_and_advance` commits the receipt and advances
   `PackageVersion` in the same transaction; `blast_fun::package_admin::make_immutable` ends
   upgrades for good.
+
+### Delayed administration
+
+Blast admin schedules changes with the relevant role and the canonical `Clock`.
+Every scheduled fee, destination, signer, adapter or creator-authority change
+waits 172,800,000 milliseconds (48 hours). Scheduling again replaces the pending
+value and restarts that delay. The applied value stays active until *anyone*
+calls the matching `apply_` operation with the current package version and
+`Clock`. A `CancelAdmin` may cancel a pending change even after it is ready.
+Scheduling and cancellation emit the proposed values; the existing changed
+event is emitted only on application. Reads and ordinary claims need no new Clock.
+
+`blast_fun::package_admin::schedule_upgrade` announces the exact digest.
+After 48 hours an `UpgradeAdmin` may call `blast_fun::package_admin::authorize_upgrade`
+with that digest and `Clock`, consume its ticket in the native upgrade command,
+and commit its receipt. The pending action is consumed once.
+`blast_fun::package_admin::schedule_make_immutable` and
+`blast_fun::package_admin::make_immutable` use the same delay;
+`blast_fun::package_admin::cancel_upgrade_action` is reserved to `CancelAdmin`.
+This source requires a fresh stack; its state layouts are not an in-place upgrade
+of the previous publication.
+
+### Emergency pause
+
+A `PauseAdmin` calls `blast_fun::blast_fun::pause` to set selected bits on the shared
+package version. Only `UnpauseAdmin` may clear bits with `blast_fun::blast_fun::unpause`.
+CREATE is 1, BUY is 2, SELL is 4, MIGRATE is 8.
+Pauses never expire. Claims, refunds and mandatory settlement remain callable.
+Launch creation/finalization/sharing, buys and opening-round entry/settlement, sells and migration check their respective bits; opening-round delivery stays open.
+
+CreatorAdmin schedules each cap replacement separately with
+`launch::schedule_curve_fee_cap_reassignment` or
+`launch::schedule_metadata_cap_reassignment`. Anyone executes the corresponding
+`launch::reassign_curve_fee_cap` or `launch::reassign_metadata_cap` after the delay.
+The current cap keeps its authority until execution. CancelAdmin can cancel either.
+ClaimSignerAdmin may immediately revoke the signer with
+`runtime_config::revoke_creator_claim_signer`; revocation also cancels a pending key.
+AdapterAdmin may immediately remove an adapter with `launch_config::remove_migration_witness`.
+Genesis treasury is configured before publication, never defaulted to the publisher.
 
 ### Economics
 
@@ -746,7 +786,7 @@ object's type arguments.
 original IDs), `quote_fee_bps`, `meme_fee_bps`, `migration_witnesses`, `protocol_allocation`
 (`meme_bps`, `quote_bps`), `creation_fee` (MIST); accepted partners are dynamic fields
 `launch_config::PartnerKey(ID)` holding `accepted_until_ms`. `RuntimeConfig` fields:
-`creator_claim_signer_public_key`, `protocol_fee_share_bps`, `treasury`. Preview a trade exactly by
+`creator_claim_signer_public_key`, `protocol_fee_share_bps`, `treasury` each contain a `Delayed` value and optional pending replacement. Read the applied `value` for live economics. Preview a trade exactly by
 dev-inspecting `launch::buy` or `launch::sell` against the live launch.
 
 ### Events
@@ -895,7 +935,7 @@ never reaches its target stays `Live`, and holders exit by selling to the curve.
 
 ## Migration and LP vaults
 
-> **Deployment status:** `blast_fun_migrators` is live on mainnet.
+> **Deployment status:** `blast_fun_migrators` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
 
 ### What it is
 
@@ -968,8 +1008,8 @@ Calls also take objects from other packages:
 | `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `BuybackAdmin` |
 | `blast_holder_rewards::publish_round` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::set_protocol_destination` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::set_default_shares`, `lp_fee_policy::set_coin_shares`, `lp_fee_policy::clear_coin_shares` | Blast admin: `FeeAdmin` |
+| `lp_fee_policy::schedule_protocol_destination` | Blast admin: `TreasuryAdmin` |
+| `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares` | Blast admin: `FeeAdmin` |
 | `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` | Blast admin: `UpgradeAdmin` |
 | `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publisher` and `UpgradeCap` (done once at deployment) |
 
@@ -1291,28 +1331,53 @@ sits in the launch and is claimed through the launchpad.
 
 #### LP-fee policy (Blast admin)
 
-- `lp_fee_policy::set_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
+- `lp_fee_policy::schedule_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
   coin without its own pair. Aborts with `EProtocolFeeSharesUnchanged` if unchanged.
-- `lp_fee_policy::set_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
+- `lp_fee_policy::schedule_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
   keyed by its original type name. A pair equal to the defaults is still a real entry: later default
   changes skip that coin. Aborts if it equals the coin's current pair.
-- `lp_fee_policy::clear_coin_shares` (type argument `Meme`; `FeeAdmin`): removes the coin's pair so
-  the defaults apply again. Aborts in Sui's table code if the coin has no pair.
-- `lp_fee_policy::set_protocol_destination` (`TreasuryAdmin`): redirects every later Blast payout.
+- `lp_fee_policy::schedule_clear_coin_shares` (type argument `Meme`; `FeeAdmin`): schedules a return to live defaults. The table entry remains with an applied `None` after application; there is no immediate deletion.
+- `lp_fee_policy::schedule_protocol_destination` (`TreasuryAdmin`): redirects every later Blast payout.
   Aborts with `EProtocolDestinationUnchanged` for `@0x0` or the current address.
 
-Each takes effect from the next collection or partner payout. At publication the defaults are 0 BPS
-for both assets and the destination is the publishing address; read the live object for current
-values.
+Each takes effect only after its delay and explicit application. At publication the defaults are 0 BPS
+for both assets and the destination is the configured genesis recipient; read the live object for current values.
 
 #### Package upgrades (Blast admin)
 
-`blast_fun_migrators::package_admin::authorize_upgrade` returns an upgrade ticket for an exact
-digest; `blast_fun_migrators::package_admin::commit_upgrade_and_advance` commits the receipt and
+`blast_fun_migrators::package_admin::schedule_upgrade` announces an exact digest. After 48 hours,
+`blast_fun_migrators::package_admin::authorize_upgrade` takes `Clock` and returns its upgrade ticket; `blast_fun_migrators::package_admin::commit_upgrade_and_advance` commits the receipt and
 moves `PackageVersion` to the next generation in the same call. From then on, every call to the old
 package's code aborts the generation check, so integrators must call the current package address.
 Type names keep the original package address. Upgrading this package leaves the launchpad on its own
 generation.
+
+### Delayed administration
+
+Blast admin schedules changes with the relevant role and the canonical `Clock`.
+Every scheduled fee, destination, signer, adapter or creator-authority change
+waits 172,800,000 milliseconds (48 hours). Scheduling again replaces the pending
+value and restarts that delay. The applied value stays active until *anyone*
+calls the matching `apply_` operation with the current package version and
+`Clock`. A `CancelAdmin` may cancel a pending change even after it is ready.
+Scheduling and cancellation emit the proposed values; the existing changed
+event is emitted only on application. Reads and ordinary claims need no new Clock.
+
+`blast_fun_migrators::package_admin::schedule_upgrade` announces the exact digest.
+After 48 hours an `UpgradeAdmin` may call `blast_fun_migrators::package_admin::authorize_upgrade`
+with that digest and `Clock`, consume its ticket in the native upgrade command,
+and commit its receipt. The pending action is consumed once.
+`blast_fun_migrators::package_admin::schedule_make_immutable` and
+`blast_fun_migrators::package_admin::make_immutable` use the same delay;
+`blast_fun_migrators::package_admin::cancel_upgrade_action` is reserved to `CancelAdmin`.
+This source requires a fresh stack; its state layouts are not an in-place upgrade
+of the previous publication.
+
+Both setting a coin override and clearing one require notice. Clearing applies
+through `lp_fee_policy::apply_coin_shares`; it restores the live defaults.
+Pending overrides do not freeze the default rates. A cleared entry remains in the
+table with no applied override so its delayed value cannot be discarded.
+Genesis LP-fee destination is configured before publication.
 
 ### Economics
 
@@ -1585,7 +1650,7 @@ its share in force at that moment, rounded down, and Blast's destination the res
 
 ## Partner codes
 
-> **Deployment status:** `blast_partners` is live on mainnet.
+> **Deployment status:** `blast_partners` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
 
 ### What it is
 
@@ -1643,8 +1708,7 @@ destroying a live cap leaves its partners with no working cap until a cap Blast
 schedules with `blast_partners::schedule_cap` takes effect, seven days later.
 
 **Partner.** `blast_partners::blast_partners::register` creates and shares the
-partner with its share and cap in force immediately (`before == after`,
-`at_ms == 0`). From then on:
+partner with a zero share and the cap in force immediately. Registration takes the canonical `Clock` and schedules the requested share seven days later. From then on:
 
 1. Blast schedules a new share or cap; the old value stays in force for seven
    days.
@@ -1681,7 +1745,7 @@ accepted for seven more days. A partner is accepted while the field exists and
 2. Give Blast the cap's object ID, the recipient address, and the agreed share.
 3. Blast's partner admin, in one PTB: `blast_acl::sign_in` with type argument
    `blast_partners::blast_partners::PartnerAdmin`, passing the shared `ACL` and
-   its owned `AdminCap`; then `blast_partners::blast_partners::register` with a
+   its owned `AdminCap`; then `blast_partners::blast_partners::register` with `Clock` and a
    reference to that `AdminWitness<PartnerAdmin>`, your cap ID, the recipient,
    and the share. The new `Partner` is shared; its ID is in the `PartnerUpdated`
    event and the transaction's created objects.
@@ -1884,7 +1948,7 @@ where you like); Blast takes no cut of it.
 
 ## API reference: `blast_fun` (Launchpad)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: every payload is emitted inside `blast_fun::blast_events::Event<T>`; filter on that type.
 
@@ -2048,14 +2112,58 @@ public struct Bootstrap has key {
 /// Singleton operational package generation.
 public struct PackageVersion has key {
     id: UID,
+    paused: u8,
     generation: blast_admin::operational_version::OperationalVersion<BLAST_FUN>,
 }
 ```
+
+#### Functions
+
+```move
+/// Freezes selected operations immediately; does not authorize unpausing.
+public fun pause(
+    self: &mut PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::PauseAdmin>,
+    bits: u8,
+)
+
+/// Clears only the requested bits; claims and settlement never require unpausing.
+public fun unpause(
+    self: &mut PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::UnpauseAdmin>,
+    bits: u8,
+)
+```
+
+#### Events
+
+```move
+/// The requested bits and resulting pause mask.
+public struct Paused has copy, drop {
+    bits: u8,
+    paused: u8,
+}
+
+/// The released bits and resulting pause mask.
+public struct Unpaused has copy, drop {
+    bits: u8,
+    paused: u8,
+}
+```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `EInvalidPauseBits` | 0 | Select nonzero pause bits supported by this package. |
+| `EPauseUnchanged` | 1 | The requested pause change must alter the active bits. |
+| `EPaused` | 2 | This operation is paused. |
 
 #### Constants
 
 - `PACKAGE_VERSION: u64 = 1`: Current package generation accepted by every protected mutation.
 - `NEXT_PACKAGE_VERSION: u64 = 2`: The generation this bytecode hands over to in a governed upgrade.
+- `VALID_PAUSE_BITS: u8 = 15`
 
 ### `blast_fun::blast_fun_domain`
 
@@ -2093,6 +2201,15 @@ public struct ClaimSignerAdmin {}
 
 /// Publishes holder-reward rounds.
 public struct RewardsAdmin {}
+
+/// May set emergency pause bits, never clear them.
+public struct PauseAdmin {}
+
+/// May clear pause bits after an incident.
+public struct UnpauseAdmin {}
+
+/// May cancel any scheduled administrative action.
+public struct CancelAdmin {}
 ```
 
 ### `blast_fun::bps`
@@ -2486,6 +2603,8 @@ public struct Launch<phantom Meme, phantom Quote> has key {
     allocated_meme: Balance<Meme>,
     fee_ledger: fees::FeeLedger<Meme, Quote>,
     metadata_cap: MetadataCap<Meme>,
+    pending_curve_fee_cap_recipient: Option<blast_admin::delayed::Pending<address>>,
+    pending_metadata_cap_recipient: Option<blast_admin::delayed::Pending<address>>,
     creator: Option<creator_authority::CreatorRecipient>,
     curve_fee_cap_id: Option<ID>,
     blast_metadata_cap_id: Option<ID>,
@@ -2617,20 +2736,50 @@ public fun claim_creator_caps<Meme, Quote>(
 
 /// Retires the pending claim or the live curve-fee cap and sends a fresh cap to `recipient`.
 /// Unclaimed curve fees follow the new cap.
-public fun reassign_curve_fee_cap<Meme, Quote>(
+/// Announces a replacement recipient without invalidating the current cap.
+public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CreatorAdmin>,
     recipient: address,
+    clock: &Clock,
+)
+
+/// Cancels the replacement without affecting either live creator cap.
+public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
+)
+
+public fun reassign_curve_fee_cap<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
     ctx: &mut TxContext,
 )
 
 /// Retires the pending claim or the live metadata cap and sends a fresh cap to `recipient`.
-public fun reassign_metadata_cap<Meme, Quote>(
+/// Announces a replacement recipient without invalidating the current cap.
+public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CreatorAdmin>,
     recipient: address,
+    clock: &Clock,
+)
+
+/// Cancels the replacement without affecting either live creator cap.
+public fun cancel_metadata_cap_reassignment<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
+)
+
+public fun reassign_metadata_cap<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
     ctx: &mut TxContext,
 )
 
@@ -2755,6 +2904,36 @@ public fun assert_curve_fee_cap<Meme, Quote>(
 )
 ```
 
+#### Events
+
+```move
+/// Public notice of creator-authority replacement.
+public struct MetadataCapReassignmentScheduled has copy, drop {
+    launch_id: ID,
+    recipient: address,
+    ready_at_ms: u64,
+}
+
+/// Cancelled replacement, identified by its launch and recipient.
+public struct MetadataCapReassignmentCancelled has copy, drop {
+    launch_id: ID,
+    recipient: address,
+}
+
+/// Public notice of creator-authority replacement.
+public struct CurveFeeCapReassignmentScheduled has copy, drop {
+    launch_id: ID,
+    recipient: address,
+    ready_at_ms: u64,
+}
+
+/// Cancelled replacement, identified by its launch and recipient.
+public struct CurveFeeCapReassignmentCancelled has copy, drop {
+    launch_id: ID,
+    recipient: address,
+}
+```
+
 ### `blast_fun::launch_config`
 
 Launch policy each new launch snapshots.
@@ -2764,6 +2943,12 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 #### Types
 
 ```move
+/// The two trade rates change atomically.
+public struct TradeFees has copy, drop, store {
+    quote_fee_bps: bps::Bps,
+    meme_fee_bps: bps::Bps,
+}
+
 /// Admitted decimals, Quotes, and migration adapters; the trade fees; Blast's one-time migration
 /// allocation; the SUI every launch pays at creation; and the Blast partners new launches may
 /// name. Each creator picks the virtual Quote reserve their curve starts from.
@@ -2771,12 +2956,12 @@ public struct LaunchConfig has key {
     id: UID,
     meme_decimals: VecSet<u8>,
     quotes: Table<TypeName, bool>,
-    quote_fee_bps: bps::Bps,
-    meme_fee_bps: bps::Bps,
+    trade_fees: blast_admin::delayed::Delayed<TradeFees>,
     migration_witnesses: VecSet<TypeName>,
-    protocol_allocation: allocation::ProtocolAllocation,
+    pending_witnesses: VecMap<TypeName, blast_admin::delayed::Pending<bool>>,
+    protocol_allocation: blast_admin::delayed::Delayed<allocation::ProtocolAllocation>,
     /// In MIST.
-    creation_fee: u64,
+    creation_fee: blast_admin::delayed::Delayed<u64>,
 }
 
 /// Dynamic-field key of a Blast partner new launches may name. Its value is the time the partner
@@ -2789,12 +2974,28 @@ public struct PartnerKey(ID) has copy, drop, store;
 ```move
 /// Sets Blast's fee share of future launches' Meme supply and final Quote reserve. The shares
 /// leave room for the curve and the pool; finalized launches keep their snapshotted shares.
-public fun set_protocol_allocation(
+/// Schedules protocol allocation after the full administrative delay.
+public fun schedule_protocol_allocation(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::TreasuryAdmin>,
     meme_bps: bps::Bps,
     quote_bps: bps::Bps,
+    clock: &Clock,
+)
+
+/// Applies the scheduled protocol allocation permissionlessly once ready.
+public fun apply_protocol_allocation(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_protocol_allocation(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
 )
 
 public fun set_meme_decimals_allowed(
@@ -2814,20 +3015,52 @@ public fun set_quote_allowed<Quote>(
 )
 
 /// Sets the trade fees launches created afterward snapshot.
-public fun set_trade_fees(
+/// Schedules trade fees after the full administrative delay.
+public fun schedule_trade_fees(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::FeeAdmin>,
     quote_fee_bps: bps::Bps,
     meme_fee_bps: bps::Bps,
+    clock: &Clock,
+)
+
+/// Applies the scheduled trade fees permissionlessly once ready.
+public fun apply_trade_fees(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_trade_fees(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
 )
 
 /// Sets the SUI, in MIST, every launch created afterward pays.
-public fun set_creation_fee(
+/// Schedules creation fee after the full administrative delay.
+public fun schedule_creation_fee(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::FeeAdmin>,
     creation_fee: u64,
+    clock: &Clock,
+)
+
+/// Applies the scheduled creation fee permissionlessly once ready.
+public fun apply_creation_fee(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_creation_fee(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
 )
 
 /// Lets new launches name `partner`, at once. Adding a partner whose removal is pending cancels
@@ -2853,12 +3086,86 @@ public fun remove_partner(
 /// and receives their liquidity at migration; existing launches keep their witness.
 ///
 /// Framework types are rejected because anyone can construct them.
-public fun set_migration_witness_allowed<MigrationWitness: drop>(
+/// Admits an adapter only after a full administrative notice period.
+public fun schedule_migration_witness<MigrationWitness: drop>(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::AdapterAdmin>,
-    allowed: bool,
+    clock: &Clock,
 )
+
+/// Permissionlessly applies the approved adapter admission once ready.
+public fun apply_migration_witness<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending adapter admission, including after its threshold.
+public fun cancel_migration_witness<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
+)
+
+/// Immediately removes adapter authority and cancels any pending admission.
+public fun remove_migration_witness<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::AdapterAdmin>,
+)
+```
+
+#### Events
+
+```move
+/// The admitted type and Unix millisecond execution threshold.
+public struct MigrationWitnessScheduled has copy, drop {
+    witness: TypeName,
+    ready_at_ms: u64,
+}
+
+/// An adapter admission removed from the pending set.
+public struct MigrationWitnessCancelled has copy, drop {
+    witness: TypeName,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct ProtocolAllocationScheduled has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct ProtocolAllocationCancelled has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct CreationFeeScheduled has copy, drop {
+    creation_fee: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct CreationFeeCancelled has copy, drop {
+    creation_fee: u64,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct TradeFeesScheduled has copy, drop {
+    quote_fee_bps: u64,
+    meme_fee_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct TradeFeesCancelled has copy, drop {
+    quote_fee_bps: u64,
+    meme_fee_bps: u64,
+}
 ```
 
 ### `blast_fun::launch_ticket`
@@ -2911,16 +3218,47 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 #### Types
 
 ```move
+/// The exact code digest or irreversible end of upgrades approved for execution.
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+}
+
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_fun::BLAST_FUN>,
+    pending: Option<blast_admin::delayed::Pending<UpgradeAction>>,
 }
 ```
 
 #### Functions
 
 ```move
+/// Schedules one exact code digest, replacing any previous action.
+public fun schedule_upgrade(
+    self: &mut PackageAdmin,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::UpgradeAdmin>,
+    digest: vector<u8>,
+    clock: &Clock,
+)
+
+/// Schedules the irreversible destruction of upgrade authority after public notice.
+public fun schedule_make_immutable(
+    self: &mut PackageAdmin,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::UpgradeAdmin>,
+    clock: &Clock,
+)
+
+/// Cancels any scheduled action, even after its execution threshold.
+public fun cancel_upgrade_action(
+    self: &mut PackageAdmin,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
+)
+
 /// Consumes publication bootstrap, seals native custody, and enables the initial generation.
 public fun wrap(bootstrap: blast_fun::Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
 
@@ -2930,6 +3268,7 @@ public fun authorize_upgrade(
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::UpgradeAdmin>,
     digest: vector<u8>,
+    clock: &Clock,
 ): UpgradeTicket
 
 /// Commits the upgrade and advances the package version together.
@@ -2941,12 +3280,37 @@ public fun commit_upgrade_and_advance(
 )
 
 /// Irreversibly destroys native upgrade authority and freezes this package generation.
+/// Executes a ready immutability decision under the live upgrade role.
 public fun make_immutable(
     self: &mut PackageAdmin,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::UpgradeAdmin>,
+    clock: &Clock,
 )
 ```
+
+#### Events
+
+```move
+/// A publicly announced upgrade action with its execution threshold.
+public struct UpgradeActionScheduled has copy, drop {
+    action: UpgradeAction,
+    ready_at_ms: u64,
+}
+
+/// A cancelled upgrade action, which can no longer execute.
+public struct UpgradeActionCancelled has copy, drop {
+    action: UpgradeAction,
+}
+```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `EWrongUpgradeAction` | 0 | The ready action must match the requested upgrade digest or immutability. |
+| `ENoPendingAction` | 1 | No upgrade action is scheduled. |
+| `EInvalidDigest` | 2 | A package digest must contain 32 bytes. |
 
 ### `blast_fun::runtime_config`
 
@@ -2961,9 +3325,9 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 /// curve trade fee, and the treasury every launch pays Blast's fees to.
 public struct RuntimeConfig has key {
     id: UID,
-    creator_claim_signer_public_key: vector<u8>,
-    protocol_fee_share_bps: bps::Bps,
-    treasury: address,
+    creator_claim_signer_public_key: blast_admin::delayed::Delayed<vector<u8>>,
+    protocol_fee_share_bps: blast_admin::delayed::Delayed<bps::Bps>,
+    treasury: blast_admin::delayed::Delayed<address>,
 }
 ```
 
@@ -2971,32 +3335,124 @@ public struct RuntimeConfig has key {
 
 ```move
 /// Replaces the account-claim signer; an empty key revokes it.
-public fun set_creator_claim_signer(
+/// Schedules creator claim signer after the full administrative delay.
+public fun schedule_creator_claim_signer(
     self: &mut RuntimeConfig,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::ClaimSignerAdmin>,
     signer_public_key: vector<u8>,
+    clock: &Clock,
 )
 
-public fun set_protocol_fee_share(
+/// Applies the scheduled creator claim signer permissionlessly once ready.
+public fun apply_creator_claim_signer(
+    self: &mut RuntimeConfig,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_creator_claim_signer(
+    self: &mut RuntimeConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
+)
+
+/// Schedules protocol fee share after the full administrative delay.
+public fun schedule_protocol_fee_share(
     self: &mut RuntimeConfig,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::FeeAdmin>,
     protocol_fee_share_bps: bps::Bps,
+    clock: &Clock,
+)
+
+/// Applies the scheduled protocol fee share permissionlessly once ready.
+public fun apply_protocol_fee_share(
+    self: &mut RuntimeConfig,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_protocol_fee_share(
+    self: &mut RuntimeConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
 )
 
 /// Redirects every later protocol fee claim to `treasury`.
-public fun set_treasury(
+/// Schedules treasury after the full administrative delay.
+public fun schedule_treasury(
     self: &mut RuntimeConfig,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::TreasuryAdmin>,
     treasury: address,
+    clock: &Clock,
 )
+
+/// Applies the scheduled treasury permissionlessly once ready.
+public fun apply_treasury(
+    self: &mut RuntimeConfig,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_treasury(
+    self: &mut RuntimeConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
+)
+
+/// Revokes the claim signer immediately and clears any scheduled replacement.
+public fun revoke_creator_claim_signer(
+    self: &mut RuntimeConfig,
+    package_version: &blast_fun::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::ClaimSignerAdmin>,
+)
+```
+
+#### Events
+
+```move
+/// Proposed values and Unix millisecond execution threshold.
+public struct TreasuryScheduled has copy, drop {
+    treasury: address,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct TreasuryCancelled has copy, drop {
+    treasury: address,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct ProtocolFeeShareScheduled has copy, drop {
+    protocol_fee_share_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct ProtocolFeeShareCancelled has copy, drop {
+    protocol_fee_share_bps: u64,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct CreatorClaimSignerScheduled has copy, drop {
+    signer_public_key: vector<u8>,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct CreatorClaimSignerCancelled has copy, drop {
+    signer_public_key: vector<u8>,
+}
 ```
 
 ## API reference: `blast_fun_migrators` (Migration and LP vaults)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -3009,6 +3465,56 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 #### Events
 
 ```move
+/// Values removed from the pending schedule.
+public struct ProtocolDestinationCancelled has copy, drop {
+    destination: address,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct ProtocolDestinationScheduled has copy, drop {
+    destination: address,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct DefaultSharesCancelled has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct DefaultSharesScheduled has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// The cancelled per-coin decision.
+public struct CoinSharesCancelled has copy, drop {
+    meme: TypeName,
+    meme_bps: Option<u64>,
+    quote_bps: Option<u64>,
+}
+
+/// None announces a return to the live defaults, not an immediate override deletion.
+public struct CoinSharesScheduled has copy, drop {
+    meme: TypeName,
+    meme_bps: Option<u64>,
+    quote_bps: Option<u64>,
+    ready_at_ms: u64,
+}
+
+/// Cancelled digest; None denotes the cancelled immutability decision.
+public struct UpgradeActionCancelled has copy, drop {
+    digest: Option<vector<u8>>,
+}
+
+/// Announced digest and execution threshold; None denotes immutability.
+public struct UpgradeActionScheduled has copy, drop {
+    digest: Option<vector<u8>>,
+    ready_at_ms: u64,
+}
+
 /// Blast's default pair (no `meme`) or one coin's pair changed; absent old/new pairs represent a
 /// coin's own pair being created or removed.
 public struct LpFeePolicyChanged has copy, drop {
@@ -3519,9 +4025,9 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 /// iteration or cardinality cap.
 public struct LpFeePolicy has key {
     id: UID,
-    destination: address,
-    defaults: SharePair,
-    coins: Table<TypeName, SharePair>,
+    destination: blast_admin::delayed::Delayed<address>,
+    defaults: blast_admin::delayed::Delayed<SharePair>,
+    coins: Table<TypeName, blast_admin::delayed::Delayed<Option<SharePair>>>,
 }
 
 /// Atomic pair of validated shares; a per-coin entry always replaces both assets together.
@@ -3535,37 +4041,85 @@ public struct SharePair has copy, drop, store {
 
 ```move
 /// Redirects every later protocol share payout.
-public fun set_protocol_destination(
+/// Schedules protocol destination after the full administrative delay.
+public fun schedule_protocol_destination(
     self: &mut LpFeePolicy,
     migrators_version: &blast_fun_migrators::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::TreasuryAdmin>,
     destination: address,
+    clock: &Clock,
+)
+
+/// Applies the scheduled protocol destination permissionlessly once ready.
+public fun apply_protocol_destination(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_protocol_destination(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::CancelAdmin>,
 )
 
 /// Changes both default shares for every coin without its own pair, from its next collection.
-public fun set_default_shares(
+/// Schedules default shares after the full administrative delay.
+public fun schedule_default_shares(
     self: &mut LpFeePolicy,
     migrators_version: &blast_fun_migrators::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::FeeAdmin>,
     meme_bps: blast_fun::bps::Bps,
     quote_bps: blast_fun::bps::Bps,
+    clock: &Clock,
 )
 
-/// Sets both shares for this original Meme type, from its next collection.
+/// Applies the scheduled default shares permissionlessly once ready.
+public fun apply_default_shares(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_default_shares(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::CancelAdmin>,
+)
+
+/// Schedules both shares for this original Meme type after the administrative delay.
 /// Setting the current defaults is a real transition because later default changes skip the coin.
-public fun set_coin_shares<Meme>(
+public fun schedule_coin_shares<Meme>(
     self: &mut LpFeePolicy,
     migrators_version: &blast_fun_migrators::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::FeeAdmin>,
     meme_bps: blast_fun::bps::Bps,
     quote_bps: blast_fun::bps::Bps,
+    clock: &Clock,
 )
 
-/// Removes the coin's own pair so its later collections use the defaults again.
-public fun clear_coin_shares<Meme>(
+/// Removing an override may increase fees through defaults, so it also requires notice.
+public fun schedule_clear_coin_shares<Meme>(
     self: &mut LpFeePolicy,
     migrators_version: &blast_fun_migrators::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::FeeAdmin>,
+    clock: &Clock,
+)
+
+/// Applies either the approved override or the approved return to live defaults.
+public fun apply_coin_shares<Meme>(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels either pending operation without changing the live override.
+public fun cancel_coin_shares<Meme>(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::CancelAdmin>,
 )
 ```
 
@@ -3585,16 +4139,47 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 #### Types
 
 ```move
+/// The exact code digest or irreversible end of upgrades approved for execution.
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+}
+
 /// Shared custody for this package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_fun_migrators::BLAST_FUN_MIGRATORS>,
+    pending: Option<blast_admin::delayed::Pending<UpgradeAction>>,
 }
 ```
 
 #### Functions
 
 ```move
+/// Schedules one exact code digest, replacing any previous action.
+public fun schedule_upgrade(
+    self: &mut PackageAdmin,
+    package_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::UpgradeAdmin>,
+    digest: vector<u8>,
+    clock: &Clock,
+)
+
+/// Schedules the irreversible destruction of upgrade authority after public notice.
+public fun schedule_make_immutable(
+    self: &mut PackageAdmin,
+    package_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::UpgradeAdmin>,
+    clock: &Clock,
+)
+
+/// Cancels any scheduled action, even after its execution threshold.
+public fun cancel_upgrade_action(
+    self: &mut PackageAdmin,
+    package_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::CancelAdmin>,
+)
+
 /// Validates and permanently seals the migrators Publisher and raw UpgradeCap.
 ///
 /// `upgrade_custody::new` requires this package's Publisher and its never-upgraded cap, and at
@@ -3611,6 +4196,7 @@ public fun authorize_upgrade(
     package_version: &blast_fun_migrators::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::UpgradeAdmin>,
     digest: vector<u8>,
+    clock: &Clock,
 ): UpgradeTicket
 
 /// Commits the native receipt and advances one operational generation at once.
@@ -3624,7 +4210,23 @@ public fun commit_upgrade_and_advance(
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::UpgradeAdmin>,
     receipt: UpgradeReceipt,
 )
+
+/// Executes a ready immutability decision under the live upgrade role.
+public fun make_immutable(
+    self: &mut PackageAdmin,
+    package_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::UpgradeAdmin>,
+    clock: &Clock,
+)
 ```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `EWrongUpgradeAction` | 0 | The ready action must match the requested upgrade digest or immutability. |
+| `ENoPendingAction` | 1 | No upgrade action is scheduled. |
+| `EInvalidDigest` | 2 | A package digest must contain 32 bytes. |
 
 ### `blast_fun_migrators::vault`
 
@@ -3739,7 +4341,7 @@ public struct VenueConfig has key {
 
 ## API reference: `blast_partners` (Partner codes)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -3781,12 +4383,13 @@ public struct PartnerCap has key, store {
 public fun new_cap(ctx: &mut TxContext): PartnerCap
 
 /// Registers and shares a partner managed by the cap `cap_id`, with its share
-/// and cap in force at once. Every later change to either waits `PARTNER_CHANGE_DELAY_MS`.
+/// scheduled after seven days; the cap is in force immediately.
 public fun register(
     _: &blast_admin::blast_acl::AdminWitness<PartnerAdmin>,
     cap_id: ID,
     recipient: address,
     share_bps: u64,
+    clock: &Clock,
     ctx: &mut TxContext,
 )
 
@@ -3863,7 +4466,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 ## API reference: `blast_admin` (Administration)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -3874,24 +4477,23 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 0 | `EInvalidSuperAdminCap` |  |
 | 1 | `EInvalidAdminCap` |  |
 | 2 | `EInvalidAdminRecipient` |  |
-| 3 | `EAdminCapacityReached` |  |
-| 4 | `EAdminRoleCapacityReached` |  |
-| 5 | `EAdminRoleAlreadyGranted` |  |
-| 6 | `EAdminRoleNotGranted` |  |
-| 7 | `EInvalidSuperAdminRecipient` |  |
-| 8 | `ESuperAdminTransferUnchanged` |  |
-| 9 | `ENoPendingSuperAdminTransfer` |  |
-| 10 | `ENotPendingSuperAdminRecipient` |  |
-| 11 | `ESuperAdminTransferNotReady` |  |
-| 12 | `ESuperAdminCapStillActive` |  |
-| 13 | `EOperationalVersionMismatch` |  |
-| 14 | `EOperationalVersionOverflow` |  |
-| 15 | `EInvalidPackagePublisher` |  |
-| 16 | `EInvalidUpgradeCap` |  |
-| 17 | `EInvalidPackageDigest` |  |
-| 18 | `EUpgradeCapUnavailable` |  |
-| 19 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 20 | `EInvalidPackageMarker` |  |
+| 3 | `EAdminRoleCapacityReached` |  |
+| 4 | `EAdminRoleAlreadyGranted` |  |
+| 5 | `EAdminRoleNotGranted` |  |
+| 6 | `EInvalidSuperAdminRecipient` |  |
+| 7 | `ESuperAdminTransferUnchanged` |  |
+| 8 | `ENoPendingSuperAdminTransfer` |  |
+| 9 | `ENotPendingSuperAdminRecipient` |  |
+| 10 | `ESuperAdminTransferNotReady` |  |
+| 11 | `ESuperAdminCapStillActive` |  |
+| 12 | `EOperationalVersionMismatch` |  |
+| 13 | `EOperationalVersionOverflow` |  |
+| 14 | `EInvalidPackagePublisher` |  |
+| 15 | `EInvalidUpgradeCap` |  |
+| 16 | `EInvalidPackageDigest` |  |
+| 17 | `EUpgradeCapUnavailable` |  |
+| 18 | `EUpgradePolicyNotMoreRestrictive` |  |
+| 19 | `EInvalidPackageMarker` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -3906,7 +4508,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
-    admins: VecMap<ID, VecSet<TypeName>>,
+    admins: Table<ID, VecSet<TypeName>>,
     /// The nominated next super admin: none until the transfer delay passes.
     pending_super_admin: blast_fun_timelock::Timelocked<Option<address>>,
 }
@@ -3973,7 +4575,6 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role>
 
 #### Constants
 
-- `MAX_ADMINS: u64 = 32`
 - `MAX_ROLES_PER_ADMIN: u64 = 32`
 - `SUPER_ADMIN_TRANSFER_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The wait before a nominated super admin may accept the root.
 
@@ -4085,6 +4686,80 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     final_policy: u8,
 }
 ```
+
+### `blast_admin::delayed`
+
+Explicitly applied administrative changes with an immutable 48-hour notice.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
+
+#### Types
+
+```move
+/// Applied value with at most one replacement; readers never need a Clock.
+public struct Delayed<T: copy + drop + store> has store {
+    value: T,
+    pending: Option<Pending<T>>,
+}
+
+/// A value bound to a Unix millisecond execution threshold.
+public struct Pending<T: copy + drop + store> has copy, drop, store {
+    value: T,
+    ready_at_ms: u64,
+}
+```
+
+#### Functions
+
+```move
+/// Initializes publication policy, with no scheduled change.
+public fun new<T: copy + drop + store>(value: T): Delayed<T>
+
+/// Returns the explicitly applied value.
+public fun value<T: copy + drop + store>(self: &Delayed<T>): T
+
+/// Borrows the applied value for internal consumers such as signature verification.
+public fun borrow<T: copy + drop + store>(self: &Delayed<T>): &T
+
+/// Returns the current schedule, if any.
+public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
+
+/// Replaces any pending change and restarts the entire delay.
+public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, clock: &Clock): u64
+
+/// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
+public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
+
+/// Cancels even a ready change and returns the cancelled value.
+public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
+
+/// Only the enclosing module's authority-reducing paths may expose this operation.
+/// Revocation also clears a pending replacement so it cannot restore revoked authority.
+public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
+
+/// Starts the immutable administrative notice period.
+public fun new_pending<T: copy + drop + store>(value: T, clock: &Clock): Pending<T>
+
+/// Returns a scheduled value only at or after its threshold.
+public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
+
+/// Returns the proposed value for cancellation events and diagnostics.
+public fun proposed<T: copy + drop + store>(self: &Pending<T>): T
+
+/// Returns the Unix millisecond threshold for a scheduling event.
+public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
+```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `ENotReady` | 0 | The full administrative delay must pass before applying a change. |
+| `ENoPending` | 1 | There is no scheduled administrative change. |
+
+#### Constants
+
+- `DELAY_MS: u64 = 48 * 60 * 60 * 1_000`
 
 ### `blast_admin::operational_version`
 

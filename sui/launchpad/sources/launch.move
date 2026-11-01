@@ -8,6 +8,16 @@ module blast_fun::launch;
 
 // === Public Types ===
 
+/// Public notice of creator-authority replacement.
+public struct MetadataCapReassignmentScheduled has copy, drop { launch_id: ID, recipient: address, ready_at_ms: u64 }
+/// Cancelled replacement, identified by its launch and recipient.
+public struct MetadataCapReassignmentCancelled has copy, drop { launch_id: ID, recipient: address }
+
+/// Public notice of creator-authority replacement.
+public struct CurveFeeCapReassignmentScheduled has copy, drop { launch_id: ID, recipient: address, ready_at_ms: u64 }
+/// Cancelled replacement, identified by its launch and recipient.
+public struct CurveFeeCapReassignmentCancelled has copy, drop { launch_id: ID, recipient: address }
+
 public enum Lifecycle has copy, drop, store {
     OpeningRound,
     Live,
@@ -50,6 +60,8 @@ public struct Launch<phantom Meme, phantom Quote> has key {
     allocated_meme: Balance<Meme>,
     fee_ledger: FeeLedger<Meme, Quote>,
     metadata_cap: MetadataCap<Meme>,
+    pending_curve_fee_cap_recipient: Option<Pending<address>>,
+    pending_metadata_cap_recipient: Option<Pending<address>>,
     creator: Option<CreatorRecipient>,
     curve_fee_cap_id: Option<ID>,
     blast_metadata_cap_id: Option<ID>,
@@ -87,6 +99,7 @@ public fun new<Meme, Quote, Witness: drop>(
     pool_fee_rate: u64,
 ): LaunchInitializer<Meme, Quote> {
     package_version.assert_current();
+    package_version.assert_not_paused(1);
     assert!(
         type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(),
         blast_fun::errors::invalid_meme_quote_pair!(),
@@ -211,6 +224,7 @@ public fun finalize<Meme, Quote>(
     ctx: &mut TxContext,
 ): Launch<Meme, Quote> {
     package_version.assert_current();
+    package_version.assert_not_paused(1);
     let LaunchInitializer {
         ticket,
         migration_witness,
@@ -281,6 +295,8 @@ public fun finalize<Meme, Quote>(
         fee_ledger: fees::new(creation_fee),
         metadata_cap,
         creator: option::some(creator),
+        pending_metadata_cap_recipient: option::none(),
+        pending_curve_fee_cap_recipient: option::none(),
         curve_fee_cap_id: option::none(),
         blast_metadata_cap_id: option::none(),
         partner_id,
@@ -314,6 +330,7 @@ public fun share<Meme, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
+    package_version.assert_not_paused(1);
     assert!(self.public_start_ms.is_none(), blast_fun::errors::invalid_launch_lifecycle!());
 
     let public_starts_at_ms = clock.timestamp_ms();
@@ -367,15 +384,31 @@ public fun claim_creator_caps<Meme, Quote>(
 
 /// Retires the pending claim or the live curve-fee cap and sends a fresh cap to `recipient`.
 /// Unclaimed curve fees follow the new cap.
+/// Announces a replacement recipient without invalidating the current cap.
+public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, clock: &Clock) {
+    package_version.assert_current();
+    assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
+    let pending = delayed::new_pending(recipient, clock);
+    self.pending_curve_fee_cap_recipient = option::some(pending);
+    blast_fun::blast_events::emit_event(CurveFeeCapReassignmentScheduled { launch_id: self.id.to_inner(), recipient, ready_at_ms: pending.ready_at_ms() });
+}
+
+/// Cancels the replacement without affecting either live creator cap.
+public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+    package_version.assert_current();
+    let recipient = self.pending_curve_fee_cap_recipient.extract().proposed();
+    blast_fun::blast_events::emit_event(CurveFeeCapReassignmentCancelled { launch_id: self.id.to_inner(), recipient });
+}
+
 public fun reassign_curve_fee_cap<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
-    _: &AdminWitness<CreatorAdmin>,
-    recipient: address,
+    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
-    assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
+    let recipient = self.pending_curve_fee_cap_recipient.destroy_some().take_ready(clock);
+    self.pending_curve_fee_cap_recipient = option::none();
 
     self.creator = option::none();
     let curve_fee_cap = creator_authority::new_curve_fee_cap<Meme>(ctx);
@@ -387,15 +420,31 @@ public fun reassign_curve_fee_cap<Meme, Quote>(
 }
 
 /// Retires the pending claim or the live metadata cap and sends a fresh cap to `recipient`.
+/// Announces a replacement recipient without invalidating the current cap.
+public fun schedule_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, clock: &Clock) {
+    package_version.assert_current();
+    assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
+    let pending = delayed::new_pending(recipient, clock);
+    self.pending_metadata_cap_recipient = option::some(pending);
+    blast_fun::blast_events::emit_event(MetadataCapReassignmentScheduled { launch_id: self.id.to_inner(), recipient, ready_at_ms: pending.ready_at_ms() });
+}
+
+/// Cancels the replacement without affecting either live creator cap.
+public fun cancel_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+    package_version.assert_current();
+    let recipient = self.pending_metadata_cap_recipient.extract().proposed();
+    blast_fun::blast_events::emit_event(MetadataCapReassignmentCancelled { launch_id: self.id.to_inner(), recipient });
+}
+
 public fun reassign_metadata_cap<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
-    _: &AdminWitness<CreatorAdmin>,
-    recipient: address,
+    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
-    assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
+    let recipient = self.pending_metadata_cap_recipient.destroy_some().take_ready(clock);
+    self.pending_metadata_cap_recipient = option::none();
 
     self.creator = option::none();
     let blast_metadata_cap = creator_authority::new_metadata_cap<Meme>(ctx);
@@ -461,6 +510,7 @@ public fun join_opening_round<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+    package_version.assert_not_paused(2);
     assert!(
         self.lifecycle == Lifecycle::OpeningRound,
         blast_fun::errors::invalid_launch_lifecycle!(),
@@ -490,6 +540,7 @@ public fun settle_opening_round<Meme, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
+    package_version.assert_not_paused(2);
     assert!(
         self.lifecycle == Lifecycle::OpeningRound,
         blast_fun::errors::invalid_launch_lifecycle!(),
@@ -548,6 +599,7 @@ public fun buy<Meme, Quote>(
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
     package_version.assert_current();
+    package_version.assert_not_paused(2);
     assert!(self.lifecycle == Lifecycle::Live, blast_fun::errors::invalid_launch_lifecycle!());
 
     let (meme_out, quote_refund) = self.buy_from_curve(
@@ -573,6 +625,7 @@ public fun sell<Meme, Quote>(
     ctx: &mut TxContext,
 ): Coin<Quote> {
     package_version.assert_current();
+    package_version.assert_not_paused(4);
     assert!(
         self.public_start_ms.is_some() && self.lifecycle == Lifecycle::Live,
         blast_fun::errors::invalid_launch_lifecycle!(),
@@ -723,6 +776,7 @@ public fun migrate<Meme, Quote, Witness: drop>(
     ctx: &mut TxContext,
 ): (Balance<Meme>, Balance<Quote>) {
     package_version.assert_current();
+    package_version.assert_not_paused(8);
     assert!(
         self.lifecycle == Lifecycle::MigrationReady,
         blast_fun::errors::invalid_launch_lifecycle!(),
@@ -894,6 +948,36 @@ fun has_opening_round_ended<Meme, Quote>(self: &Launch<Meme, Quote>, clock: &Clo
 // === Test-Only Functions ===
 
 #[test_only]
+public fun reassign_metadata_cap_for_testing<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<CreatorAdmin>,
+    recipient: address,
+    ctx: &mut TxContext,
+) {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    self.schedule_metadata_cap_reassignment(package_version, admin, recipient, &clock);
+    clock.set_for_testing(172_800_000);
+    self.reassign_metadata_cap(package_version, &clock, ctx);
+    clock.destroy_for_testing();
+}
+
+#[test_only]
+public fun reassign_curve_fee_cap_for_testing<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<CreatorAdmin>,
+    recipient: address,
+    ctx: &mut TxContext,
+) {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    self.schedule_curve_fee_cap_reassignment(package_version, admin, recipient, &clock);
+    clock.set_for_testing(172_800_000);
+    self.reassign_curve_fee_cap(package_version, &clock, ctx);
+    clock.destroy_for_testing();
+}
+
+#[test_only]
 /// Returns the curve reserve, real Quote reserve, pending burn, and pooled Meme allocations.
 public fun balances_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): (u64, u64, u64, u64) {
     (
@@ -1030,11 +1114,14 @@ public fun migration_witness_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>
 
 // === Imports ===
 
-use blast_admin::blast_acl::AdminWitness;
+use blast_admin::{
+    delayed::{Self, Pending},
+    blast_acl::AdminWitness,
+};
 
 use blast_fun::{
     allocation::{AllocationPlan, FeeSplit},
-    blast_fun_domain::CreatorAdmin,
+    blast_fun_domain::{CancelAdmin, CreatorAdmin},
     bps::Bps,
     constants,
     creator_authority::{Self, BlastMetadataCap, CreatorRecipient, CurveFeeCap},

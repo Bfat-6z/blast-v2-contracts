@@ -774,17 +774,17 @@ fun start(): OpeningRoundFixture {
         &blast_acl::witness_for_testing<ListingAdmin>(),
         true,
     );
-    config.set_migration_witness_allowed<TEST_MIGRATION_WITNESS>(
+    config.set_migration_witness_allowed_for_testing<TEST_MIGRATION_WITNESS>(
         &package_version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
         true,
-    );
-    config.set_trade_fees(
+     scenario.ctx());
+    config.set_trade_fees_for_testing(
         &package_version,
         &blast_acl::witness_for_testing<FeeAdmin>(),
         bps::new(QUOTE_FEE_BPS),
         bps::new(MEME_FEE_BPS),
-    );
+     scenario.ctx());
     scenario.next_tx(LAUNCHER);
 
     OpeningRoundFixture { scenario, package_version, config, runtime_config, clock }

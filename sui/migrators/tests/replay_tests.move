@@ -55,6 +55,7 @@ public struct ReplayFixture {
 public struct Replay has drop {
     default_shares: Shares,
     coin_shares: vector<CoinShares>,
+    coin_entries: vector<String>,
     protocol_destination: address,
     protocol_allocation: Shares,
     ticket_id: ID,
@@ -266,7 +267,7 @@ fun start(): ReplayFixture {
         migrators_version,
         runtime,
         clock,
-        replay: new_replay(PUBLISHER),
+        replay: new_replay(@blast_lp_fee_destination),
     }
 }
 
@@ -300,29 +301,29 @@ fun configure_policy(self: &mut ReplayFixture) {
         let mut policy = f.take_policy();
 
         config.set_quote_allowed<QUOTE>(&f.version, &listing_admin, true);
-        config.set_migration_witness_allowed<Venue>(
+        config.set_migration_witness_allowed_for_testing<Venue>(
             &f.version,
             &blast_acl::witness_for_testing<AdapterAdmin>(),
             true,
-        );
-        config.set_trade_fees(
+         f.scenario.ctx());
+        config.set_trade_fees_for_testing(
             &f.version,
             &fee_admin,
             bps::new(QUOTE_FEE_BPS),
             bps::new(MEME_FEE_BPS),
-        );
-        config.set_protocol_allocation(
+         f.scenario.ctx());
+        config.set_protocol_allocation_for_testing(
             &f.version,
             &treasury_admin,
             bps::new(500),
             bps::new(1_000),
-        );
+         f.scenario.ctx());
         let version = &f.migrators_version;
-        policy.set_default_shares(version, &fee_admin, bps::new(1_000), bps::new(2_000));
-        policy.set_coin_shares<OtherMeme>(version, &fee_admin, bps::new(9), bps::new(9));
-        policy.set_coin_shares<REPLAY_TESTS>(version, &fee_admin, bps::new(1_500), bps::new(2_500));
-        policy.clear_coin_shares<OtherMeme>(version, &fee_admin);
-        policy.set_protocol_destination(version, &treasury_admin, FIRST_PROTOCOL_DESTINATION);
+        policy.set_default_shares_for_testing(version, &fee_admin, bps::new(1_000), bps::new(2_000), f.scenario.ctx());
+        policy.set_coin_shares_for_testing<OtherMeme>(version, &fee_admin, bps::new(9), bps::new(9), f.scenario.ctx());
+        policy.set_coin_shares_for_testing<REPLAY_TESTS>(version, &fee_admin, bps::new(1_500), bps::new(2_500), f.scenario.ctx());
+        policy.clear_coin_shares_for_testing<OtherMeme>(version, &fee_admin, f.scenario.ctx());
+        policy.set_protocol_destination_for_testing(version, &treasury_admin, FIRST_PROTOCOL_DESTINATION, f.scenario.ctx());
 
         test_scenario::return_shared(config);
         test_scenario::return_shared(policy);
@@ -542,8 +543,8 @@ fun change_blast_share(self: &mut ReplayFixture) {
         let admin = blast_acl::witness_for_testing<FeeAdmin>();
         let mut policy = f.take_policy();
 
-        policy.clear_coin_shares<REPLAY_TESTS>(&f.migrators_version, &admin);
-        policy.set_default_shares(&f.migrators_version, &admin, bps::new(3_000), bps::new(500));
+        policy.clear_coin_shares_for_testing<REPLAY_TESTS>(&f.migrators_version, &admin, f.scenario.ctx());
+        policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(3_000), bps::new(500), f.scenario.ctx());
 
         test_scenario::return_shared(policy);
     });
@@ -623,7 +624,7 @@ fun redirect_protocol_share(self: &mut ReplayFixture, destination: address) {
         let admin = blast_acl::witness_for_testing<TreasuryAdmin>();
         let mut policy = f.take_policy();
 
-        policy.set_protocol_destination(&f.migrators_version, &admin, destination);
+        policy.set_protocol_destination_for_testing(&f.migrators_version, &admin, destination, f.scenario.ctx());
 
         test_scenario::return_shared(policy);
     });
@@ -743,6 +744,15 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         replay.protocol_allocation_set(bytes);
         reduced = reduced + 1;
     });
+    direct<blast_events::CoinSharesScheduled>().do!(|bytes| {
+        let mut r = bcs::new(bytes);
+        let meme = r.peel_type_name();
+        r.peel_shares();
+        r.peel_u64();
+        r.assert_consumed();
+        if (!replay.coin_entries.contains(&meme)) replay.coin_entries.push_back(meme);
+        reduced = reduced + 1;
+    });
     direct<blast_events::LpFeePolicyChanged>().do!(|bytes| {
         replay.lp_fee_policy_changed(bytes);
         reduced = reduced + 1;
@@ -825,9 +835,14 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         reduced = reduced + 1;
     });
 
-    // Intake admissions and the creator capability claim are outside this schema; nothing else
-    // may appear.
-    let unreduced = wrapped<events::QuoteSet>().length()
+    // This reducer tracks applied economics. Scheduling notices, intake admissions, and the
+    // creator capability claim do not change its state; nothing else may appear.
+    let unreduced = wrapped<blast_fun::launch_config::MigrationWitnessScheduled>().length()
+        + wrapped<blast_fun::launch_config::TradeFeesScheduled>().length()
+        + wrapped<blast_fun::launch_config::ProtocolAllocationScheduled>().length()
+        + direct<blast_events::DefaultSharesScheduled>().length()
+        + direct<blast_events::ProtocolDestinationScheduled>().length()
+        + wrapped<events::QuoteSet>().length()
         + wrapped<events::MigrationWitnessSet>().length()
         + wrapped<events::LaunchTradeFeesChanged>().length()
         + wrapped<events::CreatorCapsClaimed>().length();
@@ -851,6 +866,7 @@ fun new_replay(publisher: address): Replay {
     Replay {
         default_shares: Shares { meme_bps: 0, quote_bps: 0 },
         coin_shares: vector[],
+        coin_entries: vector[],
         protocol_destination: publisher,
         protocol_allocation: Shares { meme_bps: 0, quote_bps: 0 },
         ticket_id: absent(),
@@ -1601,7 +1617,7 @@ fun assert_policy(self: &Replay, policy: &LpFeePolicy) {
     assert_eq!(default_quote_bps.value(), self.default_shares.quote_bps);
     assert_eq!(policy.protocol_destination(), self.protocol_destination);
 
-    assert_eq!(policy.coin_count_for_testing(), self.coin_shares.length());
+    assert_eq!(policy.coin_count_for_testing(), self.coin_entries.length());
     let (live_meme_bps, live_quote_bps) = policy.shares<REPLAY_TESTS>();
     let own = self.own_shares(type_name::with_original_ids<REPLAY_TESTS>().into_string());
     let live = own.destroy_or!(self.default_shares);

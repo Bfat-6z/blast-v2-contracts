@@ -37,3 +37,12 @@ public struct ClaimSignerAdmin()
 
 /// Publishes holder-reward rounds.
 public struct RewardsAdmin()
+
+/// May set emergency pause bits, never clear them.
+public struct PauseAdmin()
+
+/// May clear pause bits after an incident.
+public struct UnpauseAdmin()
+
+/// May cancel any scheduled administrative action.
+public struct CancelAdmin()

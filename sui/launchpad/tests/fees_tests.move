@@ -271,13 +271,13 @@ fun changed_protocol_fee_share_applies_to_the_next_accrual() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let mut ledger = fees::new<TEST_MEME, TEST_QUOTE>(balance::zero());
 
-        f.set_protocol_fee_share(PROTOCOL_FEE_SHARE_BPS);
+        f.set_protocol_fee_share_for_testing(PROTOCOL_FEE_SHARE_BPS);
         ledger.accrue(
             balance::create_for_testing<TEST_MEME>(3),
             balance::create_for_testing<TEST_QUOTE>(4),
             f.runtime_config.protocol_fee_share(),
         );
-        f.set_protocol_fee_share(8_000);
+        f.set_protocol_fee_share_for_testing(8_000);
         let (
             protocol_meme_delta,
             creator_meme_delta,
@@ -402,16 +402,16 @@ fun start(): FeesFixture {
     FeesFixture { scenario, package_version, runtime_config }
 }
 
-fun set_protocol_fee_share(self: &mut FeesFixture, protocol_fee_share_bps: u64) {
+fun set_protocol_fee_share_for_testing(self: &mut FeesFixture, protocol_fee_share_bps: u64) {
     let admin_witness = blast_acl::witness_for_testing<FeeAdmin>();
 
     self
         .runtime_config
-        .set_protocol_fee_share(
+        .set_protocol_fee_share_for_testing(
             &self.package_version,
             &admin_witness,
             bps::new(protocol_fee_share_bps),
-        );
+         self.scenario.ctx());
 }
 
 fun end(self: FeesFixture) {

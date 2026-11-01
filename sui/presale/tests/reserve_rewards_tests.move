@@ -37,11 +37,11 @@ fun a_policy_change_after_planning_blocks_publication_with_gas_reimbursement() {
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
-            );
+             f.scenario.ctx());
     });
     fixture.publish(30);
     std::unit_test::destroy(package_version);
@@ -61,11 +61,11 @@ fun a_policy_change_after_planning_blocks_publication_without_gas_reimbursement(
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
-            );
+             f.scenario.ctx());
     });
     fixture.publish_budget(1_000, 0);
     std::unit_test::destroy(package_version);
@@ -85,11 +85,11 @@ fun a_changed_treasury_is_rejected_before_an_overcommitted_budget() {
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
-            );
+             f.scenario.ctx());
     });
     fixture.publish(31);
     std::unit_test::destroy(package_version);
@@ -105,11 +105,11 @@ fun publication_accepts_a_new_plan_bound_to_the_changed_treasury() {
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
-            );
+             f.scenario.ctx());
     });
     fixture.publish_budget_to(970, 30, @0xD);
     assert_eq!(fixture.vault_balances(), vector[0, 0]);
@@ -135,11 +135,11 @@ fun settlement_pays_measured_cost_returns_unused_reserve_and_preserves_holder_cu
         assert_eq!(reserve, option::some(30));
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
-            );
+             f.scenario.ctx());
         f.settle(&mut round, 24);
         assert_eq!(f.vault_balances(), vector[0, 6]);
         let (_, quote, reserve) = round.reserve_balances_for_testing();
@@ -366,11 +366,11 @@ fun start_reserve_rewards(): ReserveFixture {
             scenario.ctx(),
         );
         let mut policy = fee_policy::new_for_testing(scenario.ctx());
-        policy.set_destination(
+        policy.set_destination_for_testing(
             &package_version,
             &blast_acl::witness_for_testing<TreasuryAdmin>(),
             TREASURY,
-        );
+         scenario.ctx());
         vault.credit_fees_for_testing(
             &policy,
             balance::zero(),

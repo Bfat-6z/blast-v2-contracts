@@ -37,7 +37,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     call(&mut b, blast, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
-        Expected::Abort { package: admin, module: "upgrade_custody", code: 16 },
+        Expected::Abort { package: admin, module: "upgrade_custody", code: 15 },
         &[bootstrap, cap, foreign_cap],
         &[h.sender],
     )?;
@@ -70,7 +70,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     call(&mut b, unwrapped, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
-        Expected::Abort { package: admin, module: "upgrade_custody", code: 16 },
+        Expected::Abort { package: admin, module: "upgrade_custody", code: 15 },
         &[bootstrap, cap],
         &[h.sender],
     )?;

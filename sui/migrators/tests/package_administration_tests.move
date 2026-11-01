@@ -61,7 +61,7 @@ fun a_stale_generation_rejects_an_lp_fee_policy_change() {
         let admin_witness = blast_acl::witness_for_testing<FeeAdmin>();
         f.package_version.set_for_testing(2);
 
-        f.policy.set_default_shares(&f.package_version, &admin_witness, bps::new(1), bps::new(2));
+        f.policy.set_default_shares_for_testing(&f.package_version, &admin_witness, bps::new(1), bps::new(2), f.scenario.ctx());
     });
 
     fixture.end();
@@ -80,7 +80,8 @@ fun a_stale_generation_rejects_upgrade_authorization() {
         let admin_witness = upgrade_admin();
         f.package_version.set_for_testing(2);
 
-        let ticket = f.package_admin.authorize_upgrade(&f.package_version, &admin_witness, DIGEST);
+        let ticket = f.package_admin.authorize_upgrade_for_testing(&f.package_version, &admin_witness, DIGEST, f.scenario.ctx());
+        assert_eq!(*ticket.ticket_digest(), DIGEST);
         destroy(ticket);
     });
 
@@ -88,17 +89,14 @@ fun a_stale_generation_rejects_upgrade_authorization() {
 }
 
 #[test]
-#[expected_failure(abort_code = sui::package::EAlreadyAuthorized, location = sui::package)]
-/// Launchpad's upgrade-admin role reaches this package's sealed UpgradeCap. A unit-test cap
-/// belongs to package `0x0`, which the framework reads as an authorization already in flight, so
-/// reaching the cap shows as the framework's own abort.
+/// Launchpad's upgrade-admin role can issue the approved digest after the delay.
 fun the_launchpad_upgrade_admin_reaches_this_packages_upgrade_cap() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = upgrade_admin();
 
-        let ticket = f.package_admin.authorize_upgrade(&f.package_version, &admin_witness, DIGEST);
+        let ticket = f.package_admin.authorize_upgrade_for_testing(&f.package_version, &admin_witness, DIGEST, f.scenario.ctx());
         destroy(ticket);
     });
 

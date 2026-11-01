@@ -50,7 +50,6 @@ fun init_shares_one_acl_and_delivers_its_root_to_the_configured_address_without_
     assert_eq!(acl.active_super_admin_cap_id_for_testing(), root.super_admin_cap_id_for_testing());
     assert_eq!(acl.admin_count_for_testing(), 0);
     assert!(!acl.has_pending_transfer_for_testing());
-    assert_eq!(blast_acl::max_admins_for_testing(), MAX_ADMINS);
     assert_eq!(blast_acl::max_roles_per_admin_for_testing(), MAX_ROLES_PER_ADMIN);
 
     test_scenario::return_shared(acl);
@@ -270,8 +269,7 @@ fun revoke_role_rejects_an_unknown_cap() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EAdminCapacityReached, location = blast_admin::blast_acl)]
-fun grant_rejects_the_first_admin_over_capacity() {
+fun grant_accepts_more_than_the_old_inline_limit() {
     let mut fixture = start();
     MAX_ADMINS.do!(|_| fixture.grant_admin(ADMIN));
 

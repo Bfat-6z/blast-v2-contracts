@@ -15,7 +15,23 @@ const PACKAGE_VERSION: u64 = 1;
 /// The generation this bytecode hands over to in a governed upgrade.
 const NEXT_PACKAGE_VERSION: u64 = 2;
 
+const VALID_PAUSE_BITS: u8 = 15;
+
+// === Errors ===
+
+#[error(code = 0)]
+const EInvalidPauseBits: vector<u8> = b"Select nonzero pause bits supported by this package.";
+#[error(code = 1)]
+const EPauseUnchanged: vector<u8> = b"The requested pause change must alter the active bits.";
+#[error(code = 2)]
+const EPaused: vector<u8> = b"This operation is paused.";
+
 // === Public Types ===
+
+/// The requested bits and resulting pause mask.
+public struct Paused has copy, drop { bits: u8, paused: u8 }
+/// The released bits and resulting pause mask.
+public struct Unpaused has copy, drop { bits: u8, paused: u8 }
 
 /// One-time witness: it seeds the package generation and claims this package's Publisher.
 public struct BLAST_FUN() has drop;
@@ -30,6 +46,7 @@ public struct Bootstrap has key {
 /// Singleton operational package generation.
 public struct PackageVersion has key {
     id: UID,
+    paused: u8,
     generation: OperationalVersion<BLAST_FUN>,
 }
 
@@ -42,7 +59,32 @@ fun init(otw: BLAST_FUN, ctx: &mut TxContext) {
     transfer::transfer(Bootstrap { id: object::new(ctx), publisher, generation }, ctx.sender());
 }
 
+// === Public Functions ===
+
+/// Freezes selected operations immediately; does not authorize unpausing.
+public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8) {
+    self.assert_current();
+    assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
+    assert!((self.paused | bits) != self.paused, EPauseUnchanged);
+    self.paused = self.paused | bits;
+    blast_fun::blast_events::emit_event(Paused { bits, paused: self.paused });
+}
+
+/// Clears only the requested bits; claims and settlement never require unpausing.
+public fun unpause(self: &mut PackageVersion, _: &AdminWitness<UnpauseAdmin>, bits: u8) {
+    self.assert_current();
+    assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
+    assert!((self.paused & bits) != 0, EPauseUnchanged);
+    self.paused = self.paused ^ (self.paused & bits);
+    blast_fun::blast_events::emit_event(Unpaused { bits, paused: self.paused });
+}
+
 // === Package Functions ===
+
+/// Rejects a paused operation before its lifecycle or economic checks.
+public(package) fun assert_not_paused(self: &PackageVersion, bit: u8) {
+    assert!((self.paused & bit) == 0, EPaused);
+}
 
 /// Consumes the unique bootstrap for package-admin custody intake.
 public(package) fun destroy(self: Bootstrap): (Publisher, OperationalVersion<BLAST_FUN>) {
@@ -54,7 +96,7 @@ public(package) fun destroy(self: Bootstrap): (Publisher, OperationalVersion<BLA
 
 /// Publishes the usable generation in the same transaction that seals capability custody.
 public(package) fun share_version(generation: OperationalVersion<BLAST_FUN>, ctx: &mut TxContext) {
-    transfer::share_object(PackageVersion { id: object::new(ctx), generation });
+    transfer::share_object(PackageVersion { paused: 0, id: object::new(ctx), generation });
 }
 
 /// Rejects callable bytecode from every package generation except the active one.
@@ -85,7 +127,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 public fun new_for_testing(ctx: &mut TxContext): PackageVersion {
     let otw = BLAST_FUN();
 
-    PackageVersion { id: object::new(ctx), generation: operational_version::new(&otw) }
+    PackageVersion { paused: 0, id: object::new(ctx), generation: operational_version::new(&otw) }
 }
 
 #[test_only]
@@ -120,6 +162,8 @@ public fun publisher_for_testing(ctx: &mut TxContext): Publisher {
 
 // === Imports ===
 
-use blast_admin::operational_version::{Self, OperationalVersion};
+use blast_admin::{blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
+
+use blast_fun::blast_fun_domain::{PauseAdmin, UnpauseAdmin};
 
 use sui::package::Publisher;

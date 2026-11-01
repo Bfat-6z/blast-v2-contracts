@@ -121,9 +121,12 @@ fun a_vendor_sale_can_change_its_blast_rates_before_its_share() {
     let clock = clock::create_for_testing(scenario.ctx());
 
     let (mut sale, _) = new_sale(&mut scenario, &creation_policy);
+    let mut ceiling = blast_presale::fee_policy::new_for_testing(scenario.ctx());
+    ceiling.set_fees_for_testing(&package_version, &fee_admin(), bps::new(1_000), bps::new(100), bps::new(0), bps::new(0), scenario.ctx());
     sale.set_protocol_fees(
         &package_version,
         &fee_admin(),
+        &ceiling,
         bps::new(1_000),
         bps::new(100),
         bps::new(0),
@@ -131,6 +134,7 @@ fun a_vendor_sale_can_change_its_blast_rates_before_its_share() {
         &clock,
     );
 
+    ceiling.destroy_for_testing();
     let (presale_id, rates, protocol_quote, protocol_tokens, token_allocation) = last_event<
         ProtocolFeesChanged<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
     >().protocol_fees_changed_fields();

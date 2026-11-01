@@ -10,19 +10,19 @@ module blast_fun_migrators::launch_fixture;
 
 /// Admits `Quote` and the adapter's `Witness` with fixed trade fees. The launch configuration's
 /// default zero Blast allocation needs no initialization call.
-public fun admit<Quote, Witness: drop>(config: &mut LaunchConfig, version: &PackageVersion) {
+public fun admit<Quote, Witness: drop>(config: &mut LaunchConfig, version: &PackageVersion, ctx: &mut TxContext) {
     config.set_quote_allowed<Quote>(version, &blast_acl::witness_for_testing<ListingAdmin>(), true);
-    config.set_migration_witness_allowed<Witness>(
+    config.set_migration_witness_allowed_for_testing<Witness>(
         version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
         true,
-    );
-    config.set_trade_fees(
+     ctx);
+    config.set_trade_fees_for_testing(
         version,
         &blast_acl::witness_for_testing<FeeAdmin>(),
         bps::new(100),
         bps::new(100),
-    );
+     ctx);
 }
 
 /// Mints the ticket, then starts the launch for `witness` at the fixture tier with `fee_split` and

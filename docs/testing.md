@@ -11,6 +11,16 @@ package has no wrapper, run the pinned toolchain's build, warning-as-error lint,
 tests, and source-boundary check directly from that package. Generated traces
 and coverage artifacts are not committed.
 
+For ADR 0134 fresh-stack checks, run `bash scripts/test_admin_delay.sh` under the
+workspace memory guard. It temporarily excludes historical first-party publication
+metadata and supplies synthetic genesis destinations and native-cap identities,
+then restores the manifests, publications and lockfiles on exit. It never connects
+to a database or chain. Run the source gates in that same fresh-stack environment
+with `bash scripts/test_admin_delay.sh --boundaries-only admin launchpad presale migrators`.
+The Rust PTB harness supplies the nonzero genesis recipient while compiling and
+restores each manifest afterward; its configuration calls schedule, advance the
+simulator by 48 hours, and apply through the public entry points.
+
 ## Protocol vectors
 
 The chain-neutral vectors under [`vectors/`](vectors/) are the numerical

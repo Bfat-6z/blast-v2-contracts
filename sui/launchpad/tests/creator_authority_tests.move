@@ -70,7 +70,7 @@ fun account_claim_with_the_backend_signature_issues_both_caps() {
                 CREATOR,
                 EXPIRES_AT_MS,
             ),
-            x"64303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303a3a63726561746f725f617574686f726974795f74657374733a3a544553545f4d454d452011223344556677889900aabbccddeeffffeeddccbbaa009988776655443322110000000000000000000000000000000000000000000000000000000000c0ffee80841e0000000000",
+            x"64303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030633a3a63726561746f725f617574686f726974795f74657374733a3a544553545f4d454d452011223344556677889900aabbccddeeffffeeddccbbaa009988776655443322110000000000000000000000000000000000000000000000000000000000c0ffee80841e0000000000",
         );
 
         let (curve_fee_cap, metadata_cap) = creator_authority::claim_creator_caps<TEST_MEME>(
@@ -202,7 +202,7 @@ fun account_claim_rejects_an_attestation_from_a_rotated_signer() {
     let mut fixture = start();
 
     fixture.next_tx!(ADMIN, |f| {
-        f.set_creator_claim_signer(
+        f.set_creator_claim_signer_for_testing(
             x"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         );
     });
@@ -220,7 +220,7 @@ fun account_claim_rejects_every_attestation_once_the_signer_is_revoked() {
     let mut fixture = start();
 
     fixture.next_tx!(ADMIN, |f| {
-        f.set_creator_claim_signer(vector[]);
+        f.set_creator_claim_signer_for_testing(vector[]);
     });
 
     fixture.next_tx!(CREATOR, |f| {
@@ -235,8 +235,8 @@ fun restoring_the_signer_reenables_account_claims() {
     let mut fixture = start();
 
     fixture.next_tx!(ADMIN, |f| {
-        f.set_creator_claim_signer(vector[]);
-        f.set_creator_claim_signer(signer_public_key());
+        f.set_creator_claim_signer_for_testing(vector[]);
+        f.set_creator_claim_signer_for_testing(signer_public_key());
     });
 
     fixture.next_tx!(CREATOR, |f| {
@@ -296,7 +296,7 @@ fun claim_claim<Meme>(
 fun claim_set_creator_claim_signer(self: &mut ClaimFixture, signer_public_key: vector<u8>) {
     let admin_witness = blast_acl::witness_for_testing<ClaimSignerAdmin>();
 
-    self.config.set_creator_claim_signer(&self.package_version, &admin_witness, signer_public_key);
+    self.config.set_creator_claim_signer_for_testing(&self.package_version, &admin_witness, signer_public_key, self.scenario.ctx());
 }
 
 fun claim_end(self: ClaimFixture) {
@@ -316,12 +316,14 @@ fun account_commitment(): vector<u8> {
     x"11223344556677889900aabbccddeeffffeeddccbbaa00998877665544332211"
 }
 
+// Public test fixture: Ed25519 seed [7; 32], signing the BCS message above for
+// the harness's synthetic launchpad address 0xc. Never used outside tests.
 fun signer_public_key(): vector<u8> {
-    x"0ca5b32f943a1d9f119adc9b45615a06bbf0ab9f46ccbcc62d167d7d5e55ce47"
+    x"ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
 }
 
 fun signature(): vector<u8> {
-    x"9ad5e8a47856b8080b3105c805c3555bcfbdf28889ffe3fc54bc54700ff308e495e6dd1b014c9e2316bc98f0ec55c08293065ccee444aa96b1f5e107004a9a02"
+    x"ff0ced0a7390306e2da4210845558a93f6594f4c30836e2499ad400e38a9fbadc4591d9188fa6aaaac9ff3575a7c212f62fc451d1266ea744b847b4c7afc6a04"
 }
 
 // === Imports ===
@@ -347,4 +349,4 @@ use fun claim_end as ClaimFixture.end;
 
 use fun claim_next_tx as ClaimFixture.next_tx;
 
-use fun claim_set_creator_claim_signer as ClaimFixture.set_creator_claim_signer;
+use fun claim_set_creator_claim_signer as ClaimFixture.set_creator_claim_signer_for_testing;

@@ -86,7 +86,7 @@ fun collected_fees_pay_blast_its_share_first() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut policy = fee_policy::new_for_testing(scenario.ctx());
-    policy.set_destination(&package_version, &treasury_admin(), TREASURY);
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, scenario.ctx());
     let mut vault = vault_paying_blast(option::none(), &mut scenario);
 
     vault.credit_fees_for_testing(
@@ -232,7 +232,7 @@ fun held_lp_fees_go_to_the_destination_in_force_at_payout() {
     let partner = partners::new_for_testing(PARTNER_RECIPIENT, PARTNER_CUT_BPS, scenario.ctx());
     let mut vault = vault_paying_blast(option::some(object::id(&partner)), &mut scenario);
     let mut policy = fee_policy::new_for_testing(scenario.ctx());
-    policy.set_destination(&package_version, &treasury_admin(), TREASURY);
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, scenario.ctx());
     vault.credit_fees_for_testing(
         &policy,
         coin::mint_for_testing<MEME>(101, scenario.ctx()).into_balance(),
@@ -342,10 +342,10 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut policy = fee_policy::new_for_testing(scenario.ctx());
-    policy.set_destination(&package_version, &treasury_admin(), TREASURY);
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, scenario.ctx());
     let mut vault = vault_paying_blast(option::none(), &mut scenario);
 
-    vault.set_protocol_lp_fees(&package_version, &fee_admin(), bps::new(0), bps::new(5_000));
+    vault.set_protocol_lp_fees_for_testing(&package_version, &fee_admin(), bps::new(0), bps::new(5_000), scenario.ctx());
 
     let (vault_id, lp_fee_meme_bps, lp_fee_quote_bps) = only_event<
         ProtocolLpFeesChanged<MEME, QUOTE>,
@@ -393,7 +393,7 @@ fun a_vault_lp_fee_update_must_change_the_rates() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut vault = vault_paying_blast(option::none(), &mut scenario);
 
-    vault.set_protocol_lp_fees(&package_version, &fee_admin(), bps::new(1_000), bps::new(2_500));
+    vault.set_protocol_lp_fees_for_testing(&package_version, &fee_admin(), bps::new(1_000), bps::new(2_500), scenario.ctx());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -853,7 +853,7 @@ fun collect_fees(
 ) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut policy = fee_policy::new_for_testing(scenario.ctx());
-    policy.set_destination(&package_version, &treasury_admin(), TREASURY);
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, scenario.ctx());
     self.credit_fees_for_testing(&policy, meme, quote, scenario.ctx());
     policy.destroy_for_testing();
 
@@ -869,7 +869,7 @@ fun pay_held_lp_fees(
 ) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut policy = fee_policy::new_for_testing(scenario.ctx());
-    policy.set_destination(&package_version, &treasury_admin(), destination);
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), destination, scenario.ctx());
     let clock = clock::create_for_testing(scenario.ctx());
 
     self.pay_protocol_lp_fees_with_partner(
@@ -921,14 +921,14 @@ fun policy_with_lp_fees(meme_bps: u64, quote_bps: u64, scenario: &mut Scenario):
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let result = {
         let mut policy = fee_policy::new_for_testing(scenario.ctx());
-        policy.set_fees(
+        policy.set_fees_for_testing(
             &package_version,
             &fee_admin(),
             bps::new(0),
             bps::new(0),
             bps::new(meme_bps),
             bps::new(quote_bps),
-        );
+         scenario.ctx());
         policy
     };
     std::unit_test::destroy(package_version);

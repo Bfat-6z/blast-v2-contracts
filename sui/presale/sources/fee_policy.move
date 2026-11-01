@@ -15,8 +15,8 @@ module blast_presale::fee_policy;
 /// Shared singleton holding the rates new presales snapshot and the address paid Blast's fees.
 public struct FeePolicy has key {
     id: UID,
-    destination: address,
-    fees: ProtocolFees,
+    destination: Delayed<address>,
+    fees: Delayed<ProtocolFees>,
 }
 
 /// Blast's rates, in BPS: of the accepted raise, of the token supply, and of each collected
@@ -37,7 +37,8 @@ fun init(ctx: &mut TxContext) {
 // === Public Functions ===
 
 /// Sets the rates presales created afterward snapshot; existing presales keep theirs.
-public fun set_fees(
+/// Schedules fees after the full administrative delay.
+public fun schedule_fees(
     self: &mut FeePolicy,
     package_version: &PackageVersion,
     _: &AdminWitness<FeeAdmin>,
@@ -45,36 +46,85 @@ public fun set_fees(
     token_bps: Bps,
     lp_fee_meme_bps: Bps,
     lp_fee_quote_bps: Bps,
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    let fees = protocol_fees(raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps);
-    assert!(fees != self.fees, EFeesUnchanged);
+    let value = protocol_fees(raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps);
+    assert!(value != self.fees.value(), EFeesUnchanged);
+    let ready_at_ms = self.fees.schedule(value, clock);
+    sui::event::emit(FeesScheduled { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value(), ready_at_ms });
+}
 
-    self.fees = fees;
+/// Applies the scheduled fees permissionlessly once ready.
+public fun apply_fees(
+    self: &mut FeePolicy,
+    package_version: &PackageVersion,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+    let value = self.fees.apply(clock);
+    let raise_bps = value.raise_bps;
+    let token_bps = value.token_bps;
+    let lp_fee_meme_bps = value.lp_fee_meme_bps;
+    let lp_fee_quote_bps = value.lp_fee_quote_bps;
+    event::emit(FeesChanged { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value() });
+}
 
-    event::emit(FeesChanged {
-        raise_bps: raise_bps.value(),
-        token_bps: token_bps.value(),
-        lp_fee_meme_bps: lp_fee_meme_bps.value(),
-        lp_fee_quote_bps: lp_fee_quote_bps.value(),
-    });
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_fees(
+    self: &mut FeePolicy,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>,
+) {
+    package_version.assert_current();
+    let value = self.fees.cancel();
+    let raise_bps = value.raise_bps;
+    let token_bps = value.token_bps;
+    let lp_fee_meme_bps = value.lp_fee_meme_bps;
+    let lp_fee_quote_bps = value.lp_fee_quote_bps;
+    sui::event::emit(FeesCancelled { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value() });
 }
 
 /// Redirects every later protocol payout, including those of existing presales.
-public fun set_destination(
+/// Schedules destination after the full administrative delay.
+public fun schedule_destination(
     self: &mut FeePolicy,
     package_version: &PackageVersion,
     _: &AdminWitness<TreasuryAdmin>,
     destination: address,
+    clock: &Clock,
 ) {
     package_version.assert_current();
+    assert!(destination != @0x0, EInvalidDestination);
+    let value = destination;
+    assert!(value != self.destination.value(), EInvalidDestination);
+    let ready_at_ms = self.destination.schedule(value, clock);
+    sui::event::emit(DestinationScheduled { destination: destination, ready_at_ms });
+}
 
-    assert!(destination != @0x0 && destination != self.destination, EInvalidDestination);
-
-    self.destination = destination;
-
+/// Applies the scheduled destination permissionlessly once ready.
+public fun apply_destination(
+    self: &mut FeePolicy,
+    package_version: &PackageVersion,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+    let value = self.destination.apply(clock);
+    let destination = value;
     event::emit(DestinationChanged { destination });
+}
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_destination(
+    self: &mut FeePolicy,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>,
+) {
+    package_version.assert_current();
+    let value = self.destination.cancel();
+    let destination = value;
+    sui::event::emit(DestinationCancelled { destination: destination });
 }
 
 // === Package Functions ===
@@ -96,11 +146,11 @@ public(package) fun protocol_fees(
 }
 
 public(package) fun fees(self: &FeePolicy): ProtocolFees {
-    self.fees
+    self.fees.value()
 }
 
 public(package) fun destination(self: &FeePolicy): address {
-    self.destination
+    self.destination.value()
 }
 
 public(package) fun raise_bps(self: &ProtocolFees): Bps {
@@ -133,19 +183,55 @@ public(package) fun with_lp_fees(
 // === Private Functions ===
 
 fun new(ctx: &mut TxContext): FeePolicy {
+    assert!(@blast_treasury != @0x0, EInvalidDestination);
     FeePolicy {
         id: object::new(ctx),
-        destination: ctx.sender(),
-        fees: ProtocolFees {
+        destination: delayed::new(@blast_treasury),
+        fees: delayed::new(ProtocolFees {
             raise_bps: bps::new(0),
             token_bps: bps::new(0),
             lp_fee_meme_bps: bps::new(0),
             lp_fee_quote_bps: bps::new(0),
-        },
+        }),
     }
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// Fixture convenience: exercises scheduling, advances a synthetic Clock, then applies.
+public fun set_destination_for_testing(
+    self: &mut FeePolicy,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<TreasuryAdmin>,
+    destination: address,
+    ctx: &mut TxContext,
+) {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    self.schedule_destination(package_version, admin, destination, &clock);
+    clock.set_for_testing(172_800_000);
+    self.apply_destination(package_version, &clock);
+    clock.destroy_for_testing();
+}
+
+#[test_only]
+/// Fixture convenience: exercises scheduling, advances a synthetic Clock, then applies.
+public fun set_fees_for_testing(
+    self: &mut FeePolicy,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<FeeAdmin>,
+    raise_bps: Bps,
+    token_bps: Bps,
+    lp_fee_meme_bps: Bps,
+    lp_fee_quote_bps: Bps,
+    ctx: &mut TxContext,
+) {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    self.schedule_fees(package_version, admin, raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps, &clock);
+    clock.set_for_testing(172_800_000);
+    self.apply_fees(package_version, &clock);
+    clock.destroy_for_testing();
+}
 
 #[test_only]
 public fun init_for_testing(ctx: &mut TxContext) {
@@ -154,7 +240,9 @@ public fun init_for_testing(ctx: &mut TxContext) {
 
 #[test_only]
 public fun new_for_testing(ctx: &mut TxContext): FeePolicy {
-    new(ctx)
+    let mut policy = new(ctx);
+    policy.destination.set_now(ctx.sender());
+    policy
 }
 
 #[test_only]
@@ -174,7 +262,9 @@ public fun protocol_fees_for_testing(
 
 #[test_only]
 public fun destroy_for_testing(self: FeePolicy) {
-    let FeePolicy { id, destination: _, fees: _ } = self;
+    let FeePolicy { id, destination, fees } = self;
+    destination.destroy_for_testing();
+    fees.destroy_for_testing();
     id.delete();
 }
 
@@ -189,6 +279,18 @@ public fun destination_changed_fields(event: &DestinationChanged): address {
 }
 
 // === Events ===
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct DestinationScheduled has copy, drop { destination: address, ready_at_ms: u64 }
+
+/// Values removed from the pending schedule.
+public struct DestinationCancelled has copy, drop { destination: address }
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct FeesScheduled has copy, drop { raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64, ready_at_ms: u64 }
+
+/// Values removed from the pending schedule.
+public struct FeesCancelled has copy, drop { raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64 }
 
 /// New presales snapshot these rates.
 public struct FeesChanged has copy, drop {
@@ -221,12 +323,18 @@ const EInvalidDestination: vector<u8> = b"The protocol destination must be a new
 
 // === Imports ===
 
-use blast_admin::blast_acl::AdminWitness;
+use blast_admin::{
+    delayed::{Self, Delayed},
+    blast_acl::AdminWitness,
+};
+
+use sui::{
+    clock::Clock,
+    event,
+};
 
 use blast_presale::{
-    blast_presale_domain::{FeeAdmin, TreasuryAdmin},
+    blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin},
     blast_presale_package::PackageVersion,
     bps::{Self, Bps}
 };
-
-use sui::event;

@@ -20,10 +20,10 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
-| `blast_presale` | Presale | live | `0xb0279fbe54bfd1d920e985a4dba0916b2b73a5218514edeecb7b9dd30cf2863b` | `0xb0279fbe54bfd1d920e985a4dba0916b2b73a5218514edeecb7b9dd30cf2863b` |
+| `blast_presale` | Presale | live; source has changed since | `0xb0279fbe54bfd1d920e985a4dba0916b2b73a5218514edeecb7b9dd30cf2863b` | `0xb0279fbe54bfd1d920e985a4dba0916b2b73a5218514edeecb7b9dd30cf2863b` |
 | `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | live; source has changed since | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` |
-| `blast_partners` | Partner codes | live | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
-| `blast_admin` | Administration | live | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
+| `blast_partners` | Partner codes | live; source has changed since | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
+| `blast_admin` | Administration | live; source has changed since | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
 
 ## Calling Blast contracts
 
@@ -173,7 +173,7 @@ run) before signing it.
 
 ## Presale
 
-> **Deployment status:** `blast_presale` is live on mainnet. `blast_aftermath_dao_presale` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
+> **Deployment status:** `blast_presale` and `blast_aftermath_dao_presale` are live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
 
 ### What it is
 
@@ -265,15 +265,18 @@ reference. Each admin call names exactly one role in its signature:
 
 | Role | Calls |
 | --- | --- |
-| `blast_presale_domain::FeeAdmin` | `fee_policy::set_fees`, `blast_presale::blast_presale::set_protocol_fees`, `presale_vault::set_protocol_lp_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
-| `blast_presale_domain::TreasuryAdmin` | `fee_policy::set_destination` |
+| `blast_presale_domain::PauseAdmin` | `blast_presale_package::pause` |
+| `blast_presale_domain::UnpauseAdmin` | `blast_presale_package::unpause` |
+| `blast_presale_domain::CancelAdmin` | Each `cancel_*` administrative operation |
+| `blast_presale_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `presale_vault::schedule_protocol_lp_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
+| `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
 | `blast_presale_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
-| `blast_presale_domain::AdapterAdmin` | `creation_policy::set_migration_witness_allowed` |
+| `blast_presale_domain::AdapterAdmin` | `creation_policy::schedule_migration_witness` |
 | `blast_presale_domain::RewardsAdmin` | `holder_rewards::publish_round` |
 | `blast_presale_domain::UpgradeAdmin` | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` |
 
 A role from another package, such as `blast_fun_domain::FeeAdmin`, is a different type and
-cannot reach these calls. No admin can pause a sale, cancel it, move commitments, change windows, recipients, or the fee split. Its
+cannot reach these calls. PauseAdmin may freeze creation, commitments or migration. No admin may cancel a sale, move commitments, change windows, recipients, or the fee split. Its
 power over a live sale is limited to: its Blast rates before the window starts, its vault's Blast
 LP-fee rates (anything from 0 to 10,000 BPS), the fee destination, and how the vault's
 holder-reward share is distributed.
@@ -815,18 +818,53 @@ Integrators cannot call these; they explain state changes. Each takes the
 
 | Call | Effect |
 | --- | --- |
-| `fee_policy::set_fees` | Rates new sales snapshot. Raise rate < 10,000 BPS; token rate <= 9,998. Emits `fee_policy::FeesChanged`. |
-| `fee_policy::set_destination` | Redirects every later Blast payout, existing sales included. Emits `fee_policy::DestinationChanged`. |
-| `blast_presale::blast_presale::set_protocol_fees` | Replaces one sale's four rates in its creation PTB before `share` (`Pending`), or while `Open` and before `start_ms`. Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
-| `presale_vault::set_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Emits `presale_vault::ProtocolLpFeesChanged`. |
+| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise rate < 10,000 BPS; token rate <= 9,998. Application emits `fee_policy::FeesChanged`. |
+| `fee_policy::schedule_destination` | Redirects every later Blast payout, existing sales included. Application emits `fee_policy::DestinationChanged`. |
+| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), or while `Open` and before `start_ms`. Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
+| `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Application emits `presale_vault::ProtocolLpFeesChanged`. |
 | `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `creation_policy::QuoteSet`. |
-| `creation_policy::set_migration_witness_allowed` | Allows or disallows a migrator witness for later sales; rejects primitives, vectors, and `0x1`/`0x2` types. Emits `creation_policy::MigrationWitnessSet`. |
+| `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `creation_policy::MigrationWitnessSet`; `remove_migration_witness` removes immediately and cancels pending admission. |
 | `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `creation_policy::PartnerAdded`. |
 | `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `creation_policy::PartnerRemoved`. |
 | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` | See above. |
 | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic operational-version cutover. |
 
 `blast_presale::package_admin::wrap` consumes the publication Bootstrap and never-upgraded matching cap once. Each upgrade increments both compiled generation constants and commits/advances in one PTB; old bytecode then rejects the advanced version. Existing dependency-only deployments require a fresh publication to adopt this design.
+
+### Delayed administration
+
+Blast admin schedules changes with the relevant role and the canonical `Clock`.
+Every scheduled fee, destination, signer, adapter or creator-authority change
+waits 172,800,000 milliseconds (48 hours). Scheduling again replaces the pending
+value and restarts that delay. The applied value stays active until *anyone*
+calls the matching `apply_` operation with the current package version and
+`Clock`. A `CancelAdmin` may cancel a pending change even after it is ready.
+Scheduling and cancellation emit the proposed values; the existing changed
+event is emitted only on application. Reads and ordinary claims need no new Clock.
+
+`blast_presale::package_admin::schedule_upgrade` announces the exact digest.
+After 48 hours an `UpgradeAdmin` may call `blast_presale::package_admin::authorize_upgrade`
+with that digest and `Clock`, consume its ticket in the native upgrade command,
+and commit its receipt. The pending action is consumed once.
+`blast_presale::package_admin::schedule_make_immutable` and
+`blast_presale::package_admin::make_immutable` use the same delay;
+`blast_presale::package_admin::cancel_upgrade_action` is reserved to `CancelAdmin`.
+This source requires a fresh stack; its state layouts are not an in-place upgrade
+of the previous publication.
+
+### Emergency pause
+
+A `PauseAdmin` calls `blast_presale_package::pause` to set selected bits on the shared
+package version. Only `UnpauseAdmin` may clear bits with `blast_presale_package::unpause`.
+CREATE is 1, BUY is 2, MIGRATE is 8.
+Pauses never expire. Claims, refunds and mandatory settlement remain callable.
+Presale creation/sharing, all three commitment paths and migration check their respective bits; claim, cancel_unlaunched and settle stay open.
+
+`blast_presale::blast_presale::set_protocol_fees` remains immediate before the
+sale starts, but now takes the live `FeePolicy`; every rate must be at or below
+its applied rates. Scheduled increases cannot authorize larger sale overrides.
+AdapterAdmin may immediately remove an adapter with `creation_policy::remove_migration_witness`.
+Genesis treasury is configured before publication, never defaulted to the publisher.
 
 ### Economics
 
@@ -876,7 +914,7 @@ and the earlier overflow fills pro rata as usual.
 #### Blast's fees
 
 Blast takes three fees, all from the sale's snapshot (`Presale.protocol_fees`), copied from
-`FeePolicy` at creation. Later `fee_policy::set_fees` calls never touch existing sales. Nothing is
+`FeePolicy` at creation. Later `fee_policy::schedule_fees` calls never touch existing sales. Nothing is
 charged at creation, on commitment, on refund, or when a sale does not migrate.
 
 - Raise fee: Blast's Quote, apportioned with the raise at creation, paid at migration. Overflow
@@ -884,7 +922,7 @@ charged at creation, on commitment, on refund, or when a sale does not migrate.
 - Token fee: Blast's tokens, apportioned with the supply at creation, paid at migration.
 - LP fees: at each collection, Blast takes `ceil(gross × lp_fee_meme_bps / 10,000)` of the Meme
   and `ceil(gross × lp_fee_quote_bps / 10,000)` of the Quote (rounded up), at the vault's current
-  rates. The vault starts with the sale's snapshot rates; `presale_vault::set_protocol_lp_fees`
+  rates. The vault starts with the sale's snapshot rates; `presale_vault::schedule_protocol_lp_fees`
   can change them later.
 - Every payout goes to `FeePolicy.destination` as it is when paid.
 
@@ -1148,7 +1186,7 @@ and only `blast_presale::blast_presale::migrate` called with the same witness ty
 (`EWrongMigrationWitness` otherwise). `blast_presale::blast_presale::migrate` pays Blast, raise recipients, and
 token recipients exactly as for Cetus and Bluefin, then returns the LP's `(Balance<SaleToken>,
 Balance<Quote>)`, which the migrator must put into its venue in the same call. Blast must first
-allow the witness with `creation_policy::set_migration_witness_allowed`; delisting it later never
+allow the witness with `creation_policy::schedule_migration_witness`; delisting it later never
 blocks existing sales. Only the package's own Cetus, Bluefin, and Aftermath adapters create a
 `Vault`, so a vendor sale has no vault: no Blast LP fees, no holder-reward rounds, and no
 residual claims. Every other sale rule (eligibility, claims, refunds, LP deadline, the seed-price
@@ -1275,7 +1313,7 @@ Upgrades can only relink dependencies, so this cannot change.
 
 ## Partner codes
 
-> **Deployment status:** `blast_partners` is live on mainnet.
+> **Deployment status:** `blast_partners` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
 
 ### What it is
 
@@ -1333,8 +1371,7 @@ destroying a live cap leaves its partners with no working cap until a cap Blast
 schedules with `blast_partners::schedule_cap` takes effect, seven days later.
 
 **Partner.** `blast_partners::blast_partners::register` creates and shares the
-partner with its share and cap in force immediately (`before == after`,
-`at_ms == 0`). From then on:
+partner with a zero share and the cap in force immediately. Registration takes the canonical `Clock` and schedules the requested share seven days later. From then on:
 
 1. Blast schedules a new share or cap; the old value stays in force for seven
    days.
@@ -1371,7 +1408,7 @@ accepted for seven more days. A partner is accepted while the field exists and
 2. Give Blast the cap's object ID, the recipient address, and the agreed share.
 3. Blast's partner admin, in one PTB: `blast_acl::sign_in` with type argument
    `blast_partners::blast_partners::PartnerAdmin`, passing the shared `ACL` and
-   its owned `AdminCap`; then `blast_partners::blast_partners::register` with a
+   its owned `AdminCap`; then `blast_partners::blast_partners::register` with `Clock` and a
    reference to that `AdminWitness<PartnerAdmin>`, your cap ID, the recipient,
    and the share. The new `Partner` is shared; its ID is in the `PartnerUpdated`
    event and the transaction's created objects.
@@ -1574,7 +1611,7 @@ where you like); Blast takes no cut of it.
 
 ## API reference: `blast_presale` (Presale)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -2109,6 +2146,7 @@ public fun set_protocol_fees<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &blast_presale_package::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::FeeAdmin>,
+    fee_policy: &fee_policy::FeePolicy,
     raise_bps: bps::Bps,
     token_bps: bps::Bps,
     lp_fee_meme_bps: bps::Bps,
@@ -2402,6 +2440,7 @@ public struct Claimed<phantom SaleToken, phantom Quote> has copy, drop {
 | `EInvalidHardCap` | 33 | A hard cap must start inside the commitment window. |
 | `EMissingSetting` | 34 | A presale needs its eligibility policy and LP-fee split set before it is finalized. |
 | `ESaleTokenNotUnregulated` | 35 | The sale currency must be confirmed unregulated; regulated and unknown legacy currencies are not allowed. |
+| `EAboveFeePolicy` | 36 | A sale fee override cannot exceed the currently applied fee policy. |
 
 #### Constants
 
@@ -2438,6 +2477,15 @@ public struct AdapterAdmin {}
 
 /// Publishes holder-reward rounds and settles capped gas reserves.
 public struct RewardsAdmin {}
+
+/// May set emergency pause bits, never clear them.
+public struct PauseAdmin {}
+
+/// May clear pause bits after an incident.
+public struct UnpauseAdmin {}
+
+/// May cancel any scheduled administrative action.
+public struct CancelAdmin {}
 ```
 
 ### `blast_presale::blast_presale_package`
@@ -2462,14 +2510,58 @@ public struct Bootstrap has key {
 /// Singleton operational package generation.
 public struct PackageVersion has key {
     id: UID,
+    paused: u8,
     generation: blast_admin::operational_version::OperationalVersion<BLAST_PRESALE_PACKAGE>,
 }
 ```
+
+#### Functions
+
+```move
+/// Freezes selected operations immediately; does not authorize unpausing.
+public fun pause(
+    self: &mut PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::PauseAdmin>,
+    bits: u8,
+)
+
+/// Clears only the requested bits; claims and settlement never require unpausing.
+public fun unpause(
+    self: &mut PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UnpauseAdmin>,
+    bits: u8,
+)
+```
+
+#### Events
+
+```move
+/// The requested bits and resulting pause mask.
+public struct Paused has copy, drop {
+    bits: u8,
+    paused: u8,
+}
+
+/// The released bits and resulting pause mask.
+public struct Unpaused has copy, drop {
+    bits: u8,
+    paused: u8,
+}
+```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `EInvalidPauseBits` | 0 | Select nonzero pause bits supported by this package. |
+| `EPauseUnchanged` | 1 | The requested pause change must alter the active bits. |
+| `EPaused` | 2 | This operation is paused. |
 
 #### Constants
 
 - `PACKAGE_VERSION: u64 = 1`: Current package generation accepted by every protected mutation.
 - `NEXT_PACKAGE_VERSION: u64 = 2`: The generation this bytecode hands over to in a governed upgrade.
+- `VALID_PAUSE_BITS: u8 = 11`
 
 ### `blast_presale::bluefin`
 
@@ -2700,6 +2792,7 @@ public struct CreationPolicy has key {
     id: UID,
     allowed_quotes: VecSet<TypeName>,
     allowed_migration_witnesses: VecSet<TypeName>,
+    pending_witnesses: VecMap<TypeName, blast_admin::delayed::Pending<bool>>,
 }
 
 /// Dynamic-field key of a Blast partner new presales may name. Its value is the time the partner
@@ -2726,11 +2819,33 @@ public fun set_quote_allowed<Quote>(
 /// can open sales and release their liquidity. Allow only a struct whose defining module is the
 /// reviewed migrator and keeps its constructor private. A primitive, a vector, or a framework type,
 /// any of which a caller can construct, is rejected.
-public fun set_migration_witness_allowed<MigrationWitness: drop>(
+/// Admits an adapter only after a full administrative notice period.
+public fun schedule_migration_witness<MigrationWitness: drop>(
     self: &mut CreationPolicy,
     package_version: &blast_presale_package::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::AdapterAdmin>,
-    allowed: bool,
+    clock: &Clock,
+)
+
+/// Permissionlessly applies the approved adapter admission once ready.
+public fun apply_migration_witness<MigrationWitness: drop>(
+    self: &mut CreationPolicy,
+    package_version: &blast_presale_package::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending adapter admission, including after its threshold.
+public fun cancel_migration_witness<MigrationWitness: drop>(
+    self: &mut CreationPolicy,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
+)
+
+/// Immediately removes adapter authority and cancels any pending admission.
+public fun remove_migration_witness<MigrationWitness: drop>(
+    self: &mut CreationPolicy,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::AdapterAdmin>,
 )
 
 /// Lets new presales name `partner`, at once. Adding a partner whose removal is pending cancels
@@ -2756,6 +2871,17 @@ public fun remove_partner(
 #### Events
 
 ```move
+/// The admitted type and Unix millisecond execution threshold.
+public struct MigrationWitnessScheduled has copy, drop {
+    witness: TypeName,
+    ready_at_ms: u64,
+}
+
+/// An adapter admission removed from the pending set.
+public struct MigrationWitnessCancelled has copy, drop {
+    witness: TypeName,
+}
+
 /// Presales created afterward may (`allowed`) or may not raise `quote`.
 public struct QuoteSet has copy, drop {
     quote: TypeName,
@@ -2804,8 +2930,8 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 /// Shared singleton holding the rates new presales snapshot and the address paid Blast's fees.
 public struct FeePolicy has key {
     id: UID,
-    destination: address,
-    fees: ProtocolFees,
+    destination: blast_admin::delayed::Delayed<address>,
+    fees: blast_admin::delayed::Delayed<ProtocolFees>,
 }
 
 /// Blast's rates, in BPS: of the accepted raise, of the token supply, and of each collected
@@ -2822,7 +2948,8 @@ public struct ProtocolFees has copy, drop, store {
 
 ```move
 /// Sets the rates presales created afterward snapshot; existing presales keep theirs.
-public fun set_fees(
+/// Schedules fees after the full administrative delay.
+public fun schedule_fees(
     self: &mut FeePolicy,
     package_version: &blast_presale_package::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::FeeAdmin>,
@@ -2830,20 +2957,79 @@ public fun set_fees(
     token_bps: bps::Bps,
     lp_fee_meme_bps: bps::Bps,
     lp_fee_quote_bps: bps::Bps,
+    clock: &Clock,
+)
+
+/// Applies the scheduled fees permissionlessly once ready.
+public fun apply_fees(
+    self: &mut FeePolicy,
+    package_version: &blast_presale_package::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_fees(
+    self: &mut FeePolicy,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
 )
 
 /// Redirects every later protocol payout, including those of existing presales.
-public fun set_destination(
+/// Schedules destination after the full administrative delay.
+public fun schedule_destination(
     self: &mut FeePolicy,
     package_version: &blast_presale_package::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::TreasuryAdmin>,
     destination: address,
+    clock: &Clock,
+)
+
+/// Applies the scheduled destination permissionlessly once ready.
+public fun apply_destination(
+    self: &mut FeePolicy,
+    package_version: &blast_presale_package::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending change, including after its delay has elapsed.
+public fun cancel_destination(
+    self: &mut FeePolicy,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
 )
 ```
 
 #### Events
 
 ```move
+/// Proposed values and Unix millisecond execution threshold.
+public struct DestinationScheduled has copy, drop {
+    destination: address,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct DestinationCancelled has copy, drop {
+    destination: address,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct FeesScheduled has copy, drop {
+    raise_bps: u64,
+    token_bps: u64,
+    lp_fee_meme_bps: u64,
+    lp_fee_quote_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct FeesCancelled has copy, drop {
+    raise_bps: u64,
+    token_bps: u64,
+    lp_fee_meme_bps: u64,
+    lp_fee_quote_bps: u64,
+}
+
 /// New presales snapshot these rates.
 public struct FeesChanged has copy, drop {
     raise_bps: u64,
@@ -3063,16 +3249,47 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 #### Types
 
 ```move
+/// The exact code digest or irreversible end of upgrades approved for execution.
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+}
+
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    pending: Option<blast_admin::delayed::Pending<UpgradeAction>>,
 }
 ```
 
 #### Functions
 
 ```move
+/// Schedules one exact code digest, replacing any previous action.
+public fun schedule_upgrade(
+    self: &mut PackageAdmin,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
+    digest: vector<u8>,
+    clock: &Clock,
+)
+
+/// Schedules the irreversible destruction of upgrade authority after public notice.
+public fun schedule_make_immutable(
+    self: &mut PackageAdmin,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
+    clock: &Clock,
+)
+
+/// Cancels any scheduled action, even after its execution threshold.
+public fun cancel_upgrade_action(
+    self: &mut PackageAdmin,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
+)
+
 /// Consumes publication bootstrap, seals native custody, and enables the initial generation.
 public fun wrap(
     bootstrap: blast_presale_package::Bootstrap,
@@ -3086,6 +3303,7 @@ public fun authorize_upgrade(
     package_version: &blast_presale_package::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
     digest: vector<u8>,
+    clock: &Clock,
 ): UpgradeTicket
 
 /// Commits the upgrade and advances the package version together.
@@ -3095,7 +3313,38 @@ public fun commit_upgrade_and_advance(
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
     receipt: UpgradeReceipt,
 )
+
+/// Executes a ready immutability decision under the live upgrade role.
+public fun make_immutable(
+    self: &mut PackageAdmin,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
+    clock: &Clock,
+)
 ```
+
+#### Events
+
+```move
+/// A publicly announced upgrade action with its execution threshold.
+public struct UpgradeActionScheduled has copy, drop {
+    action: UpgradeAction,
+    ready_at_ms: u64,
+}
+
+/// A cancelled upgrade action, which can no longer execute.
+public struct UpgradeActionCancelled has copy, drop {
+    action: UpgradeAction,
+}
+```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `EWrongUpgradeAction` | 0 | The ready action must match the requested upgrade digest or immutability. |
+| `ENoPendingAction` | 1 | No upgrade action is scheduled. |
+| `EInvalidDigest` | 2 | A package digest must contain 32 bytes. |
 
 ### `blast_presale::presale_vault`
 
@@ -3125,7 +3374,7 @@ public struct Vault<phantom Meme, phantom Quote> has key {
     presale_cap_id: ID,
     pool_id: ID,
     fee_split: blast_presale::FeeSplit,
-    protocol_fees: fee_policy::ProtocolFees,
+    protocol_fees: blast_admin::delayed::Delayed<fee_policy::ProtocolFees>,
     /// The Blast partner the sale named, paid its cut of Blast's LP fees. It never changes.
     partner_id: Option<ID>,
     unpaid_protocol_meme: Balance<Meme>,
@@ -3152,12 +3401,27 @@ public fun claim_migration_residuals<Meme, Quote>(
 
 /// Sets Blast's share of each asset in this vault's later LP-fee collections. Fees still in the
 /// pool are split at the new rates when collected; the creator's split of the rest is unchanged.
-public fun set_protocol_lp_fees<Meme, Quote>(
+public fun schedule_protocol_lp_fees<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     package_version: &blast_presale_package::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::FeeAdmin>,
     lp_fee_meme_bps: bps::Bps,
     lp_fee_quote_bps: bps::Bps,
+    clock: &Clock,
+)
+
+/// Anyone may apply the announced LP rates once the complete notice has elapsed.
+public fun apply_protocol_lp_fees<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &blast_presale_package::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels even a ready LP-rate change.
+public fun cancel_protocol_lp_fees<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
 )
 
 /// Pays the Blast LP fees this vault holds for its partner: the partner its cut of each asset in
@@ -3177,6 +3441,21 @@ public fun pay_protocol_lp_fees_with_partner<Meme, Quote>(
 #### Events
 
 ```move
+/// LP rates publicly proposed for one vault.
+public struct ProtocolLpFeesScheduled has copy, drop {
+    vault_id: ID,
+    meme_bps: u64,
+    quote_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// LP rates removed from one vault's pending schedule.
+public struct ProtocolLpFeesCancelled has copy, drop {
+    vault_id: ID,
+    meme_bps: u64,
+    quote_bps: u64,
+}
+
 public struct VaultCreated<phantom Meme, phantom Quote, phantom Venue> has copy, drop {
     vault_id: ID,
     /// Zero for a vault created without a presale.
@@ -3411,7 +3690,7 @@ public struct Migrated<phantom Lp, phantom SaleToken, phantom Quote> has copy, d
 
 ## API reference: `blast_partners` (Partner codes)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -3453,12 +3732,13 @@ public struct PartnerCap has key, store {
 public fun new_cap(ctx: &mut TxContext): PartnerCap
 
 /// Registers and shares a partner managed by the cap `cap_id`, with its share
-/// and cap in force at once. Every later change to either waits `PARTNER_CHANGE_DELAY_MS`.
+/// scheduled after seven days; the cap is in force immediately.
 public fun register(
     _: &blast_admin::blast_acl::AdminWitness<PartnerAdmin>,
     cap_id: ID,
     recipient: address,
     share_bps: u64,
+    clock: &Clock,
     ctx: &mut TxContext,
 )
 
@@ -3535,7 +3815,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 ## API reference: `blast_admin` (Administration)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -3546,24 +3826,23 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 0 | `EInvalidSuperAdminCap` |  |
 | 1 | `EInvalidAdminCap` |  |
 | 2 | `EInvalidAdminRecipient` |  |
-| 3 | `EAdminCapacityReached` |  |
-| 4 | `EAdminRoleCapacityReached` |  |
-| 5 | `EAdminRoleAlreadyGranted` |  |
-| 6 | `EAdminRoleNotGranted` |  |
-| 7 | `EInvalidSuperAdminRecipient` |  |
-| 8 | `ESuperAdminTransferUnchanged` |  |
-| 9 | `ENoPendingSuperAdminTransfer` |  |
-| 10 | `ENotPendingSuperAdminRecipient` |  |
-| 11 | `ESuperAdminTransferNotReady` |  |
-| 12 | `ESuperAdminCapStillActive` |  |
-| 13 | `EOperationalVersionMismatch` |  |
-| 14 | `EOperationalVersionOverflow` |  |
-| 15 | `EInvalidPackagePublisher` |  |
-| 16 | `EInvalidUpgradeCap` |  |
-| 17 | `EInvalidPackageDigest` |  |
-| 18 | `EUpgradeCapUnavailable` |  |
-| 19 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 20 | `EInvalidPackageMarker` |  |
+| 3 | `EAdminRoleCapacityReached` |  |
+| 4 | `EAdminRoleAlreadyGranted` |  |
+| 5 | `EAdminRoleNotGranted` |  |
+| 6 | `EInvalidSuperAdminRecipient` |  |
+| 7 | `ESuperAdminTransferUnchanged` |  |
+| 8 | `ENoPendingSuperAdminTransfer` |  |
+| 9 | `ENotPendingSuperAdminRecipient` |  |
+| 10 | `ESuperAdminTransferNotReady` |  |
+| 11 | `ESuperAdminCapStillActive` |  |
+| 12 | `EOperationalVersionMismatch` |  |
+| 13 | `EOperationalVersionOverflow` |  |
+| 14 | `EInvalidPackagePublisher` |  |
+| 15 | `EInvalidUpgradeCap` |  |
+| 16 | `EInvalidPackageDigest` |  |
+| 17 | `EUpgradeCapUnavailable` |  |
+| 18 | `EUpgradePolicyNotMoreRestrictive` |  |
+| 19 | `EInvalidPackageMarker` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -3578,7 +3857,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
-    admins: VecMap<ID, VecSet<TypeName>>,
+    admins: Table<ID, VecSet<TypeName>>,
     /// The nominated next super admin: none until the transfer delay passes.
     pending_super_admin: blast_fun_timelock::Timelocked<Option<address>>,
 }
@@ -3645,7 +3924,6 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role>
 
 #### Constants
 
-- `MAX_ADMINS: u64 = 32`
 - `MAX_ROLES_PER_ADMIN: u64 = 32`
 - `SUPER_ADMIN_TRANSFER_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The wait before a nominated super admin may accept the root.
 
@@ -3757,6 +4035,80 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     final_policy: u8,
 }
 ```
+
+### `blast_admin::delayed`
+
+Explicitly applied administrative changes with an immutable 48-hour notice.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
+
+#### Types
+
+```move
+/// Applied value with at most one replacement; readers never need a Clock.
+public struct Delayed<T: copy + drop + store> has store {
+    value: T,
+    pending: Option<Pending<T>>,
+}
+
+/// A value bound to a Unix millisecond execution threshold.
+public struct Pending<T: copy + drop + store> has copy, drop, store {
+    value: T,
+    ready_at_ms: u64,
+}
+```
+
+#### Functions
+
+```move
+/// Initializes publication policy, with no scheduled change.
+public fun new<T: copy + drop + store>(value: T): Delayed<T>
+
+/// Returns the explicitly applied value.
+public fun value<T: copy + drop + store>(self: &Delayed<T>): T
+
+/// Borrows the applied value for internal consumers such as signature verification.
+public fun borrow<T: copy + drop + store>(self: &Delayed<T>): &T
+
+/// Returns the current schedule, if any.
+public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
+
+/// Replaces any pending change and restarts the entire delay.
+public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, clock: &Clock): u64
+
+/// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
+public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
+
+/// Cancels even a ready change and returns the cancelled value.
+public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
+
+/// Only the enclosing module's authority-reducing paths may expose this operation.
+/// Revocation also clears a pending replacement so it cannot restore revoked authority.
+public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
+
+/// Starts the immutable administrative notice period.
+public fun new_pending<T: copy + drop + store>(value: T, clock: &Clock): Pending<T>
+
+/// Returns a scheduled value only at or after its threshold.
+public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
+
+/// Returns the proposed value for cancellation events and diagnostics.
+public fun proposed<T: copy + drop + store>(self: &Pending<T>): T
+
+/// Returns the Unix millisecond threshold for a scheduling event.
+public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
+```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `ENotReady` | 0 | The full administrative delay must pass before applying a change. |
+| `ENoPending` | 1 | There is no scheduled administrative change. |
+
+#### Constants
+
+- `DELAY_MS: u64 = 48 * 60 * 60 * 1_000`
 
 ### `blast_admin::operational_version`
 

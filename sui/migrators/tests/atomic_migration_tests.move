@@ -252,17 +252,17 @@ fun start(): Fixture {
     scenario.next_tx(ADMIN);
     let mut config = scenario.take_shared<LaunchConfig>();
     config.set_quote_allowed<QUOTE>(&version, &blast_acl::witness_for_testing<ListingAdmin>(), true);
-    config.set_migration_witness_allowed<Venue>(
+    config.set_migration_witness_allowed_for_testing<Venue>(
         &version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
         true,
-    );
-    config.set_trade_fees(
+     scenario.ctx());
+    config.set_trade_fees_for_testing(
         &version,
         &blast_acl::witness_for_testing<FeeAdmin>(),
         bps::new(100),
         bps::new(100),
-    );
+     scenario.ctx());
     let launch_id = scenario.share_launch(&version, &config, &clock);
     test_scenario::return_shared(config);
 

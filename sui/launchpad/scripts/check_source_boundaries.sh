@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 failures=0
+python3 ../../scripts/check_admin_delay.py
 
 if ! bash scripts/check_error_registry.sh; then
   failures=$((failures + 1))
@@ -289,23 +290,22 @@ blast_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/blast_f
 if [[ ! -f sources/blast_fun.move ]] \
   || ! rg -Fq 'public struct BLAST_FUN() has drop;' sources/blast_fun.move \
   || ! rg -U -q \
-    'public struct PackageVersion has key \{\s*id: UID,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
+    'public struct PackageVersion has key \{\s*id: UID,\s*paused: u8,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
     sources/blast_fun.move \
   || ! rg -U -q \
     'public struct Bootstrap has key \{\s*id: UID,\s*publisher: Publisher,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
     <<<"$blast_production" \
   || ! rg -q '^const PACKAGE_VERSION: u64 = 1;$' sources/blast_fun.move \
   || ! rg -q '^const NEXT_PACKAGE_VERSION: u64 = 2;$' sources/blast_fun.move \
-  || [[ "$(rg -c '^(public struct|fun) ' <<<"$blast_production")" != 4 ]] \
+  || [[ "$(rg -c '^(public struct|fun) ' <<<"$blast_production")" != 6 ]] \
   || [[ "$(rg -c '^fun init\(' <<<"$blast_production")" != 1 ]] \
-  || [[ "$(rg -c '^public\(package\) fun (destroy|share_version|assert_current|assert_next|advance)\(' <<<"$blast_production")" != 5 ]] \
-  || rg -n '^(public|entry|public entry) fun ' <<<"$blast_production" \
+  || [[ "$(rg -c '^public\(package\) fun (destroy|share_version|assert_current|assert_next|advance|assert_not_paused)\(' <<<"$blast_production")" != 6 ]] \
   || rg -n '^public\(package\) fun activate\(' <<<"$blast_production" \
   || ! rg -Fq 'self.generation.assert_current(PACKAGE_VERSION);' sources/blast_fun.move \
   || ! rg -Fq 'self.generation.assert_next(NEXT_PACKAGE_VERSION);' sources/blast_fun.move \
   || ! rg -Fq 'self.generation.advance(&self.id, NEXT_PACKAGE_VERSION);' sources/blast_fun.move \
   || ! rg -Fq 'let generation = operational_version::new(&otw);' sources/blast_fun.move \
-  || rg -n '\.checked_add\(|events::' <<<"$blast_production"; then
+  || rg -n '\.checked_add\(' <<<"$blast_production"; then
   echo 'blast_fun.move must own the unique publication bootstrap and the guarded generation container.' >&2
   failures=$((failures + 1))
 fi
@@ -316,8 +316,8 @@ if [[ "$(move_production_body init <<<"$(move_facts sources/blast_fun.move)")" \
   || [[ "$(move_production_body destroy <<<"$(move_facts sources/blast_fun.move)")" \
     != 'let Bootstrap { id, publisher, generation } = self; id.delete(); (publisher, generation)' ]] \
   || [[ "$(move_production_body share_version <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'transfer::share_object(PackageVersion { id: object::new(ctx), generation });' ]] \
-  || [[ "$(rg -c '^public\(package\) fun ' <<<"$blast_production")" != 5 ]] \
+    != 'transfer::share_object(PackageVersion { paused: 0, id: object::new(ctx), generation });' ]] \
+  || [[ "$(rg -c '^public\(package\) fun ' <<<"$blast_production")" != 6 ]] \
   || [[ "$(rg -l '\bshare_version\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
     != 'sources/blast_fun.move sources/package_admin.move ' ]]; then
   echo 'Only wrap may activate the unique bootstrap after sealing native capability custody.' >&2
@@ -347,6 +347,9 @@ launchpad_roles=(
   AdapterAdmin
   ClaimSignerAdmin
   RewardsAdmin
+  PauseAdmin
+  UnpauseAdmin
+  CancelAdmin
 )
 launchpad_role_pattern="$(IFS='|'; echo "${launchpad_roles[*]}")"
 
@@ -387,7 +390,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'launch:reassign_curve_fee_cap:CreatorAdmin launch:reassign_metadata_cap:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:remove_partner:FeeAdmin launch_config:set_creation_fee:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_migration_witness_allowed:AdapterAdmin launch_config:set_protocol_allocation:TreasuryAdmin launch_config:set_quote_allowed:ListingAdmin launch_config:set_trade_fees:FeeAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin runtime_config:set_creator_claim_signer:ClaimSignerAdmin runtime_config:set_protocol_fee_share:FeeAdmin runtime_config:set_treasury:TreasuryAdmin ' ]]; then
+  'blast_fun:pause:PauseAdmin blast_fun:unpause:UnpauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))
@@ -405,27 +408,7 @@ fi
 
 package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/package_admin.move)"
 
-if [[ ! -f sources/package_admin.move || -f sources/upgrade.move ]] \
-  || ! rg -U -q \
-    'public struct PackageAdmin has key \{\s*id: UID,\s*custody: UpgradeCustody<BLAST_FUN>,\s*\}' \
-    sources/package_admin.move \
-  || [[ "$(rg -c '^public fun ' <<<"$package_admin_production")" != 4 ]] \
-  || [[ "$(rg -c '^public fun (wrap|authorize_upgrade|commit_upgrade_and_advance|make_immutable)\(' <<<"$package_admin_production")" != 4 ]] \
-  || rg -n '^public\(package\) fun ' <<<"$package_admin_production" \
-  || rg -n '^public fun commit_upgrade\(|^public fun activate' <<<"$package_admin_production" \
-  || [[ "$(rg -o '_: &AdminWitness<UpgradeAdmin>' <<<"$package_admin_production" | wc -l)" != 3 ]] \
-  || ! rg -U -q \
-    'public fun wrap\(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext\)' \
-    sources/package_admin.move \
-  || ! rg -U -q \
-    'public fun authorize_upgrade\(\s*self: &mut PackageAdmin,\s*package_version: &PackageVersion,\s*_: &AdminWitness<UpgradeAdmin>,\s*digest: vector<u8>,\s*\): UpgradeTicket' \
-    sources/package_admin.move \
-  || ! rg -U -q \
-    'public fun commit_upgrade_and_advance\(\s*self: &mut PackageAdmin,\s*package_version: &mut PackageVersion,\s*_: &AdminWitness<UpgradeAdmin>,\s*receipt: UpgradeReceipt,\s*\)' \
-    sources/package_admin.move; then
-  echo 'package_admin.move must expose only validated wrapping, upgrade-admin native administration, and one atomic commit-and-advance finalizer.' >&2
-  failures=$((failures + 1))
-fi
+# Custody scheduling, exact action matching, and cancellation are checked by check_admin_delay.py.
 
 # Every governed custody transition asserts the current generation first, before
 # it reaches the shared custody value. Commit-and-advance is the post-upgrade
@@ -434,8 +417,8 @@ fi
 # would end upgradeability silently.
 # Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
 if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'let (publisher, generation) = bootstrap.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody }); generation.share_version(ctx);' ]] \
-  || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 2 ]] \
+    != 'let (publisher, generation) = bootstrap.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody, pending: option::none() }); generation.share_version(ctx);' ]] \
+  || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 5 ]] \
   || [[ "$(move_facts sources/package_admin.move \
     | awk -F'\t' '$1 == "FN" && $2 == "commit_upgrade_and_advance" { print $10 }')" \
     != 'package_version.assert_next();'* ]] \
@@ -748,63 +731,7 @@ fi
 runtime_config_facts="$(move_facts sources/runtime_config.move)"
 runtime_config_source="$(move_normalized_source <<<"$runtime_config_facts")"
 
-if [[ ! -f sources/runtime_config.move ]] \
-  || [[ "$(move_production_functions <<<"$runtime_config_facts")" \
-    != 'creator_claim_signer:package:0 init:private:0 new:private:0 protocol_fee_share:package:0 set_creator_claim_signer:public:0 set_protocol_fee_share:public:0 set_treasury:public:0 treasury:package:0 ' ]] \
-  || [[ "$(move_production_type RuntimeConfig <<<"$runtime_config_facts")" \
-    != 'struct RuntimeConfig has key { id: UID, creator_claim_signer_public_key: vector<u8>, protocol_fee_share_bps: Bps, treasury: address, }' ]] \
-  || rg -q '\b(AdminCap|ProtocolAuthority|LaunchConfig|VecMap|VecSet|TypeName)\b' \
-    <<<"$runtime_config_source" \
-  || rg -q '\b(sequence|schema_version|action_tag|nonce)\b' <<<"$runtime_config_source"; then
-  echo 'runtime_config.move must own only the version-gated creator-claim signer, protocol fee share, and treasury.' >&2
-  failures=$((failures + 1))
-fi
-
-# The three setters are the only RuntimeConfig transitions; each is version-gated first and
-# authorized by a borrowed AdminWitness of the role the admin role map pins.
-runtime_config_violations=''
-runtime_config_mutations="$(awk -F'\t' '
-  $1 == "FN" && $6 == 0 && $10 ~ /self\.(creator_claim_signer_public_key|protocol_fee_share_bps|treasury) = / {
-    print $2
-  }
-' <<<"$runtime_config_facts" | sort | tr '\n' ' ')"
-
-if [[ "$runtime_config_mutations" \
-  != 'set_creator_claim_signer set_protocol_fee_share set_treasury ' ]]; then
-  runtime_config_violations+="  runtime state is mutated by '${runtime_config_mutations}' instead of the three setters"$'\n'
-fi
-
-runtime_config_ungated="$(awk -F'\t' '
-  $1 == "FN" && $6 == 0 \
-    && ($2 == "set_creator_claim_signer" || $2 == "set_protocol_fee_share" || $2 == "set_treasury") {
-    if ($9 !~ /[(,] package_version: &PackageVersion,/) {
-      print "  " $2 " must take the shared PackageVersion under that exact name"
-    }
-    if ($10 !~ /^package_version\.assert_current\(\);/) {
-      print "  " $2 " must check the live package version as its first statement"
-    }
-    if ($9 !~ /[(,] _: &AdminWitness<(ClaimSignerAdmin|FeeAdmin|TreasuryAdmin)>,/) {
-      print "  " $2 " must be authorized by a borrowed AdminWitness"
-    }
-  }
-' <<<"$runtime_config_facts")"
-
-if [[ -n "$runtime_config_ungated" ]]; then
-  runtime_config_violations+="${runtime_config_ungated}"$'\n'
-fi
-
-# Every claim pays the treasury live, so its setter refuses the zero address and a no-op before
-# the one write and its event.
-if [[ "$(move_production_body set_treasury <<<"$runtime_config_facts" | move_semantic_shape)" \
-  != 'package_version.assert_current();assert!(treasury != @0x0,blast_fun::errors::invalid_destination!());assert!(treasury != self.treasury,blast_fun::errors::unchanged!());self.treasury = treasury;events::treasury_changed(treasury);' ]]; then
-  runtime_config_violations+="  set_treasury must reject the zero and current addresses before it writes and records the treasury"$'\n'
-fi
-
-if [[ -n "$runtime_config_violations" ]]; then
-  printf '%s' "$runtime_config_violations"
-  echo 'RuntimeConfig must change only through its version-gated, AdminWitness-authorized setters.' >&2
-  failures=$((failures + 1))
-fi
+# Delayed RuntimeConfig mutations are checked by check_admin_delay.py.
 
 events_facts="$(move_facts sources/lib/events.move)"
 
@@ -838,13 +765,12 @@ launch_config_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # Blast's allocation always exists, starts at zero, and may change only for future launches while
 # leaving room for the curve and the pool.
 if [[ ! -f sources/launch_config.move ]] \
-  || [[ "$(move_production_function_contract set_protocol_allocation <<<"$launch_config_facts")" != 'public:0:0:fun set_protocol_allocation( self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<TreasuryAdmin>,'* ]] \
-  || ! rg -Fq 'protocol_allocation: ProtocolAllocation,' sources/launch_config.move \
+  || [[ "$(move_production_function_contract schedule_protocol_allocation <<<"$launch_config_facts")" != 'public:0:0:fun schedule_protocol_allocation( self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<TreasuryAdmin>,'* ]] \
+  || ! rg -Fq 'protocol_allocation: Delayed<ProtocolAllocation>,' sources/launch_config.move \
   || rg -Fq 'protocol_allocation: Option<' sources/launch_config.move \
   || ! rg -Fq 'meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999' <<<"$launch_config_source" \
-  || ! rg -Fq 'self.protocol_allocation != protocol_allocation' <<<"$launch_config_source" \
-  || ! rg -Fq 'protocol_allocation: allocation::protocol_allocation(bps::new(0), bps::new(0))' <<<"$launch_config_source" \
-  || [[ "$(count_occurrences 'self\.protocol_allocation = ' <<<"$launch_config_source")" != 1 ]] \
+  || ! rg -Fq 'value != self.protocol_allocation.value()' <<<"$launch_config_source" \
+  || ! rg -Fq 'protocol_allocation: delayed::new(allocation::protocol_allocation(bps::new(0), bps::new(0)))' <<<"$launch_config_source" \
   || rg -n '\b(set_graduation_defaults|GraduationDefaultsChanged|protocol_(quote_migration|meme_graduation)_fee_bps|meme_liquidity_provision_bps|QuoteParameters|QuoteParametersChanged|min_graduation_target|max_graduation_target)\b' \
     sources/launch_config.move sources/lib/events.move \
   || rg -n '\b(AdminCap|ProtocolAuthority|sequence|schema_version|action_tag|nonce)\b' <<<"$launch_config_production"; then
@@ -852,20 +778,20 @@ if [[ ! -f sources/launch_config.move ]] \
   failures=$((failures + 1))
 fi
 
-# ADR 0098: the creation fee and the accepted partners change only through set_creation_fee,
+# ADR 0098: the creation fee and the accepted partners change only through apply_creation_fee,
 # add_partner, and remove_partner, each version-gated first; creation reads them, nothing else does.
 launch_config_fee_writers="$(awk -F'\t' '
-  $1 == "FN" && $6 == 0 && $10 ~ /self\.creation_fee = / { print $2 }
+  $1 == "FN" && $6 == 0 && $10 ~ /self\.creation_fee\.apply/ { print $2 }
 ' <<<"$launch_config_facts" | sort | tr '\n' ' ')"
 launch_config_partner_writers="$(awk -F'\t' '
   $1 == "FN" && $6 == 0 && $10 ~ /self\.id\.(add_dynamic_field|dynamic_field_mut)/ { print $2 }
 ' <<<"$launch_config_facts" | sort | tr '\n' ' ')"
 launch_config_ungated="$(awk -F'\t' '
-  $1 == "FN" && $6 == 0 && ($2 == "set_creation_fee" || $2 == "add_partner" || $2 == "remove_partner") \
+  $1 == "FN" && $6 == 0 && ($2 == "apply_creation_fee" || $2 == "add_partner" || $2 == "remove_partner") \
     && $10 !~ /^package_version\.assert_current\(\);/ { print $2 }
 ' <<<"$launch_config_facts")"
 
-if [[ "$launch_config_fee_writers" != 'set_creation_fee ' ]] \
+if [[ "$launch_config_fee_writers" != 'apply_creation_fee ' ]] \
   || [[ "$launch_config_partner_writers" != 'add_partner remove_partner ' ]] \
   || [[ -n "$launch_config_ungated" ]] \
   || [[ "$(move_production_type PartnerKey <<<"$launch_config_facts")" != 'struct PartnerKey(ID) has copy, drop, store;' ]] \
@@ -891,7 +817,7 @@ if [[ "$(move_production_body max_recipients <<<"$constants_facts")" != '16' ]] 
   || ! rg -Fq 'assert!(virtual_quote > 0, blast_fun::errors::invalid_virtual_quote!());' sources/launch.move \
   || rg -n '\bvirtual_quote' sources/launch_config.move \
   || ! rg -Fq 'self.meme_decimals.contains(&decimals)' sources/launch_config.move \
-  || rg -n '\b(VecMap|vec_map|max_quote_assets|quote_capacity_reached|Currency<Quote>|coin_registry)\b' \
+  || rg -n '\b(max_quote_assets|quote_capacity_reached|Currency<Quote>|coin_registry)\b' \
     sources/launch_config.move sources/lib/errors.move; then
   echo 'Launch policy must keep original-type quote/witness admission, the decimal allowlist, a constant trade-fee ceiling with a configurable protocol share, and one named recipient limit.' >&2
   failures=$((failures + 1))
@@ -1063,7 +989,7 @@ if [[ ! -f sources/launch.move ]] \
     'Launch {' \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
-  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
+  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), pending_metadata_cap_recipient: option::none(), pending_curve_fee_cap_recipient: option::none(), curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
   || [[ "$launch_finalize_body" != *'fee_ledger: fees::new(creation_fee),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \
@@ -1312,7 +1238,7 @@ receiver_syntax_violations="$(
       | move_normalized_source \
       | sed 's/ *:: */::/g; s/ *(/(/g' \
       | rg -o \
-        '\b(blast_acl::(grant_admin|revoke_admin|destroy_admin_cap|begin_super_admin_transfer|cancel_super_admin_transfer|accept_super_admin_transfer|destroy_retired_super_admin_cap|sign_in)|runtime_config::(set_creator_claim_signer|set_protocol_fee_share|set_treasury|creator_claim_signer|protocol_fee_share|treasury)|launch_config::(set_meme_decimals_allowed|set_quote_allowed|set_trade_fees|set_protocol_allocation|set_migration_witness_allowed|snapshot_for_launch|protocol_allocation|allowed_meme_decimals_count_for_testing|allowed_quote_count_for_testing|allowed_migration_witness_count_for_testing)|allocation::(recipients|apportion_fee_split|add_protocol|apportion_meme|apportion_quote|destinations|destination)|launch::(treasury_cap_mut|set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_protection|finalize|share|pool_tier|lp_fee_split|partner_id|claim_creator_caps|reassign_curve_fee_cap|reassign_metadata_cap|assert_curve_fee_cap|set_name|set_description|set_icon_url)|launch_ticket::(destroy|treasury_cap_mut|decimals)|fees::(accrue|claim_creator_fees|claim_protocol_fees)|package::test_upgrade|package_admin::(authorize_upgrade|commit_upgrade|publisher_id_for_testing|upgrade_cap_id_for_testing|package_id_for_testing|version_for_testing|policy_for_testing))(<[^>]+>)?\(' \
+        '\b(blast_acl::(grant_admin|revoke_admin|destroy_admin_cap|begin_super_admin_transfer|cancel_super_admin_transfer|accept_super_admin_transfer|destroy_retired_super_admin_cap|sign_in)|runtime_config::((schedule|apply|cancel)_(creator_claim_signer|protocol_fee_share|treasury)|revoke_creator_claim_signer|creator_claim_signer|protocol_fee_share|treasury)|launch_config::(set_meme_decimals_allowed|set_quote_allowed|(schedule|apply|cancel)_(trade_fees|protocol_allocation|migration_witness|creation_fee)|remove_migration_witness|snapshot_for_launch|protocol_allocation|allowed_meme_decimals_count_for_testing|allowed_quote_count_for_testing|allowed_migration_witness_count_for_testing)|allocation::(recipients|apportion_fee_split|add_protocol|apportion_meme|apportion_quote|destinations|destination)|launch::(treasury_cap_mut|set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_protection|finalize|share|pool_tier|lp_fee_split|partner_id|claim_creator_caps|reassign_curve_fee_cap|reassign_metadata_cap|assert_curve_fee_cap|set_name|set_description|set_icon_url)|launch_ticket::(destroy|treasury_cap_mut|decimals)|fees::(accrue|claim_creator_fees|claim_protocol_fees)|package::test_upgrade|package_admin::(authorize_upgrade|commit_upgrade|publisher_id_for_testing|upgrade_cap_id_for_testing|package_id_for_testing|version_for_testing|policy_for_testing))(<[^>]+>)?\(' \
       || true; } | sed "s|^|  ${move_file}: |"
   done
 )"
@@ -1500,10 +1426,10 @@ if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'eve
     'self.fee_ledger.claim_protocol_fees(' 'events::protocol_fees_claimed(' \
   || ! events_follow_mutations sources/launch.move claim_protocol_fees_with_partner \
     'self.fee_ledger.claim_protocol_fees(' 'events::protocol_fees_claimed(' \
-  || ! events_follow_mutations sources/runtime_config.move set_treasury \
-    'self.treasury = treasury;' 'events::treasury_changed(' \
-  || ! events_follow_mutations sources/launch_config.move set_creation_fee \
-    'self.creation_fee = ' 'events::creation_fee_changed(' \
+  || ! events_follow_mutations sources/runtime_config.move apply_treasury \
+    'self.treasury.apply(clock)' 'events::treasury_changed(' \
+  || ! events_follow_mutations sources/launch_config.move apply_creation_fee \
+    'self.creation_fee.apply(clock)' 'events::creation_fee_changed(' \
   || ! events_follow_mutations sources/launch_config.move add_partner \
     '.add_dynamic_field(' 'events::partner_added(' \
   || ! events_follow_mutations sources/launch_config.move remove_partner \
@@ -1531,8 +1457,8 @@ if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'eve
     'events::protocol_fees_accrued(' \
     'currency.burn_balance(' \
     'events::migrated(' \
-  || ! events_follow_mutations sources/launch_config.move set_protocol_allocation \
-    'self.protocol_allocation = protocol_allocation;' 'events::protocol_allocation_set('; then
+  || ! events_follow_mutations sources/launch_config.move apply_protocol_allocation \
+    'self.protocol_allocation.apply(clock)' 'events::protocol_allocation_set('; then
   echo 'Every replay-schema success event must follow the state write or native transfer it records.' >&2
   failures=$((failures + 1))
 fi

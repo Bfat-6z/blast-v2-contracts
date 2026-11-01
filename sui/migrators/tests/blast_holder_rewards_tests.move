@@ -566,7 +566,7 @@ fun start(): RewardsFixture {
     let mut config = launch_config::new_for_testing(scenario.ctx());
 
     scenario.next_tx(ADMIN);
-    config.admit<QUOTE, TestVenue>(&version);
+    config.admit<QUOTE, TestVenue>(&version, scenario.ctx());
     let (launch, mut currency) = scenario.open_launch<_, QUOTE, _>(
         test_utils::create_one_time_witness<BLAST_HOLDER_REWARDS_TESTS>(),
         &version,

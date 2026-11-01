@@ -61,6 +61,7 @@ static BUILD_LOCK: Mutex<()> = Mutex::new(());
 /// published at in the simulator, so the bytecode links against those IDs.
 pub fn build(package: &Path, published: &[(&Path, ObjectID)], work: &Path) -> Result<CompiledPackage> {
     let _build = BUILD_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _genesis = GenesisFixture::configure(package)?;
     let mut command = sui_move_build(package, work)?;
     command.args(["--dump", "-e", "mainnet", "--no-tree-shaking"]);
     if !published.is_empty() {
@@ -120,6 +121,7 @@ pub fn build_unlinked(package: &Path, local: &[&str], work: &Path) -> Result<Unl
         .find_map(|line| line.strip_prefix("name = \""))
         .and_then(|rest| rest.strip_suffix('"'))
         .context("package name")?;
+    let _genesis = GenesisFixture::configure(package)?;
     let mut command = sui_move_build(package, work)?;
     let output = command.args(["-e", "mainnet"]).output().context("run the sui CLI")?;
     if !output.status.success() {
@@ -191,7 +193,41 @@ impl UnlinkedPackage {
     }
 }
 
-/// A `sui move build` command for `package` under the pinned CLI and an offline client config.
+/// Compile simulator packages with an explicit nonzero genesis recipient, restoring the source.
+/// Callers hold BUILD_LOCK until compilation completes.
+struct GenesisFixture { path: PathBuf, original: String }
+impl GenesisFixture {
+    fn configure(package: &Path) -> Result<Self> {
+        let path = package.join("Move.toml");
+        let original = std::fs::read_to_string(&path)?;
+        let fixture = original.replace("blast_treasury = \"0x0\"", "blast_treasury = \"0xa\"")
+            .replace("blast_lp_fee_destination = \"0x0\"", "blast_lp_fee_destination = \"0xa\"");
+        std::fs::write(&path, fixture)?;
+        Ok(Self { path, original })
+    }
+}
+impl Drop for GenesisFixture {
+    fn drop(&mut self) { std::fs::write(&self.path, &self.original).expect("restore genesis fixture manifest"); }
+}
+
+/// Advance the simulator through the administrative delay, then execute public apply calls.
+pub fn apply_admin_changes(
+    h: &mut Harness,
+    changes: Vec<(ObjectID, &str, &str, Vec<sui_types::TypeTag>, ObjectID, ObjectID)>,
+) -> Result<()> {
+    h.sim.advance_clock(std::time::Duration::from_millis(172_800_000));
+    let mut b = ProgrammableTransactionBuilder::new();
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    for (package, module, function, types, object, version) in changes {
+        let object = b.obj(h.shared(object, true))?;
+        let version = b.obj(h.shared(version, false))?;
+        call(&mut b, package, module, function, types, vec![object, version, clock]);
+    }
+    h.execute(b.finish())?.assert_success();
+    Ok(())
+}
+
+/// A `sui move build` command under the pinned CLI and an offline client config.
 fn sui_move_build(package: &Path, work: &Path) -> Result<Command> {
     let binary = std::env::var("SUI_BINARY").unwrap_or_else(|_| "sui".into());
     let version = Command::new(&binary).arg("--version").output().context("run the sui CLI")?;

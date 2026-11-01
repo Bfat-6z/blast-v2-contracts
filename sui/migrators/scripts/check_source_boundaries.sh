@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+python3 "$(dirname "$0")/../../../scripts/check_admin_delay.py"
 
 PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_DIR="$PACKAGE_DIR/sources"
@@ -166,15 +167,23 @@ blast_events:package:fun auto_liquidity_added( vault_id: ID, meme_amount: u64, q
 blast_events:package:fun auto_lp_position_opened(vault_id: ID, position_id: ID)
 blast_events:package:fun buyback_burned( vault_id: ID, quote_spent: u64, meme_burned: u64, quote_pending: u64, )
 blast_events:package:fun cetus_pool_reserved<Meme, Quote>(pool_creation_cap_id: ID, tick_spacing: u32)
+blast_events:package:fun coin_shares_cancelled(meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64>)
+blast_events:package:fun coin_shares_scheduled(meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64>, ready_at_ms: u64)
 blast_events:package:fun creator_fees_claimed(vault_id: ID, meme_amount: u64, quote_amount: u64)
+blast_events:package:fun default_shares_cancelled(meme_bps: u64, quote_bps: u64)
+blast_events:package:fun default_shares_scheduled(meme_bps: u64, quote_bps: u64, ready_at_ms: u64)
 blast_events:package:fun fee_split_changed( vault_id: ID, old_fee_split: FeeSplit, new_fee_split: FeeSplit, )
 blast_events:package:fun fees_collected( vault_id: ID, gross_meme: u64, gross_quote: u64, protocol_destination: Option<address>, protocol_meme: u64, protocol_quote: u64, creator_meme: u64, creator_quote: u64, auto_lp_meme: u64, auto_lp_quote: u64, rewards_meme: u64, rewards_quote: u64, burn_meme: u64, burn_quote: u64, recipient_meme: vector<u64>, recipient_quote: vector<u64>, )
 blast_events:package:fun lp_fee_destination_changed(old_destination: address, new_destination: address)
 blast_events:package:fun lp_fee_policy_changed( meme: Option<TypeName>, old_meme_bps: Option<u64>, old_quote_bps: Option<u64>, new_meme_bps: Option<u64>, new_quote_bps: Option<u64>, )
+blast_events:package:fun protocol_destination_cancelled(destination: address)
+blast_events:package:fun protocol_destination_scheduled(destination: address, ready_at_ms: u64)
 blast_events:package:fun protocol_fees_claimed<Meme, Quote>( vault_id: ID, claimant: address, meme_amount: u64, quote_amount: u64, )
 blast_events:package:fun protocol_lp_fees_claimed( vault_id: ID, protocol_destination: address, protocol_meme: u64, protocol_quote: u64, partner_meme: u64, partner_quote: u64, )
 blast_events:package:fun reward_paid( round_id: ID, index: u64, beneficiary: address, meme_amount: u64, quote_amount: u64, meme_remaining: u64, quote_remaining: u64, )
 blast_events:package:fun round_published( vault_id: ID, round_id: ID, number: u64, start_checkpoint: u64, end_checkpoint: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, meme_unallocated: u64, quote_unallocated: u64, )
+blast_events:package:fun upgrade_action_cancelled(digest: Option<vector<u8>>)
+blast_events:package:fun upgrade_action_scheduled(digest: Option<vector<u8>>, ready_at_ms: u64)
 blast_events:package:fun vault_created<Meme, Quote, Venue>( vault_id: ID, pool_id: ID, position_id: ID, residual_meme: u64, residual_quote: u64, liquidity: u128, fee_split: FeeSplit, )
 blast_fun_migrators:package:fun advance(self: &mut PackageVersion)
 blast_fun_migrators:package:fun assert_current(self: &PackageVersion)
@@ -203,16 +212,26 @@ constants:package:fun q64_shift(): u8
 constants:package:fun sqrt_upper_bound_shift(): u8
 lp_fee_policy:package:fun protocol_destination(self: &LpFeePolicy): address
 lp_fee_policy:package:fun shares<Meme>(self: &LpFeePolicy): (Bps, Bps)
-lp_fee_policy:public:fun clear_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, )
-lp_fee_policy:public:fun set_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, )
-lp_fee_policy:public:fun set_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, )
-lp_fee_policy:public:fun set_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<TreasuryAdmin>, destination: address, )
+lp_fee_policy:public:fun apply_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock)
+lp_fee_policy:public:fun apply_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
+lp_fee_policy:public:fun apply_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
+lp_fee_policy:public:fun cancel_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>)
+lp_fee_policy:public:fun cancel_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
+lp_fee_policy:public:fun cancel_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
+lp_fee_policy:public:fun schedule_clear_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, clock: &Clock)
+lp_fee_policy:public:fun schedule_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, clock: &Clock)
+lp_fee_policy:public:fun schedule_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, clock: &Clock, )
+lp_fee_policy:public:fun schedule_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<TreasuryAdmin>, destination: address, clock: &Clock, )
 merkle:package:fun leaf( vault: ID, round: u64, index: u64, beneficiary: address, meme: u64, quote: u64, ): vector<u8>
 merkle:package:fun verify( root: vector<u8>, mut digest: vector<u8>, mut index: u64, leaves: u64, proof: &vector<vector<u8>>, ): bool
 migration_math:package:fun auto_lp_fixed_side( sqrt_lower: u128, sqrt_price: u128, sqrt_upper: u128, amount_a: u64, amount_b: u64, ): (bool, u64)
 migration_math:package:fun sqrt_price_x64( meme_amount: u64, quote_amount: u64, meme_is_coin_a: bool, ): u128
-package_admin:public:fun authorize_upgrade( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, ): UpgradeTicket
+package_admin:public:fun authorize_upgrade( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock, ): UpgradeTicket
+package_admin:public:fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>)
 package_admin:public:fun commit_upgrade_and_advance( self: &mut PackageAdmin, package_version: &mut PackageVersion, _: &AdminWitness<UpgradeAdmin>, receipt: UpgradeReceipt, )
+package_admin:public:fun make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock)
+package_admin:public:fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock)
+package_admin:public:fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock)
 package_admin:public:fun wrap(publisher: Publisher, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
 vault:package:fun assert_fee_split_update<Meme, Quote>( self: &LpVault<Meme, Quote>, launch: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, proposed: FeeSplit, )
 vault:package:fun attach_auto_lp_position<Meme, Quote, Venue, Position: key + store>( self: &mut LpVault<Meme, Quote>, _venue: &Venue, position: Position, )
@@ -242,7 +261,7 @@ EOF
 # `blast_admin::upgrade_custody::new` requires this package's Publisher and its never-upgraded
 # cap, and at version one `BLAST_FUN_MIGRATORS` is the package's only one-time witness, so custody
 # declares no publisher check or error of its own.
-if rg -q '#\[error|\bconst E\w*|from_module' "$SOURCE_DIR/package_admin.move"; then
+if rg -q 'from_module' "$SOURCE_DIR/package_admin.move"; then
     fail "package admin must leave publisher validation to blast_admin's upgrade custody"
 fi
 # Every rename in the package is pinned. The rules here match protected types and calls by name,
@@ -400,7 +419,7 @@ fi
 # Every replay fact is one direct, strongly typed payload with exactly one emitter function.
 [[ "$(move_facts "$EVENTS_SOURCE" | awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' \
     | LC_ALL=C sort | tr '\n' ' ')" \
-    == 'AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CreatorFeesClaimed FeeSplitChanged FeesCollected LpFeeDestinationChanged LpFeePolicyChanged ProtocolFeesClaimed ProtocolLpFeesClaimed RewardPaid RoundPublished VaultCreated ' ]] || \
+    == 'AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CoinSharesCancelled CoinSharesScheduled CreatorFeesClaimed DefaultSharesCancelled DefaultSharesScheduled FeeSplitChanged FeesCollected LpFeeDestinationChanged LpFeePolicyChanged ProtocolDestinationCancelled ProtocolDestinationScheduled ProtocolFeesClaimed ProtocolLpFeesClaimed RewardPaid RoundPublished UpgradeActionCancelled UpgradeActionScheduled VaultCreated ' ]] || \
     fail "blast_events.move must declare exactly the pinned event payloads"
 for payload in AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CreatorFeesClaimed \
     FeeSplitChanged FeesCollected LpFeeDestinationChanged LpFeePolicyChanged ProtocolFeesClaimed \
@@ -408,8 +427,8 @@ for payload in AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolRe
     [[ "$(rg -c "sui::event::emit\(${payload} \{" "$EVENTS_SOURCE" || true)" -eq 1 ]] || \
         fail "${payload} must be emitted directly by exactly one helper"
 done
-[[ "$(rg -o 'sui::event::emit' "$EVENTS_SOURCE" | wc -l)" -eq 14 ]] || \
-    fail "blast_events.move must emit exactly the fourteen pinned payloads"
+[[ "$(rg -o 'sui::event::emit' "$EVENTS_SOURCE" | wc -l)" -eq 22 ]] || \
+    fail "blast_events.move must emit exactly the twenty-two pinned payloads"
 if rg -q 'sui::event::emit' "$SOURCE_DIR" --glob '*.move' --glob '!blast_events.move'; then
     fail "state modules must emit only through typed events helpers"
 fi
@@ -438,8 +457,8 @@ for emitter in \
     'vault_created<Meme, Quote, Venue>:vault:new' \
     'round_published:blast_holder_rewards:publish_round' \
     'reward_paid:blast_holder_rewards:claim' \
-    'lp_fee_destination_changed:lp_fee_policy:set_protocol_destination' \
-    'lp_fee_policy_changed:lp_fee_policy:clear_coin_shares set_coin_shares set_default_shares'; do
+    'lp_fee_destination_changed:lp_fee_policy:apply_protocol_destination' \
+    'lp_fee_policy_changed:lp_fee_policy:apply_coin_shares apply_default_shares'; do
     event="${emitter%%:*}"
     rest="${emitter#*:}"
     writers="$(for source in "$SOURCE_DIR"/*.move; do
@@ -1137,7 +1156,7 @@ EOF
 # Functions with a natural first receiver are called with Move 2024 dot syntax, in sources and
 # tests alike.
 if rg -n \
-    'vault::(split_fees|take_auto_lp|keep_auto_lp|assert_fee_split_update|update_fee_split|fund_round|claim_creator_fees|claim_protocol_fees|attach_auto_lp_position|position_mut|auto_lp_position|auto_lp_position_mut|has_auto_lp_position)[[:space:]]*(<[^>]*>)?\(|lp_fee_policy::(shares|set_protocol_destination|set_default_shares|set_coin_shares|clear_coin_shares|protocol_destination|default_shares)[[:space:]]*(<[^>]*>)?\(|blast_holder_rewards::claim[[:space:]]*(<[^>]*>)?\(|pool::add_liquidity_pay_amount[[:space:]]*\(|coin::from_balance[[:space:]]*\(|(^|[^.[:alnum:]_])collect_position_fees[[:space:]]*\(' \
+    'vault::(split_fees|take_auto_lp|keep_auto_lp|assert_fee_split_update|update_fee_split|fund_round|claim_creator_fees|claim_protocol_fees|attach_auto_lp_position|position_mut|auto_lp_position|auto_lp_position_mut|has_auto_lp_position)[[:space:]]*(<[^>]*>)?\(|lp_fee_policy::(shares|(schedule|apply|cancel)_(protocol_destination|default_shares|coin_shares)|schedule_clear_coin_shares|protocol_destination|default_shares)[[:space:]]*(<[^>]*>)?\(|blast_holder_rewards::claim[[:space:]]*(<[^>]*>)?\(|pool::add_liquidity_pay_amount[[:space:]]*\(|coin::from_balance[[:space:]]*\(|(^|[^.[:alnum:]_])collect_position_fees[[:space:]]*\(' \
     "$SOURCE_DIR" "$PACKAGE_DIR/tests"; then
     fail "functions with a natural first receiver must use Move 2024 dot syntax"
 fi
@@ -1244,21 +1263,27 @@ require_text "$admin_roles" \
 blast_holder_rewards:publish_round:RewardsAdmin
 bluefin:buyback_and_burn:BuybackAdmin
 cetus:buyback_and_burn:BuybackAdmin
-lp_fee_policy:clear_coin_shares:FeeAdmin
-lp_fee_policy:set_coin_shares:FeeAdmin
-lp_fee_policy:set_default_shares:FeeAdmin
-lp_fee_policy:set_protocol_destination:TreasuryAdmin
+lp_fee_policy:cancel_coin_shares:CancelAdmin
+lp_fee_policy:cancel_default_shares:CancelAdmin
+lp_fee_policy:cancel_protocol_destination:CancelAdmin
+lp_fee_policy:schedule_clear_coin_shares:FeeAdmin
+lp_fee_policy:schedule_coin_shares:FeeAdmin
+lp_fee_policy:schedule_default_shares:FeeAdmin
+lp_fee_policy:schedule_protocol_destination:TreasuryAdmin
 package_admin:authorize_upgrade:UpgradeAdmin
+package_admin:cancel_upgrade_action:CancelAdmin
 package_admin:commit_upgrade_and_advance:UpgradeAdmin
+package_admin:make_immutable:UpgradeAdmin
+package_admin:schedule_make_immutable:UpgradeAdmin
+package_admin:schedule_upgrade:UpgradeAdmin
 vault:claim_protocol_fees:TreasuryAdmin
 vault:take_buyback_quote:BuybackAdmin
 ROLES
-# Venues gate callers by package version and launchpad cutovers advance its version, so this
-# package must always be able to relink (ADR 0088): nothing may destroy its UpgradeCap. Every
-# commit also advances the generation, and an additive or dependency-only upgrade cannot change the
-# generation constants, so narrowing the policy would freeze the package at its next upgrade.
-if rg -n '\bmake_immutable\b|\brestrict_to_' "$SOURCE_DIR"; then
-    fail "the migrators package stays upgradeable under the compatible policy: no path may narrow its policy or make it immutable"
+# ADR 0134 permits delayed immutability. While upgradeable, every commit advances the
+# generation, so the policy must remain compatible: narrower policies cannot change
+# generation constants and would freeze the package at its next upgrade.
+if rg -n '\brestrict_to_' "$SOURCE_DIR"; then
+    fail "the migrators package must retain the compatible policy until delayed immutability"
 fi
 
 # Every production public function in these modules is a protected mutation, except the vault's

@@ -137,6 +137,16 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
 
     let custody = w.custody;
     let digest = MovePackage::compute_digest_for_modules_and_deps(&code.modules, &code.dependencies, true);
+    let mut schedule = ProgrammableTransactionBuilder::new();
+    let acl = schedule.obj(w.h.shared(w.acl, false))?;
+    let cap = schedule.obj(w.h.owned(w.admin_cap))?;
+    let witness = call(&mut schedule, w.admin, "blast_acl", "sign_in", vec![role.clone()], vec![acl, cap]);
+    let custody_arg = schedule.obj(w.h.shared(custody, true))?;
+    let version = schedule.obj(w.h.shared(w.version, false))?;
+    let proposed = schedule.pure(digest.to_vec())?;
+    let clock = schedule.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut schedule, original, "package_admin", "schedule_upgrade", vec![], vec![custody_arg, version, witness, proposed, clock]);
+    w.h.execute(schedule.finish())?.assert_success();
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, false))?;
     let cap = b.obj(w.h.owned(w.admin_cap))?;
@@ -144,14 +154,23 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let custody_arg = b.obj(w.h.shared(custody, true))?;
     let version = b.obj(w.h.shared(w.version, true))?;
     let digest = b.pure(digest.to_vec())?;
-    let upgrade_ticket = call(&mut b, original, "package_admin", "authorize_upgrade", vec![], vec![custody_arg, version, witness, digest]);
+    let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+    let upgrade_ticket = call(&mut b, original, "package_admin", "authorize_upgrade", vec![], vec![custody_arg, version, witness, digest, clock]);
     let receipt = b.upgrade(original, upgrade_ticket, code.dependencies, code.modules);
     call(&mut b, original, "package_admin", "commit_upgrade_and_advance", vec![], vec![custody_arg, version, witness, receipt]);
-    let upgraded = w.h.execute(b.finish())?;
+    let upgrade = b.finish();
+    w.h.assert_rolled_back(
+        upgrade.clone(),
+        Expected::Abort { package: w.admin, module: "delayed", code: 0 },
+        &[custody, w.version, w.admin_cap],
+        &[w.h.sender],
+    )?;
+    w.h.sim.advance_clock(Duration::from_millis(172_800_000));
+    let upgraded = w.h.execute(upgrade)?;
     upgraded.assert_success();
     w.blast = upgraded.effects.created().into_iter()
         .map(|(reference, _)| reference.0).find(|id| w.h.object(*id).is_package()).unwrap();
-    let (_, generation): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(w.version))?;
+    let (_, _, generation): (ObjectID, u8, u64) = bcs::from_bytes(&w.h.contents(w.version))?;
     assert_eq!(generation, 2);
 
     // A fresh adapter links to the active dependency while preserving core type origins.
@@ -167,9 +186,11 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let witness = call(&mut b, w.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]);
     let config = b.obj(w.h.shared(w.config, true))?;
     let version = b.obj(w.h.shared(w.version, false))?;
-    let allowed = b.pure(true)?;
-    call(&mut b, w.blast, "launch_config", "set_migration_witness_allowed", vec![w.adapter_type("Venue")?], vec![config, version, witness, allowed]);
+
+    let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, w.blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config, version, witness, admin_clock]);
     w.h.execute(b.finish())?.assert_success();
+    blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![(w.blast, "launch_config", "apply_migration_witness", vec![parse_sui_type_tag(&format!("{}::mock_adapter::Venue", w.adapter))?], w.config, w.version)])?;
 
     let current = w.create_launch(ticket, currency, &meme, &FeeSplit::single(DESTINATION), OPENING_ROUND_MS)?;
     for name in ["set_virtual_quote", "set_graduation_target", "set_allocation_plan", "set_lp_fee_split", "set_opening_round", "finalize", "share"] {
@@ -685,31 +706,33 @@ fn world(work: &str) -> Result<World> {
         listing_admin,
         quote_allowed,
     ]);
-    let allowed = builder.pure(true)?;
-    call(&mut builder, blast, "launch_config", "set_migration_witness_allowed", vec![w.adapter_type("Venue")?], vec![
-        config_arg,
+
+    let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut builder, blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config_arg,
         version_arg,
-        adapter_admin,
-        allowed,
-    ]);
+        adapter_admin, admin_clock]);
     let hundred = builder.pure(100u64)?;
     let fee = call(&mut builder, blast, "bps", "new", vec![], vec![hundred]);
-    call(&mut builder, blast, "launch_config", "set_trade_fees", vec![], vec![
-        config_arg,
+    let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg,
         version_arg,
         fee_admin,
         fee,
-        fee,
-    ]);
+        fee, admin_clock]);
     let blast_bps = w.bps(&mut builder, BLAST_BPS)?;
-    call(&mut builder, blast, "launch_config", "set_protocol_allocation", vec![], vec![
-        config_arg,
+    let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg,
         version_arg,
         treasury_admin,
         blast_bps,
-        blast_bps,
-    ]);
+        blast_bps, admin_clock]);
     w.h.execute(builder.finish())?.assert_success();
+    let adapter_type = w.adapter_type("Venue")?;
+    blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![
+        (blast, "launch_config", "apply_migration_witness", vec![adapter_type], config, version),
+        (blast, "launch_config", "apply_trade_fees", vec![], config, version),
+        (blast, "launch_config", "apply_protocol_allocation", vec![], config, version),
+    ])?;
 
     Ok(w)
 }

@@ -21,7 +21,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
 | `blast_sui` | blastSUI and funSUI | not yet published | — | — |
-| `blast_admin` | Administration | live | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
+| `blast_admin` | Administration | live; source has changed since | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
 
 ## Calling Blast contracts
 
@@ -1190,7 +1190,7 @@ public fun sync(
 
 ## API reference: `blast_admin` (Administration)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -1201,24 +1201,23 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 0 | `EInvalidSuperAdminCap` |  |
 | 1 | `EInvalidAdminCap` |  |
 | 2 | `EInvalidAdminRecipient` |  |
-| 3 | `EAdminCapacityReached` |  |
-| 4 | `EAdminRoleCapacityReached` |  |
-| 5 | `EAdminRoleAlreadyGranted` |  |
-| 6 | `EAdminRoleNotGranted` |  |
-| 7 | `EInvalidSuperAdminRecipient` |  |
-| 8 | `ESuperAdminTransferUnchanged` |  |
-| 9 | `ENoPendingSuperAdminTransfer` |  |
-| 10 | `ENotPendingSuperAdminRecipient` |  |
-| 11 | `ESuperAdminTransferNotReady` |  |
-| 12 | `ESuperAdminCapStillActive` |  |
-| 13 | `EOperationalVersionMismatch` |  |
-| 14 | `EOperationalVersionOverflow` |  |
-| 15 | `EInvalidPackagePublisher` |  |
-| 16 | `EInvalidUpgradeCap` |  |
-| 17 | `EInvalidPackageDigest` |  |
-| 18 | `EUpgradeCapUnavailable` |  |
-| 19 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 20 | `EInvalidPackageMarker` |  |
+| 3 | `EAdminRoleCapacityReached` |  |
+| 4 | `EAdminRoleAlreadyGranted` |  |
+| 5 | `EAdminRoleNotGranted` |  |
+| 6 | `EInvalidSuperAdminRecipient` |  |
+| 7 | `ESuperAdminTransferUnchanged` |  |
+| 8 | `ENoPendingSuperAdminTransfer` |  |
+| 9 | `ENotPendingSuperAdminRecipient` |  |
+| 10 | `ESuperAdminTransferNotReady` |  |
+| 11 | `ESuperAdminCapStillActive` |  |
+| 12 | `EOperationalVersionMismatch` |  |
+| 13 | `EOperationalVersionOverflow` |  |
+| 14 | `EInvalidPackagePublisher` |  |
+| 15 | `EInvalidUpgradeCap` |  |
+| 16 | `EInvalidPackageDigest` |  |
+| 17 | `EUpgradeCapUnavailable` |  |
+| 18 | `EUpgradePolicyNotMoreRestrictive` |  |
+| 19 | `EInvalidPackageMarker` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -1233,7 +1232,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
-    admins: VecMap<ID, VecSet<TypeName>>,
+    admins: Table<ID, VecSet<TypeName>>,
     /// The nominated next super admin: none until the transfer delay passes.
     pending_super_admin: blast_fun_timelock::Timelocked<Option<address>>,
 }
@@ -1300,7 +1299,6 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role>
 
 #### Constants
 
-- `MAX_ADMINS: u64 = 32`
 - `MAX_ROLES_PER_ADMIN: u64 = 32`
 - `SUPER_ADMIN_TRANSFER_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The wait before a nominated super admin may accept the root.
 
@@ -1412,6 +1410,80 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     final_policy: u8,
 }
 ```
+
+### `blast_admin::delayed`
+
+Explicitly applied administrative changes with an immutable 48-hour notice.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
+
+#### Types
+
+```move
+/// Applied value with at most one replacement; readers never need a Clock.
+public struct Delayed<T: copy + drop + store> has store {
+    value: T,
+    pending: Option<Pending<T>>,
+}
+
+/// A value bound to a Unix millisecond execution threshold.
+public struct Pending<T: copy + drop + store> has copy, drop, store {
+    value: T,
+    ready_at_ms: u64,
+}
+```
+
+#### Functions
+
+```move
+/// Initializes publication policy, with no scheduled change.
+public fun new<T: copy + drop + store>(value: T): Delayed<T>
+
+/// Returns the explicitly applied value.
+public fun value<T: copy + drop + store>(self: &Delayed<T>): T
+
+/// Borrows the applied value for internal consumers such as signature verification.
+public fun borrow<T: copy + drop + store>(self: &Delayed<T>): &T
+
+/// Returns the current schedule, if any.
+public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
+
+/// Replaces any pending change and restarts the entire delay.
+public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, clock: &Clock): u64
+
+/// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
+public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
+
+/// Cancels even a ready change and returns the cancelled value.
+public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
+
+/// Only the enclosing module's authority-reducing paths may expose this operation.
+/// Revocation also clears a pending replacement so it cannot restore revoked authority.
+public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
+
+/// Starts the immutable administrative notice period.
+public fun new_pending<T: copy + drop + store>(value: T, clock: &Clock): Pending<T>
+
+/// Returns a scheduled value only at or after its threshold.
+public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
+
+/// Returns the proposed value for cancellation events and diagnostics.
+public fun proposed<T: copy + drop + store>(self: &Pending<T>): T
+
+/// Returns the Unix millisecond threshold for a scheduling event.
+public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
+```
+
+#### Errors
+
+| Constant | Code | Message |
+| --- | --- | --- |
+| `ENotReady` | 0 | The full administrative delay must pass before applying a change. |
+| `ENoPending` | 1 | There is no scheduled administrative change. |
+
+#### Constants
+
+- `DELAY_MS: u64 = 48 * 60 * 60 * 1_000`
 
 ### `blast_admin::operational_version`
 

@@ -71,8 +71,8 @@ Calls also take objects from other packages:
 | `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `BuybackAdmin` |
 | `blast_holder_rewards::publish_round` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::set_protocol_destination` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::set_default_shares`, `lp_fee_policy::set_coin_shares`, `lp_fee_policy::clear_coin_shares` | Blast admin: `FeeAdmin` |
+| `lp_fee_policy::schedule_protocol_destination` | Blast admin: `TreasuryAdmin` |
+| `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares` | Blast admin: `FeeAdmin` |
 | `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` | Blast admin: `UpgradeAdmin` |
 | `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publisher` and `UpgradeCap` (done once at deployment) |
 
@@ -394,28 +394,53 @@ sits in the launch and is claimed through the launchpad.
 
 #### LP-fee policy (Blast admin)
 
-- `lp_fee_policy::set_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
+- `lp_fee_policy::schedule_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
   coin without its own pair. Aborts with `EProtocolFeeSharesUnchanged` if unchanged.
-- `lp_fee_policy::set_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
+- `lp_fee_policy::schedule_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
   keyed by its original type name. A pair equal to the defaults is still a real entry: later default
   changes skip that coin. Aborts if it equals the coin's current pair.
-- `lp_fee_policy::clear_coin_shares` (type argument `Meme`; `FeeAdmin`): removes the coin's pair so
-  the defaults apply again. Aborts in Sui's table code if the coin has no pair.
-- `lp_fee_policy::set_protocol_destination` (`TreasuryAdmin`): redirects every later Blast payout.
+- `lp_fee_policy::schedule_clear_coin_shares` (type argument `Meme`; `FeeAdmin`): schedules a return to live defaults. The table entry remains with an applied `None` after application; there is no immediate deletion.
+- `lp_fee_policy::schedule_protocol_destination` (`TreasuryAdmin`): redirects every later Blast payout.
   Aborts with `EProtocolDestinationUnchanged` for `@0x0` or the current address.
 
-Each takes effect from the next collection or partner payout. At publication the defaults are 0 BPS
-for both assets and the destination is the publishing address; read the live object for current
-values.
+Each takes effect only after its delay and explicit application. At publication the defaults are 0 BPS
+for both assets and the destination is the configured genesis recipient; read the live object for current values.
 
 #### Package upgrades (Blast admin)
 
-`blast_fun_migrators::package_admin::authorize_upgrade` returns an upgrade ticket for an exact
-digest; `blast_fun_migrators::package_admin::commit_upgrade_and_advance` commits the receipt and
+`blast_fun_migrators::package_admin::schedule_upgrade` announces an exact digest. After 48 hours,
+`blast_fun_migrators::package_admin::authorize_upgrade` takes `Clock` and returns its upgrade ticket; `blast_fun_migrators::package_admin::commit_upgrade_and_advance` commits the receipt and
 moves `PackageVersion` to the next generation in the same call. From then on, every call to the old
 package's code aborts the generation check, so integrators must call the current package address.
 Type names keep the original package address. Upgrading this package leaves the launchpad on its own
 generation.
+
+### Delayed administration
+
+Blast admin schedules changes with the relevant role and the canonical `Clock`.
+Every scheduled fee, destination, signer, adapter or creator-authority change
+waits 172,800,000 milliseconds (48 hours). Scheduling again replaces the pending
+value and restarts that delay. The applied value stays active until *anyone*
+calls the matching `apply_` operation with the current package version and
+`Clock`. A `CancelAdmin` may cancel a pending change even after it is ready.
+Scheduling and cancellation emit the proposed values; the existing changed
+event is emitted only on application. Reads and ordinary claims need no new Clock.
+
+`blast_fun_migrators::package_admin::schedule_upgrade` announces the exact digest.
+After 48 hours an `UpgradeAdmin` may call `blast_fun_migrators::package_admin::authorize_upgrade`
+with that digest and `Clock`, consume its ticket in the native upgrade command,
+and commit its receipt. The pending action is consumed once.
+`blast_fun_migrators::package_admin::schedule_make_immutable` and
+`blast_fun_migrators::package_admin::make_immutable` use the same delay;
+`blast_fun_migrators::package_admin::cancel_upgrade_action` is reserved to `CancelAdmin`.
+This source requires a fresh stack; its state layouts are not an in-place upgrade
+of the previous publication.
+
+Both setting a coin override and clearing one require notice. Clearing applies
+through `lp_fee_policy::apply_coin_shares`; it restores the live defaults.
+Pending overrides do not freeze the default rates. A cleared entry remains in the
+table with no applied override so its delayed value cannot be discarded.
+Genesis LP-fee destination is configured before publication.
 
 ### Economics
 

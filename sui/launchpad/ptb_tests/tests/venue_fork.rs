@@ -456,49 +456,33 @@ impl World {
             vec![config, version, listing_admin, quote_allowed],
         );
         let witness = tag(&format!("{migrators}::{}::Witness", case.module()));
-        let allowed = b.pure(true)?;
-        call(
-            &mut b,
-            blast,
-            "launch_config",
-            "set_migration_witness_allowed",
-            vec![witness],
-            vec![config, version, adapter_admin, allowed],
-        );
+
+        let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, blast, "launch_config", "schedule_migration_witness", vec![witness], vec![config, version, adapter_admin, admin_clock]);
         let fee = w.bps(&mut b, 100)?;
-        call(&mut b, blast, "launch_config", "set_trade_fees", vec![], vec![config, version, fee_admin, fee, fee]);
+        let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, blast, "launch_config", "schedule_trade_fees", vec![], vec![config, version, fee_admin, fee, fee, admin_clock]);
         let share = w.bps(&mut b, ALLOCATION_BPS)?;
-        call(
-            &mut b,
-            blast,
-            "launch_config",
-            "set_protocol_allocation",
-            vec![],
-            vec![config, version, treasury_admin, share, share],
-        );
+        let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config, version, treasury_admin, share, share, admin_clock]);
         // Blast's LP-fee share goes to its own destination at a nonzero default.
         let policy = b.obj(w.h.shared(w.policy, true))?;
         let migrators_version = b.obj(w.h.shared(w.migrators_version, false))?;
         let destination = b.pure(SuiAddress::from(LP_PROTOCOL))?;
-        call(
-            &mut b,
-            migrators,
-            "lp_fee_policy",
-            "set_protocol_destination",
-            vec![],
-            vec![policy, migrators_version, treasury_admin, destination],
-        );
+        let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, migrators, "lp_fee_policy", "schedule_protocol_destination", vec![], vec![policy, migrators_version, treasury_admin, destination, admin_clock]);
         let meme_bps = w.bps(&mut b, DEFAULT_SHARES.0)?;
         let quote_bps = w.bps(&mut b, DEFAULT_SHARES.1)?;
-        call(
-            &mut b,
-            migrators,
-            "lp_fee_policy",
-            "set_default_shares",
-            vec![],
-            vec![policy, migrators_version, fee_admin, meme_bps, quote_bps],
-        );
+        let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, migrators, "lp_fee_policy", "schedule_default_shares", vec![], vec![policy, migrators_version, fee_admin, meme_bps, quote_bps, admin_clock]);
         w.h.execute(b.finish())?.assert_success();
+        blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![
+            (blast, "launch_config", "apply_migration_witness", vec![tag(&format!("{migrators}::{}::Witness", case.module()))], w.config, w.version),
+            (blast, "launch_config", "apply_trade_fees", vec![], w.config, w.version),
+            (blast, "launch_config", "apply_protocol_allocation", vec![], w.config, w.version),
+            (migrators, "lp_fee_policy", "apply_protocol_destination", vec![], w.policy, w.migrators_version),
+            (migrators, "lp_fee_policy", "apply_default_shares", vec![], w.policy, w.migrators_version),
+        ])?;
 
         Ok(w)
     }
@@ -1402,15 +1386,11 @@ impl World {
         let migrators_version = self.shared(&mut b, self.migrators_version, false)?;
         let meme_bps = self.bps(&mut b, shares.0)?;
         let quote_bps = self.bps(&mut b, shares.1)?;
-        call(
-            &mut b,
-            self.migrators,
-            "lp_fee_policy",
-            "set_coin_shares",
-            vec![launch.meme.clone()],
-            vec![policy, migrators_version, signed_in, meme_bps, quote_bps],
-        );
+        let admin_clock = b.obj(self.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, self.migrators, "lp_fee_policy", "schedule_coin_shares", vec![launch.meme.clone()], vec![policy, migrators_version, signed_in, meme_bps, quote_bps, admin_clock]);
         self.h.execute(b.finish())?.assert_success();
+        blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![(self.migrators, "lp_fee_policy", "apply_coin_shares", vec![launch.meme.clone()], self.policy, self.migrators_version)])?;
+
         self.shares = shares;
 
         Ok(())
@@ -1503,15 +1483,18 @@ impl World {
         let launch_arg = self.shared(&mut b, launch.launch, true)?;
         let version = self.shared(&mut b, self.version, false)?;
         let recipient = b.pure(SuiAddress::from(CAP_HOLDER))?;
+        let clock = self.clock(&mut b)?;
         call(
             &mut b,
             self.blast,
             "launch",
-            "reassign_curve_fee_cap",
+            "schedule_curve_fee_cap_reassignment",
             self.pair(launch),
-            vec![launch_arg, version, signed_in, recipient],
+            vec![launch_arg, version, signed_in, recipient, clock],
         );
         self.h.execute(b.finish())?.assert_success();
+        let pair = self.pair(launch);
+        blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![(self.blast, "launch", "reassign_curve_fee_cap", pair, launch.launch, self.version)])?;
 
         let owners = [self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()];
         let refused = Expected::Abort { package: self.blast, module: "launch", code: CREATOR_CAP_NOT_LIVE };

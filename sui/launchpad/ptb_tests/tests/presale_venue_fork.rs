@@ -245,6 +245,7 @@ fn allow_route(h: &mut Harness,
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(h.shared(acl, false))?;
     let cap = b.obj(h.owned(cap))?;
+    let version_id = version;
     let policy = b.obj(h.shared(creation_policy, true))?;
     let version = b.obj(h.shared(version, false))?;
     let allowed = b.pure(true)?;
@@ -252,15 +253,17 @@ fn allow_route(h: &mut Harness,
         ("ListingAdmin", "set_quote_allowed", quote),
         (
             "AdapterAdmin",
-            "set_migration_witness_allowed",
+            "schedule_migration_witness",
             tag(&format!("{presale}::{}::Witness", route.module())),
         ),
     ] {
         let role = tag(&format!("{presale}::blast_presale_domain::{role}"));
         let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]);
-    call(&mut b, presale, "creation_policy", function, vec![ty], vec![policy, version, witness, allowed]);
+        let last = if function == "schedule_migration_witness" { b.obj(h.shared(SUI_CLOCK_OBJECT_ID, false))? } else { allowed };
+        call(&mut b, presale, "creation_policy", function, vec![ty], vec![policy, version, witness, last]);
     }
     h.execute(b.finish())?.assert_success();
+    blast_launchpad_ptb_tests::apply_admin_changes(h, vec![(presale, "creation_policy", "apply_migration_witness", vec![tag(&format!("{presale}::{}::Witness", route.module()))], creation_policy, version_id)])?;
 
     Ok(())
 }

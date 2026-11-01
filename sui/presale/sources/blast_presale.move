@@ -303,6 +303,7 @@ public fun new<SaleToken, Quote, MigrationWitness: drop>(
     fee_policy: &FeePolicy,
 ): PresaleInitializer<SaleToken, Quote> {
     package_version.assert_current();
+    package_version.assert_not_paused(1);
 
     creation_policy.assert_allowed<Quote, MigrationWitness>();
     assert!(
@@ -645,6 +646,7 @@ public fun share<SaleToken, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
+    package_version.assert_not_paused(1);
 
     assert!(self.lifecycle == Lifecycle::Pending, EInvalidLifecycle);
 
@@ -681,6 +683,7 @@ public fun set_protocol_fees<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &PackageVersion,
     _: &AdminWitness<FeeAdmin>,
+    fee_policy: &FeePolicy,
     raise_bps: Bps,
     token_bps: Bps,
     lp_fee_meme_bps: Bps,
@@ -700,6 +703,11 @@ public fun set_protocol_fees<SaleToken, Quote>(
         lp_fee_meme_bps,
         lp_fee_quote_bps,
     );
+    let ceiling = fee_policy.fees();
+    assert!(raise_bps.value() <= ceiling.raise_bps().value()
+        && token_bps.value() <= ceiling.token_bps().value()
+        && lp_fee_meme_bps.value() <= ceiling.lp_fee_meme_bps().value()
+        && lp_fee_quote_bps.value() <= ceiling.lp_fee_quote_bps().value(), EAboveFeePolicy);
     assert!(protocol_fees != self.protocol_fees, EProtocolFeesUnchanged);
 
     // Blast's Quote comes out of the raise left after the recipients', whose rest the LP keeps;
@@ -742,6 +750,7 @@ public fun commit_open<SaleToken, Quote>(
     ctx: &mut TxContext,
 ): Coin<Quote> {
     package_version.assert_current();
+    package_version.assert_not_paused(2);
 
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
@@ -764,6 +773,7 @@ public fun commit_allowlisted<SaleToken, Quote>(
     ctx: &mut TxContext,
 ): Coin<Quote> {
     package_version.assert_current();
+    package_version.assert_not_paused(2);
 
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
@@ -789,6 +799,7 @@ public fun commit_uncapped<SaleToken, Quote>(
     ctx: &mut TxContext,
 ): Coin<Quote> {
     package_version.assert_current();
+    package_version.assert_not_paused(2);
 
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
@@ -912,6 +923,7 @@ public fun migrate<SaleToken, Quote, MigrationWitness: drop>(
     ctx: &mut TxContext,
 ): (Balance<SaleToken>, Balance<Quote>) {
     package_version.assert_current();
+    package_version.assert_not_paused(8);
 
     assert!(self.lifecycle == Lifecycle::Funded, EInvalidLifecycle);
     assert!(
@@ -2272,6 +2284,9 @@ const EMissingSetting: vector<u8> = b"A presale needs its eligibility policy and
 
 #[error(code = 35)]
 const ESaleTokenNotUnregulated: vector<u8> = b"The sale currency must be confirmed unregulated; regulated and unknown legacy currencies are not allowed.";
+
+#[error(code = 36)]
+const EAboveFeePolicy: vector<u8> = b"A sale fee override cannot exceed the currently applied fee policy.";
 
 // === Imports ===
 

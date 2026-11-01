@@ -10,3 +10,6 @@ blast_partners = { local = "../partners" }
 
 [addresses]
 blast_fun = "0x0"
+
+# Must be set to the intended treasury before fresh publication.
+blast_treasury = "0x0"

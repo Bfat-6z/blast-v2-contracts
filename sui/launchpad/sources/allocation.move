@@ -124,6 +124,10 @@ public fun apportion_fee_split(self: &FeeSplit, total: u64): (u64, u64, u64, u64
 
 // === Package Functions ===
 
+public(package) fun meme_bps(self: &ProtocolAllocation): Bps { self.meme_bps }
+
+public(package) fun quote_bps(self: &ProtocolAllocation): Bps { self.quote_bps }
+
 public(package) fun protocol_allocation(meme_bps: Bps, quote_bps: Bps): ProtocolAllocation {
     ProtocolAllocation { meme_bps, quote_bps }
 }

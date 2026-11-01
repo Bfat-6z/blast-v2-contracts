@@ -201,8 +201,8 @@ grep -Fqx 'public struct AdminCap has key, store {' "$acl_file" \
   || fail "AdminCap must remain transferable and untyped; roles live in the ACL."
 grep -Fqx 'public struct AdminWitness<phantom Role>() has drop;' "$acl_file" \
   || fail "AdminWitness must be a drop-only, role-typed proof."
-grep -Fqx '    admins: VecMap<ID, VecSet<TypeName>>,' "$acl_file" \
-  || fail "ACL must list every live admin and its roles inline."
+grep -Fqx '    admins: Table<ID, VecSet<TypeName>>,' "$acl_file" \
+  || fail "ACL must store each live admin and its roles in a Table."
 grep -Fqx '    pending_super_admin: Timelocked<Option<address>>,' "$acl_file" \
   || fail "A nominated super admin must wait out the timelock before it can accept."
 [[ "$(grep -c '^fun init(ctx: &mut TxContext) {$' "$acl_file")" -eq 1 ]] \
