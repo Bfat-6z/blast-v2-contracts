@@ -55,8 +55,8 @@ fun newly_registered_partner_takes_no_fee_before_seven_full_days() {
 
 
 #[test]
-/// The share and the cap are in force at once, with nothing scheduled; every
-/// later change waits the forced delay.
+/// The cap is immediate; the fixture advances through the initial share delay.
+/// The event retains the scheduled activation time.
 fun registration_share_is_live_only_after_its_delay() {
     let mut fixture = start();
 
@@ -546,8 +546,8 @@ fun payment_transfers_one_coin_to_the_recipient_and_skips_dust() {
 }
 
 #[test]
-/// A partner is paid its registered share at once; a scheduled share pays only
-/// once it takes effect.
+/// After the initial share delay, a partner receives the applied share until
+/// a replacement reaches its own activation time.
 fun a_partner_is_paid_its_share_from_registration_and_a_new_one_only_once_in_force() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 5_000);
@@ -730,7 +730,7 @@ fun register_under(self: &mut Fixture, cap: &PartnerCap, recipient: address, sha
     self.register_under_id(object::id(cap), recipient, share_bps);
 }
 
-/// Registers a partner under any ID, a cap's or not.
+/// Registers a partner under any ID, then advances through its initial share delay.
 fun register_under_id(self: &mut Fixture, cap_id: ID, recipient: address, share_bps: u64) {
     let witness = partner_admin();
     partners::register(&witness, cap_id, recipient, share_bps, &self.clock, self.scenario.ctx());
