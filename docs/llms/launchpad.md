@@ -701,7 +701,7 @@ that detected it.
 
 | Flow | Code, constant (module) | Fix |
 | --- | --- | --- |
-| any | 13 in `blast_admin::operational_version` | call the launchpad's current package ID |
+| any | 12 in `blast_admin::operational_version` | call the launchpad's current package ID |
 | pause, unpause | 38 `blast_fun::errors::EInvalidPauseBits`, 39 `blast_fun::errors::EPauseUnchanged` (`blast_fun`) | select nonzero supported bits that change the active mask |
 | create, buy, sell, voluntary migration | 40 `blast_fun::errors::EPaused` (`blast_fun`) | wait for an `UnpauseAdmin` to clear the operation's bit |
 | package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::ENoPendingAction`, 43 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; schedule before applying or cancelling; use a 32-byte digest |

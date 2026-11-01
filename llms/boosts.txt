@@ -1142,7 +1142,7 @@ Codes repeat across packages. Decode by the aborting module: modules
 `checkpoint`, `snapshot`, `venue_account`, `blast_boosts_aftermath`,
 `package_admin` belong to `blast_boosts_aftermath`. A call through an
 outdated adapter package aborts in the `operational_version` module of the
-`blast_admin` package with code 13.
+`blast_admin` package with code 12.
 
 #### Adapter (`blast_boosts_aftermath`)
 
@@ -1234,7 +1234,7 @@ outdated adapter package aborts in the `operational_version` module of the
   admitted forced reduction; other drift may require ShutdownAdmin to shut
   the Boost down. Market-wide margin changes are accepted automatically.
 - Decoding an abort by code alone. Core and adapter codes overlap.
-- Calling an old adapter generation after activation (blast_admin code 13). Types
+- Calling an old adapter generation after activation (blast_admin code 12). Types
   keep their original package IDs; calls must target the current package.
 - Treating the tag name as the policy. `NVDA_BULL_2X` is a label; read `side`
   and `target_leverage_bps` from the Vault.

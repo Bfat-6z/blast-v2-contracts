@@ -389,7 +389,7 @@ and `upgrade_custody::restrict_to_dependency_only` (irreversible narrowing),
 `upgrade_custody::has_upgrade_cap`, and `upgrade_custody::publisher` (borrows
 the `Publisher` by reference for features like Display; no current consumer
 exposes it). After `make_immutable`, every transition that needs the
-`UpgradeCap` (authorize, commit, restrict, make immutable) aborts with code 18.
+`UpgradeCap` (authorize, commit, restrict, make immutable) aborts with code 17.
 The packages
 `blast_admin`, `blast_partners`, and `blast_boosts_core` are published immutable
 and have no custody at all.
@@ -476,7 +476,7 @@ Codes are plain `u64` values raised in the `blast_admin` module named.
 | 18 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
 | 19 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
 
-The one an integrator most often meets is code 13 from `operational_version`: a
+The one an integrator most often meets is code 12 from `operational_version`: a
 PTB built against an old package ID after an upgrade.
 
 ### Pitfalls
@@ -489,7 +489,7 @@ PTB built against an old package ID after an upgrade.
   the full type name, including the package address.
 - After any upgrade of `blast_fun`, `blast_fun_migrators`, `blast_sui`, or
   `blast_boosts_aftermath`, PTBs pinned to the old package ID abort with code
-  13.
+  12.
 
 ### Q&A
 

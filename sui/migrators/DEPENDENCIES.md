@@ -168,8 +168,13 @@ Each file is then bound to an exact expectation:
   carry an immutable 40-hex `rev` and must not carry `branch` or `tag`, whatever
   the expectation says;
 - `[package]` may declare only known keys, `published-at` must equal the current
-  package id, `[addresses]` must equal the original package id, and no table
-  outside `package`, `dependencies`, and `addresses` may appear;
+  package id, package identity addresses must match their pins, and no table
+  outside `package`, `dependencies`, and `addresses` may appear. The root
+  manifest's `blast_lp_fee_destination` must be a valid Sui address: the source
+  placeholder `0x0` and configured destinations are accepted by this ABI gate.
+  Fresh publication requires a nonzero destination as described in
+  [`deployments/README.md`](../../deployments/README.md); all other address keys
+  and values remain exact;
 - `Move.lock` must declare format version 4, exactly the 15 expected pinned nodes
   in the `mainnet` environment and no other (Blast deploys to mainnet only), each
   node's exact `source`
@@ -199,7 +204,7 @@ node scripts/check_mainnet_abi.mjs --self-test
 
 Makes no network request and mutates no file. It renders a well-formed function
 and struct fixture, validates the committed manifests and lock, and then asserts
-that 57 mutated inputs are rejected — null lists, a missing or null `isEntry`,
+that mutated inputs are rejected — null lists, a missing or null `isEntry`,
 unknown and duplicate abilities and constraints, unknown visibility, novel type
 bodies and reference kinds, an explicit null `signature.ref`, extra response
 fields, duplicate type origins with conflicting and with identical defining ids,
@@ -208,8 +213,12 @@ wrong-but-40-hex Sui revision, wrong repositories and subdirectories, added and
 dropped `override` rules, duplicate keys and tables, extra and missing lock
 nodes, rebound `deps` edges, boolean, malformed, and lowercase
 `manifest_digest` values, and a struct pinned to its introducing revision
-resolved against the original package. Six positive fixtures pin the accepted
+resolved against the original package. Positive fixtures pin the accepted
 shapes, including a by-value parameter with `ref` absent and that revision pin.
+Genesis destination fixtures accept the zero placeholder, a short nonzero
+address, and a full-length address; reject malformed, non-string, and missing
+destinations; and keep rejecting extra addresses, package identity drift, and
+dependency drift when a nonzero destination is configured.
 Every case that a live run cannot reach without a real venue upgrade is covered
 here instead.
 
