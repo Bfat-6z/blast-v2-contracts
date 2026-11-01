@@ -27,6 +27,36 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           tar -xzf sui.tgz -C "$HOME/.local/bin" ./sui
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Fetch source revisions recorded for current publications
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+          sys.path.insert(0, "scripts")
+          from gen_llms import PACKAGES
+          published = set()
+          for package, _ in PACKAGES:
+              path = Path(package) / "Published.toml"
+              if path.exists():
+                  entry = tomllib.loads(path.read_text()).get("published", {}).get("mainnet")
+                  if entry:
+                      published.add(entry["published-at"])
+          for path in Path("deployments/sui/mainnet").glob("*.json"):
+              text = path.read_text()
+              data = json.loads(text)
+              kind = str(data.get("recordKind", ""))
+              commit = (data.get("repository") or {}).get("commit")
+              if not commit or data.get("status") != "success" or "deployment" not in kind or "rehearsal" in kind:
+                  continue
+              if not any(address in text for address in published):
+                  continue
+              present = subprocess.run(["git", "cat-file", "-e", f"{commit}^{{commit}}"], stderr=subprocess.DEVNULL)
+              if present.returncode:
+                  subprocess.run(["git", "fetch", "--no-tags", "origin", commit], check=True)
+          PYCODE
       - name: Test summary identity handling
         run: python3 scripts/test_gen_llms.py
       - name: Check llms-full.txt and llms/ are current
