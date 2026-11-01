@@ -1681,7 +1681,8 @@ struct VaultState {
     pool_id: ObjectID,
     _fee_recipients: Vec<RecipientShare>,
     _holder_rewards_bps: u64,
-    _protocol_fees: ProtocolFees,
+    // Delayed<ProtocolFees>: applied value, then optional (proposal, ready_at_ms).
+    _protocol_fees: (ProtocolFees, Option<(ProtocolFees, u64)>),
     _partner_id: Option<ObjectID>,
     _unpaid_protocol_meme: u64,
     _unpaid_protocol_quote: u64,
