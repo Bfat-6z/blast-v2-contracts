@@ -240,9 +240,9 @@ public struct PackageVersion has key {   // launchpad; presale is the same with 
 }
 
 const CREATE: u8 = 1;
-const BUY: u8 = 2;
-const SELL: u8 = 4;      // launchpad only
-const MIGRATE: u8 = 8;
+const TRADING: u8 = 2;  // launchpad: buy and sell together
+const MIGRATE: u8 = 4;  // launchpad
+// Presale uses BUY = 2 for commitments and MIGRATE = 8.
 
 public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8);     // sets bits only
 public fun unpause(self: &mut PackageVersion, _: &AdminWitness<UnpauseAdmin>, bits: u8); // clears bits only
@@ -253,9 +253,9 @@ public(package) fun assert_not_paused(self: &PackageVersion, bit: u8);
 | Bit | Launchpad | Presale |
 | --- | --- | --- |
 | `CREATE` | `new`, `finalize`, `share` | `new`, `share` |
-| `BUY` | `buy`, `join_opening_round`, `settle_opening_round` | `commit_open`, `commit_allowlisted`, `commit_uncapped` |
-| `SELL` | `sell` | — |
-| `MIGRATE` | `migrate` | `migrate` |
+| `TRADING` (2) | `buy`, `sell`, `join_opening_round`, `settle_opening_round` | — |
+| `BUY` (2) | — | `commit_open`, `commit_allowlisted`, `commit_uncapped` |
+| `MIGRATE` | `migrate` (4) | `migrate` (8) |
 | Never paused | `deliver_opening_round`, fee claims | `claim`, `cancel_unlaunched`, `settle` |
 
 `PauseAdmin` may be a hot or automated key; it can freeze but never move funds.
@@ -322,7 +322,7 @@ quote and decimals allowlists; buybacks (their Meme is burned); reward rounds.
   effect within 48 hours of being publicly scheduled.
 - Emergency fee or destination changes are gone; the pause is the emergency
   tool. A replaced claim signer stops account claims for 48 hours.
-- Pausing `SELL` traps holders until unpause; claims and refunds stay open.
+- Pausing `TRADING` stops both buys and sells until unpause; claims and refunds stay open.
 - The indexer reads `*Scheduled`, `*Cancelled`, `Paused` and `Unpaused`. The
   admin console reads the ACL's table entries instead of an inline map.
 - SDK, indexer, web, workers and MVR rebind to the new packages; partners

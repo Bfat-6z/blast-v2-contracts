@@ -28,6 +28,20 @@ fi
 mapfile -t move_files < <(find sources tests -type f -name '*.move' -print | sort)
 mapfile -t source_files < <(find sources -type f -name '*.move' -print | sort)
 
+# Launchpad diagnostics and event construction have one package-wide owner.
+for move_file in "${source_files[@]}"; do
+  if [[ "$move_file" != sources/lib/errors.move ]] \
+    && rg -n '#\[error\(|^[[:space:]]*const E[A-Z]' "$move_file"; then
+    echo "${move_file}: define launchpad errors in sources/lib/errors.move." >&2
+    failures=$((failures + 1))
+  fi
+  if [[ "$move_file" != sources/lib/events.move ]] \
+    && rg -n 'blast_events::emit_event' "$move_file"; then
+    echo "${move_file}: construct launchpad events through sources/lib/events.move." >&2
+    failures=$((failures + 1))
+  fi
+done
+
 # Deterministic Move reader shared with the migrator gate; see move_facts.awk for
 # the record format. Parser failures fail closed as MALFORMED records.
 move_facts_reader="$(<scripts/move_facts.awk)"
@@ -297,7 +311,7 @@ if [[ ! -f sources/blast_fun.move ]] \
     <<<"$blast_production" \
   || ! rg -q '^const PACKAGE_VERSION: u64 = 1;$' sources/blast_fun.move \
   || ! rg -q '^const NEXT_PACKAGE_VERSION: u64 = 2;$' sources/blast_fun.move \
-  || [[ "$(rg -c '^(public struct|fun) ' <<<"$blast_production")" != 6 ]] \
+  || [[ "$(rg -c '^(public struct|fun) ' <<<"$blast_production")" != 4 ]] \
   || [[ "$(rg -c '^fun init\(' <<<"$blast_production")" != 1 ]] \
   || [[ "$(rg -c '^public\(package\) fun (destroy|share_version|assert_current|assert_next|advance|assert_not_paused)\(' <<<"$blast_production")" != 6 ]] \
   || rg -n '^public\(package\) fun activate\(' <<<"$blast_production" \

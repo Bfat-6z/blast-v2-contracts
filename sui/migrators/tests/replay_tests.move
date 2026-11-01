@@ -837,9 +837,9 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
 
     // This reducer tracks applied economics. Scheduling notices, intake admissions, and the
     // creator capability claim do not change its state; nothing else may appear.
-    let unreduced = wrapped<blast_fun::launch_config::MigrationWitnessScheduled>().length()
-        + wrapped<blast_fun::launch_config::TradeFeesScheduled>().length()
-        + wrapped<blast_fun::launch_config::ProtocolAllocationScheduled>().length()
+    let unreduced = wrapped<blast_fun::events::MigrationWitnessScheduled>().length()
+        + wrapped<blast_fun::events::TradeFeesScheduled>().length()
+        + wrapped<blast_fun::events::ProtocolAllocationScheduled>().length()
         + direct<blast_events::DefaultSharesScheduled>().length()
         + direct<blast_events::ProtocolDestinationScheduled>().length()
         + wrapped<events::QuoteSet>().length()

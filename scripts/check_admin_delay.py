@@ -57,7 +57,10 @@ for package in ('launchpad', 'presale', 'migrators'):
     require(fs['schedule_upgrade'][1], 'digest.length() == 32', 'delayed::new_pending(action, clock)')
     for name, action in [('authorize_upgrade', 'Upgrade(digest)'), ('make_immutable', 'MakeImmutable')]:
         body = fs[name][1]
-        require(body, f'take_ready(clock) == UpgradeAction::{action}', 'self.pending = option::none();')
+        action_expression = f'UpgradeAction::{action}'
+        if package == 'launchpad':
+            action_expression = 'events::upgrade_action(digest)' if name == 'authorize_upgrade' else 'events::immutability_action()'
+        require(body, f'take_ready(clock) == {action_expression}', 'self.pending = option::none();')
         assert body.index('self.pending = option::none();') < body.index('self.custody.'), name
     require(fs['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin>')
     require(fs['cancel_upgrade_action'][1], 'self.pending.extract()')
@@ -88,7 +91,16 @@ for cap in ('curve_fee_cap', 'metadata_cap'):
     assert 'AdminWitness' not in fs[f'reassign_{cap}'][0]
 
 for package, module, actions in [
-    ('launchpad', 'launch', {'new': 1, 'finalize': 1, 'share': 1, 'buy': 2, 'join_opening_round': 2, 'settle_opening_round': 2, 'sell': 4, 'migrate': 8}),
+    ('launchpad', 'launch', {
+        'new': 'constants::create_pause_bit!()',
+        'finalize': 'constants::create_pause_bit!()',
+        'share': 'constants::create_pause_bit!()',
+        'buy': 'constants::trading_pause_bit!()',
+        'join_opening_round': 'constants::trading_pause_bit!()',
+        'settle_opening_round': 'constants::trading_pause_bit!()',
+        'sell': 'constants::trading_pause_bit!()',
+        'migrate': 'constants::migration_pause_bit!()',
+    }),
     ('presale', 'blast_presale', {'new': 1, 'share': 1, 'commit_open': 2, 'commit_allowlisted': 2, 'commit_uncapped': 2, 'migrate': 8}),
 ]:
     fs = functions(package, module)

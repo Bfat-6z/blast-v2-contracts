@@ -8,21 +8,6 @@ module blast_fun::runtime_config;
 
 // === Public Types ===
 
-/// Proposed values and Unix millisecond execution threshold.
-public struct TreasuryScheduled has copy, drop { treasury: address, ready_at_ms: u64 }
-/// Values removed from the pending schedule.
-public struct TreasuryCancelled has copy, drop { treasury: address }
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct ProtocolFeeShareScheduled has copy, drop { protocol_fee_share_bps: u64, ready_at_ms: u64 }
-/// Values removed from the pending schedule.
-public struct ProtocolFeeShareCancelled has copy, drop { protocol_fee_share_bps: u64 }
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct CreatorClaimSignerScheduled has copy, drop { signer_public_key: vector<u8>, ready_at_ms: u64 }
-/// Values removed from the pending schedule.
-public struct CreatorClaimSignerCancelled has copy, drop { signer_public_key: vector<u8> }
-
 /// The backend key that signs account claims (empty when none may), Blast's share of every
 /// curve trade fee, and the treasury every launch pays Blast's fees to.
 public struct RuntimeConfig has key {
@@ -54,7 +39,7 @@ public fun schedule_creator_claim_signer(
     let value = signer_public_key;
     assert!(value != self.creator_claim_signer_public_key.value(), blast_fun::errors::unchanged!());
     let ready_at_ms = self.creator_claim_signer_public_key.schedule(value, clock);
-    blast_fun::blast_events::emit_event(CreatorClaimSignerScheduled { signer_public_key: signer_public_key, ready_at_ms });
+    events::creator_claim_signer_scheduled(signer_public_key, ready_at_ms);
 }
 
 /// Applies the scheduled creator claim signer permissionlessly once ready.
@@ -78,7 +63,7 @@ public fun cancel_creator_claim_signer(
     package_version.assert_current();
     let value = self.creator_claim_signer_public_key.cancel();
     let signer_public_key = value;
-    blast_fun::blast_events::emit_event(CreatorClaimSignerCancelled { signer_public_key: signer_public_key });
+    events::creator_claim_signer_cancelled(signer_public_key);
 }
 
 /// Schedules protocol fee share after the full administrative delay.
@@ -94,7 +79,7 @@ public fun schedule_protocol_fee_share(
     let value = protocol_fee_share_bps;
     assert!(value != self.protocol_fee_share_bps.value(), blast_fun::errors::unchanged!());
     let ready_at_ms = self.protocol_fee_share_bps.schedule(value, clock);
-    blast_fun::blast_events::emit_event(ProtocolFeeShareScheduled { protocol_fee_share_bps: protocol_fee_share_bps.value(), ready_at_ms });
+    events::protocol_fee_share_scheduled(protocol_fee_share_bps.value(), ready_at_ms);
 }
 
 /// Applies the scheduled protocol fee share permissionlessly once ready.
@@ -118,7 +103,7 @@ public fun cancel_protocol_fee_share(
     package_version.assert_current();
     let value = self.protocol_fee_share_bps.cancel();
     let protocol_fee_share_bps = value;
-    blast_fun::blast_events::emit_event(ProtocolFeeShareCancelled { protocol_fee_share_bps: protocol_fee_share_bps.value() });
+    events::protocol_fee_share_cancelled(protocol_fee_share_bps.value());
 }
 
 /// Redirects every later protocol fee claim to `treasury`.
@@ -135,7 +120,7 @@ public fun schedule_treasury(
     let value = treasury;
     assert!(value != self.treasury.value(), blast_fun::errors::unchanged!());
     let ready_at_ms = self.treasury.schedule(value, clock);
-    blast_fun::blast_events::emit_event(TreasuryScheduled { treasury: treasury, ready_at_ms });
+    events::treasury_scheduled(treasury, ready_at_ms);
 }
 
 /// Applies the scheduled treasury permissionlessly once ready.
@@ -159,7 +144,7 @@ public fun cancel_treasury(
     package_version.assert_current();
     let value = self.treasury.cancel();
     let treasury = value;
-    blast_fun::blast_events::emit_event(TreasuryCancelled { treasury: treasury });
+    events::treasury_cancelled(treasury);
 }
 
 /// Revokes the claim signer immediately and clears any scheduled replacement.
@@ -172,7 +157,7 @@ public fun revoke_creator_claim_signer(
     assert!(!self.creator_claim_signer_public_key.value().is_empty() || self.creator_claim_signer_public_key.pending().is_some(), blast_fun::errors::unchanged!());
     if (self.creator_claim_signer_public_key.pending().is_some()) {
         let signer_public_key = self.creator_claim_signer_public_key.cancel();
-        blast_fun::blast_events::emit_event(CreatorClaimSignerCancelled { signer_public_key });
+        events::creator_claim_signer_cancelled(signer_public_key);
     };
     self.creator_claim_signer_public_key.set_now(vector[]);
     events::creator_claim_signer_set(vector[]);

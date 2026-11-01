@@ -424,9 +424,13 @@ of the previous publication.
 
 A `PauseAdmin` calls `blast_fun::blast_fun::pause` to set selected bits on the shared
 package version. Only `UnpauseAdmin` may clear bits with `blast_fun::blast_fun::unpause`.
-CREATE is 1, BUY is 2, SELL is 4, MIGRATE is 8.
+CREATE is 1, TRADING is 2, MIGRATE is 4; all flags together are 7.
+TRADING pauses buying and selling together. The package constants
+`create_pause_bit`, `trading_pause_bit`, and `migration_pause_bit` live in the
+launchpad constants module; `valid_pause_bits` combines them.
 Pauses never expire. Claims, refunds and mandatory settlement remain callable.
-Launch creation/finalization/sharing, buys and opening-round entry/settlement, sells and migration check their respective bits; opening-round delivery stays open.
+Launch creation/finalization/sharing checks CREATE. Buys, sells and opening-round
+entry/settlement check TRADING. Migration checks MIGRATE; opening-round delivery stays open.
 
 CreatorAdmin schedules each cap replacement separately with
 `launch::schedule_curve_fee_cap_reassignment` or
@@ -624,6 +628,15 @@ the transaction sender; take it from the transaction.
 
 | Event | Emitted by | Key fields and what to derive |
 | --- | --- | --- |
+| `blast_fun::events::Paused`, `blast_fun::events::Unpaused` | pause admin or unpause admin | requested `bits`, resulting `paused` mask |
+| `blast_fun::events::TreasuryScheduled`, `blast_fun::events::TreasuryCancelled` | treasury schedule or cancel | proposed `treasury`; schedule includes `ready_at_ms` |
+| `blast_fun::events::ProtocolFeeShareScheduled`, `blast_fun::events::ProtocolFeeShareCancelled` | fee-share schedule or cancel | proposed `protocol_fee_share_bps`; schedule includes `ready_at_ms` |
+| `blast_fun::events::CreatorClaimSignerScheduled`, `blast_fun::events::CreatorClaimSignerCancelled` | signer schedule, cancellation or immediate revocation | proposed `signer_public_key`; schedule includes `ready_at_ms` |
+| `blast_fun::events::MigrationWitnessScheduled`, `blast_fun::events::MigrationWitnessCancelled` | adapter admission schedule, cancellation or removal | proposed `witness`; schedule includes `ready_at_ms` |
+| `blast_fun::events::ProtocolAllocationScheduled`, `blast_fun::events::ProtocolAllocationCancelled` | protocol allocation schedule or cancel | proposed `meme_bps` and `quote_bps`; schedule includes `ready_at_ms` |
+| `blast_fun::events::CreationFeeScheduled`, `blast_fun::events::CreationFeeCancelled` | creation fee schedule or cancel | proposed `creation_fee`; schedule includes `ready_at_ms` |
+| `blast_fun::events::TradeFeesScheduled`, `blast_fun::events::TradeFeesCancelled` | trade fee schedule or cancel | proposed `quote_fee_bps` and `meme_fee_bps`; schedule includes `ready_at_ms` |
+| `blast_fun::events::UpgradeActionScheduled`, `blast_fun::events::UpgradeActionCancelled` | upgrade or immutability schedule or cancel | `action` uses `blast_fun::events::UpgradeAction`; schedule includes `ready_at_ms` |
 | `blast_fun::events::LaunchTicketCreated` | coin publish | `ticket_id`, `meme` type, `decimals`, `metadata_cap_id`, `creator`, `burnable`, `sell_burn_bps` |
 | `blast_fun::events::LaunchCreated` | `launch::finalize` | `launch_id`, `ticket_id` (join to the ticket for the Meme type), `quote` type, `migration_witness`, pool tier, `lp_fee_split`, `virtual_quote`, `graduation_target`, both fee rates, the full `allocation_plan` with Blast's shares, `opening_round_ms`, `creation_fee`, `partner_id` |
 | `blast_fun::events::LaunchShared` | `launch::share` | `public_start_ms`; round end is this plus `opening_round_ms` |
@@ -633,6 +646,8 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::Bought` | buy, settlement | `quote_in` (gross used), `meme_out_gross`, `meme_out_net`, `quote_refund`, the four fee parts, reserves after; graduated when `real_quote_reserve >= graduation_target`. A `Bought` before `LaunchShared` in the creation transaction is the creator's buy; the one beside `OpeningRoundSettled` is the pot's |
 | `blast_fun::events::Sold` | sell | `meme_in_gross`, `pending_burn` added, `quote_out_gross`, the four fee parts, reserves after |
 | `blast_fun::events::CreatorCapsClaimed` | creator claim | `meme` type and both cap IDs (no launch ID: one launch per Meme type) |
+| `blast_fun::events::CurveFeeCapReassignmentScheduled`, `blast_fun::events::MetadataCapReassignmentScheduled` | creator admin schedules replacement | `launch_id`, proposed `recipient`, `ready_at_ms` |
+| `blast_fun::events::CurveFeeCapReassignmentCancelled`, `blast_fun::events::MetadataCapReassignmentCancelled` | cancel admin cancels replacement | `launch_id`, cancelled `recipient` |
 | `blast_fun::events::CurveFeeCapReassigned`, `blast_fun::events::MetadataCapReassigned` | admin | `launch_id`, new cap ID, `recipient` |
 | `blast_fun::events::MemeMetadataUpdated` | metadata setters | `launch_id`, current `name`, `description`, `icon_url` |
 | `blast_fun::events::CreatorFeesClaimed` | creator fee claim | `launch_id`, `meme_amount`, `quote_amount` |
@@ -658,6 +673,9 @@ that detected it.
 | Flow | Code, constant (module) | Fix |
 | --- | --- | --- |
 | any | 13 in `blast_admin::operational_version` | call the launchpad's current package ID |
+| pause, unpause | 38 `blast_fun::errors::EInvalidPauseBits`, 39 `blast_fun::errors::EPauseUnchanged` (`blast_fun`) | select nonzero supported bits that change the active mask |
+| create, buy, sell, voluntary migration | 40 `blast_fun::errors::EPaused` (`blast_fun`) | wait for an `UnpauseAdmin` to clear the operation's bit |
+| package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::ENoPendingAction`, 43 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; schedule before applying or cancelling; use a 32-byte digest |
 | publish | 9 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 25 `blast_fun::errors::EInvalidCreatorRecipient`, 26 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | start | 11 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 32 `blast_fun::errors::EQuoteNotAllowed`, 3 `blast_fun::errors::EMigrationWitnessNotAllowed`, 2 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, adapter, and decimals |

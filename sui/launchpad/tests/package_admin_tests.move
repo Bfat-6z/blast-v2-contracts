@@ -297,7 +297,7 @@ fun repeated_immutability_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = package_admin::EInvalidDigest,
+    abort_code = blast_fun::errors::EInvalidDigest,
     location = blast_fun::package_admin,
 )]
 fun authorization_rejects_non_digest_length() {

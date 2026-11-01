@@ -6,23 +6,7 @@
 /// Shared custody of this package's Publisher and UpgradeCap, driven by package administrators.
 module blast_fun::package_admin;
 
-// === Errors ===
-
-#[error(code = 0)]
-const EWrongUpgradeAction: vector<u8> = b"The ready action must match the requested upgrade digest or immutability.";
-#[error(code = 1)]
-const ENoPendingAction: vector<u8> = b"No upgrade action is scheduled.";
-#[error(code = 2)]
-const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
-
 // === Public Types ===
-
-/// The exact code digest or irreversible end of upgrades approved for execution.
-public enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable }
-/// A publicly announced upgrade action with its execution threshold.
-public struct UpgradeActionScheduled has copy, drop { action: UpgradeAction, ready_at_ms: u64 }
-/// A cancelled upgrade action, which can no longer execute.
-public struct UpgradeActionCancelled has copy, drop { action: UpgradeAction }
 
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
@@ -36,28 +20,28 @@ public struct PackageAdmin has key {
 /// Schedules one exact code digest, replacing any previous action.
 public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock) {
     package_version.assert_current();
-    assert!(digest.length() == 32, EInvalidDigest);
-    let action = UpgradeAction::Upgrade(digest);
+    assert!(digest.length() == 32, blast_fun::errors::invalid_digest!());
+    let action = events::upgrade_action(digest);
     let pending = delayed::new_pending(action, clock);
     self.pending = option::some(pending);
-    blast_fun::blast_events::emit_event(UpgradeActionScheduled { action, ready_at_ms: pending.ready_at_ms() });
+    events::upgrade_action_scheduled(action, pending.ready_at_ms());
 }
 
 /// Schedules the irreversible destruction of upgrade authority after public notice.
 public fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
     package_version.assert_current();
-    let action = UpgradeAction::MakeImmutable;
+    let action = events::immutability_action();
     let pending = delayed::new_pending(action, clock);
     self.pending = option::some(pending);
-    blast_fun::blast_events::emit_event(UpgradeActionScheduled { action, ready_at_ms: pending.ready_at_ms() });
+    events::upgrade_action_scheduled(action, pending.ready_at_ms());
 }
 
 /// Cancels any scheduled action, even after its execution threshold.
 public fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
     package_version.assert_current();
-    assert!(self.pending.is_some(), ENoPendingAction);
+    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
     let action = self.pending.extract().proposed();
-    blast_fun::blast_events::emit_event(UpgradeActionCancelled { action });
+    events::upgrade_action_cancelled(action);
 }
 
 /// Consumes publication bootstrap, seals native custody, and enables the initial generation.
@@ -81,8 +65,8 @@ public fun authorize_upgrade(
     package_version.assert_current();
     let custodian_id = self.id.to_inner();
 
-    assert!(self.pending.is_some(), ENoPendingAction);
-    assert!(self.pending.destroy_some().take_ready(clock) == UpgradeAction::Upgrade(digest), EWrongUpgradeAction);
+    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
+    assert!(self.pending.destroy_some().take_ready(clock) == events::upgrade_action(digest), blast_fun::errors::wrong_upgrade_action!());
     self.pending = option::none();
     self.custody.authorize_upgrade(custodian_id, digest)
 }
@@ -106,8 +90,8 @@ public fun commit_upgrade_and_advance(
 /// Executes a ready immutability decision under the live upgrade role.
 public fun make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
     package_version.assert_current();
-    assert!(self.pending.is_some(), ENoPendingAction);
-    assert!(self.pending.destroy_some().take_ready(clock) == UpgradeAction::MakeImmutable, EWrongUpgradeAction);
+    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
+    assert!(self.pending.destroy_some().take_ready(clock) == events::immutability_action(), blast_fun::errors::wrong_upgrade_action!());
     self.pending = option::none();
     self.custody.make_immutable(self.id.to_inner());
 }
@@ -200,6 +184,7 @@ use blast_admin::{
 };
 
 use blast_fun::{
+    events::{Self, UpgradeAction},
     blast_fun::{BLAST_FUN, Bootstrap, PackageVersion},
     blast_fun_domain::{CancelAdmin, UpgradeAdmin},
 };

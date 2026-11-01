@@ -100,12 +100,12 @@ public struct LaunchFixture {
 // === Tests ===
 
 #[test]
-#[expected_failure(abort_code = blast_fun::blast_fun::EPaused, location = blast_fun::blast_fun)]
-fun buy_pause_blocks_a_live_launch_before_coin_validation() {
+#[expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+fun trading_pause_blocks_buy_before_coin_validation() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+        f.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), constants::trading_pause_bit!());
         let (meme, refund) = f.buy(&mut launch, 0, 0);
         destroy(meme);
         destroy(refund);
@@ -114,6 +114,42 @@ fun buy_pause_blocks_a_live_launch_before_coin_validation() {
     fixture.end();
 }
 
+
+#[test]
+#[expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+fun trading_pause_blocks_sell_before_lifecycle_and_coin_validation() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        f.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), constants::trading_pause_bit!());
+        let meme = coin::zero<LAUNCH_TESTS>(f.ctx!());
+        let quote = launch.sell(&f.package_version, &f.runtime_config, meme, 0, f.ctx!());
+        destroy(quote);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test]
+fun clearing_trading_restores_buy_and_sell_while_migration_stays_paused() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let launch = f.new_default_launch(CREATOR);
+        let mut launch = f.open_launch(launch);
+        f.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), constants::trading_pause_bit!() | constants::migration_pause_bit!());
+        f.package_version.unpause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UnpauseAdmin>(), constants::trading_pause_bit!());
+
+        let (meme, refund) = f.buy(&mut launch, 1_000_000, 1);
+        assert!(meme.value() > 0);
+        let quote = launch.sell(&f.package_version, &f.runtime_config, meme, 1, f.ctx!());
+        assert!(quote.value() > 0);
+
+        destroy(refund);
+        destroy(quote);
+        destroy(launch);
+    });
+    fixture.end();
+}
 
 // --- Construction ---
 
@@ -1075,6 +1111,56 @@ fun buy_checks_the_version_first() {
 // --- Creator caps ---
 
 #[test]
+fun creator_cap_reassignment_events_record_schedules_and_cancellations() {
+    let mut fixture = start();
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        let launch_id = object::id(&launch);
+        let curve_recipient = NEW_CREATOR;
+        let metadata_recipient = CREATOR;
+        let admin_witness = creator_admin();
+        let cancel_witness = blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>();
+        f.clock.set_for_testing(1_234);
+
+        launch.schedule_curve_fee_cap_reassignment(&f.package_version, &admin_witness, curve_recipient, &f.clock);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &admin_witness, metadata_recipient, &f.clock);
+
+        let mut curve_expected = bcs::to_bytes(&launch_id);
+        curve_expected.append(bcs::to_bytes(&curve_recipient));
+        let mut curve_scheduled_expected = curve_expected;
+        curve_scheduled_expected.append(bcs::to_bytes(&172_801_234u64));
+        assert_eq!(
+            bcs::to_bytes(&collect_one<events::CurveFeeCapReassignmentScheduled>()),
+            curve_scheduled_expected,
+        );
+        let mut metadata_expected = bcs::to_bytes(&launch_id);
+        metadata_expected.append(bcs::to_bytes(&metadata_recipient));
+        let mut metadata_scheduled_expected = metadata_expected;
+        metadata_scheduled_expected.append(bcs::to_bytes(&172_801_234u64));
+        assert_eq!(
+            bcs::to_bytes(&collect_one<events::MetadataCapReassignmentScheduled>()),
+            metadata_scheduled_expected,
+        );
+
+        launch.cancel_curve_fee_cap_reassignment(&f.package_version, &cancel_witness);
+        launch.cancel_metadata_cap_reassignment(&f.package_version, &cancel_witness);
+        assert_eq!(
+            bcs::to_bytes(&collect_one<events::CurveFeeCapReassignmentCancelled>()),
+            curve_expected,
+        );
+        assert_eq!(
+            bcs::to_bytes(&collect_one<events::MetadataCapReassignmentCancelled>()),
+            metadata_expected,
+        );
+
+        destroy(launch);
+    });
+
+    fixture.end();
+}
+
+#[test]
 /// The launcher designates `CREATOR`, who claims both caps; the launch keeps the native cap.
 fun designated_creator_claims_both_caps() {
     let mut fixture = start();
@@ -1751,7 +1837,7 @@ fun anyone_claims_blasts_trade_fees_for_the_treasury() {
         assert!(protocol_quote > 0);
         assert!(creator_quote > protocol_quote);
 
-        f.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 15);
+        f.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), constants::valid_pause_bits!());
         launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
 
         let (protocol_meme_left, creator_meme_left, protocol_quote_left, creator_quote_left) = launch
@@ -3456,6 +3542,7 @@ use blast_fun::{
     bps,
     creator_authority::{Self, BlastMetadataCap, CurveFeeCap},
     curve,
+    constants,
     events,
     launch::{Self, Launch, LaunchInitializer},
     launch_config,

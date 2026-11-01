@@ -8,16 +8,6 @@ module blast_fun::launch;
 
 // === Public Types ===
 
-/// Public notice of creator-authority replacement.
-public struct MetadataCapReassignmentScheduled has copy, drop { launch_id: ID, recipient: address, ready_at_ms: u64 }
-/// Cancelled replacement, identified by its launch and recipient.
-public struct MetadataCapReassignmentCancelled has copy, drop { launch_id: ID, recipient: address }
-
-/// Public notice of creator-authority replacement.
-public struct CurveFeeCapReassignmentScheduled has copy, drop { launch_id: ID, recipient: address, ready_at_ms: u64 }
-/// Cancelled replacement, identified by its launch and recipient.
-public struct CurveFeeCapReassignmentCancelled has copy, drop { launch_id: ID, recipient: address }
-
 public enum Lifecycle has copy, drop, store {
     OpeningRound,
     Live,
@@ -99,7 +89,7 @@ public fun new<Meme, Quote, Witness: drop>(
     pool_fee_rate: u64,
 ): LaunchInitializer<Meme, Quote> {
     package_version.assert_current();
-    package_version.assert_not_paused(1);
+    package_version.assert_not_paused(constants::create_pause_bit!());
     assert!(
         type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(),
         blast_fun::errors::invalid_meme_quote_pair!(),
@@ -224,7 +214,7 @@ public fun finalize<Meme, Quote>(
     ctx: &mut TxContext,
 ): Launch<Meme, Quote> {
     package_version.assert_current();
-    package_version.assert_not_paused(1);
+    package_version.assert_not_paused(constants::create_pause_bit!());
     let LaunchInitializer {
         ticket,
         migration_witness,
@@ -330,7 +320,7 @@ public fun share<Meme, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
-    package_version.assert_not_paused(1);
+    package_version.assert_not_paused(constants::create_pause_bit!());
     assert!(self.public_start_ms.is_none(), blast_fun::errors::invalid_launch_lifecycle!());
 
     let public_starts_at_ms = clock.timestamp_ms();
@@ -390,14 +380,14 @@ public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Me
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
     let pending = delayed::new_pending(recipient, clock);
     self.pending_curve_fee_cap_recipient = option::some(pending);
-    blast_fun::blast_events::emit_event(CurveFeeCapReassignmentScheduled { launch_id: self.id.to_inner(), recipient, ready_at_ms: pending.ready_at_ms() });
+    events::curve_fee_cap_reassignment_scheduled(self.id.to_inner(), recipient, pending.ready_at_ms());
 }
 
 /// Cancels the replacement without affecting either live creator cap.
 public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
     package_version.assert_current();
     let recipient = self.pending_curve_fee_cap_recipient.extract().proposed();
-    blast_fun::blast_events::emit_event(CurveFeeCapReassignmentCancelled { launch_id: self.id.to_inner(), recipient });
+    events::curve_fee_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
 
 public fun reassign_curve_fee_cap<Meme, Quote>(
@@ -426,14 +416,14 @@ public fun schedule_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Mem
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
     let pending = delayed::new_pending(recipient, clock);
     self.pending_metadata_cap_recipient = option::some(pending);
-    blast_fun::blast_events::emit_event(MetadataCapReassignmentScheduled { launch_id: self.id.to_inner(), recipient, ready_at_ms: pending.ready_at_ms() });
+    events::metadata_cap_reassignment_scheduled(self.id.to_inner(), recipient, pending.ready_at_ms());
 }
 
 /// Cancels the replacement without affecting either live creator cap.
 public fun cancel_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
     package_version.assert_current();
     let recipient = self.pending_metadata_cap_recipient.extract().proposed();
-    blast_fun::blast_events::emit_event(MetadataCapReassignmentCancelled { launch_id: self.id.to_inner(), recipient });
+    events::metadata_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
 
 public fun reassign_metadata_cap<Meme, Quote>(
@@ -510,7 +500,7 @@ public fun join_opening_round<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
-    package_version.assert_not_paused(2);
+    package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
         self.lifecycle == Lifecycle::OpeningRound,
         blast_fun::errors::invalid_launch_lifecycle!(),
@@ -540,7 +530,7 @@ public fun settle_opening_round<Meme, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
-    package_version.assert_not_paused(2);
+    package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
         self.lifecycle == Lifecycle::OpeningRound,
         blast_fun::errors::invalid_launch_lifecycle!(),
@@ -599,7 +589,7 @@ public fun buy<Meme, Quote>(
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
     package_version.assert_current();
-    package_version.assert_not_paused(2);
+    package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(self.lifecycle == Lifecycle::Live, blast_fun::errors::invalid_launch_lifecycle!());
 
     let (meme_out, quote_refund) = self.buy_from_curve(
@@ -625,7 +615,7 @@ public fun sell<Meme, Quote>(
     ctx: &mut TxContext,
 ): Coin<Quote> {
     package_version.assert_current();
-    package_version.assert_not_paused(4);
+    package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
         self.public_start_ms.is_some() && self.lifecycle == Lifecycle::Live,
         blast_fun::errors::invalid_launch_lifecycle!(),
@@ -776,7 +766,7 @@ public fun migrate<Meme, Quote, Witness: drop>(
     ctx: &mut TxContext,
 ): (Balance<Meme>, Balance<Quote>) {
     package_version.assert_current();
-    package_version.assert_not_paused(8);
+    package_version.assert_not_paused(constants::migration_pause_bit!());
     assert!(
         self.lifecycle == Lifecycle::MigrationReady,
         blast_fun::errors::invalid_launch_lifecycle!(),

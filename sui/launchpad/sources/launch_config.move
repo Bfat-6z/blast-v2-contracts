@@ -8,26 +8,6 @@ module blast_fun::launch_config;
 
 // === Public Types ===
 
-/// The admitted type and Unix millisecond execution threshold.
-public struct MigrationWitnessScheduled has copy, drop { witness: TypeName, ready_at_ms: u64 }
-/// An adapter admission removed from the pending set.
-public struct MigrationWitnessCancelled has copy, drop { witness: TypeName }
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct ProtocolAllocationScheduled has copy, drop { meme_bps: u64, quote_bps: u64, ready_at_ms: u64 }
-/// Values removed from the pending schedule.
-public struct ProtocolAllocationCancelled has copy, drop { meme_bps: u64, quote_bps: u64 }
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct CreationFeeScheduled has copy, drop { creation_fee: u64, ready_at_ms: u64 }
-/// Values removed from the pending schedule.
-public struct CreationFeeCancelled has copy, drop { creation_fee: u64 }
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct TradeFeesScheduled has copy, drop { quote_fee_bps: u64, meme_fee_bps: u64, ready_at_ms: u64 }
-/// Values removed from the pending schedule.
-public struct TradeFeesCancelled has copy, drop { quote_fee_bps: u64, meme_fee_bps: u64 }
-
 /// The two trade rates change atomically.
 public struct TradeFees has copy, drop, store { quote_fee_bps: Bps, meme_fee_bps: Bps }
 
@@ -74,7 +54,7 @@ public fun schedule_protocol_allocation(
     let value = allocation::protocol_allocation(meme_bps, quote_bps);
     assert!(value != self.protocol_allocation.value(), blast_fun::errors::unchanged!());
     let ready_at_ms = self.protocol_allocation.schedule(value, clock);
-    blast_fun::blast_events::emit_event(ProtocolAllocationScheduled { meme_bps: meme_bps.value(), quote_bps: quote_bps.value(), ready_at_ms });
+    events::protocol_allocation_scheduled(meme_bps.value(), quote_bps.value(), ready_at_ms);
 }
 
 /// Applies the scheduled protocol allocation permissionlessly once ready.
@@ -100,7 +80,7 @@ public fun cancel_protocol_allocation(
     let value = self.protocol_allocation.cancel();
     let meme_bps = value.meme_bps();
     let quote_bps = value.quote_bps();
-    blast_fun::blast_events::emit_event(ProtocolAllocationCancelled { meme_bps: meme_bps.value(), quote_bps: quote_bps.value() });
+    events::protocol_allocation_cancelled(meme_bps.value(), quote_bps.value());
 }
 
 public fun set_meme_decimals_allowed(
@@ -147,7 +127,7 @@ public fun schedule_trade_fees(
     let value = TradeFees { quote_fee_bps, meme_fee_bps };
     assert!(value != self.trade_fees.value(), blast_fun::errors::unchanged!());
     let ready_at_ms = self.trade_fees.schedule(value, clock);
-    blast_fun::blast_events::emit_event(TradeFeesScheduled { quote_fee_bps: quote_fee_bps.value(), meme_fee_bps: meme_fee_bps.value(), ready_at_ms });
+    events::trade_fees_scheduled(quote_fee_bps.value(), meme_fee_bps.value(), ready_at_ms);
 }
 
 /// Applies the scheduled trade fees permissionlessly once ready.
@@ -173,7 +153,7 @@ public fun cancel_trade_fees(
     let value = self.trade_fees.cancel();
     let quote_fee_bps = value.quote_fee_bps;
     let meme_fee_bps = value.meme_fee_bps;
-    blast_fun::blast_events::emit_event(TradeFeesCancelled { quote_fee_bps: quote_fee_bps.value(), meme_fee_bps: meme_fee_bps.value() });
+    events::trade_fees_cancelled(quote_fee_bps.value(), meme_fee_bps.value());
 }
 
 /// Sets the SUI, in MIST, every launch created afterward pays.
@@ -190,7 +170,7 @@ public fun schedule_creation_fee(
     let value = creation_fee;
     assert!(value != self.creation_fee.value(), blast_fun::errors::unchanged!());
     let ready_at_ms = self.creation_fee.schedule(value, clock);
-    blast_fun::blast_events::emit_event(CreationFeeScheduled { creation_fee: creation_fee, ready_at_ms });
+    events::creation_fee_scheduled(creation_fee, ready_at_ms);
 }
 
 /// Applies the scheduled creation fee permissionlessly once ready.
@@ -214,7 +194,7 @@ public fun cancel_creation_fee(
     package_version.assert_current();
     let value = self.creation_fee.cancel();
     let creation_fee = value;
-    blast_fun::blast_events::emit_event(CreationFeeCancelled { creation_fee: creation_fee });
+    events::creation_fee_cancelled(creation_fee);
 }
 
 /// Lets new launches name `partner`, at once. Adding a partner whose removal is pending cancels
@@ -279,7 +259,7 @@ public fun schedule_migration_witness<MigrationWitness: drop>(self: &mut LaunchC
     let pending = delayed::new_pending(true, clock);
     if (self.pending_witnesses.contains(&witness)) { self.pending_witnesses.remove(&witness); };
     self.pending_witnesses.insert(witness, pending);
-    blast_fun::blast_events::emit_event(MigrationWitnessScheduled { witness, ready_at_ms: pending.ready_at_ms() });
+    events::migration_witness_scheduled(witness, pending.ready_at_ms());
 }
 
 /// Permissionlessly applies the approved adapter admission once ready.
@@ -297,7 +277,7 @@ public fun cancel_migration_witness<MigrationWitness: drop>(self: &mut LaunchCon
     package_version.assert_current();
     let witness = type_name::with_original_ids<MigrationWitness>();
     self.pending_witnesses.remove(&witness);
-    blast_fun::blast_events::emit_event(MigrationWitnessCancelled { witness });
+    events::migration_witness_cancelled(witness);
 }
 
 /// Immediately removes adapter authority and cancels any pending admission.
@@ -307,7 +287,7 @@ public fun remove_migration_witness<MigrationWitness: drop>(self: &mut LaunchCon
     assert!(self.migration_witnesses.contains(&witness) || self.pending_witnesses.contains(&witness), blast_fun::errors::unchanged!());
     if (self.pending_witnesses.contains(&witness)) {
         self.pending_witnesses.remove(&witness);
-        blast_fun::blast_events::emit_event(MigrationWitnessCancelled { witness });
+        events::migration_witness_cancelled(witness);
     };
     if (self.migration_witnesses.contains(&witness)) {
         self.migration_witnesses.remove(&witness);

@@ -599,9 +599,13 @@ of the previous publication.
 
 A `PauseAdmin` calls `blast_fun::blast_fun::pause` to set selected bits on the shared
 package version. Only `UnpauseAdmin` may clear bits with `blast_fun::blast_fun::unpause`.
-CREATE is 1, BUY is 2, SELL is 4, MIGRATE is 8.
+CREATE is 1, TRADING is 2, MIGRATE is 4; all flags together are 7.
+TRADING pauses buying and selling together. The package constants
+`create_pause_bit`, `trading_pause_bit`, and `migration_pause_bit` live in the
+launchpad constants module; `valid_pause_bits` combines them.
 Pauses never expire. Claims, refunds and mandatory settlement remain callable.
-Launch creation/finalization/sharing, buys and opening-round entry/settlement, sells and migration check their respective bits; opening-round delivery stays open.
+Launch creation/finalization/sharing checks CREATE. Buys, sells and opening-round
+entry/settlement check TRADING. Migration checks MIGRATE; opening-round delivery stays open.
 
 CreatorAdmin schedules each cap replacement separately with
 `launch::schedule_curve_fee_cap_reassignment` or
@@ -799,6 +803,15 @@ the transaction sender; take it from the transaction.
 
 | Event | Emitted by | Key fields and what to derive |
 | --- | --- | --- |
+| `blast_fun::events::Paused`, `blast_fun::events::Unpaused` | pause admin or unpause admin | requested `bits`, resulting `paused` mask |
+| `blast_fun::events::TreasuryScheduled`, `blast_fun::events::TreasuryCancelled` | treasury schedule or cancel | proposed `treasury`; schedule includes `ready_at_ms` |
+| `blast_fun::events::ProtocolFeeShareScheduled`, `blast_fun::events::ProtocolFeeShareCancelled` | fee-share schedule or cancel | proposed `protocol_fee_share_bps`; schedule includes `ready_at_ms` |
+| `blast_fun::events::CreatorClaimSignerScheduled`, `blast_fun::events::CreatorClaimSignerCancelled` | signer schedule, cancellation or immediate revocation | proposed `signer_public_key`; schedule includes `ready_at_ms` |
+| `blast_fun::events::MigrationWitnessScheduled`, `blast_fun::events::MigrationWitnessCancelled` | adapter admission schedule, cancellation or removal | proposed `witness`; schedule includes `ready_at_ms` |
+| `blast_fun::events::ProtocolAllocationScheduled`, `blast_fun::events::ProtocolAllocationCancelled` | protocol allocation schedule or cancel | proposed `meme_bps` and `quote_bps`; schedule includes `ready_at_ms` |
+| `blast_fun::events::CreationFeeScheduled`, `blast_fun::events::CreationFeeCancelled` | creation fee schedule or cancel | proposed `creation_fee`; schedule includes `ready_at_ms` |
+| `blast_fun::events::TradeFeesScheduled`, `blast_fun::events::TradeFeesCancelled` | trade fee schedule or cancel | proposed `quote_fee_bps` and `meme_fee_bps`; schedule includes `ready_at_ms` |
+| `blast_fun::events::UpgradeActionScheduled`, `blast_fun::events::UpgradeActionCancelled` | upgrade or immutability schedule or cancel | `action` uses `blast_fun::events::UpgradeAction`; schedule includes `ready_at_ms` |
 | `blast_fun::events::LaunchTicketCreated` | coin publish | `ticket_id`, `meme` type, `decimals`, `metadata_cap_id`, `creator`, `burnable`, `sell_burn_bps` |
 | `blast_fun::events::LaunchCreated` | `launch::finalize` | `launch_id`, `ticket_id` (join to the ticket for the Meme type), `quote` type, `migration_witness`, pool tier, `lp_fee_split`, `virtual_quote`, `graduation_target`, both fee rates, the full `allocation_plan` with Blast's shares, `opening_round_ms`, `creation_fee`, `partner_id` |
 | `blast_fun::events::LaunchShared` | `launch::share` | `public_start_ms`; round end is this plus `opening_round_ms` |
@@ -808,6 +821,8 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::Bought` | buy, settlement | `quote_in` (gross used), `meme_out_gross`, `meme_out_net`, `quote_refund`, the four fee parts, reserves after; graduated when `real_quote_reserve >= graduation_target`. A `Bought` before `LaunchShared` in the creation transaction is the creator's buy; the one beside `OpeningRoundSettled` is the pot's |
 | `blast_fun::events::Sold` | sell | `meme_in_gross`, `pending_burn` added, `quote_out_gross`, the four fee parts, reserves after |
 | `blast_fun::events::CreatorCapsClaimed` | creator claim | `meme` type and both cap IDs (no launch ID: one launch per Meme type) |
+| `blast_fun::events::CurveFeeCapReassignmentScheduled`, `blast_fun::events::MetadataCapReassignmentScheduled` | creator admin schedules replacement | `launch_id`, proposed `recipient`, `ready_at_ms` |
+| `blast_fun::events::CurveFeeCapReassignmentCancelled`, `blast_fun::events::MetadataCapReassignmentCancelled` | cancel admin cancels replacement | `launch_id`, cancelled `recipient` |
 | `blast_fun::events::CurveFeeCapReassigned`, `blast_fun::events::MetadataCapReassigned` | admin | `launch_id`, new cap ID, `recipient` |
 | `blast_fun::events::MemeMetadataUpdated` | metadata setters | `launch_id`, current `name`, `description`, `icon_url` |
 | `blast_fun::events::CreatorFeesClaimed` | creator fee claim | `launch_id`, `meme_amount`, `quote_amount` |
@@ -833,6 +848,9 @@ that detected it.
 | Flow | Code, constant (module) | Fix |
 | --- | --- | --- |
 | any | 13 in `blast_admin::operational_version` | call the launchpad's current package ID |
+| pause, unpause | 38 `blast_fun::errors::EInvalidPauseBits`, 39 `blast_fun::errors::EPauseUnchanged` (`blast_fun`) | select nonzero supported bits that change the active mask |
+| create, buy, sell, voluntary migration | 40 `blast_fun::errors::EPaused` (`blast_fun`) | wait for an `UnpauseAdmin` to clear the operation's bit |
+| package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::ENoPendingAction`, 43 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; schedule before applying or cancelling; use a 32-byte digest |
 | publish | 9 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 25 `blast_fun::errors::EInvalidCreatorRecipient`, 26 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | start | 11 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 32 `blast_fun::errors::EQuoteNotAllowed`, 3 `blast_fun::errors::EMigrationWitnessNotAllowed`, 2 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, adapter, and decimals |
@@ -1994,6 +2012,12 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 35 | `EInvalidCreationFee` | The creation fee paid is not exactly the configured one. |
 | 36 | `EPartnerNotAccepted` | New launches may not name this Blast partner. |
 | 37 | `EPartnerMismatch` | The call does not name exactly the launch's partner. |
+| 38 | `EInvalidPauseBits` | The pause bits are zero or unsupported by this package. |
+| 39 | `EPauseUnchanged` | The requested pause change does not alter the active bits. |
+| 40 | `EPaused` | The operation is paused. |
+| 41 | `EWrongUpgradeAction` | The ready action does not match the requested upgrade digest or immutability. |
+| 42 | `ENoPendingAction` | No upgrade action is scheduled. |
+| 43 | `EInvalidDigest` | The package digest is not 32 bytes. |
 
 ### `blast_fun::allocation`
 
@@ -2135,35 +2159,10 @@ public fun unpause(
 )
 ```
 
-#### Events
-
-```move
-/// The requested bits and resulting pause mask.
-public struct Paused has copy, drop {
-    bits: u8,
-    paused: u8,
-}
-
-/// The released bits and resulting pause mask.
-public struct Unpaused has copy, drop {
-    bits: u8,
-    paused: u8,
-}
-```
-
-#### Errors
-
-| Constant | Code | Message |
-| --- | --- | --- |
-| `EInvalidPauseBits` | 0 | Select nonzero pause bits supported by this package. |
-| `EPauseUnchanged` | 1 | The requested pause change must alter the active bits. |
-| `EPaused` | 2 | This operation is paused. |
-
 #### Constants
 
 - `PACKAGE_VERSION: u64 = 1`: Current package generation accepted by every protected mutation.
 - `NEXT_PACKAGE_VERSION: u64 = 2`: The generation this bytecode hands over to in a governed upgrade.
-- `VALID_PAUSE_BITS: u8 = 15`
 
 ### `blast_fun::blast_fun_domain`
 
@@ -2244,6 +2243,10 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 
 #### Constants
 
+- `create_pause_bit: u8 = 1`: Stops launch creation, finalization, and sharing.
+- `trading_pause_bit: u8 = 2`: Stops buying, selling, and opening-round entry and settlement.
+- `migration_pause_bit: u8 = 4`: Stops voluntary launch migration.
+- `valid_pause_bits: u8 = blast_fun::constants::create_pause_bit!() | blast_fun::constants::trading_pause_bit!() | blast_fun::constants::migration_pause_bit!()`: Every supported launchpad pause flag.
 - `basis_points_denominator: u64 = 10_000`: Denominator for protocol rates expressed in basis points.
 - `max_recipients: u64 = 16`: Maximum recipients in an allocation plan or an LP-fee split.
 - `max_launch_fee_bps: u64 = 1_000`: Maximum LaunchConfig trade-fee rate for either the meme or quote asset.
@@ -2311,6 +2314,16 @@ Launchpad event payloads and their package-only emitters.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/lib/events.move
 
+#### Types
+
+```move
+/// The exact code digest or irreversible end of upgrades approved for execution.
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+}
+```
+
 #### Events
 
 ```move
@@ -2373,9 +2386,35 @@ public struct CreatorCapsClaimed has copy, drop {
     blast_metadata_cap_id: ID,
 }
 
+/// Public notice of creator-authority replacement.
+public struct CurveFeeCapReassignmentScheduled has copy, drop {
+    launch_id: ID,
+    recipient: address,
+    ready_at_ms: u64,
+}
+
+/// Cancelled replacement, identified by its launch and recipient.
+public struct CurveFeeCapReassignmentCancelled has copy, drop {
+    launch_id: ID,
+    recipient: address,
+}
+
 public struct CurveFeeCapReassigned has copy, drop {
     launch_id: ID,
     curve_fee_cap_id: ID,
+    recipient: address,
+}
+
+/// Public notice of creator-authority replacement.
+public struct MetadataCapReassignmentScheduled has copy, drop {
+    launch_id: ID,
+    recipient: address,
+    ready_at_ms: u64,
+}
+
+/// Cancelled replacement, identified by its launch and recipient.
+public struct MetadataCapReassignmentCancelled has copy, drop {
+    launch_id: ID,
     recipient: address,
 }
 
@@ -2529,6 +2568,110 @@ public struct ProtocolFeesAccrued has copy, drop {
     launch_id: ID,
     meme_amount: u64,
     quote_amount: u64,
+}
+
+/// The requested bits and resulting pause mask.
+public struct Paused has copy, drop {
+    bits: u8,
+    paused: u8,
+}
+
+/// The released bits and resulting pause mask.
+public struct Unpaused has copy, drop {
+    bits: u8,
+    paused: u8,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct TreasuryScheduled has copy, drop {
+    treasury: address,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct TreasuryCancelled has copy, drop {
+    treasury: address,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct ProtocolFeeShareScheduled has copy, drop {
+    protocol_fee_share_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct ProtocolFeeShareCancelled has copy, drop {
+    protocol_fee_share_bps: u64,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct CreatorClaimSignerScheduled has copy, drop {
+    signer_public_key: vector<u8>,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct CreatorClaimSignerCancelled has copy, drop {
+    signer_public_key: vector<u8>,
+}
+
+/// The admitted type and Unix millisecond execution threshold.
+public struct MigrationWitnessScheduled has copy, drop {
+    witness: TypeName,
+    ready_at_ms: u64,
+}
+
+/// An adapter admission removed from the pending set.
+public struct MigrationWitnessCancelled has copy, drop {
+    witness: TypeName,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct ProtocolAllocationScheduled has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct ProtocolAllocationCancelled has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct CreationFeeScheduled has copy, drop {
+    creation_fee: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct CreationFeeCancelled has copy, drop {
+    creation_fee: u64,
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct TradeFeesScheduled has copy, drop {
+    quote_fee_bps: u64,
+    meme_fee_bps: u64,
+    ready_at_ms: u64,
+}
+
+/// Values removed from the pending schedule.
+public struct TradeFeesCancelled has copy, drop {
+    quote_fee_bps: u64,
+    meme_fee_bps: u64,
+}
+
+/// A publicly announced upgrade action with its execution threshold.
+public struct UpgradeActionScheduled has copy, drop {
+    action: UpgradeAction,
+    ready_at_ms: u64,
+}
+
+/// A cancelled upgrade action, which can no longer execute.
+public struct UpgradeActionCancelled has copy, drop {
+    action: UpgradeAction,
 }
 ```
 
@@ -2904,36 +3047,6 @@ public fun assert_curve_fee_cap<Meme, Quote>(
 )
 ```
 
-#### Events
-
-```move
-/// Public notice of creator-authority replacement.
-public struct MetadataCapReassignmentScheduled has copy, drop {
-    launch_id: ID,
-    recipient: address,
-    ready_at_ms: u64,
-}
-
-/// Cancelled replacement, identified by its launch and recipient.
-public struct MetadataCapReassignmentCancelled has copy, drop {
-    launch_id: ID,
-    recipient: address,
-}
-
-/// Public notice of creator-authority replacement.
-public struct CurveFeeCapReassignmentScheduled has copy, drop {
-    launch_id: ID,
-    recipient: address,
-    ready_at_ms: u64,
-}
-
-/// Cancelled replacement, identified by its launch and recipient.
-public struct CurveFeeCapReassignmentCancelled has copy, drop {
-    launch_id: ID,
-    recipient: address,
-}
-```
-
 ### `blast_fun::launch_config`
 
 Launch policy each new launch snapshots.
@@ -3116,58 +3229,6 @@ public fun remove_migration_witness<MigrationWitness: drop>(
 )
 ```
 
-#### Events
-
-```move
-/// The admitted type and Unix millisecond execution threshold.
-public struct MigrationWitnessScheduled has copy, drop {
-    witness: TypeName,
-    ready_at_ms: u64,
-}
-
-/// An adapter admission removed from the pending set.
-public struct MigrationWitnessCancelled has copy, drop {
-    witness: TypeName,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct ProtocolAllocationScheduled has copy, drop {
-    meme_bps: u64,
-    quote_bps: u64,
-    ready_at_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct ProtocolAllocationCancelled has copy, drop {
-    meme_bps: u64,
-    quote_bps: u64,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct CreationFeeScheduled has copy, drop {
-    creation_fee: u64,
-    ready_at_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct CreationFeeCancelled has copy, drop {
-    creation_fee: u64,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct TradeFeesScheduled has copy, drop {
-    quote_fee_bps: u64,
-    meme_fee_bps: u64,
-    ready_at_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct TradeFeesCancelled has copy, drop {
-    quote_fee_bps: u64,
-    meme_fee_bps: u64,
-}
-```
-
 ### `blast_fun::launch_ticket`
 
 One-time-witness currency creation and custody of its inventory until a launch starts.
@@ -3218,17 +3279,11 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 #### Types
 
 ```move
-/// The exact code digest or irreversible end of upgrades approved for execution.
-public enum UpgradeAction has copy, drop, store {
-    Upgrade(vector<u8>),
-    MakeImmutable,
-}
-
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_fun::BLAST_FUN>,
-    pending: Option<blast_admin::delayed::Pending<UpgradeAction>>,
+    pending: Option<blast_admin::delayed::Pending<events::UpgradeAction>>,
 }
 ```
 
@@ -3288,29 +3343,6 @@ public fun make_immutable(
     clock: &Clock,
 )
 ```
-
-#### Events
-
-```move
-/// A publicly announced upgrade action with its execution threshold.
-public struct UpgradeActionScheduled has copy, drop {
-    action: UpgradeAction,
-    ready_at_ms: u64,
-}
-
-/// A cancelled upgrade action, which can no longer execute.
-public struct UpgradeActionCancelled has copy, drop {
-    action: UpgradeAction,
-}
-```
-
-#### Errors
-
-| Constant | Code | Message |
-| --- | --- | --- |
-| `EWrongUpgradeAction` | 0 | The ready action must match the requested upgrade digest or immutability. |
-| `ENoPendingAction` | 1 | No upgrade action is scheduled. |
-| `EInvalidDigest` | 2 | A package digest must contain 32 bytes. |
 
 ### `blast_fun::runtime_config`
 
@@ -3411,43 +3443,6 @@ public fun revoke_creator_claim_signer(
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::ClaimSignerAdmin>,
 )
-```
-
-#### Events
-
-```move
-/// Proposed values and Unix millisecond execution threshold.
-public struct TreasuryScheduled has copy, drop {
-    treasury: address,
-    ready_at_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct TreasuryCancelled has copy, drop {
-    treasury: address,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct ProtocolFeeShareScheduled has copy, drop {
-    protocol_fee_share_bps: u64,
-    ready_at_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct ProtocolFeeShareCancelled has copy, drop {
-    protocol_fee_share_bps: u64,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct CreatorClaimSignerScheduled has copy, drop {
-    signer_public_key: vector<u8>,
-    ready_at_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct CreatorClaimSignerCancelled has copy, drop {
-    signer_public_key: vector<u8>,
-}
 ```
 
 ## API reference: `blast_fun_migrators` (Migration and LP vaults)
