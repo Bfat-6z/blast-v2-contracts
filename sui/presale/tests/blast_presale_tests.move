@@ -106,6 +106,199 @@ public struct HardCapTerms has copy, drop {
 
 // === Tests ===
 
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_pause_blocks_new() {
+    let mut ctx = tx_context::dummy();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let (treasury, mut currency) = new_currency(&mut ctx);
+    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 1);
+    destroy(presale::new<BLAST_PRESALE_TESTS, QUOTE, TEST_MIGRATOR>(treasury, &version, TEST_MIGRATOR(), &creation_policy, &fee_policy));
+    destroy(currency); destroy(fee_policy); destroy(creation_policy); destroy(version);
+}
+
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_partial_unpause_keeps_new_paused() {
+    let mut ctx = tx_context::dummy();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let (treasury, mut currency) = new_currency(&mut ctx);
+    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 11);
+    version.unpause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UnpauseAdmin>(), 2);
+    destroy(presale::new<BLAST_PRESALE_TESTS, QUOTE, TEST_MIGRATOR>(treasury, &version, TEST_MIGRATOR(), &creation_policy, &fee_policy));
+    destroy(currency); destroy(fee_policy); destroy(creation_policy); destroy(version);
+}
+
+#[test]
+/// ADR 0134 gates presale new/share; finishing an existing initializer is deliberately allowed.
+fun security_presale_finalize_remains_available_as_specified() {
+    let mut ctx = tx_context::dummy();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let (treasury, mut currency) = new_currency(&mut ctx);
+    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let initializer = new_initializer<QUOTE>(&version, treasury, valid_sale_terms(), &creation_policy, &fee_policy);
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 1);
+    let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
+    destroy(sale); destroy(cap);
+    destroy(currency); destroy(fee_policy); destroy(creation_policy); destroy(version);
+}
+
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_pause_blocks_share() {
+    let mut ctx = tx_context::dummy();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let (treasury, mut currency) = new_currency(&mut ctx);
+    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let initializer = new_initializer<QUOTE>(&version, treasury, valid_sale_terms(), &creation_policy, &fee_policy);
+    let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 1);
+    let clock = clock::create_for_testing(&mut ctx);
+    sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
+    destroy(cap); destroy(clock);
+    destroy(currency); destroy(fee_policy); destroy(creation_policy); destroy(version);
+}
+
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_partial_unpause_keeps_share_paused() {
+    let mut ctx = tx_context::dummy();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let (treasury, mut currency) = new_currency(&mut ctx);
+    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let initializer = new_initializer<QUOTE>(&version, treasury, valid_sale_terms(), &creation_policy, &fee_policy);
+    let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 11);
+    version.unpause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UnpauseAdmin>(), 2);
+    let clock = clock::create_for_testing(&mut ctx);
+    sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
+    destroy(cap); destroy(clock);
+    destroy(currency); destroy(fee_policy); destroy(creation_policy); destroy(version);
+}
+
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_pause_blocks_commit_open() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 2);
+    fixture.next_tx!(ALICE, |f| {
+        let mut sale = f.take_presale();
+        destroy(sale.commit_open(&version, coin::mint_for_testing(100, f.ctx!()), &f.clock, f.ctx!()));
+        f.return_presale(sale);
+    });
+    destroy(version); fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_pause_blocks_commit_allowlisted() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 2);
+    fixture.next_tx!(ALICE, |f| {
+        let mut sale = f.take_presale();
+        destroy(sale.commit_allowlisted(&version, coin::mint_for_testing(100, f.ctx!()), 0, WALLET_CAP, vector[], &f.clock, f.ctx!()));
+        f.return_presale(sale);
+    });
+    destroy(version); fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_pause_blocks_commit_uncapped() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 2);
+    fixture.next_tx!(ALICE, |f| {
+        let mut sale = f.take_presale();
+        destroy(sale.commit_uncapped(&version, coin::mint_for_testing(100, f.ctx!()), &f.clock, f.ctx!()));
+        f.return_presale(sale);
+    });
+    destroy(version); fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_pause_blocks_migrate() {
+    let mut fixture = start_funded_sale();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 8);
+    fixture.next_tx!(ALICE, |f| {
+        let mut sale = f.take_presale();
+        let (meme, quote) = sale.migrate(&version, &f.fee_policy, TEST_MIGRATOR(), &f.clock, f.ctx!());
+        destroy(meme); destroy(quote);
+        f.return_presale(sale);
+    });
+    destroy(version); fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+fun security_partial_unpause_keeps_migrate_paused() {
+    let mut fixture = start_funded_sale();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 11);
+    version.unpause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UnpauseAdmin>(), 2);
+    fixture.next_tx!(ALICE, |f| {
+        let mut sale = f.take_presale();
+        let (meme, quote) = sale.migrate(&version, &f.fee_policy, TEST_MIGRATOR(), &f.clock, f.ctx!());
+        destroy(meme); destroy(quote);
+        f.return_presale(sale);
+    });
+    destroy(version); fixture.end();
+}
+
+#[test]
+fun security_partial_unpause_restores_commitments() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 11);
+    version.unpause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UnpauseAdmin>(), 2);
+    fixture.next_tx!(ALICE, |f| {
+        let mut sale = f.take_presale();
+        sale.commit_open(&version, coin::mint_for_testing(RAISE_TARGET, f.ctx!()), &f.clock, f.ctx!()).destroy_zero();
+        f.return_presale(sale);
+    });
+    assert_eq!(fixture.commitment(ALICE), RAISE_TARGET);
+    destroy(version); fixture.end();
+}
+
+#[test]
+fun security_fully_paused_funded_claim_pays_all_tokens() {
+    let mut fixture = start_funded_sale();
+    fixture.migrate();
+    fixture.take_recipient_allocations();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 11);
+    fixture.next_tx!(KEEPER, |f| {
+        let mut sale = f.take_presale();
+        sale.claim(&version, ALICE, &f.clock, f.ctx!());
+        f.return_presale(sale);
+    });
+    fixture.take_tokens(ALICE, TOKEN_ALLOCATION);
+    assert_eq!(fixture.custody(), vector[RAISE_TARGET, 0, 0, 0, 0, 0, 0]);
+    fixture.destroy_migrated_cap();
+    destroy(version); fixture.end();
+}
+
+#[test]
+fun security_fully_paused_unlaunched_cancellation_preserves_refund() {
+    let mut fixture = start_funded_sale();
+    fixture.set_time(LIQUIDITY_DEADLINE_AT_MS);
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.pause(&blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(), 11);
+    fixture.next_tx!(KEEPER, |f| {
+        let mut sale = f.take_presale();
+        sale.cancel_unlaunched(&version, &f.clock);
+        sale.claim(&version, ALICE, &f.clock, f.ctx!());
+        f.return_presale(sale);
+    });
+    assert!(fixture.is_cancelled());
+    fixture.take_quote(ALICE, RAISE_TARGET);
+    fixture.destroy_cancelled_cap();
+    destroy(version); fixture.end();
+}
+
+
 #[test]
 fun pause_keeps_settlement_and_refunds_open() {
     let mut fixture = start_sale(presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2));

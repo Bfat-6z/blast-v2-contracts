@@ -500,6 +500,11 @@ public fun new_for_testing<Meme, Quote>(
 }
 
 #[test_only]
+public fun protocol_fees_for_testing<Meme, Quote>(self: &Vault<Meme, Quote>): ProtocolFees {
+    self.protocol_fees.value()
+}
+
+#[test_only]
 public fun credit_fees_for_testing<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     fee_policy: &FeePolicy,

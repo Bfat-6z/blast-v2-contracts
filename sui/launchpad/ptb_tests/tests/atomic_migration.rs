@@ -103,6 +103,92 @@ struct World {
     custody: ObjectID,
 }
 
+const ADMIN_DELAY_MS: u64 = 172_800_000;
+
+#[test]
+fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()> {
+    let mut w = world("admin-security")?;
+    w.change_role("CancelAdmin", true)?;
+    let destination: SuiAddress = address(&[0xCA, 0xFE]).into();
+    w.h.execute(w.schedule_treasury(destination)?)?.assert_success();
+    w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS - 1));
+    let watched = [w.runtime, w.config, w.acl, w.admin_cap];
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+        Expected::Abort { package: w.admin, module: "delayed", code: 0 }, &watched, &[w.h.sender])?;
+    w.h.sim.advance_clock(Duration::from_millis(1));
+
+    // Apply a ready treasury, emit its event, then fail a different not-ready action.
+    // The failed PTB must preserve the original treasury AND the still-pending proposal.
+    let mut b = ProgrammableTransactionBuilder::new();
+    let fee_admin = w.sign_in(&mut b, "FeeAdmin")?;
+    let config = b.obj(w.h.shared(w.config, true))?;
+    let version = b.obj(w.h.shared(w.version, false))?;
+    let fee = b.pure(123u64)?;
+    let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, w.blast, "launch_config", "schedule_creation_fee", vec![], vec![config, version, fee_admin, fee, clock]);
+    w.h.execute(b.finish())?.assert_success();
+    let mut b = ProgrammableTransactionBuilder::new();
+    let runtime = b.obj(w.h.shared(w.runtime, true))?;
+    let config = b.obj(w.h.shared(w.config, true))?;
+    let version = b.obj(w.h.shared(w.version, false))?;
+    let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, w.blast, "runtime_config", "apply_treasury", vec![], vec![runtime, version, clock]);
+    call(&mut b, w.blast, "launch_config", "apply_creation_fee", vec![], vec![config, version, clock]);
+    w.h.assert_rolled_back(b.finish(), Expected::Abort { package: w.admin, module: "delayed", code: 0 }, &watched, &[w.h.sender])?;
+
+    w.change_role("TreasuryAdmin", false)?;
+    w.h.assert_rolled_back(w.schedule_treasury(address(&[0xAB]).into())?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    // Revocation intentionally does not cancel a proposal. Apply requires no cap or role.
+    w.h.execute(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?)?.assert_success();
+    assert_eq!(w.applied_treasury()?, destination);
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+        Expected::Abort { package: w.admin, module: "delayed", code: 1 }, &watched, &[w.h.sender])?;
+
+    w.change_role("TreasuryAdmin", true)?;
+    w.h.execute(w.schedule_treasury(address(&[0xAB]).into())?)?.assert_success();
+    w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS));
+    let mut b = ProgrammableTransactionBuilder::new();
+    let cancel = w.sign_in(&mut b, "CancelAdmin")?;
+    let runtime = b.obj(w.h.shared(w.runtime, true))?;
+    let version = b.obj(w.h.shared(w.version, false))?;
+    call(&mut b, w.blast, "runtime_config", "cancel_treasury", vec![], vec![runtime, version, cancel]);
+    w.h.execute(b.finish())?.assert_success();
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+        Expected::Abort { package: w.admin, module: "delayed", code: 1 }, &watched, &[w.h.sender])?;
+    assert_eq!(w.applied_treasury()?, destination);
+    Ok(())
+}
+
+#[test]
+fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Result<()> {
+    let mut w = world("pause-security")?;
+    w.change_role("PauseAdmin", true)?;
+    w.change_role("UnpauseAdmin", true)?;
+    let round = w.open_launch(OPENING_ROUND_MS)?;
+    w.h.execute(w.join(&round, BID)?)?.assert_success();
+    let ready = w.open_launch(NO_OPENING_ROUND)?;
+    w.buy_to_migration(&ready)?;
+    let (ticket, currency, meme) = w.publish_ticket()?;
+    w.set_pause(true, 7)?;
+    let watched = [round.launch, ready.launch, ready.currency, ticket, currency, w.version];
+    let abort = || Expected::Abort { package: w.blast, module: "blast_fun", code: 40 };
+    w.h.assert_rolled_back(w.create_launch(ticket, currency, &meme, &FeeSplit::single(DESTINATION), NO_OPENING_ROUND)?, abort(), &watched, &[w.h.sender])?;
+    w.h.assert_rolled_back(w.join(&round, BID)?, abort(), &watched, &[w.h.sender])?;
+    w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, abort(), &watched, &[w.h.sender])?;
+    w.h.sim.advance_clock(Duration::from_millis(OPENING_ROUND_MS));
+    w.h.assert_rolled_back(w.settle(&round)?, abort(), &watched, &[w.h.sender])?;
+    w.set_pause(false, 2)?;
+    w.h.execute(w.settle(&round)?)?.assert_success();
+    // Releasing trading must not release migration or creation.
+    w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, Expected::Abort { package: w.blast, module: "blast_fun", code: 40 }, &watched, &[w.h.sender])?;
+    w.set_pause(true, 2)?;
+    let delivered = w.h.execute(w.deliver(&round, w.h.sender)?)?;
+    delivered.assert_success();
+    assert!(delivered.wrapped_payloads(w.blast).iter().any(|name| name == "OpeningRoundDelivered"));
+    Ok(())
+}
+
 #[test]
 fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> Result<()> {
     let mut w = world("mixed-generation-creation")?;
@@ -166,6 +252,15 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
         &[w.h.sender],
     )?;
     w.h.sim.advance_clock(Duration::from_millis(172_800_000));
+    // Readiness does not retain a revoked UpgradeAdmin's right to authorize code.
+    w.change_role("UpgradeAdmin", false)?;
+    w.h.assert_rolled_back(
+        upgrade.clone(),
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 },
+        &[custody, w.version, w.admin_cap, w.acl],
+        &[w.h.sender],
+    )?;
+    w.change_role("UpgradeAdmin", true)?;
     let upgraded = w.h.execute(upgrade)?;
     upgraded.assert_success();
     w.blast = upgraded.effects.created().into_iter()
@@ -725,6 +820,61 @@ fn world(work: &str) -> Result<World> {
 }
 
 impl World {
+    fn sign_in(&self, b: &mut ProgrammableTransactionBuilder, role: &str) -> Result<Argument> {
+        let acl = b.obj(self.h.shared(self.acl, false))?;
+        let cap = b.obj(self.h.owned(self.admin_cap))?;
+        let role = parse_sui_type_tag(&format!("{}::blast_fun_domain::{role}", self.blast))?;
+        Ok(call(b, self.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]))
+    }
+
+    fn change_role(&mut self, role: &str, grant: bool) -> Result<()> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl = b.obj(self.h.shared(self.acl, true))?;
+        let root = b.obj(self.h.owned(self.root))?;
+        let cap = b.pure(self.admin_cap)?;
+        let role = parse_sui_type_tag(&format!("{}::blast_fun_domain::{role}", self.blast))?;
+        call(&mut b, self.admin, "blast_acl", if grant { "grant_role" } else { "revoke_role" }, vec![role], vec![acl, root, cap]);
+        self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
+        Ok(())
+    }
+
+    fn schedule_treasury(&self, destination: SuiAddress) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.sign_in(&mut b, "TreasuryAdmin")?;
+        let config = b.obj(self.h.shared(self.runtime, true))?;
+        let version = b.obj(self.h.shared(self.version, false))?;
+        let destination = b.pure(destination)?;
+        let clock = b.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, self.blast, "runtime_config", "schedule_treasury", vec![], vec![config, version, witness, destination, clock]);
+        Ok(b.finish())
+    }
+
+    fn apply_setting(&self, module: &str, function: &str, object: ObjectID) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let config = b.obj(self.h.shared(object, true))?;
+        let version = b.obj(self.h.shared(self.version, false))?;
+        let clock = b.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, self.blast, module, function, vec![], vec![config, version, clock]);
+        Ok(b.finish())
+    }
+
+    fn applied_treasury(&self) -> Result<SuiAddress> {
+        #[derive(Deserialize)]
+        struct Delayed<T> { value: T, _pending: Option<(T, u64)> }
+        let (_, _, _, treasury): (ObjectID, Delayed<Vec<u8>>, Delayed<u64>, Delayed<SuiAddress>) = bcs::from_bytes(&self.h.contents(self.runtime))?;
+        Ok(treasury.value)
+    }
+
+    fn set_pause(&mut self, pause: bool, bits: u8) -> Result<()> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.sign_in(&mut b, if pause { "PauseAdmin" } else { "UnpauseAdmin" })?;
+        let version = b.obj(self.h.shared(self.version, true))?;
+        let bits = b.pure(bits)?;
+        call(&mut b, self.blast, "blast_fun", if pause { "pause" } else { "unpause" }, vec![], vec![version, witness, bits]);
+        self.h.execute(b.finish())?.assert_success();
+        Ok(())
+    }
+
     /// Publishes one generated project and opens its SUI-quoted launch with `opening_round_ms`,
     /// with the LP-fee split paying `DESTINATION` wholly.
     fn open_launch(&mut self, opening_round_ms: u64) -> Result<Launch> {

@@ -67,6 +67,54 @@ public struct OpeningRoundFixture {
 
 // === Tests ===
 
+#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+fun security_pause_blocks_join_with_a_valid_bid() {
+    let mut fixture = start();
+    fixture.open(MIN_ROUND_DURATION_MS);
+    fixture.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    fixture.join(ALICE, ALICE_BID);
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+fun security_pause_blocks_settlement_of_a_funded_opening_round() {
+    let mut fixture = start();
+    fixture.open(MIN_ROUND_DURATION_MS);
+    fixture.join(ALICE, ALICE_BID);
+    fixture.set_time(ROUND_ENDS_AT_MS);
+    fixture.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    fixture.settle(KEEPER);
+    fixture.end();
+}
+
+#[test]
+fun security_partial_unpause_restores_join_and_settle_and_full_pause_preserves_delivery() {
+    let mut fixture = start();
+    fixture.open(MIN_ROUND_DURATION_MS);
+    fixture.join(ALICE, ALICE_BID);
+    fixture.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
+    fixture.package_version.unpause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UnpauseAdmin>(), 2);
+    fixture.join(BOB, BOB_BID);
+    fixture.set_time(ROUND_ENDS_AT_MS);
+    fixture.settle(KEEPER);
+    let (_, _, _, total_meme) = curve::quote_buy(CURVE_MEME, 0, VIRTUAL_QUOTE, ALICE_BID + BOB_BID, bps::new(QUOTE_FEE_BPS), bps::new(MEME_FEE_BPS));
+    fixture.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    fixture.deliver(KEEPER, ALICE);
+    fixture.deliver(KEEPER, BOB);
+    fixture.next_tx!(KEEPER, |f| {
+        let alice = f.take_coin<LAUNCH_OPENING_ROUND_TESTS>(ALICE);
+        let bob = f.take_coin<LAUNCH_OPENING_ROUND_TESTS>(BOB);
+        assert_eq!(alice.value() + bob.value(), total_meme);
+        let launch = f.take_launch();
+        launch.assert_opening_round(0, 0, 0);
+        assert!(!launch.has_opening_round_bid_for_testing(ALICE));
+        assert!(!launch.has_opening_round_bid_for_testing(BOB));
+        destroy(alice); destroy(bob); launch.put_back();
+    });
+    fixture.end();
+}
+
+
 // --- Settings ---
 
 #[test]
