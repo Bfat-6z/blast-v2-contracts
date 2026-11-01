@@ -8,9 +8,9 @@
 /// `PartnerCap` for all its deals, each a separate partner with its own share.
 /// Blast's partner administrator registers partners under a cap, sets each
 /// one's share, and can move a partner to another cap; the cap's holder sets
-/// where each of its partners is paid. Everything Blast changes takes effect
-/// only `PARTNER_CHANGE_DELAY_MS` after it is scheduled, and this package is published
-/// immutable, so no one can shorten that delay. The recipient the cap holder
+/// where each of its partners is paid. Initial terms apply at registration. Later
+/// Blast changes take effect only `PARTNER_CHANGE_DELAY_MS` after scheduling.
+/// This package is published immutable, so no one can shorten that delay. The recipient the cap holder
 /// sets applies at once.
 ///
 /// Products call `pay` with Blast's own fee on a trade. `pay` emits
@@ -49,26 +49,24 @@ public fun new_cap(ctx: &mut TxContext): PartnerCap {
 }
 
 /// Registers and shares a partner managed by the cap `cap_id`, with its share
-/// scheduled after seven days; the cap is in force immediately.
+/// and managing cap in force immediately.
 public fun register(
     _: &AdminWitness<PartnerAdmin>,
     cap_id: ID,
     recipient: address,
     share_bps: u64,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert!(recipient != @0x0, EInvalidRecipient);
     assert!(share_bps <= MAX_SHARE_BPS, EShareAboveMax);
 
-    let mut partner = Partner {
+    let partner = Partner {
         id: object::new(ctx),
         recipient,
-        share_bps: timelock::new(0, PARTNER_CHANGE_DELAY_MS),
+        share_bps: timelock::new(share_bps, PARTNER_CHANGE_DELAY_MS),
         cap_id: timelock::new(cap_id, PARTNER_CHANGE_DELAY_MS),
     };
 
-    partner.share_bps.schedule(share_bps, clock);
     partner.emit_updated();
 
     transfer::share_object(partner);

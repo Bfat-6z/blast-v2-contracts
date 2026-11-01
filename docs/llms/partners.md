@@ -9,8 +9,9 @@ presales. A partner is one deal: a shared `Partner` object with a share of
 Blast's fee (0% to 80%) and a recipient address. A company holds one
 `PartnerCap` that controls the recipient of every deal registered under it.
 Users never pay for a partner: a partner is only ever paid out of Blast's own
-fee. Every change Blast makes to a partner's share or managing cap waits seven
-days, and the package is published immutable, so no one can shorten that delay.
+fee. Initial shares apply immediately. Later changes Blast makes to a partner's
+share or managing cap wait seven days. The package is published immutable, so no
+one can shorten that delay.
 
 ### Objects and authority
 
@@ -56,7 +57,8 @@ destroying a live cap leaves its partners with no working cap until a cap Blast
 schedules with `blast_partners::schedule_cap` takes effect, seven days later.
 
 **Partner.** `blast_partners::blast_partners::register` creates and shares the
-partner with a zero share and the cap in force immediately. Registration takes the canonical `Clock` and schedules the requested share seven days later. From then on:
+partner with the agreed share and managing cap in force immediately. Registration
+needs no `Clock`; there is no initial waiting period. From then on:
 
 1. Blast schedules a new share or cap; the old value stays in force for seven
    days.
@@ -93,10 +95,10 @@ accepted for seven more days. A partner is accepted while the field exists and
 2. Give Blast the cap's object ID, the recipient address, and the agreed share.
 3. Blast's partner admin, in one PTB: `blast_acl::sign_in` with type argument
    `blast_partners::blast_partners::PartnerAdmin`, passing the shared `ACL` and
-   its owned `AdminCap`; then `blast_partners::blast_partners::register` with `Clock` and a
+   its owned `AdminCap`; then `blast_partners::blast_partners::register` with a
    reference to that `AdminWitness<PartnerAdmin>`, your cap ID, the recipient,
    and the share. The new `Partner` is shared; its ID is in the `PartnerUpdated`
-   event and the transaction's created objects.
+   event and the transaction's created objects. Its initial share is active immediately.
 4. Blast's admin for each product adds the partner to that product's list.
 
 `blast_partners::blast_partners::register` accepts any ID as the cap. Confirm on
@@ -175,6 +177,7 @@ Rules common to every product:
 
 - Delay: `blast_partners::blast_partners::delay_ms()` returns 604,800,000 (seven
   days). It is a compile-time constant of an immutable package.
+- The initial share and managing cap apply at registration, without a Clock.
 - A scheduled share or cap is in force from the first transaction whose `Clock`
   reads `at_ms` or later.
 - A recipient change applies in the same transaction.

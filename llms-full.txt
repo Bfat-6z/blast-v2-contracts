@@ -2911,8 +2911,9 @@ presales. A partner is one deal: a shared `Partner` object with a share of
 Blast's fee (0% to 80%) and a recipient address. A company holds one
 `PartnerCap` that controls the recipient of every deal registered under it.
 Users never pay for a partner: a partner is only ever paid out of Blast's own
-fee. Every change Blast makes to a partner's share or managing cap waits seven
-days, and the package is published immutable, so no one can shorten that delay.
+fee. Initial shares apply immediately. Later changes Blast makes to a partner's
+share or managing cap wait seven days. The package is published immutable, so no
+one can shorten that delay.
 
 ### Objects and authority
 
@@ -2958,7 +2959,8 @@ destroying a live cap leaves its partners with no working cap until a cap Blast
 schedules with `blast_partners::schedule_cap` takes effect, seven days later.
 
 **Partner.** `blast_partners::blast_partners::register` creates and shares the
-partner with a zero share and the cap in force immediately. Registration takes the canonical `Clock` and schedules the requested share seven days later. From then on:
+partner with the agreed share and managing cap in force immediately. Registration
+needs no `Clock`; there is no initial waiting period. From then on:
 
 1. Blast schedules a new share or cap; the old value stays in force for seven
    days.
@@ -2995,10 +2997,10 @@ accepted for seven more days. A partner is accepted while the field exists and
 2. Give Blast the cap's object ID, the recipient address, and the agreed share.
 3. Blast's partner admin, in one PTB: `blast_acl::sign_in` with type argument
    `blast_partners::blast_partners::PartnerAdmin`, passing the shared `ACL` and
-   its owned `AdminCap`; then `blast_partners::blast_partners::register` with `Clock` and a
+   its owned `AdminCap`; then `blast_partners::blast_partners::register` with a
    reference to that `AdminWitness<PartnerAdmin>`, your cap ID, the recipient,
    and the share. The new `Partner` is shared; its ID is in the `PartnerUpdated`
-   event and the transaction's created objects.
+   event and the transaction's created objects. Its initial share is active immediately.
 4. Blast's admin for each product adds the partner to that product's list.
 
 `blast_partners::blast_partners::register` accepts any ID as the cap. Confirm on
@@ -3077,6 +3079,7 @@ Rules common to every product:
 
 - Delay: `blast_partners::blast_partners::delay_ms()` returns 604,800,000 (seven
   days). It is a compile-time constant of an immutable package.
+- The initial share and managing cap apply at registration, without a Clock.
 - A scheduled share or cap is in force from the first transaction whose `Clock`
   reads `at_ms` or later.
 - A recipient change applies in the same transaction.
@@ -9542,7 +9545,7 @@ Events: payload structs are emitted directly, each under its own type.
 
 ### `blast_partners::blast_partners`
 
-Blast partner codes, shared by every Blast product.  A partner is one deal: it is paid a share of the fee Blast charges on every trade that names it, in the same transaction. A company holds one `PartnerCap` for all its deals, each a separate partner with its own share. Blast's partner administrator registers partners under a cap, sets each one's share, and can move a partner to another cap; the cap's holder sets where each of its partners is paid. Everything Blast changes takes effect only `PARTNER_CHANGE_DELAY_MS` after it is scheduled, and this package is published immutable, so no one can shorten that delay. The recipient the cap holder sets applies at once.  Products call `pay` with Blast's own fee on a trade. `pay` emits `PartnerPaid` for what the partner received; the product records the trade and the amount in its own event.
+Blast partner codes, shared by every Blast product.  A partner is one deal: it is paid a share of the fee Blast charges on every trade that names it, in the same transaction. A company holds one `PartnerCap` for all its deals, each a separate partner with its own share. Blast's partner administrator registers partners under a cap, sets each one's share, and can move a partner to another cap; the cap's holder sets where each of its partners is paid. Initial terms apply at registration. Later Blast changes take effect only `PARTNER_CHANGE_DELAY_MS` after scheduling. This package is published immutable, so no one can shorten that delay. The recipient the cap holder sets applies at once.  Products call `pay` with Blast's own fee on a trade. `pay` emits `PartnerPaid` for what the partner received; the product records the trade and the amount in its own event.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/blast_partners.move
 
@@ -9578,13 +9581,12 @@ public struct PartnerCap has key, store {
 public fun new_cap(ctx: &mut TxContext): PartnerCap
 
 /// Registers and shares a partner managed by the cap `cap_id`, with its share
-/// scheduled after seven days; the cap is in force immediately.
+/// and managing cap in force immediately.
 public fun register(
     _: &blast_admin::blast_acl::AdminWitness<PartnerAdmin>,
     cap_id: ID,
     recipient: address,
     share_bps: u64,
-    clock: &Clock,
     ctx: &mut TxContext,
 )
 

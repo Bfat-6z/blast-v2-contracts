@@ -220,9 +220,10 @@ The current cap holder can still claim curve fees during the 48 hours.
 
 ### Partners
 
-`blast_partners::register` takes a `Clock` (owner-approved implementation correction, 2026-11-01). A new partner starts at
-0 bps and its requested share is scheduled with the package's existing 7-day
-partner delay, so a new partner can never take a fee share at once.
+`blast_partners::register` initializes the agreed share and managing cap
+immediately, without a `Clock` (owner, 2026-11-01). A new partner earns its
+share from its first payment. Later share changes and cap replacements retain
+the package's existing 7-day partner delay.
 
 ### Role grants are immediate
 

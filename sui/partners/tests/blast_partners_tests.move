@@ -26,45 +26,50 @@ public struct Fixture {
 
 #[test]
 /// The package is immutable, so this is the notice every partner is guaranteed.
-fun every_change_blast_makes_waits_seven_days() {
+fun later_share_and_cap_changes_wait_seven_days() {
     assert_eq!(partners::delay_ms(), 7 * 24 * 60 * 60 * 1_000);
 }
 
 // --- Registration ---
 
 #[test]
-fun newly_registered_partner_takes_no_fee_before_seven_full_days() {
+fun newly_registered_partner_receives_revenue_without_advancing_the_clock() {
     let mut fixture = start();
-    let cap = partners::new_cap(fixture.ctx!());
-    let witness = partner_admin();
-    partners::register(&witness, object::id(&cap), RECIPIENT, MAX_SHARE_BPS, &fixture.clock, fixture.scenario.ctx());
+    let cap = fixture.register(RECIPIENT, MAX_SHARE_BPS);
+    assert_eq!(fixture.now(), PARTNER_CREATED_AT_MS);
     fixture.next_tx!(ADMIN, |fixture| {
         let partner = fixture.take_partner();
         let mut fee = balance::create_for_testing<SUI>(1_000);
-        assert_eq!(fixture.pay_fee(&partner, &mut fee), 0);
-        fixture.advance(delay() - 1);
-        assert_eq!(fixture.pay_fee(&partner, &mut fee), 0);
-        fixture.advance(1);
         assert_eq!(fixture.pay_fee(&partner, &mut fee), 800);
+        assert_eq!(fee.value(), 200);
+        assert_eq!(fixture.now(), PARTNER_CREATED_AT_MS);
+        let payments = event::events_by_type<PartnerPaid<SUI>>();
+        assert_eq!(payments.length(), 1);
+        let (partner_id, amount) = payments[0].partner_paid_fields();
+        assert_eq!(partner_id, object::id(&partner));
+        assert_eq!(amount, 800);
         fee.destroy_for_testing();
         fixture.return_partner(partner);
+    });
+    fixture.next_tx!(RECIPIENT, |fixture| {
+        let payment = fixture.take_payment();
+        assert_eq!(payment.value(), 800);
+        payment.burn_for_testing();
     });
     cap.destroy_cap();
     fixture.end();
 }
 
-
 #[test]
-/// The cap is immediate; the fixture advances through the initial share delay.
-/// The event retains the scheduled activation time.
-fun registration_share_is_live_only_after_its_delay() {
+/// Both initial terms are live, with no pending replacement in the registration event.
+fun registration_share_and_cap_are_live_immediately() {
     let mut fixture = start();
 
     let cap = fixture.register(RECIPIENT, 2_500);
     let (id, recipient, share, live_cap) = fixture.last_update().partner_updated_fields();
     assert_eq!(recipient, RECIPIENT);
     assert_eq!(vector[share.value(&fixture.clock), share.scheduled()], vector[2_500, 2_500]);
-    assert_eq!(vector[share.scheduled_at_ms(), share.delay_ms()], vector[PARTNER_CREATED_AT_MS + delay(), delay()]);
+    assert_eq!(vector[share.scheduled_at_ms(), share.delay_ms()], vector[0, delay()]);
     assert_eq!(vector[live_cap.value(&fixture.clock), live_cap.scheduled()], vector[object::id(&cap), object::id(&cap)]);
     assert_eq!(vector[live_cap.scheduled_at_ms(), live_cap.delay_ms()], vector[0, delay()]);
 
@@ -546,8 +551,7 @@ fun payment_transfers_one_coin_to_the_recipient_and_skips_dust() {
 }
 
 #[test]
-/// After the initial share delay, a partner receives the applied share until
-/// a replacement reaches its own activation time.
+/// The initial share applies at registration; replacements wait the full delay.
 fun a_partner_is_paid_its_share_from_registration_and_a_new_one_only_once_in_force() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 5_000);
@@ -730,11 +734,10 @@ fun register_under(self: &mut Fixture, cap: &PartnerCap, recipient: address, sha
     self.register_under_id(object::id(cap), recipient, share_bps);
 }
 
-/// Registers a partner under any ID, then advances through its initial share delay.
+/// Registers a partner under any ID with its initial terms in force.
 fun register_under_id(self: &mut Fixture, cap_id: ID, recipient: address, share_bps: u64) {
     let witness = partner_admin();
-    partners::register(&witness, cap_id, recipient, share_bps, &self.clock, self.scenario.ctx());
-    self.advance(delay());
+    partners::register(&witness, cap_id, recipient, share_bps, self.ctx!());
 }
 
 fun schedule_share(self: &Fixture, partner: &mut Partner, share_bps: u64) {

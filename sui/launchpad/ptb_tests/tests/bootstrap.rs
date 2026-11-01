@@ -1,8 +1,14 @@
 //! Publication must remain inactive until the original, never-upgraded cap enters custody.
 
 use anyhow::Result;
-use blast_launchpad_ptb_tests::{Expected, Harness, build, build_timelock, call, sui_dir, timelock_dir};
-use sui_types::{parse_sui_type_tag, move_package::{MovePackage, UpgradeCap}, programmable_transaction_builder::ProgrammableTransactionBuilder};
+use blast_launchpad_ptb_tests::{Expected, Harness, Outcome, build, build_timelock, call, sui_dir, timelock_dir};
+use sui_types::{
+    base_types::{ObjectID, SuiAddress},
+    move_package::{MovePackage, UpgradeCap},
+    parse_sui_type_tag,
+    programmable_transaction_builder::ProgrammableTransactionBuilder,
+    transaction::{Argument, Command},
+};
 
 #[test]
 fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
@@ -15,6 +21,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let (timelock, _) = h.publish(build_timelock(&work)?)?;
     let (admin, admin_publication) = h.publish(build(&admin_dir, &[(&timelock_dir, timelock)], &work)?)?;
     let (partners, _) = h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
+    assert_initial_partner_payment(&mut h, admin, &admin_publication, partners)?;
     let code = build(
         &sui.join("launchpad"),
         &[(&timelock_dir, timelock), (&admin_dir, admin), (&partners_dir, partners)],
@@ -98,5 +105,74 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
         &[h.sender],
     )?;
 
+    Ok(())
+}
+
+/// Real ACL registration activates the agreed share before any Clock advancement.
+fn assert_initial_partner_payment(
+    h: &mut Harness,
+    admin: ObjectID,
+    publication: &Outcome,
+    partners: ObjectID,
+) -> Result<()> {
+    let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
+    let acl = publication.created(h, "blast_acl", "ACL")[0];
+    let root = publication.created(h, "blast_acl", "SuperAdminCap")[0];
+    let recipient = SuiAddress::from(ObjectID::from_single_byte(0xFE));
+    let framework = sui_types::SUI_FRAMEWORK_PACKAGE_ID;
+    let sui = parse_sui_type_tag("0x2::sui::SUI")?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    let acl_arg = b.obj(h.shared(acl, true))?;
+    let root_arg = b.obj(h.owned(root))?;
+    let owner = b.pure(h.sender)?;
+    call(&mut b, admin, "blast_acl", "grant_admin", vec![], vec![acl_arg, root_arg, owner]);
+    let granted = h.impersonate_cap_owner(root, b.finish())?;
+    granted.assert_success();
+    let admin_cap = granted.created(h, "blast_acl", "AdminCap")[0];
+    let role = parse_sui_type_tag(&format!("{partners}::blast_partners::PartnerAdmin"))?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    let acl_arg = b.obj(h.shared(acl, true))?;
+    let root_arg = b.obj(h.owned(root))?;
+    let cap_id = b.pure(admin_cap)?;
+    call(&mut b, admin, "blast_acl", "grant_role", vec![role.clone()], vec![acl_arg, root_arg, cap_id]);
+    h.impersonate_cap_owner(root, b.finish())?.assert_success();
+
+    let mut b = ProgrammableTransactionBuilder::new();
+    let acl_arg = b.obj(h.shared(acl, false))?;
+    let admin_arg = b.obj(h.owned(admin_cap))?;
+    let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, admin_arg]);
+    let cap = call(&mut b, partners, "blast_partners", "new_cap", vec![], vec![]);
+    let cap_type = parse_sui_type_tag(&format!("{partners}::blast_partners::PartnerCap"))?;
+    let cap_id = call(&mut b, framework, "object", "id", vec![cap_type], vec![cap]);
+    let recipient_arg = b.pure(recipient)?;
+    let share = b.pure(8_000u64)?;
+    call(&mut b, partners, "blast_partners", "register", vec![], vec![witness, cap_id, recipient_arg, share]);
+    b.transfer_arg(h.sender, cap);
+    let registered = h.execute(b.finish())?;
+    registered.assert_success();
+    let partner = registered.created(h, "blast_partners", "Partner")[0];
+    let updates: Vec<_> = registered.events.iter().filter(|event| event.type_.name.as_str() == "PartnerUpdated").collect();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].contents, h.contents(partner));
+
+    let mut b = ProgrammableTransactionBuilder::new();
+    let partner_arg = b.obj(h.shared(partner, false))?;
+    let clock_arg = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let amount = b.pure(1_000u64)?;
+    let Argument::Result(split) = b.command(Command::SplitCoins(Argument::GasCoin, vec![amount])) else {
+        unreachable!("SplitCoins is a command result");
+    };
+    let balance = call(&mut b, framework, "coin", "into_balance", vec![sui.clone()], vec![Argument::NestedResult(split, 0)]);
+    call(&mut b, partners, "blast_partners", "pay", vec![sui.clone()], vec![partner_arg, balance, clock_arg]);
+    let remainder = call(&mut b, framework, "coin", "from_balance", vec![sui.clone()], vec![balance]);
+    b.transfer_arg(h.sender, remainder);
+    let paid = h.execute(b.finish())?;
+    paid.assert_success();
+    assert_eq!(paid.coins_created_for(h, recipient), vec![(sui.to_canonical_string(true), 800)]);
+    assert_eq!(paid.coins_created_for(h, h.sender), vec![(sui.to_canonical_string(true), 200)]);
+    let payments: Vec<_> = paid.events.iter().filter(|event| event.type_.name.as_str() == "PartnerPaid").collect();
+    assert_eq!(payments.len(), 1);
+    assert_eq!(bcs::from_bytes::<(ObjectID, u64)>(&payments[0].contents)?, (partner, 800));
+    assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
     Ok(())
 }
