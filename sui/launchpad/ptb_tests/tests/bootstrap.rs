@@ -1,14 +1,12 @@
 //! Publication must remain inactive until the original, never-upgraded cap enters custody.
 
-use std::path::Path;
-
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{Expected, Harness, build, build_timelock, call, sui_dir, timelock_dir};
 use sui_types::{move_package::{MovePackage, UpgradeCap}, programmable_transaction_builder::ProgrammableTransactionBuilder};
 
 #[test]
 fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
-    let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join("launchpad_bootstrap");
+    let work = blast_launchpad_ptb_tests::test_work_dir().join("launchpad_bootstrap");
     let sui = sui_dir();
     let timelock_dir = timelock_dir()?;
     let admin_dir = sui.join("admin");

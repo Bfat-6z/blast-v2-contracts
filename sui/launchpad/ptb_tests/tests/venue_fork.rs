@@ -266,7 +266,7 @@ enum Side {
 fn migrators() -> &'static UnlinkedPackage {
     static MIGRATORS: OnceLock<UnlinkedPackage> = OnceLock::new();
     MIGRATORS.get_or_init(|| {
-        let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join("venue_fork");
+        let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("venue_fork");
         build_unlinked(
             &sui_dir().join("migrators"),
             &["blast_fun_timelock", "blast_admin", "blast_partners", "blast_fun"],
@@ -356,7 +356,7 @@ impl World {
     fn new(case: Case) -> Result<Self> {
         let sui_dir = sui_dir();
         let work =
-            Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join(format!("venue_fork_{case:?}"));
+            blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(format!("venue_fork_{case:?}"));
         let mut h = Harness::new()?;
         let (checkpoint, venue) = insert_snapshot(&mut h)?;
 

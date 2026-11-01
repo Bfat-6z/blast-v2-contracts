@@ -630,7 +630,7 @@ fn setup() -> Result<(World, Launch, Launch)> {
 fn world(work: &str) -> Result<World> {
     let sui_dir = sui_dir();
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture");
-    let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join(work);
+    let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(work);
     let mut h = Harness::new()?;
 
     let timelock_dir = timelock_dir()?;

@@ -410,7 +410,7 @@ impl Terms {
 fn presale() -> &'static UnlinkedPackage {
     static PRESALE: OnceLock<UnlinkedPackage> = OnceLock::new();
     PRESALE.get_or_init(|| {
-        let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join("presale_venue_fork");
+        let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("presale_venue_fork");
         build_unlinked(
             &sui_dir().join("presale"),
             &["blast_fun_timelock", "blast_admin", "blast_partners", "blast_fun_vesting"],
@@ -466,7 +466,7 @@ impl World {
 
     fn new_with_quote(route: Route, custom_quote: bool) -> Result<Self> {
         let work =
-            Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join(format!("presale_fork_{route:?}"));
+            blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(format!("presale_fork_{route:?}"));
         let mut h = Harness::new()?;
         let (checkpoint, venue) = insert_snapshot(&mut h)?;
 
@@ -1299,9 +1299,11 @@ impl World {
         ensure!(fees.len() == 1, "one FeesCollected");
         let fees = fees[0].clone();
         ensure!(fees.vault_id == m.vault && (fees.gross_meme, fees.gross_quote) == (gross_meme, gross_quote));
-        // The publisher's zero-rate policy takes no Blast share.
+        let treasury: SuiAddress = ObjectID::from_hex_literal(blast_launchpad_ptb_tests::TEST_GENESIS_RECIPIENT)?.into();
+        // The explicit genesis treasury's zero-rate policy takes no Blast share.
         ensure!(
-            (fees.protocol_destination, fees.protocol_meme, fees.protocol_quote) == (Some(self.h.sender), 0, 0),
+            (fees.protocol_destination, fees.protocol_meme, fees.protocol_quote)
+                == (Some(treasury), 0, 0),
             "a zero-rate policy pays Blast nothing"
         );
 
@@ -1326,7 +1328,7 @@ impl World {
             "holder Quote accrues in the vault; holder Meme is paid to the treasury"
         );
         ensure!(
-            outcome.coins_created_for(&self.h, self.h.sender)
+            outcome.coins_created_for(&self.h, treasury)
                 == self.coins(&sale.meme, fees.holder_rewards_meme, 0),
             "holder Meme paid exactly to the treasury"
         );

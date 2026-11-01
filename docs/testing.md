@@ -21,6 +21,10 @@ The Rust PTB harness supplies the nonzero genesis recipient while compiling and
 restores each manifest afterward; its configuration calls schedule, advance the
 simulator by 48 hours, and apply through the public entry points.
 
+Native PTB fixture output stays under the test crate's ignored `target/ptb-fixtures/`
+directory, so checkouts can share Cargo's compiler cache without overwriting each
+other's simulator artifacts.
+
 ## Protocol vectors
 
 The chain-neutral vectors under [`vectors/`](vectors/) are the numerical
@@ -39,9 +43,10 @@ type compatibility only. Before release:
    [`sui/migrators/DEPENDENCIES.md`](../sui/migrators/DEPENDENCIES.md).
 3. Record the reviewed venue revisions, module fingerprints, normalized ABI,
    route results, residual bounds, and fee-collection results.
-4. Describe LP principal as held by an upgradeable package with no exposed
-   withdrawal path, never as permanently locked: the migrators package stays
-   upgradeable (ADR 0088).
+4. Describe LP custody using the current upgrade state. While upgradeable,
+   the package has no exposed principal withdrawal path but can still change
+   through a delayed upgrade. Scheduling immutability does not freeze the
+   package until that action executes (ADR 0134).
 
 ## Blast SUI gate
 

@@ -46,6 +46,12 @@ use sui_types::{
 /// The Sui revision `Cargo.toml` pins for the simulator. The CLI that compiles the packages must
 /// be built from the same revision, or bytecode and framework could disagree.
 const PINNED_SUI_REVISION: &str = "51d177ad7d65";
+pub const TEST_GENESIS_RECIPIENT: &str = "0xa";
+
+/// Keep fixture output with its checkout even when Cargo's compiler cache is shared.
+pub fn test_work_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("target/ptb-fixtures")
+}
 
 /// Compiled modules and the on-chain packages they link against.
 #[derive(Clone)]
@@ -200,8 +206,8 @@ impl GenesisFixture {
     fn configure(package: &Path) -> Result<Self> {
         let path = package.join("Move.toml");
         let original = std::fs::read_to_string(&path)?;
-        let fixture = original.replace("blast_treasury = \"0x0\"", "blast_treasury = \"0xa\"")
-            .replace("blast_lp_fee_destination = \"0x0\"", "blast_lp_fee_destination = \"0xa\"");
+        let fixture = original.replace("blast_treasury = \"0x0\"", &format!("blast_treasury = \"{TEST_GENESIS_RECIPIENT}\""))
+            .replace("blast_lp_fee_destination = \"0x0\"", &format!("blast_lp_fee_destination = \"{TEST_GENESIS_RECIPIENT}\""));
         std::fs::write(&path, fixture)?;
         Ok(Self { path, original })
     }
@@ -499,14 +505,19 @@ impl Harness {
         let admin = outcome.created(self, "package_admin", "PackageAdmin");
         assert_eq!(admin.len(), 1);
         self.shared(admin[0], false);
-        let (admin_id, sealed_publisher, sealed_caps): (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>) =
-            bcs::from_bytes(&self.contents(admin[0]))?;
+        #[derive(serde::Deserialize)]
+        enum UpgradeAction { Upgrade { _digest: Vec<u8> }, MakeImmutable }
+        let (admin_id, sealed_publisher, sealed_caps, pending):
+            (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, Option<(UpgradeAction, u64)>) =
+            bcs::from_bytes(&self.contents(admin[0])).context("decode fresh PackageAdmin")?;
+        assert!(pending.is_none(), "fresh custody has no scheduled action");
         assert_eq!(admin_id, admin[0]);
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
         assert_eq!(bcs::to_bytes(&sealed_caps[0])?, cap_contents);
-        let (version_id, active_generation): (ObjectID, u64) = bcs::from_bytes(&self.contents(version[0]))?;
-        assert_eq!((version_id, active_generation), (version[0], generation));
+        let (version_id, paused, active_generation): (ObjectID, u8, u64) =
+            bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
+        assert_eq!((version_id, paused, active_generation), (version[0], 0, generation));
 
         Ok(version[0])
     }
