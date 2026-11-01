@@ -1056,13 +1056,24 @@ Common answers:
 
 Other objects:
 
-- `FeePolicy`: `destination`, `fees`.
+Delayed policy fields contain the applied `value` and an optional `pending` record with the
+proposed `value` and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
+pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
+positional struct wrapping one u64.
+
+- `FeePolicy`: `destination` is `Delayed<address>`, so `destination.value` is the current payee.
+  `fees` is `Delayed<ProtocolFees>`; `fees.value` holds the applied `raise_bps`, `token_bps`,
+  `lp_fee_meme_bps` and `lp_fee_quote_bps`, each a `Bps`.
 - `CreationPolicy`: `allowed_quotes` and `allowed_migration_witnesses` (sets of type names with
-  original package IDs); accepted partners are dynamic fields keyed by
+  original package IDs); `pending_witnesses` maps adapter type names to admission proposals
+  with `value` and `ready_at_ms`. A pending admission becomes active when applied to
+  `allowed_migration_witnesses`. Accepted partners are dynamic fields keyed by
   `creation_policy::PartnerKey` (the partner's ID) whose `u64` value is the time the partner stops
   being accepted (the maximum u64 while accepted).
 - `Vault`: `presale_id`, `presale_cap_id`, `pool_id`, `fee_split`, `protocol_fees`
-  (current LP rates), `partner_id`, `unpaid_protocol_meme`, `unpaid_protocol_quote`,
+  (`Delayed<ProtocolFees>`; read `protocol_fees.value.lp_fee_meme_bps` and
+  `protocol_fees.value.lp_fee_quote_bps` for the applied LP rates), `partner_id`,
+  `unpaid_protocol_meme`, `unpaid_protocol_quote`,
   `migration_meme_residual`, `migration_quote_residual`, `holder_rewards_meme`,
   `holder_rewards_quote` (unallocated holder share), `next_round`, `last_checkpoint`. The position
   is a dynamic object field keyed by `presale_vault::PositionKey`; on Aftermath it is the DAO-fee
@@ -1989,12 +2000,28 @@ object's type arguments.
 | Is this cap live? | its object ID equals `curve_fee_cap_id` or `blast_metadata_cap_id` |
 | Coin metadata, supply mode, total supply | the shared `Currency<Meme>` |
 
-`LaunchConfig` fields: `meme_decimals`, `quotes` (a `Table` keyed by the Quote `TypeName` with
-original IDs), `quote_fee_bps`, `meme_fee_bps`, `migration_witnesses`, `protocol_allocation`
-(`meme_bps`, `quote_bps`), `creation_fee` (MIST); accepted partners are dynamic fields
-`launch_config::PartnerKey(ID)` holding `accepted_until_ms`. `RuntimeConfig` fields:
-`creator_claim_signer_public_key`, `protocol_fee_share_bps`, `treasury` each contain a `Delayed` value and optional pending replacement. Read the applied `value` for live economics. Preview a trade exactly by
-dev-inspecting `launch::buy` or `launch::sell` against the live launch.
+A `Delayed<T>` stores the applied `value` and an optional `pending` record containing the
+proposed `value` and `ready_at_ms` (Unix milliseconds). Read the applied
+`value` for live economics. Reaching `ready_at_ms` makes a proposal executable; the matching
+apply call must still succeed before it becomes the applied value.
+
+`LaunchConfig` keeps `meme_decimals`, `quotes` (a `Table` keyed by the Quote `TypeName` with
+original IDs), and admitted adapters in `migration_witnesses`. Its delayed economic fields are:
+
+| Field | Applied value |
+| --- | --- |
+| `trade_fees` | `trade_fees.value` contains `quote_fee_bps` and `meme_fee_bps`, each a `Bps` |
+| `protocol_allocation` | `protocol_allocation.value` contains `meme_bps` and `quote_bps`, each a `Bps` |
+| `creation_fee` | `creation_fee.value` is the creation fee in MIST |
+
+`pending_witnesses` maps original adapter type names to admission proposals with `value` and
+`ready_at_ms`; admission becomes active only when applied to `migration_witnesses`. Accepted
+partners are dynamic fields `launch_config::PartnerKey(ID)` holding `accepted_until_ms`.
+
+`RuntimeConfig` also stores delayed fields: `creator_claim_signer_public_key.value` is the
+active signer, `protocol_fee_share_bps.value` is the applied `Bps`, and `treasury.value` is the
+current payee. A `Bps` is a positional struct wrapping one u64. Preview a trade exactly
+by dev-inspecting `launch::buy` or `launch::sell` against the live launch.
 
 ### Events
 
@@ -2717,6 +2744,10 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 
 This package has no public getters for its objects. Read object fields over RPC or GraphQL.
 
+`Delayed<T>` contains the applied `value` and an optional `pending` record with the proposed
+`value` and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
+economics: the proposal becomes applied only when its apply call succeeds.
+
 - **Vault** (`LpVault<Meme, Quote>`): the fields listed under "What an `LpVault` holds". Each
   `Balance` shows its value. `fee_split` holds `creator_bps`, `auto_lp_bps`, `rewards_bps`,
   `burn_bps` (each a `Bps` wrapping one u64) and `recipients` (each with `destination` and `bps`).
@@ -2727,8 +2758,11 @@ This package has no public getters for its objects. Read object fields over RPC 
   Quote>` is unique per Meme.
 - **Blast's live share for a coin:** `LpFeePolicy.coins` is a table keyed by the standard library's
   `TypeName` holding the Meme's original type name (64 hex digits without `0x`, then the module and
-  type names, each after two colons). If the coin has an entry, use its `meme_bps`/`quote_bps`;
-  otherwise use `defaults`. `destination` is the current payee.
+  type names, each after two colons). Each entry holds `Delayed<Option<SharePair>>`. Read the
+  entry's applied `value`: use the pair when it is `Some`, and use `defaults.value` when it is
+  `None` or the table entry is absent. Each pair contains `meme_bps` and `quote_bps`, each a `Bps`
+  positional struct wrapping one u64. `destination.value` is the current payee. Both `defaults`
+  and `destination` are delayed fields; their pending proposals do not affect these reads.
 - **Round** (`Round<Meme, Quote>`): `vault`, `number`, `root`, `leaf_count`, `meme` and `quote`
   (funds left), and `claimed`, a bitmap of u256 words: leaf `i` is paid when bit `i mod 256` of word
   `i / 256` is set.
@@ -2740,6 +2774,19 @@ This package has no public getters for its objects. Read object fields over RPC 
   holds the number.
 - **Pending fees and the next split:** dry-run `collect_fees`; the emitted `FeesCollected` and
   `AutoLiquidityAdded` show exactly what a collection would do now.
+
+For example, with applied defaults of 100/200 BPS for Meme/Quote and a proposed override of
+300/400 BPS:
+
+| Coin policy state | Applied entry value | Live Meme/Quote BPS |
+| --- | --- | --- |
+| No entry | Absent | 100/200 from applied defaults |
+| First override scheduled, including after readiness but before application | `None` | 100/200 from applied defaults |
+| Override applied, including while its clear is pending | `Some` pair | 300/400 from the applied override |
+| Clear applied; the table entry remains | `None` | 100/200 from applied defaults |
+
+When using defaults, always read their current applied value. If defaults change during a
+clear's notice period, applying that clear restores those updated defaults.
 
 ### Events
 

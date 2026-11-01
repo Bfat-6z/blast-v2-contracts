@@ -559,6 +559,10 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 
 This package has no public getters for its objects. Read object fields over RPC or GraphQL.
 
+`Delayed<T>` contains the applied `value` and an optional `pending` record with the proposed
+`value` and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
+economics: the proposal becomes applied only when its apply call succeeds.
+
 - **Vault** (`LpVault<Meme, Quote>`): the fields listed under "What an `LpVault` holds". Each
   `Balance` shows its value. `fee_split` holds `creator_bps`, `auto_lp_bps`, `rewards_bps`,
   `burn_bps` (each a `Bps` wrapping one u64) and `recipients` (each with `destination` and `bps`).
@@ -569,8 +573,11 @@ This package has no public getters for its objects. Read object fields over RPC 
   Quote>` is unique per Meme.
 - **Blast's live share for a coin:** `LpFeePolicy.coins` is a table keyed by the standard library's
   `TypeName` holding the Meme's original type name (64 hex digits without `0x`, then the module and
-  type names, each after two colons). If the coin has an entry, use its `meme_bps`/`quote_bps`;
-  otherwise use `defaults`. `destination` is the current payee.
+  type names, each after two colons). Each entry holds `Delayed<Option<SharePair>>`. Read the
+  entry's applied `value`: use the pair when it is `Some`, and use `defaults.value` when it is
+  `None` or the table entry is absent. Each pair contains `meme_bps` and `quote_bps`, each a `Bps`
+  positional struct wrapping one u64. `destination.value` is the current payee. Both `defaults`
+  and `destination` are delayed fields; their pending proposals do not affect these reads.
 - **Round** (`Round<Meme, Quote>`): `vault`, `number`, `root`, `leaf_count`, `meme` and `quote`
   (funds left), and `claimed`, a bitmap of u256 words: leaf `i` is paid when bit `i mod 256` of word
   `i / 256` is set.
@@ -582,6 +589,19 @@ This package has no public getters for its objects. Read object fields over RPC 
   holds the number.
 - **Pending fees and the next split:** dry-run `collect_fees`; the emitted `FeesCollected` and
   `AutoLiquidityAdded` show exactly what a collection would do now.
+
+For example, with applied defaults of 100/200 BPS for Meme/Quote and a proposed override of
+300/400 BPS:
+
+| Coin policy state | Applied entry value | Live Meme/Quote BPS |
+| --- | --- | --- |
+| No entry | Absent | 100/200 from applied defaults |
+| First override scheduled, including after readiness but before application | `None` | 100/200 from applied defaults |
+| Override applied, including while its clear is pending | `Some` pair | 300/400 from the applied override |
+| Clear applied; the table entry remains | `None` | 100/200 from applied defaults |
+
+When using defaults, always read their current applied value. If defaults change during a
+clear's notice period, applying that clear restores those updated defaults.
 
 ### Events
 

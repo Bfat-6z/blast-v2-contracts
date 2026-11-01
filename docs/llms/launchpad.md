@@ -640,12 +640,28 @@ object's type arguments.
 | Is this cap live? | its object ID equals `curve_fee_cap_id` or `blast_metadata_cap_id` |
 | Coin metadata, supply mode, total supply | the shared `Currency<Meme>` |
 
-`LaunchConfig` fields: `meme_decimals`, `quotes` (a `Table` keyed by the Quote `TypeName` with
-original IDs), `quote_fee_bps`, `meme_fee_bps`, `migration_witnesses`, `protocol_allocation`
-(`meme_bps`, `quote_bps`), `creation_fee` (MIST); accepted partners are dynamic fields
-`launch_config::PartnerKey(ID)` holding `accepted_until_ms`. `RuntimeConfig` fields:
-`creator_claim_signer_public_key`, `protocol_fee_share_bps`, `treasury` each contain a `Delayed` value and optional pending replacement. Read the applied `value` for live economics. Preview a trade exactly by
-dev-inspecting `launch::buy` or `launch::sell` against the live launch.
+A `Delayed<T>` stores the applied `value` and an optional `pending` record containing the
+proposed `value` and `ready_at_ms` (Unix milliseconds). Read the applied
+`value` for live economics. Reaching `ready_at_ms` makes a proposal executable; the matching
+apply call must still succeed before it becomes the applied value.
+
+`LaunchConfig` keeps `meme_decimals`, `quotes` (a `Table` keyed by the Quote `TypeName` with
+original IDs), and admitted adapters in `migration_witnesses`. Its delayed economic fields are:
+
+| Field | Applied value |
+| --- | --- |
+| `trade_fees` | `trade_fees.value` contains `quote_fee_bps` and `meme_fee_bps`, each a `Bps` |
+| `protocol_allocation` | `protocol_allocation.value` contains `meme_bps` and `quote_bps`, each a `Bps` |
+| `creation_fee` | `creation_fee.value` is the creation fee in MIST |
+
+`pending_witnesses` maps original adapter type names to admission proposals with `value` and
+`ready_at_ms`; admission becomes active only when applied to `migration_witnesses`. Accepted
+partners are dynamic fields `launch_config::PartnerKey(ID)` holding `accepted_until_ms`.
+
+`RuntimeConfig` also stores delayed fields: `creator_claim_signer_public_key.value` is the
+active signer, `protocol_fee_share_bps.value` is the applied `Bps`, and `treasury.value` is the
+current payee. A `Bps` is a positional struct wrapping one u64. Preview a trade exactly
+by dev-inspecting `launch::buy` or `launch::sell` against the live launch.
 
 ### Events
 

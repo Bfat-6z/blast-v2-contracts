@@ -875,13 +875,24 @@ Common answers:
 
 Other objects:
 
-- `FeePolicy`: `destination`, `fees`.
+Delayed policy fields contain the applied `value` and an optional `pending` record with the
+proposed `value` and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
+pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
+positional struct wrapping one u64.
+
+- `FeePolicy`: `destination` is `Delayed<address>`, so `destination.value` is the current payee.
+  `fees` is `Delayed<ProtocolFees>`; `fees.value` holds the applied `raise_bps`, `token_bps`,
+  `lp_fee_meme_bps` and `lp_fee_quote_bps`, each a `Bps`.
 - `CreationPolicy`: `allowed_quotes` and `allowed_migration_witnesses` (sets of type names with
-  original package IDs); accepted partners are dynamic fields keyed by
+  original package IDs); `pending_witnesses` maps adapter type names to admission proposals
+  with `value` and `ready_at_ms`. A pending admission becomes active when applied to
+  `allowed_migration_witnesses`. Accepted partners are dynamic fields keyed by
   `creation_policy::PartnerKey` (the partner's ID) whose `u64` value is the time the partner stops
   being accepted (the maximum u64 while accepted).
 - `Vault`: `presale_id`, `presale_cap_id`, `pool_id`, `fee_split`, `protocol_fees`
-  (current LP rates), `partner_id`, `unpaid_protocol_meme`, `unpaid_protocol_quote`,
+  (`Delayed<ProtocolFees>`; read `protocol_fees.value.lp_fee_meme_bps` and
+  `protocol_fees.value.lp_fee_quote_bps` for the applied LP rates), `partner_id`,
+  `unpaid_protocol_meme`, `unpaid_protocol_quote`,
   `migration_meme_residual`, `migration_quote_residual`, `holder_rewards_meme`,
   `holder_rewards_quote` (unallocated holder share), `next_round`, `last_checkpoint`. The position
   is a dynamic object field keyed by `presale_vault::PositionKey`; on Aftermath it is the DAO-fee
