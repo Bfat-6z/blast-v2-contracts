@@ -74,8 +74,8 @@ public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T {
     self.pending.extract().value
 }
 
-/// Only the enclosing module's authority-reducing paths may expose this operation.
-/// Revocation also clears a pending replacement so it cannot restore revoked authority.
+/// Only publication bootstrap or the enclosing module's authority-reducing paths may expose this operation.
+/// Clears a pending replacement so it cannot restore revoked authority.
 public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T) {
     self.value = value;
     self.pending = option::none();

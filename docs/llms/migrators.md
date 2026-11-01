@@ -22,7 +22,7 @@ migration itself, and everything the vault does afterwards.
 | `lp_fee_policy::LpFeePolicy` | singleton | Blast's LP-fee share (a default pair and optional per-coin pairs) and the address Blast's share is paid to. |
 | `blast_holder_rewards::Round` (`Round<Meme, Quote>`) | one per published round | A funded Merkle allocation of holder rewards and its claim bitmap. |
 | `blast_fun_migrators::venue_config::VenueConfig` | singleton | Keeps each Cetus launch's `PoolCreationCap` forever, under `blast_fun_migrators::cetus::CreationCapKey` (typed by the Meme). |
-| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation. Every public call except `wrap` checks it first. |
+| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation. Operational mutations check it first; created by wrap after initial setup. |
 | `blast_fun_migrators::package_admin::PackageAdmin` | singleton | Sealed custody of this package's `Publisher` and `UpgradeCap`. |
 
 Calls also take objects from other packages:
@@ -38,6 +38,11 @@ Calls also take objects from other packages:
   one.
 
 #### Capabilities and roles
+
+- `blast_fun_migrators::blast_fun_migrators::Bootstrap` (`key` only, owned):
+  created once at publication and sent to the deployer. It holds the canonical
+  Publisher and initial generation, authorizes initial LP policy and is consumed
+  permanently by custody wrap.
 
 - `creator_authority::CurveFeeCap` (`CurveFeeCap<Meme>`, owned, transferable). The launch records
   the ID of the one live cap. Its holder claims the creator's LP fees and changes the fee split. The
@@ -71,10 +76,11 @@ Calls also take objects from other packages:
 | `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `BuybackAdmin` |
 | `blast_holder_rewards::publish_round` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
+| `lp_fee_policy::bootstrap` | cap holder: the owned Bootstrap, before wrap |
 | `lp_fee_policy::schedule_protocol_destination` | Blast admin: `TreasuryAdmin` |
 | `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares` | Blast admin: `FeeAdmin` |
 | `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` | Blast admin: `UpgradeAdmin` |
-| `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publisher` and `UpgradeCap` (done once at deployment) |
+| `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Bootstrap` and native `UpgradeCap` (done once at deployment) |
 
 #### What an `LpVault` holds
 
@@ -107,9 +113,10 @@ balances except the flows below.
   different: Cetus LP Burn has burned it, and its `CetusLPBurnProof` can only collect fees. The
   Bluefin position, the Cetus auto-LP position, and every vault balance depend on this package's
   code.
-- **Blast sets its own share at any time.** `FeeAdmin` can set Blast's LP-fee share anywhere from 0
-  to 10,000 BPS per asset, by default or per coin, with no delay. It applies from the next
-  collection. `TreasuryAdmin` can redirect Blast's share at any time.
+- **Blast controls its own share.** After bootstrap, `FeeAdmin` schedules Blast's LP-fee share
+  from 0 to 10,000 BPS per asset, by default or per coin. `TreasuryAdmin` schedules
+  payout destination changes. Anyone applies a scheduled change after 48 hours;
+  it applies from the next collection.
 - **The admin can publish any round.** Merkle proofs enforce the published allocation, not the truth
   of Blast's off-chain holder accounting. `RewardsAdmin` can assign unreserved rewards to any
   recipient in a new round. Rounds never expire, and nothing cancels a round or sweeps its funds, so
@@ -138,7 +145,28 @@ balances except the flows below.
 
 ### Flows
 
-Every public call in this package except the one-time `wrap` takes
+#### Protocol bootstrap (cap holder: Bootstrap and the native UpgradeCap)
+
+1. Publish migrators after its launchpad dependency. Publication transfers the
+   only `blast_fun_migrators::blast_fun_migrators::Bootstrap` to the deployer and
+   shares the LP policy and venue configuration. No PackageVersion exists yet.
+2. Call `lp_fee_policy::bootstrap` with the shared mutable LpFeePolicy, a
+   reference to Bootstrap, a nonzero destination and initial default Meme/Quote
+   shares built by `blast_fun::bps::new`. Each share allows 0 through 10,000 BPS;
+   zero shares are valid defaults. The policy changes immediately and emits
+   `blast_fun_migrators::blast_events::LpFeeDestinationChanged` and
+   `blast_fun_migrators::blast_events::LpFeePolicyChanged`, without a Clock.
+3. Call `blast_fun_migrators::package_admin::wrap` with Bootstrap by value and
+   the matching never-upgraded native UpgradeCap. It consumes Bootstrap forever,
+   seals native custody and shares this package's operational PackageVersion.
+4. Admit the reviewed migrators' adapter witnesses during launchpad bootstrap,
+   then release the launchpad through its immediate UnpauseAdmin path.
+
+Migrators has no separate pause switch. The launchpad controls migration pause.
+Initial setup may span transactions; after wrap it cannot be reopened by a
+pause cycle or upgrade. Later governed LP policy changes require 48 hours.
+
+Operational state-changing calls take
 `blast_fun_migrators::blast_fun_migrators::PackageVersion` (shared) and checks it before anything
 else. Calls whose launchpad step checks the launchpad generation (`new`, `migrate`) take the
 launchpad's `blast_fun::blast_fun::PackageVersion` as well, because each package checks only its own
@@ -519,7 +547,8 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 ### Time rules
 
 - No deadlines exist in this package. Collections, payouts, claims, and buybacks work at any time.
-- Policy changes apply from the next collection; there is no delay.
+- After bootstrap, policy changes require 48 hours and explicit application,
+  then affect the next collection.
 - A partner payout uses the partner's share in force at payout, not at collection.
 - Holder-reward rounds never expire. Their checkpoint intervals must be contiguous and nonempty.
 - `migrate`, `collect_fees`, `settle_and_update_fee_split`, and `buyback_and_burn` take `Clock`

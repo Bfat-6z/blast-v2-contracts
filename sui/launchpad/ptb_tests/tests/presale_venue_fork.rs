@@ -214,60 +214,6 @@ fn run_near_equal(route: Route) -> Result<()> {
     Ok(())
 }
 
-/// Grants the simulator sender typed roles through the production ACL path, then enables the route.
-fn allow_route(h: &mut Harness,
-    admin: ObjectID,
-    admin_published: &Outcome,
-    presale: ObjectID,
-    version: ObjectID, creation_policy: ObjectID, route: Route,
-    quote: TypeTag,
-) -> Result<()> {
-    let acl = admin_published.created(h, "blast_acl", "ACL")[0];
-    let root = admin_published.created(h, "blast_acl", "SuperAdminCap")[0];
-    let mut b = ProgrammableTransactionBuilder::new();
-    let acl_arg = b.obj(h.shared(acl, true))?;
-    let root_arg = b.obj(h.owned(root))?;
-    let recipient = b.pure(h.sender)?;
-    call(&mut b, admin, "blast_acl", "grant_admin", vec![], vec![acl_arg, root_arg, recipient]);
-    let granted = h.impersonate_cap_owner(root, b.finish())?;
-    granted.assert_success();
-    let cap = granted.created(h, "blast_acl", "AdminCap")[0];
-    let mut b = ProgrammableTransactionBuilder::new();
-    let acl_arg = b.obj(h.shared(acl, true))?;
-    let root_arg = b.obj(h.owned(root))?;
-    let cap_id = b.pure(cap)?;
-    for role in ["ListingAdmin", "AdapterAdmin"] {
-        let role = tag(&format!("{presale}::blast_presale_domain::{role}"));
-        call(&mut b, admin, "blast_acl", "grant_role", vec![role], vec![acl_arg, root_arg, cap_id]);
-    }
-    h.impersonate_cap_owner(root, b.finish())?.assert_success();
-
-    let mut b = ProgrammableTransactionBuilder::new();
-    let acl = b.obj(h.shared(acl, false))?;
-    let cap = b.obj(h.owned(cap))?;
-    let version_id = version;
-    let policy = b.obj(h.shared(creation_policy, true))?;
-    let version = b.obj(h.shared(version, false))?;
-    let allowed = b.pure(true)?;
-    for (role, function, ty) in [
-        ("ListingAdmin", "set_quote_allowed", quote),
-        (
-            "AdapterAdmin",
-            "schedule_migration_witness",
-            tag(&format!("{presale}::{}::Witness", route.module())),
-        ),
-    ] {
-        let role = tag(&format!("{presale}::blast_presale_domain::{role}"));
-        let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]);
-        let last = if function == "schedule_migration_witness" { b.obj(h.shared(SUI_CLOCK_OBJECT_ID, false))? } else { allowed };
-        call(&mut b, presale, "creation_policy", function, vec![ty], vec![policy, version, witness, last]);
-    }
-    h.execute(b.finish())?.assert_success();
-    blast_launchpad_ptb_tests::apply_admin_changes(h, vec![(presale, "creation_policy", "apply_migration_witness", vec![tag(&format!("{presale}::{}::Witness", route.module()))], creation_policy, version_id)])?;
-
-    Ok(())
-}
-
 fn finalize_currency(h: &mut Harness, pending: ObjectID, coin: &TypeTag) -> Result<ObjectID> {
     let mut b = ProgrammableTransactionBuilder::new();
     let registry = b.obj(h.shared(SUI_COIN_REGISTRY_OBJECT_ID, true))?;
@@ -503,17 +449,6 @@ impl World {
         ensure!(fee_policy.len() == 1 && h.object(fee_policy[0]).is_shared());
         let creation_policy = published.created(&h, "creation_policy", "CreationPolicy");
         ensure!(creation_policy.len() == 1 && h.object(creation_policy[0]).is_shared());
-        let bootstrap = published.created(&h, "blast_presale_package", "Bootstrap")[0];
-        let upgrade_cap = published.created(&h, "package", "UpgradeCap")[0];
-        let mut b = ProgrammableTransactionBuilder::new();
-        let bootstrap = b.obj(h.owned(bootstrap))?;
-        let upgrade_cap = b.obj(h.owned(upgrade_cap))?;
-        call(&mut b, presale, "package_admin", "wrap", vec![], vec![bootstrap, upgrade_cap]);
-        let wrapped = h.execute(b.finish())?;
-        wrapped.assert_success();
-        let versions = wrapped.created(&h, "blast_presale_package", "PackageVersion");
-        ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
-        let version = versions[0];
         let token = build(&Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture/presale_token"), &[], &work)?;
         let (quote_type, quote_currency) = if custom_quote {
             let (package, published) = h.publish(token.clone())?;
@@ -525,16 +460,34 @@ impl World {
         } else {
             (route.quote(), *venue.get("sui_currency").context("SUI currency")?)
         };
-        allow_route(
-            &mut h,
-            admin,
-            &admin_published,
-            presale,
-            version,
-            creation_policy[0],
-            route,
-            quote_type.clone(),
-        )?;
+        assert!(published.created(&h, "blast_presale_package", "PackageVersion").is_empty());
+        let clock_before = h.contents(SUI_CLOCK_OBJECT_ID);
+        let bootstrap_id = published.created(&h, "blast_presale_package", "Bootstrap")[0];
+        let bootstrap = bootstrap_id;
+        let upgrade_cap = published.created(&h, "package", "UpgradeCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let bootstrap = b.obj(h.owned(bootstrap))?;
+        let upgrade_cap = b.obj(h.owned(upgrade_cap))?;
+        let policy = b.obj(h.shared(creation_policy[0], true))?;
+        let allowed = b.pure(true)?;
+        call(&mut b, presale, "creation_policy", "bootstrap_quote", vec![quote_type.clone()], vec![policy, bootstrap, allowed]);
+        call(&mut b, presale, "creation_policy", "bootstrap_migration_witness", vec![tag(&format!("{presale}::{}::Witness", route.module()))], vec![policy, bootstrap, allowed]);
+        let fees = b.obj(h.shared(fee_policy[0], true))?;
+        let destination = b.pure(h.sender)?;
+        let zero = b.pure(0u64)?;
+        let zero = call(&mut b, presale, "bps", "new", vec![], vec![zero]);
+        call(&mut b, presale, "fee_policy", "bootstrap", vec![], vec![fees, bootstrap, destination, zero, zero, zero, zero]);
+        call(&mut b, presale, "package_admin", "wrap", vec![], vec![bootstrap, upgrade_cap, policy]);
+        let wrapped = h.execute(b.finish())?;
+        wrapped.assert_success();
+        let versions = wrapped.created(&h, "blast_presale_package", "PackageVersion");
+        ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
+        let version = versions[0];
+        let (_, paused, generation): (ObjectID, u8, u64) = bcs::from_bytes(&h.contents(version))?;
+        ensure!(paused == 11 && generation == 1);
+        ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap_id));
+        h.unpause(presale, "blast_presale_package", admin, &admin_published, version, 11)?;
+        ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
         Ok(World {
             h,
@@ -1299,8 +1252,8 @@ impl World {
         ensure!(fees.len() == 1, "one FeesCollected");
         let fees = fees[0].clone();
         ensure!(fees.vault_id == m.vault && (fees.gross_meme, fees.gross_quote) == (gross_meme, gross_quote));
-        let treasury: SuiAddress = ObjectID::from_hex_literal(blast_launchpad_ptb_tests::TEST_GENESIS_RECIPIENT)?.into();
-        // The explicit genesis treasury's zero-rate policy takes no Blast share.
+        let treasury = self.h.sender;
+        // Bootstrap selected this treasury; the zero-rate policy takes no Blast share.
         ensure!(
             (fees.protocol_destination, fees.protocol_meme, fees.protocol_quote)
                 == (Some(treasury), 0, 0),

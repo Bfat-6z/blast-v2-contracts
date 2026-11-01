@@ -7,6 +7,7 @@ SOURCES = Path(__file__).resolve().parent.parent / "sources"
 GUARDED = {'blast_presale': ['new', 'set_supply', 'set_token_allocations', 'set_participant_vesting', 'set_raise', 'set_windows', 'set_eligibility', 'set_uncapped_phase', 'set_hard_cap', 'set_fee_split', 'set_partner', 'finalize', 'share', 'set_protocol_fees', 'commit_open', 'commit_allowlisted', 'commit_uncapped', 'settle', 'cancel_unlaunched', 'claim', 'migrate', 'pay_protocol_fees_with_partner'], 'creation_policy': ['set_quote_allowed', 'schedule_migration_witness', 'apply_migration_witness', 'cancel_migration_witness', 'remove_migration_witness', 'add_partner', 'remove_partner'], 'fee_policy': ['schedule_fees', 'apply_fees', 'cancel_fees', 'schedule_destination', 'apply_destination', 'cancel_destination'], 'bluefin': ['new', 'migrate', 'new_vault', 'collect_fees'], 'cetus': ['new', 'migrate', 'new_vault', 'collect_fees'], 'aftermath': ['new', 'finalize', 'share', 'migrate', 'collect_fees'], 'presale_vault': ['claim_migration_residuals', 'schedule_protocol_lp_fees', 'apply_protocol_lp_fees', 'cancel_protocol_lp_fees', 'pay_protocol_lp_fees_with_partner'], 'holder_rewards': ['publish_round', 'claim', 'settle_gas_reserve', 'close_round'], 'package_admin': ['schedule_upgrade', 'schedule_make_immutable', 'cancel_upgrade_action', 'authorize_upgrade', 'commit_upgrade_and_advance', 'make_immutable']}
 # Pure constructors/readers and deletion of an inert, caller-owned cap need no version.
 EXEMPT = {"wrap", "destroy_cap"}
+BOOTSTRAP = {"creation_policy": {"bootstrap_quote", "bootstrap_migration_witness"}, "fee_policy": {"bootstrap"}}
 
 def functions(source):
     source = source.split("// === Test-Only Functions ===")[0]
@@ -18,8 +19,10 @@ for module, names in GUARDED.items():
     found = {}
     for name, signature, body in functions((SOURCES / (module + ".move")).read_text()):
         found[name] = (signature, body)
+        if name in BOOTSTRAP.get(module, set()):
+            assert "_: &Bootstrap" in signature and "PackageVersion" not in signature, (module, name)
         # Any new function accepting mutable state must be explicitly reviewed.
-        if "&mut " in signature and name not in names and name not in EXEMPT:
+        if "&mut " in signature and name not in names and name not in EXEMPT and name not in BOOTSTRAP.get(module, set()):
             raise AssertionError(f"Unreviewed mutable entry point: {module}::{name}")
     for name in names:
         signature, body = found[name]

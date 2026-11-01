@@ -330,7 +330,7 @@ if [[ "$(move_production_body init <<<"$(move_facts sources/blast_fun.move)")" \
   || [[ "$(move_production_body destroy <<<"$(move_facts sources/blast_fun.move)")" \
     != 'let Bootstrap { id, publisher, generation } = self; id.delete(); (publisher, generation)' ]] \
   || [[ "$(move_production_body share_version <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'transfer::share_object(PackageVersion { paused: 0, id: object::new(ctx), generation });' ]] \
+    != 'transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation });' ]] \
   || [[ "$(rg -c '^public\(package\) fun ' <<<"$blast_production")" != 6 ]] \
   || [[ "$(rg -l '\bshare_version\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
     != 'sources/blast_fun.move sources/package_admin.move ' ]]; then
@@ -431,7 +431,7 @@ package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # would end upgradeability silently.
 # Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
 if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'let (publisher, generation) = bootstrap.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody, pending: option::none() }); generation.share_version(ctx);' ]] \
+    != 'config.assert_bootstrap_ready(); let (publisher, generation) = bootstrap.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody, pending: option::none() }); generation.share_version(ctx);' ]] \
   || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 5 ]] \
   || [[ "$(move_facts sources/package_admin.move \
     | awk -F'\t' '$1 == "FN" && $2 == "commit_upgrade_and_advance" { print $10 }')" \
@@ -1223,7 +1223,8 @@ version_guard_violations="$(
       }
       $1 == "FN" && $6 == 0 && $3 == "public" \
         && ($9 ~ /: &mut (Launch|Currency)</ || $9 ~ /: &mut (LaunchConfig|RuntimeConfig|PackageAdmin),/) \
-        && $9 !~ /[(,] package_version: &(mut )?PackageVersion,/ {
+        && $9 !~ /[(,] package_version: &(mut )?PackageVersion,/ \
+        && !($9 ~ /_: &Bootstrap/ && ((file ~ /launch_config[.]move$/ && $2 ~ /^(bootstrap|bootstrap_quote|bootstrap_migration_witness)$/) || (file ~ /runtime_config[.]move$/ && $2 == "bootstrap"))) {
         print "  " file ": " $2 " reaches mutable shared state without PackageVersion"
       }
       END {

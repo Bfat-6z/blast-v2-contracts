@@ -188,6 +188,8 @@ blast_events:package:fun vault_created<Meme, Quote, Venue>( vault_id: ID, pool_i
 blast_fun_migrators:package:fun advance(self: &mut PackageVersion)
 blast_fun_migrators:package:fun assert_current(self: &PackageVersion)
 blast_fun_migrators:package:fun assert_next(self: &PackageVersion)
+blast_fun_migrators:package:fun destroy(self: Bootstrap): (Publisher, OperationalVersion<BLAST_FUN_MIGRATORS>)
+blast_fun_migrators:package:fun share_version(generation: OperationalVersion<BLAST_FUN_MIGRATORS>, ctx: &mut TxContext)
 blast_holder_rewards:public:fun claim<Meme, Quote>( self: &mut Round<Meme, Quote>, migrators_version: &MigratorsVersion, index: u64, beneficiary: address, meme_amount: u64, quote_amount: u64, proof: vector<vector<u8>>, ctx: &mut TxContext, )
 blast_holder_rewards:public:fun publish_round<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<RewardsAdmin>, number: u64, start_checkpoint: u64, end_checkpoint: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, ctx: &mut TxContext, )
 bluefin:public:fun buyback_and_burn<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
@@ -215,6 +217,7 @@ lp_fee_policy:package:fun shares<Meme>(self: &LpFeePolicy): (Bps, Bps)
 lp_fee_policy:public:fun apply_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock)
 lp_fee_policy:public:fun apply_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
 lp_fee_policy:public:fun apply_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
+lp_fee_policy:public:fun bootstrap(self: &mut LpFeePolicy, _: &Bootstrap, destination: address, meme_bps: Bps, quote_bps: Bps)
 lp_fee_policy:public:fun cancel_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>)
 lp_fee_policy:public:fun cancel_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
 lp_fee_policy:public:fun cancel_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
@@ -232,7 +235,7 @@ package_admin:public:fun commit_upgrade_and_advance( self: &mut PackageAdmin, pa
 package_admin:public:fun make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock)
 package_admin:public:fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock)
 package_admin:public:fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock)
-package_admin:public:fun wrap(publisher: Publisher, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
+package_admin:public:fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
 vault:package:fun assert_fee_split_update<Meme, Quote>( self: &LpVault<Meme, Quote>, launch: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, proposed: FeeSplit, )
 vault:package:fun attach_auto_lp_position<Meme, Quote, Venue, Position: key + store>( self: &mut LpVault<Meme, Quote>, _venue: &Venue, position: Position, )
 vault:package:fun auto_lp_position< Meme, Quote, Venue, Position: key + store, >( self: &LpVault<Meme, Quote>, _venue: &Venue, ): &Position
@@ -297,6 +300,7 @@ cetus: settle_fees as LpVault.settle_fees
 cetus: swap as Pool.swap
 cetus: swap_quote_for_meme as Pool.swap_quote_for_meme
 lp_fee_policy: blast_fun_migrators::PackageVersion as MigratorsVersion
+package_admin: blast_fun_migrators::blast_fun_migrators::share_version as OperationalVersion.share_version
 vault: blast_fun_migrators::PackageVersion as MigratorsVersion
 vault: burn as Currency.burn
 vault: dynamic_object_field::add as UID.add_dynamic_object_field
@@ -457,8 +461,8 @@ for emitter in \
     'vault_created<Meme, Quote, Venue>:vault:new' \
     'round_published:blast_holder_rewards:publish_round' \
     'reward_paid:blast_holder_rewards:claim' \
-    'lp_fee_destination_changed:lp_fee_policy:apply_protocol_destination' \
-    'lp_fee_policy_changed:lp_fee_policy:apply_coin_shares apply_default_shares'; do
+    'lp_fee_destination_changed:lp_fee_policy:apply_protocol_destination bootstrap' \
+    'lp_fee_policy_changed:lp_fee_policy:apply_coin_shares apply_default_shares bootstrap'; do
     event="${emitter%%:*}"
     rest="${emitter#*:}"
     writers="$(for source in "$SOURCE_DIR"/*.move; do
@@ -1301,6 +1305,7 @@ for guard_module in lp_fee_policy vault blast_holder_rewards bluefin cetus; do
             parameters = substr($9, index($9, "(") + 1)
             parameters = substr(parameters, 1, index(parameters, ")") - 1)
         }
+        module == "lp_fee_policy" && $2 == "bootstrap" && index($9, "_: &Bootstrap,") > 0 { next }
         (module == "vault" || module == "lp_fee_policy") && parameters !~ /&mut / && parameters !~ /: [A-Za-z]/ { next }
         index($9, " migrators_version: &MigratorsVersion,") == 0 \
             || index($10, "migrators_version.assert_current();") != 1 { print $2 }

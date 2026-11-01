@@ -6,12 +6,13 @@ and [ADR 0032](../../docs/decisions/0032-admin-authorized-upgrade-cap-custody.md
 as amended by [ADR 0114](../../docs/decisions/0114-launchpad-custody-before-activation.md)
 for audit finding L-1.
 
-**Publish → identify bootstrap and fresh cap → wrap → verify activation.**
+**Publish → configure with Bootstrap → wrap → verify custody → unpause.**
 Publication creates an owned `Bootstrap` retaining the canonical Publisher and
 initial generation. It creates no `PackageVersion`, so Move cannot satisfy the
-required input to launch creation or configuration setters. `wrap` consumes
+required input to launch creation or routine configuration setters. Initial
+setters borrow Bootstrap instead. `wrap` consumes
 the bootstrap and matching native version-1 UpgradeCap, shares `PackageAdmin`
-and creates the usable `PackageVersion` in one atomic transaction.
+and creates `PackageVersion` fully paused in one atomic transaction.
 
 The deployer still receives the raw native UpgradeCap at publication. Do not
 upgrade, restrict, transfer, or destroy it before wrapping. Move cannot block
@@ -55,24 +56,37 @@ effects, not from an older deployment or an unfiltered wallet object list:
 - `LAUNCHPAD_UPGRADE_CAP_ID`: the deployer-owned `0x2::package::UpgradeCap`
   for that package, with native `version = 1` and compatible `policy = 0`.
 - No `PackageVersion` or `PackageAdmin` exists yet. `LaunchConfig` and
-  `RuntimeConfig` are shared, but their setters need the absent version object.
+  `RuntimeConfig` are shared; initial policy setters take Bootstrap. Record
+  `LAUNCHPAD_LAUNCH_CONFIG_ID` and the RuntimeConfig ID from these effects.
 
 Read each object with `sui client object <object-id> --json`. The native cap's
 version and the stored operational generation are separate values; neither is
 the Sui object storage version. Stop on a wrong owner, type, package, policy,
 generation, or missing object. Never try a raw upgrade to repair intake.
 
-## 3. Wrap immediately
+## 3. Configure and finalize bootstrap
 
-The deployer must submit the next deployment transaction with the identified
-Bootstrap and untouched UpgradeCap. `wrap` takes both by value and shares
-custody and the usable version; it needs no ACL witness. `TxContext` is supplied by Sui.
+Before wrap, borrow the identified Bootstrap for `runtime_config::bootstrap`
+(treasury, protocol fee share and claim signer) and `launch_config::bootstrap`
+(trade fees, creation fee and protocol allocation). Build Bps values in the PTB.
+Zero fees and an empty signer are legal defaults. Admit each initial Quote with
+`launch_config::bootstrap_quote<Quote>` and each reviewed adapter with
+`launch_config::bootstrap_migration_witness<Witness>`, passing `true`. Both
+allowlists must be nonempty before finalization. Record applied-value events
+and read back every initial value. These calls take effect without a Clock.
+Initial setup may span transactions; no operational activity is possible yet.
+
+Then submit Bootstrap and the untouched UpgradeCap by value to `wrap`, along
+with the read-only LaunchConfig. It consumes Bootstrap forever and shares
+custody and the fully paused version; it needs no ACL witness. `TxContext` is
+supplied by Sui.
 
 ```bash
 sui client call --package "${LAUNCHPAD_PACKAGE_ID:?set from publication}" \
   --module package_admin --function wrap \
   --args "${LAUNCHPAD_BOOTSTRAP_ID:?set from publication}" \
          "${LAUNCHPAD_UPGRADE_CAP_ID:?set from publication}" \
+         "${LAUNCHPAD_LAUNCH_CONFIG_ID:?set from publication}" \
   --gas-budget "${LAUNCHPAD_GAS_BUDGET:?set the approved budget}" --json \
   > "${LAUNCHPAD_EVIDENCE_DIR:?set the evidence directory}/wrap.json"
 ```
@@ -100,7 +114,8 @@ Require all of the following and retain the readbacks:
   the event. Wrapped capabilities are no longer standalone wallet objects;
   their absence from a wallet listing alone does not prove custody.
 - Reading the new `PackageVersion` confirms shared ownership and the compiled
-  current operational generation, initially `1`. An aborted wrap leaves the
+  current operational generation, initially `1`, and pause mask `7` (Create,
+  Trading and Migrate). An aborted wrap leaves the
   bootstrap and cap unchanged and creates neither shared output.
 
 Write a normalized record under `deployments/sui/mainnet/` following
@@ -114,8 +129,11 @@ Missing or mismatched evidence blocks release. An already-upgraded cap cannot
 be admitted: stop for a separately reviewed recovery or fresh-lineage plan;
 do not weaken intake checks. Complete the remaining release requirements,
 including treasury destinations and approved ACL/key custody from the
-deployment-record guidance, before application rollout. Move enables launch
-activity at successful wrap; those separate release controls remain operational.
+deployment-record guidance, before application rollout. Grant UnpauseAdmin
+through the shared Blast ACL, sign in with its AdminCap, and call
+`blast_fun::unpause` with the mutable PackageVersion and selected bits (all = 7).
+This release is immediate and needs no Clock; retain its events and readback.
+A later pause cannot recreate Bootstrap or bypass the normal 48-hour delay.
 
 ## Subsequent upgrades and local verification
 

@@ -337,7 +337,7 @@ const MANIFESTS = [
         path: 'Move.toml',
         packageName: 'blast_fun_migrators',
         publishedAt: null,
-        addresses: { blast_fun_migrators: '0x0' },
+        addresses: { blast_fun_migrators: '0x0', blast_lp_fee_destination: '0x0' },
         dependencies: {
             blast_admin: { local: '../admin' },
             blast_fun: { local: '../launchpad' },

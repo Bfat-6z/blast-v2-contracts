@@ -302,17 +302,17 @@ Upgradeability is a product/security decision, not a default convenience.
   authorization (ADR 0034); no pre-planted cutover flag exists.
   The launchpad's OTW retains its Publisher and initial generation in an owned
   `Bootstrap`. Only validated capability wrapping consumes it and creates the
-  shared `PackageVersion` required by launch creation and configuration setters
+  shared `PackageVersion` required by launch creation and routine configuration setters
   ([ADR 0114](decisions/0114-launchpad-custody-before-activation.md)).
   The only upgrade finalizer commits the native receipt and advances the
   operational version to the exact next compiled generation in the same call;
   there is no separate activation step.
 - The migrators package keeps its `UpgradeCap` in its own `PackageAdmin` and is
-  never made immutable: Cetus and Bluefin gate callers by package version and
-  launchpad cutovers advance the launchpad version, so the adapters must always
-  be able to relink (ADR 0088). Every migrators upgrade uses the compatible
-  policy and bumps both compiled generation constants; its custody has no
-  policy-narrowing or immutability path.
+  normally retains upgradeability: Cetus and Bluefin gate callers by package
+  version, and launchpad cutovers require adapter relinks (ADR 0088). Every
+  migrators upgrade uses the compatible policy and bumps both compiled
+  generation constants. ADR 0134 permits a delayed terminal immutability
+  decision only after dependency and exit review; no path narrows cap policy.
 
 - Boosts Aftermath separates native receipt commit from successor activation
   ([ADR 0123](decisions/0123-successor-activated-boosts-upgrades.md)). The successor
@@ -332,8 +332,18 @@ approval before the first public deployment.
 Presale uses launchpad-style custody-before-activation (ADR 0117): an owned
 Bootstrap precedes the shared PackageVersion. Its separate provenance module
 `blast_presale_package` avoids policy/economics module cycles. SDK callers pass
-the same read-only version to each public mutation; upgrade commit advances it
+the same version to each operational mutation; upgrade commit advances it
 atomically and makes prior-generation bytecode unusable.
+
+Launchpad, presale and migrators use publication-only Bootstrap authority for
+initial policy setup without an administrative delay (ADR 0134). Their owned
+Bootstrap holds the canonical Publisher and generation until custody wrap
+consumes it permanently. No operational version exists before wrap; no public
+constructor, pause cycle or upgrade can recreate Bootstrap. Launchpad and
+presale require initial Quote and adapter admission before wrap and share their
+versions fully paused. ACL-controlled unpause is immediate. Migrators shares its
+version after wrap and relies on the launchpad's migration pause. All later
+governed policy changes retain the full delay, including while paused.
 
 Boosts margin recovery separates the ability to open risk from the ability to
 reduce it ([ADR 0124](decisions/0124-margin-recovery-and-initial-headroom.md)).

@@ -652,16 +652,17 @@ fn world(work: &str) -> Result<World> {
     let root = one(&admin_published, "blast_acl", "SuperAdminCap");
     let config = one(&published, "launch_config", "LaunchConfig");
     let runtime = one(&published, "runtime_config", "RuntimeConfig");
-    let version = h.wrap_launchpad(blast, &published)?;
     let linked = [core[0], core[1], core[2], (launchpad_dir.as_path(), blast)];
     let adapter_code = build(&fixture.join("adapter"), &linked, &work)?;
     let (adapter, _) = h.publish(adapter_code.clone())?;
+    let version = h.wrap_launchpad(blast, &published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
     let project = build(&fixture.join("project"), &linked, &work)?;
     let mut w = World { h, blast, adapter, version, runtime, config, project, core_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody: ObjectID::ZERO };
 
     w.custody = w.h.sim.store().get_transaction_effects(&w.h.object(version).previous_transaction).unwrap()
         .created().into_iter().map(|(reference, _)| reference.0)
         .find(|id| w.h.is_type(*id, "package_admin", "PackageAdmin")).unwrap();
+    w.h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
 
     // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap and each role the
     // setters below take; the cap then signs in once per role.
@@ -695,22 +696,10 @@ fn world(work: &str) -> Result<World> {
     for role in roles {
         witnesses.push(call(&mut builder, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, admin_cap]));
     }
-    let [listing_admin, adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
+    let [_listing_admin, _adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
         witnesses.try_into().expect("one witness per role");
     let config_arg = builder.obj(w.h.shared(config, true))?;
     let version_arg = builder.obj(w.h.shared(version, false))?;
-    let quote_allowed = builder.pure(true)?;
-    call(&mut builder, blast, "launch_config", "set_quote_allowed", vec![sui()], vec![
-        config_arg,
-        version_arg,
-        listing_admin,
-        quote_allowed,
-    ]);
-
-    let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut builder, blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config_arg,
-        version_arg,
-        adapter_admin, admin_clock]);
     let hundred = builder.pure(100u64)?;
     let fee = call(&mut builder, blast, "bps", "new", vec![], vec![hundred]);
     let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
@@ -727,9 +716,7 @@ fn world(work: &str) -> Result<World> {
         blast_bps,
         blast_bps, admin_clock]);
     w.h.execute(builder.finish())?.assert_success();
-    let adapter_type = w.adapter_type("Venue")?;
     blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![
-        (blast, "launch_config", "apply_migration_witness", vec![adapter_type], config, version),
         (blast, "launch_config", "apply_trade_fees", vec![], config, version),
         (blast, "launch_config", "apply_protocol_allocation", vec![], config, version),
     ])?;

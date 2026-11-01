@@ -215,9 +215,10 @@ impl World {
         let root = one(&admin_published, "blast_acl", "SuperAdminCap");
         let config = one(&published, "launch_config", "LaunchConfig");
         let runtime = one(&published, "runtime_config", "RuntimeConfig");
-        let version = h.wrap_launchpad(blast, &published)?;
         let linked = [core[0], core[1], core[2], (launchpad_dir.as_path(), blast)];
         let (adapter, _) = h.publish(build(&fixture.join("adapter"), &linked, &work)?)?;
+        let version = h.wrap_launchpad(blast, &published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
+        h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
         let mut templates = Vec::new();
         for decimals in [6u8, 9] {
             templates.push((decimals, build(&generate_template(&work, decimals)?, &linked, &work)?));
@@ -277,23 +278,10 @@ impl World {
         for role in roles {
             witnesses.push(call(&mut builder, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, admin_cap]));
         }
-        let [listing_admin, adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
+        let [_listing_admin, _adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
             witnesses.try_into().expect("one witness per role");
         let config_arg = builder.obj(w.h.shared(config, true))?;
         let version_arg = builder.obj(w.h.shared(version, false))?;
-        let quote_allowed = builder.pure(true)?;
-        call(
-            &mut builder,
-            blast,
-            "launch_config",
-            "set_quote_allowed",
-            vec![sui()],
-            vec![config_arg, version_arg, listing_admin, quote_allowed],
-        );
-        let witness = parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?;
-
-        let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut builder, blast, "launch_config", "schedule_migration_witness", vec![witness], vec![config_arg, version_arg, adapter_admin, admin_clock]);
         let fee = w.bps(&mut builder, 100)?;
         let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee_admin, fee, fee, admin_clock]);
@@ -308,7 +296,6 @@ impl World {
         }
         w.h.execute(builder.finish())?.assert_success();
         let mut changes = vec![
-            (blast, "launch_config", "apply_migration_witness", vec![parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?], config, version),
             (blast, "launch_config", "apply_trade_fees", vec![], config, version),
         ];
         if protocol != [0, 0] { changes.push((blast, "launch_config", "apply_protocol_allocation", vec![], config, version)); }

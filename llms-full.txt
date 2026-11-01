@@ -202,17 +202,18 @@ between Blast, the creator's fee recipients, and holder-reward rounds.
 The presale is separate from the bonding-curve launchpad and reuses the shared Blast
 ACL, partner registry, and operational-version/capability-custody primitives.
 Publication creates an owned `blast_presale_package::Bootstrap`; it shares no
-`PackageVersion`. Only `blast_presale::package_admin::wrap(Bootstrap, UpgradeCap)` validates the
-fresh matching native cap and shares the usable version and compatible upgrade
-custody. Partners may prepare integrations before activation but cannot start sales.
+`PackageVersion`. Only `blast_presale::package_admin::wrap` with Bootstrap, UpgradeCap and CreationPolicy validates the
+fresh matching native cap and shares the version and compatible upgrade
+custody, with creation, commitment and migration paused. Partners may prepare integrations before activation but cannot start sales.
 See ADR 0117. In this guide `SaleToken` is the sale coin; venues call it `Meme`.
 
-All state-changing public calls below take `&blast_presale_package::PackageVersion`
+Routine state-changing public calls below take `&blast_presale_package::PackageVersion`
 immediately after their first object argument, including initializer setters,
 finalize/share, policy administration, migrations, payouts, and holder rewards.
-It is a read-only shared input except during upgrade commit-and-advance. A stale
+It is a read-only shared input except during pause, unpause and upgrade commit-and-advance. A stale
 or future generation aborts in `blast_admin::operational_version` before effects.
-Pure value constructors, getters and `destroy_cap` do not take it.
+Pure value constructors, getters and `destroy_cap` do not take it. Initial policy
+setters require the owned Bootstrap instead.
 
 ### Objects and authority
 
@@ -259,6 +260,7 @@ Capabilities and who holds them:
 
 | Object | Held by | Authorizes |
 | --- | --- | --- |
+| `blast_presale_package::Bootstrap` | Deployer, until wrap consumes it permanently | Initial fee policy, Quote and adapter admission; finalize native custody. |
 | `blast_acl::AdminCap` granted a presale role | Blast operations | The calls of each role it holds; see the table below. |
 | `blast_presale::blast_presale::PresaleCap` | Sale creator (or a vendor treasury) | `presale_vault::claim_migration_residuals`, `blast_presale::blast_presale::destroy_cap`. |
 | `blast_partners::blast_partners::Partner` | Shared, managed in `blast_partners` | Read by the presale to pay a partner its cut of Blast's fees. |
@@ -309,6 +311,32 @@ Migration and cancellation race once the LP deadline passes: whichever transacti
 wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
 
 ### Flows
+
+#### Protocol bootstrap (cap holder: Bootstrap and the native UpgradeCap)
+
+1. Publish the package. The deployer receives the only
+   `blast_presale_package::Bootstrap`; shared policies exist, and PackageVersion
+   is withheld until finalization.
+2. Call `fee_policy::bootstrap` with the shared mutable FeePolicy, a reference
+   to Bootstrap, a nonzero destination and the four initial fee rates built by
+   `blast_presale::bps::new`. Zero fees are valid defaults; the usual rate bounds apply.
+3. Call `creation_policy::bootstrap_quote<Quote>` and
+   `creation_policy::bootstrap_migration_witness<Witness>` with Bootstrap and
+   `allowed = true` for each initial Quote and reviewed adapter. Initial entries
+   can be removed with `false` before finalization. Configuration takes effect
+   immediately and emits the usual applied-value events, without a Clock.
+4. Call `blast_presale::package_admin::wrap` with Bootstrap by value, the matching
+   never-upgraded native UpgradeCap and a read-only CreationPolicy. Quote and
+   adapter allowlists must both be nonempty. Wrap consumes Bootstrap forever,
+   seals native custody and shares PackageVersion fully paused
+   (Create = 1, Commit = 2, Migrate = 8; combined mask = 11).
+5. A Blast admin signs in as `blast_presale_domain::UnpauseAdmin` and calls
+   `blast_presale_package::unpause` with the mutable shared version and selected
+   bits. It takes effect immediately, so sales can start on the deployment day.
+
+Setup may span transactions. After wrap there is no bootstrap authority;
+pausing or upgrading cannot recreate it. Later governed changes use their
+normal 48-hour schedule/apply flow.
 
 PTB conventions used below: `Clock` is the shared object `0x6`. Values such as `Bps`,
 `RecipientShare`, and `EligibilityPolicy` are structs, so build them with Move calls and pass the
@@ -1346,17 +1374,19 @@ collection, auto-LP, buyback, and holder rewards are in the migrators guide.
 
 | Object | Created | Holds | Who writes it |
 | --- | --- | --- | --- |
-| `blast_fun::blast_fun::PackageVersion` | `blast_fun::package_admin::wrap` | the active package generation | upgrade admin only |
+| `blast_fun::blast_fun::PackageVersion` | `blast_fun::package_admin::wrap` | the active package generation and Create/Trading/Migrate pause flags | upgrade, pause and unpause admins |
 | `launch_config::LaunchConfig` | package publish | policy that new launches snapshot: admitted Meme decimals, admitted Quote types, trade fees, admitted adapters, Blast's migration allocation, the creation fee, accepted partners | Blast admins |
 | `runtime_config::RuntimeConfig` | package publish | settings read live: the account-claim signer key, Blast's share of every trade fee, the treasury address | Blast admins |
 | `launch::Launch<Meme, Quote>` | `launch::finalize`, shared by `launch::share` | one launch: lifecycle, curve reserves, settings, fee ledger, opening-round pot, migration allocations | trades, claims, migration |
 | `blast_fun::package_admin::PackageAdmin` | `blast_fun::package_admin::wrap` | the package's `Publisher` and `UpgradeCap` | upgrade admin only |
 | `Currency<Meme>` | `0x2::coin_registry::finalize_registration` | the coin's name, symbol, decimals, description, icon URL, and supply state (Sui Coin Registry) | the launch, through its internal `MetadataCap<Meme>` |
 
-`launch::new` and configuration setters require the shared `PackageVersion`. It does not exist
+`launch::new` and routine configuration setters require the shared `PackageVersion`.
+Initial configuration uses the owned `Bootstrap` instead. PackageVersion does not exist
 until `blast_fun::package_admin::wrap` consumes the publication bootstrap and the matching,
 never-upgraded native UpgradeCap. That transaction seals both native capabilities in
-`PackageAdmin` and creates `PackageVersion` atomically. A rejected wrap leaves the bootstrap
+`PackageAdmin` and creates `PackageVersion` atomically, with all operations paused.
+Wrapping requires a nonempty Quote allowlist and a nonempty adapter allowlist. A rejected wrap leaves the bootstrap
 intact and the launchpad inactive. After activation, version-guarded calls abort when the caller
 links old bytecode after an upgrade (see Aborts).
 
@@ -1458,6 +1488,33 @@ reassignments. `launch::deliver_opening_round` works in every state after `Openi
 expiry, or refund path.
 
 ### Flows
+
+#### Protocol bootstrap (cap holder: the publication's Bootstrap and native UpgradeCap)
+
+1. Publish the package. The deployer receives `blast_fun::blast_fun::Bootstrap`;
+   policy singletons are shared, and there is no operational `PackageVersion` yet.
+2. Borrow Bootstrap to call `runtime_config::bootstrap` for the initial treasury,
+   protocol trade-fee share and claim signer, and `launch_config::bootstrap` for
+   initial trade fees, creation fee and protocol migration allocation. Build rates
+   with `blast_fun::bps::new` in the PTB. Destinations must be nonzero; an empty
+   signer disables account claims; zero fees are valid defaults. The usual bounds apply.
+3. Use `launch_config::bootstrap_quote<Quote>` and
+   `launch_config::bootstrap_migration_witness<Witness>` with `allowed = true` to
+   admit each initial Quote and reviewed adapter. Before finalization, `false`
+   removes an initial admission so the deployer can correct it. These calls emit
+   the same applied-value events as routine administration and require no Clock.
+4. Call `blast_fun::package_admin::wrap` with Bootstrap by value, the matching
+   never-upgraded native UpgradeCap and a read-only LaunchConfig. It consumes
+   Bootstrap forever, seals native custody and shares PackageVersion with all
+   operations paused (Create = 1, Trading = 2, Migrate = 4; combined mask = 7).
+5. A Blast admin signs in as `blast_fun_domain::UnpauseAdmin` and calls
+   `blast_fun::unpause` with the mutable shared version and selected bits.
+   Unpause is immediate; launches can start on the deployment day.
+
+Initial setup may span transactions; it ends permanently at wrap. Pausing later
+cannot recreate Bootstrap or bypass the 48-hour delay on governed changes.
+Upgrades do not rerun publication initialization. Operational calls use the
+version object after wrap; bootstrap setters are unavailable after its consumption.
 
 Creating a launch takes three transactions, because each step needs an object the previous one
 creates.
@@ -2123,7 +2180,7 @@ migration itself, and everything the vault does afterwards.
 | `lp_fee_policy::LpFeePolicy` | singleton | Blast's LP-fee share (a default pair and optional per-coin pairs) and the address Blast's share is paid to. |
 | `blast_holder_rewards::Round` (`Round<Meme, Quote>`) | one per published round | A funded Merkle allocation of holder rewards and its claim bitmap. |
 | `blast_fun_migrators::venue_config::VenueConfig` | singleton | Keeps each Cetus launch's `PoolCreationCap` forever, under `blast_fun_migrators::cetus::CreationCapKey` (typed by the Meme). |
-| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation. Every public call except `wrap` checks it first. |
+| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation. Operational mutations check it first; created by wrap after initial setup. |
 | `blast_fun_migrators::package_admin::PackageAdmin` | singleton | Sealed custody of this package's `Publisher` and `UpgradeCap`. |
 
 Calls also take objects from other packages:
@@ -2139,6 +2196,11 @@ Calls also take objects from other packages:
   one.
 
 #### Capabilities and roles
+
+- `blast_fun_migrators::blast_fun_migrators::Bootstrap` (`key` only, owned):
+  created once at publication and sent to the deployer. It holds the canonical
+  Publisher and initial generation, authorizes initial LP policy and is consumed
+  permanently by custody wrap.
 
 - `creator_authority::CurveFeeCap` (`CurveFeeCap<Meme>`, owned, transferable). The launch records
   the ID of the one live cap. Its holder claims the creator's LP fees and changes the fee split. The
@@ -2172,10 +2234,11 @@ Calls also take objects from other packages:
 | `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `BuybackAdmin` |
 | `blast_holder_rewards::publish_round` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
+| `lp_fee_policy::bootstrap` | cap holder: the owned Bootstrap, before wrap |
 | `lp_fee_policy::schedule_protocol_destination` | Blast admin: `TreasuryAdmin` |
 | `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares` | Blast admin: `FeeAdmin` |
 | `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` | Blast admin: `UpgradeAdmin` |
-| `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publisher` and `UpgradeCap` (done once at deployment) |
+| `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Bootstrap` and native `UpgradeCap` (done once at deployment) |
 
 #### What an `LpVault` holds
 
@@ -2208,9 +2271,10 @@ balances except the flows below.
   different: Cetus LP Burn has burned it, and its `CetusLPBurnProof` can only collect fees. The
   Bluefin position, the Cetus auto-LP position, and every vault balance depend on this package's
   code.
-- **Blast sets its own share at any time.** `FeeAdmin` can set Blast's LP-fee share anywhere from 0
-  to 10,000 BPS per asset, by default or per coin, with no delay. It applies from the next
-  collection. `TreasuryAdmin` can redirect Blast's share at any time.
+- **Blast controls its own share.** After bootstrap, `FeeAdmin` schedules Blast's LP-fee share
+  from 0 to 10,000 BPS per asset, by default or per coin. `TreasuryAdmin` schedules
+  payout destination changes. Anyone applies a scheduled change after 48 hours;
+  it applies from the next collection.
 - **The admin can publish any round.** Merkle proofs enforce the published allocation, not the truth
   of Blast's off-chain holder accounting. `RewardsAdmin` can assign unreserved rewards to any
   recipient in a new round. Rounds never expire, and nothing cancels a round or sweeps its funds, so
@@ -2239,7 +2303,28 @@ balances except the flows below.
 
 ### Flows
 
-Every public call in this package except the one-time `wrap` takes
+#### Protocol bootstrap (cap holder: Bootstrap and the native UpgradeCap)
+
+1. Publish migrators after its launchpad dependency. Publication transfers the
+   only `blast_fun_migrators::blast_fun_migrators::Bootstrap` to the deployer and
+   shares the LP policy and venue configuration. No PackageVersion exists yet.
+2. Call `lp_fee_policy::bootstrap` with the shared mutable LpFeePolicy, a
+   reference to Bootstrap, a nonzero destination and initial default Meme/Quote
+   shares built by `blast_fun::bps::new`. Each share allows 0 through 10,000 BPS;
+   zero shares are valid defaults. The policy changes immediately and emits
+   `blast_fun_migrators::blast_events::LpFeeDestinationChanged` and
+   `blast_fun_migrators::blast_events::LpFeePolicyChanged`, without a Clock.
+3. Call `blast_fun_migrators::package_admin::wrap` with Bootstrap by value and
+   the matching never-upgraded native UpgradeCap. It consumes Bootstrap forever,
+   seals native custody and shares this package's operational PackageVersion.
+4. Admit the reviewed migrators' adapter witnesses during launchpad bootstrap,
+   then release the launchpad through its immediate UnpauseAdmin path.
+
+Migrators has no separate pause switch. The launchpad controls migration pause.
+Initial setup may span transactions; after wrap it cannot be reopened by a
+pause cycle or upgrade. Later governed LP policy changes require 48 hours.
+
+Operational state-changing calls take
 `blast_fun_migrators::blast_fun_migrators::PackageVersion` (shared) and checks it before anything
 else. Calls whose launchpad step checks the launchpad generation (`new`, `migrate`) take the
 launchpad's `blast_fun::blast_fun::PackageVersion` as well, because each package checks only its own
@@ -2620,7 +2705,8 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 ### Time rules
 
 - No deadlines exist in this package. Collections, payouts, claims, and buybacks work at any time.
-- Policy changes apply from the next collection; there is no delay.
+- After bootstrap, policy changes require 48 hours and explicit application,
+  then affect the next collection.
 - A partner payout uses the partner's share in force at payout, not at collection.
 - Holder-reward rounds never expire. Their checkpoint intervals must be contiguous and nonempty.
 - `migrate`, `collect_fees`, `settle_and_update_fee_split`, and `buyback_and_burn` take `Clock`
@@ -4877,8 +4963,11 @@ that takes it and must call the latest package version.
 `UpgradeCap` (version 1) after checking both belong to the package of `M`.
 Neither can leave the custody. The consumer's shared `PackageAdmin` wraps it and
 gates authorization behind its upgrade role. Boosts receipt commit instead carries
-the native authorized receipt. `wrap`, and Blast SUI's `new` and `share`, need
-only the package's own `Publisher` and `UpgradeCap`:
+the native authorized receipt. Wrap in launchpad, presale and migrators consumes their
+publication's Bootstrap and matching fresh UpgradeCap; launchpad and presale
+also validate initial policy admission. Bootstrap authorizes immediate initial
+configuration and is permanently consumed at wrap. Blast SUI's `new` and `share`
+use its own Publisher and UpgradeCap directly:
 
 | Package | Custody object | Transitions exposed |
 | --- | --- | --- |
@@ -6234,6 +6323,20 @@ public struct PartnerKey(ID) has copy, drop, store;
 #### Functions
 
 ```move
+/// Configures an initial Quote allowance before the publication Bootstrap is consumed.
+public fun bootstrap_quote<Quote>(
+    self: &mut CreationPolicy,
+    _: &blast_presale_package::Bootstrap,
+    allowed: bool,
+)
+
+/// Configures an initial reviewed adapter before the publication Bootstrap is consumed.
+public fun bootstrap_migration_witness<MigrationWitness: drop>(
+    self: &mut CreationPolicy,
+    _: &blast_presale_package::Bootstrap,
+    allowed: bool,
+)
+
 /// Allows or disallows `Quote` for presales and vaults without a presale created afterward;
 /// existing ones keep it.
 public fun set_quote_allowed<Quote>(
@@ -6378,6 +6481,17 @@ public struct ProtocolFees has copy, drop, store {
 #### Functions
 
 ```move
+/// Sets initial payout policy immediately; consuming Bootstrap permanently closes this path.
+public fun bootstrap(
+    self: &mut FeePolicy,
+    _: &blast_presale_package::Bootstrap,
+    destination: address,
+    raise_bps: bps::Bps,
+    token_bps: bps::Bps,
+    lp_fee_meme_bps: bps::Bps,
+    lp_fee_quote_bps: bps::Bps,
+)
+
 /// Sets the rates presales created afterward snapshot; existing presales keep theirs.
 /// Schedules fees after the full administrative delay.
 public fun schedule_fees(
@@ -6721,10 +6835,12 @@ public fun cancel_upgrade_action(
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
 )
 
-/// Consumes publication bootstrap, seals native custody, and enables the initial generation.
+/// Validates initial admission, consumes Bootstrap forever, and seals native custody.
+/// The initial operational generation starts fully paused; UnpauseAdmin releases it immediately.
 public fun wrap(
     bootstrap: blast_presale_package::Bootstrap,
     upgrade_cap: UpgradeCap,
+    policy: &creation_policy::CreationPolicy,
     ctx: &mut TxContext,
 )
 
@@ -8116,6 +8232,27 @@ public struct PartnerKey(ID) has copy, drop, store;
 #### Functions
 
 ```move
+/// Sets initial launch economics immediately, before Bootstrap is consumed by custody intake.
+public fun bootstrap(
+    self: &mut LaunchConfig,
+    _: &blast_fun::Bootstrap,
+    quote_fee_bps: bps::Bps,
+    meme_fee_bps: bps::Bps,
+    protocol_meme_bps: bps::Bps,
+    protocol_quote_bps: bps::Bps,
+    creation_fee: u64,
+)
+
+/// Configures an initial Quote allowance while the publication Bootstrap exists.
+public fun bootstrap_quote<Quote>(self: &mut LaunchConfig, _: &blast_fun::Bootstrap, allowed: bool)
+
+/// Configures an initial reviewed adapter while the publication Bootstrap exists.
+public fun bootstrap_migration_witness<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    _: &blast_fun::Bootstrap,
+    allowed: bool,
+)
+
 /// Sets Blast's fee share of future launches' Meme supply and final Quote reserve. The shares
 /// leave room for the curve and the pool; finalized launches keep their snapshotted shares.
 /// Schedules protocol allocation after the full administrative delay.
@@ -8345,8 +8482,14 @@ public fun cancel_upgrade_action(
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
 )
 
-/// Consumes publication bootstrap, seals native custody, and enables the initial generation.
-public fun wrap(bootstrap: blast_fun::Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
+/// Validates initial admission, consumes Bootstrap forever, and seals native custody.
+/// The initial operational generation starts fully paused; UnpauseAdmin releases it immediately.
+public fun wrap(
+    bootstrap: blast_fun::Bootstrap,
+    upgrade_cap: UpgradeCap,
+    config: &launch_config::LaunchConfig,
+    ctx: &mut TxContext,
+)
 
 /// Authorizes the exact package digest under the wrapped cap's current policy.
 public fun authorize_upgrade(
@@ -8397,6 +8540,16 @@ public struct RuntimeConfig has key {
 #### Functions
 
 ```move
+/// Sets initial live policy immediately while the publication Bootstrap still exists.
+/// An empty signer deliberately disables account claims; finalization destroys this authority.
+public fun bootstrap(
+    self: &mut RuntimeConfig,
+    _: &blast_fun::Bootstrap,
+    signer_public_key: vector<u8>,
+    protocol_fee_share_bps: bps::Bps,
+    treasury: address,
+)
+
 /// Replaces the account-claim signer; an empty key revokes it.
 /// Schedules creator claim signer after the full administrative delay.
 public fun schedule_creator_claim_signer(
@@ -8693,7 +8846,7 @@ public struct CetusPoolReserved has copy, drop {
 
 ### `blast_fun_migrators::blast_fun_migrators`
 
-Canonical package provenance witness for the aggregate migrators package, and its own operational generation.  `init` seeds the generation from the one-time witness and then claims the Publisher with it, so no other package can create this package's generation. The marker never declares an administration role: Migrators reuses the Launchpad's roles in the shared Blast ACL and owns only its package-local state. Migrators does not treat the Launchpad generation as its own; a composed call that mutates both packages supplies both version objects, because each package checks only the transitions it implements.
+Canonical package provenance, publication bootstrap and operational generation.  `init` seeds the generation from the one-time witness and then claims the Publisher with it, so no other package can create this package's generation. The marker never declares an administration role: Migrators reuses the Launchpad's roles in the shared Blast ACL and owns only its package-local state. Migrators does not treat the Launchpad generation as its own; a composed call that mutates both packages supplies both version objects, because each package checks only the transitions it implements.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/blast_fun_migrators.move
 
@@ -8702,6 +8855,13 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 ```move
 /// One-time witness: it seeds the package generation and claims this package's Publisher.
 public struct BLAST_FUN_MIGRATORS() has drop;
+
+/// Publication-only authority; consumed permanently when native custody is sealed.
+public struct Bootstrap has key {
+    id: UID,
+    publisher: Publisher,
+    generation: blast_admin::operational_version::OperationalVersion<BLAST_FUN_MIGRATORS>,
+}
 
 /// Singleton operational package generation.
 public struct PackageVersion has key {
@@ -9066,6 +9226,15 @@ public struct SharePair has copy, drop, store {
 #### Functions
 
 ```move
+/// Sets initial LP-fee policy immediately before Bootstrap is consumed by custody intake.
+public fun bootstrap(
+    self: &mut LpFeePolicy,
+    _: &blast_fun_migrators::Bootstrap,
+    destination: address,
+    meme_bps: blast_fun::bps::Bps,
+    quote_bps: blast_fun::bps::Bps,
+)
+
 /// Redirects every later protocol share payout.
 /// Schedules protocol destination after the full administrative delay.
 public fun schedule_protocol_destination(
@@ -9206,12 +9375,12 @@ public fun cancel_upgrade_action(
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::CancelAdmin>,
 )
 
-/// Validates and permanently seals the migrators Publisher and raw UpgradeCap.
-///
-/// `upgrade_custody::new` requires this package's Publisher and its never-upgraded cap, and at
-/// version one `BLAST_FUN_MIGRATORS` is the package's only one-time witness, so no other module's
-/// Publisher can exist.
-public fun wrap(publisher: Publisher, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
+/// Consumes Bootstrap forever, seals native capabilities, and enables Migrators.
+public fun wrap(
+    bootstrap: blast_fun_migrators::Bootstrap,
+    upgrade_cap: UpgradeCap,
+    ctx: &mut TxContext,
+)
 
 /// Authorizes the exact package digest under the sealed cap's compatible policy.
 ///
@@ -12533,8 +12702,8 @@ public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): 
 /// Cancels even a ready change and returns the cancelled value.
 public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
 
-/// Only the enclosing module's authority-reducing paths may expose this operation.
-/// Revocation also clears a pending replacement so it cannot restore revoked authority.
+/// Only publication bootstrap or the enclosing module's authority-reducing paths may expose this operation.
+/// Clears a pending replacement so it cannot restore revoked authority.
 public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
 
 /// Starts the immutable administrative notice period.

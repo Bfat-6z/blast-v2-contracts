@@ -21,17 +21,18 @@ between Blast, the creator's fee recipients, and holder-reward rounds.
 The presale is separate from the bonding-curve launchpad and reuses the shared Blast
 ACL, partner registry, and operational-version/capability-custody primitives.
 Publication creates an owned `blast_presale_package::Bootstrap`; it shares no
-`PackageVersion`. Only `blast_presale::package_admin::wrap(Bootstrap, UpgradeCap)` validates the
-fresh matching native cap and shares the usable version and compatible upgrade
-custody. Partners may prepare integrations before activation but cannot start sales.
+`PackageVersion`. Only `blast_presale::package_admin::wrap` with Bootstrap, UpgradeCap and CreationPolicy validates the
+fresh matching native cap and shares the version and compatible upgrade
+custody, with creation, commitment and migration paused. Partners may prepare integrations before activation but cannot start sales.
 See ADR 0117. In this guide `SaleToken` is the sale coin; venues call it `Meme`.
 
-All state-changing public calls below take `&blast_presale_package::PackageVersion`
+Routine state-changing public calls below take `&blast_presale_package::PackageVersion`
 immediately after their first object argument, including initializer setters,
 finalize/share, policy administration, migrations, payouts, and holder rewards.
-It is a read-only shared input except during upgrade commit-and-advance. A stale
+It is a read-only shared input except during pause, unpause and upgrade commit-and-advance. A stale
 or future generation aborts in `blast_admin::operational_version` before effects.
-Pure value constructors, getters and `destroy_cap` do not take it.
+Pure value constructors, getters and `destroy_cap` do not take it. Initial policy
+setters require the owned Bootstrap instead.
 
 ### Objects and authority
 
@@ -78,6 +79,7 @@ Capabilities and who holds them:
 
 | Object | Held by | Authorizes |
 | --- | --- | --- |
+| `blast_presale_package::Bootstrap` | Deployer, until wrap consumes it permanently | Initial fee policy, Quote and adapter admission; finalize native custody. |
 | `blast_acl::AdminCap` granted a presale role | Blast operations | The calls of each role it holds; see the table below. |
 | `blast_presale::blast_presale::PresaleCap` | Sale creator (or a vendor treasury) | `presale_vault::claim_migration_residuals`, `blast_presale::blast_presale::destroy_cap`. |
 | `blast_partners::blast_partners::Partner` | Shared, managed in `blast_partners` | Read by the presale to pay a partner its cut of Blast's fees. |
@@ -128,6 +130,32 @@ Migration and cancellation race once the LP deadline passes: whichever transacti
 wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
 
 ### Flows
+
+#### Protocol bootstrap (cap holder: Bootstrap and the native UpgradeCap)
+
+1. Publish the package. The deployer receives the only
+   `blast_presale_package::Bootstrap`; shared policies exist, and PackageVersion
+   is withheld until finalization.
+2. Call `fee_policy::bootstrap` with the shared mutable FeePolicy, a reference
+   to Bootstrap, a nonzero destination and the four initial fee rates built by
+   `blast_presale::bps::new`. Zero fees are valid defaults; the usual rate bounds apply.
+3. Call `creation_policy::bootstrap_quote<Quote>` and
+   `creation_policy::bootstrap_migration_witness<Witness>` with Bootstrap and
+   `allowed = true` for each initial Quote and reviewed adapter. Initial entries
+   can be removed with `false` before finalization. Configuration takes effect
+   immediately and emits the usual applied-value events, without a Clock.
+4. Call `blast_presale::package_admin::wrap` with Bootstrap by value, the matching
+   never-upgraded native UpgradeCap and a read-only CreationPolicy. Quote and
+   adapter allowlists must both be nonempty. Wrap consumes Bootstrap forever,
+   seals native custody and shares PackageVersion fully paused
+   (Create = 1, Commit = 2, Migrate = 8; combined mask = 11).
+5. A Blast admin signs in as `blast_presale_domain::UnpauseAdmin` and calls
+   `blast_presale_package::unpause` with the mutable shared version and selected
+   bits. It takes effect immediately, so sales can start on the deployment day.
+
+Setup may span transactions. After wrap there is no bootstrap authority;
+pausing or upgrading cannot recreate it. Later governed changes use their
+normal 48-hour schedule/apply flow.
 
 PTB conventions used below: `Clock` is the shared object `0x6`. Values such as `Bps`,
 `RecipientShare`, and `EligibilityPolicy` are structs, so build them with Move calls and pass the

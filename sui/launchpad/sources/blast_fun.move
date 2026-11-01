@@ -80,7 +80,7 @@ public(package) fun destroy(self: Bootstrap): (Publisher, OperationalVersion<BLA
 
 /// Publishes the usable generation in the same transaction that seals capability custody.
 public(package) fun share_version(generation: OperationalVersion<BLAST_FUN>, ctx: &mut TxContext) {
-    transfer::share_object(PackageVersion { paused: 0, id: object::new(ctx), generation });
+    transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation });
 }
 
 /// Rejects callable bytecode from every package generation except the active one.

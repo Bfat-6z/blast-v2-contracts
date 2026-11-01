@@ -44,8 +44,10 @@ public fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &Pack
     events::upgrade_action_cancelled(action);
 }
 
-/// Consumes publication bootstrap, seals native custody, and enables the initial generation.
-public fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
+/// Validates initial admission, consumes Bootstrap forever, and seals native custody.
+/// The initial operational generation starts fully paused; UnpauseAdmin releases it immediately.
+public fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, config: &LaunchConfig, ctx: &mut TxContext) {
+    config.assert_bootstrap_ready();
     let (publisher, generation) = bootstrap.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap);
@@ -185,6 +187,7 @@ use blast_admin::{
 
 use blast_fun::{
     events::{Self, UpgradeAction},
+    launch_config::LaunchConfig,
     blast_fun::{BLAST_FUN, Bootstrap, PackageVersion},
     blast_fun_domain::{CancelAdmin, UpgradeAdmin},
 };

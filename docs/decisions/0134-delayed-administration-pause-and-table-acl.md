@@ -5,7 +5,9 @@
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability), [0007](0007-acl-pause-and-versioning.md) (pause),
   [0032](0032-admin-authorized-upgrade-cap-custody.md) and
   [0034](0034-remove-premature-governance-cutover.md) (upgrades),
-  [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage)
+  [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage),
+  [0114](0114-launchpad-custody-before-activation.md) and
+  [0117](0117-presale-versioning-and-activation.md) (one-time bootstrap and paused release)
 - Supersedes: the 2026-10-28 canonical stack, which holds no user assets
 
 ## Sources
@@ -72,7 +74,7 @@ public fun pending<T>(self: &Delayed<T>): Option<Pending<T>>;
 public fun schedule<T>(self: &mut Delayed<T>, value: T, clock: &Clock): u64; // ready_at_ms
 public fun apply<T>(self: &mut Delayed<T>, clock: &Clock): T;       // aborts before ready_at_ms
 public fun cancel<T>(self: &mut Delayed<T>): T;                     // the cancelled value
-public fun set_now<T>(self: &mut Delayed<T>, value: T);             // authority-reducing changes only
+public fun set_now<T>(self: &mut Delayed<T>, value: T);             // bootstrap or authority-reducing changes
 
 public fun new_pending<T>(value: T, clock: &Clock): Pending<T>;
 public fun take_ready<T>(self: Pending<T>, clock: &Clock): T;       // aborts before ready_at_ms
@@ -296,8 +298,29 @@ blast_treasury = "0x…"           // RuntimeConfig.treasury, FeePolicy.destinat
 blast_lp_fee_destination = "0x…" // LpFeePolicy.destination
 ```
 
-Destinations are correct from the first block, so nothing waits 48 hours
-after publish. The root goes to the multisig, which grants roles at once.
+These nonzero destinations are safe publication defaults. Launchpad, presale
+and migrators each retain their canonical Publisher and initial operational
+generation in the publication's owned Bootstrap. Before finalization its holder
+may set the initial destination and fees immediately. Launchpad also accepts its
+claim signer, creation fee and migration allocation; launchpad and presale admit
+their initial Quotes and reviewed migration witnesses. Existing applied-value
+events describe these values. Zero fees and an empty launchpad claim signer are
+valid defaults; normal bounds and nonzero destinations still apply.
+
+Initial policy setters borrow Bootstrap and do not take a PackageVersion or a
+Clock. There is no operational version until custody wrap validates and seals
+the fresh matching UpgradeCap and consumes Bootstrap by value. Launchpad and
+presale wrap require nonempty Quote and adapter allowlists, then share their
+PackageVersion with all operations paused. Migrators wraps the same linear
+bootstrap authority and shares its generation; it has no independent pause
+switch. Launchpad's migration flag controls entry into its migrators.
+
+The multisig grants UnpauseAdmin through the shared ACL and releases launchpad
+and presale immediately, without a Clock or a 48-hour wait. Initial setup may
+span transactions before wrap. After wrap the Bootstrap is deleted, has no
+public constructor, and can never be restored through pausing or upgrading:
+publication init does not rerun on upgrade. Every later governed mutation uses
+its normal delay, even while paused. There is no reusable bootstrap mode.
 
 ### Never delayed
 
@@ -318,8 +341,9 @@ quote and decimals allowlists; buybacks (their Meme is burned); reward rounds.
 
 ## Consequences
 
-- No change to fees, destinations, creator authority, adapters or code takes
-  effect within 48 hours of being publicly scheduled.
+- After one-time bootstrap finalization, no governed change to fees, destinations,
+  creator authority, adapter admission or code takes effect within 48 hours of
+  being publicly scheduled.
 - Emergency fee or destination changes are gone; the pause is the emergency
   tool. A replaced claim signer stops account claims for 48 hours.
 - Pausing `TRADING` stops both buys and sells until unpause; claims and refunds stay open.

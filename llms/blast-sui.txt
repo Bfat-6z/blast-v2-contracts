@@ -1457,8 +1457,8 @@ public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): 
 /// Cancels even a ready change and returns the cancelled value.
 public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
 
-/// Only the enclosing module's authority-reducing paths may expose this operation.
-/// Revocation also clears a pending replacement so it cannot restore revoked authority.
+/// Only publication bootstrap or the enclosing module's authority-reducing paths may expose this operation.
+/// Clears a pending replacement so it cannot restore revoked authority.
 public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
 
 /// Starts the immutable administrative notice period.

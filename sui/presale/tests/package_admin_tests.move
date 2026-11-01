@@ -75,7 +75,7 @@ fun consumed_bootstrap_cannot_be_taken_for_another_wrap() {
         let bootstrap = f.take_bootstrap();
         let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), f.ctx!());
 
-        package_admin::wrap(bootstrap, upgrade_cap, f.ctx!());
+        f.wrap(bootstrap, upgrade_cap);
     });
     fixture.next_tx!(PUBLISHER, |f| {
         destroy(f.take_bootstrap());
@@ -138,7 +138,7 @@ fun wrap_rejects_upgrade_cap_for_another_package() {
         let bootstrap = f.take_bootstrap();
         let foreign_upgrade_cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), f.ctx!());
 
-        package_admin::wrap(bootstrap, foreign_upgrade_cap, f.ctx!());
+        f.wrap(bootstrap, foreign_upgrade_cap);
     });
 
     fixture.end();
@@ -300,7 +300,7 @@ fun wrap_rejects_an_already_upgraded_cap() {
     let mut cap = package::test_publish(PACKAGE_ID.to_id(), fixture.ctx!());
     let ticket = cap.authorize_upgrade(package::compatible_policy(), package_digest());
     cap.commit(ticket.test_upgrade());
-    package_admin::wrap(bootstrap, cap, fixture.scenario.ctx());
+    fixture.wrap(bootstrap, cap);
     fixture.end();
 }
 
@@ -374,6 +374,19 @@ macro fun wrap_ctx($fixture: &mut WrapFixture): &mut TxContext {
     fixture.scenario.ctx()
 }
 
+fun ready_policy(bootstrap: &marker::Bootstrap, ctx: &mut TxContext): creation_policy::CreationPolicy {
+    let mut policy = creation_policy::new_for_testing(ctx);
+    policy.bootstrap_quote<sui::sui::SUI>(bootstrap, true);
+    policy.bootstrap_migration_witness<marker::BLAST_PRESALE_PACKAGE>(bootstrap, true);
+    policy
+}
+
+fun wrap(self: &mut WrapFixture, bootstrap: marker::Bootstrap, upgrade_cap: UpgradeCap) {
+    let policy = ready_policy(&bootstrap, self.ctx!());
+    package_admin::wrap(bootstrap, upgrade_cap, &policy, self.ctx!());
+    destroy(policy);
+}
+
 fun start_unwrapped(): WrapFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     marker::init_for_testing(scenario.ctx());
@@ -402,11 +415,14 @@ fun start_custody(): CustodyFixture {
 
     scenario.next_tx(PUBLISHER);
     let bootstrap = scenario.take_from_sender<marker::Bootstrap>();
+    let policy = ready_policy(&bootstrap, scenario.ctx());
     package_admin::wrap(
         bootstrap,
         package::test_publish(PACKAGE_ID.to_id(), scenario.ctx()),
+        &policy,
         scenario.ctx(),
     );
+    destroy(policy);
     let created = blast_admin_events::collect_one<
         blast_admin_events::UpgradeCustodyCreated<BLAST_PRESALE_PACKAGE>,
     >(0);
@@ -465,7 +481,8 @@ use blast_presale::{
     blast_presale_domain::UpgradeAdmin,
     blast_presale_package::{Self as marker, BLAST_PRESALE_PACKAGE},
     fee_policy,
-    package_admin
+    package_admin,
+    creation_policy,
 };
 
 use std::unit_test::{assert_eq, destroy};

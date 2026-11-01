@@ -32,6 +32,29 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
+/// Configures an initial Quote allowance before the publication Bootstrap is consumed.
+public fun bootstrap_quote<Quote>(self: &mut CreationPolicy, _: &Bootstrap, allowed: bool) {
+    let quote = type_name::with_original_ids<Quote>();
+    assert!(self.allowed_quotes.contains(&quote) != allowed, EAllowanceUnchanged);
+
+    if (allowed) self.allowed_quotes.insert(quote) else self.allowed_quotes.remove(&quote);
+
+    event::emit(QuoteSet { quote, allowed });
+}
+
+/// Configures an initial reviewed adapter before the publication Bootstrap is consumed.
+public fun bootstrap_migration_witness<MigrationWitness: drop>(self: &mut CreationPolicy, _: &Bootstrap, allowed: bool) {
+    let witness = type_name::with_original_ids<MigrationWitness>();
+    assert!(!witness.is_primitive(), EInvalidMigrationWitness);
+    let origin = type_name::original_id<MigrationWitness>();
+    assert!(origin != @0x1 && origin != @0x2, EInvalidMigrationWitness);
+    assert!(self.allowed_migration_witnesses.contains(&witness) != allowed, EAllowanceUnchanged);
+
+    if (allowed) self.allowed_migration_witnesses.insert(witness) else self.allowed_migration_witnesses.remove(&witness);
+
+    event::emit(MigrationWitnessSet { migration_witness: witness, allowed });
+}
+
 /// Allows or disallows `Quote` for presales and vaults without a presale created afterward;
 /// existing ones keep it.
 public fun set_quote_allowed<Quote>(
@@ -152,6 +175,12 @@ public fun remove_partner(
 }
 
 // === Package Functions ===
+
+/// Refuses to finalize a deployment that cannot create a presale.
+public(package) fun assert_bootstrap_ready(self: &CreationPolicy) {
+    assert!(!self.allowed_quotes.is_empty(), EQuoteNotAllowed);
+    assert!(!self.allowed_migration_witnesses.is_empty(), EMigrationWitnessNotAllowed);
+}
 
 /// Aborts unless a new presale, or a new vault without a presale, may use `Quote` and be created
 /// by `MigrationWitness`'s migrator.
@@ -309,7 +338,7 @@ use blast_partners::blast_partners::{Self as partners, Partner};
 
 use blast_presale::{
     blast_presale_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin},
-    blast_presale_package::PackageVersion
+    blast_presale_package::{Bootstrap, PackageVersion}
 };
 
 use std::type_name::{Self, TypeName};

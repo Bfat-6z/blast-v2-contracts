@@ -17,9 +17,12 @@ metadata and supplies synthetic genesis destinations and native-cap identities,
 then restores the manifests, publications and lockfiles on exit. It never connects
 to a database or chain. Run the source gates in that same fresh-stack environment
 with `bash scripts/test_admin_delay.sh --boundaries-only admin launchpad presale migrators`.
-The Rust PTB harness supplies the nonzero genesis recipient while compiling and
-restores each manifest afterward; its configuration calls schedule, advance the
-simulator by 48 hours, and apply through the public entry points.
+Run these wrappers sequentially: they temporarily edit the same manifests and
+publication metadata. The Rust PTB harness also supplies a nonzero genesis
+recipient while compiling and restores each manifest afterward. Its initial
+configuration uses the owned Bootstrap before wrap, then the immediate real-ACL
+unpause path without advancing the Clock. Later governed changes schedule,
+advance the simulator by 48 hours, and apply through the public entry points.
 
 Native PTB fixture output stays under the test crate's ignored `target/ptb-fixtures/`
 directory, so checkouts can share Cargo's compiler cache without overwriting each

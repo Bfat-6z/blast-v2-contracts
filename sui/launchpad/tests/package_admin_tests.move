@@ -73,7 +73,7 @@ fun consumed_bootstrap_cannot_be_taken_for_another_wrap() {
         let bootstrap = f.take_bootstrap();
         let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), f.ctx!());
 
-        package_admin::wrap(bootstrap, upgrade_cap, f.ctx!());
+        f.wrap(bootstrap, upgrade_cap);
     });
     fixture.next_tx!(PUBLISHER, |f| {
         destroy(f.take_bootstrap());
@@ -140,7 +140,7 @@ fun wrap_rejects_upgrade_cap_for_another_package() {
         let foreign_upgrade_cap =
             package::test_publish(OTHER_PACKAGE_ID.to_id(), f.ctx!());
 
-        package_admin::wrap(bootstrap, foreign_upgrade_cap, f.ctx!());
+        f.wrap(bootstrap, foreign_upgrade_cap);
     });
 
     fixture.end();
@@ -393,6 +393,19 @@ macro fun wrap_ctx($fixture: &mut WrapFixture): &mut TxContext {
     fixture.scenario.ctx()
 }
 
+fun ready_policy(bootstrap: &marker::Bootstrap, ctx: &mut TxContext): launch_config::LaunchConfig {
+    let mut policy = launch_config::new_for_testing(ctx);
+    policy.bootstrap_quote<sui::sui::SUI>(bootstrap, true);
+    policy.bootstrap_migration_witness<marker::BLAST_FUN>(bootstrap, true);
+    policy
+}
+
+fun wrap(self: &mut WrapFixture, bootstrap: marker::Bootstrap, upgrade_cap: UpgradeCap) {
+    let policy = ready_policy(&bootstrap, self.ctx!());
+    package_admin::wrap(bootstrap, upgrade_cap, &policy, self.ctx!());
+    destroy(policy);
+}
+
 fun start_unwrapped(): WrapFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     marker::init_for_testing(scenario.ctx());
@@ -421,11 +434,14 @@ fun start_custody(): CustodyFixture {
 
     scenario.next_tx(PUBLISHER);
     let bootstrap = scenario.take_from_sender<marker::Bootstrap>();
+    let policy = ready_policy(&bootstrap, scenario.ctx());
     package_admin::wrap(
         bootstrap,
         package::test_publish(PACKAGE_ID.to_id(), scenario.ctx()),
+        &policy,
         scenario.ctx(),
     );
+    destroy(policy);
     let created = blast_admin_events::collect_one<
         blast_admin_events::UpgradeCustodyCreated<BLAST_FUN>,
     >(0);
@@ -484,6 +500,7 @@ use blast_fun::{
     blast_fun::{Self as marker, BLAST_FUN},
     blast_fun_domain::UpgradeAdmin,
     package_admin,
+    launch_config,
     runtime_config,
 };
 

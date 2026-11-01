@@ -28,13 +28,16 @@ Blast SUI uses its [deployment](../sui/blast_sui/DEPLOYING.md) and
 same normalized evidence while following their accepted ADRs and verification
 scripts.
 
-The launchpad and migrators pay Blast's fees to their publisher until a
-`TreasuryAdmin` points them elsewhere, and anyone may trigger those payouts. In
-the publication transaction's follow-up, before any launch exists, set the
-launch-fee treasury with `runtime_config::set_treasury`
-([ADR 0105](../docs/decisions/0105-permissionless-launch-fee-claims.md)) and
-the LP-fee destination with `lp_fee_policy::set_protocol_destination`; the
-post-deploy record names both addresses.
+Launchpad, presale and migrators require nonzero named-address payout defaults
+before publication. Their deployer-owned Bootstrap authorizes immediate initial
+policy configuration before native custody is sealed (ADR 0134). Configure the
+initial fees and destinations, launchpad claim signer and allocation, and the
+launchpad/presale Quote and reviewed adapter allowlists before wrap. Record the
+chosen values and applied-value events. Wrap consumes Bootstrap permanently and
+creates the operational version; launchpad and presale start fully paused. Grant
+UnpauseAdmin through the shared ACL and unpause immediately when ready. Record
+bootstrap consumption, sealed custody, pause masks and unpause evidence. Later
+governed changes retain the full 48-hour delay, including while paused.
 
 ## Boosts adapter upgrades
 

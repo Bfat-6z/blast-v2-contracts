@@ -60,16 +60,14 @@ public fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &Pack
     blast_events::upgrade_action_cancelled(digest);
 }
 
-/// Validates and permanently seals the migrators Publisher and raw UpgradeCap.
-///
-/// `upgrade_custody::new` requires this package's Publisher and its never-upgraded cap, and at
-/// version one `BLAST_FUN_MIGRATORS` is the package's only one-time witness, so no other module's
-/// Publisher can exist.
-public fun wrap(publisher: Publisher, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
+/// Consumes Bootstrap forever, seals native capabilities, and enables Migrators.
+public fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
+    let (publisher, generation) = bootstrap.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN_MIGRATORS>(id.to_inner(), publisher, upgrade_cap);
 
     transfer::share_object(PackageAdmin { id, custody, pending: option::none() });
+    generation.share_version(ctx);
 }
 
 /// Authorizes the exact package digest under the sealed cap's compatible policy.
@@ -165,12 +163,13 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
 
 use blast_fun_migrators::{
     blast_events,
-    blast_fun_migrators::{BLAST_FUN_MIGRATORS, PackageVersion},
+    blast_fun_migrators::{BLAST_FUN_MIGRATORS, Bootstrap, PackageVersion},
 };
 
 use blast_admin::{
     blast_acl::AdminWitness,
     delayed::{Self, Pending},
+    operational_version::OperationalVersion,
     upgrade_custody::{Self, UpgradeCustody},
 };
 
@@ -178,5 +177,7 @@ use blast_fun::blast_fun_domain::{CancelAdmin, UpgradeAdmin};
 
 use sui::{
     clock::Clock,
-    package::{Publisher, UpgradeCap, UpgradeReceipt, UpgradeTicket},
+    package::{UpgradeCap, UpgradeReceipt, UpgradeTicket},
 };
+
+use fun blast_fun_migrators::blast_fun_migrators::share_version as OperationalVersion.share_version;

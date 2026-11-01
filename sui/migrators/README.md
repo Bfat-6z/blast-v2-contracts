@@ -21,6 +21,14 @@ types from `blast_fun_domain` on the singleton Blast ACL and declares none of it
 own. It does own an independent operational generation and its own sealed
 `PackageAdmin`, so advancing this package leaves Launchpad on its generation.
 
+Publication transfers an owned Bootstrap holding the Publisher and initial
+generation to the deployer. Before wrap, its holder may set the initial LP-fee
+destination and default shares through `lp_fee_policy::bootstrap` without a
+Clock. `package_admin::wrap` consumes Bootstrap and the matching fresh
+UpgradeCap permanently, then shares the operational version and sealed custody.
+Later policy changes retain their 48-hour delay. The launchpad's immediate
+unpause releases migration; migrators has no separate pause switch (ADR 0134).
+
 Every protected mutation checks **this** package's generation. The Launchpad
 generation is no longer treated as this package's own: a composed call that
 migrates a launch supplies both version objects, because each package checks

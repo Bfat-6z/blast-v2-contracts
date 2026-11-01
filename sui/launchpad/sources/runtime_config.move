@@ -25,6 +25,27 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
+/// Sets initial live policy immediately while the publication Bootstrap still exists.
+/// An empty signer deliberately disables account claims; finalization destroys this authority.
+public fun bootstrap(
+    self: &mut RuntimeConfig,
+    _: &Bootstrap,
+    signer_public_key: vector<u8>,
+    protocol_fee_share_bps: Bps,
+    treasury: address,
+) {
+    assert!(signer_public_key.is_empty() || signer_public_key.length() == constants::ed25519_public_key_length!(), blast_fun::errors::invalid_creator_claim_public_key!());
+    assert!(treasury != @0x0, blast_fun::errors::invalid_destination!());
+
+    self.creator_claim_signer_public_key.set_now(signer_public_key);
+    self.protocol_fee_share_bps.set_now(protocol_fee_share_bps);
+    self.treasury.set_now(treasury);
+
+    events::creator_claim_signer_set(signer_public_key);
+    events::protocol_fee_share_changed(protocol_fee_share_bps.value());
+    events::treasury_changed(treasury);
+}
+
 /// Replaces the account-claim signer; an empty key revokes it.
 /// Schedules creator claim signer after the full administrative delay.
 public fun schedule_creator_claim_signer(
@@ -281,5 +302,5 @@ use blast_fun::{
     bps::{Self, Bps},
     constants,
     events,
-    blast_fun::PackageVersion,
+    blast_fun::{Bootstrap, PackageVersion},
 };

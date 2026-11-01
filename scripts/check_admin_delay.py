@@ -65,9 +65,9 @@ for package in ('launchpad', 'presale', 'migrators'):
     require(fs['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin>')
     require(fs['cancel_upgrade_action'][1], 'self.pending.extract()')
     require(fs['wrap'][1], 'upgrade_custody::new')
-    if package != 'migrators':
-        require(fs['wrap'][1], 'generation.share_version(ctx)')
-        assert fs['wrap'][1].index('upgrade_custody::new') < fs['wrap'][1].index('generation.share_version(ctx)')
+    require(fs['wrap'][0], 'bootstrap: Bootstrap')
+    require(fs['wrap'][1], 'bootstrap.destroy()', 'generation.share_version(ctx)')
+    assert fs['wrap'][1].index('upgrade_custody::new') < fs['wrap'][1].index('generation.share_version(ctx)')
     assert fs['commit_upgrade_and_advance'][1].startswith('package_version.assert_next();')
     require(fs['commit_upgrade_and_advance'][1], 'self.custody.commit_upgrade(custodian_id, receipt); package_version.advance();')
     for signature, _ in fs.values():
@@ -115,3 +115,35 @@ require(acl, 'admins: Table<ID, VecSet<TypeName>>,')
 assert 'MAX_ADMINS' not in acl
 require((ROOT / 'sui/admin/sources/delayed.move').read_text(), '48 * 60 * 60 * 1_000', 'clock.timestamp_ms() >= self.ready_at_ms')
 print('ADR 0134 administration boundaries: OK')
+
+# Bootstrap is a publication-only linear resource, never a pause-dependent administrative mode.
+for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_package'), ('migrators', 'blast_fun_migrators')]:
+    marker_fs = functions(package, marker)
+    require(marker_fs['init'][1], 'transfer::transfer(Bootstrap', 'sui::package::claim(otw, ctx)')
+    assert 'share_object' not in marker_fs['init'][1]
+    require(marker_fs['destroy'][0], 'self: Bootstrap')
+    # The only constructor is private publication init; destroy only destructures it.
+    assert {name for name, (_, body) in marker_fs.items() if re.search(r'\bBootstrap\s*{', body)} == {'init', 'destroy'}
+    assert marker_fs['init'][0].startswith('fun init(')
+    assert 'public struct Bootstrap has key {' in (ROOT / 'sui' / package / 'sources' / f'{marker}.move').read_text()
+    for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
+        source = path.read_text().split('// === Test-Only Functions ===')[0]
+        if path.stem != marker:
+            assert not re.search(r'\bBootstrap\s*{', source), path
+    assert 'Bootstrap' not in marker_fs.get('unpause', ('', ''))[1]
+    if package != 'migrators':
+        assert 'paused: 0' not in marker_fs['share_version'][1]
+        require(functions(package, 'package_admin')['wrap'][1], '.assert_bootstrap_ready();')
+for package, module, names in [
+    ('launchpad', 'runtime_config', ['bootstrap']),
+    ('launchpad', 'launch_config', ['bootstrap', 'bootstrap_quote', 'bootstrap_migration_witness']),
+    ('presale', 'fee_policy', ['bootstrap']),
+    ('presale', 'creation_policy', ['bootstrap_quote', 'bootstrap_migration_witness']),
+    ('migrators', 'lp_fee_policy', ['bootstrap']),
+]:
+    fs = functions(package, module)
+    for name in names:
+        require(fs[name][0], '_: &Bootstrap')
+        assert 'PackageVersion' not in fs[name][0]
+        assert 'paused' not in fs[name][1]
+print('One-time Bootstrap authority and paused finalization: OK')

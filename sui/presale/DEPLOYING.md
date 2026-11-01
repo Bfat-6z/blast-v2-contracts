@@ -4,7 +4,9 @@ Use this runbook for a new `blast_presale` deployment. Record the normalized res
 in the format required by [`deployments/README.md`](../../../deployments/README.md).
 Publication alone cannot activate presales. The publisher receives an owned Bootstrap;
 only wrapping it with the matching fresh UpgradeCap shares PackageVersion.
-Every policy mutation and sale creation requires that shared version (ADR 0117).
+Initial policy setters borrow Bootstrap; routine mutations and sale creation
+require that shared version (ADR 0117, amended by ADR 0134). Wrap starts fully
+paused; immediate UnpauseAdmin release enables sales.
 
 1. Retire the previous generation's link when a release changes presale logic.
    The live package, recorded in
@@ -22,15 +24,24 @@ Every policy mutation and sale creation requires that shared version (ADR 0117).
    [README](../partners/README.md)). Run the complete `scripts/verify.sh` gate,
    then `scripts/publish.sh --preview`
    and `--execute`, which publish to mainnet. The sender receives the raw `UpgradeCap` and owned `blast_presale_package::Bootstrap`; the
-   package mints no administrator capability. Do not upgrade the package before step 3:
+   package mints no administrator capability. Do not upgrade the package before custody finalization:
    `package_admin::wrap` accepts only a never-upgraded cap, and a cap upgraded
    first can never be sealed.
-3. Seal custody with `scripts/wrap_package_admin.sh <package-id> <bootstrap-id> <upgrade-cap-id>
-   --preview` and `--execute`.
+3. Borrow Bootstrap for `fee_policy::bootstrap` to set the nonzero destination
+   and initial four fee rates. Admit every initial Quote and reviewed adapter
+   with `creation_policy::bootstrap_quote<Quote>` and
+   `creation_policy::bootstrap_migration_witness<Witness>`, passing `true`.
+   Zero fees are legal defaults. Both allowlists must be nonempty; validate
+   each adapter's dependency and venue evidence before admitting it. Initial
+   setup may span transactions and emits the normal applied-value events.
+   These calls need no Clock or ACL witness. Read back the chosen policy.
+   Then seal custody with `scripts/wrap_package_admin.sh <package-id> <bootstrap-id>
+   <upgrade-cap-id> <creation-policy-id> --preview` and `--execute`.
 4. From the effects of step 3, verify that `PackageAdmin` is shared and that the
    `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
    unchanged at compatible (`0`). Record the newly shared `PackageVersion` from
-   these activation effects. From the publish effects, record the
+   these finalization effects; its initial pause mask must be 11. Bootstrap
+   must be deleted and never available again. From the publish effects, record the
    shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
 5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
    (`blast_acl::grant_role` with each `blast_presale_domain` type) to the
@@ -44,20 +55,16 @@ Every policy mutation and sale creation requires that shared version (ADR 0117).
    and `UpgradeAdmin` authorizes compatible upgrades with atomic generation cutover. Each call signs in
    with `blast_acl::sign_in` in the same PTB. The root revokes a role or an
    administrator at once if a cap is lost or compromised.
-6. As `TreasuryAdmin`, call `fee_policy::set_destination`; the policy pays the
-   publisher until then. As `FeeAdmin`, call `fee_policy::set_fees` if the
-   launch rates are not zero.
-7. Only now allow the launch Quote types as `ListingAdmin` with
-   `creation_policy::set_quote_allowed`, and as `AdapterAdmin` the venues with
-   `set_migration_witness_allowed<cetus::Witness>`, `<bluefin::Witness>`, and
-   `<aftermath::Witness>`, plus any reviewed external migrator's witness, such as a
-   vendor package's. Before allowing Aftermath, run
-   `sui/vendors/aftermath_dao_presale`'s `node scripts/check_mainnet_abi.mjs`,
-   which pins the Aftermath AMM and DAO-fee revisions this package links to (the
-   presale source gate requires its stubs to match the vendor's byte for byte),
-   and prove a mainnet dev-inspect of
-   `aftermath::migrate` with a fresh LP coin for both coin orders: the local
-   stubs prove types, not behavior. Allow
+6. Grant `UnpauseAdmin`, sign in through the real ACL and call
+   `blast_presale_package::unpause` with the shared mutable PackageVersion and
+   selected bits (all = 11). This release is immediate and takes no Clock.
+   No presale can start before it. Later governed fee, destination and adapter
+   admission changes use their full 48-hour schedule/apply flow, even while paused.
+7. Before admitting Aftermath during bootstrap or through later administration,
+   run `sui/vendors/aftermath_dao_presale`'s `node scripts/check_mainnet_abi.mjs`,
+   which pins the Aftermath AMM and DAO-fee revisions this package links to.
+   Prove a mainnet dev-inspect of `aftermath::migrate` with a fresh LP coin for
+   both coin orders: the local stubs prove types, not behavior. Allow
    only Quote types whose deny-list and pause controls Blast accepts (owner,
    2026-10-02): payouts are pushed, so a denied fee recipient blocks that vault's
    collection and a denied raise recipient blocks migration until the LP deadline.

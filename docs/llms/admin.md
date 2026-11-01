@@ -196,8 +196,11 @@ that takes it and must call the latest package version.
 `UpgradeCap` (version 1) after checking both belong to the package of `M`.
 Neither can leave the custody. The consumer's shared `PackageAdmin` wraps it and
 gates authorization behind its upgrade role. Boosts receipt commit instead carries
-the native authorized receipt. `wrap`, and Blast SUI's `new` and `share`, need
-only the package's own `Publisher` and `UpgradeCap`:
+the native authorized receipt. Wrap in launchpad, presale and migrators consumes their
+publication's Bootstrap and matching fresh UpgradeCap; launchpad and presale
+also validate initial policy admission. Bootstrap authorizes immediate initial
+configuration and is permanently consumed at wrap. Blast SUI's `new` and `share`
+use its own Publisher and UpgradeCap directly:
 
 | Package | Custody object | Transitions exposed |
 | --- | --- | --- |

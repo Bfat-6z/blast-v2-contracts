@@ -378,7 +378,6 @@ impl World {
         let root = one(&h, &admin_published, "blast_acl", "SuperAdminCap");
         let config = one(&h, &published, "launch_config", "LaunchConfig");
         let runtime = one(&h, &published, "runtime_config", "RuntimeConfig");
-        let version = h.wrap_launchpad(blast, &published)?;
 
         let mut dependencies =
             vec![ObjectID::from_single_byte(1), ObjectID::from_single_byte(2), timelock, admin, partners, blast];
@@ -387,10 +386,27 @@ impl World {
             &[("blast_fun_timelock", timelock), ("blast_admin", admin), ("blast_partners", partners), ("blast_fun", blast)],
             dependencies,
         )?;
-        let (migrators, published) = h.publish(linked)?;
-        let migrators_version = one(&h, &published, "blast_fun_migrators", "PackageVersion");
-        let venue_config = one(&h, &published, "venue_config", "VenueConfig");
-        let policy = one(&h, &published, "lp_fee_policy", "LpFeePolicy");
+        let (migrators, migrators_publication) = h.publish(linked)?;
+        // Set the initial LP policy with publication authority, without waiting 48 hours.
+        let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
+        let mut b = ProgrammableTransactionBuilder::new();
+        let bootstrap = migrators_publication.created(&h, "blast_fun_migrators", "Bootstrap")[0];
+        let bootstrap_arg = b.obj(h.owned(bootstrap))?;
+        let initial_policy = one(&h, &migrators_publication, "lp_fee_policy", "LpFeePolicy");
+        let policy_arg = b.obj(h.shared(initial_policy, true))?;
+        let destination = b.pure(SuiAddress::from(LP_PROTOCOL))?;
+        let meme_bps = b.pure(DEFAULT_SHARES.0)?;
+        let meme_bps = call(&mut b, blast, "bps", "new", vec![], vec![meme_bps]);
+        let quote_bps = b.pure(DEFAULT_SHARES.1)?;
+        let quote_bps = call(&mut b, blast, "bps", "new", vec![], vec![quote_bps]);
+        call(&mut b, migrators, "lp_fee_policy", "bootstrap", vec![], vec![policy_arg, bootstrap_arg, destination, meme_bps, quote_bps]);
+        h.execute(b.finish())?.assert_success();
+        let venue_config = one(&h, &migrators_publication, "venue_config", "VenueConfig");
+        let policy = one(&h, &migrators_publication, "lp_fee_policy", "LpFeePolicy");
+        let migrators_version = h.wrap_migrators(migrators, &migrators_publication)?;
+        assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
+        let version = h.wrap_launchpad(blast, &published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
+        h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
         let project = build(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture/project"),
             &[core[0], core[1], core[2], (launchpad_dir.as_path(), blast)],
@@ -440,48 +456,20 @@ impl World {
         };
 
         let mut b = ProgrammableTransactionBuilder::new();
-        let listing_admin = w.sign_in(&mut b, "ListingAdmin")?;
-        let adapter_admin = w.sign_in(&mut b, "AdapterAdmin")?;
         let fee_admin = w.sign_in(&mut b, "FeeAdmin")?;
         let treasury_admin = w.sign_in(&mut b, "TreasuryAdmin")?;
         let config = b.obj(w.h.shared(w.config, true))?;
         let version = b.obj(w.h.shared(w.version, false))?;
-        let quote_allowed = b.pure(true)?;
-        call(
-            &mut b,
-            blast,
-            "launch_config",
-            "set_quote_allowed",
-            vec![case.quote()],
-            vec![config, version, listing_admin, quote_allowed],
-        );
-        let witness = tag(&format!("{migrators}::{}::Witness", case.module()));
-
-        let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, blast, "launch_config", "schedule_migration_witness", vec![witness], vec![config, version, adapter_admin, admin_clock]);
         let fee = w.bps(&mut b, 100)?;
         let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
         call(&mut b, blast, "launch_config", "schedule_trade_fees", vec![], vec![config, version, fee_admin, fee, fee, admin_clock]);
         let share = w.bps(&mut b, ALLOCATION_BPS)?;
         let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
         call(&mut b, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config, version, treasury_admin, share, share, admin_clock]);
-        // Blast's LP-fee share goes to its own destination at a nonzero default.
-        let policy = b.obj(w.h.shared(w.policy, true))?;
-        let migrators_version = b.obj(w.h.shared(w.migrators_version, false))?;
-        let destination = b.pure(SuiAddress::from(LP_PROTOCOL))?;
-        let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, migrators, "lp_fee_policy", "schedule_protocol_destination", vec![], vec![policy, migrators_version, treasury_admin, destination, admin_clock]);
-        let meme_bps = w.bps(&mut b, DEFAULT_SHARES.0)?;
-        let quote_bps = w.bps(&mut b, DEFAULT_SHARES.1)?;
-        let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, migrators, "lp_fee_policy", "schedule_default_shares", vec![], vec![policy, migrators_version, fee_admin, meme_bps, quote_bps, admin_clock]);
         w.h.execute(b.finish())?.assert_success();
         blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![
-            (blast, "launch_config", "apply_migration_witness", vec![tag(&format!("{migrators}::{}::Witness", case.module()))], w.config, w.version),
             (blast, "launch_config", "apply_trade_fees", vec![], w.config, w.version),
             (blast, "launch_config", "apply_protocol_allocation", vec![], w.config, w.version),
-            (migrators, "lp_fee_policy", "apply_protocol_destination", vec![], w.policy, w.migrators_version),
-            (migrators, "lp_fee_policy", "apply_default_shares", vec![], w.policy, w.migrators_version),
         ])?;
 
         Ok(w)

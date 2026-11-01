@@ -481,8 +481,8 @@ impl Harness {
         Ok((published[0], outcome))
     }
 
-    /// Seals the publication capabilities before any launchpad configuration or launch.
-    pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
+    /// Configures initial admission and seals custody; operations remain paused until release.
+    pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome, quote: sui_types::TypeTag, witness: sui_types::TypeTag) -> Result<ObjectID> {
         assert!(publication.created(self, "blast_fun", "PackageVersion").is_empty());
         let bootstrap = publication.created(self, "blast_fun", "Bootstrap");
         let cap = publication.created(self, "package", "UpgradeCap");
@@ -492,9 +492,9 @@ impl Harness {
             bcs::from_bytes(&self.contents(bootstrap[0]))?;
         let cap_contents = self.contents(cap[0]);
         let mut builder = ProgrammableTransactionBuilder::new();
-        let bootstrap_arg = builder.obj(self.owned(bootstrap[0]))?;
+        let (bootstrap_arg, config_arg) = self.bootstrap_launchpad_route(&mut builder, package, publication, quote, witness)?;
         let cap_arg = builder.obj(self.owned(cap[0]))?;
-        call(&mut builder, package, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
+        call(&mut builder, package, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg, config_arg]);
         let outcome = self.execute(builder.finish())?;
         outcome.assert_success();
         assert_eq!(outcome.effects.deleted().iter().map(|object| object.0).collect::<Vec<_>>(), vec![bootstrap_id]);
@@ -517,9 +517,75 @@ impl Harness {
         assert_eq!(bcs::to_bytes(&sealed_caps[0])?, cap_contents);
         let (version_id, paused, active_generation): (ObjectID, u8, u64) =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
-        assert_eq!((version_id, paused, active_generation), (version[0], 0, generation));
+        assert_eq!((version_id, paused, active_generation), (version[0], 7, generation));
 
         Ok(version[0])
+    }
+
+    /// Composes initial Quote and reviewed adapter admission using only the owned Bootstrap.
+    pub fn bootstrap_launchpad_route(&self, b: &mut ProgrammableTransactionBuilder, package: ObjectID,
+        publication: &Outcome, quote: sui_types::TypeTag, witness: sui_types::TypeTag,
+    ) -> Result<(Argument, Argument)> {
+        let bootstrap = publication.created(self, "blast_fun", "Bootstrap")[0];
+        let config = publication.created(self, "launch_config", "LaunchConfig")[0];
+        let bootstrap = b.obj(self.owned(bootstrap))?;
+        let config = b.obj(self.shared(config, true))?;
+        let allowed = b.pure(true)?;
+        call(b, package, "launch_config", "bootstrap_quote", vec![quote], vec![config, bootstrap, allowed]);
+        call(b, package, "launch_config", "bootstrap_migration_witness", vec![witness], vec![config, bootstrap, allowed]);
+        Ok((bootstrap, config))
+    }
+
+    /// Migrators shares no operational version until its one-time Bootstrap enters custody.
+    pub fn wrap_migrators(&mut self, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
+        assert!(publication.created(self, "blast_fun_migrators", "PackageVersion").is_empty());
+        let bootstrap = publication.created(self, "blast_fun_migrators", "Bootstrap")[0];
+        let cap = publication.created(self, "package", "UpgradeCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let bootstrap_arg = b.obj(self.owned(bootstrap))?;
+        let cap_arg = b.obj(self.owned(cap))?;
+        call(&mut b, package, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
+        let outcome = self.execute(b.finish())?;
+        outcome.assert_success();
+        assert!(outcome.effects.deleted().iter().any(|object| object.0 == bootstrap));
+        let version = outcome.created(self, "blast_fun_migrators", "PackageVersion");
+        assert_eq!(version.len(), 1);
+        Ok(version[0])
+    }
+
+    /// Uses the real ACL and immediate UnpauseAdmin path without advancing the Clock.
+    pub fn unpause(&mut self, package: ObjectID, marker: &str, admin: ObjectID,
+        publication: &Outcome, version: ObjectID, bits: u8,
+    ) -> Result<()> {
+        let acl = publication.created(self, "blast_acl", "ACL")[0];
+        let root = publication.created(self, "blast_acl", "SuperAdminCap")[0];
+        let domain = if marker == "blast_fun" { "blast_fun_domain" } else { "blast_presale_domain" };
+        let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::UnpauseAdmin"))?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, true))?;
+        let root_arg = b.obj(self.owned(root))?;
+        let recipient = b.pure(self.sender)?;
+        call(&mut b, admin, "blast_acl", "grant_admin", vec![], vec![acl_arg, root_arg, recipient]);
+        let granted = self.impersonate_cap_owner(root, b.finish())?;
+        granted.assert_success();
+        let cap = granted.created(self, "blast_acl", "AdminCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, true))?;
+        let root_arg = b.obj(self.owned(root))?;
+        let cap_id = b.pure(cap)?;
+        call(&mut b, admin, "blast_acl", "grant_role", vec![role.clone()], vec![acl_arg, root_arg, cap_id]);
+        self.impersonate_cap_owner(root, b.finish())?.assert_success();
+        let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, false))?;
+        let cap_arg = b.obj(self.owned(cap))?;
+        let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, cap_arg]);
+        let version_arg = b.obj(self.shared(version, true))?;
+        let bits = b.pure(bits)?;
+        call(&mut b, package, marker, "unpause", vec![], vec![version_arg, witness, bits]);
+        self.execute(b.finish())?.assert_success();
+        assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
+        Ok(())
     }
 
     pub fn snapshot(&self, objects: &[ObjectID], owners: &[SuiAddress]) -> Snapshot {
