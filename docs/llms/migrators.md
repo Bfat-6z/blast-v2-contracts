@@ -472,7 +472,6 @@ These action schedules accept no delay argument and their execution preserves th
 notice period, replacing any pending action. Anyone applies it with
 `blast_fun_migrators::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
 `blast_fun_migrators::package_admin::cancel_upgrade_action` cancels any of these proposals.
-`blast_fun_migrators::package_admin::upgrade_delay_ms` reads the current upgrade notice.
 
 Publication-owned policy singletons and package custody start with zero notice for
 ordinary role-authorized setup. Configure and apply each operation's intended notice

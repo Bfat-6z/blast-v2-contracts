@@ -887,7 +887,6 @@ These action schedules accept no delay argument and their execution preserves th
 notice period, replacing any pending action. Anyone applies it with
 `blast_presale::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
 `blast_presale::package_admin::cancel_upgrade_action` cancels any of these proposals.
-`blast_presale::package_admin::upgrade_delay_ms` reads the current upgrade notice.
 
 Publication-owned policy singletons and package custody start with zero notice for
 ordinary role-authorized setup. Configure and apply each operation's intended notice
@@ -3461,9 +3460,6 @@ public fun apply_upgrade_delay(
     package_version: &blast_presale_package::PackageVersion,
     clock: &Clock,
 )
-
-/// Returns the currently applied notice period for upgrade actions.
-public fun upgrade_delay_ms(self: &PackageAdmin): u64
 ```
 
 #### Events

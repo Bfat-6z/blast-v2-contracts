@@ -209,12 +209,13 @@ public fun apply_upgrade_delay(
     sui::event::emit(UpgradeDelayChanged { delay_ms });
 }
 
+// === Test-Only Functions ===
+
+#[test_only]
 /// Returns the currently applied notice period for upgrade actions.
 public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
     self.delay_ms
 }
-
-// === Test-Only Functions ===
 
 #[test_only]
 /// Fixture helper exercising both public phases with a synthetic 48-hour advance.
