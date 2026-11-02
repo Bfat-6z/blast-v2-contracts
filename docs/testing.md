@@ -35,6 +35,12 @@ without advancing Clock. Later governed changes schedule, advance the simulator
 by the snapshotted delay, and apply through public entry points. Policy tests also
 prove old-delay updates, same-PTB ordering/rollback and unauthorized rejection.
 
+The launchpad pause matrix runs with `cargo test --locked --test atomic_migration
+pause_ -- --test-threads=1` from `sui/launchpad/ptb_tests`, under the same memory
+guard. It exercises every reachable pause state and every `u8` input for both
+mutators, including stored-generation mismatch, exact events and rollback. The
+Move `pause_tests` module directly covers the package-only operation guard.
+
 Native PTB fixture output stays under the test crate's ignored `target/ptb-fixtures/`
 directory, so checkouts can share Cargo's compiler cache without overwriting each
 other's simulator artifacts.
