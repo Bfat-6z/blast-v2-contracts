@@ -111,10 +111,11 @@ immediate; root rotation and later partner changes retain seven-day delays.
 - **Integration:** Table ACL, clearer cap-update names, named durations,
   updated events/references and
   [SDK](https://github.com/interest-protocol/blast-v2-sdk/pull/88),
-  [app](https://github.com/interest-protocol/blast-v2/pull/711) and
-  [indexer](https://github.com/interest-protocol/blast-infra/pull/114) PRs.
-  [Remaining admin SDK bindings](https://github.com/interest-protocol/blast-v2-sdk/issues/89)
-  remain a release requirement.
+  [app/workers](https://github.com/interest-protocol/blast-v2/pull/711),
+  [indexer](https://github.com/interest-protocol/blast-infra/pull/114) and
+  [admin console](https://github.com/interest-protocol/admin-acl/pull/22) PRs
+  include the administrative bindings. They target fresh packages; rollout still
+  requires the publication manifest and a coordinated SDK release.
 
 ## Evidence and proposed dates
 

@@ -200,7 +200,13 @@ payload types, keeping the event stream self-describing without a boolean discri
 ## Consequences
 
 The fresh stack changes state layouts, signatures and event payloads. SDK, indexer and
-operators must bind to the new stack. Each operation's live notice determines its real
+operators must bind to the new stack. The fresh interfaces are implemented in
+[SDK88](https://github.com/interest-protocol/blast-v2-sdk/pull/88),
+[app/workers711](https://github.com/interest-protocol/blast-v2/pull/711),
+[indexer114](https://github.com/interest-protocol/blast-infra/pull/114) and
+[admin22](https://github.com/interest-protocol/admin-acl/pull/22). These source
+changes require a fresh publication manifest and coordinated release.
+Each operation's live notice determines its real
 cancellation window; zero provides none. The rollout must verify 48 hours where that
 notice is required. The admin module remains generic and immutable while owner-stored
 notice periods can change through their own timelocks.
