@@ -7,6 +7,49 @@ module blast_admin::delayed_tests;
 // === Tests ===
 
 #[test]
+fun readiness_validation_is_repeatable_and_does_not_mutate_pending_or_applied_policy() {
+    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
+    let mut setting = delayed::new(7u64, 10);
+    setting.schedule(9, 25, &clock);
+    clock.set_for_testing(10);
+    setting.assert_ready(&clock);
+    setting.assert_ready(&clock);
+    assert_eq!(setting.value(), 7);
+    assert_eq!(setting.delay_ms(), 10);
+    assert_eq!(setting.pending().destroy_some().value(), 9);
+    assert_eq!(setting.apply(&clock), 9);
+    setting.destroy_for_testing();
+    clock.destroy_for_testing();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun readiness_without_pending_rejects() {
+    let clock = clock::create_for_testing(&mut tx_context::dummy());
+    let setting = delayed::new(7u64, 10);
+    setting.assert_ready(&clock);
+    abort
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun readiness_checks_the_stored_deadline() {
+    let clock = clock::create_for_testing(&mut tx_context::dummy());
+    let mut setting = delayed::new(7u64, 10);
+    setting.schedule(9, 0, &clock);
+    setting.assert_ready(&clock);
+    abort
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
+fun readiness_rechecks_representability_at_application_time() {
+    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
+    let mut setting = delayed::new(7u64, 10);
+    setting.schedule(9, std::u64::max_value!() - 10, &clock);
+    clock.set_for_testing(11);
+    setting.assert_ready(&clock);
+    abort
+}
+
+#[test]
 fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
     let mut clock = clock::create_for_testing(&mut tx_context::dummy());
     clock.set_for_testing(10);

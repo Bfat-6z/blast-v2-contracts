@@ -20,7 +20,8 @@
 //! at the pool price, and burn the burn part's Meme at `@0x0` (the fixture's supply is fixed); the
 //! buyback administrator swaps the waiting burn Quote for Meme and burns it, and a minimum above
 //! the pool's output rolls back; collection against another pool of the same type is refused; the settled
-//! split update runs under the live curve-fee cap and a retired cap is refused; the creator claims
+//! split is scheduled under the live curve-fee cap and applied permissionlessly after notice; a retired cap
+//! cannot schedule/cancel, and an accepted proposal survives reassignment; the creator claims
 //! its share; a holder-reward round is published from the rewards balance and paid by Merkle
 //! proof; and the administrator claims the migration residuals. Every venue observation prints as a `VENUE_FORK`
 //! line.
@@ -201,14 +202,14 @@ fn run(case: Case) -> Result<()> {
     w.swap(&launch, &m, Side::QuoteIn, 2 * w.case.quote_unit())?;
     w.swap(&launch, &m, Side::MemeIn, LP_MEME / 50)?;
     let c = w.collect(&launch, &mut m, Some((cap, &next)))?;
-    w.report(format!("settle_and_update_fee_split: {} then the new split", c.line()));
+    w.report(format!("settle_and_apply_fee_split: {} then the new split", c.line()));
     w.swap(&launch, &m, Side::QuoteIn, w.case.quote_unit())?;
     let c = w.collect(&launch, &mut m, None)?;
-    ensure!(w.vault(&m)?.fee_split == next, "the next collection runs under the new split");
+    ensure!(w.vault(&m)?.fee_split.value == next, "the next collection runs under the new split");
     w.report(format!("collect under the new split: {}", c.line()));
     w.buyback(&launch, &m)?;
 
-    w.other_pool_is_refused(&launch, &m)?;
+    w.other_pool_is_refused(&launch, &m, cap)?;
     w.claim_creator_fees(&launch, &m, cap)?;
     w.retired_cap_is_refused(&launch, &m, cap, &next)?;
     w.holder_rewards(&launch, &m)?;
@@ -1004,7 +1005,7 @@ impl World {
             liquidity: created.liquidity,
         };
         let vault = self.vault(&m)?;
-        ensure!(vault.pool_id == m.pool && vault.fee_split == launch.split);
+        ensure!(vault.pool_id == m.pool && vault.fee_split.value == launch.split);
         ensure!(
             (vault.protocol_meme_residual, vault.protocol_quote_residual)
                 == (created.residual_meme, created.residual_quote)
@@ -1206,10 +1207,6 @@ impl World {
         let migrators_version = self.shared(&mut b, self.migrators_version, false)?;
         let policy = self.shared(&mut b, self.policy, false)?;
         let mut args = vec![vault, migrators_version, policy];
-        if let Some((cap, _)) = update {
-            args.push(self.shared(&mut b, launch.launch, false)?);
-            args.push(b.obj(self.h.owned(cap))?);
-        }
         args.push(self.shared(&mut b, launch.currency, true)?);
         if self.case.is_cetus() {
             args.push(self.shared(&mut b, self.venue("cetus_global_config"), false)?);
@@ -1218,12 +1215,9 @@ impl World {
             args.push(self.shared(&mut b, self.venue("bluefin_global_config"), false)?);
         }
         args.push(self.shared(&mut b, pool, true)?);
-        if let Some((_, split)) = update {
-            args.push(self.fee_split_arg(&mut b, split)?);
-        }
         args.push(self.clock(&mut b)?);
         let function = match update {
-            Some(_) => "settle_and_update_fee_split",
+            Some(_) => "settle_and_apply_fee_split",
             None => "collect_fees",
         };
         call(&mut b, self.migrators, self.case.module(), function, self.route_types(launch), args);
@@ -1231,7 +1225,17 @@ impl World {
         Ok(b.finish())
     }
 
-    /// A permissionless collection, or with `update` the settled split update under `cap`; checks
+    fn schedule_fee_split_pt(&self, launch: &Launch, m: &Migration, cap: ObjectID, split: &FeeSplit) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let args = vec![self.shared(&mut b, m.vault, true)?,
+            self.shared(&mut b, self.migrators_version, false)?,
+            self.shared(&mut b, launch.launch, false)?, b.obj(self.h.owned(cap))?,
+            self.fee_split_arg(&mut b, split)?, b.pure(172_800_000u64)?, self.clock(&mut b)?];
+        call(&mut b, self.migrators, "vault", "schedule_fee_split", self.pair(launch), args);
+        Ok(b.finish())
+    }
+
+    /// A permissionless collection, or with `update` a creator schedule followed by ready settlement; checks
     /// every amount against the venue's collection, Blast's live share, and the vault's split.
     fn collect(
         &mut self,
@@ -1239,6 +1243,34 @@ impl World {
         m: &mut Migration,
         update: Option<(ObjectID, &FeeSplit)>,
     ) -> Result<Collection> {
+        if let Some((cap, split)) = update {
+            let before = self.vault(m)?.fee_split;
+            let scheduled = self.schedule_fee_split_pt(launch, m, cap, split)?;
+            self.h.execute(scheduled)?.assert_success();
+            let pending = self.vault(m)?.fee_split;
+            ensure!(pending.value == before.value && pending.delay_ms == before.delay_ms);
+            ensure!(pending.pending.as_ref().is_some_and(|p| p.value == *split));
+            // Seed only fixture generation bytes; the public wrapper must reject before readiness.
+            let original = self.h.object(self.migrators_version);
+            let mut stale = original.clone();
+            stale.data.try_as_move_mut().expect("PackageVersion")
+                .set_contents_unsafe(bcs::to_bytes(&(self.migrators_version, 2u64))?);
+            self.h.insert(stale);
+            let stale_apply = self.collect_pt(launch, m, m.pool, update)?;
+            self.h.assert_rolled_back(stale_apply, Expected::Abort {package: self.admin, module: "operational_version", code: 12},
+                &[m.vault, m.pool, launch.currency], &[self.h.sender, LP_PROTOCOL.into()])?;
+            self.h.insert(original);
+            let early = self.collect_pt(launch, m, m.pool, update)?;
+            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 20 };
+            self.h.assert_rolled_back(early, expected, &[m.vault, m.pool, launch.currency], &[self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()])?;
+            self.h.sim.advance_clock(std::time::Duration::from_millis(before.delay_ms));
+            // A later failing command must roll back the ready application, venue collection,
+            // payouts, and proposal consumption together.
+            let mut rollback = self.collect_pt(launch, m, m.pool, update)?;
+            rollback.commands.push(rollback.commands.last().expect("apply").clone());
+            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 21 };
+            self.h.assert_rolled_back(rollback, expected, &[m.vault, m.pool, launch.currency], &[self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()])?;
+        }
         let before = self.vault(m)?;
         let auto_before = match m.auto_lp_position {
             Some(position) => self.position_liquidity(position)?,
@@ -1276,7 +1308,7 @@ impl World {
         *payees.entry(LP_PROTOCOL.into()).or_default() = (fees.protocol_meme, fees.protocol_quote);
         // The fixture's supply is fixed, so the burn share's Meme goes to `@0x0`.
         *payees.entry(SuiAddress::ZERO).or_default() = (fees.burn_meme, 0);
-        for (i, recipient) in before.fee_split.recipients.iter().enumerate() {
+        for (i, recipient) in before.fee_split.value.recipients.iter().enumerate() {
             let entry = payees.entry(recipient.destination).or_default();
             entry.0 += fees.recipient_meme[i];
             entry.1 += fees.recipient_quote[i];
@@ -1369,8 +1401,8 @@ impl World {
             ensure!(changed.len() == 1 && names.last().map(String::as_str) == Some("FeeSplitChanged"), "{names:?}");
             ensure!(names.first().map(String::as_str) == Some("FeesCollected"), "settles first: {names:?}");
             let changed = &changed[0];
-            ensure!(changed.old_fee_split == before.fee_split && changed.new_fee_split == *split);
-            ensure!(after.fee_split == *split);
+            ensure!(changed.old_fee_split == before.fee_split.value && changed.new_fee_split == *split);
+            ensure!(after.fee_split.value == *split && after.fee_split.pending.is_none() && changed.delay_ms == after.fee_split.delay_ms);
         } else {
             ensure!(after.fee_split == before.fee_split);
         }
@@ -1470,7 +1502,7 @@ impl World {
     }
 
     /// An administrator reassigns both caps through recipient-only schedules; the creator's old
-    /// curve-fee cap then neither updates the split nor claims.
+    /// curve-fee cap cannot schedule/cancel or claim, while an accepted ready split still applies.
     fn retired_cap_is_refused(
         &mut self,
         launch: &Launch,
@@ -1478,6 +1510,11 @@ impl World {
         cap: ObjectID,
         split: &FeeSplit,
     ) -> Result<()> {
+        let mut next = split.clone();
+        next.creator_bps -= 1_000;
+        next.rewards_bps += 1_000;
+        let proposal = self.schedule_fee_split_pt(launch, m, cap, &next)?;
+        self.h.execute(proposal)?.assert_success();
         let mut b = ProgrammableTransactionBuilder::new();
         let signed_in = self.sign_in(&mut b, "CreatorAdmin")?;
         let launch_arg = self.shared(&mut b, launch.launch, true)?;
@@ -1507,15 +1544,34 @@ impl World {
 
         let owners = [self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()];
         let refused = Expected::Abort { package: self.blast, module: "launch", code: CREATOR_CAP_NOT_LIVE };
-        let mut next = split.clone();
-        next.creator_bps -= 1_000;
-        next.rewards_bps += 1_000;
-        let pt = self.collect_pt(launch, m, m.pool, Some((cap, &next)))?;
+        ensure!(self.vault(m)?.fee_split.value == *split, "cap rotation does not activate the ready proposal");
+        let pt = self.schedule_fee_split_pt(launch, m, cap, &next)?;
         self.h.assert_rolled_back(pt, refused, &[m.vault, m.pool, cap, launch.currency], &owners)?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let args = vec![
+            self.shared(&mut b, m.vault, true)?,
+            self.shared(&mut b, self.migrators_version, false)?,
+            self.shared(&mut b, launch.launch, false)?,
+            b.obj(self.h.owned(cap))?,
+        ];
+        call(&mut b, self.migrators, "vault", "cancel_fee_split", self.pair(launch), args);
+        self.h.assert_rolled_back(
+            b.finish(),
+            Expected::Abort { package: self.blast, module: "launch", code: CREATOR_CAP_NOT_LIVE },
+            &[m.vault, cap],
+            &owners,
+        )?;
         let refused = Expected::Abort { package: self.blast, module: "launch", code: CREATOR_CAP_NOT_LIVE };
         let pt = self.claim_creator_fees_pt(launch, m, cap)?;
         self.h.assert_rolled_back(pt, refused, &[m.vault, cap], &owners)?;
-        self.report("after apply_curve_fee_cap_update the retired cap: settle_and_update_fee_split and claim_creator_fees abort launch creator_cap_not_live, rolled back".into());
+        let pt = self.collect_pt(launch, m, m.pool, Some((cap, &next)))?;
+        let applied = self.h.execute(pt)?;
+        applied.assert_success();
+        let changes: Vec<FeeSplitChanged> = self.events(&applied, "FeeSplitChanged");
+        ensure!(changes.len() == 1 && changes[0].old_fee_split == *split && changes[0].new_fee_split == next);
+        let active = self.vault(m)?.fee_split;
+        ensure!(active.value == next && active.pending.is_none());
+        self.report("after cap reassignment the retired cap cannot schedule, cancel or claim; accepted ready split applies without a creator-cap input".into());
 
         Ok(())
     }
@@ -1598,7 +1654,7 @@ impl World {
 
     /// Anyone can create another pool of the same type (Cetus at an unreserved tick spacing,
     /// Bluefin at any tier); collecting the vault against it is refused before any venue call.
-    fn other_pool_is_refused(&mut self, launch: &Launch, m: &Migration) -> Result<()> {
+    fn other_pool_is_refused(&mut self, launch: &Launch, m: &Migration, cap: ObjectID) -> Result<()> {
         let mut b = ProgrammableTransactionBuilder::new();
         let pool_pair = self.pool_pair(launch);
         let clock = self.clock(&mut b)?;
@@ -1674,6 +1730,20 @@ impl World {
         let pt = self.collect_pt(launch, m, other, None)?;
         let watched = [m.vault, other, launch.currency];
         self.h.assert_rolled_back(pt, expected, &watched, &[self.h.sender, LP_PROTOCOL.into()])?;
+        let mut next = self.vault(m)?.fee_split.value;
+        next.auto_lp_bps -= 1;
+        next.rewards_bps += 1;
+        let schedule = self.schedule_fee_split_pt(launch, m, cap, &next)?;
+        self.h.execute(schedule)?.assert_success();
+        self.h.sim.advance_clock(std::time::Duration::from_millis(self.vault(m)?.fee_split.delay_ms));
+        let ready_wrong_pool = self.collect_pt(launch, m, other, Some((cap, &next)))?;
+        self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.migrators, module, code},
+            &watched, &[self.h.sender, LP_PROTOCOL.into()])?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.migrators_version, false)?,
+            self.shared(&mut b, launch.launch, false)?, b.obj(self.h.owned(cap))?];
+        call(&mut b, self.migrators, "vault", "cancel_fee_split", self.pair(launch), args);
+        self.h.execute(b.finish())?.assert_success();
         let expected = Expected::Abort { package: self.migrators, module, code };
         let pt = self.buyback_pt(launch, m, other, 1, 1)?;
         let watched = [m.vault, other, launch.currency, self.admin_cap];
@@ -1984,7 +2054,7 @@ impl World {
 
 fn expected_fees(vault: &Vault, shares: (u64, u64), gross_meme: u64, gross_quote: u64) -> FeesCollected {
     let protocol = |gross: u64, bps: u64| (gross as u128 * bps as u128).div_ceil(10_000) as u64;
-    let split = &vault.fee_split;
+    let split = &vault.fee_split.value;
     let mut weights = vec![split.creator_bps, split.auto_lp_bps, split.rewards_bps, split.burn_bps];
     weights.extend(split.recipients.iter().map(|route| route.bps));
     let (protocol_meme, protocol_quote) = (protocol(gross_meme, shares.0), protocol(gross_quote, shares.1));
@@ -2056,6 +2126,11 @@ struct Recipient {
     bps: u64,
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+struct Delayed<T> { value: T, delay_ms: u64, pending: Option<Pending<T>> }
+#[derive(Debug, Deserialize, PartialEq)]
+struct Pending<T> { value: T, delay_ms: u64, ready_at_ms: u64 }
+
 /// Mirrors `blast_fun_migrators::vault::LpVault`; each `Balance` is one `u64`.
 #[derive(Debug, Deserialize)]
 struct Vault {
@@ -2066,7 +2141,7 @@ struct Vault {
     protocol_quote_residual: u64,
     _unpaid_protocol_meme: u64,
     _unpaid_protocol_quote: u64,
-    fee_split: FeeSplit,
+    fee_split: Delayed<FeeSplit>,
     creator_meme: u64,
     creator_quote: u64,
     auto_lp_meme: u64,
@@ -2197,6 +2272,7 @@ struct FeeSplitChanged {
     _vault_id: ObjectID,
     old_fee_split: FeeSplit,
     new_fee_split: FeeSplit,
+    delay_ms: u64,
 }
 
 #[derive(Deserialize)]

@@ -100,9 +100,11 @@ is split by the vault's `FeeSplit`:
 accepted that a caller can move the pool price around a collection to skim part
 of that call's auto-LP amount; frequent collection keeps each slice small.
 
-**Split updates.** `settle_and_update_fee_split` settles the fees accrued under
-the current split, then commits the new split (`FeeSplitChanged`).
-Only the launch's live `CurveFeeCap` authorizes it. The launchpad's
+**Split updates (amended by ADR 0134).** The launch's live `CurveFeeCap`
+authorizes schedule/cancel. A split starts with a 48-hour notice. After that
+notice, anyone calls `settle_and_apply_fee_split`, which settles accrued fees
+under the applied split, then activates the stored replacement and next notice
+(`FeeSplitChanged`). Expiry alone does not activate it. The launchpad's
 lock-to-custodian path is deleted: the creator always keeps a reassignable cap.
 
 **Holder rewards.** `blast_holder_rewards` replaces the distributor package.

@@ -71,6 +71,13 @@ public fun schedule_delay<T: copy + drop + store>(
     self.schedule(value, delay_ms, clock)
 }
 
+/// Checks that an application can proceed without consuming the stored proposal.
+/// Adapters use this before settling accrued economics under the currently applied value.
+public fun assert_ready<T: copy + drop + store>(self: &Delayed<T>, clock: &Clock) {
+    assert!(self.pending.is_some(), blast_admin::errors::no_pending!());
+    let (_, _) = self.pending.destroy_some().take_ready(clock);
+}
+
 /// Applies both proposed fields once, only after the stored deadline.
 public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T {
     assert!(self.pending.is_some(), blast_admin::errors::no_pending!());

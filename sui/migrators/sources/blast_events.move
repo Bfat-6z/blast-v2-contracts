@@ -137,11 +137,26 @@ public struct AutoLpPositionOpened has copy, drop {
     position_id: ID,
 }
 
-/// The live curve-fee cap holder committed a new fee split.
+/// A creator announced a split and the next notice, waiting the applied notice.
+public struct FeeSplitScheduled has copy, drop {
+    vault_id: ID,
+    proposed: FeeSplit,
+    ready_at_ms: u64,
+    delay_ms: u64,
+}
+
+/// The live creator discarded the pending split without changing applied policy.
+public struct FeeSplitCancelled has copy, drop {
+    vault_id: ID,
+    proposed: FeeSplit,
+}
+
+/// A ready split and notice became active after settling the position's accrued fees.
 public struct FeeSplitChanged has copy, drop {
     vault_id: ID,
     old_fee_split: FeeSplit,
     new_fee_split: FeeSplit,
+    delay_ms: u64,
 }
 
 /// The live curve-fee cap holder claimed the creator's accrued LP fees.
@@ -425,8 +440,21 @@ public(package) fun fee_split_changed(
     vault_id: ID,
     old_fee_split: FeeSplit,
     new_fee_split: FeeSplit,
+    delay_ms: u64,
 ) {
-    sui::event::emit(FeeSplitChanged { vault_id, old_fee_split, new_fee_split });
+    sui::event::emit(FeeSplitChanged { vault_id, old_fee_split, new_fee_split, delay_ms });
+}
+
+/// Emits the accepted creator-split proposal and its execution threshold.
+public(package) fun fee_split_scheduled(
+    vault_id: ID, proposed: FeeSplit, ready_at_ms: u64, delay_ms: u64,
+) {
+    sui::event::emit(FeeSplitScheduled { vault_id, proposed, ready_at_ms, delay_ms });
+}
+
+/// Emits the discarded creator-split proposal.
+public(package) fun fee_split_cancelled(vault_id: ID, proposed: FeeSplit) {
+    sui::event::emit(FeeSplitCancelled { vault_id, proposed });
 }
 
 /// Emits a creator LP-fee claim.

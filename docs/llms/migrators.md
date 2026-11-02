@@ -73,7 +73,8 @@ Calls also take objects from other packages:
 | `blast_holder_rewards::claim` | anyone (pays only the leaf's beneficiary before its deadline) |
 | `blast_holder_rewards::close_round` | anyone (returns custody to its funding vault at the deadline) |
 | `blast_fun_migrators::vault::claim_creator_fees` | cap holder: the live `CurveFeeCap<Meme>` |
-| `blast_fun_migrators::cetus::settle_and_update_fee_split`, `blast_fun_migrators::bluefin::settle_and_update_fee_split` | cap holder: the live `CurveFeeCap<Meme>` |
+| `blast_fun_migrators::cetus::settle_and_apply_fee_split`, `blast_fun_migrators::bluefin::settle_and_apply_fee_split` | anyone: settle and apply the stored ready proposal |
+| `blast_fun_migrators::vault::schedule_fee_split`, `blast_fun_migrators::vault::cancel_fee_split` | cap holder: the live `CurveFeeCap<Meme>` |
 | `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `BuybackAdmin` |
 | `blast_holder_rewards::publish_round`, `blast_holder_rewards::settle_gas_reserve` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
@@ -99,7 +100,7 @@ Calls also take objects from other packages:
 - `auto_lp_meme`, `auto_lp_quote`: auto-LP amounts the pool has not taken yet.
 - `rewards_meme`, `rewards_quote`: holder-reward funds not yet reserved by a round.
 - `burn_quote`: Quote waiting for a buyback.
-- `fee_split`: the current split (the launch's at migration).
+- `fee_split`: a delayed policy containing applied `value`, `delay_ms` and optional `pending` (the launch's split at migration, with a 48-hour notice).
 - `pool_id`, `partner_id` (copied from the launch, never changes), `next_round`, `last_checkpoint`.
 
 No function removes or transfers a position. No function withdraws the auto-LP, rewards, or burn
@@ -137,7 +138,7 @@ balances except the flows below.
   recorded at start can migrate it. A failed migration aborts the whole transaction and leaves the
   launch `MigrationReady`.
 - **Vault.** Created and shared inside `migrate` with the launch's `FeeSplit`. Each
-  `settle_and_update_fee_split` replaces the split. On Cetus, the auto-LP position appears the
+  `settle_and_apply_fee_split` replaces the split. On Cetus, the auto-LP position appears the
   first time a collection finds both auto-LP balances nonzero, even if nothing is then added. The
   vault never closes.
 - **Rounds.** `next_round` starts at 0 and rises by 1 per published round. Each round's checkpoint
@@ -334,26 +335,31 @@ which pays the creator's bonding-curve trade fees.
 
 #### Changing the fee split
 
-The live `CurveFeeCap` holder replaces the split. Fees already in the pool settle under the old
-split first, so every fee follows the split it accrued under.
+The live `CurveFeeCap<Meme>` holder schedules or cancels the vault's creator split. The
+initial notice is 48 hours (`172_800_000` milliseconds). Expiry only makes the stored proposal
+ready; collections keep using the applied split until an explicit settlement and application.
 
-1. Build the new split in the PTB: one `allocation::route` (destination, BPS) per recipient, a
-   `MakeMoveVec` of those routes, then `allocation::fee_split` (creator, auto-LP, rewards, and burn
-   BPS, then the routes), with each `Bps` from `blast_fun::bps::new`. The parts must sum to exactly
-   10,000; at most 16 recipients; destinations nonzero and distinct.
-2. Call `blast_fun_migrators::cetus::settle_and_update_fee_split` with `<Meme, Quote, CoinA, CoinB>`
-   or `blast_fun_migrators::bluefin::settle_and_update_fee_split` with `<Meme, Quote>`. Arguments,
-   in order: the `LpVault` (mutable), migrators `PackageVersion`, `LpFeePolicy`, the `Launch`
-   (read-only), the live `CurveFeeCap<Meme>`, `Currency<Meme>` (mutable), the venue objects exactly
-   as in that venue's `collect_fees` (Cetus `GlobalConfig`, `BurnManager`, pool; or Bluefin
-   `GlobalConfig`, pool), the new `FeeSplit` from step 1, and `Clock`.
+1. Build the proposed split with `allocation::route`, a `MakeMoveVec`, and
+   `allocation::fee_split`. Its parts total 10,000 BPS with at most 16 distinct, nonzero routes.
+2. The cap holder calls `blast_fun_migrators::vault::schedule_fee_split<Meme, Quote>` with the
+   mutable vault, migrators version, read-only launch, live curve-fee cap, proposed split,
+   **next** notice in milliseconds, and `Clock`. Both applied fields remain unchanged. The
+   proposal waits the full currently applied notice, even when reducing the next notice to zero.
+   A replacement restarts that wait. An unchanged value and notice abort with `EFeeSplitUnchanged`.
+3. At or after the stored threshold, **anyone** calls
+   `blast_fun_migrators::cetus::settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>` or
+   `blast_fun_migrators::bluefin::settle_and_apply_fee_split<Meme, Quote>`. Supply the same vault,
+   migrators version, fee policy, currency, venue objects and `Clock` as `collect_fees`.
+   Application accepts no cap or caller-selected split. It checks readiness, collects every
+   position's fees under the old split, adds auto-LP, and activates the stored split and notice.
 
-Order: generation check; (Cetus) pair proof; live-cap check (launchpad code 22); proposal differs
-from the current split (`EFeeSplitUnchanged`); a full collection exactly as above under the old
-split; then the new split commits and emits `FeeSplitChanged`. A settlement that finds no fees
-still commits. Balances already in the vault (creator, auto-LP leftovers, rewards, burn Quote) stay
-where they are; auto-LP leftovers keep being added on later collections even if the new split has
-no auto-LP part.
+The live cap holder may call `blast_fun_migrators::vault::cancel_fee_split` even after readiness;
+it discards the proposal and retains the applied split and notice. Cap reassignment preserves an
+accepted proposal: its ready application stays permissionless, and only the new live cap may
+cancel or replace it. A delay-only change uses the same settlement boundary. Zero fees still allow
+activation. Already allocated creator, holder, burn and auto-LP balances retain their allocation.
+`FeeSplitScheduled`, `FeeSplitCancelled` and `FeeSplitChanged` identify each transition; the last
+includes old/new splits and the newly applied notice.
 
 #### Buyback and burn (Blast admin)
 
@@ -600,7 +606,7 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
   then affect the next collection.
 - A partner payout uses the partner's share in force at payout, not at collection.
 - Holder claims stop at the round's claim deadline. Anyone may close at that deadline to restore unclaimed assets and unsettled gas custody. Checkpoint intervals must be nonempty and nonoverlapping; gaps are allowed.
-- `migrate`, `collect_fees`, `settle_and_update_fee_split`, and `buyback_and_burn` take `Clock`
+- `migrate`, `collect_fees`, `settle_and_apply_fee_split`, and `buyback_and_burn` take `Clock`
   (`0x6`) for the venue's own use (`new` takes none); the partner payout takes it for the partner's
   timelocked share.
 
@@ -609,11 +615,11 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 This package has no public getters for its objects. Read object fields over RPC or GraphQL.
 
 `Delayed<T>` contains the applied `value`, applied `delay_ms` and an optional `pending` record with the proposed
-`value` and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
+`value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
 economics: the proposal becomes applied only when its apply call succeeds.
 
 - **Vault** (`LpVault<Meme, Quote>`): the fields listed under "What an `LpVault` holds". Each
-  `Balance` shows its value. `fee_split` holds `creator_bps`, `auto_lp_bps`, `rewards_bps`,
+  `Balance` shows its value. `fee_split.value` holds `creator_bps`, `auto_lp_bps`, `rewards_bps`,
   `burn_bps` (each a `Bps` wrapping one u64) and `recipients` (each with `destination` and `bps`).
   The position is a dynamic object field of the vault: list its dynamic fields, or read the child
   object by the ID in `VaultCreated.position_id`.
@@ -665,7 +671,9 @@ This package emits its events directly, with no envelope. The launchpad wraps it
 | `FeesCollected` | nonzero collection | `vault_id`, `gross_meme`, `gross_quote`, `protocol_destination` (none when held for a partner), `protocol_meme`, `protocol_quote`, `creator_*`, `auto_lp_*`, `rewards_*`, `burn_meme` (burned), `burn_quote` (waits), `recipient_meme`, `recipient_quote` (split order) |
 | `AutoLpPositionOpened` | first Cetus collection with both auto-LP balances nonzero | `vault_id`, `position_id` |
 | `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `meme_pending`, `quote_pending` |
-| `FeeSplitChanged` | split update | `vault_id`, `old_fee_split`, `new_fee_split` |
+| `FeeSplitScheduled` | creator schedule | `vault_id`, `proposed`, `ready_at_ms`, next `delay_ms` |
+| `FeeSplitCancelled` | creator cancellation | `vault_id`, discarded `proposed` |
+| `FeeSplitChanged` | settled application | `vault_id`, `old_fee_split`, `new_fee_split`, applied `delay_ms` |
 | `CreatorFeesClaimed` | creator LP-fee claim | `vault_id`, `meme_amount`, `quote_amount` |
 | `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `quote_pending` |
 | `RoundPublished` | round publish | `vault_id`, `round_id`, `number`, `start_checkpoint`, `end_checkpoint`, `claim_deadline_at_ms`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`, `quote_amount`, `meme_unallocated`, `quote_unallocated`, `treasury`, `gas_reserve_amount` |
@@ -812,8 +820,8 @@ The coins go to the beneficiary and each leaf pays once. Claims require the cano
 and must execute strictly before the round's deadline. At the deadline, anyone can close and
 return remaining custody to the funding vault.
 
-**Can the fee split change after migration?** Yes. The live `CurveFeeCap` holder calls the venue's
-`settle_and_update_fee_split`, which first collects and splits pending fees under the old split,
+**Can the fee split change after migration?** Yes. The live `CurveFeeCap` holder schedules it;
+after the applied notice, anyone calls `settle_and_apply_fee_split`, which settles under the old split,
 then commits the new one as the next generation.
 
 **When does a partner get its cut of LP fees?** When anyone calls

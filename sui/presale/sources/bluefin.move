@@ -178,6 +178,25 @@ public fun collect_fees<Meme, Quote>(
     vault.split_fees(fee_policy, meme, quote, ctx);
 }
 
+/// Anyone may collect every accrued position fee under the applied split, then activate the
+/// stored ready split and notice. Readiness alone never changes collection accounting.
+public fun settle_and_apply_fee_split<Meme, Quote>(
+    vault: &mut Vault<Meme, Quote>,
+    package_version: &PackageVersion,
+    fee_policy: &FeePolicy,
+    bluefin_config: &GlobalConfig,
+    pool: &mut Pool<Meme, Quote>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    package_version.assert_current();
+    vault.assert_fee_split_ready(clock);
+
+    collect_fees(vault, package_version, fee_policy, bluefin_config, pool, clock, ctx);
+
+    vault.apply_fee_split(clock);
+}
+
 // === Private Functions ===
 
 /// The full tick range, with both bounds aligned inward to the pool's tick spacing.

@@ -25,7 +25,7 @@ change to the migrators on 2026-09-30, as an amendment to the frozen
 ## Decision
 
 Each Cetus operation after `new` is one public route, `migrate`, `collect_fees`,
-`settle_and_update_fee_split`, and `buyback_and_burn`, generic over
+`settle_and_apply_fee_split`, and `buyback_and_burn`, generic over
 `<Meme, Quote, CoinA, CoinB>`. The caller names the pool's coins in Cetus's
 canonical order as `CoinA` and `CoinB`; the SDK computes that order as before.
 

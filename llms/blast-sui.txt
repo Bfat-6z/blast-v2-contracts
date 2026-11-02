@@ -1478,6 +1478,10 @@ public fun schedule_delay<T: copy + drop + store>(
     clock: &Clock,
 ): u64
 
+/// Checks that an application can proceed without consuming the stored proposal.
+/// Adapters use this before settling accrued economics under the currently applied value.
+public fun assert_ready<T: copy + drop + store>(self: &Delayed<T>, clock: &Clock)
+
 /// Applies both proposed fields once, only after the stored deadline.
 public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
 

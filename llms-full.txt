@@ -1015,8 +1015,33 @@ After Blast's LP fees, the rest of each asset is apportioned by largest remainde
 recipients in order, then the holder-reward share. Ties favor fee recipients over holders and
 earlier recipients over later ones. Recipients are paid as coins in the same transaction (a zero
 amount sends nothing); holder Quote stays in the vault for rounds and holder Meme
-is paid to the governed fee-policy destination. The split never changes
-after creation.
+is paid to the governed fee-policy destination. A migrated sale's exact `PresaleCap` holder may
+schedule a replacement through `presale_vault::schedule_fee_split`, supplying the proposed
+`FeeSplit`, next notice in milliseconds and `Clock`. The initial notice is 48 hours
+(`172_800_000` milliseconds). The full applied notice governs every change, including a reduction
+to zero; replacing a proposal restarts that wait. Both value and notice stay applied until explicit
+activation. A delay-only change is valid; unchanged value and notice abort with `EFeeSplitUnchanged`.
+
+The same cap holder may call `presale_vault::cancel_fee_split` even when the proposal is ready.
+Cancellation retains applied policy. At or after readiness, anyone may call
+`blast_presale::bluefin::settle_and_apply_fee_split` or
+`blast_presale::cetus::settle_and_apply_fee_split`, supplying the usual fee-collection objects and
+`Clock`. These collect all position fees under the old split before activating the stored split
+and notice, and accept no caller-selected replacement. Fees already allocated to holders stay
+allocated to holders. Application consumes the proposal; replay and missing proposals abort.
+
+Aftermath instead exposes permissionless `blast_presale::aftermath::apply_fee_split`. It validates
+that the vault belongs to Aftermath, then activates the ready stored decision. Aftermath sends
+DAO-fee coins separately to the vault address, and a collection receives only its supplied
+`Receiving<Coin>` objects. Those coins follow the split applied **when received**, including coins
+sent before activation but received afterward. Expiry alone keeps the old split active. This is
+collection-time accounting, rather than accrual-time allocation. Indexers must expose that boundary.
+
+Standalone vaults have no matching presale cap and retain their creation split. The events
+`presale_vault::FeeSplitScheduled`, `presale_vault::FeeSplitCancelled`, and
+`presale_vault::FeeSplitChanged` record proposed values/deadline, discarded proposal, and applied
+old/new values and notice, respectively. Schedule and cancel validate the version first and the
+exact stored cap ID second; application validates the version before venue and readiness.
 
 #### Seed price bound
 
@@ -1088,7 +1113,7 @@ Common answers:
 Other objects:
 
 Delayed policy fields contain the applied `value`, applied `delay_ms`, and an optional `pending` record with the
-proposed `value` and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
+proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
 pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
 positional struct wrapping one u64.
 
@@ -1365,7 +1390,7 @@ collection, rounded up. Nothing is charged on commitments, refunds, or failed sa
 `FeeAdmin` can change the sale's four rates only before `start_ms` (including in its creation
 transaction, before `share`), can redirect the fee
 destination at any time, and after migration can change the vault's Blast LP-fee rates. Windows,
-recipients, eligibility, and the fee split never change.
+sale/token-allocation recipients and eligibility never change. After migration, the creator may propose a vault fee split under its applied notice.
 
 **How is an allowlist leaf built?** `blake2b256(0x00 || "blast-presale-v1" || u64 LE index ||
 32-byte wallet || u64 LE cap)`. Internal nodes are `blake2b256(0x01 || left || right)`. The
@@ -2334,7 +2359,8 @@ Calls also take objects from other packages:
 | `blast_holder_rewards::claim` | anyone (pays only the leaf's beneficiary before its deadline) |
 | `blast_holder_rewards::close_round` | anyone (returns custody to its funding vault at the deadline) |
 | `blast_fun_migrators::vault::claim_creator_fees` | cap holder: the live `CurveFeeCap<Meme>` |
-| `blast_fun_migrators::cetus::settle_and_update_fee_split`, `blast_fun_migrators::bluefin::settle_and_update_fee_split` | cap holder: the live `CurveFeeCap<Meme>` |
+| `blast_fun_migrators::cetus::settle_and_apply_fee_split`, `blast_fun_migrators::bluefin::settle_and_apply_fee_split` | anyone: settle and apply the stored ready proposal |
+| `blast_fun_migrators::vault::schedule_fee_split`, `blast_fun_migrators::vault::cancel_fee_split` | cap holder: the live `CurveFeeCap<Meme>` |
 | `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `BuybackAdmin` |
 | `blast_holder_rewards::publish_round`, `blast_holder_rewards::settle_gas_reserve` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
@@ -2360,7 +2386,7 @@ Calls also take objects from other packages:
 - `auto_lp_meme`, `auto_lp_quote`: auto-LP amounts the pool has not taken yet.
 - `rewards_meme`, `rewards_quote`: holder-reward funds not yet reserved by a round.
 - `burn_quote`: Quote waiting for a buyback.
-- `fee_split`: the current split (the launch's at migration).
+- `fee_split`: a delayed policy containing applied `value`, `delay_ms` and optional `pending` (the launch's split at migration, with a 48-hour notice).
 - `pool_id`, `partner_id` (copied from the launch, never changes), `next_round`, `last_checkpoint`.
 
 No function removes or transfers a position. No function withdraws the auto-LP, rewards, or burn
@@ -2398,7 +2424,7 @@ balances except the flows below.
   recorded at start can migrate it. A failed migration aborts the whole transaction and leaves the
   launch `MigrationReady`.
 - **Vault.** Created and shared inside `migrate` with the launch's `FeeSplit`. Each
-  `settle_and_update_fee_split` replaces the split. On Cetus, the auto-LP position appears the
+  `settle_and_apply_fee_split` replaces the split. On Cetus, the auto-LP position appears the
   first time a collection finds both auto-LP balances nonzero, even if nothing is then added. The
   vault never closes.
 - **Rounds.** `next_round` starts at 0 and rises by 1 per published round. Each round's checkpoint
@@ -2595,26 +2621,31 @@ which pays the creator's bonding-curve trade fees.
 
 #### Changing the fee split
 
-The live `CurveFeeCap` holder replaces the split. Fees already in the pool settle under the old
-split first, so every fee follows the split it accrued under.
+The live `CurveFeeCap<Meme>` holder schedules or cancels the vault's creator split. The
+initial notice is 48 hours (`172_800_000` milliseconds). Expiry only makes the stored proposal
+ready; collections keep using the applied split until an explicit settlement and application.
 
-1. Build the new split in the PTB: one `allocation::route` (destination, BPS) per recipient, a
-   `MakeMoveVec` of those routes, then `allocation::fee_split` (creator, auto-LP, rewards, and burn
-   BPS, then the routes), with each `Bps` from `blast_fun::bps::new`. The parts must sum to exactly
-   10,000; at most 16 recipients; destinations nonzero and distinct.
-2. Call `blast_fun_migrators::cetus::settle_and_update_fee_split` with `<Meme, Quote, CoinA, CoinB>`
-   or `blast_fun_migrators::bluefin::settle_and_update_fee_split` with `<Meme, Quote>`. Arguments,
-   in order: the `LpVault` (mutable), migrators `PackageVersion`, `LpFeePolicy`, the `Launch`
-   (read-only), the live `CurveFeeCap<Meme>`, `Currency<Meme>` (mutable), the venue objects exactly
-   as in that venue's `collect_fees` (Cetus `GlobalConfig`, `BurnManager`, pool; or Bluefin
-   `GlobalConfig`, pool), the new `FeeSplit` from step 1, and `Clock`.
+1. Build the proposed split with `allocation::route`, a `MakeMoveVec`, and
+   `allocation::fee_split`. Its parts total 10,000 BPS with at most 16 distinct, nonzero routes.
+2. The cap holder calls `blast_fun_migrators::vault::schedule_fee_split<Meme, Quote>` with the
+   mutable vault, migrators version, read-only launch, live curve-fee cap, proposed split,
+   **next** notice in milliseconds, and `Clock`. Both applied fields remain unchanged. The
+   proposal waits the full currently applied notice, even when reducing the next notice to zero.
+   A replacement restarts that wait. An unchanged value and notice abort with `EFeeSplitUnchanged`.
+3. At or after the stored threshold, **anyone** calls
+   `blast_fun_migrators::cetus::settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>` or
+   `blast_fun_migrators::bluefin::settle_and_apply_fee_split<Meme, Quote>`. Supply the same vault,
+   migrators version, fee policy, currency, venue objects and `Clock` as `collect_fees`.
+   Application accepts no cap or caller-selected split. It checks readiness, collects every
+   position's fees under the old split, adds auto-LP, and activates the stored split and notice.
 
-Order: generation check; (Cetus) pair proof; live-cap check (launchpad code 22); proposal differs
-from the current split (`EFeeSplitUnchanged`); a full collection exactly as above under the old
-split; then the new split commits and emits `FeeSplitChanged`. A settlement that finds no fees
-still commits. Balances already in the vault (creator, auto-LP leftovers, rewards, burn Quote) stay
-where they are; auto-LP leftovers keep being added on later collections even if the new split has
-no auto-LP part.
+The live cap holder may call `blast_fun_migrators::vault::cancel_fee_split` even after readiness;
+it discards the proposal and retains the applied split and notice. Cap reassignment preserves an
+accepted proposal: its ready application stays permissionless, and only the new live cap may
+cancel or replace it. A delay-only change uses the same settlement boundary. Zero fees still allow
+activation. Already allocated creator, holder, burn and auto-LP balances retain their allocation.
+`FeeSplitScheduled`, `FeeSplitCancelled` and `FeeSplitChanged` identify each transition; the last
+includes old/new splits and the newly applied notice.
 
 #### Buyback and burn (Blast admin)
 
@@ -2861,7 +2892,7 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
   then affect the next collection.
 - A partner payout uses the partner's share in force at payout, not at collection.
 - Holder claims stop at the round's claim deadline. Anyone may close at that deadline to restore unclaimed assets and unsettled gas custody. Checkpoint intervals must be nonempty and nonoverlapping; gaps are allowed.
-- `migrate`, `collect_fees`, `settle_and_update_fee_split`, and `buyback_and_burn` take `Clock`
+- `migrate`, `collect_fees`, `settle_and_apply_fee_split`, and `buyback_and_burn` take `Clock`
   (`0x6`) for the venue's own use (`new` takes none); the partner payout takes it for the partner's
   timelocked share.
 
@@ -2870,11 +2901,11 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 This package has no public getters for its objects. Read object fields over RPC or GraphQL.
 
 `Delayed<T>` contains the applied `value`, applied `delay_ms` and an optional `pending` record with the proposed
-`value` and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
+`value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
 economics: the proposal becomes applied only when its apply call succeeds.
 
 - **Vault** (`LpVault<Meme, Quote>`): the fields listed under "What an `LpVault` holds". Each
-  `Balance` shows its value. `fee_split` holds `creator_bps`, `auto_lp_bps`, `rewards_bps`,
+  `Balance` shows its value. `fee_split.value` holds `creator_bps`, `auto_lp_bps`, `rewards_bps`,
   `burn_bps` (each a `Bps` wrapping one u64) and `recipients` (each with `destination` and `bps`).
   The position is a dynamic object field of the vault: list its dynamic fields, or read the child
   object by the ID in `VaultCreated.position_id`.
@@ -2926,7 +2957,9 @@ This package emits its events directly, with no envelope. The launchpad wraps it
 | `FeesCollected` | nonzero collection | `vault_id`, `gross_meme`, `gross_quote`, `protocol_destination` (none when held for a partner), `protocol_meme`, `protocol_quote`, `creator_*`, `auto_lp_*`, `rewards_*`, `burn_meme` (burned), `burn_quote` (waits), `recipient_meme`, `recipient_quote` (split order) |
 | `AutoLpPositionOpened` | first Cetus collection with both auto-LP balances nonzero | `vault_id`, `position_id` |
 | `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `meme_pending`, `quote_pending` |
-| `FeeSplitChanged` | split update | `vault_id`, `old_fee_split`, `new_fee_split` |
+| `FeeSplitScheduled` | creator schedule | `vault_id`, `proposed`, `ready_at_ms`, next `delay_ms` |
+| `FeeSplitCancelled` | creator cancellation | `vault_id`, discarded `proposed` |
+| `FeeSplitChanged` | settled application | `vault_id`, `old_fee_split`, `new_fee_split`, applied `delay_ms` |
 | `CreatorFeesClaimed` | creator LP-fee claim | `vault_id`, `meme_amount`, `quote_amount` |
 | `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `quote_pending` |
 | `RoundPublished` | round publish | `vault_id`, `round_id`, `number`, `start_checkpoint`, `end_checkpoint`, `claim_deadline_at_ms`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`, `quote_amount`, `meme_unallocated`, `quote_unallocated`, `treasury`, `gas_reserve_amount` |
@@ -3073,8 +3106,8 @@ The coins go to the beneficiary and each leaf pays once. Claims require the cano
 and must execute strictly before the round's deadline. At the deadline, anyone can close and
 return remaining custody to the funding vault.
 
-**Can the fee split change after migration?** Yes. The live `CurveFeeCap` holder calls the venue's
-`settle_and_update_fee_split`, which first collects and splits pending fees under the old split,
+**Can the fee split change after migration?** Yes. The live `CurveFeeCap` holder schedules it;
+after the applied notice, anyone calls `settle_and_apply_fee_split`, which settles under the old split,
 then commits the new one as the next generation.
 
 **When does a partner get its cut of LP fees?** When anyone calls
@@ -5455,6 +5488,14 @@ public fun collect_fees<Meme, Quote>(
     quote_fees: vector<transfer::Receiving<Coin<Quote>>>,
     ctx: &mut TxContext,
 )
+
+/// Anyone may activate an Aftermath vault's stored ready split and notice. Aftermath pays fees
+/// as separate coins: unreceived coins follow the applied policy when they are later collected.
+public fun apply_fee_split<Meme, Quote>(
+    vault: &mut presale_vault::Vault<Meme, Quote>,
+    package_version: &blast_presale_package::PackageVersion,
+    clock: &Clock,
+)
 ```
 
 #### Events
@@ -6379,6 +6420,18 @@ public fun collect_fees<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 )
+
+/// Anyone may collect every accrued position fee under the applied split, then activate the
+/// stored ready split and notice. Readiness alone never changes collection accounting.
+public fun settle_and_apply_fee_split<Meme, Quote>(
+    vault: &mut presale_vault::Vault<Meme, Quote>,
+    package_version: &blast_presale_package::PackageVersion,
+    fee_policy: &fee_policy::FeePolicy,
+    bluefin_config: &config::GlobalConfig,
+    pool: &mut pool::Pool<Meme, Quote>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+)
 ```
 
 #### Errors
@@ -6509,6 +6562,19 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     cetus_config: &config::GlobalConfig,
     burn_manager: &lp_burn::BurnManager,
     pool: &mut pool::Pool<CoinA, CoinB>,
+    ctx: &mut TxContext,
+)
+
+/// Anyone may collect every accrued position fee under the applied split, then activate the
+/// stored ready split and notice. `CoinA` and `CoinB` are the pool's coin order.
+public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
+    vault: &mut presale_vault::Vault<Meme, Quote>,
+    package_version: &blast_presale_package::PackageVersion,
+    fee_policy: &fee_policy::FeePolicy,
+    cetus_config: &config::GlobalConfig,
+    burn_manager: &lp_burn::BurnManager,
+    pool: &mut pool::Pool<CoinA, CoinB>,
+    clock: &Clock,
     ctx: &mut TxContext,
 )
 ```
@@ -7175,7 +7241,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 /// Sealed field name binding one venue position type to a vault.
 public struct PositionKey<phantom Venue>() has copy, drop, store;
 
-/// Shared custody for one LP position and its immutable fee split: a presale's, after migration, or
+/// Shared custody for one LP position and its explicitly applied fee split: a presale's, after migration, or
 /// an owner's own position locked here directly, with zero presale and creator-capability IDs.
 ///
 /// Each collection first takes Blast's LP fees of each asset at the vault's
@@ -7190,7 +7256,7 @@ public struct Vault<phantom Meme, phantom Quote> has key {
     presale_id: ID,
     presale_cap_id: ID,
     pool_id: ID,
-    fee_split: blast_presale::FeeSplit,
+    fee_split: blast_admin::delayed::Delayed<blast_presale::FeeSplit>,
     protocol_fees: blast_admin::delayed::Delayed<fee_policy::ProtocolFees>,
     /// The Blast partner the sale named, paid its cut of Blast's LP fees. It never changes.
     partner_id: Option<ID>,
@@ -7208,6 +7274,24 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 #### Functions
 
 ```move
+/// Announces a split and next notice with this presale's creator cap. The applied notice
+/// governs the proposal, including a reduction to zero. Standalone vaults have no creator cap.
+public fun schedule_fee_split<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &blast_presale_package::PackageVersion,
+    cap: &blast_presale::PresaleCap,
+    proposed: blast_presale::FeeSplit,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Cancels even a ready split proposal with this presale's creator cap.
+public fun cancel_fee_split<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &blast_presale_package::PackageVersion,
+    cap: &blast_presale::PresaleCap,
+)
+
 /// Claims the pool's one-time migration residuals with the creator capability.
 public fun claim_migration_residuals<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
@@ -7259,6 +7343,28 @@ public fun pay_protocol_lp_fees_with_partner<Meme, Quote>(
 #### Events
 
 ```move
+/// Creator split and next notice proposed under the applied notice period.
+public struct FeeSplitScheduled has copy, drop {
+    vault_id: ID,
+    proposed: blast_presale::FeeSplit,
+    ready_at_ms: u64,
+    delay_ms: u64,
+}
+
+/// A creator discarded a pending split without changing applied policy.
+public struct FeeSplitCancelled has copy, drop {
+    vault_id: ID,
+    proposed: blast_presale::FeeSplit,
+}
+
+/// A ready creator split and notice became explicitly active.
+public struct FeeSplitChanged<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    old_fee_split: blast_presale::FeeSplit,
+    new_fee_split: blast_presale::FeeSplit,
+    delay_ms: u64,
+}
+
 /// LP rates publicly proposed for one vault.
 public struct ProtocolLpFeesScheduled has copy, drop {
     vault_id: ID,
@@ -7299,7 +7405,7 @@ public struct FeesCollected<phantom Meme, phantom Quote> has copy, drop {
     protocol_destination: Option<address>,
     protocol_meme: u64,
     protocol_quote: u64,
-    /// Aligned by index with the immutable recipients in `VaultCreated`.
+    /// Aligned by index with the currently applied split's recipients.
     fee_recipient_meme: vector<u64>,
     fee_recipient_quote: vector<u64>,
     holder_rewards_meme: u64,
@@ -7348,9 +7454,11 @@ public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
 | `EWrongPresaleCap` | 2 | The creator capability belongs to a different presale vault. |
 | `EProtocolLpFeesUnchanged` | 3 | An LP-fee update must change the vault's Blast rates. |
 | `EWrongPartner` | 4 | The partner is not the one this vault's presale named at creation. |
+| `EFeeSplitUnchanged` | 5 | Fee split or its notice must differ from the applied values. |
 
 #### Constants
 
+- `DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice before a creator split or its next notice period may change.
 - `DEFAULT_PROTOCOL_LP_FEE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice for protocol LP-fee changes: 48 hours in milliseconds.
 
 ### `blast_presale::venue_config`
@@ -9137,11 +9245,26 @@ public struct AutoLpPositionOpened has copy, drop {
     position_id: ID,
 }
 
-/// The live curve-fee cap holder committed a new fee split.
+/// A creator announced a split and the next notice, waiting the applied notice.
+public struct FeeSplitScheduled has copy, drop {
+    vault_id: ID,
+    proposed: blast_fun::allocation::FeeSplit,
+    ready_at_ms: u64,
+    delay_ms: u64,
+}
+
+/// The live creator discarded the pending split without changing applied policy.
+public struct FeeSplitCancelled has copy, drop {
+    vault_id: ID,
+    proposed: blast_fun::allocation::FeeSplit,
+}
+
+/// A ready split and notice became active after settling the position's accrued fees.
 public struct FeeSplitChanged has copy, drop {
     vault_id: ID,
     old_fee_split: blast_fun::allocation::FeeSplit,
     new_fee_split: blast_fun::allocation::FeeSplit,
+    delay_ms: u64,
 }
 
 /// The live curve-fee cap holder claimed the creator's accrued LP fees.
@@ -9446,17 +9569,14 @@ public fun collect_fees<Meme, Quote>(
     ctx: &mut TxContext,
 )
 
-/// Settles the custodied position's accrued fees under the current split, then commits `proposed`.
-public fun settle_and_update_fee_split<Meme, Quote>(
+/// Anyone may settle accrued fees under the current split, then apply the stored ready proposal.
+public fun settle_and_apply_fee_split<Meme, Quote>(
     self: &mut vault::LpVault<Meme, Quote>,
     migrators_version: &blast_fun_migrators::PackageVersion,
     policy: &lp_fee_policy::LpFeePolicy,
-    launch: &blast_fun::launch::Launch<Meme, Quote>,
-    curve_fee_cap: &blast_fun::creator_authority::CurveFeeCap<Meme>,
     currency: &mut Currency<Meme>,
     bluefin_config: &config::GlobalConfig,
     pool: &mut pool::Pool<Meme, Quote>,
-    proposed: blast_fun::allocation::FeeSplit,
     clock: &Clock,
     ctx: &mut TxContext,
 )
@@ -9571,19 +9691,16 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     ctx: &mut TxContext,
 )
 
-/// Settles the position's accrued fees under the current split, then commits `proposed`. `CoinA`
+/// Anyone may settle accrued fees under the current split, then apply the stored ready proposal. `CoinA`
 /// and `CoinB` are the pool's coin order.
-public fun settle_and_update_fee_split<Meme, Quote, CoinA, CoinB>(
+public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     self: &mut vault::LpVault<Meme, Quote>,
     migrators_version: &blast_fun_migrators::PackageVersion,
     policy: &lp_fee_policy::LpFeePolicy,
-    launch: &blast_fun::launch::Launch<Meme, Quote>,
-    curve_fee_cap: &blast_fun::creator_authority::CurveFeeCap<Meme>,
     currency: &mut Currency<Meme>,
     cetus_config: &config::GlobalConfig,
     burn_manager: &lp_burn::BurnManager,
     pool: &mut pool::Pool<CoinA, CoinB>,
-    proposed: blast_fun::allocation::FeeSplit,
     clock: &Clock,
     ctx: &mut TxContext,
 )
@@ -9912,7 +10029,7 @@ public struct LpVault<phantom Meme, phantom Quote> has key {
     protocol_quote_residual: Balance<Quote>,
     unpaid_protocol_meme: Balance<Meme>,
     unpaid_protocol_quote: Balance<Quote>,
-    fee_split: blast_fun::allocation::FeeSplit,
+    fee_split: blast_admin::delayed::Delayed<blast_fun::allocation::FeeSplit>,
     creator_meme: Balance<Meme>,
     creator_quote: Balance<Quote>,
     auto_lp_meme: Balance<Meme>,
@@ -9928,6 +10045,26 @@ public struct LpVault<phantom Meme, phantom Quote> has key {
 #### Functions
 
 ```move
+/// Announces a creator split and next notice period under the live curve-fee cap.
+/// The currently applied notice always governs this proposal, including a reduction to zero.
+public fun schedule_fee_split<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    launch: &blast_fun::launch::Launch<Meme, Quote>,
+    curve_fee_cap: &blast_fun::creator_authority::CurveFeeCap<Meme>,
+    proposed: blast_fun::allocation::FeeSplit,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Cancels even a ready creator-split proposal with the launch's live curve-fee cap.
+public fun cancel_fee_split<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    launch: &blast_fun::launch::Launch<Meme, Quote>,
+    curve_fee_cap: &blast_fun::creator_authority::CurveFeeCap<Meme>,
+)
+
 /// Claims the protocol-owned migration residuals under a treasury admin.
 public fun claim_protocol_fees<Meme, Quote>(
     self: &mut LpVault<Meme, Quote>,
@@ -9964,12 +10101,16 @@ public fun claim_creator_fees<Meme, Quote>(
 | Constant | Code | Message |
 | --- | --- | --- |
 | `ENothingClaimable` | 0 | No protocol migration residuals are available to claim. |
-| `EFeeSplitUnchanged` | 1 | Fee split proposal must differ from the current split. |
+| `EFeeSplitUnchanged` | 1 | Fee split or its notice must differ from the applied values. |
 | `ENoCreatorFees` | 2 | No creator LP fees are available to claim. |
 | `EZeroLiquidity` | 3 | Migration position must hold liquidity. |
 | `EBuybackQuoteOutOfRange` | 4 | Buyback Quote must be positive and at most the burn Quote waiting to buy Meme back. |
 | `EBuybackBelowMinimum` | 5 | Buyback must return at least the minimum Meme. |
 | `EPartnerMismatch` | 6 | The partner is not the one the vault's launch named at creation. |
+
+#### Constants
+
+- `DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice before a creator split or its next notice period may change.
 
 ### `blast_fun_migrators::venue_config`
 
@@ -13173,6 +13314,10 @@ public fun schedule_delay<T: copy + drop + store>(
     delay_ms: u64,
     clock: &Clock,
 ): u64
+
+/// Checks that an application can proceed without consuming the stored proposal.
+/// Adapters use this before settling accrued economics under the currently applied value.
+public fun assert_ready<T: copy + drop + store>(self: &Delayed<T>, clock: &Clock)
 
 /// Applies both proposed fields once, only after the stored deadline.
 public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T

@@ -834,8 +834,33 @@ After Blast's LP fees, the rest of each asset is apportioned by largest remainde
 recipients in order, then the holder-reward share. Ties favor fee recipients over holders and
 earlier recipients over later ones. Recipients are paid as coins in the same transaction (a zero
 amount sends nothing); holder Quote stays in the vault for rounds and holder Meme
-is paid to the governed fee-policy destination. The split never changes
-after creation.
+is paid to the governed fee-policy destination. A migrated sale's exact `PresaleCap` holder may
+schedule a replacement through `presale_vault::schedule_fee_split`, supplying the proposed
+`FeeSplit`, next notice in milliseconds and `Clock`. The initial notice is 48 hours
+(`172_800_000` milliseconds). The full applied notice governs every change, including a reduction
+to zero; replacing a proposal restarts that wait. Both value and notice stay applied until explicit
+activation. A delay-only change is valid; unchanged value and notice abort with `EFeeSplitUnchanged`.
+
+The same cap holder may call `presale_vault::cancel_fee_split` even when the proposal is ready.
+Cancellation retains applied policy. At or after readiness, anyone may call
+`blast_presale::bluefin::settle_and_apply_fee_split` or
+`blast_presale::cetus::settle_and_apply_fee_split`, supplying the usual fee-collection objects and
+`Clock`. These collect all position fees under the old split before activating the stored split
+and notice, and accept no caller-selected replacement. Fees already allocated to holders stay
+allocated to holders. Application consumes the proposal; replay and missing proposals abort.
+
+Aftermath instead exposes permissionless `blast_presale::aftermath::apply_fee_split`. It validates
+that the vault belongs to Aftermath, then activates the ready stored decision. Aftermath sends
+DAO-fee coins separately to the vault address, and a collection receives only its supplied
+`Receiving<Coin>` objects. Those coins follow the split applied **when received**, including coins
+sent before activation but received afterward. Expiry alone keeps the old split active. This is
+collection-time accounting, rather than accrual-time allocation. Indexers must expose that boundary.
+
+Standalone vaults have no matching presale cap and retain their creation split. The events
+`presale_vault::FeeSplitScheduled`, `presale_vault::FeeSplitCancelled`, and
+`presale_vault::FeeSplitChanged` record proposed values/deadline, discarded proposal, and applied
+old/new values and notice, respectively. Schedule and cancel validate the version first and the
+exact stored cap ID second; application validates the version before venue and readiness.
 
 #### Seed price bound
 
@@ -907,7 +932,7 @@ Common answers:
 Other objects:
 
 Delayed policy fields contain the applied `value`, applied `delay_ms`, and an optional `pending` record with the
-proposed `value` and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
+proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
 pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
 positional struct wrapping one u64.
 
@@ -1184,7 +1209,7 @@ collection, rounded up. Nothing is charged on commitments, refunds, or failed sa
 `FeeAdmin` can change the sale's four rates only before `start_ms` (including in its creation
 transaction, before `share`), can redirect the fee
 destination at any time, and after migration can change the vault's Blast LP-fee rates. Windows,
-recipients, eligibility, and the fee split never change.
+sale/token-allocation recipients and eligibility never change. After migration, the creator may propose a vault fee split under its applied notice.
 
 **How is an allowlist leaf built?** `blake2b256(0x00 || "blast-presale-v1" || u64 LE index ||
 32-byte wallet || u64 LE cap)`. Internal nodes are `blake2b256(0x01 || left || right)`. The

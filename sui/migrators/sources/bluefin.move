@@ -115,26 +115,23 @@ public fun collect_fees<Meme, Quote>(
     self.settle_fees(policy, currency, bluefin_config, pool, clock, ctx);
 }
 
-/// Settles the custodied position's accrued fees under the current split, then commits `proposed`.
-public fun settle_and_update_fee_split<Meme, Quote>(
+/// Anyone may settle accrued fees under the current split, then apply the stored ready proposal.
+public fun settle_and_apply_fee_split<Meme, Quote>(
     self: &mut LpVault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
     policy: &LpFeePolicy,
-    launch: &Launch<Meme, Quote>,
-    curve_fee_cap: &CurveFeeCap<Meme>,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
-    proposed: FeeSplit,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     migrators_version.assert_current();
-    self.assert_fee_split_update(launch, curve_fee_cap, proposed);
+    self.assert_fee_split_ready(clock);
 
     self.settle_fees(policy, currency, bluefin_config, pool, clock, ctx);
 
-    self.update_fee_split(proposed);
+    self.apply_fee_split(clock);
 }
 
 /// Swaps `quote_in` of the vault's burn Quote for Meme in its pool and burns it, under a buyback
@@ -365,9 +362,7 @@ const EInvalidTier: vector<u8> = b"Bluefin tier needs a tick spacing in 1..=400 
 use blast_admin::blast_acl::AdminWitness;
 
 use blast_fun::{
-    allocation::FeeSplit,
     blast_fun_domain::BuybackAdmin,
-    creator_authority::CurveFeeCap,
     launch::{Self, Launch, LaunchInitializer},
     launch_config::LaunchConfig,
     launch_ticket::LaunchTicket,

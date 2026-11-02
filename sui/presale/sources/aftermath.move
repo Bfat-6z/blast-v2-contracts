@@ -212,6 +212,20 @@ public fun collect_fees<Meme, Quote>(
     vault.split_fees(fee_policy, meme, quote, ctx);
 }
 
+/// Anyone may activate an Aftermath vault's stored ready split and notice. Aftermath pays fees
+/// as separate coins: unreceived coins follow the applied policy when they are later collected.
+public fun apply_fee_split<Meme, Quote>(
+    vault: &mut Vault<Meme, Quote>,
+    package_version: &PackageVersion,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+    assert!(vault.has_position(&Venue()), EWrongVault);
+    vault.assert_fee_split_ready(clock);
+
+    vault.apply_fee_split(clock);
+}
+
 // === Private Functions ===
 
 // Lazy arguments preserve short-circuit order for the external reads.

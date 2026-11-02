@@ -23,7 +23,7 @@ fee collection pays Blast's LP fees at once to a destination Blast sets:
 `blast_fun_migrators::vault::LpVault` at the `LpFeePolicy` rates for launches,
 and `blast_presale::presale_vault::Vault` at its own rates for presales.
 Collection is permissionless and lives in each venue adapter: Cetus and Bluefin
-`collect_fees`, and on the launchpad also `settle_and_update_fee_split` and
+`collect_fees`, and on the launchpad also `settle_and_apply_fee_split` and
 auto-LP.
 
 After migration is where a successful token trades most, so a partner earned
@@ -86,7 +86,7 @@ payment. The vault-creation events are unchanged: `LaunchCreated` and
 - **Pay the partner inside each collection.** Every collection would need the
   `Partner`, and Move has no `Option<&Partner>` (ADR 0098). Partner variants
   would double each venue's `collect_fees`, and on the launchpad also
-  `settle_and_update_fee_split`; the plain variants would have to abort on
+  `settle_and_apply_fee_split`; the plain variants would have to abort on
   partnered vaults. A partner whose recipient is denied a Quote would block
   every collection, auto-LP and split change on its vaults. Holding Blast's
   part in `split_fees` keeps every venue entry point unchanged.

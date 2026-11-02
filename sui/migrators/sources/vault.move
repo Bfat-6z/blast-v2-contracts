@@ -5,6 +5,11 @@
 /// balances every LP-fee collection is split into.
 module blast_fun_migrators::vault;
 
+// === Constants ===
+
+/// Initial notice before a creator split or its next notice period may change.
+const DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
+
 // === Public Types ===
 
 /// A sealed field name that binds one venue position type to one vault.
@@ -35,7 +40,7 @@ public struct LpVault<phantom Meme, phantom Quote> has key {
     protocol_quote_residual: Balance<Quote>,
     unpaid_protocol_meme: Balance<Meme>,
     unpaid_protocol_quote: Balance<Quote>,
-    fee_split: FeeSplit,
+    fee_split: Delayed<FeeSplit>,
     creator_meme: Balance<Meme>,
     creator_quote: Balance<Quote>,
     auto_lp_meme: Balance<Meme>,
@@ -48,6 +53,44 @@ public struct LpVault<phantom Meme, phantom Quote> has key {
 }
 
 // === Public Functions ===
+
+/// Announces a creator split and next notice period under the live curve-fee cap.
+/// The currently applied notice always governs this proposal, including a reduction to zero.
+public fun schedule_fee_split<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    migrators_version: &MigratorsVersion,
+    launch: &Launch<Meme, Quote>,
+    curve_fee_cap: &CurveFeeCap<Meme>,
+    proposed: FeeSplit,
+    delay_ms: u64,
+    clock: &Clock,
+) {
+    migrators_version.assert_current();
+    launch.assert_curve_fee_cap(curve_fee_cap);
+    assert!(
+        proposed != self.fee_split.value() || delay_ms != self.fee_split.delay_ms(),
+        EFeeSplitUnchanged,
+    );
+
+    let ready_at_ms = self.fee_split.schedule(proposed, delay_ms, clock);
+
+    blast_events::fee_split_scheduled(self.id.to_inner(), proposed, ready_at_ms, delay_ms);
+}
+
+/// Cancels even a ready creator-split proposal with the launch's live curve-fee cap.
+public fun cancel_fee_split<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    migrators_version: &MigratorsVersion,
+    launch: &Launch<Meme, Quote>,
+    curve_fee_cap: &CurveFeeCap<Meme>,
+) {
+    migrators_version.assert_current();
+    launch.assert_curve_fee_cap(curve_fee_cap);
+
+    let cancelled = self.fee_split.cancel();
+
+    blast_events::fee_split_cancelled(self.id.to_inner(), cancelled);
+}
 
 /// Claims the protocol-owned migration residuals under a treasury admin.
 public fun claim_protocol_fees<Meme, Quote>(
@@ -246,11 +289,13 @@ public(package) fun split_fees<Meme, Quote>(
     let protocol_quote = protocol_quote_bps.apply_up(gross_quote);
     let (creator_meme, auto_lp_meme, rewards_meme, burn_meme, recipient_meme) = self
         .fee_split
+        .value()
         .apportion_fee_split(gross_meme - protocol_meme);
     let (creator_quote, auto_lp_quote, rewards_quote, burn_quote, recipient_quote) = self
         .fee_split
+        .value()
         .apportion_fee_split(gross_quote - protocol_quote);
-    let recipients = *self.fee_split.recipients();
+    let recipients = *self.fee_split.value().recipients();
 
     let protocol_destination = self.pay_or_hold_protocol_lp_fees(
         meme.split(protocol_meme),
@@ -361,28 +406,26 @@ public(package) fun keep_auto_lp<Meme, Quote>(
     );
 }
 
-/// Checks the launch's live curve-fee cap and that `proposed` changes the split. The adapter
-/// checks first, settles the fees accrued under the current split, then calls `update_fee_split`.
-public(package) fun assert_fee_split_update<Meme, Quote>(
+/// Checks readiness before a venue settles accrued fees under the current split.
+public(package) fun assert_fee_split_ready<Meme, Quote>(
     self: &LpVault<Meme, Quote>,
-    launch: &Launch<Meme, Quote>,
-    curve_fee_cap: &CurveFeeCap<Meme>,
-    proposed: FeeSplit,
+    clock: &Clock,
 ) {
-    launch.assert_curve_fee_cap(curve_fee_cap);
-    assert!(proposed != self.fee_split, EFeeSplitUnchanged);
+    self.fee_split.assert_ready(clock);
 }
 
-/// Commits `proposed`, which `assert_fee_split_update` already checked, as the vault's split.
-public(package) fun update_fee_split<Meme, Quote>(
+/// Applies only the stored ready proposal after the venue has settled accrued fees.
+public(package) fun apply_fee_split<Meme, Quote>(
     self: &mut LpVault<Meme, Quote>,
-    proposed: FeeSplit,
+    clock: &Clock,
 ) {
-    let old_fee_split = self.fee_split;
+    let old_fee_split = self.fee_split.value();
 
-    self.fee_split = proposed;
+    let applied = self.fee_split.apply(clock);
 
-    blast_events::fee_split_changed(self.id.to_inner(), old_fee_split, proposed);
+    blast_events::fee_split_changed(
+        self.id.to_inner(), old_fee_split, applied, self.fee_split.delay_ms(),
+    );
 }
 
 /// Reserves holder-reward funds for the round numbered `next_round`, ending at `end_checkpoint`.
@@ -491,7 +534,7 @@ fun new<Meme, Quote, Venue, Position: key + store>(
         protocol_quote_residual,
         unpaid_protocol_meme: balance::zero(),
         unpaid_protocol_quote: balance::zero(),
-        fee_split: launch.lp_fee_split(),
+        fee_split: delayed::new(launch.lp_fee_split(), DEFAULT_FEE_SPLIT_DELAY_MS),
         creator_meme: balance::zero(),
         creator_quote: balance::zero(),
         auto_lp_meme: balance::zero(),
@@ -511,7 +554,7 @@ fun new<Meme, Quote, Venue, Position: key + store>(
         vault.protocol_meme_residual.value(),
         vault.protocol_quote_residual.value(),
         liquidity,
-        vault.fee_split,
+        vault.fee_split.value(),
     );
 
     vault
@@ -581,7 +624,15 @@ public fun protocol_quote_residual_for_testing<Meme, Quote>(self: &LpVault<Meme,
 #[test_only]
 /// Returns the creator's current split of every collection after Blast's share.
 public fun fee_split_for_testing<Meme, Quote>(self: &LpVault<Meme, Quote>): FeeSplit {
-    self.fee_split
+    self.fee_split.value()
+}
+
+#[test_only]
+/// Returns the applied split notice and the pending proposal, if present.
+public fun fee_split_policy_for_testing<Meme, Quote>(
+    self: &LpVault<Meme, Quote>,
+): (u64, Option<Pending<FeeSplit>>) {
+    (self.fee_split.delay_ms(), self.fee_split.pending())
 }
 
 #[test_only]
@@ -622,7 +673,7 @@ public fun burn_quote_for_testing<Meme, Quote>(self: &LpVault<Meme, Quote>): u64
 const ENothingClaimable: vector<u8> = b"No protocol migration residuals are available to claim.";
 
 #[error(code = 1)]
-const EFeeSplitUnchanged: vector<u8> = b"Fee split proposal must differ from the current split.";
+const EFeeSplitUnchanged: vector<u8> = b"Fee split or its notice must differ from the applied values.";
 
 #[error(code = 2)]
 const ENoCreatorFees: vector<u8> = b"No creator LP fees are available to claim.";
@@ -642,7 +693,7 @@ const EPartnerMismatch: vector<u8> = b"The partner is not the one the vault's la
 
 // === Imports ===
 
-use blast_admin::blast_acl::AdminWitness;
+use blast_admin::{blast_acl::AdminWitness, delayed::{Self, Delayed, Pending}};
 
 use blast_fun::{
     allocation::FeeSplit,

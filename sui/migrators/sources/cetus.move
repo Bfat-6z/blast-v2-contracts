@@ -178,29 +178,26 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     self.settle_fees(policy, currency, cetus_config, burn_manager, pool, meme_is_a, clock, ctx);
 }
 
-/// Settles the position's accrued fees under the current split, then commits `proposed`. `CoinA`
+/// Anyone may settle accrued fees under the current split, then apply the stored ready proposal. `CoinA`
 /// and `CoinB` are the pool's coin order.
-public fun settle_and_update_fee_split<Meme, Quote, CoinA, CoinB>(
+public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     self: &mut LpVault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
     policy: &LpFeePolicy,
-    launch: &Launch<Meme, Quote>,
-    curve_fee_cap: &CurveFeeCap<Meme>,
     currency: &mut Currency<Meme>,
     cetus_config: &GlobalConfig,
     burn_manager: &BurnManager,
     pool: &mut Pool<CoinA, CoinB>,
-    proposed: FeeSplit,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     migrators_version.assert_current();
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
-    self.assert_fee_split_update(launch, curve_fee_cap, proposed);
+    self.assert_fee_split_ready(clock);
 
     self.settle_fees(policy, currency, cetus_config, burn_manager, pool, meme_is_a, clock, ctx);
 
-    self.update_fee_split(proposed);
+    self.apply_fee_split(clock);
 }
 
 /// Swaps `quote_in` of the vault's burn Quote for Meme in its pool and burns it, under a buyback
@@ -560,9 +557,7 @@ const EWrongCoinPair: vector<u8> = b"CoinA and CoinB must be exactly the launch'
 use blast_admin::blast_acl::AdminWitness;
 
 use blast_fun::{
-    allocation::FeeSplit,
     blast_fun_domain::BuybackAdmin,
-    creator_authority::CurveFeeCap,
     launch::{Self, Launch, LaunchInitializer},
     launch_config::LaunchConfig,
     launch_ticket::LaunchTicket,

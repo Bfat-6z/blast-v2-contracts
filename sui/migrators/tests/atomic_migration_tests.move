@@ -134,8 +134,11 @@ fun the_migrated_vault_splits_later_collections_and_updates_its_split_under_the_
         bps::new(0),
         vector[allocation::route(ADMIN, bps::new(10_000))],
     );
-    vault.assert_fee_split_update(&launch, &curve_fee_cap, next_split);
-    vault.update_fee_split(next_split);
+    vault.schedule_fee_split(&f.migrators_version, &launch, &curve_fee_cap, next_split, 172_800_000, &f.clock);
+    let now = f.clock.timestamp_ms();
+    f.clock.set_for_testing(now + 172_800_000);
+    vault.assert_fee_split_ready(&f.clock);
+    vault.apply_fee_split(&f.clock);
     vault.split_fees(
         &policy,
         &mut currency,

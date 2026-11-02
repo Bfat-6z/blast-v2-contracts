@@ -103,7 +103,7 @@ vault through `aftermath::collect_fees` (ADR 0116). Configured recipients receiv
 distinct allocations in that same transaction. Claims open only after success.
 
 Permissionless fee collection pays Blast its share of each asset at the vault's
-current rates, or holds it for a partnered sale's partner payout, then applies the immutable creation-time split to the rest: every fee recipient
+current rates, or holds it for a partnered sale's partner payout, then applies the explicitly active creator split to the rest: every fee recipient
 is paid in the same transaction, and the holder-reward share stays
 in the vault. Blast's `RewardsAdmin` publishes Merkle
 rounds funded from that share, each with a claim deadline after which anyone can
@@ -149,3 +149,12 @@ pending actions keep their deadlines. See
 
 [ADR 0117](../../docs/decisions/0117-presale-versioning-and-activation.md). This
 source requires fresh publication; existing dependency-only releases stay unchanged.
+
+The migrated sale's exact `PresaleCap` holder schedules or cancels a new creator
+split with `presale_vault::schedule_fee_split` / `cancel_fee_split`. Its initial
+notice is 48 hours; replacements and notice reductions wait the full old notice.
+Expiry alone retains the old split. Anyone applies a ready stored proposal through
+Bluefin or Cetus `settle_and_apply_fee_split`, collecting position fees under the
+old split first. Aftermath `apply_fee_split` retains collection-time accounting:
+separate DAO-fee coins use the applied split when received, even if sent before
+activation. Standalone vaults have no matching creator cap and retain their split.

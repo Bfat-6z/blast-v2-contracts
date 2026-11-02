@@ -325,6 +325,7 @@ fn run_world(mut w: World) -> Result<()> {
     ensure!(fees.gross_meme > 0 && fees.gross_quote > 0, "both sides accrued fees");
     w.report(format!("collect_fees two-sided: {}", fees.line()));
 
+    w.delayed_fee_split(&sale, &m, &terms)?;
     w.other_pool_is_refused(&sale, &m, &terms)?;
     w.claim_residuals(&sale, &m)?;
 
@@ -557,6 +558,7 @@ struct World {
     quote_type: TypeTag,
     quote_currency: ObjectID,
     coins: u64,
+    projected_fee_weights: [u64; 3],
     lines: Vec<String>,
 }
 
@@ -684,6 +686,7 @@ impl World {
             quote_type,
             quote_currency,
             coins: 0,
+            projected_fee_weights: [0; 3],
             lines: Vec::new(),
             h,
         })
@@ -1216,6 +1219,7 @@ impl World {
                 && created.holder_rewards_bps == HOLDER_REWARDS_BPS
                 && (created.protocol_lp_fee_meme_bps, created.protocol_lp_fee_quote_bps) == (0, 0)
         );
+        self.projected_fee_weights = [created.fee_recipient_bps[0], created.fee_recipient_bps[1], created.holder_rewards_bps];
         let residual = (created.migration_meme_residual, created.migration_quote_residual);
         let m = Migration {
             pool: created.pool_id,
@@ -1443,10 +1447,14 @@ impl World {
 
     /// `collect_fees` against `pool`.
     fn collect_pt(&self, sale: &Sale, m: &Migration, pool: ObjectID) -> Result<ProgrammableTransaction> {
+        self.collect_route_pt(sale, m, pool, false)
+    }
+
+    fn collect_route_pt(&self, sale: &Sale, m: &Migration, pool: ObjectID, apply: bool) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
         let vault = self.shared(&mut b, m.vault, true)?;
         if self.route.is_cetus() {
-            let args = vec![
+            let mut args = vec![
                 vault,
                 self.shared(&mut b, self.version, false)?,
                 self.shared(&mut b, self.fee_policy, false)?,
@@ -1456,7 +1464,8 @@ impl World {
             ];
             let mut types = self.pair(sale);
             types.extend(self.pool_pair(&sale.meme));
-            call(&mut b, self.presale, "cetus", "collect_fees", types, args);
+            if apply { args.push(self.clock(&mut b)?); }
+            call(&mut b, self.presale, "cetus", if apply { "settle_and_apply_fee_split" } else { "collect_fees" }, types, args);
         } else {
             let args = vec![
                 vault,
@@ -1466,7 +1475,7 @@ impl World {
                 self.shared(&mut b, pool, true)?,
                 self.clock(&mut b)?,
             ];
-            call(&mut b, self.presale, "bluefin", "collect_fees", self.pair(sale), args);
+            call(&mut b, self.presale, "bluefin", if apply { "settle_and_apply_fee_split" } else { "collect_fees" }, self.pair(sale), args);
         }
 
         Ok(b.finish())
@@ -1476,8 +1485,12 @@ impl World {
     /// position, every fee recipient is paid its apportioned share, and the rest grows the vault's
     /// holder Quote balance and pays holder Meme to the treasury.
     fn collect(&mut self, sale: &Sale, m: &Migration) -> Result<FeesCollected> {
+        self.collect_impl(sale, m, false)
+    }
+
+    fn collect_impl(&mut self, sale: &Sale, m: &Migration, apply: bool) -> Result<FeesCollected> {
         let before = self.vault(m)?;
-        let pt = self.collect_pt(sale, m, m.pool)?;
+        let pt = self.collect_route_pt(sale, m, m.pool, apply)?;
         let outcome = self.h.execute(pt)?;
         outcome.assert_success();
 
@@ -1504,7 +1517,7 @@ impl World {
             "a zero-rate policy pays Blast nothing"
         );
 
-        let weights = [FEE_BPS[0], FEE_BPS[1], HOLDER_REWARDS_BPS];
+        let weights = self.projected_fee_weights;
         let meme = apportion(&weights, gross_meme);
         let quote = apportion(&weights, gross_quote);
         ensure!(
@@ -1529,6 +1542,14 @@ impl World {
                 == self.coins(&sale.meme, fees.holder_rewards_meme, 0),
             "holder Meme paid exactly to the treasury"
         );
+        if apply {
+            let changes: Vec<FeeSplitChanged> = self.events(&outcome, "presale_vault", "FeeSplitChanged");
+            ensure!(changes.len() == 1 && changes[0].vault_id == m.vault);
+            ensure!(changes[0].old_fee_split == before.fee_split.0 && changes[0].new_fee_split == after.fee_split.0);
+            ensure!(changes[0].delay_ms == after.fee_split.1 && after.fee_split.2.is_none());
+            let (recipients, holders) = &changes[0].new_fee_split;
+            self.projected_fee_weights = [recipients[0].bps, recipients[1].bps, *holders];
+        }
         ensure!(after.holder_rewards_quote > before.holder_rewards_quote);
         ensure!(
             (after.migration_meme_residual, after.migration_quote_residual)
@@ -1537,6 +1558,58 @@ impl World {
         ensure!(self.position_liquidity(m.position)? == m.liquidity, "collection keeps the liquidity");
 
         Ok(fees)
+    }
+
+    fn schedule_split_pt(&self, sale: &Sale, m: &Migration, next_delay: u64) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let mut recipients = Vec::new();
+        for (recipient, share) in [(CREATOR, 3_000), (FEE_B, 2_000)] {
+            let args = vec![b.pure(SuiAddress::from(recipient))?, self.bps(&mut b, share)?];
+            recipients.push(call(&mut b, self.presale, "blast_presale", "recipient_share", vec![], args));
+        }
+        let recipient_type = self.presale_tag("blast_presale", "RecipientShare");
+        let recipients = b.command(Command::make_move_vec(Some(recipient_type), recipients));
+        let holder = self.bps(&mut b, 5_000)?;
+        let split = call(&mut b, self.presale, "blast_presale", "fee_split", vec![], vec![recipients, holder]);
+        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?,
+            b.obj(self.h.owned(sale.cap))?, split, b.pure(next_delay)?, self.clock(&mut b)?];
+        call(&mut b, self.presale, "presale_vault", "schedule_fee_split", self.pair(sale), args);
+        Ok(b.finish())
+    }
+
+    fn delayed_fee_split(&mut self, sale: &Sale, m: &Migration, terms: &Terms) -> Result<()> {
+        let old = self.vault(m)?.fee_split;
+        let pt = self.schedule_split_pt(sale, m, 0)?;
+        let scheduled = self.h.execute(pt)?;
+        scheduled.assert_success();
+        ensure!(self.vault(m)?.fee_split.0 == old.0, "scheduling retains the old recipients");
+        let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
+        let watched = [m.vault, m.pool];
+        self.set_pause_generation_for_fixture(2)?;
+        let stale = self.collect_route_pt(sale, m, m.pool, true)?;
+        self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "operational_version", code: 12}, &watched, &owners)?;
+        self.set_pause_generation_for_fixture(1)?;
+        let early = self.collect_route_pt(sale, m, m.pool, true)?;
+        self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 20}, &watched, &owners)?;
+        // An Aftermath endpoint cannot bypass collectible position settlement.
+        let mut b = ProgrammableTransactionBuilder::new();
+        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?, self.clock(&mut b)?];
+        call(&mut b, self.presale, "aftermath", "apply_fee_split", self.pair(sale), args);
+        self.h.assert_rolled_back(b.finish(), Expected::Abort {package: self.presale, module: "aftermath", code: 4}, &watched, &owners)?;
+        self.h.sim.advance_clock(std::time::Duration::from_millis(old.1));
+        self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
+        self.swap(sale, m, Side::MemeIn, terms.lp_tokens() / 100)?;
+        let mut rollback = self.collect_route_pt(sale, m, m.pool, true)?;
+        rollback.commands.push(rollback.commands.last().expect("apply").clone());
+        self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 21}, &watched, &owners)?;
+        self.collect_impl(sale, m, true)?; // Existing payout oracle uses the OLD split.
+        let active = self.vault(m)?.fee_split;
+        ensure!(active.0.0[0].bps == 3_000 && active.0.0[1].bps == 2_000 && active.0.1 == 5_000);
+        ensure!(active.1 == 0 && active.2.is_none());
+        self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
+        self.collect(sale, m)?; // The same oracle now reads the explicitly applied split.
+        self.report("48-hour creator split: early apply and wrong-venue Aftermath rejected; later PTB abort restores fees/proposal; settled apply pays old recipients; next collection uses new split".into());
+        Ok(())
     }
 
     /// Anyone can create another pool of the same type (Cetus at an unreserved tick spacing,
@@ -1616,6 +1689,14 @@ impl World {
         let pt = self.collect_pt(sale, m, other)?;
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
         self.h.assert_rolled_back(pt, expected, &[m.vault, other], &owners)?;
+        let schedule = self.schedule_split_pt(sale, m, 25)?;
+        self.h.execute(schedule)?.assert_success(); // Applied notice is now zero; delay-only proposal is ready.
+        let ready_wrong_pool = self.collect_route_pt(sale, m, other, true)?;
+        self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.presale, module: self.route.module(), code}, &[m.vault, other], &owners)?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?, b.obj(self.h.owned(sale.cap))?];
+        call(&mut b, self.presale, "presale_vault", "cancel_fee_split", self.pair(sale), args);
+        self.h.execute(b.finish())?.assert_success();
         self.report(format!("collect_fees against another pool {other} of the same type: EPositionPoolMismatch, rolled back"));
 
         Ok(())
@@ -1871,6 +1952,14 @@ struct ProtocolFees {
     _lp_fee_quote_bps: u64,
 }
 
+#[derive(Deserialize)]
+struct FeeSplitChanged {
+    vault_id: ObjectID,
+    old_fee_split: (Vec<RecipientShare>, u64),
+    new_fee_split: (Vec<RecipientShare>, u64),
+    delay_ms: u64,
+}
+
 /// Mirrors `blast_presale::presale_vault::Vault`.
 #[derive(Debug, Deserialize)]
 struct VaultState {
@@ -1878,9 +1967,8 @@ struct VaultState {
     presale_id: ObjectID,
     presale_cap_id: ObjectID,
     pool_id: ObjectID,
-    _fee_recipients: Vec<RecipientShare>,
-    _holder_rewards_bps: u64,
-    // Delayed<ProtocolFees>: applied value, then optional (proposal, ready_at_ms).
+    fee_split: ((Vec<RecipientShare>, u64), u64, Option<((Vec<RecipientShare>, u64), u64, u64)>),
+    // Delayed<ProtocolFees>: applied value and notice, then optional (proposal, notice, ready_at_ms).
     _protocol_fees: (ProtocolFees, u64, Option<(ProtocolFees, u64, u64)>),
     _partner_id: Option<ObjectID>,
     _unpaid_protocol_meme: u64,

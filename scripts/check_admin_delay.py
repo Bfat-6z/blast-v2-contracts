@@ -181,6 +181,39 @@ require(primitive['take_ready'][1], 'clock.timestamp_ms() >= self.ready_at_ms', 
 for name in ('schedule_value', 'schedule_delay'):
     require(primitive[name][1], 'self.schedule(value, delay_ms, clock)')
 
+# Creator-controlled migrated-vault policy follows the same delayed value invariant,
+# but its authority is the operation-specific live creator cap rather than an admin role.
+require(primitive['assert_ready'][0], 'self: &Delayed<T>', 'clock: &Clock')
+require(primitive['assert_ready'][1], 'self.pending.is_some()', 'errors::no_pending!()', 'take_ready(clock)')
+assert 'self.pending =' not in primitive['assert_ready'][1]
+for package, module, version, authority in (
+    ('migrators', 'vault', 'migrators_version', 'launch.assert_curve_fee_cap(curve_fee_cap);'),
+    ('presale', 'presale_vault', 'package_version', 'self.assert_cap(cap);'),
+):
+    fs = functions(package, module)
+    source = (ROOT / 'sui' / package / 'sources' / f'{module}.move').read_text()
+    require(source, 'fee_split: Delayed<FeeSplit>', 'DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000')
+    for name in ('schedule_fee_split', 'cancel_fee_split'):
+        signature, body = fs[name]
+        assert body.startswith(f'{version}.assert_current(); {authority}'), (package, name)
+        assert 'AdminWitness' not in signature
+    require(fs['schedule_fee_split'][1], 'proposed != self.fee_split.value() || delay_ms != self.fee_split.delay_ms()', 'self.fee_split.schedule(proposed, delay_ms, clock)')
+    require(fs['cancel_fee_split'][1], 'self.fee_split.cancel()')
+    require(fs['assert_fee_split_ready'][1], 'self.fee_split.assert_ready(clock)')
+    require(fs['apply_fee_split'][1], 'self.fee_split.apply(clock)')
+    visibility = {row[1]: row[2] for row in facts(package, module) if row[0] == 'FN'}
+    assert visibility['apply_fee_split'] == 'package'
+    assert visibility['assert_fee_split_ready'] == 'package'
+    for venue in ('bluefin', 'cetus'):
+        signature, body = functions(package, venue)['settle_and_apply_fee_split']
+        assert body.startswith(f'{version}.assert_current();')
+        assert 'FeeSplit' not in signature and 'Cap' not in signature
+        settlement = 'self.settle_fees(' if package == 'migrators' else 'collect_fees('
+        assert body.index('.assert_fee_split_ready(clock)') < body.index(settlement) < body.index('.apply_fee_split(clock)')
+aftermath = functions('presale', 'aftermath')['apply_fee_split'][1]
+assert aftermath.startswith('package_version.assert_current();')
+assert aftermath.index('vault.has_position(&Venue())') < aftermath.index('vault.assert_fee_split_ready(clock)') < aftermath.index('vault.apply_fee_split(clock)')
+
 signer = functions('launchpad', 'runtime_config')
 for name in ('set_creator_claim_signer', 'revoke_creator_claim_signer'):
     require(signer[name][0], '&AdminWitness<ClaimSignerAdmin>')

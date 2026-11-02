@@ -76,8 +76,8 @@ recipient's amount, are unchanged. Once the window starts the rates are fixed
 `presale_vault::set_protocol_lp_fees`, which rejects a no-op update and emits
 `ProtocolLpFeesChanged`. The new rates apply to every later collection, including fees that
 accrued in the pool before the change; to settle those at the old rates, collect in the same
-transaction first. The creator's recipients and holder share keep their creation-time split of
-whatever Blast does not take. The policy's rates and every other vault are unaffected.
+transaction first. The creator's recipients and holder share use the explicitly applied vault split of
+whatever Blast does not take; ADR 0134 adds delayed creator schedule/cancel and venue settlement/application. The policy's rates and every other vault are unaffected.
 
 **Tokens.** Blast's token share joins the supply apportionment: participant, LP, Blast, and
 recipient BPS total exactly 10,000, using the same largest-remainder apportionment. The creator

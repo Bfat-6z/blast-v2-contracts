@@ -89,6 +89,8 @@ public struct Replay has drop {
     allocated_meme: u64,
     binding: Binding,
     fee_split: SplitEntry,
+    fee_split_delay_ms: u64,
+    pending_fee_split: Option<SplitProposal>,
     venue: String,
     residual_meme: u64,
     residual_quote: u64,
@@ -106,6 +108,12 @@ public struct Replay has drop {
     allocated_meme_paid: u64,
     allocated_quote_paid: u64,
     payouts: vector<Payout>,
+}
+
+public struct SplitProposal has copy, drop {
+    value: SplitEntry,
+    delay_ms: u64,
+    ready_at_ms: u64,
 }
 
 public struct Shares has copy, drop {
@@ -212,6 +220,10 @@ fun replayed_events_equal_every_getter_and_native_payout_across_the_lifecycle() 
     fixture.migrate();
     fixture.assert_state();
     fixture.claim_creator_caps();
+    fixture.schedule_split_notice();
+    fixture.assert_state();
+    fixture.cancel_split_notice();
+    fixture.assert_state();
     fixture.collect(10_001, 3_333);
     fixture.assert_state();
     fixture.settle_fee_split(777, 0);
@@ -524,6 +536,30 @@ fun collect(self: &mut ReplayFixture, meme: u64, quote: u64) {
     });
 }
 
+fun schedule_split_notice(self: &mut ReplayFixture) {
+    self.next_tx!(CREATOR, |f| {
+        let cap = f.scenario.take_from_sender<CurveFeeCap<REPLAY_TESTS>>();
+        let launch = f.take_launch();
+        let mut vault = f.take_vault();
+        vault.schedule_fee_split(&f.migrators_version, &launch, &cap, next_split(), 25, &f.clock);
+        f.scenario.return_to_sender(cap);
+        test_scenario::return_shared(launch);
+        test_scenario::return_shared(vault);
+    });
+}
+
+fun cancel_split_notice(self: &mut ReplayFixture) {
+    self.next_tx!(CREATOR, |f| {
+        let cap = f.scenario.take_from_sender<CurveFeeCap<REPLAY_TESTS>>();
+        let launch = f.take_launch();
+        let mut vault = f.take_vault();
+        vault.cancel_fee_split(&f.migrators_version, &launch, &cap);
+        f.scenario.return_to_sender(cap);
+        test_scenario::return_shared(launch);
+        test_scenario::return_shared(vault);
+    });
+}
+
 /// Settles the outstanding collection under the migration split, then commits the next split.
 fun settle_fee_split(self: &mut ReplayFixture, meme: u64, quote: u64) {
     self.next_tx!(CREATOR, |f| {
@@ -532,7 +568,17 @@ fun settle_fee_split(self: &mut ReplayFixture, meme: u64, quote: u64) {
         let mut vault = f.take_vault();
         let policy = f.take_policy();
         let mut currency = f.take_currency();
-        vault.assert_fee_split_update(&launch, &curve_fee_cap, next_split());
+        vault.schedule_fee_split(
+            &f.migrators_version,
+            &launch,
+            &curve_fee_cap,
+            next_split(),
+            172_800_000,
+            &f.clock,
+        );
+        let now = f.clock.timestamp_ms();
+        f.clock.set_for_testing(now + 172_800_000);
+        vault.assert_fee_split_ready(&f.clock);
 
         vault.split_fees(
             &policy,
@@ -542,7 +588,7 @@ fun settle_fee_split(self: &mut ReplayFixture, meme: u64, quote: u64) {
             f.ctx!(),
         );
         vault.compound();
-        vault.update_fee_split(next_split());
+        vault.apply_fee_split(&f.clock);
 
         f.scenario.return_to_sender(curve_fee_cap);
         test_scenario::return_shared(launch);
@@ -898,6 +944,14 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         replay.auto_liquidity_added(bytes);
         reduced = reduced + 1;
     });
+    direct<blast_events::FeeSplitScheduled>().do!(|bytes| {
+        replay.fee_split_scheduled(bytes);
+        reduced = reduced + 1;
+    });
+    direct<blast_events::FeeSplitCancelled>().do!(|bytes| {
+        replay.fee_split_cancelled(bytes);
+        reduced = reduced + 1;
+    });
     direct<blast_events::FeeSplitChanged>().do!(|bytes| {
         replay.fee_split_changed(bytes);
         reduced = reduced + 1;
@@ -929,7 +983,8 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
 
     // This reducer tracks applied economics. Scheduling notices, intake admissions, and the
     // creator capability claim do not change its state; nothing else may appear.
-    let unreduced = wrapped<blast_fun::events::MigrationWitnessScheduled>().length()
+    let unreduced =
+        wrapped<blast_fun::events::MigrationWitnessScheduled>().length()
         + wrapped<blast_fun::events::MigrationDelayChanged>().length()
         + wrapped<blast_fun::events::TradeFeesScheduled>().length()
         + wrapped<blast_fun::events::ProtocolAllocationScheduled>().length()
@@ -1004,6 +1059,8 @@ fun new_replay(publisher: address): Replay {
             position_id: absent(),
         },
         fee_split: empty_split(),
+        fee_split_delay_ms: 0,
+        pending_fee_split: option::none(),
         venue: b"".to_ascii_string(),
         residual_meme: 0,
         residual_quote: 0,
@@ -1250,6 +1307,8 @@ fun vault_created(self: &mut Replay, bytes: vector<u8>) {
     assert_eq!(self.venue, self.migration_witness);
     assert_eq!(fee_split, self.launch_fee_split);
     self.fee_split = fee_split;
+    // This immutable package bytecode establishes the creation notice; the event carries value.
+    self.fee_split_delay_ms = 48 * 60 * 60 * 1_000;
     self.position_meme = self.position_meme - self.residual_meme;
     self.position_quote = self.position_quote - self.residual_quote;
 }
@@ -1391,16 +1450,38 @@ fun auto_liquidity_added(self: &mut Replay, bytes: vector<u8>) {
     self.position_quote = self.position_quote + added.quote;
 }
 
+fun fee_split_scheduled(self: &mut Replay, bytes: vector<u8>) {
+    let mut r = bcs::new(bytes);
+    assert_eq!(r.peel_id(), self.binding.vault_id);
+    let value = r.peel_fee_split();
+    let ready_at_ms = r.peel_u64();
+    let delay_ms = r.peel_u64();
+    r.assert_consumed();
+    self.pending_fee_split = option::some(SplitProposal { value, delay_ms, ready_at_ms });
+}
+
+fun fee_split_cancelled(self: &mut Replay, bytes: vector<u8>) {
+    let mut r = bcs::new(bytes);
+    assert_eq!(r.peel_id(), self.binding.vault_id);
+    let cancelled = r.peel_fee_split();
+    r.assert_consumed();
+    assert_eq!(self.pending_fee_split.extract().value, cancelled);
+}
+
 fun fee_split_changed(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
     assert_eq!(r.peel_id(), self.binding.vault_id);
     let old_fee_split = r.peel_fee_split();
     let new_fee_split = r.peel_fee_split();
+    let delay_ms = r.peel_u64();
     r.assert_consumed();
 
     assert_eq!(old_fee_split, self.fee_split);
-    assert!(new_fee_split != old_fee_split);
+    let accepted = self.pending_fee_split.extract();
+    assert_eq!(new_fee_split, accepted.value);
+    assert_eq!(delay_ms, accepted.delay_ms);
     self.fee_split = new_fee_split;
+    self.fee_split_delay_ms = delay_ms;
 }
 
 /// A buyback spends part of the waiting burn Quote through the mock venue, which is the position,
@@ -1850,12 +1931,22 @@ fun assert_vault(self: &Replay, vault: &mut LpVault<REPLAY_TESTS, QUOTE>) {
     assert_eq!(vault.pool_id(), self.binding.pool_id);
     assert_eq!(
         vault.position_id_for_testing<_, _, Venue>(),
-        option::some(self.binding.position_id)
+        option::some(self.binding.position_id),
     );
     assert_eq!(self.venue, type_name::with_original_ids<Venue>().into_string());
     assert_eq!(vault.protocol_meme_residual_for_testing(), self.residual_meme);
     assert_eq!(vault.protocol_quote_residual_for_testing(), self.residual_quote);
     assert_eq!(vault.fee_split_for_testing().split_entry(), self.fee_split);
+    let (delay_ms, pending) = vault.fee_split_policy_for_testing();
+    assert_eq!(delay_ms, self.fee_split_delay_ms);
+    assert_eq!(pending.is_some(), self.pending_fee_split.is_some());
+    if (pending.is_some()) {
+        let actual = pending.destroy_some();
+        let expected = self.pending_fee_split.destroy_some();
+        assert_eq!(actual.value().split_entry(), expected.value);
+        assert_eq!(actual.delay_ms(), expected.delay_ms);
+        assert_eq!(actual.ready_at_ms(), expected.ready_at_ms);
+    };
     assert_eq!(pair!(|| vault.creator_balances_for_testing()), self.creator_balance);
     assert_eq!(pair!(|| vault.auto_lp_balances_for_testing()), self.auto_lp);
     assert_eq!(pair!(|| vault.rewards_balances()), self.rewards);
