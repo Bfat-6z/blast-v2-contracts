@@ -83,11 +83,15 @@ for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_po
     require(fs['remove_migration_witness'][1], 'self.pending_witnesses.remove')
     assert 'set_migration_witness_allowed' not in fs
 
-for cap in ('curve_fee_cap', 'metadata_cap'):
-    fs = functions('launchpad', 'launch')
+fs = functions('launchpad', 'launch')
+require(fs['apply_cap_reassignment_delay'][1],
+        '(*pending).destroy_some().take_ready(clock)', '*pending = option::none();',
+        '*delay_ms = next_delay_ms;', 'events::cap_delay_changed(launch_id, metadata, next_delay_ms);')
+for cap, metadata in [('curve_fee_cap', 'false'), ('metadata_cap', 'true')]:
     require(fs[f'schedule_{cap}_reassignment'][0], '&AdminWitness<CreatorAdmin>', 'clock: &Clock')
     require(fs[f'cancel_{cap}_reassignment'][0], '&AdminWitness<CancelAdmin>')
-    require(fs[f'reassign_{cap}'][1], '.take_ready(clock)')
+    require(fs[f'reassign_{cap}'][1],
+            f'apply_cap_reassignment_delay( &mut self.pending_{cap}_recipient, &mut self.{cap}_delay_ms, self.id.to_inner(), {metadata}, clock, )')
     assert 'AdminWitness' not in fs[f'reassign_{cap}'][0]
 
 for package, module, actions in [

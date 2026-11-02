@@ -411,10 +411,13 @@ public fun reassign_curve_fee_cap<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
-    let (recipient, delay_ms) = self.pending_curve_fee_cap_recipient.destroy_some().take_ready(clock);
-    self.pending_curve_fee_cap_recipient = option::none();
-    self.curve_fee_cap_delay_ms = delay_ms;
-    events::cap_delay_changed(self.id.to_inner(), false, delay_ms);
+    let recipient = apply_cap_reassignment_delay(
+        &mut self.pending_curve_fee_cap_recipient,
+        &mut self.curve_fee_cap_delay_ms,
+        self.id.to_inner(),
+        false,
+        clock,
+    );
     if (recipient.is_none()) return;
     let recipient = recipient.destroy_some();
 
@@ -461,10 +464,13 @@ public fun reassign_metadata_cap<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
-    let (recipient, delay_ms) = self.pending_metadata_cap_recipient.destroy_some().take_ready(clock);
-    self.pending_metadata_cap_recipient = option::none();
-    self.metadata_cap_delay_ms = delay_ms;
-    events::cap_delay_changed(self.id.to_inner(), true, delay_ms);
+    let recipient = apply_cap_reassignment_delay(
+        &mut self.pending_metadata_cap_recipient,
+        &mut self.metadata_cap_delay_ms,
+        self.id.to_inner(),
+        true,
+        clock,
+    );
     if (recipient.is_none()) return;
     let recipient = recipient.destroy_some();
 
@@ -868,6 +874,23 @@ public fun assert_curve_fee_cap<Meme, Quote>(
 }
 
 // === Private Functions ===
+
+/// Commits a ready cap proposal's notice and returns its optional reassignment recipient.
+fun apply_cap_reassignment_delay(
+    pending: &mut Option<Pending<Option<address>>>,
+    delay_ms: &mut u64,
+    launch_id: ID,
+    metadata: bool,
+    clock: &Clock,
+): Option<address> {
+    let (recipient, next_delay_ms) = (*pending).destroy_some().take_ready(clock);
+    *pending = option::none();
+    *delay_ms = next_delay_ms;
+
+    events::cap_delay_changed(launch_id, metadata, next_delay_ms);
+
+    recipient
+}
 
 fun assert_metadata_update<Meme, Quote>(
     self: &Launch<Meme, Quote>,

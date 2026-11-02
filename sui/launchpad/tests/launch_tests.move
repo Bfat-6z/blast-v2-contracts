@@ -1654,6 +1654,16 @@ fun cap_policy_only_proposal_preserves_creator_and_existing_caps() {
         launch.reassign_metadata_cap(&f.package_version, &f.clock, f.ctx!());
         assert_eq!(launch.curve_fee_cap_id_for_testing(), curve);
         assert_eq!(launch.blast_metadata_cap_id_for_testing(), metadata);
+        let changes = collect<events::CapDelayChanged>();
+        assert_eq!(changes.length(), 2);
+        let mut curve_change = bcs::to_bytes(&object::id(&launch));
+        curve_change.push_back(0);
+        curve_change.append(bcs::to_bytes(&25u64));
+        assert_eq!(bcs::to_bytes(&changes[0]), curve_change);
+        let mut metadata_change = bcs::to_bytes(&object::id(&launch));
+        metadata_change.push_back(1);
+        metadata_change.append(bcs::to_bytes(&50u64));
+        assert_eq!(bcs::to_bytes(&changes[1]), metadata_change);
         launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, 25, &f.clock);
         f.clock.set_for_testing(172_800_025);
         launch.reassign_curve_fee_cap(&f.package_version, &f.clock, f.ctx!());
