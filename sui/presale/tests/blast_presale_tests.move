@@ -111,7 +111,7 @@ fun security_pause_blocks_new() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
@@ -137,7 +137,7 @@ fun security_partial_unpause_keeps_new_paused() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
@@ -168,7 +168,7 @@ fun security_presale_finalize_remains_available_as_specified() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let initializer = new_initializer<QUOTE>(
         &version,
@@ -195,7 +195,7 @@ fun security_pause_blocks_share() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let initializer = new_initializer<QUOTE>(
         &version,
@@ -224,7 +224,7 @@ fun security_partial_unpause_keeps_share_paused() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let initializer = new_initializer<QUOTE>(
         &version,
@@ -1152,7 +1152,7 @@ fun a_sale_cannot_be_finalized_without_an_eligibility_policy() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let mut initializer = bare_initializer(
         &package_version,
@@ -1176,7 +1176,7 @@ fun a_sale_cannot_be_finalized_without_an_lp_fee_split() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let mut initializer = bare_initializer(
         &package_version,
@@ -1201,7 +1201,7 @@ fun a_sale_cannot_be_finalized_without_a_raise() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let mut initializer = bare_initializer(
         &package_version,
@@ -1581,7 +1581,7 @@ fun regulated_sale_currency_is_rejected_before_missing_settings() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_regulated_currency(false, &mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let initializer = bare_initializer(
         &package_version,
@@ -2007,7 +2007,7 @@ fun an_unshared_sales_rates_can_change_before_its_share() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
-    let mut fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let mut fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let (mut sale, cap) = new_presale<QUOTE>(
         treasury_cap,
@@ -2720,7 +2720,7 @@ fun a_sale_cannot_name_a_partner_blast_has_not_accepted() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let (treasury_cap, _currency) = new_currency(&mut ctx);
     let mut initializer = new_initializer<QUOTE>(
@@ -2898,7 +2898,7 @@ fun stale_version_precedes_partner_admission() {
     let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let (treasury_cap, _currency) = new_currency(&mut ctx);
     let mut initializer = new_initializer<QUOTE>(
@@ -2924,7 +2924,7 @@ fun future_version_cannot_finalize() {
     let mut ctx = tx_context::dummy();
     let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     let mut initializer = bare_initializer(
         &package_version,
@@ -3067,7 +3067,7 @@ fun stale_version_prevents_initializer_creation() {
     let mut ctx = tx_context::dummy();
     let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     package_version.set_for_testing(2);
     let mut initializer = bare_initializer(
@@ -3366,7 +3366,7 @@ fun share_new_sale(commitment_starts_at_ms: u64, now_at_ms: u64): ID {
         let mut clock = clock::create_for_testing(&mut ctx);
         clock.set_for_testing(now_at_ms);
         let (treasury_cap, mut currency) = new_currency(&mut ctx);
-        let fee_policy = fee_policy::new_for_testing(&mut ctx);
+        let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
         let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
         let (sale, cap) = new_presale<QUOTE>(
             treasury_cap,
@@ -3585,7 +3585,7 @@ fun treasury_fee_policy(
 ): FeePolicy {
     let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
     let result = {
-        let mut fee_policy = fee_policy::new_for_testing(ctx);
+        let mut fee_policy = fee_policy::new_zero_fees_for_testing(ctx);
         fee_policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, ctx);
         if (protocol_raise_bps > 0 || protocol_token_bps > 0)
             fee_policy.set_fees_for_testing(
@@ -3927,7 +3927,7 @@ fun create_sale_with_treasury<Quote>(
     terms: SaleTerms,
     ctx: &mut TxContext,
 ) {
-    let fee_policy = fee_policy::new_for_testing(ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(ctx);
     let creation_policy = creation_policy::allowing_for_testing<Quote, TEST_MIGRATOR>(ctx);
 
     let (sale, cap) = new_presale<Quote>(
@@ -3967,7 +3967,7 @@ fun create_bluefin_tier(tick_spacing: u32, pool_fee_rate: u64) {
     let version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, currency) = new_currency(&mut ctx);
     let policy = creation_policy::allowing_for_testing<QUOTE, bluefin::Witness>(&mut ctx);
-    let fees = fee_policy::new_for_testing(&mut ctx);
+    let fees = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let mut venues = venue_config::new_for_testing(&mut ctx);
     std::unit_test::destroy(
         bluefin::new<BLAST_PRESALE_TESTS, QUOTE>(
@@ -3990,7 +3990,7 @@ fun create_bluefin_sale<AllowedQuote, AllowedWitness>(symbol: vector<u8>) {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency_with_symbol(symbol, &mut ctx);
-    let fee_policy = fee_policy::new_for_testing(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<AllowedQuote, AllowedWitness>(
         &mut ctx,
     );

@@ -1257,8 +1257,8 @@ fun open_fixture(
     let mut scenario = test_scenario::begin(PROTOCOL);
     let version = package_version::new_for_testing(scenario.ctx());
     let migrators_version = migrators_version::new_for_testing(scenario.ctx());
-    let policy = lp_fee_policy::new_for_testing(scenario.ctx());
-    let mut config = launch_config::new_for_testing(scenario.ctx());
+    let policy = lp_fee_policy::new_zero_fees_for_testing(scenario.ctx());
+    let mut config = launch_config::new_zero_fees_for_testing(scenario.ctx());
     let partner = blast_partners::new_for_testing(PARTNER_RECIPIENT, cut_bps, scenario.ctx());
     let clock = clock::create_for_testing(scenario.ctx());
 

@@ -268,7 +268,7 @@ macro fun claim_ctx($fixture: &mut ClaimFixture): &mut TxContext {
 fun start(): ClaimFixture {
     let mut scenario = test_scenario::begin(ADMIN);
     let package_version = package_version::new_for_testing(scenario.ctx());
-    let config = runtime_config::new_for_testing(signer_public_key(), scenario.ctx());
+    let config = runtime_config::new_zero_fee_share_with_signer_for_testing(signer_public_key(), scenario.ctx());
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(NOW_AT_MS);
 

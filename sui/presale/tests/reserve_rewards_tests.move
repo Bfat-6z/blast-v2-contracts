@@ -459,7 +459,7 @@ fun start_reserve_rewards(): ReserveFixture {
             option::none(),
             scenario.ctx(),
         );
-        let mut policy = fee_policy::new_for_testing(scenario.ctx());
+        let mut policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
         policy.set_destination_for_testing(
             &package_version,
             &blast_acl::witness_for_testing<TreasuryAdmin>(),

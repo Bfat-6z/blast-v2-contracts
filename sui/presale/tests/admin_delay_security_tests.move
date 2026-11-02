@@ -201,7 +201,7 @@ fun start(setting: Setting): Fixture {
         option::none(),
         &mut ctx,
     );
-    Fixture { version, clock, policy: fee_policy::new_for_testing(&mut ctx), vault }
+    Fixture { version, clock, policy: fee_policy::new_zero_fees_for_testing(&mut ctx), vault }
 }
 
 fun prepare_again(f: &mut Fixture, setting: Setting) {

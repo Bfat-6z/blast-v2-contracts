@@ -31,7 +31,12 @@ public struct ProtocolFees has copy, drop, store {
 // === Private Initialization ===
 
 fun init(ctx: &mut TxContext) {
-    transfer::share_object(new(@blast_treasury, 0, ctx));
+    transfer::share_object(new(
+        @blast_treasury,
+        protocol_fees(bps::new(200), bps::new(100), bps::new(1_500), bps::new(1_500)),
+        0,
+        ctx,
+    ));
 }
 
 // === Public Functions ===
@@ -218,20 +223,17 @@ public(package) fun with_lp_fees(
 
 // === Private Functions ===
 
-fun new(destination: address, delay_ms: u64, ctx: &mut TxContext): FeePolicy {
+fun new(
+    destination: address,
+    fees: ProtocolFees,
+    delay_ms: u64,
+    ctx: &mut TxContext,
+): FeePolicy {
     assert!(@blast_treasury != @0x0, EInvalidDestination);
     FeePolicy {
         id: object::new(ctx),
         destination: delayed::new(destination, delay_ms),
-        fees: delayed::new(
-            ProtocolFees {
-                raise_bps: bps::new(0),
-                token_bps: bps::new(0),
-                lp_fee_meme_bps: bps::new(0),
-                lp_fee_quote_bps: bps::new(0),
-            },
-            delay_ms
-        ),
+        fees: delayed::new(fees, delay_ms),
     }
 }
 
@@ -289,8 +291,14 @@ public fun init_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-public fun new_for_testing(ctx: &mut TxContext): FeePolicy {
-    new(ctx.sender(), 172_800_000, ctx)
+/// Explicit zero-fee fixture with the existing administrative notice.
+public fun new_zero_fees_for_testing(ctx: &mut TxContext): FeePolicy {
+    new(
+        ctx.sender(),
+        protocol_fees(bps::new(0), bps::new(0), bps::new(0), bps::new(0)),
+        172_800_000,
+        ctx,
+    )
 }
 
 #[test_only]

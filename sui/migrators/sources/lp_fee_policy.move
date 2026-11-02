@@ -30,7 +30,12 @@ public struct SharePair has copy, drop, store {
 // === Private Initialization ===
 
 fun init(ctx: &mut TxContext) {
-    transfer::share_object(new(@blast_lp_fee_destination, 0, ctx));
+    transfer::share_object(new(
+        @blast_lp_fee_destination,
+        SharePair { meme_bps: bps::new(1_500), quote_bps: bps::new(1_500) },
+        0,
+        ctx,
+    ));
 }
 
 // === Public Functions ===
@@ -273,15 +278,17 @@ public(package) fun shares<Meme>(self: &LpFeePolicy): (Bps, Bps) {
 // === Private Functions ===
 
 /// Initializes the explicit genesis destination; an unset destination prevents publication.
-fun new(destination: address, delay_ms: u64, ctx: &mut TxContext): LpFeePolicy {
+fun new(
+    destination: address,
+    defaults: SharePair,
+    delay_ms: u64,
+    ctx: &mut TxContext,
+): LpFeePolicy {
     assert!(@blast_lp_fee_destination != @0x0, EProtocolDestinationUnchanged);
     LpFeePolicy {
         id: object::new(ctx),
         destination: delayed::new(destination, delay_ms),
-        defaults: delayed::new(
-            SharePair { meme_bps: bps::new(0), quote_bps: bps::new(0) },
-            delay_ms
-        ),
+        defaults: delayed::new(defaults, delay_ms),
         coins: table::new(ctx),
     }
 }
@@ -367,9 +374,25 @@ public fun init_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-/// Creates unshared zero-share policy for focused and vault tests.
-public fun new_for_testing(ctx: &mut TxContext): LpFeePolicy {
-    new(ctx.sender(), 172_800_000, ctx)
+/// Explicit zero-share fixture with the existing administrative notice.
+public fun new_zero_fees_for_testing(ctx: &mut TxContext): LpFeePolicy {
+    new(
+        ctx.sender(),
+        SharePair { meme_bps: bps::new(0), quote_bps: bps::new(0) },
+        172_800_000,
+        ctx,
+    )
+}
+
+#[test_only]
+/// Shares a zero-share genesis fixture without changing notice semantics.
+public fun init_zero_fees_for_testing(ctx: &mut TxContext) {
+    transfer::share_object(new(
+        @blast_lp_fee_destination,
+        SharePair { meme_bps: bps::new(0), quote_bps: bps::new(0) },
+        0,
+        ctx,
+    ));
 }
 
 #[test_only]

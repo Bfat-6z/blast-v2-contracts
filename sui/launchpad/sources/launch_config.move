@@ -38,7 +38,12 @@ public struct PartnerKey(ID) has copy, drop, store;
 // === Private Initialization ===
 
 fun init(ctx: &mut TxContext) {
-    transfer::share_object(new(0, ctx));
+    transfer::share_object(new(
+        TradeFees { quote_fee_bps: bps::new(150), meme_fee_bps: bps::new(0) },
+        allocation::protocol_allocation(bps::new(250), bps::new(150)),
+        0,
+        ctx,
+    ));
 }
 
 // === Public Functions ===
@@ -474,23 +479,22 @@ public(package) fun assert_partner(self: &LaunchConfig, partner_id: ID, now_at_m
 
 // === Private Functions ===
 
-fun new(delay_ms: u64, ctx: &mut TxContext): LaunchConfig {
+fun new(
+    trade_fees: TradeFees,
+    protocol_allocation: ProtocolAllocation,
+    delay_ms: u64,
+    ctx: &mut TxContext,
+): LaunchConfig {
     LaunchConfig {
         id: object::new(ctx),
         meme_decimals: vec_set::from_keys(vector[6, 9]),
         quotes: table::new(ctx),
-        trade_fees: delayed::new(
-            TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
-            delay_ms
-        ),
+        trade_fees: delayed::new(trade_fees, delay_ms),
         migration_witnesses: vec_set::empty(),
         witness_delay_ms: delay_ms,
         pending_witness_delay: option::none(),
         pending_witnesses: vec_map::empty(),
-        protocol_allocation: delayed::new(
-            allocation::protocol_allocation(bps::new(0), bps::new(0)),
-            delay_ms
-        ),
+        protocol_allocation: delayed::new(protocol_allocation, delay_ms),
         creation_fee: delayed::new(0, delay_ms),
     }
 }
@@ -588,8 +592,25 @@ public fun init_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-public fun new_for_testing(ctx: &mut TxContext): LaunchConfig {
-    new(172_800_000, ctx)
+/// Explicit zero-fee fixture with the existing administrative notice.
+public fun new_zero_fees_for_testing(ctx: &mut TxContext): LaunchConfig {
+    new(
+        TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
+        allocation::protocol_allocation(bps::new(0), bps::new(0)),
+        172_800_000,
+        ctx,
+    )
+}
+
+#[test_only]
+/// Shares a zero-fee genesis fixture without changing notice semantics.
+public fun init_zero_fees_for_testing(ctx: &mut TxContext) {
+    transfer::share_object(new(
+        TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
+        allocation::protocol_allocation(bps::new(0), bps::new(0)),
+        0,
+        ctx,
+    ));
 }
 
 #[test_only]

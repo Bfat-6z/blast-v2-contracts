@@ -286,21 +286,18 @@ impl World {
         let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     let next_delay = builder.pure(172_800_000u64)?;
     call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee_admin, fee, fee, next_delay, admin_clock]);
-        // `LaunchConfig` starts with a zero protocol allocation and its setter rejects an unchanged
-        // value, so only a nonzero allocation is set.
-        if protocol != [0, 0] {
-            let [meme_bps, quote_bps] = protocol;
-            let meme_bps = w.bps(&mut builder, meme_bps)?;
-            let quote_bps = w.bps(&mut builder, quote_bps)?;
-            let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    let next_delay = builder.pure(172_800_000u64)?;
-    call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_admin, meme_bps, quote_bps, next_delay, admin_clock]);
-        }
+        // Every measurement family configures its own allocation, including the zero case.
+        let [meme_bps, quote_bps] = protocol;
+        let meme_bps = w.bps(&mut builder, meme_bps)?;
+        let quote_bps = w.bps(&mut builder, quote_bps)?;
+        let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let next_delay = builder.pure(172_800_000u64)?;
+        call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_admin, meme_bps, quote_bps, next_delay, admin_clock]);
         w.h.execute(builder.finish())?.assert_success();
-        let mut changes = vec![
+        let changes = vec![
             (blast, "launch_config", "apply_trade_fees", vec![], config, version),
+            (blast, "launch_config", "apply_protocol_allocation", vec![], config, version),
         ];
-        if protocol != [0, 0] { changes.push((blast, "launch_config", "apply_protocol_allocation", vec![], config, version)); }
         blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, changes)?;
 
         Ok(w)

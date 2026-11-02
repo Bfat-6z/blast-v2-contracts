@@ -477,11 +477,12 @@ impl World {
         let (_, paused, generation): (ObjectID, u8, u64) = bcs::from_bytes(&h.contents(version))?;
         ensure!(paused == 11 && generation == 1);
         ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap_id));
-        let config_cap = h.configuration_admin(admin, &admin_published, presale, "blast_presale_domain", &["ListingAdmin", "AdapterAdmin", "TreasuryAdmin", "UpgradeAdmin"])?;
+        let config_cap = h.configuration_admin(admin, &admin_published, presale, "blast_presale_domain", &["ListingAdmin", "AdapterAdmin", "TreasuryAdmin", "FeeAdmin", "UpgradeAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let listing = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "ListingAdmin")?;
         let adapter = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "AdapterAdmin")?;
         let treasury = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "TreasuryAdmin")?;
+        let fee_admin = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "FeeAdmin")?;
         let policy = b.obj(h.shared(creation_policy[0], true))?;
         let version_arg = b.obj(h.shared(version, false))?;
         let clock = b.obj(h.shared(SUI_CLOCK_OBJECT_ID, false))?;
@@ -498,6 +499,11 @@ impl World {
         let next_delay = b.pure(172_800_000u64)?;
         call(&mut b, presale, "fee_policy", "schedule_destination", vec![], vec![fees, version_arg, treasury, destination, next_delay, clock]);
         call(&mut b, presale, "fee_policy", "apply_destination", vec![], vec![fees, version_arg, clock]);
+        // Venue arithmetic cases use an explicit zero-fee policy rather than publication defaults.
+        let zero = b.pure(0u64)?;
+        let zero_bps = call(&mut b, presale, "bps", "new", vec![], vec![zero]);
+        call(&mut b, presale, "fee_policy", "schedule_fees", vec![], vec![fees, version_arg, fee_admin, zero_bps, zero_bps, zero_bps, zero_bps, next_delay, clock]);
+        call(&mut b, presale, "fee_policy", "apply_fees", vec![], vec![fees, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
         h.configure_upgrade_delay(presale, "blast_presale_package", admin, &admin_published, config_cap, version, wrapped.created(&h, "package_admin", "PackageAdmin")[0], 172_800_000)?;
         h.unpause(presale, "blast_presale_package", admin, &admin_published, version, 11)?;

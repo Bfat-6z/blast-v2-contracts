@@ -63,7 +63,7 @@ fun adapter_boundaries_and_isolation() { exercise(Case::Success); }
 fun exercise(case: Case) {
     let mut ctx = sui::tx_context::dummy();
     let mut version = package_version::new_for_testing(&mut ctx);
-    let mut config = launch_config::new_for_testing(&mut ctx);
+    let mut config = launch_config::new_zero_fees_for_testing(&mut ctx);
     let mut clock = sui::clock::create_for_testing(&mut ctx);
     clock.set_for_testing(1234);
     let admin = blast_acl::witness_for_testing<AdapterAdmin>();

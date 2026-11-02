@@ -24,14 +24,13 @@ public struct ConfigFixture {
 // === Tests ===
 
 #[test]
-/// Package initialization shares a silent configuration with account claims disabled, no
-/// protocol share, and Blast's fees paid to the publisher.
-fun package_init_shares_a_config_paying_the_publisher_without_signer_or_protocol_share() {
+/// Package initialization disables account claims, splits trade fees 50/50, and uses the genesis treasury.
+fun package_init_uses_a_half_protocol_share_and_genesis_treasury_without_signer() {
     let (events, signer_public_key, protocol_fee_share_bps, treasury) = published_config();
 
     assert_eq!(events, 0);
     assert!(signer_public_key.is_empty());
-    assert_eq!(protocol_fee_share_bps, 0);
+    assert_eq!(protocol_fee_share_bps, 5_000);
     assert_eq!(treasury, @blast_treasury);
 }
 
@@ -284,7 +283,7 @@ fun published_config(): (u64, vector<u8>, u64, address) {
 fun start(): ConfigFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     let package_version = package_version::new_for_testing(scenario.ctx());
-    let config = runtime_config::new_disabled_for_testing(scenario.ctx());
+    let config = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
 
     ConfigFixture { scenario, package_version, config }
 }

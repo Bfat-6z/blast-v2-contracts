@@ -186,7 +186,7 @@ fun new(ctx: &mut TxContext): RuntimeConfig {
     RuntimeConfig {
         id: object::new(ctx),
         creator_claim_signer_public_key: vector[],
-        protocol_fee_share_bps: delayed::new(bps::new(0), 0),
+        protocol_fee_share_bps: delayed::new(bps::new(5_000), 0),
         treasury: delayed::new(@blast_treasury, 0),
     }
 }
@@ -239,12 +239,17 @@ public fun init_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-public fun new_disabled_for_testing(ctx: &mut TxContext): RuntimeConfig {
-    new_for_testing(vector[], ctx)
+/// Explicit zero-share fixture with account claims disabled.
+public fun new_zero_fee_share_for_testing(ctx: &mut TxContext): RuntimeConfig {
+    new_zero_fee_share_with_signer_for_testing(vector[], ctx)
 }
 
 #[test_only]
-public fun new_for_testing(signer_public_key: vector<u8>, ctx: &mut TxContext): RuntimeConfig {
+/// Explicit zero-share fixture with a configured account-claim signer.
+public fun new_zero_fee_share_with_signer_for_testing(
+    signer_public_key: vector<u8>,
+    ctx: &mut TxContext,
+): RuntimeConfig {
     RuntimeConfig {
         id: object::new(ctx),
         creator_claim_signer_public_key: signer_public_key,

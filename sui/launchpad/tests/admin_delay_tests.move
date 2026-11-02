@@ -14,7 +14,7 @@ public struct AdapterWitness has drop {}
 fun treasury_changes_only_on_permissionless_apply_and_events_record_the_schedule() {
     let mut ctx = tx_context::dummy();
     let version = marker::new_for_testing(&mut ctx);
-    let mut config = runtime_config::new_disabled_for_testing(&mut ctx);
+    let mut config = runtime_config::new_zero_fee_share_for_testing(&mut ctx);
     let original = config.treasury();
     let mut clock = clock::create_for_testing(&mut ctx);
     config.schedule_treasury(
@@ -46,7 +46,7 @@ fun treasury_changes_only_on_permissionless_apply_and_events_record_the_schedule
 fun treasury_cannot_change_before_the_full_delay() {
     let mut ctx = tx_context::dummy();
     let version = marker::new_for_testing(&mut ctx);
-    let mut config = runtime_config::new_disabled_for_testing(&mut ctx);
+    let mut config = runtime_config::new_zero_fee_share_for_testing(&mut ctx);
     let mut clock = clock::create_for_testing(&mut ctx);
     config.schedule_treasury(
         &version,
@@ -65,7 +65,7 @@ fun treasury_cannot_change_before_the_full_delay() {
 fun cancel_admin_can_stop_a_ready_treasury_change() {
     let mut ctx = tx_context::dummy();
     let version = marker::new_for_testing(&mut ctx);
-    let mut config = runtime_config::new_disabled_for_testing(&mut ctx);
+    let mut config = runtime_config::new_zero_fee_share_for_testing(&mut ctx);
     let mut clock = clock::create_for_testing(&mut ctx);
     config.schedule_treasury(
         &version,
@@ -119,7 +119,7 @@ fun upgrade_authorization_cannot_be_issued_early() {
 fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     let mut ctx = tx_context::dummy();
     let version = marker::new_for_testing(&mut ctx);
-    let mut config = launch_config::new_for_testing(&mut ctx);
+    let mut config = launch_config::new_zero_fees_for_testing(&mut ctx);
     let mut clock = clock::create_for_testing(&mut ctx);
     clock.set_for_testing(123);
     let cancel = blast_acl::witness_for_testing<CancelAdmin>();

@@ -246,7 +246,7 @@ fun start(setting: Setting): Fixture {
     let version = package_version::new_for_testing(&mut ctx);
     let mut clock = sui::clock::create_for_testing(&mut ctx);
     clock.set_for_testing(START);
-    let mut policy = lp_fee_policy::new_for_testing(&mut ctx);
+    let mut policy = lp_fee_policy::new_zero_fees_for_testing(&mut ctx);
     // Existing overrides must survive unrelated coin changes and cancellations.
     policy.set_coin_shares_for_testing<CoinA>(
         &version,

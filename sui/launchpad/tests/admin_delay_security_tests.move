@@ -246,8 +246,8 @@ fun start(setting: Setting): Fixture {
     Fixture {
         version,
         clock,
-        runtime: runtime_config::new_disabled_for_testing(&mut ctx),
-        config: launch_config::new_for_testing(&mut ctx)
+        runtime: runtime_config::new_zero_fee_share_for_testing(&mut ctx),
+        config: launch_config::new_zero_fees_for_testing(&mut ctx)
     }
 }
 
