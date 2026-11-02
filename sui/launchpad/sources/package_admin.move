@@ -40,7 +40,7 @@ public fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &Pa
 public fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
     package_version.assert_current();
     assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
-    let action = self.pending.extract().proposed();
+    let action = self.pending.extract().value();
     events::upgrade_action_cancelled(action);
 }
 

@@ -104,7 +104,7 @@ public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): 
 }
 
 /// Returns the proposed value for cancellation events and diagnostics.
-public fun proposed<T: copy + drop + store>(self: &Pending<T>): T { self.value }
+public fun pending_value<T: copy + drop + store>(self: &Pending<T>): T { self.value }
 
 /// Returns the Unix millisecond threshold for a scheduling event.
 public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64 { self.ready_at_ms }
@@ -117,5 +117,7 @@ public fun destroy_for_testing<T: copy + drop + store>(self: Delayed<T>) {
 }
 
 // === Imports ===
+
+public use fun pending_value as Pending.value;
 
 use sui::clock::Clock;

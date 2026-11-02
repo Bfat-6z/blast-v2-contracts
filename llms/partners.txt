@@ -892,7 +892,7 @@ public fun new_pending<T: copy + drop + store>(value: T, delay_ms: u64, clock: &
 public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
 
 /// Returns the proposed value for cancellation events and diagnostics.
-public fun proposed<T: copy + drop + store>(self: &Pending<T>): T
+public fun pending_value<T: copy + drop + store>(self: &Pending<T>): T
 
 /// Returns the Unix millisecond threshold for a scheduling event.
 public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64

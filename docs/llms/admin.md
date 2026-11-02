@@ -230,7 +230,8 @@ and have no custody at all.
 Clock. Zero is valid; deadlines are absolute snapshots and timestamp overflow
 aborts with registry code 22 (`EInvalidDelay`) from `delayed`. `Delayed` reads
 do not need Clock, and changes only become active through explicit application.
-Rescheduling replaces a proposal.
+Rescheduling replaces a proposal. `delayed::pending_value` reads a proposal
+without applying it; its public receiver alias is `Pending.value()`.
 `delayed::schedule_delay` and `delayed::apply_delay` govern a `Delayed<u64>`
 policy using its old applied delay, reject no-op proposals and ensure the
 resulting delay remains representable at scheduling and actual application.

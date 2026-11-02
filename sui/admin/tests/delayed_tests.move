@@ -13,6 +13,7 @@ fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
     let mut setting = delayed::new(7u64);
     assert_eq!(setting.schedule(9, 172_800_000, &clock), 172_800_010);
     assert_eq!(setting.value(), 7);
+    assert_eq!(setting.pending().destroy_some().value(), 9);
     clock.set_for_testing(172_800_010);
     assert_eq!(setting.value(), 7);
     assert_eq!(setting.apply(&clock), 9);

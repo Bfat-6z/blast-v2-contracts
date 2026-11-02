@@ -386,7 +386,7 @@ public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Me
 /// Cancels the replacement without affecting either live creator cap.
 public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
     package_version.assert_current();
-    let recipient = self.pending_curve_fee_cap_recipient.extract().proposed();
+    let recipient = self.pending_curve_fee_cap_recipient.extract().value();
     events::curve_fee_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
 
@@ -422,7 +422,7 @@ public fun schedule_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Mem
 /// Cancels the replacement without affecting either live creator cap.
 public fun cancel_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
     package_version.assert_current();
-    let recipient = self.pending_metadata_cap_recipient.extract().proposed();
+    let recipient = self.pending_metadata_cap_recipient.extract().value();
     events::metadata_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
 

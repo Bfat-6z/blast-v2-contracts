@@ -402,7 +402,8 @@ and have no custody at all.
 Clock. Zero is valid; deadlines are absolute snapshots and timestamp overflow
 aborts with registry code 22 (`EInvalidDelay`) from `delayed`. `Delayed` reads
 do not need Clock, and changes only become active through explicit application.
-Rescheduling replaces a proposal.
+Rescheduling replaces a proposal. `delayed::pending_value` reads a proposal
+without applying it; its public receiver alias is `Pending.value()`.
 `delayed::schedule_delay` and `delayed::apply_delay` govern a `Delayed<u64>`
 policy using its old applied delay, reject no-op proposals and ensure the
 resulting delay remains representable at scheduling and actual application.
@@ -853,7 +854,7 @@ public fun new_pending<T: copy + drop + store>(value: T, delay_ms: u64, clock: &
 public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
 
 /// Returns the proposed value for cancellation events and diagnostics.
-public fun proposed<T: copy + drop + store>(self: &Pending<T>): T
+public fun pending_value<T: copy + drop + store>(self: &Pending<T>): T
 
 /// Returns the Unix millisecond threshold for a scheduling event.
 public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
