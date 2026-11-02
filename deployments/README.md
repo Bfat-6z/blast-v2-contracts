@@ -29,15 +29,20 @@ same normalized evidence while following their accepted ADRs and verification
 scripts.
 
 Launchpad, presale and migrators require nonzero named-address payout defaults
-before publication. Their deployer-owned Bootstrap authorizes immediate initial
-policy configuration before native custody is sealed (ADR 0134). Configure the
-initial fees and destinations, launchpad claim signer and allocation, and the
-launchpad/presale Quote and reviewed adapter allowlists before wrap. Record the
-chosen values and applied-value events. Wrap consumes Bootstrap permanently and
-creates the operational version; launchpad and presale start fully paused. Grant
-UnpauseAdmin through the shared ACL and unpause immediately when ready. Record
-bootstrap consumption, sealed custody, pause masks and unpause evidence. Later
-governed changes retain the full 48-hour delay, including while paused.
+before publication. Their deployer-owned Publication retains provenance only;
+it authorizes no policy setters (ADR 0134). Wrap consumes it permanently, seals
+native custody and creates the operational version. Launchpad and presale start
+fully paused. Configure initial policies through ordinary ACL roles after wrap;
+publication-owned policies and upgrade custody initially have zero notice.
+Record the chosen fees, destinations, launchpad claim signer and allocation,
+Quote and reviewed adapter allowlists, and applied-value events. Apply or cancel
+every outstanding zero-notice proposal, including independent adapter admissions,
+then configure and read back each operation's intended notice (48 hours for this
+rollout). Raising a notice does not rewrite older proposals. Verify approved key
+custody before multisig UnpauseAdmin releases selected operations. Record
+Publication consumption, sealed custody, every applied notice, proposal state,
+pause masks and unpause evidence. Later protected changes wait their operation's
+applied notice, including while paused; notice reductions wait the old notice.
 
 ## Boosts adapter upgrades
 
