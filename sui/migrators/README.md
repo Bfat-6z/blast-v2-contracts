@@ -74,15 +74,20 @@ Blast's off-chain system turns checkpointed holder balances into a Merkle
 allocation. A Blast administrator publishes it with
 `blast_holder_rewards::publish_round`, which reserves the round's budget from
 the vault's rewards balance into a shared `Round`. Anyone can relay a proof, and
-each leaf pays its committed beneficiary once.
+each leaf pays its committed beneficiary once before the round's claim deadline.
+An optional Quote gas reserve is funded separately, with its treasury bound to
+the governed LP-fee destination at publication. `RewardsAdmin` may settle a capped
+reimbursement once; unused reserve returns to the vault. Anyone may close at the
+deadline to return unclaimed rewards and unsettled gas custody. Published
+checkpoint intervals may have gaps but must not overlap.
 
 **The administrator can assign unallocated rewards to any recipient in a new
 round.** Merkle proofs enforce the published allocation, not the truth of the
 off-chain holder accounting, so publish from a multisig with independent
 accounting review. Each round reserves its full declared budget and keeps a
-permanent claim bitmap. There is no expiry, cancellation, or recovery sweep, so an
-incorrect root or an over-reserved budget cannot be recovered through the
-current API. The leaf commits the vault ID, the round number, the index, the
+claim bitmap until closure. The administrator cannot rewrite a root or
+cancel its holder claims before the deadline; permissionless close recovers
+remaining custody at the deadline. The leaf commits the vault ID, the round number, the index, the
 beneficiary, and both amounts (`docs/vectors/holder-rewards.json` is the fixed
 Move/SDK commitment vector).
 

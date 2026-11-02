@@ -22,6 +22,8 @@ public struct TestPosition has key, store { id: UID }
 public struct RewardsFixture {
     scenario: Scenario,
     migrators_version: MigratorsVersion,
+    policy: LpFeePolicy,
+    clock: Clock,
     vault: LpVault<BLAST_HOLDER_REWARDS_TESTS, QUOTE>,
 }
 
@@ -32,6 +34,7 @@ public struct ExpectedRoundPublished has copy, drop {
     number: u64,
     start_checkpoint: u64,
     end_checkpoint: u64,
+    claim_deadline_at_ms: u64,
     root: vector<u8>,
     manifest_digest: vector<u8>,
     leaf_count: u64,
@@ -39,6 +42,8 @@ public struct ExpectedRoundPublished has copy, drop {
     quote_amount: u64,
     meme_unallocated: u64,
     quote_unallocated: u64,
+    treasury: address,
+    gas_reserve_amount: u64,
 }
 
 /// Independently encoded `RewardPaid` in ABI order.
@@ -50,6 +55,27 @@ public struct ExpectedRewardPaid has copy, drop {
     quote_amount: u64,
     meme_remaining: u64,
     quote_remaining: u64,
+}
+
+/// Independently encoded settlement payload in ABI order.
+public struct ExpectedGasReserveSettled has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    treasury: address,
+    reimbursement_amount: u64,
+    reserve_returned: u64,
+    quote_unallocated: u64,
+}
+
+/// Independently encoded recovery payload in ABI order.
+public struct ExpectedRoundClosed has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    meme_returned: u64,
+    quote_returned: u64,
+    gas_reserve_returned: u64,
 }
 
 // === Tests ===
@@ -76,6 +102,7 @@ fun publication_reserves_its_budget_from_the_rewards_balance_and_announces_the_c
                 number: 0,
                 start_checkpoint: 0,
                 end_checkpoint: 10,
+                claim_deadline_at_ms: DEADLINE_AT_MS,
                 root,
                 manifest_digest: digest(),
                 leaf_count: 1,
@@ -83,6 +110,8 @@ fun publication_reserves_its_budget_from_the_rewards_balance_and_announces_the_c
                 quote_amount: 20,
                 meme_unallocated: FUNDED_MEME - 10,
                 quote_unallocated: FUNDED_QUOTE - 20,
+                treasury: PUBLISHER,
+                gas_reserve_amount: 0,
             },
         ),
     );
@@ -113,7 +142,7 @@ fun a_round_may_reserve_the_whole_rewards_balance_of_one_asset() {
 }
 
 #[test]
-fun each_round_starts_where_the_previous_one_ended() {
+fun rounds_accept_adjacent_intervals_and_gaps() {
     let mut f = start();
     let first = f.leaf(0, 0, ALICE, 1, 1);
     let second = f.leaf(1, 0, ALICE, 1, 1);
@@ -121,9 +150,10 @@ fun each_round_starts_where_the_previous_one_ended() {
     f.scenario.next_tx(ADMIN);
     f.publish(0, 7, 9, first, digest(), 1, 1, 1);
     f.publish(1, 9, 30, second, digest(), 1, 1, 1);
+    f.publish(2, 40, 50, digest(), digest(), 1, 1, 1);
 
-    assert_eq!(f.vault.next_round(), 2);
-    assert_eq!(f.vault.last_checkpoint(), option::some(30));
+    assert_eq!(f.vault.next_round(), 3);
+    assert_eq!(f.vault.last_checkpoint(), option::some(50));
     f.end();
 }
 
@@ -170,17 +200,13 @@ fun overlapping_intervals_are_rejected() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_holder_rewards::EInvalidInterval,
-    location = blast_fun_migrators::blast_holder_rewards,
-)]
-fun gapped_intervals_are_rejected() {
+fun low_volume_checkpoint_gaps_are_accepted() {
     let mut f = start();
     f.round(0, 1, 1);
-
     f.scenario.next_tx(ADMIN);
     f.publish(1, 11, 20, digest(), digest(), 1, 1, 1);
-
+    assert_eq!(f.vault.next_round(), 2);
+    assert_eq!(f.vault.last_checkpoint(), option::some(20));
     f.end();
 }
 
@@ -268,7 +294,7 @@ fun an_empty_budget_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = balance::ENotEnough, location = sui::balance)]
+#[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
 fun a_meme_budget_above_the_rewards_balance_is_rejected() {
     let mut f = start();
 
@@ -278,7 +304,7 @@ fun a_meme_budget_above_the_rewards_balance_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = balance::ENotEnough, location = sui::balance)]
+#[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
 fun a_quote_budget_above_the_rewards_balance_is_rejected() {
     let mut f = start();
 
@@ -288,7 +314,7 @@ fun a_quote_budget_above_the_rewards_balance_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = balance::ENotEnough, location = sui::balance)]
+#[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
 fun reserved_funds_cannot_back_a_second_round() {
     let mut f = start();
     f.round(0, FUNDED_MEME, 0);
@@ -554,7 +580,270 @@ fun a_stale_generation_rejects_a_claim_before_every_claim_check() {
     f.end();
 }
 
+// Optional gas custody and deadline recovery
+
+#[test]
+fun the_maximal_combined_quote_budget_is_supported_without_overflow() {
+    let mut f = start();
+    let maximum = 18_446_744_073_709_551_615;
+    f.vault.restore_rewards(balance::zero(), balance::create_for_testing(maximum - FUNDED_QUOTE));
+    let root = f.leaf(0, 0, ALICE, 10, 20);
+    f.publish_reserved(0, 0, 10, root, digest(), 1, 10, 20, maximum - 20, DEADLINE_AT_MS, PUBLISHER);
+    let id = published_round_id();
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, 0);
+    f.settle(id, maximum - 20);
+    f.claim(id, 0, ALICE, 10, 20, vector[]);
+    f.assert_received(PUBLISHER, 0, maximum - 20);
+    f.assert_received(ALICE, 10, 20);
+    f.close(id, DEADLINE_AT_MS);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, 0);
+    f.end();
+}
+
+#[test]
+fun zero_reimbursement_returns_the_entire_reserve() {
+    assert_reimbursement(0);
+}
+
+#[test]
+fun one_unit_reimbursement_returns_every_remaining_unit() {
+    assert_reimbursement(1);
+}
+
+#[test]
+fun partial_reimbursement_preserves_claim_custody() {
+    assert_reimbursement(29);
+}
+
+#[test]
+fun full_reimbursement_does_not_consume_holder_funds() {
+    assert_reimbursement(30);
+}
+
+#[test]
+fun permissionless_close_returns_unclaimed_holder_funds_and_unsettled_reserve() {
+    let mut f = start();
+    let round_id = f.reserve_round(30);
+    f.close(round_id, DEADLINE_AT_MS);
+    let events = event::events_by_type<blast_events::RoundClosed>();
+    assert_eq!(events.length(), 1);
+    assert_eq!(bcs::to_bytes(&events[0]), bcs::to_bytes(&ExpectedRoundClosed {
+        vault_id: object::id(&f.vault), round_id, number: 0,
+        meme_returned: 10, quote_returned: 20, gas_reserve_returned: 30,
+    }));
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME, FUNDED_QUOTE);
+    assert_eq!(f.vault.next_round(), 1);
+    assert_eq!(f.vault.last_checkpoint(), option::some(10));
+    f.end();
+}
+
+#[test]
+fun settlement_after_deadline_is_allowed_until_permissionless_close() {
+    let mut f = start();
+    let round_id = f.reserve_round(30);
+    f.clock.set_for_testing(DEADLINE_AT_MS + 1);
+    f.settle(round_id, 24);
+    f.close(round_id, DEADLINE_AT_MS + 1);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME, FUNDED_QUOTE - 24);
+    f.assert_received(PUBLISHER, 0, 24);
+    f.end();
+}
+
+#[test]
+fun zero_reserve_supports_claims_and_permissionless_close_without_settlement() {
+    let mut f = start();
+    let round_id = f.reserve_round(0);
+    f.assert_reserve(round_id, option::none());
+    f.claim(round_id, 0, ALICE, 10, 20, vector[]);
+    f.close(round_id, DEADLINE_AT_MS + 1);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 20);
+    f.end();
+}
+
+#[test]
+fun a_treasury_change_after_publication_cannot_redirect_reimbursement() {
+    let mut f = start();
+    let round_id = f.reserve_round(30);
+    f.change_treasury(BOB);
+    f.settle(round_id, 24);
+    f.assert_received(PUBLISHER, 0, 24);
+    f.assert_received(BOB, 0, 0);
+    f.close(round_id, DEADLINE_AT_MS);
+    f.end();
+}
+
+#[test]
+fun claims_work_one_millisecond_before_the_deadline() {
+    let mut f = start();
+    let round_id = f.reserve_round(30);
+    f.clock.set_for_testing(DEADLINE_AT_MS - 1);
+    f.claim(round_id, 0, ALICE, 10, 20, vector[]);
+    f.assert_received(ALICE, 10, 20);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EReserveSettled, location = blast_fun_migrators::blast_holder_rewards)]
+fun disabled_gas_custody_cannot_be_settled() {
+    let mut f = start();
+    let id = f.reserve_round(0);
+    f.settle(id, 0);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EOverReserve, location = blast_fun_migrators::blast_holder_rewards)]
+fun reimbursement_cannot_exceed_the_reserved_quote() {
+    let mut f = start();
+    let id = f.reserve_round(30);
+    f.settle(id, 31);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EReserveSettled, location = blast_fun_migrators::blast_holder_rewards)]
+fun settlement_cannot_be_replayed() {
+    let mut f = start();
+    let id = f.reserve_round(30);
+    f.settle(id, 24);
+    f.settle(id, 0);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EClaimsStillOpen, location = blast_fun_migrators::blast_holder_rewards)]
+fun close_rejects_the_millisecond_before_deadline() {
+    let mut f = start();
+    let id = f.reserve_round(30);
+    f.close(id, DEADLINE_AT_MS - 1);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EClaimsClosed, location = blast_fun_migrators::blast_holder_rewards)]
+fun claims_stop_exactly_at_the_deadline_before_proof_checks() {
+    let mut f = start();
+    let id = f.reserve_round(30);
+    f.clock.set_for_testing(DEADLINE_AT_MS);
+    f.claim(id, 99, @0x0, 0, 0, vector[]);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EClaimsClosed, location = blast_fun_migrators::blast_holder_rewards)]
+fun claims_stop_after_the_deadline() {
+    let mut f = start();
+    let id = f.reserve_round(0);
+    f.clock.set_for_testing(DEADLINE_AT_MS + 1);
+    f.claim(id, 0, ALICE, 10, 20, vector[]);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EInvalidClaimDeadline, location = blast_fun_migrators::blast_holder_rewards)]
+fun publication_requires_a_future_claim_deadline() {
+    let mut f = start();
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, 0, PUBLISHER);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
+fun combined_holder_and_gas_budget_cannot_exceed_vault_quote() {
+    let mut f = start();
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, FUNDED_QUOTE - 19, DEADLINE_AT_MS, PUBLISHER);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
+fun maximal_gas_budget_is_rejected_without_arithmetic_overflow() {
+    let mut f = start();
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 1, 18_446_744_073_709_551_615, DEADLINE_AT_MS, PUBLISHER);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::ETreasuryChanged, location = blast_fun_migrators::blast_holder_rewards)]
+fun changed_treasury_rejects_publication_with_gas() {
+    let mut f = start();
+    f.change_treasury(BOB);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, DEADLINE_AT_MS, PUBLISHER);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::ETreasuryChanged, location = blast_fun_migrators::blast_holder_rewards)]
+fun changed_treasury_rejects_publication_without_gas_before_bad_budget() {
+    let mut f = start();
+    f.change_treasury(BOB);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, FUNDED_QUOTE + 1, 0, DEADLINE_AT_MS, PUBLISHER);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EWrongVault, location = blast_fun_migrators::blast_holder_rewards)]
+fun settlement_rejects_a_different_vault_before_over_reserve() {
+    let mut f = start();
+    let id = f.reserve_round(30);
+    f.settle_against_wrong_vault(id);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EWrongVault, location = blast_fun_migrators::blast_holder_rewards)]
+fun close_rejects_a_different_vault_before_deadline() {
+    let mut f = start();
+    let id = f.reserve_round(30);
+    f.close_against_wrong_vault(id);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun stale_generation_rejects_settlement_before_vault_and_budget_checks() {
+    let mut f = start();
+    let id = f.reserve_round(30);
+    f.migrators_version.set_for_testing(2);
+    f.settle(id, 31);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun stale_generation_rejects_close_before_deadline_checks() {
+    let mut f = start();
+    let id = f.reserve_round(30);
+    f.migrators_version.set_for_testing(2);
+    f.close(id, 0);
+    f.end();
+}
+
 // === Test Helpers ===
+
+fun assert_reimbursement(reimbursement: u64) {
+    let mut f = start();
+    let round_id = f.reserve_round(30);
+    f.assert_reserve(round_id, option::some(30));
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 50);
+    f.claim(round_id, 0, ALICE, 10, 20, vector[]);
+    f.assert_reserve(round_id, option::some(30));
+    f.settle(round_id, reimbursement);
+    let events = event::events_by_type<blast_events::GasReserveSettled>();
+    assert_eq!(events.length(), 1);
+    assert_eq!(bcs::to_bytes(&events[0]), bcs::to_bytes(&ExpectedGasReserveSettled {
+        vault_id: object::id(&f.vault), round_id, number: 0,
+        treasury: PUBLISHER, reimbursement_amount: reimbursement,
+        reserve_returned: 30 - reimbursement,
+        quote_unallocated: FUNDED_QUOTE - 20 - reimbursement,
+    }));
+    f.assert_reserve(round_id, option::none());
+    f.assert_received(PUBLISHER, 0, reimbursement);
+    f.assert_received(ALICE, 10, 20);
+    f.close(round_id, DEADLINE_AT_MS);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 20 - reimbursement);
+    f.end();
+}
 
 /// Opens an owned launch whose whole fee split funds rewards, attaches its vault, and splits one
 /// collection into the rewards balance under the zero default Blast share.
@@ -597,9 +886,9 @@ fun start(): RewardsFixture {
     destroy(currency);
     destroy(config);
     destroy(version);
-    destroy(policy);
+    let clock = clock::create_for_testing(scenario.ctx());
 
-    RewardsFixture { scenario, migrators_version, vault }
+    RewardsFixture { scenario, migrators_version, policy, clock, vault }
 }
 
 /// The leaf the fixture vault commits for one allocation.
@@ -626,11 +915,31 @@ fun publish(
     meme_amount: u64,
     quote_amount: u64,
 ) {
-    let admin = blast_acl::witness_for_testing<RewardsAdmin>();
+    let treasury = self.policy.protocol_destination();
+    self.publish_reserved(number, start_checkpoint, end_checkpoint, root, manifest_digest, leaf_count,
+        meme_amount, quote_amount, 0, DEADLINE_AT_MS, treasury);
+}
 
+/// Publishes with explicit reserve, deadline and signed treasury commitment.
+fun publish_reserved(
+    self: &mut RewardsFixture,
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    root: vector<u8>,
+    manifest_digest: vector<u8>,
+    leaf_count: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+    gas_reserve_amount: u64,
+    claim_deadline_at_ms: u64,
+    expected_treasury: address,
+) {
     self.vault.publish_round(
         &self.migrators_version,
-        &admin,
+        &blast_acl::witness_for_testing<RewardsAdmin>(),
+        &self.policy,
+        expected_treasury,
         number,
         start_checkpoint,
         end_checkpoint,
@@ -639,6 +948,9 @@ fun publish(
         leaf_count,
         meme_amount,
         quote_amount,
+        gas_reserve_amount,
+        claim_deadline_at_ms,
+        &self.clock,
         self.scenario.ctx(),
     );
 }
@@ -651,6 +963,91 @@ fun round(self: &mut RewardsFixture, number: u64, meme: u64, quote: u64): ID {
     self.publish(number, number * 10, (number + 1) * 10, root, digest(), 1, meme, quote);
 
     published_round_id()
+}
+
+/// Publishes one holder allocation with independent gas custody.
+fun reserve_round(self: &mut RewardsFixture, gas: u64): ID {
+    let root = self.leaf(0, 0, ALICE, 10, 20);
+    self.scenario.next_tx(ADMIN);
+    let treasury = self.policy.protocol_destination();
+    self.publish_reserved(0, 0, 10, root, digest(), 1, 10, 20, gas, DEADLINE_AT_MS, treasury);
+    let id = published_round_id();
+    let events = event::events_by_type<blast_events::RoundPublished>();
+    assert_eq!(bcs::to_bytes(&events[0]), bcs::to_bytes(&ExpectedRoundPublished {
+        vault_id: object::id(&self.vault), round_id: id, number: 0,
+        start_checkpoint: 0, end_checkpoint: 10, claim_deadline_at_ms: DEADLINE_AT_MS,
+        root, manifest_digest: digest(), leaf_count: 1, meme_amount: 10, quote_amount: 20,
+        meme_unallocated: FUNDED_MEME - 10, quote_unallocated: FUNDED_QUOTE - 20 - gas,
+        treasury, gas_reserve_amount: gas,
+    }));
+    id
+}
+
+fun settle(self: &mut RewardsFixture, round_id: ID, reimbursement: u64) {
+    self.scenario.next_tx(ADMIN);
+    let mut round = self.take_round(round_id);
+    round.settle_gas_reserve(&self.migrators_version,
+        &blast_acl::witness_for_testing<RewardsAdmin>(), &mut self.vault,
+        reimbursement, self.scenario.ctx());
+    test_scenario::return_shared(round);
+}
+
+fun close(self: &mut RewardsFixture, round_id: ID, now_at_ms: u64) {
+    self.scenario.next_tx(BOT);
+    self.clock.set_for_testing(now_at_ms);
+    let round = self.take_round(round_id);
+    round.close_round(&self.migrators_version, &mut self.vault, &self.clock);
+}
+
+fun assert_reserve(self: &mut RewardsFixture, round_id: ID, expected: Option<u64>) {
+    self.scenario.next_tx(BOT);
+    let round = self.take_round(round_id);
+    assert_eq!(round.gas_reserve_for_testing(), expected);
+    test_scenario::return_shared(round);
+}
+
+fun change_treasury(self: &mut RewardsFixture, destination: address) {
+    self.policy.set_protocol_destination_for_testing(&self.migrators_version,
+        &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::TreasuryAdmin>(),
+        destination, self.scenario.ctx());
+}
+
+fun settle_against_wrong_vault(self: &mut RewardsFixture, round_id: ID) {
+    let mut other = self.other_vault();
+    self.scenario.next_tx(ADMIN);
+    let mut round = self.take_round(round_id);
+    round.settle_gas_reserve(&self.migrators_version,
+        &blast_acl::witness_for_testing<RewardsAdmin>(), &mut other, 31, self.scenario.ctx());
+    destroy(round);
+    destroy(other);
+}
+
+fun close_against_wrong_vault(self: &mut RewardsFixture, round_id: ID) {
+    let mut other = self.other_vault();
+    self.scenario.next_tx(BOT);
+    let round = self.take_round(round_id);
+    round.close_round(&self.migrators_version, &mut other, &self.clock);
+    destroy(other);
+}
+
+/// Builds a distinct, unfunded vault in this scenario for identity rejection.
+fun other_vault(self: &mut RewardsFixture): LpVault<BLAST_HOLDER_REWARDS_TESTS, QUOTE> {
+    let version = package_version::new_for_testing(self.scenario.ctx());
+    let mut config = launch_config::new_zero_fees_for_testing(self.scenario.ctx());
+    config.admit<QUOTE, TestVenue>(&version, self.scenario.ctx());
+    let (launch, currency) = self.scenario.open_launch<_, QUOTE, _>(
+        test_utils::create_one_time_witness<BLAST_HOLDER_REWARDS_TESTS>(), &version,
+        &config, TestVenue(),
+        allocation::fee_split(bps::new(0), bps::new(0), bps::new(10_000), bps::new(0), vector[]), false,
+    );
+    let position = TestPosition { id: object::new(self.scenario.ctx()) };
+    let vault = vault::new_for_testing(&launch, &TestVenue(), object::id_from_address(POOL),
+        position, 1, balance::zero(), balance::zero(), self.scenario.ctx());
+    destroy(launch);
+    destroy(currency);
+    destroy(config);
+    destroy(version);
+    vault
 }
 
 /// Returns the ID of the one round this transaction published.
@@ -681,6 +1078,7 @@ fun claim(
         meme_amount,
         quote_amount,
         proof,
+        &self.clock,
         self.scenario.ctx(),
     );
     test_scenario::return_shared(round);
@@ -763,6 +1161,8 @@ const POOL: address = @0x9001;
 /// Rewards the fixture vault holds before any round.
 const FUNDED_MEME: u64 = 1_000;
 
+const DEADLINE_AT_MS: u64 = 1_000;
+
 const FUNDED_QUOTE: u64 = 2_000;
 
 // === Imports ===
@@ -781,7 +1181,7 @@ use blast_fun_migrators::{
     blast_events,
     blast_holder_rewards::{Self, Round},
     launch_fixture,
-    lp_fee_policy,
+    lp_fee_policy::{Self, LpFeePolicy},
     merkle,
     blast_fun_migrators::{Self as migrators_version, PackageVersion as MigratorsVersion},
     vault::{Self, LpVault},
@@ -789,7 +1189,7 @@ use blast_fun_migrators::{
 
 use std::unit_test::{assert_eq, destroy};
 
-use sui::{balance, bcs, coin::Coin, event, test_scenario::{Self, Scenario}, test_utils};
+use sui::{balance, bcs, clock::{Self, Clock}, coin::Coin, event, test_scenario::{Self, Scenario}, test_utils};
 
 use fun blast_holder_rewards::publish_round as LpVault.publish_round;
 

@@ -343,6 +343,7 @@ struct World {
     venue_config: ObjectID,
     policy: ObjectID,
     acl: ObjectID,
+    root: ObjectID,
     admin_cap: ObjectID,
     project: CompiledPackage,
     coins: u64,
@@ -455,6 +456,7 @@ impl World {
             venue_config,
             policy,
             acl,
+            root,
             admin_cap,
             project,
             coins: 0,
@@ -1737,15 +1739,22 @@ impl World {
             .collect();
         let root = merkle_node(&digests[0], &digests[1]);
         let (start, end) = (1_000u64, 2_000u64);
+        let gas_reserve = (before.rewards_quote / 4).max(1);
+        let (_, now_at_ms): (ObjectID, u64) = bcs::from_bytes(&self.h.contents(SUI_CLOCK_OBJECT_ID))?;
+        let deadline_at_ms = now_at_ms + 1_000;
 
         let mut b = ProgrammableTransactionBuilder::new();
         let signed_in = self.sign_in(&mut b, "RewardsAdmin")?;
         let vault = self.shared(&mut b, m.vault, true)?;
         let migrators_version = self.shared(&mut b, self.migrators_version, false)?;
+        let policy = self.shared(&mut b, self.policy, false)?;
+        let clock = self.clock(&mut b)?;
         let args = vec![
             vault,
             migrators_version,
             signed_in,
+            policy,
+            b.pure(SuiAddress::from(LP_PROTOCOL))?,
             b.pure(0u64)?,
             b.pure(start)?,
             b.pure(end)?,
@@ -1754,6 +1763,9 @@ impl World {
             b.pure(2u64)?,
             b.pure(meme)?,
             b.pure(quote)?,
+            b.pure(gas_reserve)?,
+            b.pure(deadline_at_ms)?,
+            clock,
         ];
         let meme_type = launch.meme.clone();
         call(
@@ -1772,9 +1784,11 @@ impl World {
         let published: Vec<RoundPublished> = self.events(&outcome, "RoundPublished");
         ensure!(published.len() == 1 && published[0].round_id == round && published[0].root == root.to_vec());
         ensure!((published[0].meme_amount, published[0].quote_amount) == (meme, quote));
+        ensure!(published[0].claim_deadline_at_ms == deadline_at_ms);
+        ensure!(published[0].treasury == LP_PROTOCOL.into() && published[0].gas_reserve_amount == gas_reserve);
         let after = self.vault(m)?;
         ensure!(
-            (after.rewards_meme, after.rewards_quote) == (before.rewards_meme - meme, before.rewards_quote - quote)
+            (after.rewards_meme, after.rewards_quote) == (before.rewards_meme - meme, before.rewards_quote - quote - gas_reserve)
         );
         ensure!(
             (published[0].meme_unallocated, published[0].quote_unallocated)
@@ -1786,6 +1800,7 @@ impl World {
             let mut b = ProgrammableTransactionBuilder::new();
             let round = w.shared(&mut b, round, true)?;
             let migrators_version = w.shared(&mut b, w.migrators_version, false)?;
+            let clock = w.clock(&mut b)?;
             let (beneficiary, meme, quote) = leaves[0];
             let args = vec![
                 round,
@@ -1795,6 +1810,7 @@ impl World {
                 b.pure(meme)?,
                 b.pure(quote)?,
                 b.pure(vec![digests[1].to_vec()])?,
+                clock,
             ];
             call(&mut b, w.migrators, "blast_holder_rewards", "claim", vec![meme_type.clone(), w.quote()], args);
             Ok(b.finish())
@@ -1816,9 +1832,105 @@ impl World {
         let expected = Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 6 };
         let pt = claim(self)?;
         self.h.assert_rolled_back(pt, expected, &[round], &[beneficiary.into()])?;
-        self.report(format!(
-            "publish_round funds ({meme}, {quote}) from rewards; Merkle claim pays {beneficiary} ({meme_paid}, {quote_paid}); a second claim aborts 6"
-        ));
+        // A valid settlement followed by a replay in one PTB must roll back both
+        // the treasury transfer and returned custody, with no committed event.
+        let settlement = |w: &Self, round_id: ObjectID, amount: u64, replay: bool| -> Result<ProgrammableTransaction> {
+            let mut b = ProgrammableTransactionBuilder::new();
+            let admin = w.sign_in(&mut b, "RewardsAdmin")?;
+            let round_arg = w.shared(&mut b, round_id, true)?;
+            let version = w.shared(&mut b, w.migrators_version, false)?;
+            let vault = w.shared(&mut b, m.vault, true)?;
+            let amount = b.pure(amount)?;
+            call(&mut b, w.migrators, "blast_holder_rewards", "settle_gas_reserve", vec![meme_type.clone(), w.quote()], vec![round_arg, version, admin, vault, amount]);
+            if replay {
+                let amount = b.pure(0u64)?;
+                call(&mut b, w.migrators, "blast_holder_rewards", "settle_gas_reserve", vec![meme_type.clone(), w.quote()], vec![round_arg, version, admin, vault, amount]);
+            }
+            Ok(b.finish())
+        };
+        let pt = settlement(self, round, gas_reserve + 1, false)?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 15 }, &[round, m.vault, self.admin_cap], &[LP_PROTOCOL.into()])?;
+        let reimbursement = gas_reserve / 2;
+        let pt = settlement(self, round, reimbursement, true)?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 14 }, &[round, m.vault, self.admin_cap], &[LP_PROTOCOL.into()])?;
+        let pt = settlement(self, round, reimbursement, false)?;
+        let settled = self.h.execute(pt)?;
+        settled.assert_success();
+        let events: Vec<GasReserveSettled> = self.events(&settled, "GasReserveSettled");
+        ensure!(events.len() == 1);
+        let event = &events[0];
+        ensure!(event.vault_id == m.vault && event.round_id == round && event.number == 0 && event.treasury == LP_PROTOCOL.into());
+        ensure!((event.reimbursement_amount, event.reserve_returned) == (reimbursement, gas_reserve - reimbursement));
+        ensure!(event.quote_unallocated == before.rewards_quote - quote - reimbursement);
+        ensure!(self.vault(m)?.rewards_quote == event.quote_unallocated);
+
+        let close = |w: &Self, round_id: ObjectID| -> Result<ProgrammableTransaction> {
+            let mut b = ProgrammableTransactionBuilder::new();
+            let round = w.shared(&mut b, round_id, true)?;
+            let version = w.shared(&mut b, w.migrators_version, false)?;
+            let vault = w.shared(&mut b, m.vault, true)?;
+            let clock = w.clock(&mut b)?;
+            call(&mut b, w.migrators, "blast_holder_rewards", "close_round", vec![meme_type.clone(), w.quote()], vec![round, version, vault, clock]);
+            Ok(b.finish())
+        };
+        let pt = close(self, round)?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 16 }, &[round, m.vault], &[])?;
+
+        // Publish another funded round after a deliberately skipped holding
+        // interval. Its reserve stays unsettled until recovery after revocation.
+        let mut b = ProgrammableTransactionBuilder::new();
+        let signed_in = self.sign_in(&mut b, "RewardsAdmin")?;
+        let vault = self.shared(&mut b, m.vault, true)?;
+        let version = self.shared(&mut b, self.migrators_version, false)?;
+        let policy = self.shared(&mut b, self.policy, false)?;
+        let clock = self.clock(&mut b)?;
+        let args = vec![vault, version, signed_in, policy, b.pure(SuiAddress::from(LP_PROTOCOL))?,
+            b.pure(1u64)?, b.pure(end + 100)?, b.pure(end + 200)?,
+            b.pure(vec![0xAAu8; 32])?, b.pure(vec![0xBBu8; 32])?,
+            b.pure(1u64)?, b.pure(1u64)?, b.pure(0u64)?, b.pure(1u64)?,
+            b.pure(deadline_at_ms)?, clock];
+        call(&mut b, self.migrators, "blast_holder_rewards", "publish_round", vec![meme_type.clone(), self.quote()], args);
+        let second = self.h.execute(b.finish())?;
+        second.assert_success();
+        let second_rounds = second.created(&self.h, "blast_holder_rewards", "Round");
+        ensure!(second_rounds.len() == 1 && self.h.object(second_rounds[0]).is_shared());
+        let second_round = second_rounds[0];
+        let second_events: Vec<RoundPublished> = self.events(&second, "RoundPublished");
+        ensure!(second_events.len() == 1 && second_events[0].gas_reserve_amount == 1);
+        ensure!(second_events[0].treasury == LP_PROTOCOL.into() && second_events[0].claim_deadline_at_ms == deadline_at_ms);
+
+        // Revoke the live role, prove settlement cannot sign in, then recover
+        // all unclaimed holder funds permissionlessly at the exact deadline.
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl = self.shared(&mut b, self.acl, true)?;
+        let root_cap = b.obj(self.h.owned(self.root))?;
+        let cap_id = b.pure(self.admin_cap)?;
+        call(&mut b, self.admin, "blast_acl", "revoke_role", vec![tag(&format!("{}::blast_fun_domain::RewardsAdmin", self.blast))], vec![acl, root_cap, cap_id]);
+        self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
+        let pt = settlement(self, second_round, 0, false)?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.admin, module: "blast_acl", code: 5 }, &[second_round, m.vault, self.admin_cap], &[LP_PROTOCOL.into()])?;
+        self.h.sim.advance_clock(std::time::Duration::from_millis(1_000));
+        let pt = claim(self)?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 12 }, &[round], &[beneficiary.into()])?;
+        let pt = close(self, round)?;
+        let closed = self.h.execute(pt)?;
+        closed.assert_success();
+        let events: Vec<RoundClosed> = self.events(&closed, "RoundClosed");
+        ensure!(events.len() == 1);
+        let event = &events[0];
+        ensure!(event.vault_id == m.vault && event.round_id == round && event.number == 0);
+        ensure!((event.meme_returned, event.quote_returned, event.gas_reserve_returned) == (meme - meme_paid, quote - quote_paid, 0));
+        let pt = close(self, second_round)?;
+        let recovered = self.h.execute(pt)?;
+        recovered.assert_success();
+        let events: Vec<RoundClosed> = self.events(&recovered, "RoundClosed");
+        ensure!(events.len() == 1);
+        let event = &events[0];
+        ensure!(event.vault_id == m.vault && event.round_id == second_round && event.number == 1);
+        ensure!((event.meme_returned, event.quote_returned, event.gas_reserve_returned) == (1, 0, 1));
+        let final_vault = self.vault(m)?;
+        ensure!((final_vault.rewards_meme, final_vault.rewards_quote) == (before.rewards_meme - meme_paid, before.rewards_quote - quote_paid - reimbursement));
+        self.report(format!("holder rewards: isolated gas={gas_reserve}, reimbursement={reimbursement}, atomic replay rollback, ACL revocation, deadline claim rejection and permissionless close conserve both assets"));
 
         Ok(())
     }
@@ -2101,6 +2213,7 @@ struct RoundPublished {
     _number: u64,
     _start_checkpoint: u64,
     _end_checkpoint: u64,
+    claim_deadline_at_ms: u64,
     root: Vec<u8>,
     _manifest_digest: Vec<u8>,
     _leaf_count: u64,
@@ -2108,6 +2221,29 @@ struct RoundPublished {
     quote_amount: u64,
     meme_unallocated: u64,
     quote_unallocated: u64,
+    treasury: SuiAddress,
+    gas_reserve_amount: u64,
+}
+
+#[derive(Deserialize)]
+struct GasReserveSettled {
+    vault_id: ObjectID,
+    round_id: ObjectID,
+    number: u64,
+    treasury: SuiAddress,
+    reimbursement_amount: u64,
+    reserve_returned: u64,
+    quote_unallocated: u64,
+}
+
+#[derive(Deserialize)]
+struct RoundClosed {
+    vault_id: ObjectID,
+    round_id: ObjectID,
+    number: u64,
+    meme_returned: u64,
+    quote_returned: u64,
+    gas_reserve_returned: u64,
 }
 
 #[derive(Deserialize)]

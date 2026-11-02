@@ -164,6 +164,9 @@ public struct RoundEntry has copy, drop {
     root: vector<u8>,
     leaf_count: u64,
     remaining: Pair,
+    gas_reserve: Option<u64>,
+    treasury: address,
+    claim_deadline_at_ms: u64,
     claimed: vector<u64>,
 }
 
@@ -223,7 +226,15 @@ fun replayed_events_equal_every_getter_and_native_payout_across_the_lifecycle() 
     fixture.assert_state();
     fixture.publish_round();
     fixture.assert_state();
+    fixture.settle_reward_gas();
+    fixture.assert_state();
     fixture.claim_reward();
+    fixture.assert_state();
+    fixture.close_reward_round();
+    fixture.assert_state();
+    fixture.publish_round();
+    fixture.assert_state();
+    fixture.close_reward_round();
     fixture.assert_state();
     fixture.assert_native_payouts();
 
@@ -608,29 +619,38 @@ fun claim_creator_fees(self: &mut ReplayFixture) {
     });
 }
 
-/// Publishes round zero: one leaf paying Alice half of each rewards balance.
+/// Publishes the next round with one leaf paying Alice half of each rewards balance.
 fun publish_round(self: &mut ReplayFixture) {
     self.next_tx!(ADMIN, |f| {
         let admin = blast_acl::witness_for_testing<RewardsAdmin>();
+        let policy = f.take_policy();
         let mut vault = f.take_vault();
         let (meme, quote) = vault.rewards_balances();
-        let root = merkle::leaf(object::id(&vault), 0, 0, ALICE, meme / 2, quote / 2);
+        let number = vault.next_round();
+        let claim_deadline_at_ms = f.clock.timestamp_ms() + 1_000_000;
+        let root = merkle::leaf(object::id(&vault), number, 0, ALICE, meme / 2, quote / 2);
 
         vault.publish_round(
             &f.migrators_version,
             &admin,
-            0,
-            100,
-            200,
+            &policy,
+            policy.protocol_destination(),
+            number,
+            100 + number * 200,
+            200 + number * 200,
             root,
             vector::tabulate!(32, |i| i as u8),
             1,
             meme / 2,
             quote / 2,
+            quote / 4,
+            claim_deadline_at_ms,
+            &f.clock,
             f.ctx!(),
         );
 
         test_scenario::return_shared(vault);
+        test_scenario::return_shared(policy);
     });
 }
 
@@ -647,10 +667,37 @@ fun claim_reward(self: &mut ReplayFixture) {
             entry.remaining.meme,
             entry.remaining.quote,
             vector[],
+            &f.clock,
             f.ctx!(),
         );
 
         test_scenario::return_shared(round);
+    });
+}
+
+/// Settles half the pending reserve, independently of the holder leaf.
+fun settle_reward_gas(self: &mut ReplayFixture) {
+    self.next_tx!(ADMIN, |f| {
+        let entry = f.replay.rounds[0];
+        let mut round = f.take_round(entry.round_id);
+        let mut vault = f.take_vault();
+        round.settle_gas_reserve(&f.migrators_version,
+            &blast_acl::witness_for_testing<RewardsAdmin>(), &mut vault,
+            entry.gas_reserve.destroy_some() / 2, f.ctx!());
+        test_scenario::return_shared(round);
+        test_scenario::return_shared(vault);
+    });
+}
+
+/// Recovers the entire remaining custody at the deadline, without an admin.
+fun close_reward_round(self: &mut ReplayFixture) {
+    self.next_tx!(KEEPER, |f| {
+        let entry = f.replay.rounds[0];
+        f.clock.set_for_testing(entry.claim_deadline_at_ms);
+        let round = f.take_round(entry.round_id);
+        let mut vault = f.take_vault();
+        round.close_round(&f.migrators_version, &mut vault, &f.clock);
+        test_scenario::return_shared(vault);
     });
 }
 
@@ -865,6 +912,14 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
     });
     direct<blast_events::RoundPublished>().do!(|bytes| {
         replay.round_published(bytes);
+        reduced = reduced + 1;
+    });
+    direct<blast_events::GasReserveSettled>().do!(|bytes| {
+        replay.gas_reserve_settled(bytes);
+        reduced = reduced + 1;
+    });
+    direct<blast_events::RoundClosed>().do!(|bytes| {
+        replay.round_closed(bytes);
         reduced = reduced + 1;
     });
     direct<blast_events::RewardPaid>().do!(|bytes| {
@@ -1388,21 +1443,25 @@ fun round_published(self: &mut Replay, bytes: vector<u8>) {
     let number = r.peel_u64();
     let start_checkpoint = r.peel_u64();
     let end_checkpoint = r.peel_u64();
+    let claim_deadline_at_ms = r.peel_u64();
     let root = r.peel_vec_u8();
     assert_eq!(r.peel_vec_u8().length(), 32);
     let leaf_count = r.peel_u64();
     let budget = r.peel_pair();
     let unallocated = r.peel_pair();
+    let treasury = r.peel_address();
+    assert_eq!(treasury, self.protocol_destination);
+    let gas = r.peel_u64();
     r.assert_consumed();
 
     assert_eq!(number, self.next_round);
     assert!(start_checkpoint < end_checkpoint);
-    assert!(self.last_checkpoint.is_none_or!(|last| *last == start_checkpoint));
+    assert!(self.last_checkpoint.is_none_or!(|last| *last <= start_checkpoint));
     assert_eq!(root.length(), 32);
     assert!(leaf_count > 0);
     assert!(budget.meme > 0 || budget.quote > 0);
     assert_eq!(unallocated.meme, self.rewards.meme - budget.meme);
-    assert_eq!(unallocated.quote, self.rewards.quote - budget.quote);
+    assert_eq!(unallocated.quote, self.rewards.quote - budget.quote - gas);
     self.rewards = unallocated;
     self.next_round = number + 1;
     self.last_checkpoint = option::some(end_checkpoint);
@@ -1413,6 +1472,9 @@ fun round_published(self: &mut Replay, bytes: vector<u8>) {
         root,
         leaf_count,
         remaining: budget,
+        gas_reserve: if (gas > 0) option::some(gas) else option::none(),
+        treasury,
+        claim_deadline_at_ms,
         claimed: vector[],
     });
 }
@@ -1435,6 +1497,45 @@ fun reward_paid(self: &mut Replay, bytes: vector<u8>) {
     round.remaining = remaining;
     round.claimed.push_back(index);
     self.credit(beneficiary, paid.meme, paid.quote);
+}
+
+/// Reconciles exact reimbursement and unused reserve against the funding vault.
+fun gas_reserve_settled(self: &mut Replay, bytes: vector<u8>) {
+    let mut r = bcs::new(bytes);
+    assert_eq!(r.peel_id(), self.binding.vault_id);
+    let round_id = r.peel_id();
+    let number = r.peel_u64();
+    let treasury = r.peel_address();
+    let reimbursement = r.peel_u64();
+    let returned = r.peel_u64();
+    let quote_unallocated = r.peel_u64();
+    r.assert_consumed();
+    let i = self.rounds.find_index!(|round| round.round_id == round_id).destroy_some();
+    let round = &mut self.rounds[i];
+    assert_eq!(round.number, number);
+    assert_eq!(round.treasury, treasury);
+    assert_eq!(round.gas_reserve.extract(), reimbursement + returned);
+    self.rewards.quote = self.rewards.quote + returned;
+    assert_eq!(self.rewards.quote, quote_unallocated);
+    self.credit(treasury, 0, reimbursement);
+}
+
+/// Closing deletes the round and restores all of its remaining custody.
+fun round_closed(self: &mut Replay, bytes: vector<u8>) {
+    let mut r = bcs::new(bytes);
+    assert_eq!(r.peel_id(), self.binding.vault_id);
+    let round_id = r.peel_id();
+    let number = r.peel_u64();
+    let returned = r.peel_pair();
+    let gas_returned = r.peel_u64();
+    r.assert_consumed();
+    let i = self.rounds.find_index!(|round| round.round_id == round_id).destroy_some();
+    let round = self.rounds.remove(i);
+    assert_eq!(round.number, number);
+    assert_eq!(round.remaining, returned);
+    assert_eq!(round.gas_reserve.destroy_or!(0), gas_returned);
+    self.rewards.meme = self.rewards.meme + returned.meme;
+    self.rewards.quote = self.rewards.quote + returned.quote + gas_returned;
 }
 
 /// Burned Meme leaves a burn-only supply and reaches `@0x0` under a fixed one.
@@ -1641,6 +1742,7 @@ fun assert_state(self: &mut ReplayFixture) {
             let round = f.take_round(entry.round_id);
             let (meme, quote) = round.round_balances_for_testing();
             assert_eq!(Pair { meme, quote }, entry.remaining);
+            assert_eq!(round.gas_reserve_for_testing(), entry.gas_reserve);
             entry.leaf_count.do!(|index| {
                 assert_eq!(round.is_claimed_for_testing(index), entry.claimed.contains(&index));
             });

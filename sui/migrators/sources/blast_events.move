@@ -158,6 +158,7 @@ public struct RoundPublished has copy, drop {
     number: u64,
     start_checkpoint: u64,
     end_checkpoint: u64,
+    claim_deadline_at_ms: u64,
     root: vector<u8>,
     manifest_digest: vector<u8>,
     leaf_count: u64,
@@ -165,6 +166,29 @@ public struct RoundPublished has copy, drop {
     quote_amount: u64,
     meme_unallocated: u64,
     quote_unallocated: u64,
+    treasury: address,
+    gas_reserve_amount: u64,
+}
+
+/// One-shot gas reimbursement and the unused Quote restored to its vault.
+public struct GasReserveSettled has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    treasury: address,
+    reimbursement_amount: u64,
+    reserve_returned: u64,
+    quote_unallocated: u64,
+}
+
+/// Deadline recovery of unclaimed holder assets and any unsettled reserve.
+public struct RoundClosed has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    meme_returned: u64,
+    quote_returned: u64,
+    gas_reserve_returned: u64,
 }
 
 /// A completed holder-reward payout and both remaining round balances.
@@ -417,6 +441,7 @@ public(package) fun round_published(
     number: u64,
     start_checkpoint: u64,
     end_checkpoint: u64,
+    claim_deadline_at_ms: u64,
     root: vector<u8>,
     manifest_digest: vector<u8>,
     leaf_count: u64,
@@ -424,6 +449,8 @@ public(package) fun round_published(
     quote_amount: u64,
     meme_unallocated: u64,
     quote_unallocated: u64,
+    treasury: address,
+    gas_reserve_amount: u64,
 ) {
     sui::event::emit(RoundPublished {
         vault_id,
@@ -431,6 +458,7 @@ public(package) fun round_published(
         number,
         start_checkpoint,
         end_checkpoint,
+        claim_deadline_at_ms,
         root,
         manifest_digest,
         leaf_count,
@@ -438,6 +466,48 @@ public(package) fun round_published(
         quote_amount,
         meme_unallocated,
         quote_unallocated,
+        treasury,
+        gas_reserve_amount,
+    });
+}
+
+/// Emits gas reserve settled.
+public(package) fun gas_reserve_settled(
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    treasury: address,
+    reimbursement_amount: u64,
+    reserve_returned: u64,
+    quote_unallocated: u64,
+) {
+    sui::event::emit(GasReserveSettled {
+        vault_id,
+        round_id,
+        number,
+        treasury,
+        reimbursement_amount,
+        reserve_returned,
+        quote_unallocated,
+    });
+}
+
+/// Emits round closed.
+public(package) fun round_closed(
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    meme_returned: u64,
+    quote_returned: u64,
+    gas_reserve_returned: u64,
+) {
+    sui::event::emit(RoundClosed {
+        vault_id,
+        round_id,
+        number,
+        meme_returned,
+        quote_returned,
+        gas_reserve_returned,
     });
 }
 

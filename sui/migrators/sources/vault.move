@@ -398,6 +398,16 @@ public(package) fun fund_round<Meme, Quote>(
     (self.rewards_meme.split(meme_amount), self.rewards_quote.split(quote_amount))
 }
 
+/// Restores closed holder funds and unused gas custody to the funding vault.
+public(package) fun restore_rewards<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+) {
+    self.rewards_meme.join(meme);
+    self.rewards_quote.join(quote);
+}
+
 /// Returns the venue pool the attached position belongs to.
 public(package) fun pool_id<Meme, Quote>(self: &LpVault<Meme, Quote>): ID {
     self.pool_id
