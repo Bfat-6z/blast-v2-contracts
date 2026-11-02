@@ -17,10 +17,10 @@ public enum Case has copy, drop { Early, Replacement, Cancelled, Removed, Replay
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun adapter_early() { exercise(Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun adapter_replacement() { exercise(Case::Replacement); }
 
 #[test, expected_failure(abort_code = sui::vec_map::EKeyDoesNotExist, location = sui::vec_map)]

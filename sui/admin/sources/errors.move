@@ -67,6 +67,18 @@ const EUpgradePolicyNotMoreRestrictive: u64 = 18;
 #[test_only]
 const EInvalidPackageMarker: u64 = 19;
 
+#[test_only]
+const ENotReady: u64 = 20;
+
+#[test_only]
+const ENoPending: u64 = 21;
+
+#[test_only]
+const EInvalidDelay: u64 = 22;
+
+#[test_only]
+const EDelayUnchanged: u64 = 23;
+
 macro public(package) fun invalid_super_admin_cap(): u64 { 0 }
 
 macro public(package) fun invalid_admin_cap(): u64 { 1 }
@@ -106,3 +118,11 @@ macro public(package) fun upgrade_cap_unavailable(): u64 { 17 }
 macro public(package) fun upgrade_policy_not_more_restrictive(): u64 { 18 }
 
 macro public(package) fun invalid_package_marker(): u64 { 19 }
+
+macro public(package) fun not_ready(): u64 { 20 }
+
+macro public(package) fun no_pending(): u64 { 21 }
+
+macro public(package) fun invalid_delay(): u64 { 22 }
+
+macro public(package) fun delay_unchanged(): u64 { 23 }

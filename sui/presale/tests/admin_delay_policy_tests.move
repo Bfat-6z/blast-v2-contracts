@@ -110,7 +110,7 @@ fun cancellation_after_readiness_preserves_policy_and_replacement_restarts_notic
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun a_reduction_cannot_apply_one_millisecond_before_the_old_deadline() {
     let mut fixture = start();
     fixture.next_tx!(|f| {
@@ -123,7 +123,7 @@ fun a_reduction_cannot_apply_one_millisecond_before_the_old_deadline() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun an_increase_cannot_apply_before_the_old_deadline() {
     let mut fixture = start();
     fixture.next_tx!(|f| {
@@ -136,7 +136,7 @@ fun an_increase_cannot_apply_before_the_old_deadline() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun a_policy_replacement_restarts_the_whole_old_notice() {
     let mut fixture = start();
     fixture.next_tx!(|f| {
@@ -151,7 +151,7 @@ fun a_policy_replacement_restarts_the_whole_old_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun a_new_delay_cannot_shorten_an_earlier_pending_action() {
     let mut fixture = start();
     fixture.next_tx!(|f| {
@@ -168,7 +168,7 @@ fun a_new_delay_cannot_shorten_an_earlier_pending_action() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENoPending, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun applying_a_policy_change_twice_is_rejected() {
     let mut fixture = start();
     fixture.next_tx!(|f| { f.set_delay(100); f.version.apply_admin_delay(&f.clock); });
@@ -176,7 +176,7 @@ fun applying_a_policy_change_twice_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENoPending, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun a_cancelled_policy_change_cannot_be_applied() {
     let mut fixture = start();
     fixture.next_tx!(|f| {
@@ -188,7 +188,7 @@ fun a_cancelled_policy_change_cannot_be_applied() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::EDelayUnchanged, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::EDelayUnchanged, location = blast_admin::delayed)]
 fun scheduling_an_unchanged_delay_is_rejected() {
     let mut fixture = start();
     fixture.next_tx!(|f| f.schedule_delay(0));
@@ -309,7 +309,7 @@ fun configure_route_and_destinations(self: &mut AdminDelayFixture) {
 
 // === Imports ===
 
-use blast_admin::{blast_acl, delayed};
+use blast_admin::blast_acl;
 use blast_presale::{blast_presale_package as marker, bps, creation_policy, fee_policy, package_admin, blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin, AdapterAdmin, ListingAdmin}, blast_presale_package::{AdminDelayScheduled as Scheduled, AdminDelayChanged as Changed, AdminDelayCancelled as Cancelled}};
 use std::unit_test::{assert_eq, destroy};
 use sui::{clock::Clock, sui::SUI, test_scenario::{Self, Scenario}};

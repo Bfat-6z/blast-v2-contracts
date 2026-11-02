@@ -29,6 +29,10 @@ fun shared_error_codes_are_stable() {
     assert_eq!(errors::upgrade_cap_unavailable!(), 17);
     assert_eq!(errors::upgrade_policy_not_more_restrictive!(), 18);
     assert_eq!(errors::invalid_package_marker!(), 19);
+    assert_eq!(errors::not_ready!(), 20);
+    assert_eq!(errors::no_pending!(), 21);
+    assert_eq!(errors::invalid_delay!(), 22);
+    assert_eq!(errors::delay_unchanged!(), 23);
 }
 
 // === Imports ===

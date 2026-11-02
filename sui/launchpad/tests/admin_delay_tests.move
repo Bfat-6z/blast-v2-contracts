@@ -33,7 +33,7 @@ fun treasury_changes_only_on_permissionless_apply_and_events_record_the_schedule
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun treasury_cannot_change_before_the_full_delay() {
     let mut ctx = tx_context::dummy();
     let version = marker::new_for_testing(&mut ctx);
@@ -46,7 +46,7 @@ fun treasury_cannot_change_before_the_full_delay() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENoPending, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun cancel_admin_can_stop_a_ready_treasury_change() {
     let mut ctx = tx_context::dummy();
     let version = marker::new_for_testing(&mut ctx);
@@ -75,7 +75,7 @@ fun a_ready_digest_does_not_authorize_different_code() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun upgrade_authorization_cannot_be_issued_early() {
     let mut ctx = tx_context::dummy();
     let version = marker::new_for_testing(&mut ctx);
@@ -234,7 +234,7 @@ fun with_ready_at(mut bytes: vector<u8>): vector<u8> {
 
 // === Imports ===
 
-use blast_admin::{blast_acl, delayed};
+use blast_admin::blast_acl;
 use blast_fun::{blast_fun as marker, blast_fun_domain::{AdapterAdmin, CancelAdmin, ClaimSignerAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin}, bps, events, launch_config, runtime_config, package_admin};
 use std::unit_test::{assert_eq, destroy};
 use sui::clock;

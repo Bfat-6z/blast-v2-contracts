@@ -4,20 +4,6 @@
 /// Explicitly applied changes whose notice period is supplied by the owning policy.
 module blast_admin::delayed;
 
-// === Errors ===
-
-#[error(code = 0)]
-const ENotReady: vector<u8> = b"The full administrative delay must pass before applying a change.";
-
-#[error(code = 1)]
-const ENoPending: vector<u8> = b"There is no scheduled administrative change.";
-
-#[error(code = 2)]
-const EInvalidDelay: vector<u8> = b"The notice period must fit a Unix millisecond execution threshold.";
-
-#[error(code = 3)]
-const EDelayUnchanged: vector<u8> = b"A notice-period update must change the applied delay.";
-
 // === Public Types ===
 
 /// Applied value with at most one replacement; readers never need a Clock.
@@ -66,24 +52,24 @@ public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, del
 /// The enclosing module must restrict this operation to its delay-policy authority.
 public fun schedule_delay(self: &mut Delayed<u64>, delay_ms: u64, clock: &Clock): u64 {
     let current_delay_ms = self.value;
-    assert!(delay_ms != current_delay_ms, EDelayUnchanged);
+    assert!(delay_ms != current_delay_ms, blast_admin::errors::delay_unchanged!());
     let pending = new_pending(delay_ms, current_delay_ms, clock);
-    assert!(delay_ms <= std::u64::max_value!() - pending.ready_at_ms, EInvalidDelay);
+    assert!(delay_ms <= std::u64::max_value!() - pending.ready_at_ms, blast_admin::errors::invalid_delay!());
     self.pending = option::some(pending);
     pending.ready_at_ms
 }
 
 /// Applies a ready delay only while it can still form a future execution threshold.
 public fun apply_delay(self: &mut Delayed<u64>, clock: &Clock): u64 {
-    assert!(self.pending.is_some(), ENoPending);
+    assert!(self.pending.is_some(), blast_admin::errors::no_pending!());
     let delay_ms = self.pending.destroy_some().take_ready(clock);
-    assert!(delay_ms <= std::u64::max_value!() - clock.timestamp_ms(), EInvalidDelay);
+    assert!(delay_ms <= std::u64::max_value!() - clock.timestamp_ms(), blast_admin::errors::invalid_delay!());
     self.apply(clock)
 }
 
 /// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
 public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T {
-    assert!(self.pending.is_some(), ENoPending);
+    assert!(self.pending.is_some(), blast_admin::errors::no_pending!());
     let value = self.pending.destroy_some().take_ready(clock);
     self.pending = option::none();
     self.value = value;
@@ -92,7 +78,7 @@ public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): 
 
 /// Cancels even a ready change and returns the cancelled value.
 public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T {
-    assert!(self.pending.is_some(), ENoPending);
+    assert!(self.pending.is_some(), blast_admin::errors::no_pending!());
     self.pending.extract().value
 }
 
@@ -107,13 +93,13 @@ public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T) {
 /// Later policy changes cannot shorten or extend this pending value's notice.
 public fun new_pending<T: copy + drop + store>(value: T, delay_ms: u64, clock: &Clock): Pending<T> {
     let scheduled_at_ms = clock.timestamp_ms();
-    assert!(delay_ms <= std::u64::max_value!() - scheduled_at_ms, EInvalidDelay);
+    assert!(delay_ms <= std::u64::max_value!() - scheduled_at_ms, blast_admin::errors::invalid_delay!());
     Pending { value, ready_at_ms: scheduled_at_ms + delay_ms }
 }
 
 /// Returns a scheduled value only at or after its threshold.
 public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T {
-    assert!(clock.timestamp_ms() >= self.ready_at_ms, ENotReady);
+    assert!(clock.timestamp_ms() >= self.ready_at_ms, blast_admin::errors::not_ready!());
     self.value
 }
 

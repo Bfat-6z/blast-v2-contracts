@@ -22,16 +22,16 @@ public struct CoinB has drop {}
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun destination_early() { exercise(Setting::Destination, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun destination_replacement_restarts_notice() { exercise(Setting::Destination, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun destination_cancelled() { exercise(Setting::Destination, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun destination_replay() { exercise(Setting::Destination, Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
@@ -46,16 +46,16 @@ fun destination_stale_cancel() { exercise(Setting::Destination, Case::StaleCance
 #[test]
 fun destination_boundaries_and_cancel_reschedule() { exercise(Setting::Destination, Case::Success); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun defaults_early() { exercise(Setting::Defaults, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun defaults_replacement_restarts_notice() { exercise(Setting::Defaults, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun defaults_cancelled() { exercise(Setting::Defaults, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun defaults_replay() { exercise(Setting::Defaults, Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
@@ -70,16 +70,16 @@ fun defaults_stale_cancel() { exercise(Setting::Defaults, Case::StaleCancel); }
 #[test]
 fun defaults_boundaries_and_cancel_reschedule() { exercise(Setting::Defaults, Case::Success); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun coin_override_early() { exercise(Setting::CoinOverride, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun coin_override_replacement_restarts_notice() { exercise(Setting::CoinOverride, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun coin_override_cancelled() { exercise(Setting::CoinOverride, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun coin_override_replay() { exercise(Setting::CoinOverride, Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
@@ -94,16 +94,16 @@ fun coin_override_stale_cancel() { exercise(Setting::CoinOverride, Case::StaleCa
 #[test]
 fun coin_override_boundaries_and_cancel_reschedule() { exercise(Setting::CoinOverride, Case::Success); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun coin_clear_early() { exercise(Setting::CoinClear, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun coin_clear_replacement_restarts_notice() { exercise(Setting::CoinClear, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun coin_clear_cancelled() { exercise(Setting::CoinClear, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun coin_clear_replay() { exercise(Setting::CoinClear, Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]

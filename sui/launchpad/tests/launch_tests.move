@@ -99,7 +99,7 @@ public struct LaunchFixture {
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun security_curve_fee_cap_early() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -114,7 +114,7 @@ fun security_curve_fee_cap_early() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun security_curve_fee_cap_replacement() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -282,7 +282,7 @@ fun security_curve_fee_cap_cancel_reschedule() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun security_metadata_cap_early() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -297,7 +297,7 @@ fun security_metadata_cap_early() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun security_metadata_cap_replacement() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {

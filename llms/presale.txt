@@ -3934,6 +3934,10 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 17 | `EUpgradeCapUnavailable` |  |
 | 18 | `EUpgradePolicyNotMoreRestrictive` |  |
 | 19 | `EInvalidPackageMarker` |  |
+| 20 | `ENotReady` |  |
+| 21 | `ENoPending` |  |
+| 22 | `EInvalidDelay` |  |
+| 23 | `EDelayUnchanged` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -4203,15 +4207,6 @@ public fun proposed<T: copy + drop + store>(self: &Pending<T>): T
 /// Returns the Unix millisecond threshold for a scheduling event.
 public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
 ```
-
-#### Errors
-
-| Constant | Code | Message |
-| --- | --- | --- |
-| `ENotReady` | 0 | The full administrative delay must pass before applying a change. |
-| `ENoPending` | 1 | There is no scheduled administrative change. |
-| `EInvalidDelay` | 2 | The notice period must fit a Unix millisecond execution threshold. |
-| `EDelayUnchanged` | 3 | A notice-period update must change the applied delay. |
 
 ### `blast_admin::operational_version`
 

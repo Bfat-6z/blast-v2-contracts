@@ -115,7 +115,7 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
     let version_arg = b.obj(h.shared(version, true))?;
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut b, blast, "blast_fun", "apply_admin_delay", vec![], vec![version_arg, clock]);
-    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 0 }, &[version], &[])?;
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 20 }, &[version], &[])?;
     h.sim.advance_clock(std::time::Duration::from_millis(1));
 
     let mut b = ProgrammableTransactionBuilder::new();
@@ -127,7 +127,7 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
     let value = b.pure(123u64)?;
     call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, clock]);
     call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
-    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 0 }, &[version, config, cap], &[])?;
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 20 }, &[version, config, cap], &[])?;
     assert_eq!(decode(h)?.0, 172_800_000);
 
     let mut b = ProgrammableTransactionBuilder::new();

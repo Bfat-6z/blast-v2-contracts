@@ -228,8 +228,9 @@ and have no custody at all.
 
 `delayed::schedule` and `delayed::new_pending` accept an explicit `delay_ms` and
 Clock. Zero is valid; deadlines are absolute snapshots and timestamp overflow
-aborts with `EInvalidDelay`. `Delayed` reads do not need Clock, and changes only
-become active through explicit application. Rescheduling replaces a proposal.
+aborts with registry code 22 (`EInvalidDelay`) from `delayed`. `Delayed` reads
+do not need Clock, and changes only become active through explicit application.
+Rescheduling replaces a proposal.
 `delayed::schedule_delay` and `delayed::apply_delay` govern a `Delayed<u64>`
 policy using its old applied delay, reject no-op proposals and ensure the
 resulting delay remains representable at scheduling and actual application.
@@ -319,6 +320,10 @@ Codes are plain `u64` values raised in the `blast_admin` module named.
 | 17 | `EUpgradeCapUnavailable` | `upgrade_custody` | the package was made immutable |
 | 18 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
 | 19 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
+| 20 | `ENotReady` | `delayed` | applying a change before its snapshotted deadline |
+| 21 | `ENoPending` | `delayed` | applying or cancelling when no change is pending |
+| 22 | `EInvalidDelay` | `delayed` | the delay would overflow its Unix millisecond deadline; choose a representable delay |
+| 23 | `EDelayUnchanged` | `delayed` | the proposed delay equals the currently applied delay |
 
 The one an integrator most often meets is code 12 from `operational_version`: a
 PTB built against an old package ID after an upgrade.

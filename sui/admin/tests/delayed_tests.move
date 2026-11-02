@@ -22,7 +22,7 @@ fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun one_millisecond_before_ready_is_rejected() {
     let mut clock = clock::create_for_testing(&mut tx_context::dummy());
     let mut setting = delayed::new(0u64);
@@ -33,7 +33,7 @@ fun one_millisecond_before_ready_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun replacing_a_ready_proposal_restarts_the_entire_delay() {
     let mut clock = clock::create_for_testing(&mut tx_context::dummy());
     let mut setting = delayed::new(0u64);
@@ -58,7 +58,7 @@ fun cancellation_after_readiness_preserves_the_applied_value() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENoPending, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun an_applied_proposal_cannot_be_replayed() {
     let mut clock = clock::create_for_testing(&mut tx_context::dummy());
     let mut setting = delayed::new(0u64);
@@ -120,7 +120,7 @@ fun delay_changes_use_old_policy_and_existing_deadlines_are_immutable() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun reducing_the_delay_to_zero_still_waits_the_old_notice() {
     let mut clock = clock::create_for_testing(&mut tx_context::dummy());
     let mut policy = delayed::new(100u64);
@@ -131,7 +131,7 @@ fun reducing_the_delay_to_zero_still_waits_the_old_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::EDelayUnchanged, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::EDelayUnchanged, location = blast_admin::delayed)]
 fun rescheduling_the_applied_delay_is_rejected() {
     let clock = clock::create_for_testing(&mut tx_context::dummy());
     let mut policy = delayed::new(100u64);
@@ -152,7 +152,7 @@ fun the_largest_representable_deadline_is_valid() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::EInvalidDelay, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
 fun scheduling_rejects_an_overflowing_deadline() {
     let mut clock = clock::create_for_testing(&mut tx_context::dummy());
     clock.set_for_testing(1);
@@ -161,7 +161,7 @@ fun scheduling_rejects_an_overflowing_deadline() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::EInvalidDelay, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
 fun a_proposed_delay_must_fit_at_its_earliest_application() {
     let mut clock = clock::create_for_testing(&mut tx_context::dummy());
     clock.set_for_testing(1);
@@ -171,7 +171,7 @@ fun a_proposed_delay_must_fit_at_its_earliest_application() {
 }
 
 #[test]
-#[expected_failure(abort_code = delayed::EInvalidDelay, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
 fun applying_a_delay_too_late_rejects_a_now_unrepresentable_notice() {
     let mut clock = clock::create_for_testing(&mut tx_context::dummy());
     clock.set_for_testing(1);

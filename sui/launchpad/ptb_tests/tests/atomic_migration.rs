@@ -114,7 +114,7 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS - 1));
     let watched = [w.runtime, w.config, w.acl, w.admin_cap];
     w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
-        Expected::Abort { package: w.admin, module: "delayed", code: 0 }, &watched, &[w.h.sender])?;
+        Expected::Abort { package: w.admin, module: "delayed", code: 20 }, &watched, &[w.h.sender])?;
     w.h.sim.advance_clock(Duration::from_millis(1));
 
     // Apply a ready treasury, emit its event, then fail a different not-ready action.
@@ -134,7 +134,7 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut b, w.blast, "runtime_config", "apply_treasury", vec![], vec![runtime, version, clock]);
     call(&mut b, w.blast, "launch_config", "apply_creation_fee", vec![], vec![config, version, clock]);
-    w.h.assert_rolled_back(b.finish(), Expected::Abort { package: w.admin, module: "delayed", code: 0 }, &watched, &[w.h.sender])?;
+    w.h.assert_rolled_back(b.finish(), Expected::Abort { package: w.admin, module: "delayed", code: 20 }, &watched, &[w.h.sender])?;
 
     w.change_role("TreasuryAdmin", false)?;
     w.h.assert_rolled_back(w.schedule_treasury(address(&[0xAB]).into())?,
@@ -143,7 +143,7 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     w.h.execute(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?)?.assert_success();
     assert_eq!(w.applied_treasury()?, destination);
     w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
-        Expected::Abort { package: w.admin, module: "delayed", code: 1 }, &watched, &[w.h.sender])?;
+        Expected::Abort { package: w.admin, module: "delayed", code: 21 }, &watched, &[w.h.sender])?;
 
     w.change_role("TreasuryAdmin", true)?;
     w.h.execute(w.schedule_treasury(address(&[0xAB]).into())?)?.assert_success();
@@ -155,7 +155,7 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     call(&mut b, w.blast, "runtime_config", "cancel_treasury", vec![], vec![runtime, version, cancel]);
     w.h.execute(b.finish())?.assert_success();
     w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
-        Expected::Abort { package: w.admin, module: "delayed", code: 1 }, &watched, &[w.h.sender])?;
+        Expected::Abort { package: w.admin, module: "delayed", code: 21 }, &watched, &[w.h.sender])?;
     assert_eq!(w.applied_treasury()?, destination);
     Ok(())
 }
@@ -247,7 +247,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let upgrade = b.finish();
     w.h.assert_rolled_back(
         upgrade.clone(),
-        Expected::Abort { package: w.admin, module: "delayed", code: 0 },
+        Expected::Abort { package: w.admin, module: "delayed", code: 20 },
         &[custody, w.version, w.admin_cap],
         &[w.h.sender],
     )?;

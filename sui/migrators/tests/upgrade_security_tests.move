@@ -19,10 +19,10 @@ public struct Fixture { version: PackageVersion, admin: PackageAdmin, clock: Clo
 #[test, expected_failure(abort_code = blast_fun_migrators::package_admin::ENoPendingAction, location = blast_fun_migrators::package_admin)]
 fun upgrade_missing() { exercise(false, Case::Missing); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun upgrade_early() { exercise(false, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun upgrade_replacement() { exercise(false, Case::Replacement); }
 
 #[test, expected_failure(abort_code = blast_fun_migrators::package_admin::ENoPendingAction, location = blast_fun_migrators::package_admin)]
@@ -55,10 +55,10 @@ fun upgrade_cancel_then_reschedule() { exercise(false, Case::Reschedule); }
 #[test, expected_failure(abort_code = blast_fun_migrators::package_admin::ENoPendingAction, location = blast_fun_migrators::package_admin)]
 fun immutable_missing() { exercise(true, Case::Missing); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun immutable_early() { exercise(true, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::delayed::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun immutable_replacement() { exercise(true, Case::Replacement); }
 
 #[test, expected_failure(abort_code = blast_fun_migrators::package_admin::ENoPendingAction, location = blast_fun_migrators::package_admin)]
