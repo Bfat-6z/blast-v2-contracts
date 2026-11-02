@@ -3680,6 +3680,10 @@ public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
 | `EProtocolLpFeesUnchanged` | 3 | An LP-fee update must change the vault's Blast rates. |
 | `EWrongPartner` | 4 | The partner is not the one this vault's presale named at creation. |
 
+#### Constants
+
+- `DEFAULT_PROTOCOL_LP_FEE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice for protocol LP-fee changes: 48 hours in milliseconds.
+
 ### `blast_presale::venue_config`
 
 Write-once custody for the venue capabilities and pool tiers migrators reserve before a presale opens.

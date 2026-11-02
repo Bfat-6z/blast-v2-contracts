@@ -413,7 +413,7 @@ fun build<Meme, Quote>(
         presale_cap_id,
         pool_id,
         fee_split,
-        protocol_fees: delayed::new(protocol_fees, 172_800_000),
+        protocol_fees: delayed::new(protocol_fees, DEFAULT_PROTOCOL_LP_FEE_DELAY_MS),
         partner_id,
         unpaid_protocol_meme: balance::zero(),
         unpaid_protocol_quote: balance::zero(),
@@ -510,10 +510,10 @@ public fun set_protocol_lp_fees_for_testing<Meme, Quote>(
         admin,
         lp_fee_meme_bps,
         lp_fee_quote_bps,
-        172_800_000,
+        DEFAULT_PROTOCOL_LP_FEE_DELAY_MS,
         &clock
     );
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(DEFAULT_PROTOCOL_LP_FEE_DELAY_MS);
     self.apply_protocol_lp_fees(package_version, &clock);
     clock.destroy_for_testing();
 }
@@ -533,7 +533,7 @@ public fun new_for_testing<Meme, Quote>(
         presale_cap_id,
         pool_id: object::id_from_address(@0x1),
         fee_split,
-        protocol_fees: delayed::new(protocol_fees, 172_800_000),
+        protocol_fees: delayed::new(protocol_fees, DEFAULT_PROTOCOL_LP_FEE_DELAY_MS),
         partner_id,
         unpaid_protocol_meme: balance::zero(),
         unpaid_protocol_quote: balance::zero(),
@@ -759,6 +759,11 @@ public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
     meme_amount: u64,
     unallocated_meme_remaining: u64,
 }
+
+// === Constants ===
+
+/// Initial notice for protocol LP-fee changes: 48 hours in milliseconds.
+const DEFAULT_PROTOCOL_LP_FEE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Errors ===
 

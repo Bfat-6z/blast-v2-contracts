@@ -3269,6 +3269,10 @@ public fun assert_curve_fee_cap<Meme, Quote>(
 )
 ```
 
+#### Constants
+
+- `DEFAULT_CAP_REASSIGNMENT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice for each creator-cap reassignment: 48 hours in milliseconds.
+
 ### `blast_fun::launch_config`
 
 Launch policy each new launch snapshots.

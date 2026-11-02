@@ -1012,7 +1012,7 @@ if [[ ! -f sources/launch.move ]] \
     'Launch {' \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
-  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), metadata_cap_delay_ms: 172_800_000, pending_metadata_cap_recipient: option::none(), curve_fee_cap_delay_ms: 172_800_000, pending_curve_fee_cap_recipient: option::none(), curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
+  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), metadata_cap_delay_ms: DEFAULT_CAP_REASSIGNMENT_DELAY_MS, pending_metadata_cap_recipient: option::none(), curve_fee_cap_delay_ms: DEFAULT_CAP_REASSIGNMENT_DELAY_MS, pending_curve_fee_cap_recipient: option::none(), curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
   || [[ "$launch_finalize_body" != *'fee_ledger: fees::new(creation_fee),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \

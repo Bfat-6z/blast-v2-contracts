@@ -6,6 +6,11 @@
 /// Launch construction, the bonding curve, and the migration handoff.
 module blast_fun::launch;
 
+// === Constants ===
+
+/// Initial notice for each creator-cap reassignment: 48 hours in milliseconds.
+const DEFAULT_CAP_REASSIGNMENT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
+
 // === Public Types ===
 
 public enum Lifecycle has copy, drop, store {
@@ -293,9 +298,9 @@ public fun finalize<Meme, Quote>(
         fee_ledger: fees::new(creation_fee),
         metadata_cap,
         creator: option::some(creator),
-        metadata_cap_delay_ms: 172_800_000,
+        metadata_cap_delay_ms: DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
         pending_metadata_cap_recipient: option::none(),
-        curve_fee_cap_delay_ms: 172_800_000,
+        curve_fee_cap_delay_ms: DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
         pending_curve_fee_cap_recipient: option::none(),
         curve_fee_cap_id: option::none(),
         blast_metadata_cap_id: option::none(),
@@ -1117,7 +1122,7 @@ public fun reassign_metadata_cap_for_testing<Meme, Quote>(
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_metadata_cap_reassignment(package_version, admin, recipient, &clock);
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(DEFAULT_CAP_REASSIGNMENT_DELAY_MS);
     self.reassign_metadata_cap(package_version, &clock, ctx);
     clock.destroy_for_testing();
 }
@@ -1132,7 +1137,7 @@ public fun reassign_curve_fee_cap_for_testing<Meme, Quote>(
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_curve_fee_cap_reassignment(package_version, admin, recipient, &clock);
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(DEFAULT_CAP_REASSIGNMENT_DELAY_MS);
     self.reassign_curve_fee_cap(package_version, &clock, ctx);
     clock.destroy_for_testing();
 }
