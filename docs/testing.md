@@ -35,11 +35,32 @@ without advancing Clock. Later governed changes schedule, advance the simulator
 by the snapshotted delay, and apply through public entry points. Policy tests also
 prove old-delay updates, same-PTB ordering/rollback and unauthorized rejection.
 
-The launchpad pause matrix runs with `cargo test --locked --test atomic_migration
-pause_ -- --test-threads=1` from `sui/launchpad/ptb_tests`, under the same memory
-guard. It exercises every reachable pause state and every `u8` input for both
-mutators, including stored-generation mismatch, exact events and rollback. The
-Move `pause_tests` module directly covers the package-only operation guard.
+Run the pause matrices from `sui/launchpad/ptb_tests`, under the same memory guard:
+
+```bash
+cargo test --locked --test atomic_migration pause_ -- --test-threads=1
+cargo test --locked --test presale_venue_fork presale_pause_ -- --test-threads=1
+```
+
+Both exercise every reachable pause state and every `u8` input for both mutators,
+including stored-generation mismatch, exact events and rollback. Real ACL tests
+cover role separation, wrong witness types, role and administrator revocation,
+and successful and failing multi-command sequences. The presale matrix also
+preserves a funded sale's balances, currency and capability. Each package's Move
+`pause_tests` directly covers the package-only operation guard: every supported
+state/query pair, every disjoint `u8` query, and unsupported query bits combined
+with paused operations. The administration source gate pins every protected
+operation's version/pause guard order and keeps settlement and exits available.
+
+Measure instruction coverage of the three pause functions independently of the
+larger suites with the fresh-stack wrapper:
+
+```bash
+MOVE_TEST_FILTER=pause_tests bash scripts/test_admin_delay.sh --coverage launchpad presale
+```
+
+Require 100% for `pause`, `unpause` and `assert_not_paused` in both package markers.
+Run the full affected suites separately without the filter.
 
 Native PTB fixture output stays under the test crate's ignored `target/ptb-fixtures/`
 directory, so checkouts can share Cargo's compiler cache without overwriting each

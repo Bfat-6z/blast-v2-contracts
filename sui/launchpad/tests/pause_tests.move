@@ -7,6 +7,39 @@ module blast_fun::pause_tests;
 // === Tests ===
 
 #[test]
+#[expected_failure(abort_code = blast_fun::errors::EInvalidPauseBits, location = blast_fun::blast_fun)]
+fun pausing_zero_bits_is_rejected() {
+    let mut version = marker::new_for_testing(&mut tx_context::dummy());
+    version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 0);
+    destroy(version);
+}
+
+#[test]
+#[expected_failure(abort_code = blast_fun::errors::EInvalidPauseBits, location = blast_fun::blast_fun)]
+fun unpausing_zero_bits_is_rejected() {
+    let mut version = marker::new_for_testing(&mut tx_context::dummy());
+    version.unpause(&blast_acl::witness_for_testing<UnpauseAdmin>(), 0);
+    destroy(version);
+}
+
+#[test]
+#[expected_failure(abort_code = blast_fun::errors::EInvalidPauseBits, location = blast_fun::blast_fun)]
+fun unsupported_unpause_bits_are_rejected() {
+    let mut version = marker::new_for_testing(&mut tx_context::dummy());
+    version.unpause(&blast_acl::witness_for_testing<UnpauseAdmin>(), 8);
+    destroy(version);
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun stale_generation_is_rejected_before_invalid_unpause_bits() {
+    let mut version = marker::new_for_testing(&mut tx_context::dummy());
+    version.set_for_testing(2);
+    version.unpause(&blast_acl::witness_for_testing<UnpauseAdmin>(), 0);
+    destroy(version);
+}
+
+#[test]
 fun pause_sets_only_requested_bits_and_unpause_clears_only_requested_bits() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.pause(

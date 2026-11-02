@@ -25,7 +25,7 @@
 //!
 //! Run from `sui/launchpad/ptb_tests` with `cargo test --offline --test presale_venue_fork`.
 
-use std::{collections::BTreeMap, path::Path, sync::OnceLock, time::Duration};
+use std::{collections::{BTreeMap, BTreeSet}, path::Path, sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
@@ -109,6 +109,158 @@ const fn address(suffix: &[u8]) -> ObjectID {
 }
 
 // === Tests ===
+
+/// Every reachable pause state against every u8 input, through unmodified production bytecode.
+#[test]
+fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> Result<()> {
+    let mut w = World::new(Route::Bluefin)?;
+    w.change_role("PauseAdmin", true)?;
+    w.change_role("UnpauseAdmin", true)?;
+    // A set oracle keeps expected transitions independent of the contract's bitwise formulas.
+    let states: [&[u8]; 8] = [&[], &[1], &[2], &[1, 2], &[8], &[1, 8], &[2, 8], &[1, 2, 8]];
+    let sale = w.open_sale(&Terms::standard(Route::Bluefin))?;
+    let watched = [w.version, w.acl, w.admin_cap, w.creation_policy, w.fee_policy,
+        w.venue_config, w.custody, sale.presale, sale.cap, sale.currency];
+    let mut successes = 0;
+    let mut invalid = 0;
+    let mut unchanged = 0;
+    let mut stale = 0;
+    for generation in [1, 2] {
+        for flags in states {
+            let mask: u8 = flags.iter().sum();
+            w.set_pause_generation_for_fixture(1)?;
+            w.replace_pause_mask(mask)?;
+            w.set_pause_generation_for_fixture(generation)?;
+            let before: BTreeSet<_> = flags.iter().copied().collect();
+            for bits in 0..=u8::MAX {
+                for pausing in [true, false] {
+                    let requested: BTreeSet<_> = [1u8, 2, 8].into_iter()
+                        .filter(|flag| (bits / flag) % 2 == 1).collect();
+                    let after: BTreeSet<u8> = if pausing {
+                        before.union(&requested).copied().collect()
+                    } else {
+                        before.difference(&requested).copied().collect()
+                    };
+                    let pt = w.pause_command(pausing, bits)?;
+                    let rejected = if generation != 1 {
+                        stale += 1;
+                        Some(Expected::Abort { package: w.admin, module: "operational_version", code: 12 })
+                    } else if bits == 0 || requested.iter().sum::<u8>() != bits {
+                        invalid += 1;
+                        Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: 0 })
+                    } else if after == before {
+                        unchanged += 1;
+                        Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: 1 })
+                    } else {
+                        None
+                    };
+                    if let Some(expected) = rejected {
+                        w.h.assert_rolled_back(pt, expected, &watched, &[w.h.sender])?;
+                    } else {
+                        let untouched = w.h.snapshot(&watched[1..], &[w.h.sender]);
+                        let outcome = w.h.execute(pt)?;
+                        outcome.assert_success();
+                        let name = if pausing { "Paused" } else { "Unpaused" };
+                        let next: u8 = after.iter().sum();
+                        assert_eq!(outcome.events.len(), 1);
+                        assert_eq!(ObjectID::from(outcome.events[0].type_.address), w.presale);
+                        assert_eq!(outcome.events[0].type_.module.as_str(), "blast_presale_package");
+                        assert_eq!(outcome.events[0].type_.name.as_str(), name);
+                        assert_eq!(outcome.events[0].contents, [bits, next]);
+                        assert_eq!(w.pause_state()?, (w.version, next, generation));
+                        assert_eq!(w.h.snapshot(&watched[1..], &[w.h.sender]), untouched);
+                        w.replace_pause_mask(mask)?;
+                        successes += 1;
+                    }
+                    assert_eq!(w.pause_state()?, (w.version, mask, generation),
+                        "pausing={pausing}, bits={bits}, initial={mask}, generation={generation}");
+                }
+            }
+        }
+    }
+    assert_eq!((successes, invalid, unchanged, stale), (74, 3984, 38, 4096));
+    Ok(())
+}
+
+#[test]
+fn presale_pause_roles_revocation_and_failed_sequences_preserve_state_and_events() -> Result<()> {
+    let mut w = World::new(Route::Bluefin)?;
+    let watched = [w.version, w.acl, w.admin_cap];
+    // A live AdminCap with neither role authorizes neither operation.
+    for pausing in [true, false] {
+        w.h.assert_rolled_back(w.pause_command(pausing, 1)?,
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    }
+    w.change_role("PauseAdmin", true)?;
+    w.set_pause(true, 1)?;
+    w.h.assert_rolled_back(w.pause_command(false, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    w.append_pause(&mut b, false, 1, "PauseAdmin")?;
+    w.h.assert_rolled_back(b.finish(), Expected::Error("TypeMismatch"), &watched, &[w.h.sender])?;
+    w.change_role("PauseAdmin", false)?;
+    w.h.assert_rolled_back(w.pause_command(true, 2)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    w.change_role("UnpauseAdmin", true)?;
+    w.set_pause(false, 1)?;
+    w.h.assert_rolled_back(w.pause_command(true, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    w.append_pause(&mut b, true, 1, "UnpauseAdmin")?;
+    w.h.assert_rolled_back(b.finish(), Expected::Error("TypeMismatch"), &watched, &[w.h.sender])?;
+    w.change_role("UnpauseAdmin", false)?;
+    w.h.assert_rolled_back(w.pause_command(false, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+
+    w.change_role("PauseAdmin", true)?;
+    w.change_role("UnpauseAdmin", true)?;
+    for (sequence, code) in [
+        (vec![(true, 1), (true, 1)], 1),
+        (vec![(true, 1), (false, 1), (false, 1)], 1),
+        (vec![(true, 1), (true, 5)], 0),
+    ] {
+        let mut b = ProgrammableTransactionBuilder::new();
+        for (pausing, bits) in sequence {
+            w.append_pause(&mut b, pausing, bits, if pausing { "PauseAdmin" } else { "UnpauseAdmin" })?;
+        }
+        // Earlier successful commands emitted events, but the later failure commits none.
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.presale, module: "blast_presale_package", code }, &watched, &[w.h.sender])?;
+        assert_eq!(w.pause_state()?, (w.version, 0, 1));
+    }
+
+    // Interleaved successful commands preserve native event order and replay to the final mask.
+    let steps = [(true, 1, 1), (true, 3, 3), (false, 9, 2),
+        (true, 8, 10), (false, 2, 8), (false, 9, 0)];
+    let mut b = ProgrammableTransactionBuilder::new();
+    for &(pausing, bits, _) in &steps {
+        w.append_pause(&mut b, pausing, bits, if pausing { "PauseAdmin" } else { "UnpauseAdmin" })?;
+    }
+    let outcome = w.h.execute(b.finish())?;
+    outcome.assert_success();
+    let names: Vec<_> = steps.iter().map(|(pausing, _, _)| if *pausing { "Paused" } else { "Unpaused" }).collect();
+    assert_eq!(outcome.events.len(), steps.len());
+    assert_eq!(outcome.events.iter().map(|event| event.type_.name.as_str()).collect::<Vec<_>>(), names);
+    for (event, &(_, bits, next)) in outcome.events.iter().zip(&steps) {
+        assert_eq!(ObjectID::from(event.type_.address), w.presale);
+        assert_eq!(event.type_.module.as_str(), "blast_presale_package");
+        assert_eq!(event.contents, [bits, next]);
+    }
+    assert_eq!(w.pause_state()?, (w.version, 0, 1));
+
+    // Revoking the whole administrator defeats both roles even while it still owns its cap.
+    let mut b = ProgrammableTransactionBuilder::new();
+    let acl = b.obj(w.h.shared(w.acl, true))?;
+    let root = b.obj(w.h.owned(w.root))?;
+    let cap = b.pure(w.admin_cap)?;
+    call(&mut b, w.admin, "blast_acl", "revoke_admin", vec![], vec![acl, root, cap]);
+    w.h.impersonate_cap_owner(w.root, b.finish())?.assert_success();
+    for pausing in [true, false] {
+        w.h.assert_rolled_back(w.pause_command(pausing, 1)?,
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 1 }, &watched, &[w.h.sender])?;
+    }
+    Ok(())
+}
 
 #[test]
 fn presale_cetus_meme_a_with_sui_against_mainnet_bytecode() -> Result<()> {
@@ -393,6 +545,11 @@ struct World {
     venue: BTreeMap<String, ObjectID>,
     presale: ObjectID,
     version: ObjectID,
+    admin: ObjectID,
+    acl: ObjectID,
+    root: ObjectID,
+    admin_cap: ObjectID,
+    custody: ObjectID,
     venue_config: ObjectID,
     creation_policy: ObjectID,
     fee_policy: ObjectID,
@@ -510,12 +667,16 @@ impl World {
         ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
         Ok(World {
-            h,
             route,
             checkpoint,
             venue,
             presale,
             version,
+            admin,
+            acl: admin_published.created(&h, "blast_acl", "ACL")[0],
+            root: admin_published.created(&h, "blast_acl", "SuperAdminCap")[0],
+            admin_cap: config_cap,
+            custody: wrapped.created(&h, "package_admin", "PackageAdmin")[0],
             venue_config: venue_config[0],
             creation_policy: creation_policy[0],
             fee_policy: fee_policy[0],
@@ -524,7 +685,70 @@ impl World {
             quote_currency,
             coins: 0,
             lines: Vec::new(),
+            h,
         })
+    }
+
+    fn sign_in(&self, b: &mut ProgrammableTransactionBuilder, role: &str) -> Result<Argument> {
+        let acl = b.obj(self.h.shared(self.acl, false))?;
+        let cap = b.obj(self.h.owned(self.admin_cap))?;
+        let role = tag(&format!("{}::blast_presale_domain::{role}", self.presale));
+        Ok(call(b, self.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]))
+    }
+
+    fn change_role(&mut self, role: &str, grant: bool) -> Result<()> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl = b.obj(self.h.shared(self.acl, true))?;
+        let root = b.obj(self.h.owned(self.root))?;
+        let cap = b.pure(self.admin_cap)?;
+        let role = tag(&format!("{}::blast_presale_domain::{role}", self.presale));
+        call(&mut b, self.admin, "blast_acl", if grant { "grant_role" } else { "revoke_role" }, vec![role], vec![acl, root, cap]);
+        self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
+        Ok(())
+    }
+
+    fn set_pause(&mut self, pause: bool, bits: u8) -> Result<()> {
+        self.h.execute(self.pause_command(pause, bits)?)?.assert_success();
+        Ok(())
+    }
+
+    fn pause_command(&self, pause: bool, bits: u8) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        self.append_pause(&mut b, pause, bits, if pause { "PauseAdmin" } else { "UnpauseAdmin" })?;
+        Ok(b.finish())
+    }
+
+    fn append_pause(&self, b: &mut ProgrammableTransactionBuilder, pause: bool, bits: u8, role: &str) -> Result<()> {
+        let witness = self.sign_in(b, role)?;
+        let version = b.obj(self.h.shared(self.version, true))?;
+        let bits = b.pure(bits)?;
+        call(b, self.presale, "blast_presale_package", if pause { "pause" } else { "unpause" }, vec![], vec![version, witness, bits]);
+        Ok(())
+    }
+
+    fn pause_state(&self) -> Result<(ObjectID, u8, u64)> {
+        Ok(bcs::from_bytes(&self.h.contents(self.version))?)
+    }
+
+    fn replace_pause_mask(&mut self, mask: u8) -> Result<()> {
+        let (_, current, _) = self.pause_state()?;
+        if current != 0 {
+            self.set_pause(false, current)?;
+        }
+        if mask != 0 {
+            self.set_pause(true, mask)?;
+        }
+        Ok(())
+    }
+
+    /// Only seed the stored generation; masks are always reached through real public calls.
+    fn set_pause_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+        let (id, paused, _) = self.pause_state()?;
+        let mut object = self.h.object(self.version);
+        object.data.try_as_move_mut().expect("PackageVersion")
+            .set_contents_unsafe(bcs::to_bytes(&(id, paused, generation))?);
+        self.h.insert(object);
+        Ok(())
     }
 
     fn report(&mut self, line: String) {

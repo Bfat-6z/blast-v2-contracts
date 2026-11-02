@@ -33,6 +33,8 @@ for package, key in [('launchpad', 'blast_treasury'), ('presale', 'blast_treasur
 PY
 boundaries_only=0
 if [ "${1:-}" = --boundaries-only ]; then boundaries_only=1; shift; fi
+coverage_args=()
+if [ "${1:-}" = --coverage ]; then coverage_args=(--coverage); shift; fi
 if [ "$#" -eq 0 ]; then set -- admin partners launchpad presale migrators presale_testkit vendors/aftermath_dao_presale; fi
 for package in "$@"; do
  if [ "$boundaries_only" -eq 1 ]; then
@@ -44,5 +46,8 @@ for package in "$@"; do
   continue
  fi
  sui move lint --path "sui/$package" --build-env mainnet --warnings-are-errors
- sui move test --path "sui/$package" --build-env mainnet --threads 1 --lint --warnings-are-errors ${MOVE_TEST_FILTER:+"$MOVE_TEST_FILTER"}
+ sui move test --path "sui/$package" --build-env mainnet --threads 1 --lint --warnings-are-errors "${coverage_args[@]}" ${MOVE_TEST_FILTER:+"$MOVE_TEST_FILTER"}
+ if [ "${#coverage_args[@]}" -gt 0 ]; then
+  sui move coverage summary --path "sui/$package" --build-env mainnet --summarize-functions
+ fi
 done
