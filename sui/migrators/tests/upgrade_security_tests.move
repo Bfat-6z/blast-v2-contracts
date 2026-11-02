@@ -153,8 +153,8 @@ fun start(): Fixture {
 
 fun schedule(f: &mut Fixture, immutable: bool) {
     let admin = blast_acl::witness_for_testing<UpgradeAdmin>();
-    if (immutable) f.admin.schedule_make_immutable(&f.version, &admin, &f.clock)
-    else f.admin.schedule_upgrade(&f.version, &admin, digest(), &f.clock);
+    if (immutable) f.admin.schedule_make_immutable(&f.version, &admin, 172_800_000, &f.clock)
+    else f.admin.schedule_upgrade(&f.version, &admin, digest(), 172_800_000, &f.clock);
 }
 
 fun apply(f: &mut Fixture, immutable: bool) {

@@ -11,7 +11,7 @@ const DELAY: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
-public enum Setting has copy, drop, store { Signer, ProtocolShare, Treasury, TradeFees, Allocation, CreationFee }
+public enum Setting has copy, drop, store { ProtocolShare, Treasury, TradeFees, Allocation, CreationFee }
 
 public enum Case has copy, drop { Early, Replacement, Cancelled, Replay, StaleSchedule, StaleApply, StaleCancel, Success }
 
@@ -21,30 +21,6 @@ public struct CoinA has drop {}
 public struct CoinB has drop {}
 
 // === Tests ===
-
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun signer_early() { exercise(Setting::Signer, Case::Early); }
-
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun signer_replacement_restarts_notice() { exercise(Setting::Signer, Case::Replacement); }
-
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
-fun signer_cancelled() { exercise(Setting::Signer, Case::Cancelled); }
-
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
-fun signer_replay() { exercise(Setting::Signer, Case::Replay); }
-
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun signer_stale_schedule() { exercise(Setting::Signer, Case::StaleSchedule); }
-
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun signer_stale_apply() { exercise(Setting::Signer, Case::StaleApply); }
-
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun signer_stale_cancel() { exercise(Setting::Signer, Case::StaleCancel); }
-
-#[test]
-fun signer_boundaries_and_cancel_reschedule() { exercise(Setting::Signer, Case::Success); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun protocol_share_early() { exercise(Setting::ProtocolShare, Case::Early); }
@@ -239,18 +215,18 @@ fun prepare_again(f: &mut Fixture, setting: Setting) { let _ = f; let _ = settin
 
 fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
     match (setting) {
-        Setting::Signer => { f.runtime.schedule_creator_claim_signer(&f.version, &blast_acl::witness_for_testing<ClaimSignerAdmin>(), vector::tabulate!(32, |_| ((n / 10) as u8)), &f.clock); },
-        Setting::ProtocolShare => { f.runtime.schedule_protocol_fee_share(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), &f.clock); },
-        Setting::Treasury => { f.runtime.schedule_treasury(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300, &f.clock); },
-        Setting::TradeFees => { f.config.schedule_trade_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), &f.clock); },
-        Setting::Allocation => { f.config.schedule_protocol_allocation(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), bps::new(n), bps::new(n + 1), &f.clock); },
-        Setting::CreationFee => { f.config.schedule_creation_fee(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), n, &f.clock); },
+
+        Setting::ProtocolShare => { f.runtime.schedule_protocol_fee_share(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), 172_800_000, &f.clock); },
+        Setting::Treasury => { f.runtime.schedule_treasury(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300, 172_800_000, &f.clock); },
+        Setting::TradeFees => { f.config.schedule_trade_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), 172_800_000, &f.clock); },
+        Setting::Allocation => { f.config.schedule_protocol_allocation(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), bps::new(n), bps::new(n + 1), 172_800_000, &f.clock); },
+        Setting::CreationFee => { f.config.schedule_creation_fee(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), n, 172_800_000, &f.clock); },
     }
 }
 
 fun apply(f: &mut Fixture, setting: Setting) {
     match (setting) {
-        Setting::Signer => { f.runtime.apply_creator_claim_signer(&f.version, &f.clock); },
+
         Setting::ProtocolShare => { f.runtime.apply_protocol_fee_share(&f.version, &f.clock); },
         Setting::Treasury => { f.runtime.apply_treasury(&f.version, &f.clock); },
         Setting::TradeFees => { f.config.apply_trade_fees(&f.version, &f.clock); },
@@ -261,7 +237,7 @@ fun apply(f: &mut Fixture, setting: Setting) {
 
 fun cancel(f: &mut Fixture, setting: Setting) {
     match (setting) {
-        Setting::Signer => { f.runtime.cancel_creator_claim_signer(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
+
         Setting::ProtocolShare => { f.runtime.cancel_protocol_fee_share(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
         Setting::Treasury => { f.runtime.cancel_treasury(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
         Setting::TradeFees => { f.config.cancel_trade_fees(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
@@ -272,7 +248,7 @@ fun cancel(f: &mut Fixture, setting: Setting) {
 
 fun snapshot(f: &Fixture, setting: Setting): vector<u8> {
     match (setting) {
-        Setting::Signer => { bcs::to_bytes(f.runtime.creator_claim_signer()) },
+
         Setting::ProtocolShare => { bcs::to_bytes(&f.runtime.protocol_fee_share().value()) },
         Setting::Treasury => { bcs::to_bytes(&f.runtime.treasury()) },
         Setting::TradeFees => { let (a, b) = f.config.rate_defaults_for_testing(); bcs::to_bytes(&vector[a, b]) },
@@ -283,7 +259,7 @@ fun snapshot(f: &Fixture, setting: Setting): vector<u8> {
 
 fun expected(setting: Setting, n: u64): vector<u8> {
     match (setting) {
-        Setting::Signer => { bcs::to_bytes(&vector::tabulate!(32, |_| ((n / 10) as u8))) },
+
         Setting::ProtocolShare => { bcs::to_bytes(&n) },
         Setting::Treasury => { bcs::to_bytes(&(if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300)) },
         Setting::TradeFees => { bcs::to_bytes(&vector[n, n + 1]) },
@@ -296,16 +272,16 @@ fun assert_value(f: &Fixture, setting: Setting, n: u64) { assert_eq!(snapshot(f,
 
 fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
     let mut expected = match (setting) {
-        Setting::Signer => { expected(setting, n) },
+
         Setting::ProtocolShare => { expected(setting, n) },
         Setting::Treasury => { expected(setting, n) },
         Setting::TradeFees => { u64_fields_bytes(vector[n, n + 1]) },
         Setting::Allocation => { u64_fields_bytes(vector[n, n + 1]) },
         Setting::CreationFee => { expected(setting, n) },
     };
-    if (scheduled) expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY)));
+    if (scheduled) { expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY))); let delay_ms = DELAY; expected.append(bcs::to_bytes(&delay_ms)); };
     let actual = match (setting) {
-        Setting::Signer => if (scheduled) last_event<events::CreatorClaimSignerScheduled>() else last_event<events::CreatorClaimSignerCancelled>(),
+
         Setting::ProtocolShare => if (scheduled) last_event<events::ProtocolFeeShareScheduled>() else last_event<events::ProtocolFeeShareCancelled>(),
         Setting::Treasury => if (scheduled) last_event<events::TreasuryScheduled>() else last_event<events::TreasuryCancelled>(),
         Setting::TradeFees => if (scheduled) last_event<events::TradeFeesScheduled>() else last_event<events::TradeFeesCancelled>(),
@@ -327,7 +303,7 @@ fun last_event<T: copy + drop>(): vector<u8> { let mut events = sui::event::even
 
 use blast_fun::{
     events, blast_events::Event,
-    blast_fun::{Self as package_version, PackageVersion}, blast_fun_domain::{CancelAdmin, ClaimSignerAdmin, FeeAdmin, TreasuryAdmin}, bps, launch_config::{Self, LaunchConfig}, runtime_config::{Self, RuntimeConfig}
+    blast_fun::{Self as package_version, PackageVersion}, blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}, bps, launch_config::{Self, LaunchConfig}, runtime_config::{Self, RuntimeConfig}
 };
 
 

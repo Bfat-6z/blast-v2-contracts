@@ -17,6 +17,8 @@ public struct CreationPolicy has key {
     id: UID,
     allowed_quotes: VecSet<TypeName>,
     allowed_migration_witnesses: VecSet<TypeName>,
+    witness_delay_ms: u64,
+    pending_witness_delay: Option<Pending<bool>>,
     pending_witnesses: VecMap<TypeName, Pending<bool>>,
 }
 
@@ -27,7 +29,7 @@ public struct PartnerKey(ID) has copy, drop, store;
 // === Private Initialization ===
 
 fun init(ctx: &mut TxContext) {
-    transfer::share_object(new(ctx));
+    transfer::share_object(new(0, ctx));
 }
 
 // === Public Functions ===
@@ -58,24 +60,26 @@ public fun set_quote_allowed<Quote>(
 /// reviewed migrator and keeps its constructor private. A primitive, a vector, or a framework type,
 /// any of which a caller can construct, is rejected.
 /// Admits an adapter only after a full administrative notice period.
-public fun schedule_migration_witness<MigrationWitness: drop>(self: &mut CreationPolicy, package_version: &PackageVersion, _: &AdminWitness<AdapterAdmin>, clock: &Clock) {
+public fun schedule_migration_witness<MigrationWitness: drop>(self: &mut CreationPolicy, package_version: &PackageVersion, _: &AdminWitness<AdapterAdmin>, delay_ms: u64, clock: &Clock) {
     package_version.assert_current();
     let witness = type_name::with_original_ids<MigrationWitness>();
     assert!(!witness.is_primitive(), EInvalidMigrationWitness);
     let origin = type_name::original_id<MigrationWitness>();
     assert!(origin != @0x1 && origin != @0x2, EInvalidMigrationWitness);
     assert!(!self.allowed_migration_witnesses.contains(&witness), EAllowanceUnchanged);
-    let pending = delayed::new_pending(true, package_version.admin_delay_ms(), clock);
+    let pending = delayed::new_pending(true, self.witness_delay_ms, delay_ms, clock);
     if (self.pending_witnesses.contains(&witness)) { self.pending_witnesses.remove(&witness); };
     self.pending_witnesses.insert(witness, pending);
-    sui::event::emit(MigrationWitnessScheduled { witness, ready_at_ms: pending.ready_at_ms() });
+    sui::event::emit(MigrationWitnessScheduled { witness, ready_at_ms: pending.ready_at_ms(), delay_ms });
 }
 
 /// Permissionlessly applies the approved adapter admission once ready.
 public fun apply_migration_witness<MigrationWitness: drop>(self: &mut CreationPolicy, package_version: &PackageVersion, clock: &Clock) {
     package_version.assert_current();
     let witness = type_name::with_original_ids<MigrationWitness>();
-    self.pending_witnesses[&witness].take_ready(clock);
+    let (_, delay_ms) = self.pending_witnesses[&witness].take_ready(clock);
+    self.witness_delay_ms = delay_ms;
+    sui::event::emit(MigrationDelayChanged { delay_ms });
     self.pending_witnesses.remove(&witness);
     self.allowed_migration_witnesses.insert(witness);
     event::emit(MigrationWitnessSet { migration_witness: witness, allowed: true });
@@ -151,6 +155,29 @@ public fun remove_partner(
     event::emit(PartnerRemoved { partner_id, accepted_until_ms: notice_ends_at_ms });
 }
 
+/// Proposes only the admission notice period. Existing admission deadlines remain fixed.
+public fun schedule_migration_delay(self: &mut CreationPolicy, package_version: &PackageVersion, _: &AdminWitness<AdapterAdmin>, delay_ms: u64, clock: &Clock) {
+    package_version.assert_current();
+    let pending = delayed::new_pending(false, self.witness_delay_ms, delay_ms, clock);
+    self.pending_witness_delay = option::some(pending);
+    sui::event::emit(MigrationDelayScheduled { delay_ms, ready_at_ms: pending.ready_at_ms() });
+}
+
+/// Permissionlessly applies a ready admission-policy proposal.
+public fun apply_migration_delay(self: &mut CreationPolicy, package_version: &PackageVersion, clock: &Clock) {
+    package_version.assert_current();
+    let (_, delay_ms) = self.pending_witness_delay.extract().take_ready(clock);
+    self.witness_delay_ms = delay_ms;
+    sui::event::emit(MigrationDelayChanged { delay_ms });
+}
+
+/// Cancels only the admission-policy proposal.
+public fun cancel_migration_delay(self: &mut CreationPolicy, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+    package_version.assert_current();
+    self.pending_witness_delay.extract();
+    sui::event::emit(MigrationDelayCancelled {});
+}
+
 // === Package Functions ===
 
 /// Aborts unless a new presale, or a new vault without a presale, may use `Quote` and be created
@@ -176,11 +203,13 @@ public(package) fun assert_partner(self: &CreationPolicy, partner_id: ID, now_at
 
 // === Private Functions ===
 
-fun new(ctx: &mut TxContext): CreationPolicy {
+fun new(delay_ms: u64, ctx: &mut TxContext): CreationPolicy {
     CreationPolicy {
         id: object::new(ctx),
         allowed_quotes: vec_set::empty(),
         allowed_migration_witnesses: vec_set::empty(),
+        witness_delay_ms: delay_ms,
+        pending_witness_delay: option::none(),
         pending_witnesses: vec_map::empty(),
     }
 }
@@ -191,7 +220,8 @@ fun new(ctx: &mut TxContext): CreationPolicy {
 public fun set_migration_witness_allowed_for_testing<MigrationWitness: drop>(self: &mut CreationPolicy, package_version: &PackageVersion, admin: &AdminWitness<AdapterAdmin>, allowed: bool, ctx: &mut TxContext) {
     if (!allowed) { self.remove_migration_witness<MigrationWitness>(package_version, admin); return };
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_migration_witness<MigrationWitness>(package_version, admin, &clock);
+    let delay_ms = self.witness_delay_ms;
+    self.schedule_migration_witness<MigrationWitness>(package_version, admin, delay_ms, &clock);
     clock.set_for_testing(172_800_000);
     self.apply_migration_witness<MigrationWitness>(package_version, &clock);
     clock.destroy_for_testing();
@@ -204,13 +234,13 @@ public fun init_for_testing(ctx: &mut TxContext) {
 
 #[test_only]
 public fun new_for_testing(ctx: &mut TxContext): CreationPolicy {
-    new(ctx)
+    new(172_800_000, ctx)
 }
 
 /// A policy that allows exactly `Quote` and `MigrationWitness`.
 #[test_only]
 public fun allowing_for_testing<Quote, MigrationWitness>(ctx: &mut TxContext): CreationPolicy {
-    let mut policy = new(ctx);
+    let mut policy = new(172_800_000, ctx);
     policy.allowed_quotes.insert(type_name::with_original_ids<Quote>());
     policy.allowed_migration_witnesses.insert(type_name::with_original_ids<MigrationWitness>());
 
@@ -219,7 +249,7 @@ public fun allowing_for_testing<Quote, MigrationWitness>(ctx: &mut TxContext): C
 
 #[test_only]
 public fun destroy_for_testing(self: CreationPolicy) {
-    let CreationPolicy { id, allowed_quotes: _, allowed_migration_witnesses: _, pending_witnesses: _ } = self;
+    let CreationPolicy { id, allowed_quotes: _, allowed_migration_witnesses: _, pending_witnesses: _, witness_delay_ms: _, pending_witness_delay: _ } = self;
     id.delete();
 }
 
@@ -245,8 +275,15 @@ public fun partner_removed_fields(event: &PartnerRemoved): (ID, u64) {
 
 // === Events ===
 
+/// Proposed admission notice period and fixed execution deadline.
+public struct MigrationDelayScheduled has copy, drop { delay_ms: u64, ready_at_ms: u64 }
+/// Applied admission notice period.
+public struct MigrationDelayChanged has copy, drop { delay_ms: u64 }
+/// Cancelled admission-policy proposal.
+public struct MigrationDelayCancelled has copy, drop {}
+
 /// The admitted type and Unix millisecond execution threshold.
-public struct MigrationWitnessScheduled has copy, drop { witness: TypeName, ready_at_ms: u64 }
+public struct MigrationWitnessScheduled has copy, drop { witness: TypeName, ready_at_ms: u64, delay_ms: u64 }
 
 /// An adapter admission removed from the pending set.
 public struct MigrationWitnessCancelled has copy, drop { witness: TypeName }

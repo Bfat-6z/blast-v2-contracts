@@ -76,12 +76,12 @@ public fun claim_migration_residuals<Meme, Quote>(
 
 /// Sets Blast's share of each asset in this vault's later LP-fee collections. Fees still in the
 /// pool are split at the new rates when collected; the creator's split of the rest is unchanged.
-public fun schedule_protocol_lp_fees<Meme, Quote>(self: &mut Vault<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<FeeAdmin>, lp_fee_meme_bps: Bps, lp_fee_quote_bps: Bps, clock: &Clock) {
+public fun schedule_protocol_lp_fees<Meme, Quote>(self: &mut Vault<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<FeeAdmin>, lp_fee_meme_bps: Bps, lp_fee_quote_bps: Bps, delay_ms: u64, clock: &Clock) {
     package_version.assert_current();
     let proposed = self.protocol_fees.value().with_lp_fees(lp_fee_meme_bps, lp_fee_quote_bps);
-    assert!(proposed != self.protocol_fees.value(), EProtocolLpFeesUnchanged);
-    let ready_at_ms = self.protocol_fees.schedule(proposed, package_version.admin_delay_ms(), clock);
-    event::emit(ProtocolLpFeesScheduled { vault_id: self.id.to_inner(), meme_bps: lp_fee_meme_bps.value(), quote_bps: lp_fee_quote_bps.value(), ready_at_ms });
+    assert!(proposed != self.protocol_fees.value() || delay_ms != self.protocol_fees.delay_ms(), EProtocolLpFeesUnchanged);
+    let ready_at_ms = self.protocol_fees.schedule(proposed, delay_ms, clock);
+    event::emit(ProtocolLpFeesScheduled { vault_id: self.id.to_inner(), meme_bps: lp_fee_meme_bps.value(), quote_bps: lp_fee_quote_bps.value(), ready_at_ms, delay_ms });
 }
 
 /// Anyone may apply the announced LP rates once the complete notice has elapsed.
@@ -374,7 +374,7 @@ fun build<Meme, Quote>(
         presale_cap_id,
         pool_id,
         fee_split,
-        protocol_fees: delayed::new(protocol_fees),
+        protocol_fees: delayed::new(protocol_fees, 172_800_000),
         partner_id,
         unpaid_protocol_meme: balance::zero(),
         unpaid_protocol_quote: balance::zero(),
@@ -465,7 +465,7 @@ public fun set_protocol_lp_fees_for_testing<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_protocol_lp_fees(package_version, admin, lp_fee_meme_bps, lp_fee_quote_bps, &clock);
+    self.schedule_protocol_lp_fees(package_version, admin, lp_fee_meme_bps, lp_fee_quote_bps, 172_800_000, &clock);
     clock.set_for_testing(172_800_000);
     self.apply_protocol_lp_fees(package_version, &clock);
     clock.destroy_for_testing();
@@ -486,7 +486,7 @@ public fun new_for_testing<Meme, Quote>(
         presale_cap_id,
         pool_id: object::id_from_address(@0x1),
         fee_split,
-        protocol_fees: delayed::new(protocol_fees),
+        protocol_fees: delayed::new(protocol_fees, 172_800_000),
         partner_id,
         unpaid_protocol_meme: balance::zero(),
         unpaid_protocol_quote: balance::zero(),
@@ -633,7 +633,7 @@ public fun holder_meme_paid_bytes<Meme, Quote>(payload: &HolderMemePaid<Meme, Qu
 // === Events ===
 
 /// LP rates publicly proposed for one vault.
-public struct ProtocolLpFeesScheduled has copy, drop { vault_id: ID, meme_bps: u64, quote_bps: u64, ready_at_ms: u64 }
+public struct ProtocolLpFeesScheduled has copy, drop { vault_id: ID, meme_bps: u64, quote_bps: u64, ready_at_ms: u64, delay_ms: u64 }
 
 /// LP rates removed from one vault's pending schedule.
 public struct ProtocolLpFeesCancelled has copy, drop { vault_id: ID, meme_bps: u64, quote_bps: u64 }

@@ -484,7 +484,8 @@ impl Harness {
     /// Configures initial admission and seals custody; operations remain paused until release.
     pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome, admin: ObjectID, admin_publication: &Outcome, quote: sui_types::TypeTag, witness: sui_types::TypeTag) -> Result<(ObjectID, ObjectID)> {
         assert!(publication.created(self, "blast_fun", "PackageVersion").is_empty());
-        let config = publication.created(self, "launch_config", "LaunchConfig")[0];
+        let config_id = publication.created(self, "launch_config", "LaunchConfig")[0];
+        let runtime_id = publication.created(self, "runtime_config", "RuntimeConfig")[0];
         let bootstrap = publication.created(self, "blast_fun", "Publication");
         let cap = publication.created(self, "package", "UpgradeCap");
         assert_eq!(bootstrap.len(), 1);
@@ -507,33 +508,50 @@ impl Harness {
         assert_eq!(package_admin.len(), 1);
         self.shared(package_admin[0], false);
         #[derive(serde::Deserialize)]
-        enum UpgradeAction { Upgrade { _digest: Vec<u8> }, MakeImmutable }
-        let (admin_id, sealed_publisher, sealed_caps, pending):
-            (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, Option<(UpgradeAction, u64)>) =
+        enum UpgradeAction { Upgrade { _digest: Vec<u8> }, MakeImmutable, DelayOnly }
+        let (admin_id, sealed_publisher, sealed_caps, delay_ms, pending):
+            (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, u64, Option<(UpgradeAction, u64, u64)>) =
             bcs::from_bytes(&self.contents(package_admin[0])).context("decode fresh PackageAdmin")?;
         assert!(pending.is_none(), "fresh custody has no scheduled action");
+        assert_eq!(delay_ms, 0);
         assert_eq!(admin_id, package_admin[0]);
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
         assert_eq!(bcs::to_bytes(&sealed_caps[0])?, cap_contents);
-        let (version_id, paused, active_generation, delay): (ObjectID, u8, u64, (u64, Option<(u64, u64)>)) =
+        let (version_id, paused, active_generation): (ObjectID, u8, u64) =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
         assert_eq!((version_id, paused, active_generation), (version[0], 7, generation));
-
-        assert_eq!(delay, (0, None));
-        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "UpgradeAdmin"])?;
+        let (_, _, _, treasury): (ObjectID, Vec<u8>, (u64, u64, Option<(u64, u64, u64)>), (SuiAddress, u64, Option<(SuiAddress, u64, u64)>)) = bcs::from_bytes(&self.contents(runtime_id))?;
+        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "UpgradeAdmin", "FeeAdmin", "TreasuryAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
-        let config = b.obj(self.shared(config, true))?;
+        let config = b.obj(self.shared(config_id, true))?;
         let version_arg = b.obj(self.shared(version[0], false))?;
         let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
         let listing = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "ListingAdmin")?;
         let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "AdapterAdmin")?;
         let allowed = b.pure(true)?;
         call(&mut b, package, "launch_config", "set_quote_allowed", vec![quote], vec![config, version_arg, listing, allowed]);
-        call(&mut b, package, "launch_config", "schedule_migration_witness", vec![witness.clone()], vec![config, version_arg, adapter, clock]);
+        let next_delay = b.pure(172_800_000u64)?;
+        call(&mut b, package, "launch_config", "schedule_migration_witness", vec![witness.clone()], vec![config, version_arg, adapter, next_delay, clock]);
         call(&mut b, package, "launch_config", "apply_migration_witness", vec![witness], vec![config, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
-        self.configure_admin_delay(package, "blast_fun", admin, admin_publication, config_cap, version[0], 172_800_000)?;
+        // Set independent operation notices during publication setup using ordinary ACL roles.
+        let mut b = ProgrammableTransactionBuilder::new();
+        let config_arg = b.obj(self.shared(config_id, true))?;
+        let runtime = b.obj(self.shared(runtime_id, true))?;
+        let version_arg = b.obj(self.shared(version[0], false))?;
+        let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let fee = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "FeeAdmin")?;
+        let treasury_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "TreasuryAdmin")?;
+        let zero = b.pure(0u64)?;
+        let delay = b.pure(172_800_000u64)?;
+        let destination = b.pure(treasury.0)?;
+        call(&mut b, package, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, zero, delay, clock]);
+        call(&mut b, package, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
+        call(&mut b, package, "runtime_config", "schedule_treasury", vec![], vec![runtime, version_arg, treasury_role, destination, delay, clock]);
+        call(&mut b, package, "runtime_config", "apply_treasury", vec![], vec![runtime, version_arg, clock]);
+        self.execute(b.finish())?.assert_success();
+        self.configure_upgrade_delay(package, "blast_fun", admin, admin_publication, config_cap, version[0], package_admin[0], 172_800_000)?;
         Ok((version[0], package_admin[0]))
     }
 
@@ -574,8 +592,8 @@ impl Harness {
     }
 
     /// Schedules and applies through real ACL authority; only usable at the old policy's readiness.
-    pub fn configure_admin_delay(&mut self, package: ObjectID, marker: &str, admin: ObjectID,
-        publication: &Outcome, cap: ObjectID, version: ObjectID, delay_ms: u64,
+    pub fn configure_upgrade_delay(&mut self, package: ObjectID, marker: &str, admin: ObjectID,
+        publication: &Outcome, cap: ObjectID, version: ObjectID, custody: ObjectID, delay_ms: u64,
     ) -> Result<()> {
         let domain = if marker == "blast_presale_package" { "blast_presale_domain" } else { "blast_fun_domain" };
         let mut b = ProgrammableTransactionBuilder::new();
@@ -583,8 +601,9 @@ impl Harness {
         let version_arg = b.obj(self.shared(version, true))?;
         let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
         let delay = b.pure(delay_ms)?;
-        call(&mut b, package, marker, "schedule_admin_delay", vec![], vec![version_arg, witness, delay, clock]);
-        call(&mut b, package, marker, "apply_admin_delay", vec![], vec![version_arg, clock]);
+        let custody = b.obj(self.shared(custody, true))?;
+        call(&mut b, package, "package_admin", "schedule_upgrade_delay", vec![], vec![custody, version_arg, witness, delay, clock]);
+        call(&mut b, package, "package_admin", "apply_upgrade_delay", vec![], vec![custody, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
         Ok(())
     }

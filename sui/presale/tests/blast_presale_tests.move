@@ -325,7 +325,7 @@ fun a_pending_policy_increase_does_not_raise_the_sales_immediate_fee_ceiling() {
     let mut fixture = schedule_with_protocol_fees(vector[], PROTOCOL_RAISE_BPS, PROTOCOL_TOKEN_BPS, FEE_PAYING_RECIPIENT_B_BPS);
     let version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
     let notice_clock = sui::clock::create_for_testing(fixture.scenario.ctx());
-    fixture.fee_policy.schedule_fees(&version, &fee_admin(), bps::new(1_000), bps::new(PROTOCOL_TOKEN_BPS), bps::new(0), bps::new(0), &notice_clock);
+    fixture.fee_policy.schedule_fees(&version, &fee_admin(), bps::new(1_000), bps::new(PROTOCOL_TOKEN_BPS), bps::new(0), bps::new(0), 172_800_000, &notice_clock);
     fixture.next_tx!(ADMIN, |f| {
         let mut sale = f.take_presale();
         sale.set_protocol_fees(&version, &fee_admin(), &f.fee_policy, bps::new(1_000), bps::new(PROTOCOL_TOKEN_BPS), bps::new(0), bps::new(0), &f.clock);

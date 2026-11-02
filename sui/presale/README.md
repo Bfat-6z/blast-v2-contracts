@@ -131,7 +131,7 @@ roles: `FeeAdmin` sets Blast's rates and the partners new sales may name,
 types and migrators new sales may use, `RewardsAdmin` publishes holder-reward
 rounds, and `UpgradeAdmin` authorizes compatible upgrades and atomic version cutovers.
 [DEPLOYING.md](DEPLOYING.md) gives the complete order: custody verification, ordinary ACL configuration at zero delay,
-enabling the chosen administrative delay, then immediate UnpauseAdmin release. No presale can exist
+enabling each operation’s intended notice, then immediate UnpauseAdmin release. No presale can exist
 under an unsealed cap or before unpause.
 
 The accepted design is [ADR 0099](../../docs/decisions/0099-standalone-overflow-presale.md);
@@ -142,9 +142,9 @@ creation through the initializer, the sale-level hard cap, and early close are p
 
 Presale activation and operational versioning follow launchpad: publication transfers
 `blast_presale_package::Publication`, and wrapping it with the matching fresh cap
-shares PackageVersion fully paused with administrative delay zero. Ordinary ACL
-operations configure initial policy; settle setup proposals and enable the desired
-delay before release. Later delay changes wait the old policy, and existing
+shares PackageVersion fully paused while publication-owned operations have zero notice. Ordinary ACL
+operations configure initial policy; settle setup proposals and enable each operation’s intended
+notice before release. Later delay changes wait the old policy, and existing
 pending actions keep their deadlines. See
 
 [ADR 0117](../../docs/decisions/0117-presale-versioning-and-activation.md). This

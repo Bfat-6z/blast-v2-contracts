@@ -304,7 +304,7 @@ blast_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/blast_f
 if [[ ! -f sources/blast_fun.move ]] \
   || ! rg -Fq 'public struct BLAST_FUN() has drop;' sources/blast_fun.move \
   || ! rg -U -q \
-    'public struct PackageVersion has key \{\s*id: UID,\s*paused: u8,\s*generation: OperationalVersion<BLAST_FUN>,\s*admin_delay: Delayed<u64>,\s*\}' \
+    'public struct PackageVersion has key \{\s*id: UID,\s*paused: u8,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
     sources/blast_fun.move \
   || ! rg -U -q \
     'public struct Publication has key \{\s*id: UID,\s*publisher: Publisher,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
@@ -330,7 +330,7 @@ if [[ "$(move_production_body init <<<"$(move_facts sources/blast_fun.move)")" \
   || [[ "$(move_production_body destroy <<<"$(move_facts sources/blast_fun.move)")" \
     != 'let Publication { id, publisher, generation } = self; id.delete(); (publisher, generation)' ]] \
   || [[ "$(move_production_body share_version <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation, admin_delay: delayed::new(0) });' ]] \
+    != 'transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation });' ]] \
   || [[ "$(rg -c '^public\(package\) fun ' <<<"$blast_production")" != 6 ]] \
   || [[ "$(rg -l '\bshare_version\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
     != 'sources/blast_fun.move sources/package_admin.move ' ]]; then
@@ -404,7 +404,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'blast_fun:cancel_admin_delay:CancelAdmin blast_fun:pause:PauseAdmin blast_fun:schedule_admin_delay:UpgradeAdmin blast_fun:unpause:UnpauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin ' ]]; then
+  'blast_fun:pause:PauseAdmin blast_fun:unpause:UnpauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_delay:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_delay:AdapterAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin package_admin:schedule_upgrade_delay:UpgradeAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin runtime_config:set_creator_claim_signer:ClaimSignerAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))
@@ -431,8 +431,8 @@ package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # would end upgradeability silently.
 # Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
 if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody, pending: option::none() }); generation.share_version(ctx);' ]] \
-  || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 5 ]] \
+    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody, delay_ms: 0, pending: option::none() }); generation.share_version(ctx);' ]] \
+  || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 7 ]] \
   || [[ "$(move_facts sources/package_admin.move \
     | awk -F'\t' '$1 == "FN" && $2 == "commit_upgrade_and_advance" { print $10 }')" \
     != 'package_version.assert_next();'* ]] \
@@ -784,7 +784,7 @@ if [[ ! -f sources/launch_config.move ]] \
   || rg -Fq 'protocol_allocation: Option<' sources/launch_config.move \
   || ! rg -Fq 'meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999' <<<"$launch_config_source" \
   || ! rg -Fq 'value != self.protocol_allocation.value()' <<<"$launch_config_source" \
-  || ! rg -Fq 'protocol_allocation: delayed::new(allocation::protocol_allocation(bps::new(0), bps::new(0)))' <<<"$launch_config_source" \
+  || ! rg -Fq 'protocol_allocation: delayed::new(allocation::protocol_allocation(bps::new(0), bps::new(0)), delay_ms)' <<<"$launch_config_source" \
   || rg -n '\b(set_graduation_defaults|GraduationDefaultsChanged|protocol_(quote_migration|meme_graduation)_fee_bps|meme_liquidity_provision_bps|QuoteParameters|QuoteParametersChanged|min_graduation_target|max_graduation_target)\b' \
     sources/launch_config.move sources/lib/events.move \
   || rg -n '\b(AdminCap|ProtocolAuthority|sequence|schema_version|action_tag|nonce)\b' <<<"$launch_config_production"; then
@@ -837,7 +837,7 @@ if [[ "$(move_production_body max_recipients <<<"$constants_facts")" != '16' ]] 
   failures=$((failures + 1))
 fi
 if ! rg -U -q \
-    'fun init\(ctx: &mut TxContext\) \{\s*transfer::share_object\(new\(ctx\)\);\s*\}' \
+    'fun init\(ctx: &mut TxContext\) \{\s*transfer::share_object\(new\(0, ctx\)\);\s*\}' \
     sources/launch_config.move \
   || rg -q '\bLaunchConfigCreated\b' sources/lib/events.move sources/launch_config.move; then
   echo 'Launch-config initialization must share the one cold-policy singleton and emit no creation event.' >&2
@@ -1003,7 +1003,7 @@ if [[ ! -f sources/launch.move ]] \
     'Launch {' \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
-  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), pending_metadata_cap_recipient: option::none(), pending_curve_fee_cap_recipient: option::none(), curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
+  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), metadata_cap_delay_ms: 172_800_000, pending_metadata_cap_recipient: option::none(), curve_fee_cap_delay_ms: 172_800_000, pending_curve_fee_cap_recipient: option::none(), curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
   || [[ "$launch_finalize_body" != *'fee_ledger: fees::new(creation_fee),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \

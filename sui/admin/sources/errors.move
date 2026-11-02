@@ -76,9 +76,6 @@ const ENoPending: u64 = 21;
 #[test_only]
 const EInvalidDelay: u64 = 22;
 
-#[test_only]
-const EDelayUnchanged: u64 = 23;
-
 macro public(package) fun invalid_super_admin_cap(): u64 { 0 }
 
 macro public(package) fun invalid_admin_cap(): u64 { 1 }
@@ -124,5 +121,3 @@ macro public(package) fun not_ready(): u64 { 20 }
 macro public(package) fun no_pending(): u64 { 21 }
 
 macro public(package) fun invalid_delay(): u64 { 22 }
-
-macro public(package) fun delay_unchanged(): u64 { 23 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Canonical publication custody, administrative delay, and operational generation.
+/// Canonical publication custody and operational generation.
 ///
 /// The one-time witness seeds the generation and claims the Publisher. Both stay in owned
 /// publication custody until package administration seals the native capabilities.
@@ -32,7 +32,6 @@ public struct PackageVersion has key {
     id: UID,
     paused: u8,
     generation: OperationalVersion<BLAST_FUN>,
-    admin_delay: Delayed<u64>,
 }
 
 // === Private Initialization ===
@@ -45,34 +44,6 @@ fun init(otw: BLAST_FUN, ctx: &mut TxContext) {
 }
 
 // === Public Functions ===
-
-/// Returns the currently applied notice period in milliseconds from scheduling.
-public fun admin_delay_ms(self: &PackageVersion): u64 {
-    self.admin_delay.value()
-}
-
-/// Proposes a new notice period using the currently applied delay, including zero.
-/// Previously scheduled actions retain their original execution thresholds.
-public fun schedule_admin_delay(self: &mut PackageVersion, _: &AdminWitness<UpgradeAdmin>, delay_ms: u64, clock: &Clock) {
-    self.assert_current();
-    let ready_at_ms = self.admin_delay.schedule_delay(delay_ms, clock);
-    events::admin_delay_scheduled(delay_ms, ready_at_ms);
-}
-
-/// Applies a ready notice-period change permissionlessly.
-public fun apply_admin_delay(self: &mut PackageVersion, clock: &Clock) {
-    self.assert_current();
-    let previous_delay_ms = self.admin_delay.value();
-    let delay_ms = self.admin_delay.apply_delay(clock);
-    events::admin_delay_changed(previous_delay_ms, delay_ms);
-}
-
-/// Cancels a pending notice-period change, including after readiness.
-public fun cancel_admin_delay(self: &mut PackageVersion, _: &AdminWitness<CancelAdmin>) {
-    self.assert_current();
-    let delay_ms = self.admin_delay.cancel();
-    events::admin_delay_cancelled(delay_ms);
-}
 
 /// Freezes selected operations immediately; does not authorize unpausing.
 public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8) {
@@ -109,7 +80,7 @@ public(package) fun destroy(self: Publication): (Publisher, OperationalVersion<B
 
 /// Publishes the usable generation in the same transaction that seals capability custody.
 public(package) fun share_version(generation: OperationalVersion<BLAST_FUN>, ctx: &mut TxContext) {
-    transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation, admin_delay: delayed::new(0) });
+    transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation });
 }
 
 /// Rejects callable bytecode from every package generation except the active one.
@@ -140,7 +111,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 public fun new_for_testing(ctx: &mut TxContext): PackageVersion {
     let otw = BLAST_FUN();
 
-    PackageVersion { paused: 0, id: object::new(ctx), generation: operational_version::new(&otw), admin_delay: delayed::new(172_800_000) }
+    PackageVersion { paused: 0, id: object::new(ctx), generation: operational_version::new(&otw) }
 }
 
 #[test_only]
@@ -175,8 +146,8 @@ public fun publisher_for_testing(ctx: &mut TxContext): Publisher {
 
 // === Imports ===
 
-use blast_admin::{delayed::{Self, Delayed}, blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
+use blast_admin::{blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
 
-use blast_fun::{blast_fun_domain::{CancelAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin}, constants, events};
+use blast_fun::{blast_fun_domain::{PauseAdmin, UnpauseAdmin}, constants, events};
 
-use sui::{clock::Clock, package::Publisher};
+use sui::package::Publisher;

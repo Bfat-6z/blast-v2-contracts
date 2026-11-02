@@ -474,8 +474,8 @@ impl World {
         let versions = wrapped.created(&h, "blast_presale_package", "PackageVersion");
         ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
         let version = versions[0];
-        let (_, paused, generation, delay): (ObjectID, u8, u64, (u64, Option<(u64, u64)>)) = bcs::from_bytes(&h.contents(version))?;
-        ensure!(paused == 11 && generation == 1 && delay == (0, None));
+        let (_, paused, generation): (ObjectID, u8, u64) = bcs::from_bytes(&h.contents(version))?;
+        ensure!(paused == 11 && generation == 1);
         ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap_id));
         let config_cap = h.configuration_admin(admin, &admin_published, presale, "blast_presale_domain", &["ListingAdmin", "AdapterAdmin", "TreasuryAdmin", "UpgradeAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
@@ -488,14 +488,16 @@ impl World {
         let allowed = b.pure(true)?;
         let witness = tag(&format!("{presale}::{}::Witness", route.module()));
         call(&mut b, presale, "creation_policy", "set_quote_allowed", vec![quote_type.clone()], vec![policy, version_arg, listing, allowed]);
-        call(&mut b, presale, "creation_policy", "schedule_migration_witness", vec![witness.clone()], vec![policy, version_arg, adapter, clock]);
+        let next_delay = b.pure(172_800_000u64)?;
+        call(&mut b, presale, "creation_policy", "schedule_migration_witness", vec![witness.clone()], vec![policy, version_arg, adapter, next_delay, clock]);
         call(&mut b, presale, "creation_policy", "apply_migration_witness", vec![witness], vec![policy, version_arg, clock]);
         let fees = b.obj(h.shared(fee_policy[0], true))?;
         let destination = b.pure(h.sender)?;
-        call(&mut b, presale, "fee_policy", "schedule_destination", vec![], vec![fees, version_arg, treasury, destination, clock]);
+        let next_delay = b.pure(172_800_000u64)?;
+        call(&mut b, presale, "fee_policy", "schedule_destination", vec![], vec![fees, version_arg, treasury, destination, next_delay, clock]);
         call(&mut b, presale, "fee_policy", "apply_destination", vec![], vec![fees, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
-        h.configure_admin_delay(presale, "blast_presale_package", admin, &admin_published, config_cap, version, 172_800_000)?;
+        h.configure_upgrade_delay(presale, "blast_presale_package", admin, &admin_published, config_cap, version, wrapped.created(&h, "package_admin", "PackageAdmin")[0], 172_800_000)?;
         h.unpause(presale, "blast_presale_package", admin, &admin_published, version, 11)?;
         ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
@@ -1647,7 +1649,7 @@ struct VaultState {
     _fee_recipients: Vec<RecipientShare>,
     _holder_rewards_bps: u64,
     // Delayed<ProtocolFees>: applied value, then optional (proposal, ready_at_ms).
-    _protocol_fees: (ProtocolFees, Option<(ProtocolFees, u64)>),
+    _protocol_fees: (ProtocolFees, u64, Option<(ProtocolFees, u64, u64)>),
     _partner_id: Option<ObjectID>,
     _unpaid_protocol_meme: u64,
     _unpaid_protocol_quote: u64,

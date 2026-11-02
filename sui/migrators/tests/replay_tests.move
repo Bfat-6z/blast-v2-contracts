@@ -749,6 +749,7 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         let meme = r.peel_type_name();
         r.peel_shares();
         r.peel_u64();
+        assert_eq!(r.peel_u64(), 172_800_000);
         r.assert_consumed();
         if (!replay.coin_entries.contains(&meme)) replay.coin_entries.push_back(meme);
         reduced = reduced + 1;
@@ -838,6 +839,7 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
     // This reducer tracks applied economics. Scheduling notices, intake admissions, and the
     // creator capability claim do not change its state; nothing else may appear.
     let unreduced = wrapped<blast_fun::events::MigrationWitnessScheduled>().length()
+        + wrapped<blast_fun::events::MigrationDelayChanged>().length()
         + wrapped<blast_fun::events::TradeFeesScheduled>().length()
         + wrapped<blast_fun::events::ProtocolAllocationScheduled>().length()
         + direct<blast_events::DefaultSharesScheduled>().length()

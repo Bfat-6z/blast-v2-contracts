@@ -21,7 +21,7 @@ Run these wrappers sequentially: they temporarily edit the same manifests and
 publication metadata. The Rust PTB harness also supplies a nonzero genesis
 recipient while compiling and restores each manifest afterward. Its initial
 configuration wraps Publication, then uses ordinary real-ACL schedule/apply calls
-at zero delay. It enables a 48-hour policy before the immediate real-ACL unpause
+at zero delay. It enables independent 48-hour operation notices before the immediate real-ACL unpause
 without advancing Clock. Later governed changes schedule, advance the simulator
 by the snapshotted delay, and apply through public entry points. Policy tests also
 prove old-delay updates, same-PTB ordering/rollback and unauthorized rejection.

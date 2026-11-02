@@ -6,15 +6,8 @@ module blast_fun::events;
 
 // === Public Types ===
 
-/// Proposed notice period and its Unix millisecond execution threshold.
-public struct AdminDelayScheduled has copy, drop { delay_ms: u64, ready_at_ms: u64 }
-/// Previously applied and newly applied notice periods.
-public struct AdminDelayChanged has copy, drop { previous_delay_ms: u64, delay_ms: u64 }
-/// Notice-period proposal removed from the pending schedule.
-public struct AdminDelayCancelled has copy, drop { delay_ms: u64 }
-
 /// The exact code digest or irreversible end of upgrades approved for execution.
-public enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable }
+public enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable, DelayOnly }
 
 /// Blast's one-time fee share of the Meme supply and final Quote reserve of launches finalized
 /// from now on. Finalized launches keep the shares recorded in `LaunchCreated.allocation_plan`.
@@ -80,6 +73,7 @@ public struct CurveFeeCapReassignmentScheduled has copy, drop {
     launch_id: ID,
     recipient: address,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// Cancelled replacement, identified by its launch and recipient.
@@ -99,6 +93,7 @@ public struct MetadataCapReassignmentScheduled has copy, drop {
     launch_id: ID,
     recipient: address,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// Cancelled replacement, identified by its launch and recipient.
@@ -275,6 +270,7 @@ public struct Unpaused has copy, drop {
 public struct TreasuryScheduled has copy, drop {
     treasury: address,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// Values removed from the pending schedule.
@@ -286,6 +282,7 @@ public struct TreasuryCancelled has copy, drop {
 public struct ProtocolFeeShareScheduled has copy, drop {
     protocol_fee_share_bps: u64,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// Values removed from the pending schedule.
@@ -293,21 +290,11 @@ public struct ProtocolFeeShareCancelled has copy, drop {
     protocol_fee_share_bps: u64,
 }
 
-/// Proposed values and Unix millisecond execution threshold.
-public struct CreatorClaimSignerScheduled has copy, drop {
-    signer_public_key: vector<u8>,
-    ready_at_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct CreatorClaimSignerCancelled has copy, drop {
-    signer_public_key: vector<u8>,
-}
-
 /// The admitted type and Unix millisecond execution threshold.
 public struct MigrationWitnessScheduled has copy, drop {
     witness: TypeName,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// An adapter admission removed from the pending set.
@@ -320,6 +307,7 @@ public struct ProtocolAllocationScheduled has copy, drop {
     meme_bps: u64,
     quote_bps: u64,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// Values removed from the pending schedule.
@@ -332,6 +320,7 @@ public struct ProtocolAllocationCancelled has copy, drop {
 public struct CreationFeeScheduled has copy, drop {
     creation_fee: u64,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// Values removed from the pending schedule.
@@ -344,6 +333,7 @@ public struct TradeFeesScheduled has copy, drop {
     quote_fee_bps: u64,
     meme_fee_bps: u64,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// Values removed from the pending schedule.
@@ -356,6 +346,7 @@ public struct TradeFeesCancelled has copy, drop {
 public struct UpgradeActionScheduled has copy, drop {
     action: UpgradeAction,
     ready_at_ms: u64,
+    delay_ms: u64,
 }
 
 /// A cancelled upgrade action, which can no longer execute.
@@ -363,19 +354,35 @@ public struct UpgradeActionCancelled has copy, drop {
     action: UpgradeAction,
 }
 
+/// Applied notice period for future upgrades and immutability.
+public struct UpgradeDelayChanged has copy, drop { delay_ms: u64 }
+
+/// Proposed adapter-admission notice period.
+public struct MigrationDelayScheduled has copy, drop { delay_ms: u64, ready_at_ms: u64 }
+/// Applied adapter-admission notice period.
+public struct MigrationDelayChanged has copy, drop { delay_ms: u64 }
+/// Cancelled admission-policy proposal.
+public struct MigrationDelayCancelled has copy, drop {}
+
+/// Proposed notice for one launch's curve-fee or metadata cap reassignment.
+public struct CapDelayScheduled has copy, drop { launch_id: ID, metadata: bool, delay_ms: u64, ready_at_ms: u64 }
+/// Applied cap-reassignment notice.
+public struct CapDelayChanged has copy, drop { launch_id: ID, metadata: bool, delay_ms: u64 }
+/// Cancelled policy-only cap proposal.
+public struct CapDelayCancelled has copy, drop { launch_id: ID, metadata: bool }
+
 // === Package Functions ===
 
-public(package) fun admin_delay_scheduled(delay_ms: u64, ready_at_ms: u64) {
-    emit(AdminDelayScheduled { delay_ms, ready_at_ms });
-}
+public(package) fun cap_delay_scheduled(launch_id: ID, metadata: bool, delay_ms: u64, ready_at_ms: u64) { emit(CapDelayScheduled { launch_id, metadata, delay_ms, ready_at_ms }); }
+public(package) fun cap_delay_changed(launch_id: ID, metadata: bool, delay_ms: u64) { emit(CapDelayChanged { launch_id, metadata, delay_ms }); }
+public(package) fun cap_delay_cancelled(launch_id: ID, metadata: bool) { emit(CapDelayCancelled { launch_id, metadata }); }
 
-public(package) fun admin_delay_changed(previous_delay_ms: u64, delay_ms: u64) {
-    emit(AdminDelayChanged { previous_delay_ms, delay_ms });
-}
+public(package) fun migration_delay_scheduled(delay_ms: u64, ready_at_ms: u64) { emit(MigrationDelayScheduled { delay_ms, ready_at_ms }); }
+public(package) fun migration_delay_changed(delay_ms: u64) { emit(MigrationDelayChanged { delay_ms }); }
+public(package) fun migration_delay_cancelled() { emit(MigrationDelayCancelled {}); }
 
-public(package) fun admin_delay_cancelled(delay_ms: u64) {
-    emit(AdminDelayCancelled { delay_ms });
-}
+public(package) fun delay_only_action(): UpgradeAction { UpgradeAction::DelayOnly }
+public(package) fun upgrade_delay_changed(delay_ms: u64) { emit(UpgradeDelayChanged { delay_ms }); }
 
 /// The exact package digest an administrator proposes or checks.
 public(package) fun upgrade_action(digest: vector<u8>): UpgradeAction {
@@ -395,70 +402,61 @@ public(package) fun unpaused(bits: u8, paused: u8) {
     emit(Unpaused { bits, paused });
 }
 
-public(package) fun treasury_scheduled(treasury: address, ready_at_ms: u64) {
-    emit(TreasuryScheduled { treasury, ready_at_ms });
+public(package) fun treasury_scheduled(treasury: address, ready_at_ms: u64, delay_ms: u64) {
+    emit(TreasuryScheduled { treasury, ready_at_ms, delay_ms });
 }
 
 public(package) fun treasury_cancelled(treasury: address) {
     emit(TreasuryCancelled { treasury });
 }
 
-public(package) fun protocol_fee_share_scheduled(protocol_fee_share_bps: u64, ready_at_ms: u64) {
-    emit(ProtocolFeeShareScheduled { protocol_fee_share_bps, ready_at_ms });
+public(package) fun protocol_fee_share_scheduled(protocol_fee_share_bps: u64, ready_at_ms: u64, delay_ms: u64) {
+    emit(ProtocolFeeShareScheduled { protocol_fee_share_bps, ready_at_ms, delay_ms });
 }
 
 public(package) fun protocol_fee_share_cancelled(protocol_fee_share_bps: u64) {
     emit(ProtocolFeeShareCancelled { protocol_fee_share_bps });
 }
 
-public(package) fun creator_claim_signer_scheduled(signer_public_key: vector<u8>, ready_at_ms: u64) {
-    emit(CreatorClaimSignerScheduled { signer_public_key, ready_at_ms });
-}
-
-public(package) fun creator_claim_signer_cancelled(signer_public_key: vector<u8>) {
-    emit(CreatorClaimSignerCancelled { signer_public_key });
-}
-
-public(package) fun migration_witness_scheduled(witness: TypeName, ready_at_ms: u64) {
-    emit(MigrationWitnessScheduled { witness, ready_at_ms });
+public(package) fun migration_witness_scheduled(witness: TypeName, ready_at_ms: u64, delay_ms: u64) {
+    emit(MigrationWitnessScheduled { witness, ready_at_ms, delay_ms });
 }
 
 public(package) fun migration_witness_cancelled(witness: TypeName) {
     emit(MigrationWitnessCancelled { witness });
 }
 
-public(package) fun protocol_allocation_scheduled(meme_bps: u64, quote_bps: u64, ready_at_ms: u64) {
-    emit(ProtocolAllocationScheduled { meme_bps, quote_bps, ready_at_ms });
+public(package) fun protocol_allocation_scheduled(meme_bps: u64, quote_bps: u64, ready_at_ms: u64, delay_ms: u64) {
+    emit(ProtocolAllocationScheduled { meme_bps, quote_bps, ready_at_ms, delay_ms });
 }
 
 public(package) fun protocol_allocation_cancelled(meme_bps: u64, quote_bps: u64) {
     emit(ProtocolAllocationCancelled { meme_bps, quote_bps });
 }
 
-public(package) fun creation_fee_scheduled(creation_fee: u64, ready_at_ms: u64) {
-    emit(CreationFeeScheduled { creation_fee, ready_at_ms });
+public(package) fun creation_fee_scheduled(creation_fee: u64, ready_at_ms: u64, delay_ms: u64) {
+    emit(CreationFeeScheduled { creation_fee, ready_at_ms, delay_ms });
 }
 
 public(package) fun creation_fee_cancelled(creation_fee: u64) {
     emit(CreationFeeCancelled { creation_fee });
 }
 
-public(package) fun trade_fees_scheduled(quote_fee_bps: u64, meme_fee_bps: u64, ready_at_ms: u64) {
-    emit(TradeFeesScheduled { quote_fee_bps, meme_fee_bps, ready_at_ms });
+public(package) fun trade_fees_scheduled(quote_fee_bps: u64, meme_fee_bps: u64, ready_at_ms: u64, delay_ms: u64) {
+    emit(TradeFeesScheduled { quote_fee_bps, meme_fee_bps, ready_at_ms, delay_ms });
 }
 
 public(package) fun trade_fees_cancelled(quote_fee_bps: u64, meme_fee_bps: u64) {
     emit(TradeFeesCancelled { quote_fee_bps, meme_fee_bps });
 }
 
-public(package) fun upgrade_action_scheduled(action: UpgradeAction, ready_at_ms: u64) {
-    emit(UpgradeActionScheduled { action, ready_at_ms });
+public(package) fun upgrade_action_scheduled(action: UpgradeAction, ready_at_ms: u64, delay_ms: u64) {
+    emit(UpgradeActionScheduled { action, ready_at_ms, delay_ms });
 }
 
 public(package) fun upgrade_action_cancelled(action: UpgradeAction) {
     emit(UpgradeActionCancelled { action });
 }
-
 
 public(package) fun protocol_allocation_set(meme_bps: u64, quote_bps: u64) {
     emit(ProtocolAllocationSet { meme_bps, quote_bps });
@@ -519,8 +517,9 @@ public(package) fun curve_fee_cap_reassignment_scheduled(
     launch_id: ID,
     recipient: address,
     ready_at_ms: u64,
+    delay_ms: u64,
 ) {
-    emit(CurveFeeCapReassignmentScheduled { launch_id, recipient, ready_at_ms });
+    emit(CurveFeeCapReassignmentScheduled { launch_id, recipient, ready_at_ms, delay_ms });
 }
 
 public(package) fun curve_fee_cap_reassignment_cancelled(launch_id: ID, recipient: address) {
@@ -535,8 +534,9 @@ public(package) fun metadata_cap_reassignment_scheduled(
     launch_id: ID,
     recipient: address,
     ready_at_ms: u64,
+    delay_ms: u64,
 ) {
-    emit(MetadataCapReassignmentScheduled { launch_id, recipient, ready_at_ms });
+    emit(MetadataCapReassignmentScheduled { launch_id, recipient, ready_at_ms, delay_ms });
 }
 
 public(package) fun metadata_cap_reassignment_cancelled(launch_id: ID, recipient: address) {

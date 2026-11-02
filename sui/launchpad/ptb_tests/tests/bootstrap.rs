@@ -92,57 +92,49 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     Ok(())
 }
 
-/// A real PTB applies a ready delay and then schedules using the newly applied policy.
+/// A delay-only proposal waits the old notice; a failed apply-then-schedule PTB rolls back both fields.
 fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, admin: ObjectID,
     publication: &Outcome, version: ObjectID, config: ObjectID,
 ) -> Result<()> {
-    let cap = h.configuration_admin(admin, publication, blast, "blast_fun_domain", &["UpgradeAdmin", "FeeAdmin", "CancelAdmin"])?;
+    let cap = h.configuration_admin(admin, publication, blast, "blast_fun_domain", &["FeeAdmin", "CancelAdmin"])?;
     let mut b = ProgrammableTransactionBuilder::new();
-    let upgrade = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "UpgradeAdmin")?;
-    let version_arg = b.obj(h.shared(version, true))?;
+    let fee = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "FeeAdmin")?;
+    let version_arg = b.obj(h.shared(version, false))?;
+    let config_arg = b.obj(h.shared(config, true))?;
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let value = b.pure(0u64)?;
     let delay = b.pure(25u64)?;
-    call(&mut b, blast, "blast_fun", "schedule_admin_delay", vec![], vec![version_arg, upgrade, delay, clock]);
+    call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, delay, clock]);
     h.execute(b.finish())?.assert_success();
-    let decode = |h: &Harness| -> Result<(u64, Option<(u64, u64)>)> {
-        let (_, _, _, delay): (ObjectID, u8, u64, (u64, Option<(u64, u64)>)) = bcs::from_bytes(&h.contents(version))?;
-        Ok(delay)
-    };
     let (_, scheduled_at_ms): (ObjectID, u64) = bcs::from_bytes(&h.contents(sui_types::SUI_CLOCK_OBJECT_ID))?;
-    assert_eq!(decode(h)?, (172_800_000, Some((25, scheduled_at_ms + 172_800_000))));
     h.sim.advance_clock(std::time::Duration::from_millis(172_799_999));
     let mut b = ProgrammableTransactionBuilder::new();
-    let version_arg = b.obj(h.shared(version, true))?;
-    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut b, blast, "blast_fun", "apply_admin_delay", vec![], vec![version_arg, clock]);
-    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 20 }, &[version], &[])?;
-    h.sim.advance_clock(std::time::Duration::from_millis(1));
-
-    let mut b = ProgrammableTransactionBuilder::new();
-    let version_arg = b.obj(h.shared(version, true))?;
+    let version_arg = b.obj(h.shared(version, false))?;
     let config_arg = b.obj(h.shared(config, true))?;
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    let fee = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "FeeAdmin")?;
-    call(&mut b, blast, "blast_fun", "apply_admin_delay", vec![], vec![version_arg, clock]);
-    let value = b.pure(123u64)?;
-    call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, clock]);
     call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
-    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 20 }, &[version, config, cap], &[])?;
-    assert_eq!(decode(h)?.0, 172_800_000);
-
-    let mut b = ProgrammableTransactionBuilder::new();
-    let version_arg = b.obj(h.shared(version, true))?;
-    let config_arg = b.obj(h.shared(config, true))?;
-    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    let fee = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "FeeAdmin")?;
-    call(&mut b, blast, "blast_fun", "apply_admin_delay", vec![], vec![version_arg, clock]);
-    let value = b.pure(123u64)?;
-    call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, clock]);
-    let applied = h.execute(b.finish())?;
-    applied.assert_success();
-    assert_eq!(decode(h)?, (25, None));
-    let scheduled = applied.events.iter().find(|event| event.type_.type_params.iter().any(|tag| tag.to_canonical_string(true).ends_with("::events::CreationFeeScheduled"))).expect("scheduled creation fee");
-    assert_eq!(bcs::from_bytes::<(u64, u64)>(&scheduled.contents)?, (123, scheduled_at_ms + 172_800_000 + 25));
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 20 }, &[config], &[])?;
+    h.sim.advance_clock(std::time::Duration::from_millis(1));
+    for must_abort in [true, false] {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let version_arg = b.obj(h.shared(version, false))?;
+        let config_arg = b.obj(h.shared(config, true))?;
+        let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let fee = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "FeeAdmin")?;
+        call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
+        let value = b.pure(123u64)?;
+        let next_delay = b.pure(0u64)?;
+        call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, next_delay, clock]);
+        if must_abort {
+            call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
+            h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 20 }, &[config, cap], &[])?;
+        } else {
+            let applied = h.execute(b.finish())?;
+            applied.assert_success();
+            let scheduled = applied.events.iter().find(|event| event.type_.type_params.iter().any(|tag| tag.to_canonical_string(true).ends_with("::events::CreationFeeScheduled"))).expect("scheduled creation fee");
+            assert_eq!(bcs::from_bytes::<(u64, u64, u64)>(&scheduled.contents)?, (123, scheduled_at_ms + 172_800_000 + 25, 0));
+        }
+    }
     h.sim.advance_clock(std::time::Duration::from_millis(25));
     let mut b = ProgrammableTransactionBuilder::new();
     let version_arg = b.obj(h.shared(version, false))?;
@@ -150,12 +142,10 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
     h.execute(b.finish())?.assert_success();
-
-    // A cap without UpgradeAdmin cannot acquire the witness needed to alter the delay.
-    let forbidden = h.configuration_admin(admin, publication, blast, "blast_fun_domain", &["FeeAdmin"])?;
+    let forbidden = h.configuration_admin(admin, publication, blast, "blast_fun_domain", &["TreasuryAdmin"])?;
     let mut b = ProgrammableTransactionBuilder::new();
-    h.configuration_witness(&mut b, admin, publication, forbidden, blast, "blast_fun_domain", "UpgradeAdmin")?;
-    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "blast_acl", code: 5 }, &[version, forbidden], &[])?;
+    h.configuration_witness(&mut b, admin, publication, forbidden, blast, "blast_fun_domain", "FeeAdmin")?;
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "blast_acl", code: 5 }, &[forbidden], &[])?;
     Ok(())
 }
 

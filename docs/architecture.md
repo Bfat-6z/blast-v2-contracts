@@ -337,14 +337,18 @@ atomically and makes prior-generation bytecode unusable.
 
 Launchpad, presale and migrators retain the canonical Publisher and generation
 in a unique owned Publication until validated custody wrap consumes it. It has
-no policy authority. Wrap shares the canonical PackageVersion with administrative
-delay zero; launchpad and presale also start fully paused. Ordinary ACL operations
-configure policy after wrap. Each package owns a `Delayed<u64>` notice policy in
-its version. UpgradeAdmin schedules changes to it under the old applied delay,
-anyone applies ready changes and CancelAdmin can cancel. Other schedules read
-the applied policy internally and snapshot absolute deadlines. Settle pending
-zero-delay setup proposals, enable the desired delay and verify policy before
-unpausing. Pausing or upgrading never resets that policy (ADR 0134).
+no policy authority. Wrap shares the canonical PackageVersion; launchpad and
+presale start fully paused. Ordinary ACL operations configure policy after wrap.
+Each protected operation owns its applied notice, initially zero for publication-owned
+policy. A proposal binds its value, next notice and a deadline derived from the old
+applied notice. Application commits both fields; cancellation preserves both applied
+fields. Delay-only changes follow the same timelock, with no immediate setter or
+bypass. Upgrade custody persists its own notice independently of other policy.
+Settle or cancel all setup proposals, configure and verify every operation's intended
+notice, then unpause. New creator-cap and presale-vault operations begin at 48 hours;
+per-coin LP policy inherits the applied defaults notice. Pausing, cancellation and
+upgrading never reset an applied notice. The backend creator-claim signer remains
+a separate immediate, revocable ACL setting (ADR 0134).
 
 Boosts margin recovery separates the ability to open risk from the ability to
 reduce it ([ADR 0124](decisions/0124-margin-recovery-and-initial-headroom.md)).

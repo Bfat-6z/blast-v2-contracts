@@ -31,7 +31,7 @@ public struct ProtocolFees has copy, drop, store {
 // === Private Initialization ===
 
 fun init(ctx: &mut TxContext) {
-    transfer::share_object(new(ctx));
+    transfer::share_object(new(@blast_treasury, 0, ctx));
 }
 
 // === Public Functions ===
@@ -46,14 +46,15 @@ public fun schedule_fees(
     token_bps: Bps,
     lp_fee_meme_bps: Bps,
     lp_fee_quote_bps: Bps,
+    delay_ms: u64,
     clock: &Clock,
 ) {
     package_version.assert_current();
 
     let value = protocol_fees(raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps);
-    assert!(value != self.fees.value(), EFeesUnchanged);
-    let ready_at_ms = self.fees.schedule(value, package_version.admin_delay_ms(), clock);
-    sui::event::emit(FeesScheduled { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value(), ready_at_ms });
+    assert!(value != self.fees.value() || delay_ms != self.fees.delay_ms(), EFeesUnchanged);
+    let ready_at_ms = self.fees.schedule(value, delay_ms, clock);
+    sui::event::emit(FeesScheduled { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value(), ready_at_ms, delay_ms });
 }
 
 /// Applies the scheduled fees permissionlessly once ready.
@@ -93,14 +94,15 @@ public fun schedule_destination(
     package_version: &PackageVersion,
     _: &AdminWitness<TreasuryAdmin>,
     destination: address,
+    delay_ms: u64,
     clock: &Clock,
 ) {
     package_version.assert_current();
     assert!(destination != @0x0, EInvalidDestination);
     let value = destination;
-    assert!(value != self.destination.value(), EInvalidDestination);
-    let ready_at_ms = self.destination.schedule(value, package_version.admin_delay_ms(), clock);
-    sui::event::emit(DestinationScheduled { destination: destination, ready_at_ms });
+    assert!(value != self.destination.value() || delay_ms != self.destination.delay_ms(), EInvalidDestination);
+    let ready_at_ms = self.destination.schedule(value, delay_ms, clock);
+    sui::event::emit(DestinationScheduled { destination: destination, ready_at_ms, delay_ms });
 }
 
 /// Applies the scheduled destination permissionlessly once ready.
@@ -182,17 +184,17 @@ public(package) fun with_lp_fees(
 
 // === Private Functions ===
 
-fun new(ctx: &mut TxContext): FeePolicy {
+fun new(destination: address, delay_ms: u64, ctx: &mut TxContext): FeePolicy {
     assert!(@blast_treasury != @0x0, EInvalidDestination);
     FeePolicy {
         id: object::new(ctx),
-        destination: delayed::new(@blast_treasury),
+        destination: delayed::new(destination, delay_ms),
         fees: delayed::new(ProtocolFees {
             raise_bps: bps::new(0),
             token_bps: bps::new(0),
             lp_fee_meme_bps: bps::new(0),
             lp_fee_quote_bps: bps::new(0),
-        }),
+        }, delay_ms),
     }
 }
 
@@ -208,7 +210,8 @@ public fun set_destination_for_testing(
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_destination(package_version, admin, destination, &clock);
+    let delay_ms = self.destination.delay_ms();
+    self.schedule_destination(package_version, admin, destination, delay_ms, &clock);
     clock.set_for_testing(172_800_000);
     self.apply_destination(package_version, &clock);
     clock.destroy_for_testing();
@@ -227,7 +230,8 @@ public fun set_fees_for_testing(
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_fees(package_version, admin, raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps, &clock);
+    let delay_ms = self.fees.delay_ms();
+    self.schedule_fees(package_version, admin, raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps, delay_ms, &clock);
     clock.set_for_testing(172_800_000);
     self.apply_fees(package_version, &clock);
     clock.destroy_for_testing();
@@ -240,9 +244,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 
 #[test_only]
 public fun new_for_testing(ctx: &mut TxContext): FeePolicy {
-    let mut policy = new(ctx);
-    policy.destination.set_now(ctx.sender());
-    policy
+    new(ctx.sender(), 172_800_000, ctx)
 }
 
 #[test_only]
@@ -281,13 +283,13 @@ public fun destination_changed_fields(event: &DestinationChanged): address {
 // === Events ===
 
 /// Proposed values and Unix millisecond execution threshold.
-public struct DestinationScheduled has copy, drop { destination: address, ready_at_ms: u64 }
+public struct DestinationScheduled has copy, drop { destination: address, ready_at_ms: u64, delay_ms: u64 }
 
 /// Values removed from the pending schedule.
 public struct DestinationCancelled has copy, drop { destination: address }
 
 /// Proposed values and Unix millisecond execution threshold.
-public struct FeesScheduled has copy, drop { raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64, ready_at_ms: u64 }
+public struct FeesScheduled has copy, drop { raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64, ready_at_ms: u64, delay_ms: u64 }
 
 /// Values removed from the pending schedule.
 public struct FeesCancelled has copy, drop { raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64 }

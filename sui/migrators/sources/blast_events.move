@@ -7,36 +7,29 @@ module blast_fun_migrators::blast_events;
 
 // === Public Types ===
 
-/// Proposed notice period and its Unix millisecond execution threshold.
-public struct AdminDelayScheduled has copy, drop { delay_ms: u64, ready_at_ms: u64 }
-/// Previously applied and newly applied notice periods.
-public struct AdminDelayChanged has copy, drop { previous_delay_ms: u64, delay_ms: u64 }
-/// Notice-period proposal removed from the pending schedule.
-public struct AdminDelayCancelled has copy, drop { delay_ms: u64 }
-
 /// Values removed from the pending schedule.
 public struct ProtocolDestinationCancelled has copy, drop { destination: address }
 
 /// Proposed values and Unix millisecond execution threshold.
-public struct ProtocolDestinationScheduled has copy, drop { destination: address, ready_at_ms: u64 }
+public struct ProtocolDestinationScheduled has copy, drop { destination: address, ready_at_ms: u64, delay_ms: u64 }
 
 /// Values removed from the pending schedule.
 public struct DefaultSharesCancelled has copy, drop { meme_bps: u64, quote_bps: u64 }
 
 /// Proposed values and Unix millisecond execution threshold.
-public struct DefaultSharesScheduled has copy, drop { meme_bps: u64, quote_bps: u64, ready_at_ms: u64 }
+public struct DefaultSharesScheduled has copy, drop { meme_bps: u64, quote_bps: u64, ready_at_ms: u64, delay_ms: u64 }
 
 /// The cancelled per-coin decision.
 public struct CoinSharesCancelled has copy, drop { meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64> }
 
 /// None announces a return to the live defaults, not an immediate override deletion.
-public struct CoinSharesScheduled has copy, drop { meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64>, ready_at_ms: u64 }
+public struct CoinSharesScheduled has copy, drop { meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64>, ready_at_ms: u64, delay_ms: u64 }
 
 /// Cancelled digest; None denotes the cancelled immutability decision.
 public struct UpgradeActionCancelled has copy, drop { digest: Option<vector<u8>> }
 
 /// Announced digest and execution threshold; None denotes immutability.
-public struct UpgradeActionScheduled has copy, drop { digest: Option<vector<u8>>, ready_at_ms: u64 }
+public struct UpgradeActionScheduled has copy, drop { digest: Option<vector<u8>>, ready_at_ms: u64, delay_ms: u64 }
 
 /// Blast's default pair (no `meme`) or one coin's pair changed; absent old/new pairs represent a
 /// coin's own pair being created or removed.
@@ -187,50 +180,46 @@ public struct CetusPoolReserved has copy, drop {
     tick_spacing: u32,
 }
 
+/// A policy-only proposal, replacing any pending upgrade action.
+public struct UpgradeDelayScheduled has copy, drop { delay_ms: u64, ready_at_ms: u64 }
+/// Applied notice period for future upgrade actions.
+public struct UpgradeDelayChanged has copy, drop { delay_ms: u64 }
+
 // === Package Functions ===
 
-public(package) fun admin_delay_scheduled(delay_ms: u64, ready_at_ms: u64) {
-    sui::event::emit(AdminDelayScheduled { delay_ms, ready_at_ms });
-}
-
-public(package) fun admin_delay_changed(previous_delay_ms: u64, delay_ms: u64) {
-    sui::event::emit(AdminDelayChanged { previous_delay_ms, delay_ms });
-}
-
-public(package) fun admin_delay_cancelled(delay_ms: u64) {
-    sui::event::emit(AdminDelayCancelled { delay_ms });
-}
+public(package) fun upgrade_delay_scheduled(delay_ms: u64, ready_at_ms: u64) { sui::event::emit(UpgradeDelayScheduled { delay_ms, ready_at_ms }); }
+public(package) fun upgrade_delay_changed(delay_ms: u64) { sui::event::emit(UpgradeDelayChanged { delay_ms }); }
 
 public(package) fun protocol_destination_cancelled(destination: address) {
     sui::event::emit(ProtocolDestinationCancelled { destination });
 }
 
-public(package) fun protocol_destination_scheduled(destination: address, ready_at_ms: u64) {
-    sui::event::emit(ProtocolDestinationScheduled { destination, ready_at_ms });
+public(package) fun protocol_destination_scheduled(destination: address, ready_at_ms: u64, delay_ms: u64) {
+    sui::event::emit(ProtocolDestinationScheduled { destination, ready_at_ms, delay_ms });
 }
 
 public(package) fun default_shares_cancelled(meme_bps: u64, quote_bps: u64) {
     sui::event::emit(DefaultSharesCancelled { meme_bps, quote_bps });
 }
 
-public(package) fun default_shares_scheduled(meme_bps: u64, quote_bps: u64, ready_at_ms: u64) {
-    sui::event::emit(DefaultSharesScheduled { meme_bps, quote_bps, ready_at_ms });
+public(package) fun default_shares_scheduled(meme_bps: u64, quote_bps: u64, ready_at_ms: u64, delay_ms: u64) {
+    sui::event::emit(DefaultSharesScheduled { meme_bps, quote_bps, ready_at_ms, delay_ms });
 }
 
 public(package) fun coin_shares_cancelled(meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64>) {
     sui::event::emit(CoinSharesCancelled { meme, meme_bps, quote_bps });
 }
 
-public(package) fun coin_shares_scheduled(meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64>, ready_at_ms: u64) {
-    sui::event::emit(CoinSharesScheduled { meme, meme_bps, quote_bps, ready_at_ms });
+public(package) fun coin_shares_scheduled(meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64>, ready_at_ms: u64, delay_ms: u64) {
+    sui::event::emit(CoinSharesScheduled { meme, meme_bps, quote_bps, ready_at_ms, delay_ms });
 }
 
 public(package) fun upgrade_action_cancelled(digest: Option<vector<u8>>) {
     sui::event::emit(UpgradeActionCancelled { digest });
 }
 
-public(package) fun upgrade_action_scheduled(digest: Option<vector<u8>>, ready_at_ms: u64) {
-    sui::event::emit(UpgradeActionScheduled { digest, ready_at_ms });
+public(package) fun upgrade_action_scheduled(digest: Option<vector<u8>>, ready_at_ms: u64, delay_ms: u64) {
+    sui::event::emit(UpgradeActionScheduled { digest, ready_at_ms, delay_ms });
 }
 
 /// Emits a default or original-type partner policy mutation with complete old/new pairs.

@@ -125,7 +125,8 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     let version = b.obj(w.h.shared(w.version, false))?;
     let fee = b.pure(123u64)?;
     let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut b, w.blast, "launch_config", "schedule_creation_fee", vec![], vec![config, version, fee_admin, fee, clock]);
+    let next_delay = b.pure(172_800_000u64)?;
+    call(&mut b, w.blast, "launch_config", "schedule_creation_fee", vec![], vec![config, version, fee_admin, fee, next_delay, clock]);
     w.h.execute(b.finish())?.assert_success();
     let mut b = ProgrammableTransactionBuilder::new();
     let runtime = b.obj(w.h.shared(w.runtime, true))?;
@@ -231,7 +232,8 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let version = schedule.obj(w.h.shared(w.version, false))?;
     let proposed = schedule.pure(digest.to_vec())?;
     let clock = schedule.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut schedule, original, "package_admin", "schedule_upgrade", vec![], vec![custody_arg, version, witness, proposed, clock]);
+    let next_delay = schedule.pure(172_800_000u64)?;
+    call(&mut schedule, original, "package_admin", "schedule_upgrade", vec![], vec![custody_arg, version, witness, proposed, next_delay, clock]);
     w.h.execute(schedule.finish())?.assert_success();
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, false))?;
@@ -265,7 +267,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     upgraded.assert_success();
     w.blast = upgraded.effects.created().into_iter()
         .map(|(reference, _)| reference.0).find(|id| w.h.object(*id).is_package()).unwrap();
-    let (_, _, generation, _): (ObjectID, u8, u64, (u64, Option<(u64, u64)>)) = bcs::from_bytes(&w.h.contents(w.version))?;
+    let (_, _, generation): (ObjectID, u8, u64) = bcs::from_bytes(&w.h.contents(w.version))?;
     assert_eq!(generation, 2);
 
     // A fresh adapter links to the active dependency while preserving core type origins.
@@ -283,7 +285,8 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let version = b.obj(w.h.shared(w.version, false))?;
 
     let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut b, w.blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config, version, witness, admin_clock]);
+    let next_delay = b.pure(172_800_000u64)?;
+    call(&mut b, w.blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config, version, witness, next_delay, admin_clock]);
     w.h.execute(b.finish())?.assert_success();
     blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![(w.blast, "launch_config", "apply_migration_witness", vec![parse_sui_type_tag(&format!("{}::mock_adapter::Venue", w.adapter))?], w.config, w.version)])?;
 
@@ -795,18 +798,20 @@ fn world(work: &str) -> Result<World> {
     let hundred = builder.pure(100u64)?;
     let fee = call(&mut builder, blast, "bps", "new", vec![], vec![hundred]);
     let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let next_delay = builder.pure(172_800_000u64)?;
     call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg,
         version_arg,
         fee_admin,
         fee,
-        fee, admin_clock]);
+        fee, next_delay, admin_clock]);
     let blast_bps = w.bps(&mut builder, BLAST_BPS)?;
     let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let next_delay = builder.pure(172_800_000u64)?;
     call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg,
         version_arg,
         treasury_admin,
         blast_bps,
-        blast_bps, admin_clock]);
+        blast_bps, next_delay, admin_clock]);
     w.h.execute(builder.finish())?.assert_success();
     blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![
         (blast, "launch_config", "apply_trade_fees", vec![], config, version),
@@ -842,7 +847,8 @@ impl World {
         let version = b.obj(self.h.shared(self.version, false))?;
         let destination = b.pure(destination)?;
         let clock = b.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, self.blast, "runtime_config", "schedule_treasury", vec![], vec![config, version, witness, destination, clock]);
+        let next_delay = b.pure(172_800_000u64)?;
+        call(&mut b, self.blast, "runtime_config", "schedule_treasury", vec![], vec![config, version, witness, destination, next_delay, clock]);
         Ok(b.finish())
     }
 
@@ -857,8 +863,8 @@ impl World {
 
     fn applied_treasury(&self) -> Result<SuiAddress> {
         #[derive(Deserialize)]
-        struct Delayed<T> { value: T, _pending: Option<(T, u64)> }
-        let (_, _, _, treasury): (ObjectID, Delayed<Vec<u8>>, Delayed<u64>, Delayed<SuiAddress>) = bcs::from_bytes(&self.h.contents(self.runtime))?;
+        struct Delayed<T> { value: T, _delay_ms: u64, _pending: Option<(T, u64, u64)> }
+        let (_, _, _, treasury): (ObjectID, Vec<u8>, Delayed<u64>, Delayed<SuiAddress>) = bcs::from_bytes(&self.h.contents(self.runtime))?;
         Ok(treasury.value)
     }
 

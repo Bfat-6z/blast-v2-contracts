@@ -41,13 +41,13 @@ fun pending_override_and_delayed_clear_preserve_in_force_shares() {
     let mut fixture = start_policy();
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let mut clock = sui::clock::create_for_testing(f.scenario.ctx());
-        f.policy.schedule_coin_shares<MemeA>(&f.migrators_version, &fee_admin(), bps::new(123), bps::new(456), &clock);
+        f.policy.schedule_coin_shares<MemeA>(&f.migrators_version, &fee_admin(), bps::new(123), bps::new(456), 172_800_000, &clock);
         f.assert_shares<MemeA>(0, 0);
         clock.set_for_testing(172_800_000);
         f.assert_shares<MemeA>(0, 0);
         f.policy.apply_coin_shares<MemeA>(&f.migrators_version, &clock);
         f.assert_shares<MemeA>(123, 456);
-        f.policy.schedule_clear_coin_shares<MemeA>(&f.migrators_version, &fee_admin(), &clock);
+        f.policy.schedule_clear_coin_shares<MemeA>(&f.migrators_version, &fee_admin(), 172_800_000, &clock);
         f.assert_shares<MemeA>(123, 456);
         clock.set_for_testing(345_600_000);
         f.policy.apply_coin_shares<MemeA>(&f.migrators_version, &clock);

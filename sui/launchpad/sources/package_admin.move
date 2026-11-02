@@ -12,28 +12,29 @@ module blast_fun::package_admin;
 public struct PackageAdmin has key {
     id: UID,
     custody: UpgradeCustody<BLAST_FUN>,
+    delay_ms: u64,
     pending: Option<Pending<UpgradeAction>>,
 }
 
 // === Public Functions ===
 
 /// Schedules one exact code digest, replacing any previous action.
-public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock) {
+public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, delay_ms: u64, clock: &Clock) {
     package_version.assert_current();
     assert!(digest.length() == 32, blast_fun::errors::invalid_digest!());
     let action = events::upgrade_action(digest);
-    let pending = delayed::new_pending(action, package_version.admin_delay_ms(), clock);
+    let pending = delayed::new_pending(action, self.delay_ms, delay_ms, clock);
     self.pending = option::some(pending);
-    events::upgrade_action_scheduled(action, pending.ready_at_ms());
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
 }
 
 /// Schedules the irreversible destruction of upgrade authority after public notice.
-public fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
+public fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, delay_ms: u64, clock: &Clock) {
     package_version.assert_current();
     let action = events::immutability_action();
-    let pending = delayed::new_pending(action, package_version.admin_delay_ms(), clock);
+    let pending = delayed::new_pending(action, self.delay_ms, delay_ms, clock);
     self.pending = option::some(pending);
-    events::upgrade_action_scheduled(action, pending.ready_at_ms());
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
 }
 
 /// Cancels any scheduled action, even after its execution threshold.
@@ -51,7 +52,7 @@ public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxC
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap);
 
-    transfer::share_object(PackageAdmin { id, custody, pending: option::none() });
+    transfer::share_object(PackageAdmin { id, custody, delay_ms: 0, pending: option::none() });
     generation.share_version(ctx);
 }
 
@@ -67,8 +68,11 @@ public fun authorize_upgrade(
     let custodian_id = self.id.to_inner();
 
     assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
-    assert!(self.pending.destroy_some().take_ready(clock) == events::upgrade_action(digest), blast_fun::errors::wrong_upgrade_action!());
+    let (action, delay_ms) = self.pending.destroy_some().take_ready(clock);
+    assert!(action == events::upgrade_action(digest), blast_fun::errors::wrong_upgrade_action!());
     self.pending = option::none();
+    self.delay_ms = delay_ms;
+    events::upgrade_delay_changed(delay_ms);
     self.custody.authorize_upgrade(custodian_id, digest)
 }
 
@@ -92,9 +96,38 @@ public fun commit_upgrade_and_advance(
 public fun make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
     package_version.assert_current();
     assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
-    assert!(self.pending.destroy_some().take_ready(clock) == events::immutability_action(), blast_fun::errors::wrong_upgrade_action!());
+    let (action, delay_ms) = self.pending.destroy_some().take_ready(clock);
+    assert!(action == events::immutability_action(), blast_fun::errors::wrong_upgrade_action!());
     self.pending = option::none();
+    self.delay_ms = delay_ms;
+    events::upgrade_delay_changed(delay_ms);
     self.custody.make_immutable(self.id.to_inner());
+}
+
+/// Changes only the upgrade notice period, after the currently applied notice.
+/// Replaces any pending upgrade or immutability action.
+public fun schedule_upgrade_delay(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, delay_ms: u64, clock: &Clock) {
+    package_version.assert_current();
+    let action = events::delay_only_action();
+    let pending = delayed::new_pending(action, self.delay_ms, delay_ms, clock);
+    self.pending = option::some(pending);
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+}
+
+/// Applies a ready policy-only proposal; cannot consume an upgrade authorization.
+public fun apply_upgrade_delay(self: &mut PackageAdmin, package_version: &PackageVersion, clock: &Clock) {
+    package_version.assert_current();
+    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
+    let (action, delay_ms) = self.pending.destroy_some().take_ready(clock);
+    assert!(action == events::delay_only_action(), blast_fun::errors::wrong_upgrade_action!());
+    self.pending = option::none();
+    self.delay_ms = delay_ms;
+    events::upgrade_delay_changed(delay_ms);
+}
+
+/// Returns the currently applied notice period for upgrade actions.
+public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
+    self.delay_ms
 }
 
 // === Test-Only Functions ===
@@ -105,7 +138,8 @@ public fun authorize_upgrade_for_testing(self: &mut PackageAdmin, package_versio
     ctx: &mut TxContext,
 ): UpgradeTicket {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_upgrade(package_version, admin, digest, &clock);
+    let delay_ms = self.delay_ms;
+    self.schedule_upgrade(package_version, admin, digest, delay_ms, &clock);
     clock.set_for_testing(172_800_000);
     let ticket = self.authorize_upgrade(package_version, admin, digest, &clock);
     clock.destroy_for_testing();
@@ -117,7 +151,8 @@ public fun make_immutable_for_testing(self: &mut PackageAdmin, package_version: 
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_make_immutable(package_version, admin, &clock);
+    let delay_ms = self.delay_ms;
+    self.schedule_make_immutable(package_version, admin, delay_ms, &clock);
     clock.set_for_testing(172_800_000);
     self.make_immutable(package_version, admin, &clock);
     clock.destroy_for_testing();
@@ -136,7 +171,7 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    PackageAdmin { id, custody, pending: option::none() }
+    PackageAdmin { id, custody, delay_ms: 172_800_000, pending: option::none() }
 }
 
 #[test_only]

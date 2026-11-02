@@ -1221,7 +1221,6 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 20 | `ENotReady` |  |
 | 21 | `ENoPending` |  |
 | 22 | `EInvalidDelay` |  |
-| 23 | `EDelayUnchanged` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -1417,22 +1416,25 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Explicitly applied changes whose notice period is supplied by the owning policy.
+Explicit changes that always wait their operation's currently applied notice period.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
 
 #### Types
 
 ```move
-/// Applied value with at most one replacement; readers never need a Clock.
+/// Applied value and notice period, with at most one atomic replacement.
+/// Readers need no Clock. There is no immediate mutation or bypass operation.
 public struct Delayed<T: copy + drop + store> has store {
     value: T,
+    delay_ms: u64,
     pending: Option<Pending<T>>,
 }
 
-/// A value bound to a Unix millisecond execution threshold.
+/// Proposed value and next notice period, bound to a Unix millisecond threshold.
 public struct Pending<T: copy + drop + store> has copy, drop, store {
     value: T,
+    delay_ms: u64,
     ready_at_ms: u64,
 }
 ```
@@ -1440,20 +1442,20 @@ public struct Pending<T: copy + drop + store> has copy, drop, store {
 #### Functions
 
 ```move
-/// Initializes publication policy, with no scheduled change.
-public fun new<T: copy + drop + store>(value: T): Delayed<T>
+/// Initializes a value and the notice period anchored at each future scheduling time.
+public fun new<T: copy + drop + store>(value: T, delay_ms: u64): Delayed<T>
 
 /// Returns the explicitly applied value.
 public fun value<T: copy + drop + store>(self: &Delayed<T>): T
 
-/// Borrows the applied value for internal consumers such as signature verification.
-public fun borrow<T: copy + drop + store>(self: &Delayed<T>): &T
+/// Returns this operation's currently applied notice period in milliseconds.
+public fun delay_ms<T: copy + drop + store>(self: &Delayed<T>): u64
 
-/// Returns the current schedule, if any.
+/// Returns the current proposal, if any.
 public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
 
-/// Replaces any pending change and restarts the supplied policy delay.
-/// The enclosing module must derive `delay_ms` from its authorized policy.
+/// Replaces the proposal and restarts the full currently applied delay.
+/// `delay_ms` is the NEXT notice period, never the wait for this proposal.
 public fun schedule<T: copy + drop + store>(
     self: &mut Delayed<T>,
     value: T,
@@ -1461,34 +1463,47 @@ public fun schedule<T: copy + drop + store>(
     clock: &Clock,
 ): u64
 
-/// Schedules a notice-period change using its currently applied delay, including zero.
-/// The enclosing module must restrict this operation to its delay-policy authority.
-public fun schedule_delay(self: &mut Delayed<u64>, delay_ms: u64, clock: &Clock): u64
+/// Changes only the value, retaining the applied notice period.
+public fun schedule_value<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    clock: &Clock,
+): u64
 
-/// Applies a ready delay only while it can still form a future execution threshold.
-public fun apply_delay(self: &mut Delayed<u64>, clock: &Clock): u64
+/// Changes only the notice period, retaining the applied value.
+/// A reduction, including to zero, still waits the old notice period.
+public fun schedule_delay<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
 
-/// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
+/// Applies both proposed fields once, only after the stored deadline.
 public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
 
-/// Cancels even a ready change and returns the cancelled value.
+/// Cancels even a ready proposal without changing the applied value or delay.
 public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
 
-/// Only publication bootstrap or the enclosing module's authority-reducing paths may expose this operation.
-/// Clears a pending replacement so it cannot restore revoked authority.
-public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
+/// Snapshots a standalone operation's applied delay and proposed next delay.
+/// Its owner must persist the returned next delay on successful application.
+public fun new_pending<T: copy + drop + store>(
+    value: T,
+    current_delay_ms: u64,
+    delay_ms: u64,
+    clock: &Clock,
+): Pending<T>
 
-/// Snapshots the owning policy's notice period into an immutable deadline.
-/// Later policy changes cannot shorten or extend this pending value's notice.
-public fun new_pending<T: copy + drop + store>(value: T, delay_ms: u64, clock: &Clock): Pending<T>
+/// Returns a ready proposal's value and next delay. Rechecks representability at actual application.
+/// Future scheduling still checks its own timestamp addition as time advances.
+public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): (T, u64)
 
-/// Returns a scheduled value only at or after its threshold.
-public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
-
-/// Returns the proposed value for cancellation events and diagnostics.
+/// Returns the proposed value for cancellation and diagnostics.
 public fun pending_value<T: copy + drop + store>(self: &Pending<T>): T
 
-/// Returns the Unix millisecond threshold for a scheduling event.
+/// Returns the proposed next notice period.
+public fun pending_delay_ms<T: copy + drop + store>(self: &Pending<T>): u64
+
+/// Returns the Unix millisecond execution threshold.
 public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
 ```
 

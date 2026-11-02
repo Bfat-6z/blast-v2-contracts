@@ -5,8 +5,8 @@ in the format required by [`deployments/README.md`](../../../deployments/README.
 Publication alone cannot activate presales. The publisher receives an owned Publication;
 only wrapping it with the matching fresh UpgradeCap shares PackageVersion.
 Routine mutations and sale creation require the shared version (ADR 0117,
-amended by ADR 0134). Wrap starts fully paused with administrative delay zero;
-ordinary ACL operations configure policy before the chosen delay and release.
+amended by ADR 0134). Wrap starts fully paused with zero notice on publication-owned
+operations; ordinary ACL operations configure policy before the chosen delay and release.
 
 1. Retire the previous generation's link when a release changes presale logic.
    The live package, recorded in
@@ -34,8 +34,8 @@ ordinary ACL operations configure policy before the chosen delay and release.
 4. From the effects of step 3, verify that `PackageAdmin` is shared and that the
    `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
    unchanged at compatible (`0`). Record the newly shared `PackageVersion` from
-   these finalization effects; its initial pause mask must be 11 and administrative delay must be zero. Publication
-   must be deleted and never available again. From the publish effects, record the
+   these finalization effects; its initial pause mask must be 11. Verify zero notice
+   on publication-owned policy and upgrade custody. Publication must be deleted and never available again. From the publish effects, record the
    shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
 5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
    (`blast_acl::grant_role` with each `blast_presale_domain` type) to the
@@ -46,15 +46,18 @@ ordinary ACL operations configure policy before the chosen delay and release.
    partners new sales may name; `ListingAdmin` allows Quote types;
    `AdapterAdmin` allows migrators, each of which receives the liquidity of the
    sales it creates; `RewardsAdmin` directs every vault's holder-reward share;
-   and `UpgradeAdmin` governs the administrative delay and compatible upgrades with atomic generation cutover. Each call signs in
+   and `UpgradeAdmin` governs the upgrade notice and compatible upgrades with atomic
+   generation cutover. Each call signs in
    with `blast_acl::sign_in` in the same PTB. The root revokes a role or an
    administrator at once if a cap is lost or compromised.
 6. With the ordinary role witnesses and Clock, schedule/apply fee rates,
    destination and reviewed adapter admission. Quote admission uses ListingAdmin.
    At zero delay scheduling and application can share a PTB. Zero fees are valid;
    verify destinations, rates and route admission. Apply or cancel every outstanding
-   zero-delay proposal. As UpgradeAdmin, schedule/apply the chosen administrative
-   delay (172,800,000 ms = 48 hours for the R2 rollout) and read it back. Then grant
+   zero-delay proposal. Use each operation’s role to schedule/apply its intended next
+   notice
+   (172,800,000 ms = 48 hours for the R2 rollout), including an UpgradeAdmin
+   policy-only proposal for upgrade custody, and read each notice back. Then grant
    UnpauseAdmin and clear the selected bits (all = 11). Unpause is immediate and
    needs no Clock. Later changes snapshot the applied delay; delay-policy changes
    themselves wait the old delay. Pausing never resets it.

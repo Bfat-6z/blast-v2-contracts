@@ -43,13 +43,13 @@ Same-named roles in different packages are different types.
 
 | Package | Declared in | Roles |
 | --- | --- | --- |
-| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (govern administrative delay, authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::BuybackAdmin` (swap a vault's burn Quote for Meme to burn), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches, claim migration residuals), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (migration adapters), `blast_fun_domain::ClaimSignerAdmin` (the key that signs account claims), `blast_fun_domain::RewardsAdmin` (publish holder-reward rounds), `blast_fun_domain::PauseAdmin`, `blast_fun_domain::UnpauseAdmin`, `blast_fun_domain::CancelAdmin` |
+| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (govern upgrade notice, authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::BuybackAdmin` (swap a vault's burn Quote for Meme to burn), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches, claim migration residuals), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (migration adapters), `blast_fun_domain::ClaimSignerAdmin` (the key that signs account claims), `blast_fun_domain::RewardsAdmin` (publish holder-reward rounds), `blast_fun_domain::PauseAdmin`, `blast_fun_domain::UnpauseAdmin`, `blast_fun_domain::CancelAdmin` |
 | `blast_fun_migrators` | declares none | uses the launchpad's `UpgradeAdmin` (its own delay policy and upgrades), `FeeAdmin` (LP-fee shares), `TreasuryAdmin` (where Blast's LP fees go, migration residuals), `BuybackAdmin` (buyback and burn), `RewardsAdmin` (holder-reward rounds), and `CancelAdmin` (pending administration) |
 | `blast_sui` | `blast_sui_domain` | `blast_sui_domain::UpgradeAdmin` (attach package capabilities; authorize, commit, restrict, or seal upgrades), `blast_sui_domain::FeeAdmin` (blastSUI redemption fee) |
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
 | `blast_boosts_aftermath` | declares none | uses the four Boosts core roles |
 | `blast_partners` | `blast_partners` | `blast_partners::blast_partners::PartnerAdmin` (register partners, schedule shares and caps) |
-| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (govern administrative delay, schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (where Blast's presale fees go), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (publish holder-reward rounds), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
+| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (govern upgrade notice, schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (where Blast's presale fees go), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (publish holder-reward rounds), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
 
 ### Lifecycle
 
@@ -119,7 +119,7 @@ what each transaction leaves on chain.
 #### Upgrade a consumer package (Blast admin)
 
 Launchpad, presale and migrators first require `schedule_upgrade` with the exact
-digest and `Clock`, followed by that package's applied administrative delay. A `CancelAdmin` can cancel
+digest, proposed next notice and `Clock`, followed by that package custody's applied upgrade notice. A `CancelAdmin` can cancel
 even a ready action. Their `authorize_upgrade` also takes `Clock` and consumes
 the matching ready action. Immutability follows the same scheduling rule.
 
@@ -198,8 +198,8 @@ gates authorization behind its upgrade role. Boosts receipt commit instead carri
 the native authorized receipt. Wrap in launchpad, presale and migrators consumes their
 unique Publication and matching fresh UpgradeCap. Publication carries
 provenance only and is permanently consumed at wrap. Ordinary ACL operations
-configure policies using the new version's initial zero delay. Each consuming
-package stores its own self-timelocked delay policy; see ADR 0134.
+configure policies using each publication-owned operation's initial zero notice. Each operation
+stores its own self-timelocked notice period; see ADR 0134.
 
 Blast SUI's `new` and `share`
 use its own Publisher and UpgradeCap directly:
@@ -226,19 +226,31 @@ and have no custody at all.
 
 ### Explicit-application delayed values
 
-`delayed::schedule` and `delayed::new_pending` accept an explicit `delay_ms` and
-Clock. Zero is valid; deadlines are absolute snapshots and timestamp overflow
-aborts with registry code 22 (`EInvalidDelay`) from `delayed`. `Delayed` reads
-do not need Clock, and changes only become active through explicit application.
-Rescheduling replaces a proposal. `delayed::pending_value` reads a proposal
-without applying it; its public receiver alias is `Pending.value()`.
-`delayed::schedule_delay` and `delayed::apply_delay` govern a `Delayed<u64>`
-policy using its old applied delay, reject no-op proposals and ensure the
-resulting delay remains representable at scheduling and actual application.
-The launchpad, presale and migrators keep that policy in their canonical version;
-operational entry points read it internally rather than accepting caller-chosen
-notice. The ACL root and partner registry retain their independent seven-day
-timelocks.
+Each `Delayed<T>` owns its applied `value`, its applied `delay_ms`, and at most one
+pending proposal containing the next value, next delay and absolute `ready_at_ms`.
+`delayed::schedule` always waits the **stored old delay**; the supplied `delay_ms`
+is the notice period that becomes active together with the proposed value.
+`delayed::schedule_value` retains the old delay. `delayed::schedule_delay` retains
+the applied value and replaces any existing value proposal. Both use ordinary
+scheduling, and `delayed::apply` handles all proposals. There is no immediate setter.
+Reads need no Clock. `delayed::pending_value` has the receiver alias `Pending.value()`;
+`delayed::pending_delay_ms` has the alias `Pending.delay_ms()`.
+
+Zero permits publication setup through ordinary ACL roles. Once a positive delay
+is applied, reducing it, including to zero, waits that old delay. Different operations
+can have different notice periods. Replacing a proposal restarts its full old notice;
+cancellation preserves both applied fields and remains possible after readiness.
+Application is explicit and consumes the proposal once. The primitive accepts no-op
+proposals; domain setters reject unchanged value-and-delay pairs where applicable.
+
+`delayed::new_pending` supports standalone actions: its owner supplies the stored
+current delay and proposed next delay. `delayed::take_ready` returns the value and
+next delay; the owner must atomically clear its pending slot and persist that delay.
+Overflow at scheduling or actual application aborts with registry code 22
+(`EInvalidDelay`). Later scheduling checks again because time continues advancing.
+The creator-claim backend signer is a plain value assigned and revoked immediately
+under ClaimSignerAdmin. ACL administrator and role grants remain immediate. The
+ACL root and partner registry retain their independent seven-day timelocks.
 
 ### Time rules
 
@@ -324,7 +336,6 @@ Codes are plain `u64` values raised in the `blast_admin` module named.
 | 20 | `ENotReady` | `delayed` | applying a change before its snapshotted deadline |
 | 21 | `ENoPending` | `delayed` | applying or cancelling when no change is pending |
 | 22 | `EInvalidDelay` | `delayed` | the delay would overflow its Unix millisecond deadline; choose a representable delay |
-| 23 | `EDelayUnchanged` | `delayed` | the proposed delay equals the currently applied delay |
 
 The one an integrator most often meets is code 12 from `operational_version`: a
 PTB built against an old package ID after an upgrade.

@@ -23,7 +23,7 @@ ACL, partner registry, and operational-version/capability-custody primitives.
 Publication creates an owned `blast_presale_package::Publication`; it shares no
 PackageVersion. `blast_presale::package_admin::wrap` consumes Publication and the
 fresh matching UpgradeCap, sealing compatible custody and sharing the version
-fully paused with zero administrative delay. Ordinary ACL-authorized operations
+fully paused; publication-owned policy operations start with zero notice. Ordinary ACL-authorized operations
 then configure policies before release.
 
 See ADR 0117. In this guide `SaleToken` is the sale coin; venues call it `Meme`.
@@ -31,7 +31,7 @@ See ADR 0117. In this guide `SaleToken` is the sale coin; venues call it `Meme`.
 Routine state-changing public calls below take `&blast_presale_package::PackageVersion`
 immediately after their first object argument, including initializer setters,
 finalize/share, policy administration, migrations, payouts, and holder rewards.
-It is a read-only shared input except during delay-policy changes, pause, unpause and upgrade commit-and-advance. A stale
+It is a read-only shared input except during pause, unpause and upgrade commit-and-advance. A stale
 or future generation aborts in `blast_admin::operational_version` before effects.
 Pure value constructors, getters and `destroy_cap` do not take it. Initial policy
 configuration uses the same version-guarded ACL operations as later changes.
@@ -57,7 +57,7 @@ Shared singletons, created once at deployment (`PackageAdmin` and `PackageVersio
   `blast_presale::aftermath::finalize` consumes it, so the PTB that starts an Aftermath sale must
   finalize it there, or it fails with the ticket unconsumed.
 - `blast_presale::package_admin::PackageAdmin`: holds the package's Publisher and compatible upgrade cap.
-- `blast_presale::blast_presale_package::PackageVersion`: the singleton active generation, administrative delay and pause flags, shared by custody wrap.
+- `blast_presale::blast_presale_package::PackageVersion`: the singleton active generation and pause flags, shared by custody wrap.
 
 Per-sale objects:
 
@@ -140,20 +140,20 @@ wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
    shared; no operational PackageVersion exists yet.
 2. Call `blast_presale::package_admin::wrap` with Publication by value and the matching
    never-upgraded UpgradeCap. It consumes Publication permanently, seals native
-   custody and shares PackageVersion with an initial administrative delay of zero. All operations start paused (combined mask = 11).
+   custody and shares PackageVersion. Publication-owned policy operations start with zero notice. All operations start paused (combined mask = 11).
 3. Grant the required roles on the real Blast ACL. Configure destinations, fees
    and reviewed adapter admission through the ordinary schedule/apply operations
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
-4. Apply or cancel every outstanding zero-delay proposal. Sign in as UpgradeAdmin,
-   schedule the desired administrative delay (for example, 172,800,000 ms = 48 hours),
-   and apply it. This first policy change waits the old zero delay. Read back the
-   policy and configured values before release.
+4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
+   role to schedule and apply its intended value and next notice. Use UpgradeAdmin's
+   policy-only upgrade proposal to enable upgrade notice without a code change.
+   Read back every operation's notice and configured value before release.
 5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11). Unpause is immediate.
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
 policy or recreate Publication. An outstanding zero-delay proposal remains ready
-after enabling a positive delay, which is why setup must settle those proposals
+after enabling positive notices, which is why setup must settle those proposals
 before release. Route admission remains checked when creating launches or sales.
 
 PTB conventions used below: `Clock` is the shared object `0x6`. Values such as `Bps`,
@@ -685,35 +685,50 @@ Integrators cannot call these; they explain state changes. Each takes the
 
 ### Delayed administration
 
-Blast admin schedules changes with the relevant role and canonical `Clock`.
-Each package's canonical `PackageVersion` stores its own applied administrative
-delay. Every governed schedule snapshots `ready_at_ms = now + admin_delay_ms`;
-changing the policy never changes an existing pending deadline. Rescheduling
-replaces the pending value and starts a new notice period under the applied policy.
-Applied values remain active until anyone calls the matching application with
-the current version and Clock. `CancelAdmin` can cancel even a ready proposal.
+Each treasury, fee or upgrade operation owns its applied notice period. A schedule
+accepts a proposed value and **next** `delay_ms`, but its execution deadline is
+`ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
+current wait. The proposed value and next notice become active together only after
+explicit application with the current version and canonical Clock. A value-only
+change supplies the applied delay; a delay-only change supplies the applied value.
+Different operations, including operations in the same package, can use different delays.
 
-The marker module exposes `blast_presale::blast_presale_package::admin_delay_ms`, `blast_presale::blast_presale_package::schedule_admin_delay`,
-`blast_presale::blast_presale_package::apply_admin_delay` and `blast_presale::blast_presale_package::cancel_admin_delay`. `UpgradeAdmin` proposes a new delay;
-that proposal waits the **old applied delay**. Anyone applies it once ready;
-`CancelAdmin` may cancel it. Zero is valid, including for later reductions, but
-reducing to zero still waits the old delay. A no-op delay proposal aborts.
-Scheduling and applying reject delays whose deadlines cannot fit a `u64`
-timestamp. `blast_presale::blast_presale_package::AdminDelayScheduled` includes the proposed delay and absolute
-deadline. `blast_presale::blast_presale_package::AdminDelayChanged` includes previous and applied
-delays; `blast_presale::blast_presale_package::AdminDelayCancelled` includes the cancelled proposal. There is no implicit minimum
-or fixed 48-hour guarantee: read the live policy before relying on notice.
-Reads and ordinary claims need no new Clock.
+Rescheduling replaces the proposal and restarts the full currently applied notice.
+`CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
+Ordinary value applications need no role; code authorization and immutability execution
+still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
+later schedules check their own timestamp addition too. Scheduled events include the
+proposed next delay. Read the live operation's notice before relying on a cancellation window.
 
-`blast_presale::package_admin::schedule_upgrade` announces the exact digest.
-After its snapshotted deadline an `UpgradeAdmin` may call `blast_presale::package_admin::authorize_upgrade`
-with that digest and `Clock`, consume its ticket in the native upgrade command,
-and commit its receipt. The pending action is consumed once.
+`blast_presale::package_admin::schedule_upgrade` binds the exact digest and next notice.
+`blast_presale::package_admin::authorize_upgrade` consumes only a ready matching digest;
+its ticket must feed the native upgrade command and its receipt the ordinary finalizer.
 `blast_presale::package_admin::schedule_make_immutable` and
-`blast_presale::package_admin::make_immutable` use the same delay;
-`blast_presale::package_admin::cancel_upgrade_action` is reserved to `CancelAdmin`.
-This source requires a fresh stack; its state layouts are not an in-place upgrade
-of the previous publication.
+`blast_presale::package_admin::make_immutable` govern destruction of upgrade authority.
+`blast_presale::package_admin::schedule_upgrade_delay` uses UpgradeAdmin to propose only the
+notice period, replacing any pending action. Anyone applies it with
+`blast_presale::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
+`blast_presale::package_admin::cancel_upgrade_action` cancels any of these proposals.
+`blast_presale::package_admin::upgrade_delay_ms` reads the current upgrade notice.
+
+Publication-owned policy singletons and package custody start with zero notice for
+ordinary role-authorized setup. Configure and apply each operation's intended notice
+(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
+release. Raising a notice never changes previously scheduled deadlines or next delays.
+Pausing and upgrades cannot reset notices. This source requires a fresh stack.
+
+Adapter admissions share one persistent `witness_delay_ms` across witness types;
+a fresh type cannot reopen setup. Each pending admission also proposes the next
+admission notice. `creation_policy::schedule_migration_delay` proposes only that notice
+under AdapterAdmin; anyone calls `creation_policy::apply_migration_delay`, and CancelAdmin
+uses `creation_policy::cancel_migration_delay`. Existing admissions remain independent:
+their application can apply their previously proposed next delay. Settle or cancel
+those admissions before finalizing setup. Immediate adapter removal cancels that
+type's pending admission and preserves the applied admission notice.
+
+New vaults start their own LP-fee notice at 48 hours; creating a fresh vault never
+reopens zero-notice setup. Vault fee changes can propose a different next notice,
+which waits the vault's currently applied notice.
 
 ### Emergency pause
 
@@ -885,7 +900,7 @@ Common answers:
 
 Other objects:
 
-Delayed policy fields contain the applied `value` and an optional `pending` record with the
+Delayed policy fields contain the applied `value`, applied `delay_ms`, and an optional `pending` record with the
 proposed `value` and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
 pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
 positional struct wrapping one u64.

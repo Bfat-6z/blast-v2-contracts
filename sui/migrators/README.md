@@ -23,11 +23,11 @@ own. It does own an independent operational generation and its own sealed
 
 Publication transfers an owned Publication holding the Publisher and initial
 generation. `package_admin::wrap` consumes it with the matching fresh UpgradeCap
-and shares the version with administrative delay zero. Configure the initial
-LP-fee destination and default shares through ordinary ACL schedule/apply calls
-with Clock. Settle all setup proposals, enable the desired self-timelocked delay,
-and verify it before releasing launchpad migration. Later policy changes use
-this package's applied delay. Migrators has no separate pause switch (ADR 0134).
+and shares the version while publication-owned operations have zero notice.
+Configure the initial LP-fee destination and default shares through ordinary ACL schedule/apply calls
+with Clock. Settle all setup proposals, enable each operation’s intended
+self-timelocked notice, and verify it before releasing launchpad migration. Later policy changes use
+that operation's applied delay. Migrators has no separate pause switch (ADR 0134).
 
 Every protected mutation checks **this** package's generation. The Launchpad
 generation is no longer treated as this package's own: a composed call that

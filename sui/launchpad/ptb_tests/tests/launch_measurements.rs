@@ -284,7 +284,8 @@ impl World {
         let version_arg = builder.obj(w.h.shared(version, false))?;
         let fee = w.bps(&mut builder, 100)?;
         let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee_admin, fee, fee, admin_clock]);
+    let next_delay = builder.pure(172_800_000u64)?;
+    call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee_admin, fee, fee, next_delay, admin_clock]);
         // `LaunchConfig` starts with a zero protocol allocation and its setter rejects an unchanged
         // value, so only a nonzero allocation is set.
         if protocol != [0, 0] {
@@ -292,7 +293,8 @@ impl World {
             let meme_bps = w.bps(&mut builder, meme_bps)?;
             let quote_bps = w.bps(&mut builder, quote_bps)?;
             let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_admin, meme_bps, quote_bps, admin_clock]);
+    let next_delay = builder.pure(172_800_000u64)?;
+    call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_admin, meme_bps, quote_bps, next_delay, admin_clock]);
         }
         w.h.execute(builder.finish())?.assert_success();
         let mut changes = vec![

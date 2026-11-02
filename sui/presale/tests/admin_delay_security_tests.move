@@ -172,9 +172,9 @@ fun prepare_again(f: &mut Fixture, setting: Setting) { let _ = f; let _ = settin
 
 fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
     match (setting) {
-        Setting::VaultFees => { f.vault.schedule_protocol_lp_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), &f.clock); },
-        Setting::Fees => { f.policy.schedule_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), bps::new(n + 2), bps::new(n + 3), &f.clock); },
-        Setting::Destination => { f.policy.schedule_destination(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300, &f.clock); },
+        Setting::VaultFees => { f.vault.schedule_protocol_lp_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), 172_800_000, &f.clock); },
+        Setting::Fees => { f.policy.schedule_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), bps::new(n + 2), bps::new(n + 3), 172_800_000, &f.clock); },
+        Setting::Destination => { f.policy.schedule_destination(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300, 172_800_000, &f.clock); },
     }
 }
 
@@ -218,7 +218,7 @@ fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
         Setting::Destination => { expected(setting, n) },
         Setting::VaultFees => { let mut bytes = bcs::to_bytes(&sui::object::id(&f.vault)); bytes.append(u64_fields_bytes(vector[n, n + 1])); bytes },
     };
-    if (scheduled) expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY)));
+    if (scheduled) { expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY))); let delay_ms = DELAY; expected.append(bcs::to_bytes(&delay_ms)); };
     let actual = match (setting) {
         Setting::Fees => if (scheduled) last_event<fee_policy::FeesScheduled>() else last_event<fee_policy::FeesCancelled>(),
         Setting::Destination => if (scheduled) last_event<fee_policy::DestinationScheduled>() else last_event<fee_policy::DestinationCancelled>(),

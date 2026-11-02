@@ -22,7 +22,7 @@ migration itself, and everything the vault does afterwards.
 | `lp_fee_policy::LpFeePolicy` | singleton | Blast's LP-fee share (a default pair and optional per-coin pairs) and the address Blast's share is paid to. |
 | `blast_holder_rewards::Round` (`Round<Meme, Quote>`) | one per published round | A funded Merkle allocation of holder rewards and its claim bitmap. |
 | `blast_fun_migrators::venue_config::VenueConfig` | singleton | Keeps each Cetus launch's `PoolCreationCap` forever, under `blast_fun_migrators::cetus::CreationCapKey` (typed by the Meme). |
-| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation and administrative delay. Created by wrap before ACL configuration; operational mutations check it first. |
+| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation. Created by wrap before ACL configuration; operational mutations check it first. |
 | `blast_fun_migrators::package_admin::PackageAdmin` | singleton | Sealed custody of this package's `Publisher` and `UpgradeCap`. |
 
 Calls also take objects from other packages:
@@ -57,7 +57,7 @@ Calls also take objects from other packages:
   - `blast_fun_domain::RewardsAdmin`: publish holder-reward rounds.
   - `blast_fun_domain::TreasuryAdmin`: claim migration residuals; set the LP-fee destination.
   - `blast_fun_domain::FeeAdmin`: set Blast's default and per-coin LP-fee shares.
-  - `blast_fun_domain::UpgradeAdmin`: govern administrative delay and authorize package upgrades.
+  - `blast_fun_domain::UpgradeAdmin`: govern upgrade notice and authorize package upgrades.
 
   These role types belong to the launchpad; this package declares no roles of its own. Integrators
   cannot call admin functions.
@@ -151,20 +151,19 @@ balances except the flows below.
    shared; no operational PackageVersion exists yet.
 2. Call `blast_fun_migrators::package_admin::wrap` with Publication by value and the matching
    never-upgraded UpgradeCap. It consumes Publication permanently, seals native
-   custody and shares PackageVersion with an initial administrative delay of zero.
+   custody and shares PackageVersion. Publication-owned policy operations start with zero notice.
 3. Grant the required roles on the real Blast ACL. Configure destinations, fees
    and reviewed adapter admission through the ordinary schedule/apply operations
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
-4. Apply or cancel every outstanding zero-delay proposal. Sign in as UpgradeAdmin,
-   schedule the desired administrative delay (for example, 172,800,000 ms = 48 hours),
-   and apply it. This first policy change waits the old zero delay. Read back the
-   policy and configured values before release.
-5. Finish launchpad configuration and enable its delay before unpausing migration. Migrators has no independent pause switch.
+4. Apply or cancel every outstanding zero-delay proposal. Use each operation’s role
+   to schedule and apply its intended value and next notice. Configure upgrade notice
+   through UpgradeAdmin’s policy-only proposal. Read each applied notice before release.
+5. Finish launchpad configuration and enable each operation’s notice before unpausing migration. Migrators has no independent pause switch.
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
 policy or recreate Publication. An outstanding zero-delay proposal remains ready
-after enabling a positive delay, which is why setup must settle those proposals
+after enabling positive notices, which is why setup must settle those proposals
 before release. Route admission remains checked when creating launches or sales.
 
 Operational state-changing calls take
@@ -446,41 +445,41 @@ generation.
 
 ### Delayed administration
 
-Blast admin schedules changes with the relevant role and canonical `Clock`.
-Each package's canonical `PackageVersion` stores its own applied administrative
-delay. Every governed schedule snapshots `ready_at_ms = now + admin_delay_ms`;
-changing the policy never changes an existing pending deadline. Rescheduling
-replaces the pending value and starts a new notice period under the applied policy.
-Applied values remain active until anyone calls the matching application with
-the current version and Clock. `CancelAdmin` can cancel even a ready proposal.
+Each treasury, fee or upgrade operation owns its applied notice period. A schedule
+accepts a proposed value and **next** `delay_ms`, but its execution deadline is
+`ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
+current wait. The proposed value and next notice become active together only after
+explicit application with the current version and canonical Clock. A value-only
+change supplies the applied delay; a delay-only change supplies the applied value.
+Different operations, including operations in the same package, can use different delays.
 
-The marker module exposes `blast_fun_migrators::blast_fun_migrators::admin_delay_ms`, `blast_fun_migrators::blast_fun_migrators::schedule_admin_delay`,
-`blast_fun_migrators::blast_fun_migrators::apply_admin_delay` and `blast_fun_migrators::blast_fun_migrators::cancel_admin_delay`. `UpgradeAdmin` proposes a new delay;
-that proposal waits the **old applied delay**. Anyone applies it once ready;
-`CancelAdmin` may cancel it. Zero is valid, including for later reductions, but
-reducing to zero still waits the old delay. A no-op delay proposal aborts.
-Scheduling and applying reject delays whose deadlines cannot fit a `u64`
-timestamp. `blast_fun_migrators::blast_events::AdminDelayScheduled` includes the proposed delay and absolute
-deadline. `blast_fun_migrators::blast_events::AdminDelayChanged` includes previous and applied
-delays; `blast_fun_migrators::blast_events::AdminDelayCancelled` includes the cancelled proposal. There is no implicit minimum
-or fixed 48-hour guarantee: read the live policy before relying on notice.
-Reads and ordinary claims need no new Clock.
+Rescheduling replaces the proposal and restarts the full currently applied notice.
+`CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
+Ordinary value applications need no role; code authorization and immutability execution
+still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
+later schedules check their own timestamp addition too. Scheduled events include the
+proposed next delay. Read the live operation's notice before relying on a cancellation window.
 
-`blast_fun_migrators::package_admin::schedule_upgrade` announces the exact digest.
-After its snapshotted deadline an `UpgradeAdmin` may call `blast_fun_migrators::package_admin::authorize_upgrade`
-with that digest and `Clock`, consume its ticket in the native upgrade command,
-and commit its receipt. The pending action is consumed once.
+`blast_fun_migrators::package_admin::schedule_upgrade` binds the exact digest and next notice.
+`blast_fun_migrators::package_admin::authorize_upgrade` consumes only a ready matching digest;
+its ticket must feed the native upgrade command and its receipt the ordinary finalizer.
 `blast_fun_migrators::package_admin::schedule_make_immutable` and
-`blast_fun_migrators::package_admin::make_immutable` use the same delay;
-`blast_fun_migrators::package_admin::cancel_upgrade_action` is reserved to `CancelAdmin`.
-This source requires a fresh stack; its state layouts are not an in-place upgrade
-of the previous publication.
+`blast_fun_migrators::package_admin::make_immutable` govern destruction of upgrade authority.
+`blast_fun_migrators::package_admin::schedule_upgrade_delay` uses UpgradeAdmin to propose only the
+notice period, replacing any pending action. Anyone applies it with
+`blast_fun_migrators::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
+`blast_fun_migrators::package_admin::cancel_upgrade_action` cancels any of these proposals.
+`blast_fun_migrators::package_admin::upgrade_delay_ms` reads the current upgrade notice.
 
-Both setting a coin override and clearing one require notice. Clearing applies
-through `lp_fee_policy::apply_coin_shares`; it restores the live defaults.
-Pending overrides do not freeze the default rates. A cleared entry remains in the
-table with no applied override so its delayed value cannot be discarded.
-Genesis LP-fee destination is configured before publication.
+Publication-owned policy singletons and package custody start with zero notice for
+ordinary role-authorized setup. Configure and apply each operation's intended notice
+(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
+release. Raising a notice never changes previously scheduled deadlines or next delays.
+Pausing and upgrades cannot reset notices. This source requires a fresh stack.
+
+A newly introduced coin override inherits the defaults operation's applied notice.
+Clearing or cancelling an override retains its table entry and its applied notice;
+a fresh override cannot obtain a zero-delay first update once defaults are protected.
 
 ### Economics
 
@@ -571,7 +570,7 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 
 This package has no public getters for its objects. Read object fields over RPC or GraphQL.
 
-`Delayed<T>` contains the applied `value` and an optional `pending` record with the proposed
+`Delayed<T>` contains the applied `value`, applied `delay_ms` and an optional `pending` record with the proposed
 `value` and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
 economics: the proposal becomes applied only when its apply call succeeds.
 

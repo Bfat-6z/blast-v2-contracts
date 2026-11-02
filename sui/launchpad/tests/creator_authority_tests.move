@@ -296,7 +296,8 @@ fun claim_claim<Meme>(
 fun claim_set_creator_claim_signer(self: &mut ClaimFixture, signer_public_key: vector<u8>) {
     let admin_witness = blast_acl::witness_for_testing<ClaimSignerAdmin>();
 
-    self.config.set_creator_claim_signer_for_testing(&self.package_version, &admin_witness, signer_public_key, self.scenario.ctx());
+    if (signer_public_key.is_empty()) self.config.revoke_creator_claim_signer(&self.package_version, &admin_witness)
+    else self.config.set_creator_claim_signer(&self.package_version, &admin_witness, signer_public_key);
 }
 
 fun claim_end(self: ClaimFixture) {

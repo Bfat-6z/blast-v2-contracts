@@ -12,7 +12,7 @@ module blast_fun::runtime_config;
 /// curve trade fee, and the treasury every launch pays Blast's fees to.
 public struct RuntimeConfig has key {
     id: UID,
-    creator_claim_signer_public_key: Delayed<vector<u8>>,
+    creator_claim_signer_public_key: vector<u8>,
     protocol_fee_share_bps: Delayed<Bps>,
     treasury: Delayed<address>,
 }
@@ -25,45 +25,13 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Replaces the account-claim signer; an empty key revokes it.
-/// Schedules creator claim signer after the full administrative delay.
-public fun schedule_creator_claim_signer(
-    self: &mut RuntimeConfig,
-    package_version: &PackageVersion,
-    _: &AdminWitness<ClaimSignerAdmin>,
-    signer_public_key: vector<u8>,
-    clock: &Clock,
-) {
+/// Immediately assigns the backend claim signer under the live, revocable role.
+public fun set_creator_claim_signer(self: &mut RuntimeConfig, package_version: &PackageVersion, _: &AdminWitness<ClaimSignerAdmin>, signer_public_key: vector<u8>) {
     package_version.assert_current();
-    assert!(!signer_public_key.is_empty() && signer_public_key.length() == constants::ed25519_public_key_length!(), blast_fun::errors::invalid_creator_claim_public_key!());
-    let value = signer_public_key;
-    assert!(value != self.creator_claim_signer_public_key.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.creator_claim_signer_public_key.schedule(value, package_version.admin_delay_ms(), clock);
-    events::creator_claim_signer_scheduled(signer_public_key, ready_at_ms);
-}
-
-/// Applies the scheduled creator claim signer permissionlessly once ready.
-public fun apply_creator_claim_signer(
-    self: &mut RuntimeConfig,
-    package_version: &PackageVersion,
-    clock: &Clock,
-) {
-    package_version.assert_current();
-    let value = self.creator_claim_signer_public_key.apply(clock);
-    let signer_public_key = value;
+    assert!(signer_public_key.length() == constants::ed25519_public_key_length!(), blast_fun::errors::invalid_creator_claim_public_key!());
+    assert!(signer_public_key != self.creator_claim_signer_public_key, blast_fun::errors::unchanged!());
+    self.creator_claim_signer_public_key = signer_public_key;
     events::creator_claim_signer_set(signer_public_key);
-}
-
-/// Cancels a pending change, including after its delay has elapsed.
-public fun cancel_creator_claim_signer(
-    self: &mut RuntimeConfig,
-    package_version: &PackageVersion,
-    _: &AdminWitness<CancelAdmin>,
-) {
-    package_version.assert_current();
-    let value = self.creator_claim_signer_public_key.cancel();
-    let signer_public_key = value;
-    events::creator_claim_signer_cancelled(signer_public_key);
 }
 
 /// Schedules protocol fee share after the full administrative delay.
@@ -72,14 +40,15 @@ public fun schedule_protocol_fee_share(
     package_version: &PackageVersion,
     _: &AdminWitness<FeeAdmin>,
     protocol_fee_share_bps: Bps,
+    delay_ms: u64,
     clock: &Clock,
 ) {
     package_version.assert_current();
 
     let value = protocol_fee_share_bps;
-    assert!(value != self.protocol_fee_share_bps.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.protocol_fee_share_bps.schedule(value, package_version.admin_delay_ms(), clock);
-    events::protocol_fee_share_scheduled(protocol_fee_share_bps.value(), ready_at_ms);
+    assert!(value != self.protocol_fee_share_bps.value() || delay_ms != self.protocol_fee_share_bps.delay_ms(), blast_fun::errors::unchanged!());
+    let ready_at_ms = self.protocol_fee_share_bps.schedule(value, delay_ms, clock);
+    events::protocol_fee_share_scheduled(protocol_fee_share_bps.value(), ready_at_ms, delay_ms);
 }
 
 /// Applies the scheduled protocol fee share permissionlessly once ready.
@@ -113,14 +82,15 @@ public fun schedule_treasury(
     package_version: &PackageVersion,
     _: &AdminWitness<TreasuryAdmin>,
     treasury: address,
+    delay_ms: u64,
     clock: &Clock,
 ) {
     package_version.assert_current();
     assert!(treasury != @0x0, blast_fun::errors::invalid_destination!());
     let value = treasury;
-    assert!(value != self.treasury.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.treasury.schedule(value, package_version.admin_delay_ms(), clock);
-    events::treasury_scheduled(treasury, ready_at_ms);
+    assert!(value != self.treasury.value() || delay_ms != self.treasury.delay_ms(), blast_fun::errors::unchanged!());
+    let ready_at_ms = self.treasury.schedule(value, delay_ms, clock);
+    events::treasury_scheduled(treasury, ready_at_ms, delay_ms);
 }
 
 /// Applies the scheduled treasury permissionlessly once ready.
@@ -147,26 +117,22 @@ public fun cancel_treasury(
     events::treasury_cancelled(treasury);
 }
 
-/// Revokes the claim signer immediately and clears any scheduled replacement.
+/// Revokes the backend claim signer immediately.
 public fun revoke_creator_claim_signer(
     self: &mut RuntimeConfig,
     package_version: &PackageVersion,
     _: &AdminWitness<ClaimSignerAdmin>,
 ) {
     package_version.assert_current();
-    assert!(!self.creator_claim_signer_public_key.value().is_empty() || self.creator_claim_signer_public_key.pending().is_some(), blast_fun::errors::unchanged!());
-    if (self.creator_claim_signer_public_key.pending().is_some()) {
-        let signer_public_key = self.creator_claim_signer_public_key.cancel();
-        events::creator_claim_signer_cancelled(signer_public_key);
-    };
-    self.creator_claim_signer_public_key.set_now(vector[]);
+    assert!(!self.creator_claim_signer_public_key.is_empty(), blast_fun::errors::unchanged!());
+    self.creator_claim_signer_public_key = vector[];
     events::creator_claim_signer_set(vector[]);
 }
 
 // === Package Functions ===
 
 public(package) fun creator_claim_signer(self: &RuntimeConfig): &vector<u8> {
-    self.creator_claim_signer_public_key.borrow()
+    &self.creator_claim_signer_public_key
 }
 
 public(package) fun protocol_fee_share(self: &RuntimeConfig): Bps {
@@ -184,9 +150,9 @@ fun new(ctx: &mut TxContext): RuntimeConfig {
     assert!(@blast_treasury != @0x0, blast_fun::errors::invalid_destination!());
     RuntimeConfig {
         id: object::new(ctx),
-        creator_claim_signer_public_key: delayed::new(vector[]),
-        protocol_fee_share_bps: delayed::new(bps::new(0)),
-        treasury: delayed::new(@blast_treasury),
+        creator_claim_signer_public_key: vector[],
+        protocol_fee_share_bps: delayed::new(bps::new(0), 0),
+        treasury: delayed::new(@blast_treasury, 0),
     }
 }
 
@@ -202,7 +168,8 @@ public fun set_treasury_for_testing(
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_treasury(package_version, admin, treasury, &clock);
+    let delay_ms = self.treasury.delay_ms();
+    self.schedule_treasury(package_version, admin, treasury, delay_ms, &clock);
     clock.set_for_testing(172_800_000);
     self.apply_treasury(package_version, &clock);
     clock.destroy_for_testing();
@@ -218,30 +185,10 @@ public fun set_protocol_fee_share_for_testing(
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_protocol_fee_share(package_version, admin, protocol_fee_share_bps, &clock);
+    let delay_ms = self.protocol_fee_share_bps.delay_ms();
+    self.schedule_protocol_fee_share(package_version, admin, protocol_fee_share_bps, delay_ms, &clock);
     clock.set_for_testing(172_800_000);
     self.apply_protocol_fee_share(package_version, &clock);
-    clock.destroy_for_testing();
-}
-
-#[test_only]
-/// Fixture convenience: exercises scheduling, advances a synthetic Clock, then applies.
-public fun set_creator_claim_signer_for_testing(
-    self: &mut RuntimeConfig,
-    package_version: &PackageVersion,
-    admin: &AdminWitness<ClaimSignerAdmin>,
-    signer_public_key: vector<u8>,
-    ctx: &mut TxContext,
-) {
-    let mut clock = sui::clock::create_for_testing(ctx);
-    if (signer_public_key.is_empty()) {
-        self.revoke_creator_claim_signer(package_version, admin);
-        clock.destroy_for_testing();
-        return
-    };
-    self.schedule_creator_claim_signer(package_version, admin, signer_public_key, &clock);
-    clock.set_for_testing(172_800_000);
-    self.apply_creator_claim_signer(package_version, &clock);
     clock.destroy_for_testing();
 }
 
@@ -252,18 +199,16 @@ public fun init_for_testing(ctx: &mut TxContext) {
 
 #[test_only]
 public fun new_disabled_for_testing(ctx: &mut TxContext): RuntimeConfig {
-    let mut config = new(ctx);
-    config.treasury.set_now(ctx.sender());
-    config
+    new_for_testing(vector[], ctx)
 }
 
 #[test_only]
 public fun new_for_testing(signer_public_key: vector<u8>, ctx: &mut TxContext): RuntimeConfig {
     RuntimeConfig {
         id: object::new(ctx),
-        creator_claim_signer_public_key: delayed::new(signer_public_key),
-        protocol_fee_share_bps: delayed::new(bps::new(0)),
-        treasury: delayed::new(ctx.sender()),
+        creator_claim_signer_public_key: signer_public_key,
+        protocol_fee_share_bps: delayed::new(bps::new(0), 172_800_000),
+        treasury: delayed::new(ctx.sender(), 172_800_000),
     }
 }
 
