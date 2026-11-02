@@ -560,7 +560,35 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let proposed = schedule.pure(digest.to_vec())?;
     let clock = schedule.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut schedule, original, "package_admin", "schedule_upgrade", vec![], vec![custody_arg, version, witness, proposed, clock]);
-    w.h.execute(schedule.finish())?.assert_success();
+    let schedule = schedule.finish();
+    let (_, scheduled_at_ms): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
+    let scheduled = w.h.execute(schedule.clone())?;
+    scheduled.assert_success();
+    assert_eq!(scheduled.events.len(), 1);
+    assert_eq!(TypeTag::Struct(Box::new(scheduled.events[0].type_.clone())), parse_sui_type_tag(
+        &format!("{original}::blast_events::Event<{original}::events::UpgradeActionScheduled<{original}::package_admin::UpgradeAction>>")
+    )?);
+    let mut action_bytes = vec![0u8];
+    action_bytes.extend(bcs::to_bytes(&digest.to_vec())?);
+    let mut scheduled_bytes = action_bytes.clone();
+    scheduled_bytes.extend(bcs::to_bytes(&(scheduled_at_ms + ADMIN_DELAY_MS))?);
+    scheduled_bytes.extend(bcs::to_bytes(&ADMIN_DELAY_MS)?);
+    assert_eq!(scheduled.events[0].contents, scheduled_bytes);
+
+    w.change_role("CancelAdmin", true)?;
+    let mut cancel = ProgrammableTransactionBuilder::new();
+    let witness = w.sign_in(&mut cancel, "CancelAdmin")?;
+    let custody_arg = cancel.obj(w.h.shared(custody, true))?;
+    let version = cancel.obj(w.h.shared(w.version, false))?;
+    call(&mut cancel, original, "package_admin", "cancel_upgrade_action", vec![], vec![custody_arg, version, witness]);
+    let cancelled = w.h.execute(cancel.finish())?;
+    cancelled.assert_success();
+    assert_eq!(cancelled.events.len(), 1);
+    assert_eq!(TypeTag::Struct(Box::new(cancelled.events[0].type_.clone())), parse_sui_type_tag(
+        &format!("{original}::blast_events::Event<{original}::events::UpgradeActionCancelled<{original}::package_admin::UpgradeAction>>")
+    )?);
+    assert_eq!(cancelled.events[0].contents, action_bytes);
+    w.h.execute(schedule)?.assert_success();
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, false))?;
     let cap = b.obj(w.h.owned(w.admin_cap))?;

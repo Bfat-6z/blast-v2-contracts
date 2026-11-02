@@ -340,6 +340,19 @@ public struct TradeFeesCancelled has copy, drop {
     meme_fee_bps: u64,
 }
 
+/// A publicly announced upgrade action with its execution threshold.
+public struct UpgradeActionScheduled<T: copy + drop> has copy, drop {
+    action: T,
+    ready_at_ms: u64,
+    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
+    delay_ms: u64,
+}
+
+/// A cancelled upgrade action, which can no longer execute.
+public struct UpgradeActionCancelled<T: copy + drop> has copy, drop {
+    action: T,
+}
+
 /// Applied notice period for future upgrades and immutability.
 public struct UpgradeDelayChanged has copy, drop { delay_ms: u64 }
 
@@ -422,6 +435,18 @@ public(package) fun migration_delay_changed(delay_ms: u64) {
     emit(MigrationDelayChanged { delay_ms });
 }
 public(package) fun migration_delay_cancelled() { emit(MigrationDelayCancelled {}); }
+
+public(package) fun upgrade_action_scheduled<T: copy + drop>(
+    action: T,
+    ready_at_ms: u64,
+    delay_ms: u64
+) {
+    emit(UpgradeActionScheduled { action, ready_at_ms, delay_ms });
+}
+
+public(package) fun upgrade_action_cancelled<T: copy + drop>(action: T) {
+    emit(UpgradeActionCancelled { action });
+}
 
 public(package) fun upgrade_delay_changed(delay_ms: u64) { emit(UpgradeDelayChanged { delay_ms }); }
 

@@ -28,16 +28,16 @@ fi
 mapfile -t move_files < <(find sources tests -type f -name '*.move' -print | sort)
 mapfile -t source_files < <(find sources -type f -name '*.move' -print | sort)
 
-# Launchpad errors have one registry; event payload construction stays with its owner.
+# Launchpad errors have one registry; event payload construction stays in events.move.
 for move_file in "${source_files[@]}"; do
   if [[ "$move_file" != sources/lib/errors.move ]] \
     && rg -n '#\[error\(|^[[:space:]]*const E[A-Z]' "$move_file"; then
     echo "${move_file}: define launchpad errors in sources/lib/errors.move." >&2
     failures=$((failures + 1))
   fi
-  if [[ "$move_file" != sources/lib/events.move && "$move_file" != sources/package_admin.move ]] \
+  if [[ "$move_file" != sources/lib/events.move ]] \
     && rg -n 'blast_events::emit_event' "$move_file"; then
-    echo "${move_file}: construct event payloads only in their defining module." >&2
+    echo "${move_file}: construct event payloads only in sources/lib/events.move." >&2
     failures=$((failures + 1))
   fi
 done

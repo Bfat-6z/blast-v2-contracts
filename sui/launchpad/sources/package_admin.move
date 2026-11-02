@@ -23,19 +23,6 @@ public struct PackageAdmin has key {
     pending: Option<Pending<UpgradeAction>>,
 }
 
-/// A publicly announced upgrade action with its execution threshold.
-public struct UpgradeActionScheduled has copy, drop {
-    action: UpgradeAction,
-    ready_at_ms: u64,
-    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
-    delay_ms: u64,
-}
-
-/// A cancelled upgrade action, which can no longer execute.
-public struct UpgradeActionCancelled has copy, drop {
-    action: UpgradeAction,
-}
-
 // === Public Functions ===
 
 /// Schedules one exact code digest under the applied notice, replacing any previous action.
@@ -57,7 +44,7 @@ public fun schedule_upgrade(
 
     self.pending = option::some(pending);
 
-    upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
 }
 
 /// Schedules the irreversible destruction of upgrade authority under the applied notice.
@@ -75,7 +62,7 @@ public fun schedule_make_immutable(
 
     self.pending = option::some(pending);
 
-    upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
 }
 
 /// Cancels any scheduled action, even after its execution threshold.
@@ -90,7 +77,7 @@ public fun cancel_upgrade_action(
 
     let action = self.pending.extract().value();
 
-    upgrade_action_cancelled(action);
+    events::upgrade_action_cancelled(action);
 }
 
 /// Consumes the unique publication proof and seals native custody before activation.
@@ -176,7 +163,7 @@ public fun schedule_upgrade_delay(
 
     self.pending = option::some(pending);
 
-    upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
 }
 
 /// Applies a ready policy-only proposal; cannot consume an upgrade authorization.
@@ -200,20 +187,6 @@ public fun apply_upgrade_delay(
 /// Returns the currently applied notice period for upgrade actions.
 public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
     self.delay_ms
-}
-
-// === Private Functions ===
-
-fun upgrade_action_scheduled(
-    action: UpgradeAction,
-    ready_at_ms: u64,
-    delay_ms: u64
-) {
-    blast_events::emit_event(UpgradeActionScheduled { action, ready_at_ms, delay_ms });
-}
-
-fun upgrade_action_cancelled(action: UpgradeAction) {
-    blast_events::emit_event(UpgradeActionCancelled { action });
 }
 
 // === Test-Only Functions ===
@@ -312,7 +285,6 @@ use blast_admin::{
 };
 
 use blast_fun::{
-    blast_events,
     events,
     blast_fun::{BLAST_FUN, Publication, PackageVersion},
     blast_fun_domain::{CancelAdmin, UpgradeAdmin},
