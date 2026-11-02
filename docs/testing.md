@@ -11,6 +11,15 @@ package has no wrapper, run the pinned toolchain's build, warning-as-error lint,
 tests, and source-boundary check directly from that package. Generated traces
 and coverage artifacts are not committed.
 
+Run `python3 scripts/check_move_errors.py` for the first-party error gate. Each
+error must be used in production, numbered sequentially from zero within its
+module, and covered by an exact abort code and raising-module assertion. Registry
+macros also need literal numeric pins. The gate checks Move test declarations and
+the explicitly mapped native venue oracles; run those suites to verify behavior.
+Aftermath pool postconditions have direct guard tests because local interface
+stubs abort before migration can reach them; these do not replace the external
+venue gate below.
+
 For ADR 0134 fresh-stack checks, run `bash scripts/test_admin_delay.sh` under the
 workspace memory guard. It temporarily excludes historical first-party publication
 metadata and supplies synthetic genesis destinations and native-cap identities,

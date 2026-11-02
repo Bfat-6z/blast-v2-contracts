@@ -619,6 +619,48 @@ fun a_cancelled_sales_reservation_cannot_be_consumed() {
     abort
 }
 
+#[test]
+fun migration_postconditions_accept_exact_balances_fee_and_recipient() {
+    aftermath::assert_pool_balances_for_testing(100, 100, 200, 200);
+    aftermath::assert_dao_fee_terms_for_testing(200, 200, @0xA, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+fun migration_rejects_wrong_meme_balance() {
+    aftermath::assert_pool_balances_for_testing(99, 100, 200, 200);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+fun migration_rejects_wrong_quote_balance() {
+    aftermath::assert_pool_balances_for_testing(100, 100, 199, 200);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+fun migration_rejects_wrong_dao_fee() {
+    aftermath::assert_dao_fee_terms_for_testing(199, 200, @0xA, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+fun migration_rejects_wrong_dao_fee_recipient() {
+    aftermath::assert_dao_fee_terms_for_testing(200, 200, @0xB, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+fun meme_mismatch_rejects_before_reading_quote() {
+    aftermath::assert_pool_short_circuit_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+fun fee_mismatch_rejects_before_reading_recipient() {
+    aftermath::assert_dao_fee_short_circuit_for_testing();
+}
+
 // === Test Helpers ===
 
 /// A creation policy that allows `QUOTE` and `MigrationWitness`.

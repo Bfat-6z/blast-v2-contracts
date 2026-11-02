@@ -110,6 +110,33 @@ fun immutable_destroys_upgrade_authority() {
     destroy(f);
 }
 
+#[test]
+#[expected_failure(abort_code = blast_fun_migrators::package_admin::EInvalidDigest, location = blast_fun_migrators::package_admin)]
+fun upgrade_digest_rejects_0_bytes() {
+    let mut f = start();
+    let r = &mut f;
+    r.admin.schedule_upgrade(&r.version, &blast_acl::witness_for_testing<UpgradeAdmin>(), vector::tabulate!(0, |_| 0u8), DELAY, &r.clock);
+    destroy(f);
+}
+
+#[test]
+#[expected_failure(abort_code = blast_fun_migrators::package_admin::EInvalidDigest, location = blast_fun_migrators::package_admin)]
+fun upgrade_digest_rejects_31_bytes() {
+    let mut f = start();
+    let r = &mut f;
+    r.admin.schedule_upgrade(&r.version, &blast_acl::witness_for_testing<UpgradeAdmin>(), vector::tabulate!(31, |_| 0u8), DELAY, &r.clock);
+    destroy(f);
+}
+
+#[test]
+#[expected_failure(abort_code = blast_fun_migrators::package_admin::EInvalidDigest, location = blast_fun_migrators::package_admin)]
+fun upgrade_digest_rejects_33_bytes() {
+    let mut f = start();
+    let r = &mut f;
+    r.admin.schedule_upgrade(&r.version, &blast_acl::witness_for_testing<UpgradeAdmin>(), vector::tabulate!(33, |_| 0u8), DELAY, &r.clock);
+    destroy(f);
+}
+
 // === Test Helpers ===
 
 fun exercise(immutable: bool, case: Case) {

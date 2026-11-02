@@ -2885,6 +2885,103 @@ fun stale_version_prevents_initializer_creation() {
     abort
 }
 
+#[test]
+#[expected_failure(abort_code = presale::EZeroCommitment, location = blast_presale::blast_presale)]
+fun open_commitments_reject_zero_quote() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    fixture.commit_open(ALICE, 0);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EZeroCommitment, location = blast_presale::blast_presale)]
+fun allowlisted_commitments_reject_zero_quote() {
+    let root = presale::allowlist_leaf_for_testing(0, ALICE, WALLET_CAP);
+    let mut fixture = start_sale(presale::allowlisted_eligibility(root, 1));
+    fixture.commit_allowlisted(ALICE, 0, 0, WALLET_CAP, vector[]);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EZeroCommitment, location = blast_presale::blast_presale)]
+fun uncapped_commitments_reject_zero_quote() {
+    let mut fixture = start_with_uncapped_phase(
+        single_wallet_eligibility(), presale::uncapped_for_anyone(UNCAPPED_DELAY_MS, 2, RAISE_TARGET),
+    );
+    fixture.set_time(UNCAPPED_STARTS_AT_MS);
+    fixture.commit_uncapped(ALICE, 0);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = presale::ETotalCommitmentOverflow, location = blast_presale::blast_presale)]
+fun aggregate_commitments_reject_u64_overflow_before_joining_quote() {
+    let mut fixture = start_sale(presale::open_eligibility(std::u64::max_value!(), 2, RAISE_TARGET / 2));
+    fixture.commit_open(ALICE, std::u64::max_value!());
+    fixture.commit_open(BOB, RAISE_TARGET / 2);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = presale::ENoCommitment, location = blast_presale::blast_presale)]
+fun a_wallet_without_a_commitment_cannot_claim_a_cancelled_sale() {
+    let mut fixture = start_sale(presale::open_eligibility(WALLET_CAP, RAISE_TARGET, 1));
+    fixture.commit_open(ALICE, 1);
+    fixture.set_time(COMMITMENT_ENDS_AT_MS);
+    fixture.settle(KEEPER);
+    fixture.claim(KEEPER, BOB);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = presale::ENoCommitment, location = blast_presale::blast_presale)]
+fun a_delivered_commitment_cannot_be_claimed_twice() {
+    let mut fixture = start_sale(presale::open_eligibility(WALLET_CAP, RAISE_TARGET, 1));
+    fixture.commit_open(ALICE, 1);
+    fixture.set_time(COMMITMENT_ENDS_AT_MS);
+    fixture.settle(KEEPER);
+    fixture.claim(KEEPER, ALICE);
+    fixture.claim(KEEPER, ALICE);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EWrongPresaleCap, location = blast_presale::blast_presale)]
+fun a_fresh_cap_for_the_same_sale_is_not_the_accepted_creator_cap() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    fixture.next_tx!(CREATOR, |f| {
+        let sale = f.take_presale();
+        let other_cap = presale::cap_for_testing(f.presale_id, f.ctx!());
+        sale.assert_cap(&other_cap);
+        abort
+    });
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = bluefin::EInvalidTier, location = blast_presale::bluefin)]
+fun bluefin_rejects_zero_tick_spacing() {
+    create_bluefin_tier(0, 1000);
+}
+
+#[test]
+#[expected_failure(abort_code = bluefin::EInvalidTier, location = blast_presale::bluefin)]
+fun bluefin_rejects_tick_spacing_above_max() {
+    create_bluefin_tier(401, 1000);
+}
+
+#[test]
+#[expected_failure(abort_code = bluefin::EInvalidTier, location = blast_presale::bluefin)]
+fun bluefin_rejects_zero_fee() {
+    create_bluefin_tier(10, 0);
+}
+
+#[test]
+#[expected_failure(abort_code = bluefin::EInvalidTier, location = blast_presale::bluefin)]
+fun bluefin_rejects_fee_above_max() {
+    create_bluefin_tier(10, 20001);
+}
+
 // === Test Helpers ===
 
 /// Starts a fee-free sale under `eligibility` with no raise allocations or uncapped phase.
@@ -3630,6 +3727,19 @@ fun create_with_windows(commitment_duration_ms: u64, liquidity_window_duration_m
     terms.liquidity_window_ms = liquidity_window_duration_ms;
 
     create_sale<QUOTE>(terms);
+}
+
+fun create_bluefin_tier(tick_spacing: u32, pool_fee_rate: u64) {
+    let mut ctx = tx_context::dummy();
+    let version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let (treasury, currency) = new_currency(&mut ctx);
+    let policy = creation_policy::allowing_for_testing<QUOTE, bluefin::Witness>(&mut ctx);
+    let fees = fee_policy::new_for_testing(&mut ctx);
+    let mut venues = venue_config::new_for_testing(&mut ctx);
+    std::unit_test::destroy(bluefin::new<BLAST_PRESALE_TESTS, QUOTE>(
+        treasury, &version, &currency, &policy, &fees, &mut venues, tick_spacing, pool_fee_rate,
+    ));
+    abort
 }
 
 /// Creates a Bluefin sale under a creation policy that allows only `AllowedQuote` and

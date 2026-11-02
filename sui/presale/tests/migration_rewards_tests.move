@@ -804,6 +804,23 @@ fun generic_merkle_proofs_preserve_left_and_right_order() {
     assert!(!merkle_tree::verify(root, right, 2, 2, &vector[left]));
 }
 
+#[test]
+#[expected_failure(abort_code = vault::ENoMigrationResiduals, location = blast_presale::presale_vault)]
+fun a_valid_creator_cap_cannot_claim_empty_migration_residuals() {
+    let mut ctx = sui::tx_context::dummy();
+    let presale_id = object::id_from_address(@0xCAFE);
+    let cap = presale::cap_for_testing(presale_id, &mut ctx);
+    let mut vault = vault::new_for_testing<MEME, QUOTE>(
+        presale_id, object::id(&cap), presale::fee_split(vector[], bps::new(10_000)),
+        no_protocol_fees(), option::none(), &mut ctx,
+    );
+    let version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let (meme, quote) = vault.claim_migration_residuals(&version, &cap, &mut ctx);
+    meme.burn_for_testing();
+    quote.burn_for_testing();
+    abort
+}
+
 // === Test Helpers ===
 
 fun new_vault(

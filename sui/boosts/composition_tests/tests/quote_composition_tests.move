@@ -51,13 +51,15 @@ fun quote_round_trip<Quote>(admit_exact: bool) {
     scenario.next_tx(@0xa);
     let listing_admin = blast_acl::witness_for_testing<ListingAdmin>();
     let adapter_admin = blast_acl::witness_for_testing<AdapterAdmin>();
+    let clock = clock::create_for_testing(scenario.ctx());
     let mut config = scenario.take_shared<LaunchConfig>();
     if (admit_exact) {
         config.set_quote_allowed<Quote>(&version, &listing_admin, true);
     } else {
         config.set_quote_allowed<BlastBoost<Long2x>>(&version, &listing_admin, true);
     };
-    config.set_migration_witness_allowed<Migration>(&version, &adapter_admin, true);
+    config.schedule_migration_witness<Migration>(&version, &adapter_admin, 0, &clock);
+    config.apply_migration_witness<Migration>(&version, &clock);
     let runtime = runtime_config::new_disabled_for_testing(scenario.ctx());
     let ticket = launch_ticket::new(
         test_utils::create_one_time_witness<QUOTE_COMPOSITION_TESTS>(), 9,
@@ -76,7 +78,6 @@ fun quote_round_trip<Quote>(admit_exact: bool) {
     initializer.set_lp_fee_split(&version, default_fee_split());
     let creation_fee = coin::zero(scenario.ctx());
     let market = initializer.finalize(&version, &mut currency, &config, creation_fee, scenario.ctx());
-    let clock = clock::create_for_testing(scenario.ctx());
     market.share(&version, &clock);
     test_scenario::return_shared(config);
     test_scenario::return_to_address(@0xc, currency);

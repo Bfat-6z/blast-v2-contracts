@@ -281,6 +281,48 @@ fun coin_order_is_the_byte_order_of_type_names() {
     assert!(!sorts_before_for_testing<A, A>());
 }
 
+#[test]
+fun migration_postconditions_accept_exact_balances_fee_and_recipient() {
+    migrator::assert_pool_balances_for_testing(100, 100, 200, 200);
+    migrator::assert_dao_fee_terms_for_testing(200, 200, @0xA, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EPoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun migration_rejects_wrong_meme_balance() {
+    migrator::assert_pool_balances_for_testing(99, 100, 200, 200);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EPoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun migration_rejects_wrong_quote_balance() {
+    migrator::assert_pool_balances_for_testing(100, 100, 199, 200);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EDaoFeePoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun migration_rejects_wrong_dao_fee() {
+    migrator::assert_dao_fee_terms_for_testing(199, 200, @0xA, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EDaoFeePoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun migration_rejects_wrong_dao_fee_recipient() {
+    migrator::assert_dao_fee_terms_for_testing(200, 200, @0xB, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EPoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun meme_mismatch_rejects_before_reading_quote() {
+    migrator::assert_pool_short_circuit_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EDaoFeePoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun fee_mismatch_rejects_before_reading_recipient() {
+    migrator::assert_dao_fee_short_circuit_for_testing();
+}
+
 // === Test Helpers ===
 
 /// Runs `init`, then opens the publisher's next transaction.

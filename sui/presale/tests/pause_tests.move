@@ -47,6 +47,23 @@ fun stale_generation_is_rejected_before_invalid_pause_bits() {
     abort
 }
 
+#[test]
+#[expected_failure(abort_code = marker::EPauseUnchanged, location = blast_presale::blast_presale_package)]
+fun pausing_an_already_paused_bit_is_rejected() {
+    let mut version = marker::new_for_testing(&mut tx_context::dummy());
+    version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 1);
+    version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 1);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = marker::EPauseUnchanged, location = blast_presale::blast_presale_package)]
+fun unpausing_an_already_clear_bit_is_rejected() {
+    let mut version = marker::new_for_testing(&mut tx_context::dummy());
+    version.unpause(&blast_acl::witness_for_testing<UnpauseAdmin>(), 1);
+    abort
+}
+
 // === Imports ===
 
 use blast_admin::blast_acl;
