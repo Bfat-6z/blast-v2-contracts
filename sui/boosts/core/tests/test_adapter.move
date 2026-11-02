@@ -35,14 +35,6 @@ const MAX_ORDERS: u64 = 16;
 
 const ORACLE_LAG_DURATION_MS: u64 = 1_000;
 
-// === Errors ===
-
-/// The venue cannot serve a priced operation: paused, under margin, orders open, or drifted.
-const EVenueNotReady: u64 = 0;
-
-/// A mint or redemption would need more capped orders than one transaction places.
-const EOrderLimitExceeded: u64 = 1;
-
 // === Test-Only Types ===
 
 public struct Product {}
@@ -600,6 +592,14 @@ public fun destroy(self: Vault) {
     let Vault { state, venue: _, supply: _, locked: _, admin_cash: _, terminal_cash: _, last_orders: _ } = self;
     state.destroy_for_testing();
 }
+
+// === Errors ===
+
+/// The venue cannot serve a priced operation: paused, under margin, orders open, or drifted.
+const EVenueNotReady: u64 = 0;
+
+/// A mint or redemption would need more capped orders than one transaction places.
+const EOrderLimitExceeded: u64 = 1;
 
 // === Imports ===
 

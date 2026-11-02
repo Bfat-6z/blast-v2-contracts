@@ -8,12 +8,6 @@
 /// Launchpad capability reaches package custody.
 module blast_fun_dex::package_admin;
 
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidPackagePublisher: vector<u8> =
-    b"Publisher must be claimed by the canonical DEX package module.";
-
 // === Public Types ===
 
 /// Shared custody for this package's framework Publisher and UpgradeCap.
@@ -157,6 +151,12 @@ public fun version_for_testing(self: &PackageAdmin): u64 {
 public fun policy_for_testing(self: &PackageAdmin): u8 {
     self.custody.policy_for_testing()
 }
+
+// === Errors ===
+
+#[error(code = 0)]
+const EInvalidPackagePublisher: vector<u8> =
+    b"Publisher must be claimed by the canonical DEX package module.";
 
 // === Imports ===
 

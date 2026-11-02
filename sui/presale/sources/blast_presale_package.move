@@ -17,15 +17,6 @@ const NEXT_PACKAGE_VERSION: u64 = 2;
 
 const VALID_PAUSE_BITS: u8 = 11;
 
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidPauseBits: vector<u8> = b"Select nonzero pause bits supported by this package.";
-#[error(code = 1)]
-const EPauseUnchanged: vector<u8> = b"The requested pause change must alter the active bits.";
-#[error(code = 2)]
-const EPaused: vector<u8> = b"This operation is paused.";
-
 // === Public Types ===
 
 /// The requested bits and resulting pause mask.
@@ -178,6 +169,15 @@ public fun advance_for_testing(self: &mut PackageVersion) {
 public fun publisher_for_testing(ctx: &mut TxContext): Publisher {
     sui::package::test_claim(BLAST_PRESALE_PACKAGE(), ctx)
 }
+
+// === Errors ===
+
+#[error(code = 0)]
+const EInvalidPauseBits: vector<u8> = b"Select nonzero pause bits supported by this package.";
+#[error(code = 1)]
+const EPauseUnchanged: vector<u8> = b"The requested pause change must alter the active bits.";
+#[error(code = 2)]
+const EPaused: vector<u8> = b"This operation is paused.";
 
 // === Imports ===
 

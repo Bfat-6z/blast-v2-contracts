@@ -14,17 +14,6 @@ const HALF_LIFE_SECONDS: u64 = 1800;
 const IDLE_RESET_SECONDS: u64 = 129 * 1800;
 const MAX_FEE_BPS: u64 = 500;
 
-// === Errors ===
-
-#[error(code = 0)]
-const EZeroTarget: vector<u8> = b"Fee volume target must be positive.";
-#[error(code = 1)]
-const EFeeCap: vector<u8> = b"Maximum fee must not exceed 500 basis points.";
-#[error(code = 2)]
-const EVolumeCap: vector<u8> = b"Volume score must not exceed the target in Q32 units.";
-#[error(code = 3)]
-const EShareOverflow: vector<u8> = b"Deposit must keep total shares within u128.";
-
 // === Package Functions ===
 
 /// Integral of the capped linear fee ramp, rounded up once to a Quote atom.
@@ -133,3 +122,14 @@ public(package) fun deposit_amounts(
     // Each rounded contribution is <= its u64 input maximum by construction.
     (meme as u64, quote as u64, shares as u128)
 }
+
+// === Errors ===
+
+#[error(code = 0)]
+const EZeroTarget: vector<u8> = b"Fee volume target must be positive.";
+#[error(code = 1)]
+const EFeeCap: vector<u8> = b"Maximum fee must not exceed 500 basis points.";
+#[error(code = 2)]
+const EVolumeCap: vector<u8> = b"Volume score must not exceed the target in Q32 units.";
+#[error(code = 3)]
+const EShareOverflow: vector<u8> = b"Deposit must keep total shares within u128.";

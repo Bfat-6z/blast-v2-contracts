@@ -6,15 +6,6 @@
 /// Shared custody of this package's Publisher and UpgradeCap, driven by package administrators.
 module blast_presale::package_admin;
 
-// === Errors ===
-
-#[error(code = 0)]
-const EWrongUpgradeAction: vector<u8> = b"The ready action must match the requested upgrade digest or immutability.";
-#[error(code = 1)]
-const ENoPendingAction: vector<u8> = b"No upgrade action is scheduled.";
-#[error(code = 2)]
-const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
-
 // === Public Types ===
 
 /// The exact code digest or irreversible end of upgrades approved for execution.
@@ -308,6 +299,15 @@ public fun policy_for_testing(self: &PackageAdmin): u8 {
 public fun has_upgrade_cap_for_testing(self: &PackageAdmin): bool {
     self.custody.has_upgrade_cap()
 }
+
+// === Errors ===
+
+#[error(code = 0)]
+const EWrongUpgradeAction: vector<u8> = b"The ready action must match the requested upgrade digest or immutability.";
+#[error(code = 1)]
+const ENoPendingAction: vector<u8> = b"No upgrade action is scheduled.";
+#[error(code = 2)]
+const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
 
 // === Imports ===
 

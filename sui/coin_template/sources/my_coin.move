@@ -34,11 +34,6 @@ const METADATA_MUTABLE: bool = true;
 
 const METADATA_CAP_RECIPIENT: address = @0x3e7a;
 
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidSupplyMode: vector<u8> = b"The supply mode must be 0 (mintable), 1 (fixed), or 2 (burn-only).";
-
 // === Public Types ===
 
 /// One-time witness naming this package's currency; the Coin Registry proves it is unique.
@@ -145,6 +140,11 @@ public fun create_and_deliver_currency_for_testing(
         ctx,
     );
 }
+
+// === Errors ===
+
+#[error(code = 0)]
+const EInvalidSupplyMode: vector<u8> = b"The supply mode must be 0 (mintable), 1 (fixed), or 2 (burn-only).";
 
 // === Imports ===
 

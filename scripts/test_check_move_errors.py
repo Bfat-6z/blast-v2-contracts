@@ -7,11 +7,11 @@ from check_move_errors import audit, imports, mask_rust, native_oracle
 
 
 VALUE = '''module example::value;
+// === Public Functions ===
+public fun require(value: bool) { assert!(value, EInvalid); }
 // === Errors ===
 #[error(code = 0)]
 const EInvalid: vector<u8> = b"Invalid value.";
-// === Public Functions ===
-public fun require(value: bool) { assert!(value, EInvalid); }
 '''
 
 TEST = '''#[test_only]

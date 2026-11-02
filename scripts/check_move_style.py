@@ -6,10 +6,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SECTIONS = [
-    "Constants", "Package Constants", "Errors", "Public Types",
+    "Constants", "Package Constants", "Public Types",
     "Private Initialization", "Public Functions", "Package Functions",
     "Private Functions", "Test-Only Types", "Test-Only Functions",
-    "Tests", "Test Helpers", "Imports",
+    "Tests", "Test Helpers", "Errors", "Imports",
 ]
 TRAILING = ["Constants", "Package Constants", "Errors"]
 # A module may instead end with its events, constants and errors, just before Imports.
@@ -147,17 +147,20 @@ def check(path):
     if not (in_order(SECTIONS) or in_order(TAIL_SECTIONS)):
         raise ValueError("sections must occur once, in the order in AGENTS.md")
     previous_kind = None
-    constants_closed = False
+    closed_constant_sections = set()
+    previous_section = None
     for start, kind, attributes, declaration in items:
         section = next((h[1] for h in reversed(headings) if h.start() < start), None)
         expected = section_for(path, test_module, kind, attributes, declaration, events)
         if section != expected:
             line = source[:start].count("\n") + 1
             raise ValueError(f"line {line}: declaration belongs under {expected}, found {section}")
-        if kind == "const" and constants_closed:
-            raise ValueError("group all constants together, first or just before Imports")
-        constants_closed = constants_closed or (previous_kind == "const" and kind != "const")
+        if kind == "const" and section in closed_constant_sections:
+            raise ValueError("group all constants together within their section")
+        if previous_kind == "const" and kind != "const":
+            closed_constant_sections.add(previous_section)
         previous_kind = kind
+        previous_section = section
     codes = [int(code) for code in re.findall(r"#\[error\(code = (\d+)\)\]", mask(source))]
     if codes != list(range(len(codes))):
         raise ValueError("local error codes must be sequential from zero")

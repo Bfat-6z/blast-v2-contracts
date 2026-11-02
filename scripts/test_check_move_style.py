@@ -72,6 +72,47 @@ public enum UpgradeAction has copy, drop, store {
 """
         self.check_source(source, "package_admin.move")
 
+    def test_errors_at_bottom_with_top_constants_pass(self):
+        source = """module example::value;
+// === Constants ===
+const LIMIT: u64 = 10;
+// === Public Functions ===
+public fun validate(value: u64) { assert!(value <= LIMIT, EInvalid); }
+// === Errors ===
+#[error(code = 0)]
+const EInvalid: vector<u8> = b"Invalid value.";
+// === Imports ===
+use std::string::String;
+"""
+        self.check_source(source, "value.move")
+
+    def test_errors_at_bottom_without_imports_pass(self):
+        source = """module example::value;
+// === Public Functions ===
+public fun validate(value: u64) { assert!(value != 0, EInvalid); }
+// === Errors ===
+#[error(code = 0)]
+const EInvalid: vector<u8> = b"Invalid value.";
+"""
+        self.check_source(source, "value.move")
+
+    def test_errors_before_functions_or_tests_fail(self):
+        for section, declaration in (
+            ("Public Functions", "public fun validate() {}"),
+            ("Tests", "#[test] fun validate() {}"),
+        ):
+            prefix = "#[test_only]\n" if section == "Tests" else ""
+            source = prefix + f"""module example::value;
+// === Errors ===
+#[error(code = 0)]
+const EInvalid: vector<u8> = b"Invalid value.";
+// === {section} ===
+{declaration}
+"""
+            with self.subTest(section=section):
+                with self.assertRaisesRegex(ValueError, "sections must occur once"):
+                    self.check_source(source, "value.move")
+
     def test_grouped_registry_passes(self):
         self.check_source(REGISTRY)
 

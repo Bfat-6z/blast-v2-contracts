@@ -22,59 +22,6 @@ const MAX_BURN_BPS: u64 = 500;
 
 const X64: u256 = 18_446_744_073_709_551_616;
 
-// === Errors ===
-
-#[error(code = 0)]
-const EIdenticalAssets: vector<u8> = b"Meme and Quote must have different original types.";
-
-#[error(code = 1)]
-const EDuplicatePool: vector<u8> = b"A canonical pool already exists for this Meme.";
-
-#[error(code = 2)]
-const ESeedTooSmall: vector<u8> =
-    b"Both seed assets and more than 1000 initial shares are required.";
-
-#[error(code = 3)]
-const EBurnPolicy: vector<u8> = b"Burn must not exceed 500 bps and requires BurnOnly currency.";
-
-#[error(code = 4)]
-const EFeeCap: vector<u8> = b"Pool maximum fee must not exceed 500 bps.";
-
-#[error(code = 5)]
-const EUnchangedFee: vector<u8> = b"Maximum fee must change.";
-
-#[error(code = 6)]
-const EExpired: vector<u8> = b"Transaction deadline has passed.";
-
-#[error(code = 7)]
-const EZeroAmount: vector<u8> = b"Swap principal and net output must be positive.";
-
-#[error(code = 8)]
-const EFeeLimit: vector<u8> = b"Rounded Quote fee exceeds the signed effective fee limit.";
-
-#[error(code = 9)]
-const EMinimumOutput: vector<u8> = b"Net received amount is below the signed minimum.";
-
-#[error(code = 10)]
-const EWrongPool: vector<u8> = b"Position must belong to the supplied pool.";
-
-#[error(code = 11)]
-const EMinimumShares: vector<u8> = b"Deposit must mint positive shares meeting the signed minimum.";
-
-#[error(code = 12)]
-const EInsufficientShares: vector<u8> =
-    b"Withdrawal requires positive shares owned by the position.";
-
-#[error(code = 13)]
-const EPositionNotEmpty: vector<u8> =
-    b"Position must have no principal or whole-atom fee entitlement.";
-
-#[error(code = 14)]
-const EAccountingOverflow: vector<u8> = b"Fee accounting must remain representable.";
-
-#[error(code = 15)]
-const EClockReversed: vector<u8> = b"Clock must not precede the last successful trade.";
-
 // === Public Types ===
 
 /// Publication-only uniqueness registry and operational generation authority.
@@ -731,6 +678,59 @@ public fun policy_for_testing<Meme, Quote>(self: &Pool<Meme, Quote>): (u64, u64,
 public fun set_fee_growth_for_testing<Meme, Quote>(self: &mut Pool<Meme, Quote>, growth: u128) {
     self.fee_growth_x64 = growth;
 }
+
+// === Errors ===
+
+#[error(code = 0)]
+const EIdenticalAssets: vector<u8> = b"Meme and Quote must have different original types.";
+
+#[error(code = 1)]
+const EDuplicatePool: vector<u8> = b"A canonical pool already exists for this Meme.";
+
+#[error(code = 2)]
+const ESeedTooSmall: vector<u8> =
+    b"Both seed assets and more than 1000 initial shares are required.";
+
+#[error(code = 3)]
+const EBurnPolicy: vector<u8> = b"Burn must not exceed 500 bps and requires BurnOnly currency.";
+
+#[error(code = 4)]
+const EFeeCap: vector<u8> = b"Pool maximum fee must not exceed 500 bps.";
+
+#[error(code = 5)]
+const EUnchangedFee: vector<u8> = b"Maximum fee must change.";
+
+#[error(code = 6)]
+const EExpired: vector<u8> = b"Transaction deadline has passed.";
+
+#[error(code = 7)]
+const EZeroAmount: vector<u8> = b"Swap principal and net output must be positive.";
+
+#[error(code = 8)]
+const EFeeLimit: vector<u8> = b"Rounded Quote fee exceeds the signed effective fee limit.";
+
+#[error(code = 9)]
+const EMinimumOutput: vector<u8> = b"Net received amount is below the signed minimum.";
+
+#[error(code = 10)]
+const EWrongPool: vector<u8> = b"Position must belong to the supplied pool.";
+
+#[error(code = 11)]
+const EMinimumShares: vector<u8> = b"Deposit must mint positive shares meeting the signed minimum.";
+
+#[error(code = 12)]
+const EInsufficientShares: vector<u8> =
+    b"Withdrawal requires positive shares owned by the position.";
+
+#[error(code = 13)]
+const EPositionNotEmpty: vector<u8> =
+    b"Position must have no principal or whole-atom fee entitlement.";
+
+#[error(code = 14)]
+const EAccountingOverflow: vector<u8> = b"Fee accounting must remain representable.";
+
+#[error(code = 15)]
+const EClockReversed: vector<u8> = b"Clock must not precede the last successful trade.";
 
 // === Imports ===
 
