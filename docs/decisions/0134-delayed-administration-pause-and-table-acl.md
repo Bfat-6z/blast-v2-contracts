@@ -2,8 +2,10 @@
 
 - Status: accepted
 - Date: 2026-10-31
-- Amended: 2026-11-02 — per-operation self-timelocked notices, no bypass, immediate creator-claim signer
-- Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability), [0007](0007-acl-pause-and-versioning.md) (pause),
+- Amended: 2026-11-02 — operation-owned notices, delayed creator splits, and bonding reward custody
+- Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
+  [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
+  [0007](0007-acl-pause-and-versioning.md) (pause),
   [0032](0032-admin-authorized-upgrade-cap-custody.md) and
   [0034](0034-remove-premature-governance-cutover.md) (upgrades),
   [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage),
@@ -71,6 +73,67 @@ Fresh creator-cap reassignment operations and presale-vault LP-fee operations st
 48 hours. Their later notices can change independently after the current notice. A lazy
 per-coin LP override inherits the accepted defaults notice; clearing and cancelling keep
 the entry and its applied notice. New objects cannot reopen publication bootstrap.
+
+### Delayed migrated-vault creator splits
+
+Both bonding `LpVault.fee_split` and presale `Vault.fee_split` store
+`blast_admin::delayed::Delayed<FeeSplit>` with a named 48-hour initial notice.
+The applied value remains active until explicit application. The live curve-fee cap
+holder (bonding) or exact stored presale cap holder (presale) schedules and cancels.
+Scheduling atomically binds a proposed split and next notice. Full old notice applies
+to reductions and delay-only changes; replacements restart that wait. Unchanged
+applied value and notice are rejected. Cancellation is allowed even after readiness.
+Version guards precede authority and value validation. Pending decisions survive
+cap reassignment; the new live cap can replace/cancel them, and ready application
+remains permissionless. Standalone presale vaults have no matching creator cap.
+
+Application accepts only the stored ready decision. For Bluefin and Cetus, public
+venue adapters validate readiness before external work, collect every vault position's
+fees under the applied split, compound auto-LP where applicable, and invoke a
+package-only core activation. A later transaction failure rolls back collection,
+payouts and activation together. No public core activation bypasses this settlement.
+The shared read-only `Delayed.assert_ready` owns no-pending, readiness and application-time
+representability checks without modifying pending or applied policy.
+
+Aftermath presales retain their established collection-time fee accounting. DAO fees
+arrive as separate coins at the vault address; receiving an arbitrary list cannot
+prove that every earlier coin was received. After the full notice and an explicit
+venue-checked application, later receipt uses the newly applied split, even when the
+coin arrived before activation. Neither notice expiry nor scheduling alone changes
+receipts. The API and guides make this accounting boundary explicit; the protocol
+does not claim accrual-time fee attribution for Aftermath.
+
+`FeeSplitScheduled` records proposal, threshold and next notice;
+`FeeSplitCancelled` records the discarded proposal; `FeeSplitChanged` records old
+and applied splits plus applied notice. Vault-created events still carry the plain
+initial split; the immutable published package bytecode establishes its named 48-hour
+initial notice. Replay initializes that notice from the package version, then follows
+schedule/cancel/change facts. Indexers decode the stored delayed policy and treat expiry as readiness,
+never as activation.
+
+### Bonding holder-reward custody and recovery
+
+Bonding rounds reserve holder assets separately from an optional Quote gas reserve.
+The live RewardsAdmin publishes the allocation and may settle reimbursement once;
+measuring attributable gas remains an off-chain responsibility. Publication checks the
+caller's expected treasury against the governed LP-fee destination, even with no reserve,
+and freezes that address for the round. Later treasury changes cannot redirect its
+reimbursement. A zero reserve disables reimbursement; settlement is capped at the
+reserved amount and immediately returns the unused reserve to the funding vault.
+Holder proofs cannot spend the reserve, and bonding holder Meme remains payable to holders.
+
+A round commits a future claim deadline. Bonding claims require a time strictly before
+that deadline. From the deadline onward, anyone may consume the round and return
+unclaimed holder assets and an unsettled reserve to its original vault. This recovery
+needs no administrator, so role revocation cannot strand custody. Reimbursement may
+still settle after the deadline while the round exists; settlement and closure serialize
+through the same shared round. The first completed closure deletes it.
+
+Round numbers remain sequential, but checkpoint intervals need only be nonempty and
+nonoverlapping: `previous_end <= start < end`. Gaps allow the publisher to skip periods
+with insufficient volume. Closing a round does not rewind its number or checkpoint
+cursor. Publication, claims, gas settlement and closure events preserve the separate
+holder and gas accounting for replay.
 
 ### Immediate signer and administrator authority
 
@@ -148,44 +211,11 @@ Tests cover old-delay reductions including zero, value-only/delay-only replaceme
 atomic application, cancellation after readiness, replay, rescheduling, overflow at
 schedule/application/later schedule, stale generations, exact action/digest matching,
 fresh-object defaults, admission policy interactions and live ACL role rejection.
+Creator-split tests cover notice boundaries, replacement, cancellation, live-cap binding,
+permissionless venue activation and old-split settlement. Bonding reward tests cover
+separate gas custody, frozen treasury, capped and disabled reimbursement, checkpoint
+gaps, exact claim/closure deadlines, authority revocation and conservation on recovery.
 Native PTBs cover application followed by a failing schedule/application, proving rollback
 of values, notices, proposals and events. Existing pause, custody, claims and ACL tests
 remain required. Source boundary gates reject bypass APIs and missing owner persistence;
 integrator guides and generated references must match source.
-
-## Delayed migrated-vault creator splits
-
-Both bonding `LpVault.fee_split` and presale `Vault.fee_split` store
-`blast_admin::delayed::Delayed<FeeSplit>` with a named 48-hour initial notice.
-The applied value remains active until explicit application. The live curve-fee cap
-holder (bonding) or exact stored presale cap holder (presale) schedules and cancels.
-Scheduling atomically binds a proposed split and next notice. Full old notice applies
-to reductions and delay-only changes; replacements restart that wait. Unchanged
-applied value and notice are rejected. Cancellation is allowed even after readiness.
-Version guards precede authority and value validation. Pending decisions survive
-cap reassignment; the new live cap can replace/cancel them, and ready application
-remains permissionless. Standalone presale vaults have no matching creator cap.
-
-Application accepts only the stored ready decision. For Bluefin and Cetus, public
-venue adapters validate readiness before external work, collect every vault position's
-fees under the applied split, compound auto-LP where applicable, and invoke a
-package-only core activation. A later transaction failure rolls back collection,
-payouts and activation together. No public core activation bypasses this settlement.
-The shared read-only `Delayed.assert_ready` owns no-pending, readiness and application-time
-representability checks without modifying pending or applied policy.
-
-Aftermath presales retain their established collection-time fee accounting. DAO fees
-arrive as separate coins at the vault address; receiving an arbitrary list cannot
-prove that every earlier coin was received. After the full notice and an explicit
-venue-checked application, later receipt uses the newly applied split, even when the
-coin arrived before activation. Neither notice expiry nor scheduling alone changes
-receipts. The API and guides make this accounting boundary explicit; the protocol
-does not claim accrual-time fee attribution for Aftermath.
-
-`FeeSplitScheduled` records proposal, threshold and next notice;
-`FeeSplitCancelled` records the discarded proposal; `FeeSplitChanged` records old
-and applied splits plus applied notice. Vault-created events still carry the plain
-initial split; the immutable published package bytecode establishes its named 48-hour
-initial notice. Replay initializes that notice from the package version, then follows
-schedule/cancel/change facts. Indexers decode the stored delayed policy and treat expiry as readiness,
-never as activation.
