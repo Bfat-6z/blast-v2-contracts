@@ -1924,7 +1924,7 @@ An `AllocationPlan` splits two totals at migration:
   `protocol_meme_bps` + each recipient's `meme_bps` = 10,000. Curve and pool Meme shares must be
   positive.
 - Final real Quote reserve: `lp_quote_bps` (seeds the pool) + Blast's `protocol_quote_bps` + each
-  recipient's `quote_bps` = 10,000.
+  recipient's `quote_bps` = 10,000. The pool's Quote share must be positive.
 
 The creator's plan leaves Blast's fields at zero; `launch::finalize` copies
 `LaunchConfig.protocol_allocation` into them and then checks both sums. So the creator's shares
@@ -2158,7 +2158,7 @@ that detected it.
 | publish | 9 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 25 `blast_fun::errors::EInvalidCreatorRecipient`, 26 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | start | 11 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 32 `blast_fun::errors::EQuoteNotAllowed`, 3 `blast_fun::errors::EMigrationWitnessNotAllowed`, 2 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, adapter, and decimals |
-| building values | 0 `blast_fun::errors::EInvalidBps` (`bps`); 6 `blast_fun::errors::EInvalidDestination`, 7 `blast_fun::errors::EInvalidShares`, 8 `blast_fun::errors::ERecipientCapacityReached`, 24 `blast_fun::errors::EDuplicateDestination` (`allocation`) | rates at most 10,000; non-zero addresses; curve and pool Meme positive; split sums to 10,000; at most 16 distinct routes |
+| building values | 0 `blast_fun::errors::EInvalidBps` (`bps`); 6 `blast_fun::errors::EInvalidDestination`, 7 `blast_fun::errors::EInvalidShares`, 8 `blast_fun::errors::ERecipientCapacityReached`, 24 `blast_fun::errors::EDuplicateDestination` (`allocation`) | rates at most 10,000; non-zero addresses; curve Meme and pool Meme/Quote positive; split sums to 10,000; at most 16 distinct routes |
 | finalize | `std::option` `EOPTION_NOT_SET` | set the virtual Quote, target, plan, and LP-fee split |
 | finalize | 35 `blast_fun::errors::EInvalidCreationFee`, 33 `blast_fun::errors::EInvalidVirtualQuote`, 13 `blast_fun::errors::EInvalidOpeningRound`, 12 `blast_fun::errors::EMemeSymbolTooLong`, 14 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; symbol at most 32 bytes; target big enough that the pool's Quote share is at least 1 |
 | finalize | 7 `blast_fun::errors::EInvalidShares`, 8 (`allocation`) | plan plus Blast's allocation must sum to 10,000 per asset; at most 16 recipients |
@@ -7447,7 +7447,8 @@ public struct FeeSplit has copy, drop, store {
 ```move
 public fun recipient(destination: address, meme_bps: bps::Bps, quote_bps: bps::Bps): Recipient
 
-/// The curve and the pool need positive Meme shares; Blast's allocation is added at finalization.
+/// The curve needs positive Meme and the pool needs positive Meme and Quote shares.
+/// Blast's allocation is added at finalization.
 public fun plan(
     curve_meme_bps: bps::Bps,
     lp_meme_bps: bps::Bps,

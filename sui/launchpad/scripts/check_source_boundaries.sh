@@ -945,7 +945,7 @@ if [[ ! -f sources/allocation.move ]] \
   || [[ "$(move_production_type Recipient <<<"$allocation_facts")" != 'struct Recipient has copy, drop, store { destination: address, meme_bps: Bps, quote_bps: Bps, }' ]] \
   || [[ "$(move_production_type ProtocolAllocation <<<"$allocation_facts")" != 'struct ProtocolAllocation has copy, drop, store { meme_bps: Bps, quote_bps: Bps, }' ]] \
   || [[ "$(move_production_type AllocationPlan <<<"$allocation_facts")" != 'struct AllocationPlan has copy, drop, store { curve_meme_bps: Bps, lp_meme_bps: Bps, lp_quote_bps: Bps, protocol_meme_bps: Bps, protocol_quote_bps: Bps, recipients: vector<Recipient>, }' ]] \
-  || [[ "$(move_production_body plan <<<"$allocation_facts")" != 'assert!(curve_meme_bps.value() > 0 && lp_meme_bps.value() > 0, blast_fun::errors::invalid_shares!()); AllocationPlan { curve_meme_bps, lp_meme_bps, lp_quote_bps, protocol_meme_bps: bps::new(0), protocol_quote_bps: bps::new(0), recipients, }' ]] \
+  || [[ "$(move_production_body plan <<<"$allocation_facts")" != 'assert!( curve_meme_bps.value() > 0 && lp_meme_bps.value() > 0 && lp_quote_bps.value() > 0, blast_fun::errors::invalid_shares!(), ); AllocationPlan { curve_meme_bps, lp_meme_bps, lp_quote_bps, protocol_meme_bps: bps::new(0), protocol_quote_bps: bps::new(0), recipients, }' ]] \
   || ! rg -Fq 'self.protocol_meme_bps = protocol.meme_bps; self.protocol_quote_bps = protocol.quote_bps;' <<<"$allocation_source" \
   || ! rg -Fq 'let amounts = apportion(bps, supply, option::some(2));' <<<"$allocation_source" \
   || ! rg -Fq 'let amounts = apportion(bps, reserve, option::some(1));' <<<"$allocation_source" \

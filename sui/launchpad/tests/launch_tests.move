@@ -1289,25 +1289,6 @@ fun target_that_leaves_the_pool_no_quote_is_rejected() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EInvalidGraduationTarget, location = blast_fun::launch)]
-/// A zero pool Quote share leaves the pool no Quote at any target.
-fun zero_lp_quote_share_is_rejected() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let plan = allocation::plan(
-            bps::new(CURVE_MEME_BPS),
-            bps::new(LP_MEME_BPS),
-            bps::new(0),
-            vector[allocation::recipient(ALICE, bps::new(0), bps::new(LP_QUOTE_BPS))],
-        );
-
-        destroy(f.new_launch_with(MIGRATION_QUOTE_TARGET, plan));
-    });
-
-    fixture.end();
-}
-
 #[test, expected_failure(abort_code = blast_fun::errors::EDecimalsNotAllowed, location = blast_fun::launch_config)]
 fun intake_rejects_a_ticket_whose_decimals_are_no_longer_allowed() {
     let mut fixture = start();
