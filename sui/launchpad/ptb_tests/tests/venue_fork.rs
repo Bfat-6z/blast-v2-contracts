@@ -387,25 +387,39 @@ impl World {
             dependencies,
         )?;
         let (migrators, migrators_publication) = h.publish(linked)?;
-        // Set the initial LP policy with publication authority, without waiting 48 hours.
         let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
-        let mut b = ProgrammableTransactionBuilder::new();
-        let bootstrap = migrators_publication.created(&h, "blast_fun_migrators", "Bootstrap")[0];
-        let bootstrap_arg = b.obj(h.owned(bootstrap))?;
         let initial_policy = one(&h, &migrators_publication, "lp_fee_policy", "LpFeePolicy");
+        let venue_config = one(&h, &migrators_publication, "venue_config", "VenueConfig");
+        let policy = initial_policy;
+        let migrators_version = h.wrap_migrators(migrators, &migrators_publication)?;
+        let config_cap = h.configuration_admin(admin, &admin_published, blast, "blast_fun_domain", &["TreasuryAdmin", "FeeAdmin", "UpgradeAdmin"])?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let treasury = h.configuration_witness(&mut b, admin, &admin_published, config_cap, blast, "blast_fun_domain", "TreasuryAdmin")?;
+        let fee = h.configuration_witness(&mut b, admin, &admin_published, config_cap, blast, "blast_fun_domain", "FeeAdmin")?;
         let policy_arg = b.obj(h.shared(initial_policy, true))?;
+        let version_arg = b.obj(h.shared(migrators_version, false))?;
+        let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
         let destination = b.pure(SuiAddress::from(LP_PROTOCOL))?;
         let meme_bps = b.pure(DEFAULT_SHARES.0)?;
         let meme_bps = call(&mut b, blast, "bps", "new", vec![], vec![meme_bps]);
         let quote_bps = b.pure(DEFAULT_SHARES.1)?;
         let quote_bps = call(&mut b, blast, "bps", "new", vec![], vec![quote_bps]);
-        call(&mut b, migrators, "lp_fee_policy", "bootstrap", vec![], vec![policy_arg, bootstrap_arg, destination, meme_bps, quote_bps]);
+        call(&mut b, migrators, "lp_fee_policy", "schedule_protocol_destination", vec![], vec![policy_arg, version_arg, treasury, destination, clock]);
+        call(&mut b, migrators, "lp_fee_policy", "apply_protocol_destination", vec![], vec![policy_arg, version_arg, clock]);
+        call(&mut b, migrators, "lp_fee_policy", "schedule_default_shares", vec![], vec![policy_arg, version_arg, fee, meme_bps, quote_bps, clock]);
+        call(&mut b, migrators, "lp_fee_policy", "apply_default_shares", vec![], vec![policy_arg, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
-        let venue_config = one(&h, &migrators_publication, "venue_config", "VenueConfig");
-        let policy = one(&h, &migrators_publication, "lp_fee_policy", "LpFeePolicy");
-        let migrators_version = h.wrap_migrators(migrators, &migrators_publication)?;
+        // Migrators uses launchpad roles; its policy belongs to its own version object.
+        let mut b = ProgrammableTransactionBuilder::new();
+        let upgrade = h.configuration_witness(&mut b, admin, &admin_published, config_cap, blast, "blast_fun_domain", "UpgradeAdmin")?;
+        let version_arg = b.obj(h.shared(migrators_version, true))?;
+        let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let delay = b.pure(172_800_000u64)?;
+        call(&mut b, migrators, "blast_fun_migrators", "schedule_admin_delay", vec![], vec![version_arg, upgrade, delay, clock]);
+        call(&mut b, migrators, "blast_fun_migrators", "apply_admin_delay", vec![], vec![version_arg, clock]);
+        h.execute(b.finish())?.assert_success();
         assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
-        let version = h.wrap_launchpad(blast, &published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
+        let (version, _) = h.wrap_launchpad(blast, &published, admin, &admin_published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
         h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
         let project = build(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture/project"),

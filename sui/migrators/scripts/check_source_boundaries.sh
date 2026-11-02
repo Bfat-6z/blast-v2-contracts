@@ -163,6 +163,9 @@ package_surface="$(for source in "$SOURCE_DIR"/*.move; do
 done | LC_ALL=C sort)"
 require_text "$package_surface" \
     "the package's public and package functions must have exactly the pinned signatures" <<'EOF'
+blast_events:package:fun admin_delay_cancelled(delay_ms: u64)
+blast_events:package:fun admin_delay_changed(previous_delay_ms: u64, delay_ms: u64)
+blast_events:package:fun admin_delay_scheduled(delay_ms: u64, ready_at_ms: u64)
 blast_events:package:fun auto_liquidity_added( vault_id: ID, meme_amount: u64, quote_amount: u64, meme_pending: u64, quote_pending: u64, )
 blast_events:package:fun auto_lp_position_opened(vault_id: ID, position_id: ID)
 blast_events:package:fun buyback_burned( vault_id: ID, quote_spent: u64, meme_burned: u64, quote_pending: u64, )
@@ -188,8 +191,12 @@ blast_events:package:fun vault_created<Meme, Quote, Venue>( vault_id: ID, pool_i
 blast_fun_migrators:package:fun advance(self: &mut PackageVersion)
 blast_fun_migrators:package:fun assert_current(self: &PackageVersion)
 blast_fun_migrators:package:fun assert_next(self: &PackageVersion)
-blast_fun_migrators:package:fun destroy(self: Bootstrap): (Publisher, OperationalVersion<BLAST_FUN_MIGRATORS>)
+blast_fun_migrators:package:fun destroy(self: Publication): (Publisher, OperationalVersion<BLAST_FUN_MIGRATORS>)
 blast_fun_migrators:package:fun share_version(generation: OperationalVersion<BLAST_FUN_MIGRATORS>, ctx: &mut TxContext)
+blast_fun_migrators:public:fun admin_delay_ms(self: &PackageVersion): u64
+blast_fun_migrators:public:fun apply_admin_delay(self: &mut PackageVersion, clock: &Clock)
+blast_fun_migrators:public:fun cancel_admin_delay(self: &mut PackageVersion, _: &AdminWitness<CancelAdmin>)
+blast_fun_migrators:public:fun schedule_admin_delay(self: &mut PackageVersion, _: &AdminWitness<UpgradeAdmin>, delay_ms: u64, clock: &Clock)
 blast_holder_rewards:public:fun claim<Meme, Quote>( self: &mut Round<Meme, Quote>, migrators_version: &MigratorsVersion, index: u64, beneficiary: address, meme_amount: u64, quote_amount: u64, proof: vector<vector<u8>>, ctx: &mut TxContext, )
 blast_holder_rewards:public:fun publish_round<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<RewardsAdmin>, number: u64, start_checkpoint: u64, end_checkpoint: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, ctx: &mut TxContext, )
 bluefin:public:fun buyback_and_burn<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
@@ -217,7 +224,6 @@ lp_fee_policy:package:fun shares<Meme>(self: &LpFeePolicy): (Bps, Bps)
 lp_fee_policy:public:fun apply_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock)
 lp_fee_policy:public:fun apply_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
 lp_fee_policy:public:fun apply_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
-lp_fee_policy:public:fun bootstrap(self: &mut LpFeePolicy, _: &Bootstrap, destination: address, meme_bps: Bps, quote_bps: Bps)
 lp_fee_policy:public:fun cancel_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>)
 lp_fee_policy:public:fun cancel_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
 lp_fee_policy:public:fun cancel_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
@@ -235,7 +241,7 @@ package_admin:public:fun commit_upgrade_and_advance( self: &mut PackageAdmin, pa
 package_admin:public:fun make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock)
 package_admin:public:fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock)
 package_admin:public:fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock)
-package_admin:public:fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
+package_admin:public:fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
 vault:package:fun assert_fee_split_update<Meme, Quote>( self: &LpVault<Meme, Quote>, launch: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, proposed: FeeSplit, )
 vault:package:fun attach_auto_lp_position<Meme, Quote, Venue, Position: key + store>( self: &mut LpVault<Meme, Quote>, _venue: &Venue, position: Position, )
 vault:package:fun auto_lp_position< Meme, Quote, Venue, Position: key + store, >( self: &LpVault<Meme, Quote>, _venue: &Venue, ): &Position
@@ -423,16 +429,16 @@ fi
 # Every replay fact is one direct, strongly typed payload with exactly one emitter function.
 [[ "$(move_facts "$EVENTS_SOURCE" | awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' \
     | LC_ALL=C sort | tr '\n' ' ')" \
-    == 'AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CoinSharesCancelled CoinSharesScheduled CreatorFeesClaimed DefaultSharesCancelled DefaultSharesScheduled FeeSplitChanged FeesCollected LpFeeDestinationChanged LpFeePolicyChanged ProtocolDestinationCancelled ProtocolDestinationScheduled ProtocolFeesClaimed ProtocolLpFeesClaimed RewardPaid RoundPublished UpgradeActionCancelled UpgradeActionScheduled VaultCreated ' ]] || \
+    == 'AdminDelayCancelled AdminDelayChanged AdminDelayScheduled AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CoinSharesCancelled CoinSharesScheduled CreatorFeesClaimed DefaultSharesCancelled DefaultSharesScheduled FeeSplitChanged FeesCollected LpFeeDestinationChanged LpFeePolicyChanged ProtocolDestinationCancelled ProtocolDestinationScheduled ProtocolFeesClaimed ProtocolLpFeesClaimed RewardPaid RoundPublished UpgradeActionCancelled UpgradeActionScheduled VaultCreated ' ]] || \
     fail "blast_events.move must declare exactly the pinned event payloads"
-for payload in AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CreatorFeesClaimed \
+for payload in AdminDelayCancelled AdminDelayChanged AdminDelayScheduled AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CreatorFeesClaimed \
     FeeSplitChanged FeesCollected LpFeeDestinationChanged LpFeePolicyChanged ProtocolFeesClaimed \
     ProtocolLpFeesClaimed RewardPaid RoundPublished VaultCreated; do
     [[ "$(rg -c "sui::event::emit\(${payload} \{" "$EVENTS_SOURCE" || true)" -eq 1 ]] || \
         fail "${payload} must be emitted directly by exactly one helper"
 done
-[[ "$(rg -o 'sui::event::emit' "$EVENTS_SOURCE" | wc -l)" -eq 22 ]] || \
-    fail "blast_events.move must emit exactly the twenty-two pinned payloads"
+[[ "$(rg -o 'sui::event::emit' "$EVENTS_SOURCE" | wc -l)" -eq 25 ]] || \
+    fail "blast_events.move must emit exactly the twenty-five pinned payloads"
 if rg -q 'sui::event::emit' "$SOURCE_DIR" --glob '*.move' --glob '!blast_events.move'; then
     fail "state modules must emit only through typed events helpers"
 fi
@@ -450,6 +456,9 @@ fi
 # custody, and claims (the partner claim included); the holder-reward publication and claim; and the policy's destination and
 # share setters.
 for emitter in \
+    'admin_delay_scheduled:blast_fun_migrators:schedule_admin_delay' \
+    'admin_delay_changed:blast_fun_migrators:apply_admin_delay' \
+    'admin_delay_cancelled:blast_fun_migrators:cancel_admin_delay' \
     'fees_collected:vault:split_fees' \
     'buyback_burned:vault:burn_buyback' \
     'auto_liquidity_added:vault:keep_auto_lp' \
@@ -461,8 +470,8 @@ for emitter in \
     'vault_created<Meme, Quote, Venue>:vault:new' \
     'round_published:blast_holder_rewards:publish_round' \
     'reward_paid:blast_holder_rewards:claim' \
-    'lp_fee_destination_changed:lp_fee_policy:apply_protocol_destination bootstrap' \
-    'lp_fee_policy_changed:lp_fee_policy:apply_coin_shares apply_default_shares bootstrap'; do
+    'lp_fee_destination_changed:lp_fee_policy:apply_protocol_destination' \
+    'lp_fee_policy_changed:lp_fee_policy:apply_coin_shares apply_default_shares'; do
     event="${emitter%%:*}"
     rest="${emitter#*:}"
     writers="$(for source in "$SOURCE_DIR"/*.move; do
@@ -1264,6 +1273,8 @@ admin_roles="$(for source in "$SOURCE_DIR"/*.move; do
 done | LC_ALL=C sort)"
 require_text "$admin_roles" \
     "every administrator action must take exactly its pinned role witness" <<'ROLES'
+blast_fun_migrators:cancel_admin_delay:CancelAdmin
+blast_fun_migrators:schedule_admin_delay:UpgradeAdmin
 blast_holder_rewards:publish_round:RewardsAdmin
 bluefin:buyback_and_burn:BuybackAdmin
 cetus:buyback_and_burn:BuybackAdmin
@@ -1305,7 +1316,6 @@ for guard_module in lp_fee_policy vault blast_holder_rewards bluefin cetus; do
             parameters = substr($9, index($9, "(") + 1)
             parameters = substr(parameters, 1, index(parameters, ")") - 1)
         }
-        module == "lp_fee_policy" && $2 == "bootstrap" && index($9, "_: &Bootstrap,") > 0 { next }
         (module == "vault" || module == "lp_fee_policy") && parameters !~ /&mut / && parameters !~ /: [A-Za-z]/ { next }
         index($9, " migrators_version: &MigratorsVersion,") == 0 \
             || index($10, "migrators_version.assert_current();") != 1 { print $2 }

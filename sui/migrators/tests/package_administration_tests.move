@@ -108,7 +108,7 @@ fun the_launchpad_upgrade_admin_reaches_this_packages_upgrade_cap() {
     abort_code = blast_admin::errors::EInvalidUpgradeCap,
     location = blast_admin::upgrade_custody,
 )]
-/// The publication Bootstrap cannot seal another package's native upgrade authority.
+/// The publication Publication cannot seal another package's native upgrade authority.
 fun a_cap_from_another_package_cannot_seal_the_package_custody() {
     let mut fixture = start();
 
@@ -176,7 +176,7 @@ fun foreign_receipt(self: &mut AdminFixtureState): UpgradeReceipt {
 fun wrap_with_foreign_package_cap(self: &mut AdminFixtureState) {
     package_version::init_for_testing(self.scenario.ctx());
     self.scenario.next_tx(PUBLISHER);
-    let bootstrap = self.scenario.take_from_sender<package_version::Bootstrap>();
+    let bootstrap = self.scenario.take_from_sender<package_version::Publication>();
     let upgrade_cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), self.scenario.ctx());
 
     package_admin::wrap(bootstrap, upgrade_cap, self.scenario.ctx());

@@ -38,7 +38,7 @@ public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVe
     package_version.assert_current();
     assert!(digest.length() == 32, EInvalidDigest);
     let action = UpgradeAction::Upgrade(digest);
-    let pending = delayed::new_pending(action, clock);
+    let pending = delayed::new_pending(action, package_version.admin_delay_ms(), clock);
     self.pending = option::some(pending);
     sui::event::emit(UpgradeActionScheduled { action, ready_at_ms: pending.ready_at_ms() });
 }
@@ -47,7 +47,7 @@ public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVe
 public fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
     package_version.assert_current();
     let action = UpgradeAction::MakeImmutable;
-    let pending = delayed::new_pending(action, clock);
+    let pending = delayed::new_pending(action, package_version.admin_delay_ms(), clock);
     self.pending = option::some(pending);
     sui::event::emit(UpgradeActionScheduled { action, ready_at_ms: pending.ready_at_ms() });
 }
@@ -60,11 +60,10 @@ public fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &Pack
     sui::event::emit(UpgradeActionCancelled { action });
 }
 
-/// Validates initial admission, consumes Bootstrap forever, and seals native custody.
+/// Consumes the unique publication proof and seals native custody before activation.
 /// The initial operational generation starts fully paused; UnpauseAdmin releases it immediately.
-public fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, policy: &CreationPolicy, ctx: &mut TxContext) {
-    policy.assert_bootstrap_ready();
-    let (publisher, generation) = bootstrap.destroy();
+public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
+    let (publisher, generation) = publication.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_PRESALE_PACKAGE>(
         id.to_inner(),
@@ -204,9 +203,8 @@ use blast_admin::{
 };
 
 use blast_presale::{
-    creation_policy::CreationPolicy,
     blast_presale_domain::{CancelAdmin, UpgradeAdmin},
-    blast_presale_package::{BLAST_PRESALE_PACKAGE, Bootstrap, PackageVersion}
+    blast_presale_package::{BLAST_PRESALE_PACKAGE, Publication, PackageVersion}
 };
 
 use sui::{

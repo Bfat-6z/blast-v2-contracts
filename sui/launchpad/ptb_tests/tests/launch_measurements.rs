@@ -217,7 +217,7 @@ impl World {
         let runtime = one(&published, "runtime_config", "RuntimeConfig");
         let linked = [core[0], core[1], core[2], (launchpad_dir.as_path(), blast)];
         let (adapter, _) = h.publish(build(&fixture.join("adapter"), &linked, &work)?)?;
-        let version = h.wrap_launchpad(blast, &published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
+        let (version, _) = h.wrap_launchpad(blast, &published, admin, &admin_published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
         h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
         let mut templates = Vec::new();
         for decimals in [6u8, 9] {

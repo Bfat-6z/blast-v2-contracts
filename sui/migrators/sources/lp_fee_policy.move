@@ -35,19 +35,6 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Sets initial LP-fee policy immediately before Bootstrap is consumed by custody intake.
-public fun bootstrap(self: &mut LpFeePolicy, _: &Bootstrap, destination: address, meme_bps: Bps, quote_bps: Bps) {
-    assert!(destination != @0x0, EProtocolDestinationUnchanged);
-    let old_destination = self.destination.value();
-    let old_defaults = self.defaults.value();
-
-    self.destination.set_now(destination);
-    self.defaults.set_now(SharePair { meme_bps, quote_bps });
-
-    blast_events::lp_fee_destination_changed(old_destination, destination);
-    blast_events::lp_fee_policy_changed(option::none(), option::some(old_defaults.meme_bps.value()), option::some(old_defaults.quote_bps.value()), option::some(meme_bps.value()), option::some(quote_bps.value()));
-}
-
 /// Redirects every later protocol share payout.
 /// Schedules protocol destination after the full administrative delay.
 public fun schedule_protocol_destination(
@@ -61,7 +48,7 @@ public fun schedule_protocol_destination(
     assert!(destination != @0x0, EProtocolDestinationUnchanged);
     let value = destination;
     assert!(value != self.destination.value(), EProtocolDestinationUnchanged);
-    let ready_at_ms = self.destination.schedule(value, clock);
+    let ready_at_ms = self.destination.schedule(value, migrators_version.admin_delay_ms(), clock);
     blast_events::protocol_destination_scheduled(destination, ready_at_ms);
 }
 
@@ -104,7 +91,7 @@ public fun schedule_default_shares(
 
     let value = SharePair { meme_bps, quote_bps };
     assert!(value != self.defaults.value(), EProtocolFeeSharesUnchanged);
-    let ready_at_ms = self.defaults.schedule(value, clock);
+    let ready_at_ms = self.defaults.schedule(value, migrators_version.admin_delay_ms(), clock);
     blast_events::default_shares_scheduled(meme_bps.value(), quote_bps.value(), ready_at_ms);
 }
 
@@ -143,7 +130,7 @@ public fun schedule_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version:
     let proposed = option::some(SharePair { meme_bps, quote_bps });
     if (!self.coins.contains(meme)) self.coins.add(meme, delayed::new(option::none()));
     assert!(self.coins[meme].value() != proposed, EProtocolFeeSharesUnchanged);
-    let ready_at_ms = self.coins[meme].schedule(proposed, clock);
+    let ready_at_ms = self.coins[meme].schedule(proposed, migrators_version.admin_delay_ms(), clock);
     blast_events::coin_shares_scheduled(meme, option::some(meme_bps.value()), option::some(quote_bps.value()), ready_at_ms);
 }
 
@@ -152,7 +139,7 @@ public fun schedule_clear_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_ve
     migrators_version.assert_current();
     let meme = type_name::with_original_ids<Meme>();
     assert!(self.coins[meme].value().is_some(), EProtocolFeeSharesUnchanged);
-    let ready_at_ms = self.coins[meme].schedule(option::none(), clock);
+    let ready_at_ms = self.coins[meme].schedule(option::none(), migrators_version.admin_delay_ms(), clock);
     blast_events::coin_shares_scheduled(meme, option::none(), option::none(), ready_at_ms);
 }
 
@@ -307,6 +294,6 @@ use sui::{
 
 use blast_fun::{blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}, bps::{Self, Bps}};
 
-use blast_fun_migrators::{blast_events, blast_fun_migrators::Bootstrap, blast_fun_migrators::PackageVersion as MigratorsVersion};
+use blast_fun_migrators::{blast_events, blast_fun_migrators::PackageVersion as MigratorsVersion};
 
 use std::type_name::{Self, TypeName};

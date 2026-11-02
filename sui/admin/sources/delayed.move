@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Explicitly applied administrative changes with an immutable 48-hour notice.
+/// Explicitly applied changes whose notice period is supplied by the owning policy.
 module blast_admin::delayed;
-
-// === Constants ===
-
-const DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Errors ===
 
@@ -15,6 +11,12 @@ const ENotReady: vector<u8> = b"The full administrative delay must pass before a
 
 #[error(code = 1)]
 const ENoPending: vector<u8> = b"There is no scheduled administrative change.";
+
+#[error(code = 2)]
+const EInvalidDelay: vector<u8> = b"The notice period must fit a Unix millisecond execution threshold.";
+
+#[error(code = 3)]
+const EDelayUnchanged: vector<u8> = b"A notice-period update must change the applied delay.";
 
 // === Public Types ===
 
@@ -52,11 +54,31 @@ public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>
     self.pending
 }
 
-/// Replaces any pending change and restarts the entire delay.
-public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, clock: &Clock): u64 {
-    let pending = new_pending(value, clock);
+/// Replaces any pending change and restarts the supplied policy delay.
+/// The enclosing module must derive `delay_ms` from its authorized policy.
+public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, delay_ms: u64, clock: &Clock): u64 {
+    let pending = new_pending(value, delay_ms, clock);
     self.pending = option::some(pending);
     pending.ready_at_ms
+}
+
+/// Schedules a notice-period change using its currently applied delay, including zero.
+/// The enclosing module must restrict this operation to its delay-policy authority.
+public fun schedule_delay(self: &mut Delayed<u64>, delay_ms: u64, clock: &Clock): u64 {
+    let current_delay_ms = self.value;
+    assert!(delay_ms != current_delay_ms, EDelayUnchanged);
+    let pending = new_pending(delay_ms, current_delay_ms, clock);
+    assert!(delay_ms <= std::u64::max_value!() - pending.ready_at_ms, EInvalidDelay);
+    self.pending = option::some(pending);
+    pending.ready_at_ms
+}
+
+/// Applies a ready delay only while it can still form a future execution threshold.
+public fun apply_delay(self: &mut Delayed<u64>, clock: &Clock): u64 {
+    assert!(self.pending.is_some(), ENoPending);
+    let delay_ms = self.pending.destroy_some().take_ready(clock);
+    assert!(delay_ms <= std::u64::max_value!() - clock.timestamp_ms(), EInvalidDelay);
+    self.apply(clock)
 }
 
 /// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
@@ -81,9 +103,12 @@ public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T) {
     self.pending = option::none();
 }
 
-/// Starts the immutable administrative notice period.
-public fun new_pending<T: copy + drop + store>(value: T, clock: &Clock): Pending<T> {
-    Pending { value, ready_at_ms: clock.timestamp_ms() + DELAY_MS }
+/// Snapshots the owning policy's notice period into an immutable deadline.
+/// Later policy changes cannot shorten or extend this pending value's notice.
+public fun new_pending<T: copy + drop + store>(value: T, delay_ms: u64, clock: &Clock): Pending<T> {
+    let scheduled_at_ms = clock.timestamp_ms();
+    assert!(delay_ms <= std::u64::max_value!() - scheduled_at_ms, EInvalidDelay);
+    Pending { value, ready_at_ms: scheduled_at_ms + delay_ms }
 }
 
 /// Returns a scheduled value only at or after its threshold.

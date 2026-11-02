@@ -20,9 +20,11 @@ with `bash scripts/test_admin_delay.sh --boundaries-only admin launchpad presale
 Run these wrappers sequentially: they temporarily edit the same manifests and
 publication metadata. The Rust PTB harness also supplies a nonzero genesis
 recipient while compiling and restores each manifest afterward. Its initial
-configuration uses the owned Bootstrap before wrap, then the immediate real-ACL
-unpause path without advancing the Clock. Later governed changes schedule,
-advance the simulator by 48 hours, and apply through the public entry points.
+configuration wraps Publication, then uses ordinary real-ACL schedule/apply calls
+at zero delay. It enables a 48-hour policy before the immediate real-ACL unpause
+without advancing Clock. Later governed changes schedule, advance the simulator
+by the snapshotted delay, and apply through public entry points. Policy tests also
+prove old-delay updates, same-PTB ordering/rollback and unauthorized rejection.
 
 Native PTB fixture output stays under the test crate's ignored `target/ptb-fixtures/`
 directory, so checkouts can share Cargo's compiler cache without overwriting each

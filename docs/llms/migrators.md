@@ -22,7 +22,7 @@ migration itself, and everything the vault does afterwards.
 | `lp_fee_policy::LpFeePolicy` | singleton | Blast's LP-fee share (a default pair and optional per-coin pairs) and the address Blast's share is paid to. |
 | `blast_holder_rewards::Round` (`Round<Meme, Quote>`) | one per published round | A funded Merkle allocation of holder rewards and its claim bitmap. |
 | `blast_fun_migrators::venue_config::VenueConfig` | singleton | Keeps each Cetus launch's `PoolCreationCap` forever, under `blast_fun_migrators::cetus::CreationCapKey` (typed by the Meme). |
-| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation. Operational mutations check it first; created by wrap after initial setup. |
+| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation and administrative delay. Created by wrap before ACL configuration; operational mutations check it first. |
 | `blast_fun_migrators::package_admin::PackageAdmin` | singleton | Sealed custody of this package's `Publisher` and `UpgradeCap`. |
 
 Calls also take objects from other packages:
@@ -39,10 +39,10 @@ Calls also take objects from other packages:
 
 #### Capabilities and roles
 
-- `blast_fun_migrators::blast_fun_migrators::Bootstrap` (`key` only, owned):
+- `blast_fun_migrators::blast_fun_migrators::Publication` (`key` only, owned):
   created once at publication and sent to the deployer. It holds the canonical
-  Publisher and initial generation, authorizes initial LP policy and is consumed
-  permanently by custody wrap.
+  Publisher and initial generation and is consumed permanently by custody wrap.
+  It has no policy authority.
 
 - `creator_authority::CurveFeeCap` (`CurveFeeCap<Meme>`, owned, transferable). The launch records
   the ID of the one live cap. Its holder claims the creator's LP fees and changes the fee split. The
@@ -57,7 +57,7 @@ Calls also take objects from other packages:
   - `blast_fun_domain::RewardsAdmin`: publish holder-reward rounds.
   - `blast_fun_domain::TreasuryAdmin`: claim migration residuals; set the LP-fee destination.
   - `blast_fun_domain::FeeAdmin`: set Blast's default and per-coin LP-fee shares.
-  - `blast_fun_domain::UpgradeAdmin`: authorize and commit package upgrades.
+  - `blast_fun_domain::UpgradeAdmin`: govern administrative delay and authorize package upgrades.
 
   These role types belong to the launchpad; this package declares no roles of its own. Integrators
   cannot call admin functions.
@@ -76,11 +76,10 @@ Calls also take objects from other packages:
 | `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `BuybackAdmin` |
 | `blast_holder_rewards::publish_round` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::bootstrap` | cap holder: the owned Bootstrap, before wrap |
 | `lp_fee_policy::schedule_protocol_destination` | Blast admin: `TreasuryAdmin` |
 | `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares` | Blast admin: `FeeAdmin` |
 | `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` | Blast admin: `UpgradeAdmin` |
-| `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Bootstrap` and native `UpgradeCap` (done once at deployment) |
+| `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publication` and native `UpgradeCap` (done once at deployment) |
 
 #### What an `LpVault` holds
 
@@ -113,9 +112,9 @@ balances except the flows below.
   different: Cetus LP Burn has burned it, and its `CetusLPBurnProof` can only collect fees. The
   Bluefin position, the Cetus auto-LP position, and every vault balance depend on this package's
   code.
-- **Blast controls its own share.** After bootstrap, `FeeAdmin` schedules Blast's LP-fee share
+- **Blast controls its own share.** `FeeAdmin` schedules Blast's LP-fee share
   from 0 to 10,000 BPS per asset, by default or per coin. `TreasuryAdmin` schedules
-  payout destination changes. Anyone applies a scheduled change after 48 hours;
+  payout destination changes. Anyone applies a scheduled change after the snapshotted deadline;
   it applies from the next collection.
 - **The admin can publish any round.** Merkle proofs enforce the published allocation, not the truth
   of Blast's off-chain holder accounting. `RewardsAdmin` can assign unreserved rewards to any
@@ -145,26 +144,28 @@ balances except the flows below.
 
 ### Flows
 
-#### Protocol bootstrap (cap holder: Bootstrap and the native UpgradeCap)
+#### Publication and initial configuration
 
-1. Publish migrators after its launchpad dependency. Publication transfers the
-   only `blast_fun_migrators::blast_fun_migrators::Bootstrap` to the deployer and
-   shares the LP policy and venue configuration. No PackageVersion exists yet.
-2. Call `lp_fee_policy::bootstrap` with the shared mutable LpFeePolicy, a
-   reference to Bootstrap, a nonzero destination and initial default Meme/Quote
-   shares built by `blast_fun::bps::new`. Each share allows 0 through 10,000 BPS;
-   zero shares are valid defaults. The policy changes immediately and emits
-   `blast_fun_migrators::blast_events::LpFeeDestinationChanged` and
-   `blast_fun_migrators::blast_events::LpFeePolicyChanged`, without a Clock.
-3. Call `blast_fun_migrators::package_admin::wrap` with Bootstrap by value and
-   the matching never-upgraded native UpgradeCap. It consumes Bootstrap forever,
-   seals native custody and shares this package's operational PackageVersion.
-4. Admit the reviewed migrators' adapter witnesses during launchpad bootstrap,
-   then release the launchpad through its immediate UnpauseAdmin path.
+1. Publish the package. The deployer receives the unique `blast_fun_migrators::blast_fun_migrators::Publication`,
+   holding its canonical Publisher and initial generation. Policy singletons are
+   shared; no operational PackageVersion exists yet.
+2. Call `blast_fun_migrators::package_admin::wrap` with Publication by value and the matching
+   never-upgraded UpgradeCap. It consumes Publication permanently, seals native
+   custody and shares PackageVersion with an initial administrative delay of zero.
+3. Grant the required roles on the real Blast ACL. Configure destinations, fees
+   and reviewed adapter admission through the ordinary schedule/apply operations
+   with Clock. At zero delay these can run in one PTB. Quote admission uses its
+   ordinary ListingAdmin setter. No publication proof authorizes policy changes.
+4. Apply or cancel every outstanding zero-delay proposal. Sign in as UpgradeAdmin,
+   schedule the desired administrative delay (for example, 172,800,000 ms = 48 hours),
+   and apply it. This first policy change waits the old zero delay. Read back the
+   policy and configured values before release.
+5. Finish launchpad configuration and enable its delay before unpausing migration. Migrators has no independent pause switch.
 
-Migrators has no separate pause switch. The launchpad controls migration pause.
-Initial setup may span transactions; after wrap it cannot be reopened by a
-pause cycle or upgrade. Later governed LP policy changes require 48 hours.
+Setup may span transactions. Pausing and upgrades never reset the administrative
+policy or recreate Publication. An outstanding zero-delay proposal remains ready
+after enabling a positive delay, which is why setup must settle those proposals
+before release. Route admission remains checked when creating launches or sales.
 
 Operational state-changing calls take
 `blast_fun_migrators::blast_fun_migrators::PackageVersion` (shared) and checks it before anything
@@ -436,7 +437,7 @@ for both assets and the destination is the configured genesis recipient; read th
 
 #### Package upgrades (Blast admin)
 
-`blast_fun_migrators::package_admin::schedule_upgrade` announces an exact digest. After 48 hours,
+`blast_fun_migrators::package_admin::schedule_upgrade` announces an exact digest. After its snapshotted deadline,
 `blast_fun_migrators::package_admin::authorize_upgrade` takes `Clock` and returns its upgrade ticket; `blast_fun_migrators::package_admin::commit_upgrade_and_advance` commits the receipt and
 moves `PackageVersion` to the next generation in the same call. From then on, every call to the old
 package's code aborts the generation check, so integrators must call the current package address.
@@ -445,17 +446,28 @@ generation.
 
 ### Delayed administration
 
-Blast admin schedules changes with the relevant role and the canonical `Clock`.
-Every scheduled fee, destination, signer, adapter or creator-authority change
-waits 172,800,000 milliseconds (48 hours). Scheduling again replaces the pending
-value and restarts that delay. The applied value stays active until *anyone*
-calls the matching `apply_` operation with the current package version and
-`Clock`. A `CancelAdmin` may cancel a pending change even after it is ready.
-Scheduling and cancellation emit the proposed values; the existing changed
-event is emitted only on application. Reads and ordinary claims need no new Clock.
+Blast admin schedules changes with the relevant role and canonical `Clock`.
+Each package's canonical `PackageVersion` stores its own applied administrative
+delay. Every governed schedule snapshots `ready_at_ms = now + admin_delay_ms`;
+changing the policy never changes an existing pending deadline. Rescheduling
+replaces the pending value and starts a new notice period under the applied policy.
+Applied values remain active until anyone calls the matching application with
+the current version and Clock. `CancelAdmin` can cancel even a ready proposal.
+
+The marker module exposes `blast_fun_migrators::blast_fun_migrators::admin_delay_ms`, `blast_fun_migrators::blast_fun_migrators::schedule_admin_delay`,
+`blast_fun_migrators::blast_fun_migrators::apply_admin_delay` and `blast_fun_migrators::blast_fun_migrators::cancel_admin_delay`. `UpgradeAdmin` proposes a new delay;
+that proposal waits the **old applied delay**. Anyone applies it once ready;
+`CancelAdmin` may cancel it. Zero is valid, including for later reductions, but
+reducing to zero still waits the old delay. A no-op delay proposal aborts.
+Scheduling and applying reject delays whose deadlines cannot fit a `u64`
+timestamp. `blast_fun_migrators::blast_events::AdminDelayScheduled` includes the proposed delay and absolute
+deadline. `blast_fun_migrators::blast_events::AdminDelayChanged` includes previous and applied
+delays; `blast_fun_migrators::blast_events::AdminDelayCancelled` includes the cancelled proposal. There is no implicit minimum
+or fixed 48-hour guarantee: read the live policy before relying on notice.
+Reads and ordinary claims need no new Clock.
 
 `blast_fun_migrators::package_admin::schedule_upgrade` announces the exact digest.
-After 48 hours an `UpgradeAdmin` may call `blast_fun_migrators::package_admin::authorize_upgrade`
+After its snapshotted deadline an `UpgradeAdmin` may call `blast_fun_migrators::package_admin::authorize_upgrade`
 with that digest and `Clock`, consume its ticket in the native upgrade command,
 and commit its receipt. The pending action is consumed once.
 `blast_fun_migrators::package_admin::schedule_make_immutable` and
@@ -547,7 +559,7 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 ### Time rules
 
 - No deadlines exist in this package. Collections, payouts, claims, and buybacks work at any time.
-- After bootstrap, policy changes require 48 hours and explicit application,
+- Policy changes wait the applied administrative delay and explicit application,
   then affect the next collection.
 - A partner payout uses the partner's share in force at payout, not at collection.
 - Holder-reward rounds never expire. Their checkpoint intervals must be contiguous and nonempty.

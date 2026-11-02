@@ -299,15 +299,15 @@ fi
 
 blast_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/blast_fun.move)"
 
-# The OTW creates one owned Bootstrap. Only validated custody intake may consume it and share
+# The OTW creates one owned Publication. Only validated custody intake may consume it and share
 # PackageVersion; publication must not supply a usable generation before custody is sealed.
 if [[ ! -f sources/blast_fun.move ]] \
   || ! rg -Fq 'public struct BLAST_FUN() has drop;' sources/blast_fun.move \
   || ! rg -U -q \
-    'public struct PackageVersion has key \{\s*id: UID,\s*paused: u8,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
+    'public struct PackageVersion has key \{\s*id: UID,\s*paused: u8,\s*generation: OperationalVersion<BLAST_FUN>,\s*admin_delay: Delayed<u64>,\s*\}' \
     sources/blast_fun.move \
   || ! rg -U -q \
-    'public struct Bootstrap has key \{\s*id: UID,\s*publisher: Publisher,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
+    'public struct Publication has key \{\s*id: UID,\s*publisher: Publisher,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
     <<<"$blast_production" \
   || ! rg -q '^const PACKAGE_VERSION: u64 = 1;$' sources/blast_fun.move \
   || ! rg -q '^const NEXT_PACKAGE_VERSION: u64 = 2;$' sources/blast_fun.move \
@@ -320,21 +320,21 @@ if [[ ! -f sources/blast_fun.move ]] \
   || ! rg -Fq 'self.generation.advance(&self.id, NEXT_PACKAGE_VERSION);' sources/blast_fun.move \
   || ! rg -Fq 'let generation = operational_version::new(&otw);' sources/blast_fun.move \
   || rg -n '\.checked_add\(' <<<"$blast_production"; then
-  echo 'blast_fun.move must own the unique publication bootstrap and the guarded generation container.' >&2
+  echo 'blast_fun.move must own the unique publication proof and the guarded generation container.' >&2
   failures=$((failures + 1))
 fi
 
-# Exact construction and intake paths keep a later helper from bypassing bootstrap custody.
+# Exact construction and intake paths keep a later helper from bypassing publication custody.
 if [[ "$(move_production_body init <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'let generation = operational_version::new(&otw); let publisher = sui::package::claim(otw, ctx); transfer::transfer(Bootstrap { id: object::new(ctx), publisher, generation }, ctx.sender());' ]] \
+    != 'let generation = operational_version::new(&otw); let publisher = sui::package::claim(otw, ctx); transfer::transfer(Publication { id: object::new(ctx), publisher, generation }, ctx.sender());' ]] \
   || [[ "$(move_production_body destroy <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'let Bootstrap { id, publisher, generation } = self; id.delete(); (publisher, generation)' ]] \
+    != 'let Publication { id, publisher, generation } = self; id.delete(); (publisher, generation)' ]] \
   || [[ "$(move_production_body share_version <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation });' ]] \
+    != 'transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation, admin_delay: delayed::new(0) });' ]] \
   || [[ "$(rg -c '^public\(package\) fun ' <<<"$blast_production")" != 6 ]] \
   || [[ "$(rg -l '\bshare_version\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
     != 'sources/blast_fun.move sources/package_admin.move ' ]]; then
-  echo 'Only wrap may activate the unique bootstrap after sealing native capability custody.' >&2
+  echo 'Only wrap may activate the unique publication proof after sealing native capability custody.' >&2
   failures=$((failures + 1))
 fi
 
@@ -404,7 +404,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'blast_fun:pause:PauseAdmin blast_fun:unpause:UnpauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin ' ]]; then
+  'blast_fun:cancel_admin_delay:CancelAdmin blast_fun:pause:PauseAdmin blast_fun:schedule_admin_delay:UpgradeAdmin blast_fun:unpause:UnpauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))
@@ -431,7 +431,7 @@ package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # would end upgradeability silently.
 # Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
 if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'config.assert_bootstrap_ready(); let (publisher, generation) = bootstrap.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody, pending: option::none() }); generation.share_version(ctx);' ]] \
+    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody, pending: option::none() }); generation.share_version(ctx);' ]] \
   || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 5 ]] \
   || [[ "$(move_facts sources/package_admin.move \
     | awk -F'\t' '$1 == "FN" && $2 == "commit_upgrade_and_advance" { print $10 }')" \
@@ -1223,8 +1223,7 @@ version_guard_violations="$(
       }
       $1 == "FN" && $6 == 0 && $3 == "public" \
         && ($9 ~ /: &mut (Launch|Currency)</ || $9 ~ /: &mut (LaunchConfig|RuntimeConfig|PackageAdmin),/) \
-        && $9 !~ /[(,] package_version: &(mut )?PackageVersion,/ \
-        && !($9 ~ /_: &Bootstrap/ && ((file ~ /launch_config[.]move$/ && $2 ~ /^(bootstrap|bootstrap_quote|bootstrap_migration_witness)$/) || (file ~ /runtime_config[.]move$/ && $2 == "bootstrap"))) {
+        && $9 !~ /[(,] package_version: &(mut )?PackageVersion,/ {
         print "  " file ": " $2 " reaches mutable shared state without PackageVersion"
       }
       END {

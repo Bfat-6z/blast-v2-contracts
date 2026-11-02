@@ -120,8 +120,8 @@ allocation remains permanently locked in the presale and the supply mode cannot
 be reversed.
 
 Run `scripts/verify.sh`. Publish to mainnet with `scripts/publish.sh --preview`,
-repeat with `--execute`, configure initial policy with Bootstrap, then seal custody with
-`scripts/wrap_package_admin.sh <package-id> <bootstrap-id> <upgrade-cap-id> <creation-policy-id> --preview` and
+repeat with `--execute`, then seal custody with
+`scripts/wrap_package_admin.sh <package-id> <publication-id> <upgrade-cap-id> --preview` and
 `--execute` before creating any presale. The package mints no administrator
 capability: Blast administers it through the one shared Blast ACL
 (`blast_admin`, [ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)),
@@ -130,8 +130,8 @@ roles: `FeeAdmin` sets Blast's rates and the partners new sales may name,
 `TreasuryAdmin` their destination, `ListingAdmin` and `AdapterAdmin` the Quote
 types and migrators new sales may use, `RewardsAdmin` publishes holder-reward
 rounds, and `UpgradeAdmin` authorizes compatible upgrades and atomic version cutovers.
-[DEPLOYING.md](DEPLOYING.md) gives the complete order: initial policy and admission,
-custody verification, then immediate UnpauseAdmin release. No presale can exist
+[DEPLOYING.md](DEPLOYING.md) gives the complete order: custody verification, ordinary ACL configuration at zero delay,
+enabling the chosen administrative delay, then immediate UnpauseAdmin release. No presale can exist
 under an unsealed cap or before unpause.
 
 The accepted design is [ADR 0099](../../docs/decisions/0099-standalone-overflow-presale.md);
@@ -141,9 +141,11 @@ creation through the initializer, the sale-level hard cap, and early close are p
 [ADR 0110](../../docs/decisions/0110-presale-initializer-and-early-close.md).
 
 Presale activation and operational versioning follow launchpad: publication transfers
-`blast_presale_package::Bootstrap`, and wrapping it with the matching fresh cap
-shares `PackageVersion` fully paused. Initial policy calls require Bootstrap;
-routine state-changing calls require the version. Bootstrap is consumed forever,
-and later governed changes retain their delay. See
+`blast_presale_package::Publication`, and wrapping it with the matching fresh cap
+shares PackageVersion fully paused with administrative delay zero. Ordinary ACL
+operations configure initial policy; settle setup proposals and enable the desired
+delay before release. Later delay changes wait the old policy, and existing
+pending actions keep their deadlines. See
+
 [ADR 0117](../../docs/decisions/0117-presale-versioning-and-activation.md). This
 source requires fresh publication; existing dependency-only releases stay unchanged.

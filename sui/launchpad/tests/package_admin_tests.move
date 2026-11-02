@@ -50,7 +50,7 @@ fun publication_cannot_supply_the_version_required_to_launch() {
 }
 
 #[test]
-fun wrapping_enables_guarded_mutations_and_consumes_bootstrap() {
+fun wrapping_enables_guarded_mutations_and_consumes_publication() {
     let mut fixture = start_custody();
 
     fixture.next_tx!(PUBLISHER, |f| {
@@ -58,7 +58,7 @@ fun wrapping_enables_guarded_mutations_and_consumes_bootstrap() {
 
         assert_eq!(f.runtime.treasury(), PROTOCOL_ADMIN);
         assert_eq!(f.package_version.version_for_testing(), 1);
-        assert!(!f.has_bootstrap());
+        assert!(!f.has_publication());
     });
 
     fixture.end();
@@ -66,17 +66,17 @@ fun wrapping_enables_guarded_mutations_and_consumes_bootstrap() {
 
 #[test]
 #[expected_failure(abort_code = sui::test_scenario::EEmptyInventory, location = sui::test_scenario)]
-fun consumed_bootstrap_cannot_be_taken_for_another_wrap() {
+fun consumed_publication_cannot_be_taken_for_another_wrap() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        let bootstrap = f.take_bootstrap();
+        let publication = f.take_publication();
         let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), f.ctx!());
 
-        f.wrap(bootstrap, upgrade_cap);
+        f.wrap(publication, upgrade_cap);
     });
     fixture.next_tx!(PUBLISHER, |f| {
-        destroy(f.take_bootstrap());
+        destroy(f.take_publication());
     });
 
     fixture.end();
@@ -84,12 +84,12 @@ fun consumed_bootstrap_cannot_be_taken_for_another_wrap() {
 
 #[test]
 #[expected_failure(abort_code = sui::test_scenario::EEmptyInventory, location = sui::test_scenario)]
-fun another_sender_cannot_take_the_publication_bootstrap() {
+fun another_sender_cannot_take_the_publication_proof() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let bootstrap = f.take_bootstrap();
-        destroy(bootstrap);
+        let publication = f.take_publication();
+        destroy(publication);
     });
 
     fixture.end();
@@ -136,11 +136,11 @@ fun wrap_rejects_upgrade_cap_for_another_package() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        let bootstrap = f.take_bootstrap();
+        let publication = f.take_publication();
         let foreign_upgrade_cap =
             package::test_publish(OTHER_PACKAGE_ID.to_id(), f.ctx!());
 
-        f.wrap(bootstrap, foreign_upgrade_cap);
+        f.wrap(publication, foreign_upgrade_cap);
     });
 
     fixture.end();
@@ -393,17 +393,9 @@ macro fun wrap_ctx($fixture: &mut WrapFixture): &mut TxContext {
     fixture.scenario.ctx()
 }
 
-fun ready_policy(bootstrap: &marker::Bootstrap, ctx: &mut TxContext): launch_config::LaunchConfig {
-    let mut policy = launch_config::new_for_testing(ctx);
-    policy.bootstrap_quote<sui::sui::SUI>(bootstrap, true);
-    policy.bootstrap_migration_witness<marker::BLAST_FUN>(bootstrap, true);
-    policy
-}
 
-fun wrap(self: &mut WrapFixture, bootstrap: marker::Bootstrap, upgrade_cap: UpgradeCap) {
-    let policy = ready_policy(&bootstrap, self.ctx!());
-    package_admin::wrap(bootstrap, upgrade_cap, &policy, self.ctx!());
-    destroy(policy);
+fun wrap(self: &mut WrapFixture, publication: marker::Publication, upgrade_cap: UpgradeCap) {
+    package_admin::wrap(publication, upgrade_cap, self.ctx!());
 }
 
 fun start_unwrapped(): WrapFixture {
@@ -418,12 +410,12 @@ fun has_shared_version(_: &WrapFixture): bool {
     test_scenario::has_most_recent_shared<marker::PackageVersion>()
 }
 
-fun take_bootstrap(self: &WrapFixture): marker::Bootstrap {
+fun take_publication(self: &WrapFixture): marker::Publication {
     self.scenario.take_from_sender()
 }
 
-fun has_bootstrap(self: &CustodyFixture): bool {
-    self.scenario.has_most_recent_for_sender<marker::Bootstrap>()
+fun has_publication(self: &CustodyFixture): bool {
+    self.scenario.has_most_recent_for_sender<marker::Publication>()
 }
 
 /// Runs the production wrap flow so the fixture custodies the real shared object.
@@ -433,15 +425,12 @@ fun start_custody(): CustodyFixture {
     runtime_config::init_for_testing(scenario.ctx());
 
     scenario.next_tx(PUBLISHER);
-    let bootstrap = scenario.take_from_sender<marker::Bootstrap>();
-    let policy = ready_policy(&bootstrap, scenario.ctx());
+    let publication = scenario.take_from_sender<marker::Publication>();
     package_admin::wrap(
-        bootstrap,
+        publication,
         package::test_publish(PACKAGE_ID.to_id(), scenario.ctx()),
-        &policy,
         scenario.ctx(),
     );
-    destroy(policy);
     let created = blast_admin_events::collect_one<
         blast_admin_events::UpgradeCustodyCreated<BLAST_FUN>,
     >(0);
@@ -500,7 +489,6 @@ use blast_fun::{
     blast_fun::{Self as marker, BLAST_FUN},
     blast_fun_domain::UpgradeAdmin,
     package_admin,
-    launch_config,
     runtime_config,
 };
 

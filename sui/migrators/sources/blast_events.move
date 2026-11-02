@@ -7,6 +7,13 @@ module blast_fun_migrators::blast_events;
 
 // === Public Types ===
 
+/// Proposed notice period and its Unix millisecond execution threshold.
+public struct AdminDelayScheduled has copy, drop { delay_ms: u64, ready_at_ms: u64 }
+/// Previously applied and newly applied notice periods.
+public struct AdminDelayChanged has copy, drop { previous_delay_ms: u64, delay_ms: u64 }
+/// Notice-period proposal removed from the pending schedule.
+public struct AdminDelayCancelled has copy, drop { delay_ms: u64 }
+
 /// Values removed from the pending schedule.
 public struct ProtocolDestinationCancelled has copy, drop { destination: address }
 
@@ -181,6 +188,18 @@ public struct CetusPoolReserved has copy, drop {
 }
 
 // === Package Functions ===
+
+public(package) fun admin_delay_scheduled(delay_ms: u64, ready_at_ms: u64) {
+    sui::event::emit(AdminDelayScheduled { delay_ms, ready_at_ms });
+}
+
+public(package) fun admin_delay_changed(previous_delay_ms: u64, delay_ms: u64) {
+    sui::event::emit(AdminDelayChanged { previous_delay_ms, delay_ms });
+}
+
+public(package) fun admin_delay_cancelled(delay_ms: u64) {
+    sui::event::emit(AdminDelayCancelled { delay_ms });
+}
 
 public(package) fun protocol_destination_cancelled(destination: address) {
     sui::event::emit(ProtocolDestinationCancelled { destination });

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Canonical package provenance, publication bootstrap, and operational generation.
+/// Canonical publication custody, administrative delay, and operational generation.
 ///
 /// The one-time witness seeds the generation and claims the Publisher. Both stay in owned
-/// bootstrap custody until package administration seals the native capabilities.
+/// publication custody until package administration seals the native capabilities.
 module blast_presale::blast_presale_package;
 
 // === Constants ===
@@ -28,6 +28,13 @@ const EPaused: vector<u8> = b"This operation is paused.";
 
 // === Public Types ===
 
+/// Proposed notice period and its Unix millisecond execution threshold.
+public struct AdminDelayScheduled has copy, drop { delay_ms: u64, ready_at_ms: u64 }
+/// Previously applied and newly applied notice periods.
+public struct AdminDelayChanged has copy, drop { previous_delay_ms: u64, delay_ms: u64 }
+/// Notice-period proposal removed from the pending schedule.
+public struct AdminDelayCancelled has copy, drop { delay_ms: u64 }
+
 /// The requested bits and resulting pause mask.
 public struct Paused has copy, drop { bits: u8, paused: u8 }
 /// The released bits and resulting pause mask.
@@ -37,7 +44,7 @@ public struct Unpaused has copy, drop { bits: u8, paused: u8 }
 public struct BLAST_PRESALE_PACKAGE() has drop;
 
 /// Publication-only custody; it cannot supply the PackageVersion required by presale activity.
-public struct Bootstrap has key {
+public struct Publication has key {
     id: UID,
     publisher: Publisher,
     generation: OperationalVersion<BLAST_PRESALE_PACKAGE>,
@@ -48,6 +55,7 @@ public struct PackageVersion has key {
     id: UID,
     paused: u8,
     generation: OperationalVersion<BLAST_PRESALE_PACKAGE>,
+    admin_delay: Delayed<u64>,
 }
 
 // === Private Initialization ===
@@ -56,10 +64,38 @@ fun init(otw: BLAST_PRESALE_PACKAGE, ctx: &mut TxContext) {
     let generation = operational_version::new(&otw);
     let publisher = sui::package::claim(otw, ctx);
 
-    transfer::transfer(Bootstrap { id: object::new(ctx), publisher, generation }, ctx.sender());
+    transfer::transfer(Publication { id: object::new(ctx), publisher, generation }, ctx.sender());
 }
 
 // === Public Functions ===
+
+/// Returns the currently applied notice period in milliseconds from scheduling.
+public fun admin_delay_ms(self: &PackageVersion): u64 {
+    self.admin_delay.value()
+}
+
+/// Proposes a new notice period using the currently applied delay, including zero.
+/// Previously scheduled actions retain their original execution thresholds.
+public fun schedule_admin_delay(self: &mut PackageVersion, _: &AdminWitness<UpgradeAdmin>, delay_ms: u64, clock: &Clock) {
+    self.assert_current();
+    let ready_at_ms = self.admin_delay.schedule_delay(delay_ms, clock);
+    sui::event::emit(AdminDelayScheduled { delay_ms, ready_at_ms });
+}
+
+/// Applies a ready notice-period change permissionlessly.
+public fun apply_admin_delay(self: &mut PackageVersion, clock: &Clock) {
+    self.assert_current();
+    let previous_delay_ms = self.admin_delay.value();
+    let delay_ms = self.admin_delay.apply_delay(clock);
+    sui::event::emit(AdminDelayChanged { previous_delay_ms, delay_ms });
+}
+
+/// Cancels a pending notice-period change, including after readiness.
+public fun cancel_admin_delay(self: &mut PackageVersion, _: &AdminWitness<CancelAdmin>) {
+    self.assert_current();
+    let delay_ms = self.admin_delay.cancel();
+    sui::event::emit(AdminDelayCancelled { delay_ms });
+}
 
 /// Freezes selected operations immediately; does not authorize unpausing.
 public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8) {
@@ -86,11 +122,11 @@ public(package) fun assert_not_paused(self: &PackageVersion, bit: u8) {
     assert!((self.paused & bit) == 0, EPaused);
 }
 
-/// Consumes the unique bootstrap for package-admin custody intake.
+/// Consumes the unique publication for package-admin custody intake.
 public(package) fun destroy(
-    self: Bootstrap,
+    self: Publication,
 ): (Publisher, OperationalVersion<BLAST_PRESALE_PACKAGE>) {
-    let Bootstrap { id, publisher, generation } = self;
+    let Publication { id, publisher, generation } = self;
     id.delete();
 
     (publisher, generation)
@@ -101,7 +137,7 @@ public(package) fun share_version(
     generation: OperationalVersion<BLAST_PRESALE_PACKAGE>,
     ctx: &mut TxContext,
 ) {
-    transfer::share_object(PackageVersion { paused: VALID_PAUSE_BITS, id: object::new(ctx), generation });
+    transfer::share_object(PackageVersion { paused: VALID_PAUSE_BITS, id: object::new(ctx), generation, admin_delay: delayed::new(0) });
 }
 
 /// Rejects callable bytecode from every package generation except the active one.
@@ -132,12 +168,12 @@ public fun init_for_testing(ctx: &mut TxContext) {
 public fun new_for_testing(ctx: &mut TxContext): PackageVersion {
     let otw = BLAST_PRESALE_PACKAGE();
 
-    PackageVersion { paused: 0, id: object::new(ctx), generation: operational_version::new(&otw) }
+    PackageVersion { paused: 0, id: object::new(ctx), generation: operational_version::new(&otw), admin_delay: delayed::new(172_800_000) }
 }
 
 #[test_only]
 /// Inspects the canonical Publisher retained by initialization without releasing it.
-public fun publisher_for_bootstrap_testing(self: &Bootstrap): &Publisher {
+public fun publisher_for_publication_testing(self: &Publication): &Publisher {
     &self.publisher
 }
 
@@ -167,8 +203,8 @@ public fun publisher_for_testing(ctx: &mut TxContext): Publisher {
 
 // === Imports ===
 
-use blast_admin::{blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
+use blast_admin::{delayed::{Self, Delayed}, blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
 
-use blast_presale::blast_presale_domain::{PauseAdmin, UnpauseAdmin};
+use blast_presale::blast_presale_domain::{CancelAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin};
 
-use sui::package::Publisher;
+use sui::{clock::Clock, package::Publisher};

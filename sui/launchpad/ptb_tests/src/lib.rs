@@ -482,9 +482,10 @@ impl Harness {
     }
 
     /// Configures initial admission and seals custody; operations remain paused until release.
-    pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome, quote: sui_types::TypeTag, witness: sui_types::TypeTag) -> Result<ObjectID> {
+    pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome, admin: ObjectID, admin_publication: &Outcome, quote: sui_types::TypeTag, witness: sui_types::TypeTag) -> Result<(ObjectID, ObjectID)> {
         assert!(publication.created(self, "blast_fun", "PackageVersion").is_empty());
-        let bootstrap = publication.created(self, "blast_fun", "Bootstrap");
+        let config = publication.created(self, "launch_config", "LaunchConfig")[0];
+        let bootstrap = publication.created(self, "blast_fun", "Publication");
         let cap = publication.created(self, "package", "UpgradeCap");
         assert_eq!(bootstrap.len(), 1);
         assert_eq!(cap.len(), 1);
@@ -492,9 +493,9 @@ impl Harness {
             bcs::from_bytes(&self.contents(bootstrap[0]))?;
         let cap_contents = self.contents(cap[0]);
         let mut builder = ProgrammableTransactionBuilder::new();
-        let (bootstrap_arg, config_arg) = self.bootstrap_launchpad_route(&mut builder, package, publication, quote, witness)?;
+        let bootstrap_arg = builder.obj(self.owned(bootstrap[0]))?;
         let cap_arg = builder.obj(self.owned(cap[0]))?;
-        call(&mut builder, package, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg, config_arg]);
+        call(&mut builder, package, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
         let outcome = self.execute(builder.finish())?;
         outcome.assert_success();
         assert_eq!(outcome.effects.deleted().iter().map(|object| object.0).collect::<Vec<_>>(), vec![bootstrap_id]);
@@ -502,44 +503,96 @@ impl Harness {
         assert_eq!(outcome.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>(), cap);
         let version = outcome.created(self, "blast_fun", "PackageVersion");
         assert_eq!(version.len(), 1);
-        let admin = outcome.created(self, "package_admin", "PackageAdmin");
-        assert_eq!(admin.len(), 1);
-        self.shared(admin[0], false);
+        let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
+        assert_eq!(package_admin.len(), 1);
+        self.shared(package_admin[0], false);
         #[derive(serde::Deserialize)]
         enum UpgradeAction { Upgrade { _digest: Vec<u8> }, MakeImmutable }
         let (admin_id, sealed_publisher, sealed_caps, pending):
             (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, Option<(UpgradeAction, u64)>) =
-            bcs::from_bytes(&self.contents(admin[0])).context("decode fresh PackageAdmin")?;
+            bcs::from_bytes(&self.contents(package_admin[0])).context("decode fresh PackageAdmin")?;
         assert!(pending.is_none(), "fresh custody has no scheduled action");
-        assert_eq!(admin_id, admin[0]);
+        assert_eq!(admin_id, package_admin[0]);
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
         assert_eq!(bcs::to_bytes(&sealed_caps[0])?, cap_contents);
-        let (version_id, paused, active_generation): (ObjectID, u8, u64) =
+        let (version_id, paused, active_generation, delay): (ObjectID, u8, u64, (u64, Option<(u64, u64)>)) =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
         assert_eq!((version_id, paused, active_generation), (version[0], 7, generation));
 
-        Ok(version[0])
-    }
-
-    /// Composes initial Quote and reviewed adapter admission using only the owned Bootstrap.
-    pub fn bootstrap_launchpad_route(&self, b: &mut ProgrammableTransactionBuilder, package: ObjectID,
-        publication: &Outcome, quote: sui_types::TypeTag, witness: sui_types::TypeTag,
-    ) -> Result<(Argument, Argument)> {
-        let bootstrap = publication.created(self, "blast_fun", "Bootstrap")[0];
-        let config = publication.created(self, "launch_config", "LaunchConfig")[0];
-        let bootstrap = b.obj(self.owned(bootstrap))?;
+        assert_eq!(delay, (0, None));
+        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "UpgradeAdmin"])?;
+        let mut b = ProgrammableTransactionBuilder::new();
         let config = b.obj(self.shared(config, true))?;
+        let version_arg = b.obj(self.shared(version[0], false))?;
+        let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let listing = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "ListingAdmin")?;
+        let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "AdapterAdmin")?;
         let allowed = b.pure(true)?;
-        call(b, package, "launch_config", "bootstrap_quote", vec![quote], vec![config, bootstrap, allowed]);
-        call(b, package, "launch_config", "bootstrap_migration_witness", vec![witness], vec![config, bootstrap, allowed]);
-        Ok((bootstrap, config))
+        call(&mut b, package, "launch_config", "set_quote_allowed", vec![quote], vec![config, version_arg, listing, allowed]);
+        call(&mut b, package, "launch_config", "schedule_migration_witness", vec![witness.clone()], vec![config, version_arg, adapter, clock]);
+        call(&mut b, package, "launch_config", "apply_migration_witness", vec![witness], vec![config, version_arg, clock]);
+        self.execute(b.finish())?.assert_success();
+        self.configure_admin_delay(package, "blast_fun", admin, admin_publication, config_cap, version[0], 172_800_000)?;
+        Ok((version[0], package_admin[0]))
     }
 
-    /// Migrators shares no operational version until its one-time Bootstrap enters custody.
+    /// Creates a real ACL administrator for initial zero-delay configuration.
+    pub fn configuration_admin(&mut self, admin: ObjectID, publication: &Outcome, package: ObjectID,
+        domain: &str, roles: &[&str],
+    ) -> Result<ObjectID> {
+        let acl = publication.created(self, "blast_acl", "ACL")[0];
+        let root = publication.created(self, "blast_acl", "SuperAdminCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, true))?;
+        let root_arg = b.obj(self.owned(root))?;
+        let recipient = b.pure(self.sender)?;
+        call(&mut b, admin, "blast_acl", "grant_admin", vec![], vec![acl_arg, root_arg, recipient]);
+        let granted = self.impersonate_cap_owner(root, b.finish())?;
+        granted.assert_success();
+        let cap = granted.created(self, "blast_acl", "AdminCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, true))?;
+        let root_arg = b.obj(self.owned(root))?;
+        let cap_id = b.pure(cap)?;
+        for role in roles {
+            let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::{role}"))?;
+            call(&mut b, admin, "blast_acl", "grant_role", vec![role], vec![acl_arg, root_arg, cap_id]);
+        }
+        self.impersonate_cap_owner(root, b.finish())?.assert_success();
+        Ok(cap)
+    }
+
+    pub fn configuration_witness(&self, b: &mut ProgrammableTransactionBuilder, admin: ObjectID,
+        publication: &Outcome, cap: ObjectID, package: ObjectID, domain: &str, role: &str,
+    ) -> Result<Argument> {
+        let acl = publication.created(self, "blast_acl", "ACL")[0];
+        let acl_arg = b.obj(self.shared(acl, false))?;
+        let cap_arg = b.obj(self.owned(cap))?;
+        let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::{role}"))?;
+        Ok(call(b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, cap_arg]))
+    }
+
+    /// Schedules and applies through real ACL authority; only usable at the old policy's readiness.
+    pub fn configure_admin_delay(&mut self, package: ObjectID, marker: &str, admin: ObjectID,
+        publication: &Outcome, cap: ObjectID, version: ObjectID, delay_ms: u64,
+    ) -> Result<()> {
+        let domain = if marker == "blast_presale_package" { "blast_presale_domain" } else { "blast_fun_domain" };
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.configuration_witness(&mut b, admin, publication, cap, package, domain, "UpgradeAdmin")?;
+        let version_arg = b.obj(self.shared(version, true))?;
+        let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let delay = b.pure(delay_ms)?;
+        call(&mut b, package, marker, "schedule_admin_delay", vec![], vec![version_arg, witness, delay, clock]);
+        call(&mut b, package, marker, "apply_admin_delay", vec![], vec![version_arg, clock]);
+        self.execute(b.finish())?.assert_success();
+        Ok(())
+    }
+
+    /// Migrators shares no operational version until its one-time Publication enters custody.
     pub fn wrap_migrators(&mut self, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
         assert!(publication.created(self, "blast_fun_migrators", "PackageVersion").is_empty());
-        let bootstrap = publication.created(self, "blast_fun_migrators", "Bootstrap")[0];
+        let bootstrap = publication.created(self, "blast_fun_migrators", "Publication")[0];
         let cap = publication.created(self, "package", "UpgradeCap")[0];
         let mut b = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = b.obj(self.owned(bootstrap))?;

@@ -36,26 +36,6 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Sets initial payout policy immediately; consuming Bootstrap permanently closes this path.
-public fun bootstrap(
-    self: &mut FeePolicy,
-    _: &Bootstrap,
-    destination: address,
-    raise_bps: Bps,
-    token_bps: Bps,
-    lp_fee_meme_bps: Bps,
-    lp_fee_quote_bps: Bps,
-) {
-    assert!(destination != @0x0, EInvalidDestination);
-    let fees = protocol_fees(raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps);
-
-    self.destination.set_now(destination);
-    self.fees.set_now(fees);
-
-    event::emit(DestinationChanged { destination });
-    event::emit(FeesChanged { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value() });
-}
-
 /// Sets the rates presales created afterward snapshot; existing presales keep theirs.
 /// Schedules fees after the full administrative delay.
 public fun schedule_fees(
@@ -72,7 +52,7 @@ public fun schedule_fees(
 
     let value = protocol_fees(raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps);
     assert!(value != self.fees.value(), EFeesUnchanged);
-    let ready_at_ms = self.fees.schedule(value, clock);
+    let ready_at_ms = self.fees.schedule(value, package_version.admin_delay_ms(), clock);
     sui::event::emit(FeesScheduled { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value(), ready_at_ms });
 }
 
@@ -119,7 +99,7 @@ public fun schedule_destination(
     assert!(destination != @0x0, EInvalidDestination);
     let value = destination;
     assert!(value != self.destination.value(), EInvalidDestination);
-    let ready_at_ms = self.destination.schedule(value, clock);
+    let ready_at_ms = self.destination.schedule(value, package_version.admin_delay_ms(), clock);
     sui::event::emit(DestinationScheduled { destination: destination, ready_at_ms });
 }
 
@@ -355,6 +335,6 @@ use sui::{
 
 use blast_presale::{
     blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin},
-    blast_presale_package::{Bootstrap, PackageVersion},
+    blast_presale_package::{PackageVersion},
     bps::{Self, Bps}
 };

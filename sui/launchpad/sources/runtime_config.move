@@ -25,27 +25,6 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Sets initial live policy immediately while the publication Bootstrap still exists.
-/// An empty signer deliberately disables account claims; finalization destroys this authority.
-public fun bootstrap(
-    self: &mut RuntimeConfig,
-    _: &Bootstrap,
-    signer_public_key: vector<u8>,
-    protocol_fee_share_bps: Bps,
-    treasury: address,
-) {
-    assert!(signer_public_key.is_empty() || signer_public_key.length() == constants::ed25519_public_key_length!(), blast_fun::errors::invalid_creator_claim_public_key!());
-    assert!(treasury != @0x0, blast_fun::errors::invalid_destination!());
-
-    self.creator_claim_signer_public_key.set_now(signer_public_key);
-    self.protocol_fee_share_bps.set_now(protocol_fee_share_bps);
-    self.treasury.set_now(treasury);
-
-    events::creator_claim_signer_set(signer_public_key);
-    events::protocol_fee_share_changed(protocol_fee_share_bps.value());
-    events::treasury_changed(treasury);
-}
-
 /// Replaces the account-claim signer; an empty key revokes it.
 /// Schedules creator claim signer after the full administrative delay.
 public fun schedule_creator_claim_signer(
@@ -59,7 +38,7 @@ public fun schedule_creator_claim_signer(
     assert!(!signer_public_key.is_empty() && signer_public_key.length() == constants::ed25519_public_key_length!(), blast_fun::errors::invalid_creator_claim_public_key!());
     let value = signer_public_key;
     assert!(value != self.creator_claim_signer_public_key.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.creator_claim_signer_public_key.schedule(value, clock);
+    let ready_at_ms = self.creator_claim_signer_public_key.schedule(value, package_version.admin_delay_ms(), clock);
     events::creator_claim_signer_scheduled(signer_public_key, ready_at_ms);
 }
 
@@ -99,7 +78,7 @@ public fun schedule_protocol_fee_share(
 
     let value = protocol_fee_share_bps;
     assert!(value != self.protocol_fee_share_bps.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.protocol_fee_share_bps.schedule(value, clock);
+    let ready_at_ms = self.protocol_fee_share_bps.schedule(value, package_version.admin_delay_ms(), clock);
     events::protocol_fee_share_scheduled(protocol_fee_share_bps.value(), ready_at_ms);
 }
 
@@ -140,7 +119,7 @@ public fun schedule_treasury(
     assert!(treasury != @0x0, blast_fun::errors::invalid_destination!());
     let value = treasury;
     assert!(value != self.treasury.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.treasury.schedule(value, clock);
+    let ready_at_ms = self.treasury.schedule(value, package_version.admin_delay_ms(), clock);
     events::treasury_scheduled(treasury, ready_at_ms);
 }
 
@@ -302,5 +281,5 @@ use blast_fun::{
     bps::{Self, Bps},
     constants,
     events,
-    blast_fun::{Bootstrap, PackageVersion},
+    blast_fun::{PackageVersion},
 };

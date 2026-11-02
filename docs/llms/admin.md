@@ -43,14 +43,13 @@ Same-named roles in different packages are different types.
 
 | Package | Declared in | Roles |
 | --- | --- | --- |
-| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::BuybackAdmin` (swap a vault's burn Quote for Meme to burn), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches, claim migration residuals), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (migration adapters), `blast_fun_domain::ClaimSignerAdmin` (the key that signs account claims), `blast_fun_domain::RewardsAdmin` (publish holder-reward rounds), `blast_fun_domain::PauseAdmin`, `blast_fun_domain::UnpauseAdmin`, `blast_fun_domain::CancelAdmin` |
-| `blast_fun_migrators` | declares none | uses the launchpad's `UpgradeAdmin` (its own upgrades), `FeeAdmin` (LP-fee shares), `TreasuryAdmin` (where Blast's LP fees go, migration residuals), `BuybackAdmin` (buyback and burn), `RewardsAdmin` (holder-reward rounds), and `CancelAdmin` (pending administration) |
-| `blast_presale` | `blast_presale::package_admin::PackageAdmin` | `blast_presale::package_admin::wrap`, `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance`, delayed `blast_presale::package_admin::make_immutable` |
+| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (govern administrative delay, authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::BuybackAdmin` (swap a vault's burn Quote for Meme to burn), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches, claim migration residuals), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (migration adapters), `blast_fun_domain::ClaimSignerAdmin` (the key that signs account claims), `blast_fun_domain::RewardsAdmin` (publish holder-reward rounds), `blast_fun_domain::PauseAdmin`, `blast_fun_domain::UnpauseAdmin`, `blast_fun_domain::CancelAdmin` |
+| `blast_fun_migrators` | declares none | uses the launchpad's `UpgradeAdmin` (its own delay policy and upgrades), `FeeAdmin` (LP-fee shares), `TreasuryAdmin` (where Blast's LP fees go, migration residuals), `BuybackAdmin` (buyback and burn), `RewardsAdmin` (holder-reward rounds), and `CancelAdmin` (pending administration) |
 | `blast_sui` | `blast_sui_domain` | `blast_sui_domain::UpgradeAdmin` (attach package capabilities; authorize, commit, restrict, or seal upgrades), `blast_sui_domain::FeeAdmin` (blastSUI redemption fee) |
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
 | `blast_boosts_aftermath` | declares none | uses the four Boosts core roles |
 | `blast_partners` | `blast_partners` | `blast_partners::blast_partners::PartnerAdmin` (register partners, schedule shares and caps) |
-| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (where Blast's presale fees go), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (publish holder-reward rounds), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
+| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (govern administrative delay, schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (where Blast's presale fees go), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (publish holder-reward rounds), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
 
 ### Lifecycle
 
@@ -120,7 +119,7 @@ what each transaction leaves on chain.
 #### Upgrade a consumer package (Blast admin)
 
 Launchpad, presale and migrators first require `schedule_upgrade` with the exact
-digest and `Clock`, followed by 48 hours of notice. A `CancelAdmin` can cancel
+digest and `Clock`, followed by that package's applied administrative delay. A `CancelAdmin` can cancel
 even a ready action. Their `authorize_upgrade` also takes `Clock` and consumes
 the matching ready action. Immutability follows the same scheduling rule.
 
@@ -197,9 +196,12 @@ that takes it and must call the latest package version.
 Neither can leave the custody. The consumer's shared `PackageAdmin` wraps it and
 gates authorization behind its upgrade role. Boosts receipt commit instead carries
 the native authorized receipt. Wrap in launchpad, presale and migrators consumes their
-publication's Bootstrap and matching fresh UpgradeCap; launchpad and presale
-also validate initial policy admission. Bootstrap authorizes immediate initial
-configuration and is permanently consumed at wrap. Blast SUI's `new` and `share`
+unique Publication and matching fresh UpgradeCap. Publication carries
+provenance only and is permanently consumed at wrap. Ordinary ACL operations
+configure policies using the new version's initial zero delay. Each consuming
+package stores its own self-timelocked delay policy; see ADR 0134.
+
+Blast SUI's `new` and `share`
 use its own Publisher and UpgradeCap directly:
 
 | Package | Custody object | Transitions exposed |
@@ -221,6 +223,20 @@ exposes it). After `make_immutable`, every transition that needs the
 The packages
 `blast_admin`, `blast_partners`, and `blast_boosts_core` are published immutable
 and have no custody at all.
+
+### Explicit-application delayed values
+
+`delayed::schedule` and `delayed::new_pending` accept an explicit `delay_ms` and
+Clock. Zero is valid; deadlines are absolute snapshots and timestamp overflow
+aborts with `EInvalidDelay`. `Delayed` reads do not need Clock, and changes only
+become active through explicit application. Rescheduling replaces a proposal.
+`delayed::schedule_delay` and `delayed::apply_delay` govern a `Delayed<u64>`
+policy using its old applied delay, reject no-op proposals and ensure the
+resulting delay remains representable at scheduling and actual application.
+The launchpad, presale and migrators keep that policy in their canonical version;
+operational entry points read it internally rather than accepting caller-chosen
+notice. The ACL root and partner registry retain their independent seven-day
+timelocks.
 
 ### Time rules
 

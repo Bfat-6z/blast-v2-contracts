@@ -265,7 +265,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     upgraded.assert_success();
     w.blast = upgraded.effects.created().into_iter()
         .map(|(reference, _)| reference.0).find(|id| w.h.object(*id).is_package()).unwrap();
-    let (_, _, generation): (ObjectID, u8, u64) = bcs::from_bytes(&w.h.contents(w.version))?;
+    let (_, _, generation, _): (ObjectID, u8, u64, (u64, Option<(u64, u64)>)) = bcs::from_bytes(&w.h.contents(w.version))?;
     assert_eq!(generation, 2);
 
     // A fresh adapter links to the active dependency while preserving core type origins.
@@ -750,13 +750,10 @@ fn world(work: &str) -> Result<World> {
     let linked = [core[0], core[1], core[2], (launchpad_dir.as_path(), blast)];
     let adapter_code = build(&fixture.join("adapter"), &linked, &work)?;
     let (adapter, _) = h.publish(adapter_code.clone())?;
-    let version = h.wrap_launchpad(blast, &published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
+    let (version, custody) = h.wrap_launchpad(blast, &published, admin, &admin_published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
     let project = build(&fixture.join("project"), &linked, &work)?;
-    let mut w = World { h, blast, adapter, version, runtime, config, project, core_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody: ObjectID::ZERO };
+    let mut w = World { h, blast, adapter, version, runtime, config, project, core_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody };
 
-    w.custody = w.h.sim.store().get_transaction_effects(&w.h.object(version).previous_transaction).unwrap()
-        .created().into_iter().map(|(reference, _)| reference.0)
-        .find(|id| w.h.is_type(*id, "package_admin", "PackageAdmin")).unwrap();
     w.h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
 
     // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap and each role the

@@ -10,7 +10,7 @@ module blast_fun::blast_fun_domain;
 
 // === Public Types ===
 
-/// Authorizes and commits package upgrades, and makes a package immutable.
+/// Governs the administrative delay, authorizes upgrades and terminal immutability.
 public struct UpgradeAdmin()
 
 /// Revokes and reissues a launch's creator capabilities.

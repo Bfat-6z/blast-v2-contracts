@@ -31,16 +31,16 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     assert!(publication.created(&h, "blast_fun", "PackageVersion").is_empty());
     assert!(publication.created(&h, "package_admin", "PackageAdmin").is_empty());
     assert!(publication.created(&h, "package", "Publisher").is_empty());
-    let bootstrap = publication.created(&h, "blast_fun", "Bootstrap")[0];
+    let bootstrap = publication.created(&h, "blast_fun", "Publication")[0];
     let cap = publication.created(&h, "package", "UpgradeCap")[0];
     assert_eq!(bcs::from_bytes::<UpgradeCap>(&h.contents(cap))?.version, 1);
     let config = publication.created(&h, "launch_config", "LaunchConfig")[0];
     let foreign_cap = admin_publication.created(&h, "package", "UpgradeCap")[0];
 
     let mut b = ProgrammableTransactionBuilder::new();
-    let (bootstrap_arg, config_arg) = h.bootstrap_launchpad_route(&mut b, blast, &publication, parse_sui_type_tag("0x2::sui::SUI")?, parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)?;
+    let bootstrap_arg = b.obj(h.owned(bootstrap))?;
     let cap_arg = b.obj(h.owned(foreign_cap))?;
-    call(&mut b, blast, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg, config_arg]);
+    call(&mut b, blast, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: admin, module: "upgrade_custody", code: 15 },
@@ -48,36 +48,20 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
         &[h.sender],
     )?;
 
-    // Every initial policy is usable at publication time, before any Clock advance.
+    // Initial routes use real ACL roles at zero delay; enabling 48h needs no Clock advance.
     let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
-    let mut b = ProgrammableTransactionBuilder::new();
-    let bootstrap_arg = b.obj(h.owned(bootstrap))?;
-    let runtime = publication.created(&h, "runtime_config", "RuntimeConfig")[0];
-    let config_arg = b.obj(h.shared(config, true))?;
-    let runtime_arg = b.obj(h.shared(runtime, true))?;
-    let mut rates = Vec::new();
-    for value in [100u64, 200, 300, 400, 500] {
-        let value = b.pure(value)?;
-        rates.push(call(&mut b, blast, "bps", "new", vec![], vec![value]));
-    }
-    let creation_fee = b.pure(123u64)?;
-    call(&mut b, blast, "launch_config", "bootstrap", vec![],
-        vec![config_arg, bootstrap_arg, rates[0], rates[1], rates[2], rates[3], creation_fee]);
-    let signer = b.pure(vec![0x11u8; 32])?;
-    let treasury = b.pure(h.sender)?;
-    call(&mut b, blast, "runtime_config", "bootstrap", vec![],
-        vec![runtime_arg, bootstrap_arg, signer, rates[4], treasury]);
-    h.execute(b.finish())?.assert_success();
-    let version = h.wrap_launchpad(blast, &publication, parse_sui_type_tag("0x2::sui::SUI")?, parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)?;
+    let (version, _) = h.wrap_launchpad(blast, &publication, admin, &admin_publication, parse_sui_type_tag("0x2::sui::SUI")?, parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)?;
     h.unpause(blast, "blast_fun", admin, &admin_publication, version, 7)?;
     h.shared(version, false);
     assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
     // Simulacrum resolves historical owned inputs; test_scenario covers repeated intake.
     assert!(h.sim.store().get_object(&bootstrap).is_none());
 
+    assert_delay_changes_use_the_old_notice(&mut h, blast, admin, &admin_publication, version, config)?;
+
     // A native upgrade is possible before wrapping, but its cap can never activate this lineage.
     let (unwrapped, publication) = h.publish(code.clone())?;
-    let bootstrap = publication.created(&h, "blast_fun", "Bootstrap")[0];
+    let bootstrap = publication.created(&h, "blast_fun", "Publication")[0];
     let cap = publication.created(&h, "package", "UpgradeCap")[0];
     let config = publication.created(&h, "launch_config", "LaunchConfig")[0];
     let digest = MovePackage::compute_digest_for_modules_and_deps(&code.modules, &code.dependencies, true);
@@ -93,11 +77,11 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     upgraded.assert_success();
     assert_eq!(bcs::from_bytes::<UpgradeCap>(&h.contents(cap))?.version, 2);
     assert!(upgraded.created(&h, "blast_fun", "PackageVersion").is_empty());
-    assert!(upgraded.created(&h, "blast_fun", "Bootstrap").is_empty());
+    assert!(upgraded.created(&h, "blast_fun", "Publication").is_empty());
     let mut b = ProgrammableTransactionBuilder::new();
-    let (bootstrap_arg, config_arg) = h.bootstrap_launchpad_route(&mut b, unwrapped, &publication, parse_sui_type_tag("0x2::sui::SUI")?, parse_sui_type_tag(&format!("{unwrapped}::blast_fun::BLAST_FUN"))?)?;
+    let bootstrap_arg = b.obj(h.owned(bootstrap))?;
     let cap_arg = b.obj(h.owned(cap))?;
-    call(&mut b, unwrapped, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg, config_arg]);
+    call(&mut b, unwrapped, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: admin, module: "upgrade_custody", code: 15 },
@@ -105,6 +89,73 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
         &[h.sender],
     )?;
 
+    Ok(())
+}
+
+/// A real PTB applies a ready delay and then schedules using the newly applied policy.
+fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, admin: ObjectID,
+    publication: &Outcome, version: ObjectID, config: ObjectID,
+) -> Result<()> {
+    let cap = h.configuration_admin(admin, publication, blast, "blast_fun_domain", &["UpgradeAdmin", "FeeAdmin", "CancelAdmin"])?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    let upgrade = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "UpgradeAdmin")?;
+    let version_arg = b.obj(h.shared(version, true))?;
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let delay = b.pure(25u64)?;
+    call(&mut b, blast, "blast_fun", "schedule_admin_delay", vec![], vec![version_arg, upgrade, delay, clock]);
+    h.execute(b.finish())?.assert_success();
+    let decode = |h: &Harness| -> Result<(u64, Option<(u64, u64)>)> {
+        let (_, _, _, delay): (ObjectID, u8, u64, (u64, Option<(u64, u64)>)) = bcs::from_bytes(&h.contents(version))?;
+        Ok(delay)
+    };
+    let (_, scheduled_at_ms): (ObjectID, u64) = bcs::from_bytes(&h.contents(sui_types::SUI_CLOCK_OBJECT_ID))?;
+    assert_eq!(decode(h)?, (172_800_000, Some((25, scheduled_at_ms + 172_800_000))));
+    h.sim.advance_clock(std::time::Duration::from_millis(172_799_999));
+    let mut b = ProgrammableTransactionBuilder::new();
+    let version_arg = b.obj(h.shared(version, true))?;
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, blast, "blast_fun", "apply_admin_delay", vec![], vec![version_arg, clock]);
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 0 }, &[version], &[])?;
+    h.sim.advance_clock(std::time::Duration::from_millis(1));
+
+    let mut b = ProgrammableTransactionBuilder::new();
+    let version_arg = b.obj(h.shared(version, true))?;
+    let config_arg = b.obj(h.shared(config, true))?;
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let fee = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "FeeAdmin")?;
+    call(&mut b, blast, "blast_fun", "apply_admin_delay", vec![], vec![version_arg, clock]);
+    let value = b.pure(123u64)?;
+    call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, clock]);
+    call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 0 }, &[version, config, cap], &[])?;
+    assert_eq!(decode(h)?.0, 172_800_000);
+
+    let mut b = ProgrammableTransactionBuilder::new();
+    let version_arg = b.obj(h.shared(version, true))?;
+    let config_arg = b.obj(h.shared(config, true))?;
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let fee = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "FeeAdmin")?;
+    call(&mut b, blast, "blast_fun", "apply_admin_delay", vec![], vec![version_arg, clock]);
+    let value = b.pure(123u64)?;
+    call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, clock]);
+    let applied = h.execute(b.finish())?;
+    applied.assert_success();
+    assert_eq!(decode(h)?, (25, None));
+    let scheduled = applied.events.iter().find(|event| event.type_.type_params.iter().any(|tag| tag.to_canonical_string(true).ends_with("::events::CreationFeeScheduled"))).expect("scheduled creation fee");
+    assert_eq!(bcs::from_bytes::<(u64, u64)>(&scheduled.contents)?, (123, scheduled_at_ms + 172_800_000 + 25));
+    h.sim.advance_clock(std::time::Duration::from_millis(25));
+    let mut b = ProgrammableTransactionBuilder::new();
+    let version_arg = b.obj(h.shared(version, false))?;
+    let config_arg = b.obj(h.shared(config, true))?;
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
+    h.execute(b.finish())?.assert_success();
+
+    // A cap without UpgradeAdmin cannot acquire the witness needed to alter the delay.
+    let forbidden = h.configuration_admin(admin, publication, blast, "blast_fun_domain", &["FeeAdmin"])?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    h.configuration_witness(&mut b, admin, publication, forbidden, blast, "blast_fun_domain", "UpgradeAdmin")?;
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "blast_acl", code: 5 }, &[version, forbidden], &[])?;
     Ok(())
 }
 

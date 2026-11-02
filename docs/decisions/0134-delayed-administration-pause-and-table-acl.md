@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-10-31
+- Amended: 2026-11-02 — owner requested a configurable, self-timelocked delay and ordinary zero-delay setup
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability), [0007](0007-acl-pause-and-versioning.md) (pause),
   [0032](0032-admin-authorized-upgrade-cap-custody.md) and
   [0034](0034-remove-premature-governance-cutover.md) (upgrades),
@@ -47,41 +48,31 @@ publish.
 
 ### One delay type
 
-`blast_admin` gains a module that every package uses for delayed values. The
-delay is a constant in the module, so no caller can shorten it.
+`blast_admin::delayed` owns applied values and absolute pending deadlines.
+`schedule` and `new_pending` take an explicit `delay_ms` and Clock; zero is valid.
+Reads need no Clock. Rescheduling replaces the pending proposal and snapshots a
+new deadline. Applying before that deadline aborts. Scheduling rejects timestamp
+overflow; cancel removes the proposal. This explicit-application primitive does
+not change the independent seven-day ACL root and partner timelocks.
 
-```move
-module blast_admin::delayed;
+Each consuming package's canonical PackageVersion owns `admin_delay: Delayed<u64>`,
+initially zero. All governed schedules read `admin_delay_ms()` internally, including
+upgrades, immutability, creator caps and policy administration. Callers cannot
+supply a shorter operational notice. Existing pending deadlines never change
+when the applied policy changes.
 
-const DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
+The marker's `schedule_admin_delay` requires UpgradeAdmin and schedules the new
+value under the **old applied delay**; `apply_admin_delay` is permissionless once
+ready; `cancel_admin_delay` requires CancelAdmin. All enforce the current version.
+Same-value proposals abort. Zero is also valid later, but a reduction to zero
+waits the old delay. No arbitrary minimum or maximum is imposed; the proposal
+must fit a u64 deadline both when scheduled and at actual application. Changes
+emit AdminDelayScheduled, AdminDelayChanged and AdminDelayCancelled events.
 
-/// A value whose changes wait DELAY_MS. No `drop`, so the storing
-/// module cannot overwrite the field; it changes only through this module.
-public struct Delayed<T: copy + drop + store> has store {
-    value: T,
-    pending: Option<Pending<T>>,
-}
-
-/// One scheduled value or action.
-public struct Pending<T: copy + drop + store> has copy, drop, store {
-    value: T,
-    ready_at_ms: u64,
-}
-
-public fun new<T>(value: T): Delayed<T>;
-public fun value<T>(self: &Delayed<T>): T;                          // no Clock
-public fun pending<T>(self: &Delayed<T>): Option<Pending<T>>;
-public fun schedule<T>(self: &mut Delayed<T>, value: T, clock: &Clock): u64; // ready_at_ms
-public fun apply<T>(self: &mut Delayed<T>, clock: &Clock): T;       // aborts before ready_at_ms
-public fun cancel<T>(self: &mut Delayed<T>): T;                     // the cancelled value
-public fun set_now<T>(self: &mut Delayed<T>, value: T);             // bootstrap or authority-reducing changes
-
-public fun new_pending<T>(value: T, clock: &Clock): Pending<T>;
-public fun take_ready<T>(self: Pending<T>, clock: &Clock): T;       // aborts before ready_at_ms
-```
-
-The applied value is a plain read, so `buy`, `sell` and claims need no
-`Clock`. Scheduling again replaces the pending value and restarts the delay.
+For example, a 48-hour policy reduced to zero still waits 48 hours. A fee proposal
+already scheduled under 48 hours keeps its original deadline after that reduction.
+The owner approved this design to remove privileged bootstrap setters while
+retaining a practical initial configuration path.
 
 ### Delayed setters
 
@@ -216,7 +207,7 @@ public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme
 // the same three for the metadata cap
 ```
 
-The current cap holder can still claim curve fees during the 48 hours.
+The current cap holder can still claim curve fees during the notice period.
 
 ### Partners
 
@@ -230,8 +221,8 @@ the package's existing 7-day partner delay.
 `grant_role` and `AdminCap` transfers are not delayed (owner, 2026-10-31).
 Every change a role can make to fees, destinations, creator authority,
 adapters or code is delayed where it is made, so a new `UpgradeAdmin` still
-waits 48 hours from scheduling a digest. That covers R2's `UpgradeAdmin`
-grants.
+waits the applied administrative delay from scheduling a digest. A 48-hour
+rollout policy meets the requested R2 notice; zero does not provide that notice.
 
 ### Pause
 
@@ -240,6 +231,7 @@ public struct PackageVersion has key {   // launchpad; presale is the same with 
     id: UID,
     generation: OperationalVersion<BLAST_FUN>,
     paused: u8,
+    admin_delay: Delayed<u64>,
 }
 
 const CREATE: u8 = 1;
@@ -300,28 +292,25 @@ blast_lp_fee_destination = "0x…" // LpFeePolicy.destination
 ```
 
 These nonzero destinations are safe publication defaults. Launchpad, presale
-and migrators each retain their canonical Publisher and initial operational
-generation in the publication's owned Bootstrap. Before finalization its holder
-may set the initial destination and fees immediately. Launchpad also accepts its
-claim signer, creation fee and migration allocation; launchpad and presale admit
-their initial Quotes and reviewed migration witnesses. Existing applied-value
-events describe these values. Zero fees and an empty launchpad claim signer are
-valid defaults; normal bounds and nonzero destinations still apply.
+and migrators retain their Publisher and initial generation in a unique owned
+Publication. It authorizes only validated wrapping of the matching never-upgraded
+UpgradeCap. No policy setters accept it. Custody wrap consumes Publication
+permanently and shares PackageVersion with administrative delay zero. Launchpad
+and presale start fully paused; migrators relies on launchpad's migration pause.
 
-Initial policy setters borrow Bootstrap and do not take a PackageVersion or a
-Clock. There is no operational version until custody wrap validates and seals
-the fresh matching UpgradeCap and consumes Bootstrap by value. Launchpad and
-presale wrap require nonempty Quote and adapter allowlists, then share their
-PackageVersion with all operations paused. Migrators wraps the same linear
-bootstrap authority and shares its generation; it has no independent pause
-switch. Launchpad's migration flag controls entry into its migrators.
+The multisig grants ordinary ACL roles and configures policy using schedule/apply
+and Clock. With zero delay, scheduling and application can share a PTB. Quote
+admission uses the ordinary immediate ListingAdmin setter. Launch and sale
+creation continue checking actual quote and adapter admission; wrap no longer
+requires preconfigured policy. Normal rate bounds and nonzero destinations apply.
 
-The multisig grants UnpauseAdmin through the shared ACL and releases launchpad
-and presale immediately, without a Clock or a 48-hour wait. Initial setup may
-span transactions before wrap. After wrap the Bootstrap is deleted, has no
-public constructor, and can never be restored through pausing or upgrading:
-publication init does not rerun on upgrade. Every later governed mutation uses
-its normal delay, even while paused. There is no reusable bootstrap mode.
+Apply or cancel all outstanding zero-delay setup proposals, then schedule and
+apply the chosen administrative delay (48 hours for the R2 rollout). Enabling it
+waits the old zero delay. Read back configuration and policy before immediate
+UnpauseAdmin release. Existing zero-delay proposals remain ready after enabling
+a positive delay; raising the policy is not a substitute for settling them.
+Setup can span transactions. Pause cycles and upgrades cannot reset delay or
+recreate Publication. There is no privileged bootstrap setter or reusable bypass.
 
 ### Never delayed
 
@@ -342,11 +331,13 @@ quote and decimals allowlists; buybacks (their Meme is burned); reward rounds.
 
 ## Consequences
 
-- After one-time bootstrap finalization, no governed change to fees, destinations,
-  creator authority, adapter admission or code takes effect within 48 hours of
-  being publicly scheduled.
-- Emergency fee or destination changes are gone; the pause is the emergency
-  tool. A replaced claim signer stops account claims for 48 hours.
+- Governed changes snapshot the applied package delay. Operators must enable and
+  verify the chosen notice before release; the initial zero policy provides no notice.
+- Later delay reductions wait the old policy, including reductions to zero.
+  Existing proposals retain their deadlines. Emergency policy changes follow
+  the same notice; pause and cancellation remain immediate.
+
+
 - Pausing `TRADING` stops both buys and sells until unpause; claims and refunds stay open.
 - The indexer reads `*Scheduled`, `*Cancelled`, `Paused` and `Unpaused`. The
   admin console reads the ACL's table entries instead of an inline map.
@@ -371,6 +362,9 @@ Nothing opens before the rebind date; if a date slips, so does that gate.
 
 - `delayed`: apply before `ready_at_ms` aborts; reschedule restarts the delay;
   cancel clears it; `value` never changes before apply.
+- Delay policy: production zero initial state, old-delay reductions and increases,
+  zero and positive pending snapshots, replacement, cancellation, no-op and overflow,
+  stale generations, real-ACL role rejection and same-PTB rollback.
 - Every delayed setter: schedule, early apply, apply, cancel, old package
   generation.
 - `authorize_upgrade` and `make_immutable` abort without a ready matching

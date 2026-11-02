@@ -22,7 +22,7 @@ public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVe
     package_version.assert_current();
     assert!(digest.length() == 32, blast_fun::errors::invalid_digest!());
     let action = events::upgrade_action(digest);
-    let pending = delayed::new_pending(action, clock);
+    let pending = delayed::new_pending(action, package_version.admin_delay_ms(), clock);
     self.pending = option::some(pending);
     events::upgrade_action_scheduled(action, pending.ready_at_ms());
 }
@@ -31,7 +31,7 @@ public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVe
 public fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
     package_version.assert_current();
     let action = events::immutability_action();
-    let pending = delayed::new_pending(action, clock);
+    let pending = delayed::new_pending(action, package_version.admin_delay_ms(), clock);
     self.pending = option::some(pending);
     events::upgrade_action_scheduled(action, pending.ready_at_ms());
 }
@@ -44,11 +44,10 @@ public fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &Pack
     events::upgrade_action_cancelled(action);
 }
 
-/// Validates initial admission, consumes Bootstrap forever, and seals native custody.
+/// Consumes the unique publication proof and seals native custody before activation.
 /// The initial operational generation starts fully paused; UnpauseAdmin releases it immediately.
-public fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, config: &LaunchConfig, ctx: &mut TxContext) {
-    config.assert_bootstrap_ready();
-    let (publisher, generation) = bootstrap.destroy();
+public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
+    let (publisher, generation) = publication.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap);
 
@@ -187,8 +186,7 @@ use blast_admin::{
 
 use blast_fun::{
     events::{Self, UpgradeAction},
-    launch_config::LaunchConfig,
-    blast_fun::{BLAST_FUN, Bootstrap, PackageVersion},
+    blast_fun::{BLAST_FUN, Publication, PackageVersion},
     blast_fun_domain::{CancelAdmin, UpgradeAdmin},
 };
 

@@ -819,7 +819,7 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Explicitly applied administrative changes with an immutable 48-hour notice.
+Explicitly applied changes whose notice period is supplied by the owning policy.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
 
@@ -854,8 +854,21 @@ public fun borrow<T: copy + drop + store>(self: &Delayed<T>): &T
 /// Returns the current schedule, if any.
 public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
 
-/// Replaces any pending change and restarts the entire delay.
-public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, clock: &Clock): u64
+/// Replaces any pending change and restarts the supplied policy delay.
+/// The enclosing module must derive `delay_ms` from its authorized policy.
+public fun schedule<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Schedules a notice-period change using its currently applied delay, including zero.
+/// The enclosing module must restrict this operation to its delay-policy authority.
+public fun schedule_delay(self: &mut Delayed<u64>, delay_ms: u64, clock: &Clock): u64
+
+/// Applies a ready delay only while it can still form a future execution threshold.
+public fun apply_delay(self: &mut Delayed<u64>, clock: &Clock): u64
 
 /// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
 public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
@@ -867,8 +880,9 @@ public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
 /// Clears a pending replacement so it cannot restore revoked authority.
 public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
 
-/// Starts the immutable administrative notice period.
-public fun new_pending<T: copy + drop + store>(value: T, clock: &Clock): Pending<T>
+/// Snapshots the owning policy's notice period into an immutable deadline.
+/// Later policy changes cannot shorten or extend this pending value's notice.
+public fun new_pending<T: copy + drop + store>(value: T, delay_ms: u64, clock: &Clock): Pending<T>
 
 /// Returns a scheduled value only at or after its threshold.
 public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
@@ -886,10 +900,8 @@ public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
 | --- | --- | --- |
 | `ENotReady` | 0 | The full administrative delay must pass before applying a change. |
 | `ENoPending` | 1 | There is no scheduled administrative change. |
-
-#### Constants
-
-- `DELAY_MS: u64 = 48 * 60 * 60 * 1_000`
+| `EInvalidDelay` | 2 | The notice period must fit a Unix millisecond execution threshold. |
+| `EDelayUnchanged` | 3 | A notice-period update must change the applied delay. |
 
 ### `blast_admin::operational_version`
 

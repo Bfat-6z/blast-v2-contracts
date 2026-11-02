@@ -2,11 +2,11 @@
 
 Use this runbook for a new `blast_presale` deployment. Record the normalized result
 in the format required by [`deployments/README.md`](../../../deployments/README.md).
-Publication alone cannot activate presales. The publisher receives an owned Bootstrap;
+Publication alone cannot activate presales. The publisher receives an owned Publication;
 only wrapping it with the matching fresh UpgradeCap shares PackageVersion.
-Initial policy setters borrow Bootstrap; routine mutations and sale creation
-require that shared version (ADR 0117, amended by ADR 0134). Wrap starts fully
-paused; immediate UnpauseAdmin release enables sales.
+Routine mutations and sale creation require the shared version (ADR 0117,
+amended by ADR 0134). Wrap starts fully paused with administrative delay zero;
+ordinary ACL operations configure policy before the chosen delay and release.
 
 1. Retire the previous generation's link when a release changes presale logic.
    The live package, recorded in
@@ -23,24 +23,18 @@ paused; immediate UnpauseAdmin release enables sales.
    and the partner registry (see the partners
    [README](../partners/README.md)). Run the complete `scripts/verify.sh` gate,
    then `scripts/publish.sh --preview`
-   and `--execute`, which publish to mainnet. The sender receives the raw `UpgradeCap` and owned `blast_presale_package::Bootstrap`; the
+   and `--execute`, which publish to mainnet. The sender receives the raw `UpgradeCap` and owned `blast_presale_package::Publication`; the
    package mints no administrator capability. Do not upgrade the package before custody finalization:
    `package_admin::wrap` accepts only a never-upgraded cap, and a cap upgraded
    first can never be sealed.
-3. Borrow Bootstrap for `fee_policy::bootstrap` to set the nonzero destination
-   and initial four fee rates. Admit every initial Quote and reviewed adapter
-   with `creation_policy::bootstrap_quote<Quote>` and
-   `creation_policy::bootstrap_migration_witness<Witness>`, passing `true`.
-   Zero fees are legal defaults. Both allowlists must be nonempty; validate
-   each adapter's dependency and venue evidence before admitting it. Initial
-   setup may span transactions and emits the normal applied-value events.
-   These calls need no Clock or ACL witness. Read back the chosen policy.
-   Then seal custody with `scripts/wrap_package_admin.sh <package-id> <bootstrap-id>
-   <upgrade-cap-id> <creation-policy-id> --preview` and `--execute`.
+3. Seal custody with `scripts/wrap_package_admin.sh <package-id> <publication-id>
+   <upgrade-cap-id> --preview` and `--execute`. Publication carries provenance
+   only and is permanently consumed. Configure policy after wrap through the ACL.
+
 4. From the effects of step 3, verify that `PackageAdmin` is shared and that the
    `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
    unchanged at compatible (`0`). Record the newly shared `PackageVersion` from
-   these finalization effects; its initial pause mask must be 11. Bootstrap
+   these finalization effects; its initial pause mask must be 11 and administrative delay must be zero. Publication
    must be deleted and never available again. From the publish effects, record the
    shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
 5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
@@ -52,15 +46,20 @@ paused; immediate UnpauseAdmin release enables sales.
    partners new sales may name; `ListingAdmin` allows Quote types;
    `AdapterAdmin` allows migrators, each of which receives the liquidity of the
    sales it creates; `RewardsAdmin` directs every vault's holder-reward share;
-   and `UpgradeAdmin` authorizes compatible upgrades with atomic generation cutover. Each call signs in
+   and `UpgradeAdmin` governs the administrative delay and compatible upgrades with atomic generation cutover. Each call signs in
    with `blast_acl::sign_in` in the same PTB. The root revokes a role or an
    administrator at once if a cap is lost or compromised.
-6. Grant `UnpauseAdmin`, sign in through the real ACL and call
-   `blast_presale_package::unpause` with the shared mutable PackageVersion and
-   selected bits (all = 11). This release is immediate and takes no Clock.
-   No presale can start before it. Later governed fee, destination and adapter
-   admission changes use their full 48-hour schedule/apply flow, even while paused.
-7. Before admitting Aftermath during bootstrap or through later administration,
+6. With the ordinary role witnesses and Clock, schedule/apply fee rates,
+   destination and reviewed adapter admission. Quote admission uses ListingAdmin.
+   At zero delay scheduling and application can share a PTB. Zero fees are valid;
+   verify destinations, rates and route admission. Apply or cancel every outstanding
+   zero-delay proposal. As UpgradeAdmin, schedule/apply the chosen administrative
+   delay (172,800,000 ms = 48 hours for the R2 rollout) and read it back. Then grant
+   UnpauseAdmin and clear the selected bits (all = 11). Unpause is immediate and
+   needs no Clock. Later changes snapshot the applied delay; delay-policy changes
+   themselves wait the old delay. Pausing never resets it.
+
+7. Before admitting Aftermath during initial configuration or later administration,
    run `sui/vendors/aftermath_dao_presale`'s `node scripts/check_mainnet_abi.mjs`,
    which pins the Aftermath AMM and DAO-fee revisions this package links to.
    Prove a mainnet dev-inspect of `aftermath::migrate` with a fresh LP coin for
@@ -94,8 +93,8 @@ with its amendments [0101](../../docs/decisions/0101-presale-protocol-fees.md),
 [0104](../../docs/decisions/0104-external-presale-migrators-and-vendor-packages.md),
 and [0106](../../docs/decisions/0106-presale-partners.md).
 
-For later governed upgrades, increment both compiled generation constants. Authorize
-the digest with UpgradeAdmin, execute the native upgrade, and call
+For later governed upgrades, increment both compiled generation constants. Schedule the digest with UpgradeAdmin, wait its snapshotted deadline, authorize
+it, execute the native upgrade, and call
 `commit_upgrade_and_advance` with the receipt and mutable PackageVersion in the
 same PTB. Refresh SDK package IDs while retaining the original type identity and
 shared objects. Never advance a version separately from the native commit.

@@ -10,7 +10,7 @@ import unittest
 
 
 class PublicationTests(unittest.TestCase):
-    def test_finalization_passes_bootstrap_cap_and_ready_policy(self):
+    def test_finalization_passes_publication_and_cap(self):
         script = Path(__file__).resolve().parent / 'wrap_package_admin.sh'
         with tempfile.TemporaryDirectory() as temp:
             fake_sui = Path(temp) / 'sui'
@@ -18,12 +18,12 @@ class PublicationTests(unittest.TestCase):
             fake_sui.chmod(0o755)
             for mode in ['--preview', '--execute']:
                 result = subprocess.run(
-                    ['bash', str(script), '0x10', '0x20', '0x30', '0x40', mode],
+                    ['bash', str(script), '0x10', '0x20', '0x30', mode],
                     env={**os.environ, 'PATH': temp + os.pathsep + os.environ['PATH']},
                     capture_output=True, text=True, check=True,
                 )
                 expected = ['client', '--client.env', 'mainnet', 'ptb', '--move-call',
-                            '0x10::package_admin::wrap', '@0x20', '@0x30', '@0x40', '--json']
+                            '0x10::package_admin::wrap', '@0x20', '@0x30', '--json']
                 if mode == '--preview':
                     expected.append('--preview')
                 self.assertEqual(result.stdout.splitlines(), expected)

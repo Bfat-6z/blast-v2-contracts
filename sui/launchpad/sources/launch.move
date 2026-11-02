@@ -378,7 +378,7 @@ public fun claim_creator_caps<Meme, Quote>(
 public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, clock: &Clock) {
     package_version.assert_current();
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
-    let pending = delayed::new_pending(recipient, clock);
+    let pending = delayed::new_pending(recipient, package_version.admin_delay_ms(), clock);
     self.pending_curve_fee_cap_recipient = option::some(pending);
     events::curve_fee_cap_reassignment_scheduled(self.id.to_inner(), recipient, pending.ready_at_ms());
 }
@@ -414,7 +414,7 @@ public fun reassign_curve_fee_cap<Meme, Quote>(
 public fun schedule_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, clock: &Clock) {
     package_version.assert_current();
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
-    let pending = delayed::new_pending(recipient, clock);
+    let pending = delayed::new_pending(recipient, package_version.admin_delay_ms(), clock);
     self.pending_metadata_cap_recipient = option::some(pending);
     events::metadata_cap_reassignment_scheduled(self.id.to_inner(), recipient, pending.ready_at_ms());
 }

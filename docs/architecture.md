@@ -301,7 +301,7 @@ Upgradeability is a product/security decision, not a default convenience.
   through the mandatory shared-object version gate after installing replacement
   authorization (ADR 0034); no pre-planted cutover flag exists.
   The launchpad's OTW retains its Publisher and initial generation in an owned
-  `Bootstrap`. Only validated capability wrapping consumes it and creates the
+  `Publication`. Only validated capability wrapping consumes it and creates the
   shared `PackageVersion` required by launch creation and routine configuration setters
   ([ADR 0114](decisions/0114-launchpad-custody-before-activation.md)).
   The only upgrade finalizer commits the native receipt and advances the
@@ -330,20 +330,21 @@ governance, delay, recovery, and remaining shared-state cutover coverage require
 approval before the first public deployment.
 
 Presale uses launchpad-style custody-before-activation (ADR 0117): an owned
-Bootstrap precedes the shared PackageVersion. Its separate provenance module
+Publication precedes the shared PackageVersion. Its separate provenance module
 `blast_presale_package` avoids policy/economics module cycles. SDK callers pass
 the same version to each operational mutation; upgrade commit advances it
 atomically and makes prior-generation bytecode unusable.
 
-Launchpad, presale and migrators use publication-only Bootstrap authority for
-initial policy setup without an administrative delay (ADR 0134). Their owned
-Bootstrap holds the canonical Publisher and generation until custody wrap
-consumes it permanently. No operational version exists before wrap; no public
-constructor, pause cycle or upgrade can recreate Bootstrap. Launchpad and
-presale require initial Quote and adapter admission before wrap and share their
-versions fully paused. ACL-controlled unpause is immediate. Migrators shares its
-version after wrap and relies on the launchpad's migration pause. All later
-governed policy changes retain the full delay, including while paused.
+Launchpad, presale and migrators retain the canonical Publisher and generation
+in a unique owned Publication until validated custody wrap consumes it. It has
+no policy authority. Wrap shares the canonical PackageVersion with administrative
+delay zero; launchpad and presale also start fully paused. Ordinary ACL operations
+configure policy after wrap. Each package owns a `Delayed<u64>` notice policy in
+its version. UpgradeAdmin schedules changes to it under the old applied delay,
+anyone applies ready changes and CancelAdmin can cancel. Other schedules read
+the applied policy internally and snapshot absolute deadlines. Settle pending
+zero-delay setup proposals, enable the desired delay and verify policy before
+unpausing. Pausing or upgrading never resets that policy (ADR 0134).
 
 Boosts margin recovery separates the ability to open risk from the ability to
 reduce it ([ADR 0124](decisions/0124-margin-recovery-and-initial-headroom.md)).

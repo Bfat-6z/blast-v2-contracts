@@ -38,51 +38,6 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Sets initial launch economics immediately, before Bootstrap is consumed by custody intake.
-public fun bootstrap(
-    self: &mut LaunchConfig,
-    _: &Bootstrap,
-    quote_fee_bps: Bps,
-    meme_fee_bps: Bps,
-    protocol_meme_bps: Bps,
-    protocol_quote_bps: Bps,
-    creation_fee: u64,
-) {
-    assert!(quote_fee_bps.value() <= constants::max_launch_fee_bps!() && meme_fee_bps.value() <= constants::max_launch_fee_bps!(), blast_fun::errors::invalid_trade_fee_bps!());
-    assert!(protocol_meme_bps.value() <= 9_998 && protocol_quote_bps.value() <= 9_999, blast_fun::errors::invalid_protocol_allocation!());
-
-    self.trade_fees.set_now(TradeFees { quote_fee_bps, meme_fee_bps });
-    self.protocol_allocation.set_now(allocation::protocol_allocation(protocol_meme_bps, protocol_quote_bps));
-    self.creation_fee.set_now(creation_fee);
-
-    events::launch_trade_fees_changed(quote_fee_bps.value(), meme_fee_bps.value());
-    events::protocol_allocation_set(protocol_meme_bps.value(), protocol_quote_bps.value());
-    events::creation_fee_changed(creation_fee);
-}
-
-/// Configures an initial Quote allowance while the publication Bootstrap exists.
-public fun bootstrap_quote<Quote>(self: &mut LaunchConfig, _: &Bootstrap, allowed: bool) {
-    let quote = type_name::with_original_ids<Quote>();
-    assert!(self.quotes.contains(quote) != allowed, blast_fun::errors::unchanged!());
-
-    if (allowed) self.quotes.add(quote, true) else { self.quotes.remove(quote); };
-
-    events::quote_set<Quote>(allowed);
-}
-
-/// Configures an initial reviewed adapter while the publication Bootstrap exists.
-public fun bootstrap_migration_witness<MigrationWitness: drop>(self: &mut LaunchConfig, _: &Bootstrap, allowed: bool) {
-    let witness = type_name::with_original_ids<MigrationWitness>();
-    assert!(!witness.is_primitive(), blast_fun::errors::invalid_migration_witness_type!());
-    let origin = type_name::original_id<MigrationWitness>();
-    assert!(origin != @0x1 && origin != @0x2, blast_fun::errors::invalid_migration_witness_type!());
-    assert!(self.migration_witnesses.contains(&witness) != allowed, blast_fun::errors::unchanged!());
-
-    if (allowed) self.migration_witnesses.insert(witness) else self.migration_witnesses.remove(&witness);
-
-    events::migration_witness_set<MigrationWitness>(allowed);
-}
-
 /// Sets Blast's fee share of future launches' Meme supply and final Quote reserve. The shares
 /// leave room for the curve and the pool; finalized launches keep their snapshotted shares.
 /// Schedules protocol allocation after the full administrative delay.
@@ -98,7 +53,7 @@ public fun schedule_protocol_allocation(
     assert!(meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999, blast_fun::errors::invalid_protocol_allocation!());
     let value = allocation::protocol_allocation(meme_bps, quote_bps);
     assert!(value != self.protocol_allocation.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.protocol_allocation.schedule(value, clock);
+    let ready_at_ms = self.protocol_allocation.schedule(value, package_version.admin_delay_ms(), clock);
     events::protocol_allocation_scheduled(meme_bps.value(), quote_bps.value(), ready_at_ms);
 }
 
@@ -171,7 +126,7 @@ public fun schedule_trade_fees(
     assert!(quote_fee_bps.value() <= constants::max_launch_fee_bps!() && meme_fee_bps.value() <= constants::max_launch_fee_bps!(), blast_fun::errors::invalid_trade_fee_bps!());
     let value = TradeFees { quote_fee_bps, meme_fee_bps };
     assert!(value != self.trade_fees.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.trade_fees.schedule(value, clock);
+    let ready_at_ms = self.trade_fees.schedule(value, package_version.admin_delay_ms(), clock);
     events::trade_fees_scheduled(quote_fee_bps.value(), meme_fee_bps.value(), ready_at_ms);
 }
 
@@ -214,7 +169,7 @@ public fun schedule_creation_fee(
 
     let value = creation_fee;
     assert!(value != self.creation_fee.value(), blast_fun::errors::unchanged!());
-    let ready_at_ms = self.creation_fee.schedule(value, clock);
+    let ready_at_ms = self.creation_fee.schedule(value, package_version.admin_delay_ms(), clock);
     events::creation_fee_scheduled(creation_fee, ready_at_ms);
 }
 
@@ -301,7 +256,7 @@ public fun schedule_migration_witness<MigrationWitness: drop>(self: &mut LaunchC
     let origin = type_name::original_id<MigrationWitness>();
     assert!(origin != @0x1 && origin != @0x2, blast_fun::errors::invalid_migration_witness_type!());
     assert!(!self.migration_witnesses.contains(&witness), blast_fun::errors::unchanged!());
-    let pending = delayed::new_pending(true, clock);
+    let pending = delayed::new_pending(true, package_version.admin_delay_ms(), clock);
     if (self.pending_witnesses.contains(&witness)) { self.pending_witnesses.remove(&witness); };
     self.pending_witnesses.insert(witness, pending);
     events::migration_witness_scheduled(witness, pending.ready_at_ms());
@@ -341,12 +296,6 @@ public fun remove_migration_witness<MigrationWitness: drop>(self: &mut LaunchCon
 }
 
 // === Package Functions ===
-
-/// Refuses to finalize a deployment that cannot create a launch.
-public(package) fun assert_bootstrap_ready(self: &LaunchConfig) {
-    assert!(!self.quotes.is_empty(), blast_fun::errors::quote_not_allowed!());
-    assert!(!self.migration_witnesses.is_empty(), blast_fun::errors::migration_witness_not_allowed!());
-}
 
 /// Checks the Quote, the adapter, and the decimals, and returns the trade fees.
 public(package) fun snapshot_for_launch<Quote>(
@@ -509,7 +458,7 @@ use blast_fun::{
     bps::{Self, Bps},
     constants,
     events,
-    blast_fun::{Bootstrap, PackageVersion},
+    blast_fun::{PackageVersion},
 };
 
 use blast_partners::blast_partners::{Self as partners, Partner};

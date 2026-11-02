@@ -54,7 +54,7 @@ for package in ('launchpad', 'presale', 'migrators'):
         signature, body = fs[name]
         require(signature, '&AdminWitness<UpgradeAdmin>', 'clock: &Clock')
         assert body.startswith('package_version.assert_current();'), (package, name)
-    require(fs['schedule_upgrade'][1], 'digest.length() == 32', 'delayed::new_pending(action, clock)')
+    require(fs['schedule_upgrade'][1], 'digest.length() == 32', 'delayed::new_pending(action, package_version.admin_delay_ms(), clock)')
     for name, action in [('authorize_upgrade', 'Upgrade(digest)'), ('make_immutable', 'MakeImmutable')]:
         body = fs[name][1]
         action_expression = f'UpgradeAction::{action}'
@@ -65,8 +65,8 @@ for package in ('launchpad', 'presale', 'migrators'):
     require(fs['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin>')
     require(fs['cancel_upgrade_action'][1], 'self.pending.extract()')
     require(fs['wrap'][1], 'upgrade_custody::new')
-    require(fs['wrap'][0], 'bootstrap: Bootstrap')
-    require(fs['wrap'][1], 'bootstrap.destroy()', 'generation.share_version(ctx)')
+    require(fs['wrap'][0], 'publication: Publication')
+    require(fs['wrap'][1], 'publication.destroy()', 'generation.share_version(ctx)')
     assert fs['wrap'][1].index('upgrade_custody::new') < fs['wrap'][1].index('generation.share_version(ctx)')
     assert fs['commit_upgrade_and_advance'][1].startswith('package_version.assert_next();')
     require(fs['commit_upgrade_and_advance'][1], 'self.custody.commit_upgrade(custodian_id, receipt); package_version.advance();')
@@ -76,7 +76,7 @@ for package in ('launchpad', 'presale', 'migrators'):
 for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_policy')]:
     fs = functions(package, module)
     require(fs['schedule_migration_witness'][0], '&AdminWitness<AdapterAdmin>', 'clock: &Clock')
-    require(fs['schedule_migration_witness'][1], 'delayed::new_pending(true, clock)')
+    require(fs['schedule_migration_witness'][1], 'delayed::new_pending(true, package_version.admin_delay_ms(), clock)')
     require(fs['apply_migration_witness'][1], '.take_ready(clock)')
     assert 'AdminWitness' not in fs['apply_migration_witness'][0]
     require(fs['cancel_migration_witness'][0], '&AdminWitness<CancelAdmin>')
@@ -113,37 +113,40 @@ for package, module, actions in [
 acl = (ROOT / 'sui/admin/sources/blast_acl.move').read_text()
 require(acl, 'admins: Table<ID, VecSet<TypeName>>,')
 assert 'MAX_ADMINS' not in acl
-require((ROOT / 'sui/admin/sources/delayed.move').read_text(), '48 * 60 * 60 * 1_000', 'clock.timestamp_ms() >= self.ready_at_ms')
+require((ROOT / 'sui/admin/sources/delayed.move').read_text(), 'scheduled_at_ms + delay_ms', 'clock.timestamp_ms() >= self.ready_at_ms')
 print('ADR 0134 administration boundaries: OK')
 
-# Bootstrap is a publication-only linear resource, never a pause-dependent administrative mode.
+# Publication proves unique native custody intake; it never authorizes policy changes.
 for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_package'), ('migrators', 'blast_fun_migrators')]:
     marker_fs = functions(package, marker)
-    require(marker_fs['init'][1], 'transfer::transfer(Bootstrap', 'sui::package::claim(otw, ctx)')
+    require(marker_fs['init'][1], 'transfer::transfer(Publication', 'sui::package::claim(otw, ctx)')
     assert 'share_object' not in marker_fs['init'][1]
-    require(marker_fs['destroy'][0], 'self: Bootstrap')
-    # The only constructor is private publication init; destroy only destructures it.
-    assert {name for name, (_, body) in marker_fs.items() if re.search(r'\bBootstrap\s*{', body)} == {'init', 'destroy'}
+    require(marker_fs['destroy'][0], 'self: Publication')
+    assert {name for name, (_, body) in marker_fs.items() if re.search(r'\bPublication\s*{', body)} == {'init', 'destroy'}
     assert marker_fs['init'][0].startswith('fun init(')
-    assert 'public struct Bootstrap has key {' in (ROOT / 'sui' / package / 'sources' / f'{marker}.move').read_text()
-    for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
-        source = path.read_text().split('// === Test-Only Functions ===')[0]
-        if path.stem != marker:
-            assert not re.search(r'\bBootstrap\s*{', source), path
-    assert 'Bootstrap' not in marker_fs.get('unpause', ('', ''))[1]
+    source = (ROOT / 'sui' / package / 'sources' / f'{marker}.move').read_text()
+    require(source, 'public struct Publication has key {', 'admin_delay: Delayed<u64>,')
+    require(marker_fs['share_version'][1], 'admin_delay: delayed::new(0)')
     if package != 'migrators':
         assert 'paused: 0' not in marker_fs['share_version'][1]
-        require(functions(package, 'package_admin')['wrap'][1], '.assert_bootstrap_ready();')
-for package, module, names in [
-    ('launchpad', 'runtime_config', ['bootstrap']),
-    ('launchpad', 'launch_config', ['bootstrap', 'bootstrap_quote', 'bootstrap_migration_witness']),
-    ('presale', 'fee_policy', ['bootstrap']),
-    ('presale', 'creation_policy', ['bootstrap_quote', 'bootstrap_migration_witness']),
-    ('migrators', 'lp_fee_policy', ['bootstrap']),
-]:
-    fs = functions(package, module)
-    for name in names:
-        require(fs[name][0], '_: &Bootstrap')
-        assert 'PackageVersion' not in fs[name][0]
-        assert 'paused' not in fs[name][1]
-print('One-time Bootstrap authority and paused finalization: OK')
+    for name, role in [('schedule_admin_delay', 'UpgradeAdmin'), ('cancel_admin_delay', 'CancelAdmin')]:
+        require(marker_fs[name][0], f'&AdminWitness<{role}>')
+        assert marker_fs[name][1].startswith('self.assert_current();')
+    require(marker_fs['schedule_admin_delay'][1], 'self.admin_delay.schedule_delay(delay_ms, clock)')
+    require(marker_fs['apply_admin_delay'][1], 'self.admin_delay.apply_delay(clock)')
+    assert marker_fs['apply_admin_delay'][1].startswith('self.assert_current();')
+    assert 'AdminWitness' not in marker_fs['apply_admin_delay'][0]
+    require(marker_fs['admin_delay_ms'][1], 'self.admin_delay.value()')
+    for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
+        production = path.read_text().split('// === Test-Only Functions ===')[0]
+        assert 'Bootstrap' not in production, path
+        if path.stem not in (marker, 'package_admin'):
+            assert 'Publication' not in production, path
+        for name, (signature, body) in functions(package, str(path.relative_to(ROOT / 'sui' / package / 'sources').with_suffix(''))).items():
+            if '.schedule(' not in body and 'delayed::new_pending(' not in body:
+                continue
+            version = 'migrators_version' if package == 'migrators' and path.stem == 'lp_fee_policy' else 'package_version'
+            assert 'delay_ms: u64' not in signature, (path, name)
+            for call in re.findall(r'(?:\.schedule|delayed::new_pending)\([^;]+?clock\)', body):
+                require(call, f'{version}.admin_delay_ms()')
+print('Canonical self-timelocked policy, zero-delay setup, and publication custody: OK')

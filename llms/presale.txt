@@ -195,19 +195,21 @@ between Blast, the creator's fee recipients, and holder-reward rounds.
 
 The presale is separate from the bonding-curve launchpad and reuses the shared Blast
 ACL, partner registry, and operational-version/capability-custody primitives.
-Publication creates an owned `blast_presale_package::Bootstrap`; it shares no
-`PackageVersion`. Only `blast_presale::package_admin::wrap` with Bootstrap, UpgradeCap and CreationPolicy validates the
-fresh matching native cap and shares the version and compatible upgrade
-custody, with creation, commitment and migration paused. Partners may prepare integrations before activation but cannot start sales.
+Publication creates an owned `blast_presale_package::Publication`; it shares no
+PackageVersion. `blast_presale::package_admin::wrap` consumes Publication and the
+fresh matching UpgradeCap, sealing compatible custody and sharing the version
+fully paused with zero administrative delay. Ordinary ACL-authorized operations
+then configure policies before release.
+
 See ADR 0117. In this guide `SaleToken` is the sale coin; venues call it `Meme`.
 
 Routine state-changing public calls below take `&blast_presale_package::PackageVersion`
 immediately after their first object argument, including initializer setters,
 finalize/share, policy administration, migrations, payouts, and holder rewards.
-It is a read-only shared input except during pause, unpause and upgrade commit-and-advance. A stale
+It is a read-only shared input except during delay-policy changes, pause, unpause and upgrade commit-and-advance. A stale
 or future generation aborts in `blast_admin::operational_version` before effects.
 Pure value constructors, getters and `destroy_cap` do not take it. Initial policy
-setters require the owned Bootstrap instead.
+configuration uses the same version-guarded ACL operations as later changes.
 
 ### Objects and authority
 
@@ -230,7 +232,7 @@ Shared singletons, created once at deployment (`PackageAdmin` and `PackageVersio
   `blast_presale::aftermath::finalize` consumes it, so the PTB that starts an Aftermath sale must
   finalize it there, or it fails with the ticket unconsumed.
 - `blast_presale::package_admin::PackageAdmin`: holds the package's Publisher and compatible upgrade cap.
-- `blast_presale::blast_presale_package::PackageVersion`: the singleton active generation, shared only on activation.
+- `blast_presale::blast_presale_package::PackageVersion`: the singleton active generation, administrative delay and pause flags, shared by custody wrap.
 
 Per-sale objects:
 
@@ -254,7 +256,7 @@ Capabilities and who holds them:
 
 | Object | Held by | Authorizes |
 | --- | --- | --- |
-| `blast_presale_package::Bootstrap` | Deployer, until wrap consumes it permanently | Initial fee policy, Quote and adapter admission; finalize native custody. |
+| `blast_presale_package::Publication` | Deployer, until wrap consumes it permanently | Holds publication provenance until native custody is sealed; no policy authority. |
 | `blast_acl::AdminCap` granted a presale role | Blast operations | The calls of each role it holds; see the table below. |
 | `blast_presale::blast_presale::PresaleCap` | Sale creator (or a vendor treasury) | `presale_vault::claim_migration_residuals`, `blast_presale::blast_presale::destroy_cap`. |
 | `blast_partners::blast_partners::Partner` | Shared, managed in `blast_partners` | Read by the presale to pay a partner its cut of Blast's fees. |
@@ -306,31 +308,28 @@ wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
 
 ### Flows
 
-#### Protocol bootstrap (cap holder: Bootstrap and the native UpgradeCap)
+#### Publication and initial configuration
 
-1. Publish the package. The deployer receives the only
-   `blast_presale_package::Bootstrap`; shared policies exist, and PackageVersion
-   is withheld until finalization.
-2. Call `fee_policy::bootstrap` with the shared mutable FeePolicy, a reference
-   to Bootstrap, a nonzero destination and the four initial fee rates built by
-   `blast_presale::bps::new`. Zero fees are valid defaults; the usual rate bounds apply.
-3. Call `creation_policy::bootstrap_quote<Quote>` and
-   `creation_policy::bootstrap_migration_witness<Witness>` with Bootstrap and
-   `allowed = true` for each initial Quote and reviewed adapter. Initial entries
-   can be removed with `false` before finalization. Configuration takes effect
-   immediately and emits the usual applied-value events, without a Clock.
-4. Call `blast_presale::package_admin::wrap` with Bootstrap by value, the matching
-   never-upgraded native UpgradeCap and a read-only CreationPolicy. Quote and
-   adapter allowlists must both be nonempty. Wrap consumes Bootstrap forever,
-   seals native custody and shares PackageVersion fully paused
-   (Create = 1, Commit = 2, Migrate = 8; combined mask = 11).
-5. A Blast admin signs in as `blast_presale_domain::UnpauseAdmin` and calls
-   `blast_presale_package::unpause` with the mutable shared version and selected
-   bits. It takes effect immediately, so sales can start on the deployment day.
+1. Publish the package. The deployer receives the unique `blast_presale::blast_presale_package::Publication`,
+   holding its canonical Publisher and initial generation. Policy singletons are
+   shared; no operational PackageVersion exists yet.
+2. Call `blast_presale::package_admin::wrap` with Publication by value and the matching
+   never-upgraded UpgradeCap. It consumes Publication permanently, seals native
+   custody and shares PackageVersion with an initial administrative delay of zero. All operations start paused (combined mask = 11).
+3. Grant the required roles on the real Blast ACL. Configure destinations, fees
+   and reviewed adapter admission through the ordinary schedule/apply operations
+   with Clock. At zero delay these can run in one PTB. Quote admission uses its
+   ordinary ListingAdmin setter. No publication proof authorizes policy changes.
+4. Apply or cancel every outstanding zero-delay proposal. Sign in as UpgradeAdmin,
+   schedule the desired administrative delay (for example, 172,800,000 ms = 48 hours),
+   and apply it. This first policy change waits the old zero delay. Read back the
+   policy and configured values before release.
+5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11). Unpause is immediate.
 
-Setup may span transactions. After wrap there is no bootstrap authority;
-pausing or upgrading cannot recreate it. Later governed changes use their
-normal 48-hour schedule/apply flow.
+Setup may span transactions. Pausing and upgrades never reset the administrative
+policy or recreate Publication. An outstanding zero-delay proposal remains ready
+after enabling a positive delay, which is why setup must settle those proposals
+before release. Route admission remains checked when creating launches or sales.
 
 PTB conventions used below: `Clock` is the shared object `0x6`. Values such as `Bps`,
 `RecipientShare`, and `EligibilityPolicy` are structs, so build them with Move calls and pass the
@@ -857,21 +856,32 @@ Integrators cannot call these; they explain state changes. Each takes the
 | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` | See above. |
 | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic operational-version cutover. |
 
-`blast_presale::package_admin::wrap` consumes the publication Bootstrap and never-upgraded matching cap once. Each upgrade increments both compiled generation constants and commits/advances in one PTB; old bytecode then rejects the advanced version. Existing dependency-only deployments require a fresh publication to adopt this design.
+`blast_presale::package_admin::wrap` consumes the publication Publication and never-upgraded matching cap once. Each upgrade increments both compiled generation constants and commits/advances in one PTB; old bytecode then rejects the advanced version. Existing dependency-only deployments require a fresh publication to adopt this design.
 
 ### Delayed administration
 
-Blast admin schedules changes with the relevant role and the canonical `Clock`.
-Every scheduled fee, destination, signer, adapter or creator-authority change
-waits 172,800,000 milliseconds (48 hours). Scheduling again replaces the pending
-value and restarts that delay. The applied value stays active until *anyone*
-calls the matching `apply_` operation with the current package version and
-`Clock`. A `CancelAdmin` may cancel a pending change even after it is ready.
-Scheduling and cancellation emit the proposed values; the existing changed
-event is emitted only on application. Reads and ordinary claims need no new Clock.
+Blast admin schedules changes with the relevant role and canonical `Clock`.
+Each package's canonical `PackageVersion` stores its own applied administrative
+delay. Every governed schedule snapshots `ready_at_ms = now + admin_delay_ms`;
+changing the policy never changes an existing pending deadline. Rescheduling
+replaces the pending value and starts a new notice period under the applied policy.
+Applied values remain active until anyone calls the matching application with
+the current version and Clock. `CancelAdmin` can cancel even a ready proposal.
+
+The marker module exposes `blast_presale::blast_presale_package::admin_delay_ms`, `blast_presale::blast_presale_package::schedule_admin_delay`,
+`blast_presale::blast_presale_package::apply_admin_delay` and `blast_presale::blast_presale_package::cancel_admin_delay`. `UpgradeAdmin` proposes a new delay;
+that proposal waits the **old applied delay**. Anyone applies it once ready;
+`CancelAdmin` may cancel it. Zero is valid, including for later reductions, but
+reducing to zero still waits the old delay. A no-op delay proposal aborts.
+Scheduling and applying reject delays whose deadlines cannot fit a `u64`
+timestamp. `blast_presale::blast_presale_package::AdminDelayScheduled` includes the proposed delay and absolute
+deadline. `blast_presale::blast_presale_package::AdminDelayChanged` includes previous and applied
+delays; `blast_presale::blast_presale_package::AdminDelayCancelled` includes the cancelled proposal. There is no implicit minimum
+or fixed 48-hour guarantee: read the live policy before relying on notice.
+Reads and ordinary claims need no new Clock.
 
 `blast_presale::package_admin::schedule_upgrade` announces the exact digest.
-After 48 hours an `UpgradeAdmin` may call `blast_presale::package_admin::authorize_upgrade`
+After its snapshotted deadline an `UpgradeAdmin` may call `blast_presale::package_admin::authorize_upgrade`
 with that digest and `Clock`, consume its ticket in the native upgrade command,
 and commit its receipt. The pending action is consumed once.
 `blast_presale::package_admin::schedule_make_immutable` and
@@ -2501,7 +2511,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 #### Types
 
 ```move
-/// Authorizes compatible package upgrades and their atomic operational-version cutover.
+/// Governs administrative delay and compatible upgrades with atomic version cutover.
 public struct UpgradeAdmin {}
 
 /// Sets the address every protocol fee is paid to.
@@ -2532,7 +2542,7 @@ public struct CancelAdmin {}
 
 ### `blast_presale::blast_presale_package`
 
-Canonical package provenance, publication bootstrap, and operational generation.  The one-time witness seeds the generation and claims the Publisher. Both stay in owned bootstrap custody until package administration seals the native capabilities.
+Canonical publication custody, administrative delay, and operational generation.  The one-time witness seeds the generation and claims the Publisher. Both stay in owned publication custody until package administration seals the native capabilities.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/blast_presale_package.move
 
@@ -2543,7 +2553,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 public struct BLAST_PRESALE_PACKAGE() has drop;
 
 /// Publication-only custody; it cannot supply the PackageVersion required by presale activity.
-public struct Bootstrap has key {
+public struct Publication has key {
     id: UID,
     publisher: Publisher,
     generation: blast_admin::operational_version::OperationalVersion<BLAST_PRESALE_PACKAGE>,
@@ -2554,12 +2564,34 @@ public struct PackageVersion has key {
     id: UID,
     paused: u8,
     generation: blast_admin::operational_version::OperationalVersion<BLAST_PRESALE_PACKAGE>,
+    admin_delay: blast_admin::delayed::Delayed<u64>,
 }
 ```
 
 #### Functions
 
 ```move
+/// Returns the currently applied notice period in milliseconds from scheduling.
+public fun admin_delay_ms(self: &PackageVersion): u64
+
+/// Proposes a new notice period using the currently applied delay, including zero.
+/// Previously scheduled actions retain their original execution thresholds.
+public fun schedule_admin_delay(
+    self: &mut PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Applies a ready notice-period change permissionlessly.
+public fun apply_admin_delay(self: &mut PackageVersion, clock: &Clock)
+
+/// Cancels a pending notice-period change, including after readiness.
+public fun cancel_admin_delay(
+    self: &mut PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
+)
+
 /// Freezes selected operations immediately; does not authorize unpausing.
 public fun pause(
     self: &mut PackageVersion,
@@ -2578,6 +2610,23 @@ public fun unpause(
 #### Events
 
 ```move
+/// Proposed notice period and its Unix millisecond execution threshold.
+public struct AdminDelayScheduled has copy, drop {
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// Previously applied and newly applied notice periods.
+public struct AdminDelayChanged has copy, drop {
+    previous_delay_ms: u64,
+    delay_ms: u64,
+}
+
+/// Notice-period proposal removed from the pending schedule.
+public struct AdminDelayCancelled has copy, drop {
+    delay_ms: u64,
+}
+
 /// The requested bits and resulting pause mask.
 public struct Paused has copy, drop {
     bits: u8,
@@ -2845,20 +2894,6 @@ public struct PartnerKey(ID) has copy, drop, store;
 #### Functions
 
 ```move
-/// Configures an initial Quote allowance before the publication Bootstrap is consumed.
-public fun bootstrap_quote<Quote>(
-    self: &mut CreationPolicy,
-    _: &blast_presale_package::Bootstrap,
-    allowed: bool,
-)
-
-/// Configures an initial reviewed adapter before the publication Bootstrap is consumed.
-public fun bootstrap_migration_witness<MigrationWitness: drop>(
-    self: &mut CreationPolicy,
-    _: &blast_presale_package::Bootstrap,
-    allowed: bool,
-)
-
 /// Allows or disallows `Quote` for presales and vaults without a presale created afterward;
 /// existing ones keep it.
 public fun set_quote_allowed<Quote>(
@@ -3003,17 +3038,6 @@ public struct ProtocolFees has copy, drop, store {
 #### Functions
 
 ```move
-/// Sets initial payout policy immediately; consuming Bootstrap permanently closes this path.
-public fun bootstrap(
-    self: &mut FeePolicy,
-    _: &blast_presale_package::Bootstrap,
-    destination: address,
-    raise_bps: bps::Bps,
-    token_bps: bps::Bps,
-    lp_fee_meme_bps: bps::Bps,
-    lp_fee_quote_bps: bps::Bps,
-)
-
 /// Sets the rates presales created afterward snapshot; existing presales keep theirs.
 /// Schedules fees after the full administrative delay.
 public fun schedule_fees(
@@ -3357,12 +3381,11 @@ public fun cancel_upgrade_action(
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
 )
 
-/// Validates initial admission, consumes Bootstrap forever, and seals native custody.
+/// Consumes the unique publication proof and seals native custody before activation.
 /// The initial operational generation starts fully paused; UnpauseAdmin releases it immediately.
 public fun wrap(
-    bootstrap: blast_presale_package::Bootstrap,
+    publication: blast_presale_package::Publication,
     upgrade_cap: UpgradeCap,
-    policy: &creation_policy::CreationPolicy,
     ctx: &mut TxContext,
 )
 
@@ -4106,7 +4129,7 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Explicitly applied administrative changes with an immutable 48-hour notice.
+Explicitly applied changes whose notice period is supplied by the owning policy.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
 
@@ -4141,8 +4164,21 @@ public fun borrow<T: copy + drop + store>(self: &Delayed<T>): &T
 /// Returns the current schedule, if any.
 public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
 
-/// Replaces any pending change and restarts the entire delay.
-public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, clock: &Clock): u64
+/// Replaces any pending change and restarts the supplied policy delay.
+/// The enclosing module must derive `delay_ms` from its authorized policy.
+public fun schedule<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Schedules a notice-period change using its currently applied delay, including zero.
+/// The enclosing module must restrict this operation to its delay-policy authority.
+public fun schedule_delay(self: &mut Delayed<u64>, delay_ms: u64, clock: &Clock): u64
+
+/// Applies a ready delay only while it can still form a future execution threshold.
+public fun apply_delay(self: &mut Delayed<u64>, clock: &Clock): u64
 
 /// Applies a ready change once; anyone authorized to borrow the enclosing state may call it.
 public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
@@ -4154,8 +4190,9 @@ public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
 /// Clears a pending replacement so it cannot restore revoked authority.
 public fun set_now<T: copy + drop + store>(self: &mut Delayed<T>, value: T)
 
-/// Starts the immutable administrative notice period.
-public fun new_pending<T: copy + drop + store>(value: T, clock: &Clock): Pending<T>
+/// Snapshots the owning policy's notice period into an immutable deadline.
+/// Later policy changes cannot shorten or extend this pending value's notice.
+public fun new_pending<T: copy + drop + store>(value: T, delay_ms: u64, clock: &Clock): Pending<T>
 
 /// Returns a scheduled value only at or after its threshold.
 public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): T
@@ -4173,10 +4210,8 @@ public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
 | --- | --- | --- |
 | `ENotReady` | 0 | The full administrative delay must pass before applying a change. |
 | `ENoPending` | 1 | There is no scheduled administrative change. |
-
-#### Constants
-
-- `DELAY_MS: u64 = 48 * 60 * 60 * 1_000`
+| `EInvalidDelay` | 2 | The notice period must fit a Unix millisecond execution threshold. |
+| `EDelayUnchanged` | 3 | A notice-period update must change the applied delay. |
 
 ### `blast_admin::operational_version`
 

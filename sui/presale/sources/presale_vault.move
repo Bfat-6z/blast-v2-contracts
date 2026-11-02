@@ -80,7 +80,7 @@ public fun schedule_protocol_lp_fees<Meme, Quote>(self: &mut Vault<Meme, Quote>,
     package_version.assert_current();
     let proposed = self.protocol_fees.value().with_lp_fees(lp_fee_meme_bps, lp_fee_quote_bps);
     assert!(proposed != self.protocol_fees.value(), EProtocolLpFeesUnchanged);
-    let ready_at_ms = self.protocol_fees.schedule(proposed, clock);
+    let ready_at_ms = self.protocol_fees.schedule(proposed, package_version.admin_delay_ms(), clock);
     event::emit(ProtocolLpFeesScheduled { vault_id: self.id.to_inner(), meme_bps: lp_fee_meme_bps.value(), quote_bps: lp_fee_quote_bps.value(), ready_at_ms });
 }
 

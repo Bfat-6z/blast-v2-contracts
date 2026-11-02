@@ -37,7 +37,7 @@ public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVe
     package_version.assert_current();
     assert!(digest.length() == 32, EInvalidDigest);
     let action = UpgradeAction::Upgrade(digest);
-    let pending = delayed::new_pending(action, clock);
+    let pending = delayed::new_pending(action, package_version.admin_delay_ms(), clock);
     self.pending = option::some(pending);
     blast_events::upgrade_action_scheduled(option::some(digest), pending.ready_at_ms());
 }
@@ -46,7 +46,7 @@ public fun schedule_upgrade(self: &mut PackageAdmin, package_version: &PackageVe
 public fun schedule_make_immutable(self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock) {
     package_version.assert_current();
     let action = UpgradeAction::MakeImmutable;
-    let pending = delayed::new_pending(action, clock);
+    let pending = delayed::new_pending(action, package_version.admin_delay_ms(), clock);
     self.pending = option::some(pending);
     blast_events::upgrade_action_scheduled(option::none(), pending.ready_at_ms());
 }
@@ -60,9 +60,9 @@ public fun cancel_upgrade_action(self: &mut PackageAdmin, package_version: &Pack
     blast_events::upgrade_action_cancelled(digest);
 }
 
-/// Consumes Bootstrap forever, seals native capabilities, and enables Migrators.
-public fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
-    let (publisher, generation) = bootstrap.destroy();
+/// Consumes Publication forever, seals native capabilities, and enables Migrators.
+public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
+    let (publisher, generation) = publication.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN_MIGRATORS>(id.to_inner(), publisher, upgrade_cap);
 
@@ -163,7 +163,7 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
 
 use blast_fun_migrators::{
     blast_events,
-    blast_fun_migrators::{BLAST_FUN_MIGRATORS, Bootstrap, PackageVersion},
+    blast_fun_migrators::{BLAST_FUN_MIGRATORS, Publication, PackageVersion},
 };
 
 use blast_admin::{

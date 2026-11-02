@@ -10,7 +10,7 @@ module blast_presale::blast_presale_domain;
 
 // === Public Types ===
 
-/// Authorizes compatible package upgrades and their atomic operational-version cutover.
+/// Governs administrative delay and compatible upgrades with atomic version cutover.
 public struct UpgradeAdmin()
 
 /// Sets the address every protocol fee is paid to.

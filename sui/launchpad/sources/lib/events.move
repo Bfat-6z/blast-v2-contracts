@@ -6,6 +6,13 @@ module blast_fun::events;
 
 // === Public Types ===
 
+/// Proposed notice period and its Unix millisecond execution threshold.
+public struct AdminDelayScheduled has copy, drop { delay_ms: u64, ready_at_ms: u64 }
+/// Previously applied and newly applied notice periods.
+public struct AdminDelayChanged has copy, drop { previous_delay_ms: u64, delay_ms: u64 }
+/// Notice-period proposal removed from the pending schedule.
+public struct AdminDelayCancelled has copy, drop { delay_ms: u64 }
+
 /// The exact code digest or irreversible end of upgrades approved for execution.
 public enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable }
 
@@ -357,6 +364,18 @@ public struct UpgradeActionCancelled has copy, drop {
 }
 
 // === Package Functions ===
+
+public(package) fun admin_delay_scheduled(delay_ms: u64, ready_at_ms: u64) {
+    emit(AdminDelayScheduled { delay_ms, ready_at_ms });
+}
+
+public(package) fun admin_delay_changed(previous_delay_ms: u64, delay_ms: u64) {
+    emit(AdminDelayChanged { previous_delay_ms, delay_ms });
+}
+
+public(package) fun admin_delay_cancelled(delay_ms: u64) {
+    emit(AdminDelayCancelled { delay_ms });
+}
 
 /// The exact package digest an administrator proposes or checks.
 public(package) fun upgrade_action(digest: vector<u8>): UpgradeAction {
