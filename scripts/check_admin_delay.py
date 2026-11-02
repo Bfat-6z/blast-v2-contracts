@@ -86,15 +86,17 @@ for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_po
 fs = functions('launchpad', 'launch')
 require(fs['apply_cap_reassignment_delay'][1],
         '(*pending).destroy_some().take_ready(clock)', '*pending = option::none();',
-        '*delay_ms = next_delay_ms;', 'events::cap_delay_changed(launch_id, metadata, next_delay_ms);')
-for cap, metadata in [('curve_fee_cap', 'false'), ('metadata_cap', 'true')]:
+        '*delay_ms = next_delay_ms;')
+assert 'events::' not in fs['apply_cap_reassignment_delay'][1]
+for cap in ['curve_fee_cap', 'metadata_cap']:
     require(fs[f'schedule_{cap}_reassignment'][0], '&AdminWitness<CreatorAdmin>', 'clock: &Clock')
     assert 'delay_ms: u64' not in fs[f'schedule_{cap}_reassignment'][0], cap
     require(fs[f'schedule_{cap}_reassignment'][1], f'let delay_ms = self.{cap}_delay_ms;',
             'delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock)')
     require(fs[f'cancel_{cap}_reassignment'][0], '&AdminWitness<CancelAdmin>')
     require(fs[f'reassign_{cap}'][1],
-            f'apply_cap_reassignment_delay( &mut self.pending_{cap}_recipient, &mut self.{cap}_delay_ms, self.id.to_inner(), {metadata}, clock, )')
+            f'apply_cap_reassignment_delay( &mut self.pending_{cap}_recipient, &mut self.{cap}_delay_ms, clock, )',
+            f'events::{cap}_delay_changed(self.id.to_inner(), self.{cap}_delay_ms);')
     assert 'AdminWitness' not in fs[f'reassign_{cap}'][0]
 
 for package, module, actions in [

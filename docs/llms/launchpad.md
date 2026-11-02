@@ -493,6 +493,14 @@ the change waits the old notice. Each operation has one pending proposal, so eit
 kind of schedule replaces its previous proposal. Anyone executes the corresponding
 `launch::reassign_curve_fee_cap` or `launch::reassign_metadata_cap` after the delay.
 The current cap keeps its authority until execution. CancelAdmin can cancel either.
+Delay policy has distinct event types for each cap: scheduling emits
+`blast_fun::events::CurveFeeCapDelayScheduled` or
+`blast_fun::events::MetadataCapDelayScheduled`; applying emits
+`blast_fun::events::CurveFeeCapDelayChanged` or
+`blast_fun::events::MetadataCapDelayChanged`; cancelling a policy-only proposal emits
+`blast_fun::events::CurveFeeCapDelayCancelled` or
+`blast_fun::events::MetadataCapDelayCancelled`. Applying a recipient proposal also
+emits its cap's delay-changed event before the reassignment event.
 ClaimSignerAdmin may immediately revoke the signer with
 `runtime_config::revoke_creator_claim_signer`; assignment and revocation take effect immediately.
 AdapterAdmin may immediately remove an adapter with `launch_config::remove_migration_witness`.

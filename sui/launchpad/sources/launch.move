@@ -382,7 +382,7 @@ public fun schedule_curve_fee_cap_delay<Meme, Quote>(self: &mut Launch<Meme, Quo
     package_version.assert_current();
     let pending = delayed::new_pending(option::none(), self.curve_fee_cap_delay_ms, delay_ms, clock);
     self.pending_curve_fee_cap_recipient = option::some(pending);
-    events::cap_delay_scheduled(self.id.to_inner(), false, delay_ms, pending.ready_at_ms());
+    events::curve_fee_cap_delay_scheduled(self.id.to_inner(), delay_ms, pending.ready_at_ms());
 }
 
 /// Announces a replacement recipient without invalidating the current curve-fee cap.
@@ -401,7 +401,10 @@ public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Me
 public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
     package_version.assert_current();
     let recipient = self.pending_curve_fee_cap_recipient.extract().value();
-    if (recipient.is_none()) { events::cap_delay_cancelled(self.id.to_inner(), false); return };
+    if (recipient.is_none()) {
+        events::curve_fee_cap_delay_cancelled(self.id.to_inner());
+        return
+    };
     let recipient = recipient.destroy_some();
     events::curve_fee_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
@@ -416,10 +419,9 @@ public fun reassign_curve_fee_cap<Meme, Quote>(
     let recipient = apply_cap_reassignment_delay(
         &mut self.pending_curve_fee_cap_recipient,
         &mut self.curve_fee_cap_delay_ms,
-        self.id.to_inner(),
-        false,
         clock,
     );
+    events::curve_fee_cap_delay_changed(self.id.to_inner(), self.curve_fee_cap_delay_ms);
     if (recipient.is_none()) return;
     let recipient = recipient.destroy_some();
 
@@ -438,7 +440,7 @@ public fun schedule_metadata_cap_delay<Meme, Quote>(self: &mut Launch<Meme, Quot
     package_version.assert_current();
     let pending = delayed::new_pending(option::none(), self.metadata_cap_delay_ms, delay_ms, clock);
     self.pending_metadata_cap_recipient = option::some(pending);
-    events::cap_delay_scheduled(self.id.to_inner(), true, delay_ms, pending.ready_at_ms());
+    events::metadata_cap_delay_scheduled(self.id.to_inner(), delay_ms, pending.ready_at_ms());
 }
 
 /// Announces a replacement recipient without invalidating the current metadata cap.
@@ -456,7 +458,10 @@ public fun schedule_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Mem
 public fun cancel_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
     package_version.assert_current();
     let recipient = self.pending_metadata_cap_recipient.extract().value();
-    if (recipient.is_none()) { events::cap_delay_cancelled(self.id.to_inner(), true); return };
+    if (recipient.is_none()) {
+        events::metadata_cap_delay_cancelled(self.id.to_inner());
+        return
+    };
     let recipient = recipient.destroy_some();
     events::metadata_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
@@ -471,10 +476,9 @@ public fun reassign_metadata_cap<Meme, Quote>(
     let recipient = apply_cap_reassignment_delay(
         &mut self.pending_metadata_cap_recipient,
         &mut self.metadata_cap_delay_ms,
-        self.id.to_inner(),
-        true,
         clock,
     );
+    events::metadata_cap_delay_changed(self.id.to_inner(), self.metadata_cap_delay_ms);
     if (recipient.is_none()) return;
     let recipient = recipient.destroy_some();
 
@@ -883,15 +887,11 @@ public fun assert_curve_fee_cap<Meme, Quote>(
 fun apply_cap_reassignment_delay(
     pending: &mut Option<Pending<Option<address>>>,
     delay_ms: &mut u64,
-    launch_id: ID,
-    metadata: bool,
     clock: &Clock,
 ): Option<address> {
     let (recipient, next_delay_ms) = (*pending).destroy_some().take_ready(clock);
     *pending = option::none();
     *delay_ms = next_delay_ms;
-
-    events::cap_delay_changed(launch_id, metadata, next_delay_ms);
 
     recipient
 }

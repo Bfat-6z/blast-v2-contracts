@@ -115,6 +115,8 @@ Scheduling events include the next notice and absolute deadline with the propose
 or value. Application and cancellation facts identify which proposal becomes active or
 is discarded. Multi-instance operations retain object identity. The indexer reads live
 applied fields for current economics; readiness alone never activates a proposal.
+Curve-fee and metadata-cap policy events identify their operation through distinct
+payload types, keeping the event stream self-describing without a boolean discriminator.
 
 ## Alternatives considered
 

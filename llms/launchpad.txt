@@ -668,6 +668,14 @@ the change waits the old notice. Each operation has one pending proposal, so eit
 kind of schedule replaces its previous proposal. Anyone executes the corresponding
 `launch::reassign_curve_fee_cap` or `launch::reassign_metadata_cap` after the delay.
 The current cap keeps its authority until execution. CancelAdmin can cancel either.
+Delay policy has distinct event types for each cap: scheduling emits
+`blast_fun::events::CurveFeeCapDelayScheduled` or
+`blast_fun::events::MetadataCapDelayScheduled`; applying emits
+`blast_fun::events::CurveFeeCapDelayChanged` or
+`blast_fun::events::MetadataCapDelayChanged`; cancelling a policy-only proposal emits
+`blast_fun::events::CurveFeeCapDelayCancelled` or
+`blast_fun::events::MetadataCapDelayCancelled`. Applying a recipient proposal also
+emits its cap's delay-changed event before the reassignment event.
 ClaimSignerAdmin may immediately revoke the signer with
 `runtime_config::revoke_creator_claim_signer`; assignment and revocation take effect immediately.
 AdapterAdmin may immediately remove an adapter with `launch_config::remove_migration_witness`.
@@ -2827,25 +2835,40 @@ public struct MigrationDelayChanged has copy, drop {
 /// Cancelled admission-policy proposal.
 public struct MigrationDelayCancelled() has copy, drop;
 
-/// Proposed notice for one launch's curve-fee or metadata cap reassignment.
-public struct CapDelayScheduled has copy, drop {
+/// Proposed notice for one launch's curve-fee cap reassignment.
+public struct CurveFeeCapDelayScheduled has copy, drop {
     launch_id: ID,
-    metadata: bool,
     delay_ms: u64,
     ready_at_ms: u64,
 }
 
-/// Applied cap-reassignment notice.
-public struct CapDelayChanged has copy, drop {
+/// Applied curve-fee cap reassignment notice.
+public struct CurveFeeCapDelayChanged has copy, drop {
     launch_id: ID,
-    metadata: bool,
     delay_ms: u64,
 }
 
-/// Cancelled policy-only cap proposal.
-public struct CapDelayCancelled has copy, drop {
+/// Cancelled policy-only curve-fee cap proposal.
+public struct CurveFeeCapDelayCancelled has copy, drop {
     launch_id: ID,
-    metadata: bool,
+}
+
+/// Proposed notice for one launch's metadata cap reassignment.
+public struct MetadataCapDelayScheduled has copy, drop {
+    launch_id: ID,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// Applied metadata cap reassignment notice.
+public struct MetadataCapDelayChanged has copy, drop {
+    launch_id: ID,
+    delay_ms: u64,
+}
+
+/// Cancelled policy-only metadata cap proposal.
+public struct MetadataCapDelayCancelled has copy, drop {
+    launch_id: ID,
 }
 ```
 

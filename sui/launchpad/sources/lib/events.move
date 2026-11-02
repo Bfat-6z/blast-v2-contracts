@@ -368,18 +368,67 @@ public struct MigrationDelayChanged has copy, drop { delay_ms: u64 }
 /// Cancelled admission-policy proposal.
 public struct MigrationDelayCancelled has copy, drop {}
 
-/// Proposed notice for one launch's curve-fee or metadata cap reassignment.
-public struct CapDelayScheduled has copy, drop { launch_id: ID, metadata: bool, delay_ms: u64, ready_at_ms: u64 }
-/// Applied cap-reassignment notice.
-public struct CapDelayChanged has copy, drop { launch_id: ID, metadata: bool, delay_ms: u64 }
-/// Cancelled policy-only cap proposal.
-public struct CapDelayCancelled has copy, drop { launch_id: ID, metadata: bool }
+/// Proposed notice for one launch's curve-fee cap reassignment.
+public struct CurveFeeCapDelayScheduled has copy, drop {
+    launch_id: ID,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// Applied curve-fee cap reassignment notice.
+public struct CurveFeeCapDelayChanged has copy, drop {
+    launch_id: ID,
+    delay_ms: u64,
+}
+
+/// Cancelled policy-only curve-fee cap proposal.
+public struct CurveFeeCapDelayCancelled has copy, drop {
+    launch_id: ID,
+}
+
+/// Proposed notice for one launch's metadata cap reassignment.
+public struct MetadataCapDelayScheduled has copy, drop {
+    launch_id: ID,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// Applied metadata cap reassignment notice.
+public struct MetadataCapDelayChanged has copy, drop {
+    launch_id: ID,
+    delay_ms: u64,
+}
+
+/// Cancelled policy-only metadata cap proposal.
+public struct MetadataCapDelayCancelled has copy, drop {
+    launch_id: ID,
+}
 
 // === Package Functions ===
 
-public(package) fun cap_delay_scheduled(launch_id: ID, metadata: bool, delay_ms: u64, ready_at_ms: u64) { emit(CapDelayScheduled { launch_id, metadata, delay_ms, ready_at_ms }); }
-public(package) fun cap_delay_changed(launch_id: ID, metadata: bool, delay_ms: u64) { emit(CapDelayChanged { launch_id, metadata, delay_ms }); }
-public(package) fun cap_delay_cancelled(launch_id: ID, metadata: bool) { emit(CapDelayCancelled { launch_id, metadata }); }
+public(package) fun curve_fee_cap_delay_scheduled(launch_id: ID, delay_ms: u64, ready_at_ms: u64) {
+    emit(CurveFeeCapDelayScheduled { launch_id, delay_ms, ready_at_ms });
+}
+
+public(package) fun curve_fee_cap_delay_changed(launch_id: ID, delay_ms: u64) {
+    emit(CurveFeeCapDelayChanged { launch_id, delay_ms });
+}
+
+public(package) fun curve_fee_cap_delay_cancelled(launch_id: ID) {
+    emit(CurveFeeCapDelayCancelled { launch_id });
+}
+
+public(package) fun metadata_cap_delay_scheduled(launch_id: ID, delay_ms: u64, ready_at_ms: u64) {
+    emit(MetadataCapDelayScheduled { launch_id, delay_ms, ready_at_ms });
+}
+
+public(package) fun metadata_cap_delay_changed(launch_id: ID, delay_ms: u64) {
+    emit(MetadataCapDelayChanged { launch_id, delay_ms });
+}
+
+public(package) fun metadata_cap_delay_cancelled(launch_id: ID) {
+    emit(MetadataCapDelayCancelled { launch_id });
+}
 
 public(package) fun migration_delay_scheduled(delay_ms: u64, ready_at_ms: u64) { emit(MigrationDelayScheduled { delay_ms, ready_at_ms }); }
 public(package) fun migration_delay_changed(delay_ms: u64) { emit(MigrationDelayChanged { delay_ms }); }
