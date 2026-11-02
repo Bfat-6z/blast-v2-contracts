@@ -49,6 +49,9 @@ Standalone upgrade actions and cap reassignments retain their applied notice aft
 execution and cancellation. An explicit policy-only proposal can change the notice
 without upgrading code, destroying upgrade authority or transferring a creator cap.
 It follows the same old-delay rule and cannot be consumed as a different action.
+Cap reassignment schedules accept only the new recipient and preserve that
+operation's applied notice. Changing its notice requires an explicit policy-only
+proposal; the two proposal kinds share the operation's single pending slot.
 Upgrades remain bound to an exact digest, live UpgradeAdmin role, package generation,
 capability custody and native upgrade receipt.
 

@@ -89,6 +89,9 @@ require(fs['apply_cap_reassignment_delay'][1],
         '*delay_ms = next_delay_ms;', 'events::cap_delay_changed(launch_id, metadata, next_delay_ms);')
 for cap, metadata in [('curve_fee_cap', 'false'), ('metadata_cap', 'true')]:
     require(fs[f'schedule_{cap}_reassignment'][0], '&AdminWitness<CreatorAdmin>', 'clock: &Clock')
+    assert 'delay_ms: u64' not in fs[f'schedule_{cap}_reassignment'][0], cap
+    require(fs[f'schedule_{cap}_reassignment'][1], f'let delay_ms = self.{cap}_delay_ms;',
+            'delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock)')
     require(fs[f'cancel_{cap}_reassignment'][0], '&AdminWitness<CancelAdmin>')
     require(fs[f'reassign_{cap}'][1],
             f'apply_cap_reassignment_delay( &mut self.pending_{cap}_recipient, &mut self.{cap}_delay_ms, self.id.to_inner(), {metadata}, clock, )')
@@ -142,7 +145,10 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
         for name, (signature, body) in functions(package, str(path.relative_to(ROOT / 'sui' / package / 'sources').with_suffix(''))).items():
             if '.schedule(' not in body and 'delayed::new_pending(' not in body:
                 continue
-            require(signature, 'delay_ms: u64', 'clock: &Clock')
+            require(signature, 'clock: &Clock')
+            if not (package == 'launchpad' and path.stem == 'launch'
+                    and name in ('schedule_curve_fee_cap_reassignment', 'schedule_metadata_cap_reassignment')):
+                require(signature, 'delay_ms: u64')
             assert 'admin_delay_ms()' not in body, (path, name)
 
 primitive = functions('admin', 'delayed')

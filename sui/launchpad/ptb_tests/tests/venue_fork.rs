@@ -1467,8 +1467,8 @@ impl World {
         Ok(())
     }
 
-    /// An administrator reassigns the curve-fee cap; the creator's old cap then neither updates
-    /// the split nor claims.
+    /// An administrator reassigns both caps through recipient-only schedules; the creator's old
+    /// curve-fee cap then neither updates the split nor claims.
     fn retired_cap_is_refused(
         &mut self,
         launch: &Launch,
@@ -1482,18 +1482,26 @@ impl World {
         let version = self.shared(&mut b, self.version, false)?;
         let recipient = b.pure(SuiAddress::from(CAP_HOLDER))?;
         let clock = self.clock(&mut b)?;
-        let next_delay = b.pure(172_800_000u64)?;
-        call(
-            &mut b,
-            self.blast,
-            "launch",
-            "schedule_curve_fee_cap_reassignment",
-            self.pair(launch),
-            vec![launch_arg, version, signed_in, recipient, next_delay, clock],
-        );
-        self.h.execute(b.finish())?.assert_success();
+        for name in ["schedule_curve_fee_cap_reassignment", "schedule_metadata_cap_reassignment"] {
+            call(&mut b, self.blast, "launch", name, self.pair(launch),
+                vec![launch_arg, version, signed_in, recipient, clock]);
+        }
+        let scheduled = self.h.execute(b.finish())?;
+        scheduled.assert_success();
+        ensure!(scheduled.wrapped_payloads(self.blast)
+            == ["CurveFeeCapReassignmentScheduled", "MetadataCapReassignmentScheduled"]);
+        for event in ["CurveFeeCapReassignmentScheduled", "MetadataCapReassignmentScheduled"] {
+            let payloads = scheduled.events_of("events", event);
+            ensure!(payloads.len() == 1);
+            let (id, recipient, _, delay_ms): (ObjectID, SuiAddress, u64, u64) = bcs::from_bytes(payloads[0])?;
+            ensure!(id == launch.launch && recipient == SuiAddress::from(CAP_HOLDER));
+            ensure!(delay_ms == 172_800_000, "recipient-only schedules retain the applied notice");
+        }
         let pair = self.pair(launch);
-        blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![(self.blast, "launch", "reassign_curve_fee_cap", pair, launch.launch, self.version)])?;
+        blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![
+            (self.blast, "launch", "reassign_curve_fee_cap", pair.clone(), launch.launch, self.version),
+            (self.blast, "launch", "reassign_metadata_cap", pair, launch.launch, self.version),
+        ])?;
 
         let owners = [self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()];
         let refused = Expected::Abort { package: self.blast, module: "launch", code: CREATOR_CAP_NOT_LIVE };

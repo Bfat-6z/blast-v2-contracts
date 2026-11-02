@@ -1489,7 +1489,7 @@ role authorizes only the functions that name it. The roles are types in `blast_f
 | `blast_fun_domain::UnpauseAdmin` | `blast_fun::unpause` |
 | `blast_fun_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_fun_domain::UpgradeAdmin` | `blast_fun::package_admin::authorize_upgrade`, `blast_fun::package_admin::commit_upgrade_and_advance`, `blast_fun::package_admin::make_immutable` |
-| `blast_fun_domain::CreatorAdmin` | `launch::schedule_curve_fee_cap_reassignment`, `launch::schedule_metadata_cap_reassignment` |
+| `blast_fun_domain::CreatorAdmin` | `launch::schedule_curve_fee_cap_reassignment`, `launch::schedule_metadata_cap_reassignment`, `launch::schedule_curve_fee_cap_delay`, `launch::schedule_metadata_cap_delay` |
 | `blast_fun_domain::TreasuryAdmin` | `launch_config::schedule_protocol_allocation`, `runtime_config::schedule_treasury` |
 | `blast_fun_domain::FeeAdmin` | `launch_config::schedule_trade_fees`, `launch_config::schedule_creation_fee`, `launch_config::add_partner`, `launch_config::remove_partner`, `runtime_config::schedule_protocol_fee_share` |
 | `blast_fun_domain::ListingAdmin` | `launch_config::set_meme_decimals_allowed`, `launch_config::set_quote_allowed` |
@@ -1814,7 +1814,7 @@ accepts a proposed value and **next** `delay_ms`, but its execution deadline is
 `ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
 current wait. The proposed value and next notice become active together only after
 explicit application with the current version and canonical Clock. A value-only
-change supplies the applied delay; a delay-only change supplies the applied value.
+change retains the applied delay; a delay-only change retains the applied value.
 Different operations, including operations in the same package, can use different delays.
 
 Rescheduling replaces the proposal and restarts the full currently applied notice.
@@ -1871,7 +1871,11 @@ entry/settlement check TRADING. Migration checks MIGRATE; opening-round delivery
 
 CreatorAdmin schedules each cap replacement separately with
 `launch::schedule_curve_fee_cap_reassignment` or
-`launch::schedule_metadata_cap_reassignment`. Anyone executes the corresponding
+`launch::schedule_metadata_cap_reassignment`. Both accept a recipient and preserve
+that operation's applied notice. CreatorAdmin changes only the notice with
+`launch::schedule_curve_fee_cap_delay` or `launch::schedule_metadata_cap_delay`;
+the change waits the old notice. Each operation has one pending proposal, so either
+kind of schedule replaces its previous proposal. Anyone executes the corresponding
 `launch::reassign_curve_fee_cap` or `launch::reassign_metadata_cap` after the delay.
 The current cap keeps its authority until execution. CancelAdmin can cancel either.
 ClaimSignerAdmin may immediately revoke the signer with
@@ -8270,12 +8274,12 @@ public fun schedule_curve_fee_cap_delay<Meme, Quote>(
 
 /// Announces a replacement recipient without invalidating the current curve-fee cap.
 /// Unclaimed curve fees follow the fresh cap when applied.
+/// Preserves this operation's currently applied notice period.
 public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CreatorAdmin>,
     recipient: address,
-    delay_ms: u64,
     clock: &Clock,
 )
 
@@ -8304,12 +8308,12 @@ public fun schedule_metadata_cap_delay<Meme, Quote>(
 )
 
 /// Announces a replacement recipient without invalidating the current metadata cap.
+/// Preserves this operation's currently applied notice period.
 public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CreatorAdmin>,
     recipient: address,
-    delay_ms: u64,
     clock: &Clock,
 )
 

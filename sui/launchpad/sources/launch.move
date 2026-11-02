@@ -387,10 +387,12 @@ public fun schedule_curve_fee_cap_delay<Meme, Quote>(self: &mut Launch<Meme, Quo
 
 /// Announces a replacement recipient without invalidating the current curve-fee cap.
 /// Unclaimed curve fees follow the fresh cap when applied.
-public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, delay_ms: u64, clock: &Clock) {
+/// Preserves this operation's currently applied notice period.
+public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, clock: &Clock) {
     package_version.assert_current();
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
-    let pending = delayed::new_pending(option::some(recipient), self.curve_fee_cap_delay_ms, delay_ms, clock);
+    let delay_ms = self.curve_fee_cap_delay_ms;
+    let pending = delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock);
     self.pending_curve_fee_cap_recipient = option::some(pending);
     events::curve_fee_cap_reassignment_scheduled(self.id.to_inner(), recipient, pending.ready_at_ms(), delay_ms);
 }
@@ -440,10 +442,12 @@ public fun schedule_metadata_cap_delay<Meme, Quote>(self: &mut Launch<Meme, Quot
 }
 
 /// Announces a replacement recipient without invalidating the current metadata cap.
-public fun schedule_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, delay_ms: u64, clock: &Clock) {
+/// Preserves this operation's currently applied notice period.
+public fun schedule_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, clock: &Clock) {
     package_version.assert_current();
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
-    let pending = delayed::new_pending(option::some(recipient), self.metadata_cap_delay_ms, delay_ms, clock);
+    let delay_ms = self.metadata_cap_delay_ms;
+    let pending = delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock);
     self.pending_metadata_cap_recipient = option::some(pending);
     events::metadata_cap_reassignment_scheduled(self.id.to_inner(), recipient, pending.ready_at_ms(), delay_ms);
 }
@@ -1001,7 +1005,7 @@ public fun reassign_metadata_cap_for_testing<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_metadata_cap_reassignment(package_version, admin, recipient, 172_800_000, &clock);
+    self.schedule_metadata_cap_reassignment(package_version, admin, recipient, &clock);
     clock.set_for_testing(172_800_000);
     self.reassign_metadata_cap(package_version, &clock, ctx);
     clock.destroy_for_testing();
@@ -1016,7 +1020,7 @@ public fun reassign_curve_fee_cap_for_testing<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_curve_fee_cap_reassignment(package_version, admin, recipient, 172_800_000, &clock);
+    self.schedule_curve_fee_cap_reassignment(package_version, admin, recipient, &clock);
     clock.set_for_testing(172_800_000);
     self.reassign_curve_fee_cap(package_version, &clock, ctx);
     clock.destroy_for_testing();
