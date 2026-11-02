@@ -33,9 +33,12 @@ aborts unless the supplied cap is the recorded one: `ECurveFeeCapNotLive`
 (`claim_creator_fees`, `assert_curve_fee_cap`) or `EMetadataCapNotLive` (the
 metadata setters).
 
-`reassign_curve_fee_cap` and `reassign_metadata_cap` each retire the pending
-claim or live cap for their concern, mint a new cap, record its ID, and
-transfer it to a nonzero address. Revoking a pending claim through one leaves
+When applying a reassignment, `apply_curve_fee_cap_update` and
+`apply_metadata_cap_update` each retire the pending claim or live cap for their
+concern, mint a new cap, record its ID, and transfer it to a nonzero address.
+Delay-only proposals preserve the live cap, as specified in
+[0134](0134-delayed-administration-pause-and-table-acl.md).
+Revoking a pending claim through one leaves
 the other concern unassigned until an administrator reassigns it. A CTO calls
 both in one transaction. `blast_fun_dex::pool::create` calls
 `Launch::assert_curve_fee_cap`.
@@ -66,7 +69,7 @@ on a launch (with `CurveFeeCap`) or a post-migration vault (with `LpFeeCap`),
 passing a drop-only `Custodian` witness value. The cap is destroyed and the fee
 stream moves to the terminal `Custodian(TypeName)` state, naming that witness
 type. Afterward only `claim_custodied_creator_fees` with the same witness
-claims it, and `reassign_curve_fee_cap` or `issue_lp_fee_cap` abort before any
+claims it, and `apply_curve_fee_cap_update` or `issue_lp_fee_cap` abort before any
 role or recipient check. Each lock rejects a witness anyone can construct: a
 primitive, a vector, or a framework type such as `Option`, `String`, or
 `VecMap`, whose package is `0x1` or `0x2` (`EInvalidFeeCustodian` in launchpad

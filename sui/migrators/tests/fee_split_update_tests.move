@@ -184,7 +184,7 @@ fun zero_fee_settlement_still_commits_the_split_without_a_collection_event() {
 fun a_reassigned_curve_fee_cap_updates_the_split() {
     let mut f = start(creator_and_a());
     let retired = f.claim_curve_fee_cap();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     let curve_fee_cap = f.take_reassigned_cap();
     f.settle_exact_position(&curve_fee_cap, rewards_and_b());
@@ -216,7 +216,7 @@ fun an_identical_proposal_is_rejected() {
 fun a_retired_curve_fee_cap_cannot_update_the_split() {
     let mut f = start(creator_and_a());
     let retired = f.claim_curve_fee_cap();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     f.settle_exact_position(&retired, rewards_and_b());
 
@@ -232,7 +232,7 @@ fun a_retired_curve_fee_cap_cannot_update_the_split() {
 fun the_live_cap_is_checked_before_the_proposal() {
     let mut f = start(creator_and_a());
     let retired = f.claim_curve_fee_cap();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     f.settle_exact_position(&retired, creator_and_a());
 
@@ -309,7 +309,7 @@ fun a_reassigned_cap_claims_the_creator_fees_accrued_before_the_reassignment() {
     f.scenario.next_tx(KEEPER);
     f.accrue(4, 0);
     f.collect_exact_position();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     let curve_fee_cap = f.take_reassigned_cap();
     let (meme, quote) = f.claim_creator_fees(&curve_fee_cap);
@@ -332,7 +332,7 @@ fun a_retired_cap_cannot_claim_creator_fees() {
     f.scenario.next_tx(KEEPER);
     f.accrue(4, 4);
     f.collect_exact_position();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     let (meme, quote) = f.claim_creator_fees(&retired);
 
@@ -384,7 +384,7 @@ fun a_drained_creator_balance_cannot_be_claimed_again() {
 fun a_stale_generation_rejects_the_creator_claim_before_the_cap_and_balance_checks() {
     let mut f = start(creator_and_a());
     let retired = f.claim_curve_fee_cap();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
     f.migrators_version.set_for_testing(2);
 
     let (meme, quote) = f.claim_creator_fees(&retired);
@@ -469,7 +469,7 @@ fun claim_curve_fee_cap(self: &mut FeeSplitFixture): CurveFeeCap<FEE_SPLIT_UPDAT
 }
 
 /// Retires the live curve-fee cap and delivers a fresh one to the creator.
-fun reassign_curve_fee_cap(self: &mut FeeSplitFixture) {
+fun apply_curve_fee_cap_update(self: &mut FeeSplitFixture) {
     self.scenario.next_tx(ADMIN);
     let admin = blast_acl::witness_for_testing<CreatorAdmin>();
     let mut launch = self.take_launch();

@@ -1046,10 +1046,10 @@ launch_authority_violations=''
 # record authority, claim from either ledger owner, retire the pending claim, reach the native
 # MetadataCap, or transfer value outside the approved paths (ADR 0082).
 for authority_spec in \
-  'self.curve_fee_cap_id = |claim_creator_caps reassign_curve_fee_cap ' \
-  'self.blast_metadata_cap_id = |claim_creator_caps reassign_metadata_cap ' \
+  'self.curve_fee_cap_id = |apply_curve_fee_cap_update claim_creator_caps ' \
+  'self.blast_metadata_cap_id = |apply_metadata_cap_update claim_creator_caps ' \
   'self.creator.extract()|claim_creator_caps ' \
-  'self.creator = |reassign_curve_fee_cap reassign_metadata_cap ' \
+  'self.creator = |apply_curve_fee_cap_update apply_metadata_cap_update ' \
   'self.fee_ledger.claim_creator_fees(|claim_creator_fees ' \
   'self.fee_ledger.claim_protocol_fees(|claim_protocol_fees claim_protocol_fees_with_partner ' \
   'partner.pay(|claim_protocol_fees_with_partner ' \
@@ -1059,7 +1059,7 @@ for authority_spec in \
   'self.assert_curve_fee_cap(|claim_creator_fees ' \
   'self.assert_metadata_update(|set_description set_icon_url set_name ' \
   '&self.metadata_cap|set_description set_icon_url set_name ' \
-  'transfer::public_transfer(|migrate pay pay_treasury reassign_curve_fee_cap reassign_metadata_cap ' \
+  'transfer::public_transfer(|apply_curve_fee_cap_update apply_metadata_cap_update migrate pay pay_treasury ' \
   '.opening_round_meme.pay(|deliver_opening_round ' \
   '.opening_round_quote.pay(|deliver_opening_round ' \
   '.allocated_meme.pay(|migrate ' \
@@ -1261,7 +1261,7 @@ receiver_syntax_violations="$(
       | move_normalized_source \
       | sed 's/ *:: */::/g; s/ *(/(/g' \
       | rg -o \
-        '\b(blast_acl::(grant_admin|revoke_admin|destroy_admin_cap|begin_super_admin_transfer|cancel_super_admin_transfer|accept_super_admin_transfer|destroy_retired_super_admin_cap|sign_in)|runtime_config::((schedule|apply|cancel)_(creator_claim_signer|protocol_fee_share|treasury)|revoke_creator_claim_signer|creator_claim_signer|protocol_fee_share|treasury)|launch_config::(set_meme_decimals_allowed|set_quote_allowed|(schedule|apply|cancel)_(trade_fees|protocol_allocation|migration_witness|creation_fee)|remove_migration_witness|snapshot_for_launch|protocol_allocation|allowed_meme_decimals_count_for_testing|allowed_quote_count_for_testing|allowed_migration_witness_count_for_testing)|allocation::(recipients|apportion_fee_split|add_protocol|apportion_meme|apportion_quote|destinations|destination)|launch::(treasury_cap_mut|set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_protection|finalize|share|pool_tier|lp_fee_split|partner_id|claim_creator_caps|reassign_curve_fee_cap|reassign_metadata_cap|assert_curve_fee_cap|set_name|set_description|set_icon_url)|launch_ticket::(destroy|treasury_cap_mut|decimals)|fees::(accrue|claim_creator_fees|claim_protocol_fees)|package::test_upgrade|package_admin::(authorize_upgrade|commit_upgrade|publisher_id_for_testing|upgrade_cap_id_for_testing|package_id_for_testing|version_for_testing|policy_for_testing))(<[^>]+>)?\(' \
+        '\b(blast_acl::(grant_admin|revoke_admin|destroy_admin_cap|begin_super_admin_transfer|cancel_super_admin_transfer|accept_super_admin_transfer|destroy_retired_super_admin_cap|sign_in)|runtime_config::((schedule|apply|cancel)_(creator_claim_signer|protocol_fee_share|treasury)|revoke_creator_claim_signer|creator_claim_signer|protocol_fee_share|treasury)|launch_config::(set_meme_decimals_allowed|set_quote_allowed|(schedule|apply|cancel)_(trade_fees|protocol_allocation|migration_witness|creation_fee)|remove_migration_witness|snapshot_for_launch|protocol_allocation|allowed_meme_decimals_count_for_testing|allowed_quote_count_for_testing|allowed_migration_witness_count_for_testing)|allocation::(recipients|apportion_fee_split|add_protocol|apportion_meme|apportion_quote|destinations|destination)|launch::(treasury_cap_mut|set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_protection|finalize|share|pool_tier|lp_fee_split|partner_id|claim_creator_caps|apply_curve_fee_cap_update|apply_metadata_cap_update|assert_curve_fee_cap|set_name|set_description|set_icon_url)|launch_ticket::(destroy|treasury_cap_mut|decimals)|fees::(accrue|claim_creator_fees|claim_protocol_fees)|package::test_upgrade|package_admin::(authorize_upgrade|commit_upgrade|publisher_id_for_testing|upgrade_cap_id_for_testing|package_id_for_testing|version_for_testing|policy_for_testing))(<[^>]+>)?\(' \
       || true; } | sed "s|^|  ${move_file}: |"
   done
 )"

@@ -1499,8 +1499,8 @@ impl World {
         }
         let pair = self.pair(launch);
         blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![
-            (self.blast, "launch", "reassign_curve_fee_cap", pair.clone(), launch.launch, self.version),
-            (self.blast, "launch", "reassign_metadata_cap", pair, launch.launch, self.version),
+            (self.blast, "launch", "apply_curve_fee_cap_update", pair.clone(), launch.launch, self.version),
+            (self.blast, "launch", "apply_metadata_cap_update", pair, launch.launch, self.version),
         ])?;
 
         let owners = [self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()];
@@ -1513,7 +1513,7 @@ impl World {
         let refused = Expected::Abort { package: self.blast, module: "launch", code: CREATOR_CAP_NOT_LIVE };
         let pt = self.claim_creator_fees_pt(launch, m, cap)?;
         self.h.assert_rolled_back(pt, refused, &[m.vault, cap], &owners)?;
-        self.report("after reassign_curve_fee_cap the retired cap: settle_and_update_fee_split and claim_creator_fees abort launch creator_cap_not_live, rolled back".into());
+        self.report("after apply_curve_fee_cap_update the retired cap: settle_and_update_fee_split and claim_creator_fees abort launch creator_cap_not_live, rolled back".into());
 
         Ok(())
     }

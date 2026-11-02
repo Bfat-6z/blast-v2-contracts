@@ -470,7 +470,7 @@ fun creator_funded_pool_rejects_a_retired_creator_cap() {
     f.finish_external!();
     f.next_tx!(@0xA, |f| {
         let witness = f.authority.sign_in(&f.admin);
-        f.launch.reassign_curve_fee_cap(&f.version, &witness, @0xC, f.ctx!());
+        f.launch.apply_curve_fee_cap_update(&f.version, &witness, @0xC, f.ctx!());
         let (pool, position) = f.create_pool!(0);
         destroy(pool);
         destroy(position);

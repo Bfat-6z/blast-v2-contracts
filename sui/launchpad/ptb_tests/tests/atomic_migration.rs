@@ -482,7 +482,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
         let launch_arg = b.obj(w.h.shared(launch.launch, true))?;
         let version = b.obj(w.h.shared(w.version, false))?;
         let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, w.blast, "launch", &format!("reassign_{cap}"),
+        call(&mut b, w.blast, "launch", &format!("apply_{cap}_update"),
             vec![launch.meme.clone(), sui()], vec![launch_arg, version, clock]);
         w.h.assert_rolled_back(b.finish(),
             Expected::Abort { package: w.admin, module: "delayed", code: 20 }, &watched, &owners)?;
@@ -499,7 +499,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
         let launch_arg = b.obj(w.h.shared(launch.launch, true))?;
         let version = b.obj(w.h.shared(w.version, false))?;
         let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, w.blast, "launch", &format!("reassign_{cap}"),
+        call(&mut b, w.blast, "launch", &format!("apply_{cap}_update"),
             vec![launch.meme.clone(), sui()], vec![launch_arg, version, clock]);
         let applied = w.h.execute(b.finish())?;
         applied.assert_success();

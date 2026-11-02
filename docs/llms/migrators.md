@@ -48,7 +48,7 @@ Calls also take objects from other packages:
   the ID of the one live cap. Its holder claims the creator's LP fees and changes the fee split. The
   creator gets it from `launch::claim_creator_caps`. A Blast admin with
   `blast_fun_domain::CreatorAdmin` can retire it and issue a new one with
-  `launch::reassign_curve_fee_cap`; the new cap then controls the vault too.
+  `launch::apply_curve_fee_cap_update`; the new cap then controls the vault too.
 - Blast admin roles. An admin calls `blast_acl::sign_in` (type argument `Role`) with the shared
   `blast_acl::ACL` and its own `blast_acl::AdminCap`, which yields a droppable
   `blast_acl::AdminWitness` (`AdminWitness<Role>`). Each admin call takes the witness for exactly

@@ -392,7 +392,7 @@ public fun claim_creator_caps<Meme, Quote>(
 }
 
 /// Changes only this launch's curve fee cap notice, waiting its current delay.
-/// Apply through `reassign_curve_fee_cap`; a policy-only proposal transfers no cap.
+/// Apply through `apply_curve_fee_cap_update`; a policy-only proposal transfers no cap.
 public fun schedule_curve_fee_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -459,7 +459,10 @@ public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
     events::curve_fee_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
 
-public fun reassign_curve_fee_cap<Meme, Quote>(
+/// Applies a ready curve-fee cap proposal. A delay-only proposal changes the notice;
+/// a reassignment issues a fresh cap to the recipient and retires the old authority.
+/// Anyone may apply after the scheduled deadline.
+public fun apply_curve_fee_cap_update<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
     clock: &Clock,
@@ -489,7 +492,7 @@ public fun reassign_curve_fee_cap<Meme, Quote>(
 }
 
 /// Changes only this launch's metadata cap notice, waiting its current delay.
-/// Apply through `reassign_metadata_cap`; a policy-only proposal transfers no cap.
+/// Apply through `apply_metadata_cap_update`; a policy-only proposal transfers no cap.
 public fun schedule_metadata_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -550,7 +553,10 @@ public fun cancel_metadata_cap_reassignment<Meme, Quote>(
     events::metadata_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
 
-public fun reassign_metadata_cap<Meme, Quote>(
+/// Applies a ready metadata cap proposal. A delay-only proposal changes the notice;
+/// a reassignment issues a fresh cap to the recipient and retires the old authority.
+/// Anyone may apply after the scheduled deadline.
+public fun apply_metadata_cap_update<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
     clock: &Clock,
@@ -1123,7 +1129,7 @@ public fun reassign_metadata_cap_for_testing<Meme, Quote>(
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_metadata_cap_reassignment(package_version, admin, recipient, &clock);
     clock.set_for_testing(DEFAULT_CAP_REASSIGNMENT_DELAY_MS);
-    self.reassign_metadata_cap(package_version, &clock, ctx);
+    self.apply_metadata_cap_update(package_version, &clock, ctx);
     clock.destroy_for_testing();
 }
 
@@ -1138,7 +1144,7 @@ public fun reassign_curve_fee_cap_for_testing<Meme, Quote>(
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_curve_fee_cap_reassignment(package_version, admin, recipient, &clock);
     clock.set_for_testing(DEFAULT_CAP_REASSIGNMENT_DELAY_MS);
-    self.reassign_curve_fee_cap(package_version, &clock, ctx);
+    self.apply_curve_fee_cap_update(package_version, &clock, ctx);
     clock.destroy_for_testing();
 }
 

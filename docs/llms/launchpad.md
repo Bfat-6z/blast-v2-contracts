@@ -411,10 +411,11 @@ allow/remove toggles for Quotes, decimals, and adapters instead abort inside the
   claim on every launch pays it. Application emits `blast_fun::events::TreasuryChanged`.
 - `runtime_config::set_creator_claim_signer` (ClaimSignerAdmin), with a 32-byte Ed25519 public key,
   with immediate revocation handled by the separate revoke operation. Application emits `blast_fun::events::CreatorClaimSignerSet`.
-- `launch::reassign_curve_fee_cap` and `launch::reassign_metadata_cap` (anyone after the delay), using the
-  scheduled non-zero recipient: mint a fresh cap, record it as the live one, send it to the recipient, and
-  cancel any unclaimed creator claim. The old cap stops working; unclaimed curve fees follow the
-  new cap. Emit `blast_fun::events::CurveFeeCapReassigned` or
+- `launch::apply_curve_fee_cap_update` and `launch::apply_metadata_cap_update` (anyone after the delay)
+  apply the pending proposal. A delay-only proposal updates the notice and keeps the live cap.
+  A reassignment mints a fresh cap, records it as the live one, sends it to the scheduled non-zero
+  recipient, and cancels any unclaimed creator claim. The old cap stops working; unclaimed curve
+  fees follow the new cap. Reassignments emit `blast_fun::events::CurveFeeCapReassigned` or
   `blast_fun::events::MetadataCapReassigned`.
 - Upgrades (UpgradeAdmin): `blast_fun::package_admin::authorize_upgrade` returns an
   `UpgradeTicket` for an exact digest; after the Upgrade command,
@@ -495,8 +496,9 @@ that operation's applied notice. CreatorAdmin changes only the notice with
 `launch::schedule_curve_fee_cap_delay` or `launch::schedule_metadata_cap_delay`;
 the change waits the old notice. Each operation has one pending proposal, so either
 kind of schedule replaces its previous proposal. Anyone executes the corresponding
-`launch::reassign_curve_fee_cap` or `launch::reassign_metadata_cap` after the delay.
-The current cap keeps its authority until execution. CancelAdmin can cancel either.
+`launch::apply_curve_fee_cap_update` or `launch::apply_metadata_cap_update` after the delay.
+Delay-only execution keeps the current cap's authority; reassignment retires it.
+CancelAdmin can cancel either proposal.
 Delay policy has distinct event types for each cap: scheduling emits
 `blast_fun::events::CurveFeeCapDelayScheduled` or
 `blast_fun::events::MetadataCapDelayScheduled`; applying emits

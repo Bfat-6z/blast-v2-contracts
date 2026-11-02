@@ -106,10 +106,10 @@ for cap in ['curve_fee_cap', 'metadata_cap']:
     require(fs[f'schedule_{cap}_reassignment'][1], f'let delay_ms = self.{cap}_delay_ms;',
             'delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock)')
     require(fs[f'cancel_{cap}_reassignment'][0], '&AdminWitness<CancelAdmin>')
-    require(fs[f'reassign_{cap}'][1],
+    require(fs[f'apply_{cap}_update'][1],
             f'apply_cap_reassignment_delay( &mut self.pending_{cap}_recipient, &mut self.{cap}_delay_ms, clock, )',
             f'events::{cap}_delay_changed(self.id.to_inner(), self.{cap}_delay_ms);')
-    assert 'AdminWitness' not in fs[f'reassign_{cap}'][0]
+    assert 'AdminWitness' not in fs[f'apply_{cap}_update'][0]
 
 for package, module, actions in [
     ('launchpad', 'launch', {
