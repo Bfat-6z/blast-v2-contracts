@@ -24,7 +24,10 @@ public(package) fun oracle_notional_up(
     let numerator = (base as u256) * (base_price as u256) * (collateral_unit as u256);
     let denominator = (collateral_price as u256) * (base_unit as u256);
     let value = numerator.div_ceil(denominator);
-    assert!(value <= std::u64::max_value!() as u256, blast_boosts_core::errors::arithmetic_overflow!());
+    assert!(
+        value <= std::u64::max_value!() as u256,
+        blast_boosts_core::errors::arithmetic_overflow!()
+    );
 
     value as u64
 }
@@ -41,9 +44,13 @@ public(package) fun base_for_oracle_notional_down(
     assert!(base_price > 0 && collateral_price > 0, blast_boosts_core::errors::invalid_price!());
     assert!(lot_size > 0, blast_boosts_core::errors::invalid_lot_size!());
 
-    let base = (notional as u256) * (collateral_price as u256) * (base_unit as u256)
+    let base =
+        (notional as u256) * (collateral_price as u256) * (base_unit as u256)
         / ((base_price as u256) * (collateral_unit as u256));
-    assert!(base <= std::u64::max_value!() as u256, blast_boosts_core::errors::arithmetic_overflow!());
+    assert!(
+        base <= std::u64::max_value!() as u256,
+        blast_boosts_core::errors::arithmetic_overflow!()
+    );
 
     (base as u64) / lot_size * lot_size
 }
@@ -64,11 +71,15 @@ public(package) fun base_for_execution_notional_down(
 ): u64 {
     assert!(base_price > 0 && collateral_price > 0, blast_boosts_core::errors::invalid_price!());
     assert!(lot_size > 0, blast_boosts_core::errors::invalid_lot_size!());
-    assert!(slippage_bps < constants::basis_points_denominator!(), blast_boosts_core::errors::invalid_max_slippage_bps!());
+    assert!(
+        slippage_bps < constants::basis_points_denominator!(),
+        blast_boosts_core::errors::invalid_max_slippage_bps!()
+    );
 
     let bps = constants::basis_points_denominator!() as u256;
     let upper_price = (base_price as u256) * (bps + (slippage_bps as u256)) / bps + 1;
-    let lots = (notional as u256) * (collateral_price as u256) * (base_unit as u256)
+    let lots =
+        (notional as u256) * (collateral_price as u256) * (base_unit as u256)
         / (upper_price * (collateral_unit as u256) * (lot_size as u256));
     let representable_lots = (std::u64::max_value!() / lot_size) as u256;
 
@@ -94,23 +105,38 @@ public(package) fun increase_base_down(
     assert!(nav > 0, blast_boosts_core::errors::invalid_nav!());
     assert!(target_leverage_bps > 0, blast_boosts_core::errors::invalid_target_leverage_bps!());
 
-    let target = (nav as u128) * (target_leverage_bps as u128) / (constants::basis_points_denominator!() as u128);
+    let target =
+        (nav as u128) * (target_leverage_bps as u128) / (constants::basis_points_denominator!() as u128);
     if (target <= notional as u128) return 0;
 
     let capped_base = base_for_execution_notional_down(
-        max_order_notional, base_price, collateral_price, lot_size, max_slippage_bps, base_unit, collateral_unit,
+        max_order_notional,
+        base_price,
+        collateral_price,
+        lot_size,
+        max_slippage_bps,
+        base_unit,
+        collateral_unit,
     );
     assert!(capped_base > 0, blast_boosts_core::errors::order_cap_below_minimum!());
+
     let maximum = capped_base;
     let mut low = 0;
     let mut high = maximum / lot_size;
 
     while (low < high) {
         let candidate = low + (high - low).div_ceil(2);
-        let value = oracle_notional_up(candidate * lot_size, base_price, collateral_price, base_unit, collateral_unit);
+        let value = oracle_notional_up(
+            candidate * lot_size,
+            base_price,
+            collateral_price,
+            base_unit,
+            collateral_unit
+        );
         let cost = execution_cost_up(value, venue_fee_bps, max_slippage_bps);
         let notional_after = (notional as u128) + (value as u128);
-        let within_target = notional_after <= std::u64::max_value!() as u128 && (nav as u128) > cost
+        let within_target =
+            notional_after <= std::u64::max_value!() as u128 && (nav as u128) > cost
             && notional_after * (constants::basis_points_denominator!() as u128)
                 <= (target_leverage_bps as u128) * ((nav as u128) - cost);
 
@@ -125,7 +151,12 @@ public(package) fun increase_base_down(
 }
 
 /// Returns whether leverage rose from one reading to the next, comparing `notional / nav` exactly.
-public(package) fun leverage_rose(notional_before: u64, nav_before: u64, notional_after: u64, nav_after: u64): bool {
+public(package) fun leverage_rose(
+    notional_before: u64,
+    nav_before: u64,
+    notional_after: u64,
+    nav_after: u64
+): bool {
     (notional_after as u128) * (nav_before as u128) > (notional_before as u128) * (nav_after as u128)
 }
 
@@ -174,12 +205,19 @@ public(package) fun reduction_is_sufficient(
 /// basis point. Both the full-batch projection and the real fill must improve;
 /// the real result must be at least as close as the conservative projection.
 public(package) fun reduction_matches_capacity(
-    notional_before: u64, nav_before: u64,
-    notional_after: u64, nav_after: u64,
-    projected_notional: u64, projected_nav: u64,
+    notional_before: u64,
+    nav_before: u64,
+    notional_after: u64,
+    nav_after: u64,
+    projected_notional: u64,
+    projected_nav: u64,
     target_leverage_bps: u64,
 ): bool {
-    assert!(nav_before > 0 && nav_after > 0 && projected_nav > 0, blast_boosts_core::errors::invalid_nav!());
+    assert!(
+        nav_before > 0 && nav_after > 0 && projected_nav > 0,
+        blast_boosts_core::errors::invalid_nav!()
+    );
+
     let bps = constants::basis_points_denominator!() as u256;
     let target = target_leverage_bps as u256;
     let before = ((notional_before as u256) * bps).diff(target * (nav_before as u256));
@@ -193,7 +231,11 @@ public(package) fun reduction_matches_capacity(
 
 /// Reserves adverse execution first, then the authenticated fee on that adverse quote.
 /// Each session calls this separately: rounding a multi-order total is not equivalent.
-public(package) fun execution_cost_up(notional: u64, venue_fee_bps: u64, max_slippage_bps: u64): u128 {
+public(package) fun execution_cost_up(
+    notional: u64,
+    venue_fee_bps: u64,
+    max_slippage_bps: u64
+): u128 {
     assert!(
         venue_fee_bps <= constants::basis_points_denominator!() && max_slippage_bps < constants::basis_points_denominator!(),
         blast_boosts_core::errors::venue_fee_unusable!(),

@@ -29,7 +29,11 @@ public enum Case has copy, drop {
     Success,
 }
 
-public struct Fixture { version: PackageVersion, clock: Clock, policy: LpFeePolicy, }
+public struct Fixture {
+    version: PackageVersion,
+    clock: Clock,
+    policy: LpFeePolicy,
+}
 
 public struct CoinA has drop {}
 public struct CoinB has drop {}
@@ -138,7 +142,16 @@ fun coin_clear_uses_defaults_applied_during_its_notice() {
     let f = &mut fixture;
     let fee_admin = blast_acl::witness_for_testing<FeeAdmin>();
     f.policy.schedule_clear_coin_shares<CoinA>(&f.version, &fee_admin, 172_800_000, &f.clock);
-    f.policy.schedule_default_shares(&f.version, &fee_admin, bps::new(900), bps::new(901), 172_800_000, &f.clock);
+    f
+        .policy
+        .schedule_default_shares(
+            &f.version,
+            &fee_admin,
+            bps::new(900),
+            bps::new(901),
+            172_800_000,
+            &f.clock
+        );
     f.clock.set_for_testing(START + DELAY);
     f.policy.apply_default_shares(&f.version, &f.clock);
     let (a, b) = f.policy.shares<CoinA>();
@@ -146,7 +159,10 @@ fun coin_clear_uses_defaults_applied_during_its_notice() {
     f.policy.apply_coin_shares<CoinA>(&f.version, &f.clock);
     let (a, b) = f.policy.shares<CoinA>();
     let (other_a, other_b) = f.policy.shares<CoinB>();
-    assert_eq!(vector[a.value(), b.value(), other_a.value(), other_b.value()], vector[900, 901, 7, 8]);
+    assert_eq!(
+        vector[a.value(), b.value(), other_a.value(), other_b.value()],
+        vector[900, 901, 7, 8]
+    );
     destroy(fixture);
 }
 
@@ -163,7 +179,10 @@ fun exercise(setting: Setting, case: Case) {
     f.clock.set_for_testing(START + DELAY - if (case == Case::Early) 1 else 0);
     assert_eq!(snapshot(&f, setting), initial);
     match (case) {
-        Case::Early => { apply(&mut f, setting); destroy(f); },
+        Case::Early => {
+            apply(&mut f, setting);
+            destroy(f);
+        },
         Case::Replacement => {
             schedule(&mut f, setting, 200);
             assert_notice(&f, setting, 200, true);
@@ -178,18 +197,30 @@ fun exercise(setting: Setting, case: Case) {
             apply(&mut f, setting);
             destroy(f);
         },
-        Case::Replay => { apply(&mut f, setting); apply(&mut f, setting); destroy(f); },
+        Case::Replay => {
+            apply(&mut f, setting);
+            apply(&mut f, setting);
+            destroy(f);
+        },
         Case::StaleSchedule => destroy(f),
-        Case::StaleApply => { f.version.set_for_testing(2); apply(&mut f, setting); destroy(f); },
-        Case::StaleCancel => { f.version.set_for_testing(2); cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false); destroy(f); },
+        Case::StaleApply => {
+            f.version.set_for_testing(2);
+            apply(&mut f, setting);
+            destroy(f);
+        },
+        Case::StaleCancel => {
+            f.version.set_for_testing(2);
+            cancel(&mut f, setting);
+            assert_notice(&f, setting, 100, false);
+            destroy(f);
+        },
         Case::Success => {
             // A ready proposal can still be cancelled; a later proposal receives a full delay.
             cancel(&mut f, setting);
             assert_notice(&f, setting, 100, false);
             assert_eq!(snapshot(&f, setting), initial);
             schedule(&mut f, setting, 100);
-    assert_notice(&f, setting, 100, true);
+            assert_notice(&f, setting, 100, true);
             f.clock.set_for_testing(START + 2 * DELAY);
             apply(&mut f, setting);
             assert_value(&f, setting, 100);
@@ -217,60 +248,174 @@ fun start(setting: Setting): Fixture {
     clock.set_for_testing(START);
     let mut policy = lp_fee_policy::new_for_testing(&mut ctx);
     // Existing overrides must survive unrelated coin changes and cancellations.
-    policy.set_coin_shares_for_testing<CoinA>(&version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(5), bps::new(6), &mut ctx);
-    policy.set_coin_shares_for_testing<CoinB>(&version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(7), bps::new(8), &mut ctx);
+    policy.set_coin_shares_for_testing<CoinA>(
+        &version,
+        &blast_acl::witness_for_testing<FeeAdmin>(),
+        bps::new(5),
+        bps::new(6),
+        &mut ctx
+    );
+    policy.set_coin_shares_for_testing<CoinB>(
+        &version,
+        &blast_acl::witness_for_testing<FeeAdmin>(),
+        bps::new(7),
+        bps::new(8),
+        &mut ctx
+    );
     let _ = setting;
     Fixture { version, clock, policy }
 }
 
 fun prepare_again(f: &mut Fixture, setting: Setting) { if (setting == Setting::CoinClear) {
-    f.policy.schedule_coin_shares<CoinA>(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(5), bps::new(6), 172_800_000, &f.clock);
-    f.clock.set_for_testing(START + 3 * DELAY);
-    f.policy.apply_coin_shares<CoinA>(&f.version, &f.clock);
-} }
+        f
+            .policy
+            .schedule_coin_shares<CoinA>(
+                &f.version,
+                &blast_acl::witness_for_testing<FeeAdmin>(),
+                bps::new(5),
+                bps::new(6),
+                172_800_000,
+                &f.clock
+            );
+        f.clock.set_for_testing(START + 3 * DELAY);
+        f.policy.apply_coin_shares<CoinA>(&f.version, &f.clock);
+    } }
 
 fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
     match (setting) {
-        Setting::Destination => { f.policy.schedule_protocol_destination(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300, 172_800_000, &f.clock); },
-        Setting::Defaults => { f.policy.schedule_default_shares(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), 172_800_000, &f.clock); },
-        Setting::CoinOverride => { f.policy.schedule_coin_shares<CoinA>(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), 172_800_000, &f.clock); },
-        Setting::CoinClear => { let _ = n; f.policy.schedule_clear_coin_shares<CoinA>(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), 172_800_000, &f.clock); },
+        Setting::Destination => {
+            f
+                .policy
+                .schedule_protocol_destination(
+                    &f.version,
+                    &blast_acl::witness_for_testing<TreasuryAdmin>(),
+                    if (n == 100) @0x100
+                    else if (n == 200) @0x200
+                    else @0x300,
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::Defaults => {
+            f
+                .policy
+                .schedule_default_shares(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    bps::new(n),
+                    bps::new(n + 1),
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::CoinOverride => {
+            f
+                .policy
+                .schedule_coin_shares<CoinA>(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    bps::new(n),
+                    bps::new(n + 1),
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::CoinClear => {
+            let _ = n;
+            f
+                .policy
+                .schedule_clear_coin_shares<CoinA>(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    172_800_000,
+                    &f.clock
+                );
+        },
     }
 }
 
 fun apply(f: &mut Fixture, setting: Setting) {
     match (setting) {
-        Setting::Destination => { f.policy.apply_protocol_destination(&f.version, &f.clock); },
-        Setting::Defaults => { f.policy.apply_default_shares(&f.version, &f.clock); },
-        Setting::CoinOverride => { f.policy.apply_coin_shares<CoinA>(&f.version, &f.clock); },
-        Setting::CoinClear => { f.policy.apply_coin_shares<CoinA>(&f.version, &f.clock); },
+        Setting::Destination => {
+            f.policy.apply_protocol_destination(&f.version, &f.clock);
+        },
+        Setting::Defaults => {
+            f.policy.apply_default_shares(&f.version, &f.clock);
+        },
+        Setting::CoinOverride => {
+            f.policy.apply_coin_shares<CoinA>(&f.version, &f.clock);
+        },
+        Setting::CoinClear => {
+            f.policy.apply_coin_shares<CoinA>(&f.version, &f.clock);
+        },
     }
 }
 
 fun cancel(f: &mut Fixture, setting: Setting) {
     match (setting) {
-        Setting::Destination => { f.policy.cancel_protocol_destination(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::Defaults => { f.policy.cancel_default_shares(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::CoinOverride => { f.policy.cancel_coin_shares<CoinA>(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::CoinClear => { f.policy.cancel_coin_shares<CoinA>(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
+        Setting::Destination => {
+            f
+                .policy
+                .cancel_protocol_destination(
+                    &f.version,
+                    &blast_acl::witness_for_testing<CancelAdmin>()
+                );
+        },
+        Setting::Defaults => {
+            f
+                .policy
+                .cancel_default_shares(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        },
+        Setting::CoinOverride => {
+            f
+                .policy
+                .cancel_coin_shares<CoinA>(
+                    &f.version,
+                    &blast_acl::witness_for_testing<CancelAdmin>()
+                );
+        },
+        Setting::CoinClear => {
+            f
+                .policy
+                .cancel_coin_shares<CoinA>(
+                    &f.version,
+                    &blast_acl::witness_for_testing<CancelAdmin>()
+                );
+        },
     }
 }
 
 fun snapshot(f: &Fixture, setting: Setting): vector<u8> {
     match (setting) {
         Setting::Destination => { bcs::to_bytes(&f.policy.protocol_destination()) },
-        Setting::Defaults => { let (a, b) = f.policy.default_shares_for_testing(); bcs::to_bytes(&vector[a.value(), b.value()]) },
-        Setting::CoinOverride => { let (a, b) = f.policy.shares<CoinA>(); let (c, d) = f.policy.shares<CoinB>(); bcs::to_bytes(&vector[a.value(), b.value(), c.value(), d.value()]) },
-        Setting::CoinClear => { let (a, b) = f.policy.shares<CoinA>(); let (c, d) = f.policy.shares<CoinB>(); bcs::to_bytes(&vector[a.value(), b.value(), c.value(), d.value()]) },
+        Setting::Defaults => {
+            let (a, b) = f.policy.default_shares_for_testing();
+            bcs::to_bytes(&vector[a.value(), b.value()])
+        },
+        Setting::CoinOverride => {
+            let (a, b) = f.policy.shares<CoinA>();
+            let (c, d) = f.policy.shares<CoinB>();
+            bcs::to_bytes(&vector[a.value(), b.value(), c.value(), d.value()])
+        },
+        Setting::CoinClear => {
+            let (a, b) = f.policy.shares<CoinA>();
+            let (c, d) = f.policy.shares<CoinB>();
+            bcs::to_bytes(&vector[a.value(), b.value(), c.value(), d.value()])
+        },
     }
 }
 
 fun expected(setting: Setting, n: u64): vector<u8> {
     match (setting) {
-        Setting::Destination => { bcs::to_bytes(&(if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300)) },
+        Setting::Destination => { bcs::to_bytes(&(if (n == 100) @0x100
+                    else if (n == 200) @0x200
+                    else @0x300)) },
         Setting::Defaults => { bcs::to_bytes(&vector[n, n + 1]) },
         Setting::CoinOverride => { bcs::to_bytes(&vector[n, n + 1, 7, 8]) },
-        Setting::CoinClear => { let _ = n; bcs::to_bytes(&vector[0u64, 0, 7, 8]) },
+        Setting::CoinClear => {
+            let _ = n;
+            bcs::to_bytes(&vector[0u64, 0, 7, 8])
+        },
     }
 }
 
@@ -280,15 +425,34 @@ fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
     let mut expected = match (setting) {
         Setting::Destination => { expected(setting, n) },
         Setting::Defaults => { u64_fields_bytes(vector[n, n + 1]) },
-        Setting::CoinOverride => { let mut bytes = bcs::to_bytes(&std::type_name::with_original_ids<CoinA>()); bytes.append(bcs::to_bytes(&option::some(n))); bytes.append(bcs::to_bytes(&option::some(n + 1))); bytes },
-        Setting::CoinClear => { let mut bytes = bcs::to_bytes(&std::type_name::with_original_ids<CoinA>()); bytes.append(bcs::to_bytes(&option::none<u64>())); bytes.append(bcs::to_bytes(&option::none<u64>())); bytes },
+        Setting::CoinOverride => {
+            let mut bytes = bcs::to_bytes(&std::type_name::with_original_ids<CoinA>());
+            bytes.append(bcs::to_bytes(&option::some(n)));
+            bytes.append(bcs::to_bytes(&option::some(n + 1)));
+            bytes
+        },
+        Setting::CoinClear => {
+            let mut bytes = bcs::to_bytes(&std::type_name::with_original_ids<CoinA>());
+            bytes.append(bcs::to_bytes(&option::none<u64>()));
+            bytes.append(bcs::to_bytes(&option::none<u64>()));
+            bytes
+        },
     };
-    if (scheduled) { expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY))); let delay_ms = DELAY; expected.append(bcs::to_bytes(&delay_ms)); };
+    if (scheduled) {
+        expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY)));
+        let delay_ms = DELAY;
+        expected.append(bcs::to_bytes(&delay_ms));
+    };
     let actual = match (setting) {
-        Setting::Destination => if (scheduled) last_event<blast_events::ProtocolDestinationScheduled>() else last_event<blast_events::ProtocolDestinationCancelled>(),
-        Setting::Defaults => if (scheduled) last_event<blast_events::DefaultSharesScheduled>() else last_event<blast_events::DefaultSharesCancelled>(),
-        Setting::CoinOverride => if (scheduled) last_event<blast_events::CoinSharesScheduled>() else last_event<blast_events::CoinSharesCancelled>(),
-        Setting::CoinClear => if (scheduled) last_event<blast_events::CoinSharesScheduled>() else last_event<blast_events::CoinSharesCancelled>(),
+        Setting::Destination => if (scheduled)
+            last_event<blast_events::ProtocolDestinationScheduled>()
+        else last_event<blast_events::ProtocolDestinationCancelled>(),
+        Setting::Defaults => if (scheduled) last_event<blast_events::DefaultSharesScheduled>()
+        else last_event<blast_events::DefaultSharesCancelled>(),
+        Setting::CoinOverride => if (scheduled) last_event<blast_events::CoinSharesScheduled>()
+        else last_event<blast_events::CoinSharesCancelled>(),
+        Setting::CoinClear => if (scheduled) last_event<blast_events::CoinSharesScheduled>()
+        else last_event<blast_events::CoinSharesCancelled>(),
     };
     assert_eq!(actual, expected);
 }
@@ -299,7 +463,10 @@ fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     bytes
 }
 
-fun last_event<T: copy + drop>(): vector<u8> { let mut events = sui::event::events_by_type<T>(); bcs::to_bytes(&events.pop_back()) }
+fun last_event<T: copy + drop>(): vector<u8> {
+    let mut events = sui::event::events_by_type<T>();
+    bcs::to_bytes(&events.pop_back())
+}
 
 // === Imports ===
 

@@ -24,7 +24,8 @@ fun emergency_capture_and_fills_allow_divergence_without_opening_margin() {
         vector[980_000_000, DIVERGENT_MARK].do!(|mark| {
             let state = seeded(side);
             let mut base = 3_000 * BASE_PER_NOTIONAL;
-            let (mut plan, _) = capture(side, base, false).with_mark_for_testing(mark)
+            let (mut plan, _) = capture(side, base, false)
+                .with_mark_for_testing(mark)
                 .into_rebalance_plan(&state, 10, NOW);
             assert!(plan.is_emergency_rebalance());
             let mut steps = 0;
@@ -35,7 +36,9 @@ fun emergency_capture_and_fills_allow_divergence_without_opening_margin() {
                 assert!(order.is_emergency() && !order.is_increase());
                 assert_eq!(order.bound().slippage_bps(), 200);
                 base = base - filled;
-                let (after, _) = capture(side, base, false).with_mark_for_testing(mark).into_rebalance_observation(&plan);
+                let (after, _) = capture(side, base, false)
+                    .with_mark_for_testing(mark)
+                    .into_rebalance_observation(&plan);
                 state.accept_rebalance_fill(&mut plan, order, after, filled, NOW);
                 steps = steps + 1;
             };
@@ -54,7 +57,8 @@ fun emergency_capture_and_fills_allow_divergence_without_opening_margin() {
 fun keeper_capture_reports_emergency_despite_divergence_and_low_margin() {
     vector[policy::long(), policy::short()].do!(|side| {
         let state = seeded(side);
-        let ready = capture(side, 3_000 * BASE_PER_NOTIONAL, false).with_mark_for_testing(DIVERGENT_MARK)
+        let ready = capture(side, 3_000 * BASE_PER_NOTIONAL, false)
+            .with_mark_for_testing(DIVERGENT_MARK)
             .into_rebalance_readiness(&state, checkpoint::unchanged_change(), 10, NOW);
         assert!(ready);
         state.destroy_for_testing();
@@ -65,7 +69,8 @@ fun keeper_capture_reports_emergency_despite_divergence_and_low_margin() {
 #[expected_failure(abort_code = core_errors::EMarkOracleDivergenceExceedsBound, location = blast_boosts_core::policy)]
 fun ordinary_capture_at_the_cap_still_requires_mark_agreement() {
     let state = seeded(policy::long());
-    let (plan, _) = capture(policy::long(), 2_700 * BASE_PER_NOTIONAL, false).with_mark_for_testing(DIVERGENT_MARK)
+    let (plan, _) = capture(policy::long(), 2_700 * BASE_PER_NOTIONAL, false)
+        .with_mark_for_testing(DIVERGENT_MARK)
         .into_rebalance_plan(&state, 10, NOW);
     destroy(plan);
     state.destroy_for_testing();
@@ -84,8 +89,16 @@ fun ordinary_keeper_capture_still_requires_mark_agreement() {
 #[expected_failure(abort_code = errors::EVenueNotReady, location = blast_boosts_aftermath::snapshot)]
 fun emergency_with_a_divergent_mark_cannot_bypass_market_readiness() {
     let state = seeded(policy::long());
-    let (plan, _) = snapshot::captured_position_for_testing(checkpoint(), 1_000, 3_000 * BASE_PER_NOTIONAL, policy::long(), false, false)
-        .with_mark_for_testing(DIVERGENT_MARK).into_rebalance_plan(&state, 10, NOW);
+    let (plan, _) = snapshot::captured_position_for_testing(
+        checkpoint(),
+        1_000,
+        3_000 * BASE_PER_NOTIONAL,
+        policy::long(),
+        false,
+        false
+    )
+        .with_mark_for_testing(DIVERGENT_MARK)
+        .into_rebalance_plan(&state, 10, NOW);
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -94,10 +107,12 @@ fun emergency_with_a_divergent_mark_cannot_bypass_market_readiness() {
 #[expected_failure(abort_code = errors::EVenueNotReady, location = blast_boosts_aftermath::snapshot)]
 fun emergency_fill_with_a_divergent_mark_cannot_bypass_pending_orders() {
     let state = seeded(policy::long());
-    let (plan, _) = capture(policy::long(), 3_000 * BASE_PER_NOTIONAL, false).with_mark_for_testing(DIVERGENT_MARK)
+    let (plan, _) = capture(policy::long(), 3_000 * BASE_PER_NOTIONAL, false)
+        .with_mark_for_testing(DIVERGENT_MARK)
         .into_rebalance_plan(&state, 10, NOW);
     snapshot::captured_health_for_testing(checkpoint(), 1_000, false, 1, true, true)
-        .with_mark_for_testing(DIVERGENT_MARK).into_rebalance_observation(&plan);
+        .with_mark_for_testing(DIVERGENT_MARK)
+        .into_rebalance_observation(&plan);
     destroy(plan);
     state.destroy_for_testing();
 }

@@ -22,10 +22,22 @@ fun crossing_the_opening_reserve_does_not_block_the_next_order() {
         let mut plan = state.prepare_rebalance(position(side, 51_000, 1_000_000, 1), 0, NOW);
         let order = state.next_rebalance_order(&plan);
         assert_eq!(order.order_base(), 49_750);
-        state.accept_rebalance_fill(&mut plan, order, position(side, 50_005, 950_250, 1), 49_750, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            order,
+            position(side, 50_005, 950_250, 1),
+            49_750,
+            NOW
+        );
         let next = state.next_rebalance_order(&plan);
         assert_eq!(next.order_base(), 100_000);
-        state.accept_rebalance_fill(&mut plan, next, position(side, 48_005, 850_250, 1), 100_000, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            next,
+            position(side, 48_005, 850_250, 1),
+            100_000,
+            NOW
+        );
         // Actual reserve is 42,512; 5,493 belongs to holders. The old 50,000
         // opening reserve exceeds equity and used to abort the next order.
         assert_eq!(state.next_rebalance_order(&plan).order_base(), 100_000);
@@ -41,9 +53,21 @@ fun crossing_the_opening_reserve_does_not_undo_completion() {
         let state = seeded(side, 50_000, 500, 102_001);
         let mut plan = state.prepare_rebalance(position(side, 51_000, 1_000_000, 1), 0, NOW);
         let order = state.next_rebalance_order(&plan);
-        state.accept_rebalance_fill(&mut plan, order, position(side, 50_005, 950_250, 1), 49_750, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            order,
+            position(side, 50_005, 950_250, 1),
+            49_750,
+            NOW
+        );
         let next = state.next_rebalance_order(&plan);
-        state.accept_rebalance_fill(&mut plan, next, position(side, 48_005, 850_250, 1), 100_000, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            next,
+            position(side, 48_005, 850_250, 1),
+            100_000,
+            NOW
+        );
         state.complete_rebalance(plan);
         assert_eq!(state.maintenance_reserve(), 50_000);
         state.destroy_for_testing();
@@ -57,7 +81,13 @@ fun an_emergency_partial_close_can_commit_even_when_costs_worsen_leverage() {
         let mut plan = state.prepare_rebalance(position(side, 10_000, 1_000_000, 1), 0, NOW);
         let order = state.next_rebalance_order(&plan);
         assert!(order.order_base() > 10_000);
-        state.accept_rebalance_fill(&mut plan, order, position(side, 9_800, 990_000, 1), 10_000, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            order,
+            position(side, 9_800, 990_000, 1),
+            10_000,
+            NOW
+        );
         // 100x -> over 101x, but exposure really fell and holder value is positive.
         state.complete_rebalance(plan);
         state.destroy_for_testing();
@@ -74,7 +104,13 @@ fun reserve_release_stops_the_emergency_at_the_actual_cap() {
         let order = state.next_rebalance_order(&plan);
         assert_eq!(order.order_base(), 160_000);
         assert!(order.is_emergency());
-        state.accept_rebalance_fill(&mut plan, order, position(side, 700_000, 840_000, 1), 160_000, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            order,
+            position(side, 700_000, 840_000, 1),
+            160_000,
+            NOW
+        );
         assert_eq!(state.next_rebalance_order(&plan).order_base(), 0);
         state.complete_rebalance(plan);
         let ordinary = state.prepare_rebalance(position(side, 700_000, 840_000, 1), 0, NOW);
@@ -106,8 +142,13 @@ fun reduction_sizing_matches_independent_whole_lot_enumeration() {
             vector[1u64, 7].do!(|lot| {
                 let state = seeded(policy::long(), reserve, reserve_bps, 2_000_000);
                 let before = observation::new_position(
-                    150, 280, lot, policy::long(), observation::new_price(PRICE * 13 / 10, 0, NOW),
-                    observation::new_price(PRICE, 0, NOW), PRICE * 13 / 10,
+                    150,
+                    280,
+                    lot,
+                    policy::long(),
+                    observation::new_price(PRICE * 13 / 10, 0, NOW),
+                    observation::new_price(PRICE, 0, NOW),
+                    PRICE * 13 / 10,
                 );
                 let plan = state.prepare_rebalance(before, 37, NOW);
                 let target = if (plan.is_emergency_rebalance()) 3 else 2;
@@ -138,7 +179,15 @@ fun an_unaffordable_flat_close_leaves_one_lot_and_keeps_the_valid_reduction() {
         state.accept_rebalance_fill(&mut plan, order, position(side, 90, 1_000, 1_000), 1_000, NOW);
         assert_eq!(state.next_rebalance_order(&plan).order_base(), 0);
         state.complete_rebalance(plan);
-        assert!(!state.needs_rebalance(position(side, 90, 1_000, 1_000), observation::funding_credit(0), true, 0, NOW));
+        assert!(
+            !state.needs_rebalance(
+                position(side, 90, 1_000, 1_000),
+                observation::funding_credit(0),
+                true,
+                0,
+                NOW
+            )
+        );
         assert_eq!(state.maintenance_reserve(), 50_000);
         state.destroy_for_testing();
     });
@@ -171,8 +220,24 @@ fun a_flat_close_keeps_the_full_reserve_and_positive_holder_value() {
 fun flat_preflight_includes_the_fee_and_requires_strictly_positive_nav() {
     let state = seeded(policy::long(), 5, 500, 102_001);
     // 20 slippage + 11 fee + 1 price precision + 1 precision fee + 3 capture + 5 reserve = 41.
-    assert!(!state.needs_rebalance(position(policy::long(), 41, 1_000, 1_000), observation::funding_credit(0), true, 100, NOW));
-    assert!(state.needs_rebalance(position(policy::long(), 42, 1_000, 1_000), observation::funding_credit(0), true, 100, NOW));
+    assert!(
+        !state.needs_rebalance(
+            position(policy::long(), 41, 1_000, 1_000),
+            observation::funding_credit(0),
+            true,
+            100,
+            NOW
+        )
+    );
+    assert!(
+        state.needs_rebalance(
+            position(policy::long(), 42, 1_000, 1_000),
+            observation::funding_credit(0),
+            true,
+            100,
+            NOW
+        )
+    );
     state.destroy_for_testing();
 }
 
@@ -182,7 +247,13 @@ fun emergency_reduction_cannot_consume_current_holder_value() {
     let state = seeded(policy::long(), 50_000, 500, 102_001);
     let mut plan = state.prepare_rebalance(position(policy::long(), 51_000, 1_000_000, 1), 0, NOW);
     let order = state.next_rebalance_order(&plan);
-    state.accept_rebalance_fill(&mut plan, order, position(policy::long(), 47_512, 950_250, 1), 49_750, NOW);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        position(policy::long(), 47_512, 950_250, 1),
+        49_750,
+        NOW
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -214,7 +285,13 @@ fun an_ordinary_partial_close_still_needs_substantive_progress() {
     let mut plan = state.prepare_rebalance(position(policy::long(), 450_000, 1_000_000, 1), 0, NOW);
     assert!(!plan.is_emergency_rebalance());
     let order = state.next_rebalance_order(&plan);
-    state.accept_rebalance_fill(&mut plan, order, position(policy::long(), 450_000, 999_999, 1), 1, NOW);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        position(policy::long(), 450_000, 999_999, 1),
+        1,
+        NOW
+    );
     state.complete_rebalance(plan);
     state.destroy_for_testing();
 }
@@ -232,7 +309,13 @@ fun an_ordinary_full_batch_projects_the_shrinking_reserve_after_every_fill() {
             let filled = order.order_base();
             equity = equity - (rebalance_math::execution_cost_up(filled, 10, 100) as u64);
             base = base - filled;
-            state.accept_rebalance_fill(&mut plan, order, position(side, equity, base, 1), filled, NOW);
+            state.accept_rebalance_fill(
+                &mut plan,
+                order,
+                position(side, equity, base, 1),
+                filled,
+                NOW
+            );
         });
         state.complete_rebalance(plan);
         assert_eq!(state.maintenance_reserve(), 150_000_000);
@@ -245,15 +328,25 @@ fun a_below_target_position_stops_before_an_inverse_quote_could_overflow() {
     let state = seeded(policy::long(), 0, 500, 102_001);
     let max = std::u64::max_value!();
     let before = observation::new_position(
-        7_000_000_000, max - 15, 1, policy::long(), observation::new_price(1, 0, NOW),
-        observation::new_price(PRICE, 0, NOW), 1,
+        7_000_000_000,
+        max - 15,
+        1,
+        policy::long(),
+        observation::new_price(1, 0, NOW),
+        observation::new_price(PRICE, 0, NOW),
+        1,
     );
     let mut plan = state.prepare_rebalance(before, 0, NOW);
     assert!(!plan.is_emergency_rebalance());
     let order = state.next_rebalance_order(&plan);
     let after = observation::new_position(
-        max - 1, max - 16, 1, policy::long(), observation::new_price(1, 0, NOW),
-        observation::new_price(PRICE, 0, NOW), 1,
+        max - 1,
+        max - 16,
+        1,
+        policy::long(),
+        observation::new_price(1, 0, NOW),
+        observation::new_price(PRICE, 0, NOW),
+        1,
     );
     state.accept_rebalance_fill(&mut plan, order, after, 1, NOW);
     assert_eq!(state.next_rebalance_order(&plan).order_base(), 0);
@@ -270,14 +363,30 @@ fun a_smaller_retained_order_cannot_claim_an_ordinary_full_batch() {
     assert_eq!(small_order.order_base(), 21);
     destroy(small_plan);
     let mut base = 2_900_000_000;
-    let mut plan = state.prepare_rebalance(position(policy::long(), 1_000_000_000, base, 1), 0, NOW);
+    let mut plan = state.prepare_rebalance(
+        position(policy::long(), 1_000_000_000, base, 1),
+        0,
+        NOW
+    );
     15u64.do!(|_| {
         let order = state.next_rebalance_order(&plan);
         let filled = order.order_base();
         base = base - filled;
-        state.accept_rebalance_fill(&mut plan, order, position(policy::long(), 1_000_000_000, base, 1), filled, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            order,
+            position(policy::long(), 1_000_000_000, base, 1),
+            filled,
+            NOW
+        );
     });
-    state.accept_rebalance_fill(&mut plan, small_order, position(policy::long(), 1_000_000_000, base - 21, 1), 21, NOW);
+    state.accept_rebalance_fill(
+        &mut plan,
+        small_order,
+        position(policy::long(), 1_000_000_000, base - 21, 1),
+        21,
+        NOW
+    );
     state.complete_rebalance(plan);
     state.destroy_for_testing();
 }
@@ -297,14 +406,28 @@ fun a_full_emergency_batch_stops_before_its_permitted_costs_erase_holder_value()
             // Captured equity loses two atoms beyond the ordinary cost model.
             equity = equity - (rebalance_math::execution_cost_up(filled, 0, 200) as u64) - 2;
             base = base - filled;
-            state.accept_rebalance_fill(&mut plan, order, position(side, equity, base, 1), filled, NOW);
+            state.accept_rebalance_fill(
+                &mut plan,
+                order,
+                position(side, equity, base, 1),
+                filled,
+                NOW
+            );
             steps = steps + 1;
         };
         assert_eq!(steps, 5);
         assert_eq!(equity, 3);
         assert_eq!(base, 500_650);
         state.complete_rebalance(plan);
-        assert!(!state.needs_rebalance(position(side, equity, base, 1), observation::funding_credit(0), true, 0, NOW));
+        assert!(
+            !state.needs_rebalance(
+                position(side, equity, base, 1),
+                observation::funding_credit(0),
+                true,
+                0,
+                NOW
+            )
+        );
         state.destroy_for_testing();
     });
 }
@@ -344,7 +467,13 @@ fun an_emergency_order_is_affordable_even_before_a_partial_fill_releases_reserve
     // A very large full close could release reserve, but an intermediate
     // partial fill might not. Bound costs by current NAV for every fill size.
     assert_eq!(order.order_base(), 49_750);
-    state.accept_rebalance_fill(&mut plan, order, position(policy::long(), 50_500, 1_975_000, 1), 25_000, NOW);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        position(policy::long(), 50_500, 1_975_000, 1),
+        25_000,
+        NOW
+    );
     let next = state.next_rebalance_order(&plan);
     assert_eq!(next.order_base(), 24_750);
     destroy(next);
@@ -370,7 +499,13 @@ fun long_closes_budget_the_full_sub_price_atom_loss_not_just_its_slippage() {
         assert!(cost + 2 < equity);
         equity = equity - cost - 2;
         base = base - filled;
-        state.accept_rebalance_fill(&mut plan, order, low_price_position(equity, base), filled, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            order,
+            low_price_position(equity, base),
+            filled,
+            NOW
+        );
         steps = steps + 1;
     };
     assert!(steps > 1 && steps <= state::max_rebalance_orders());
@@ -390,20 +525,43 @@ fun low_price_position(equity: u64, base: u64): PositionObservation {
 
 fun reject_exhausted_projection(reserve: u64) {
     let vault_policy = policy::new_vault_policy(
-        policy::long(), policy::new_rebalance_policy(18_000, 20_000, 22_000, 30_000, 100, 200, 9_000),
-        policy::new_price_policy(30_000, 2_000, 100, 500), 0, 0, 100, 100, 10_000, 2, 1_000,
+        policy::long(),
+        policy::new_rebalance_policy(18_000, 20_000, 22_000, 30_000, 100, 200, 9_000),
+        policy::new_price_policy(30_000, 2_000, 100, 500),
+        0,
+        0,
+        100,
+        100,
+        10_000,
+        2,
+        1_000,
     );
     let (state, _, _) = state::issue<Product>(
-        &blast_acl::witness_for_testing(), vault_policy, 6, 100, 0, 0,
+        &blast_acl::witness_for_testing(),
+        vault_policy,
+        6,
+        100,
+        0,
+        0,
     ).activate(position(policy::long(), 100 + reserve, 200, 1), reserve, NOW);
     let mut base = 290;
-    let mut plan = state.prepare_rebalance(position(policy::long(), 100 + reserve, base, 1), 10_000, NOW);
+    let mut plan = state.prepare_rebalance(
+        position(policy::long(), 100 + reserve, base, 1),
+        10_000,
+        NOW
+    );
     assert!(!plan.is_emergency_rebalance());
     16u64.do!(|_| {
         let order = state.next_rebalance_order(&plan);
         assert_eq!(order.order_base(), 5);
         base = base - 5;
-        state.accept_rebalance_fill(&mut plan, order, position(policy::long(), 100 + reserve, base, 1), 5, NOW);
+        state.accept_rebalance_fill(
+            &mut plan,
+            order,
+            position(policy::long(), 100 + reserve, base, 1),
+            5,
+            NOW
+        );
     });
     // Actual cost-free fills improve 0.8x, below the configured 0.9x. The
     // conservative projection costs 7 per order and exhausts equity or NAV.

@@ -85,20 +85,36 @@ public fun issue<Product, Collateral>(
     ctx: &mut TxContext,
 ): VaultIssuance<Product, Collateral> {
     protocol.assert_current();
+
     assert!(
         !type_name::with_original_ids<Product>().is_primitive(),
         blast_boosts_aftermath::errors::invalid_product_witness_type!(),
     );
 
     let issuance = state::issue<Product>(
-        admin_witness, vault_policy, max_order_notional, nav_cap,
-        constants::base_decimals!(), constants::collateral_decimals!(),
+        admin_witness,
+        vault_policy,
+        max_order_notional,
+        nav_cap,
+        constants::base_decimals!(),
+        constants::collateral_decimals!(),
     );
     let (treasury_cap, metadata_cap) =
-        blast_boost::new_currency<Product>(registry, symbol, name, description, icon_url, ctx);
+        blast_boost::new_currency<Product>(
+        registry,
+        symbol,
+        name,
+        description,
+        icon_url,
+        ctx
+    );
 
     events::vault_issued<Product>(
-        object::id(&treasury_cap), object::id(&metadata_cap), vault_policy, max_order_notional, nav_cap,
+        object::id(&treasury_cap),
+        object::id(&metadata_cap),
+        vault_policy,
+        max_order_notional,
+        nav_cap,
     );
 
     VaultIssuance { issuance, treasury_cap, metadata_cap }
@@ -137,12 +153,22 @@ public fun redeem_shutdown<Product, Collateral>(
     ctx: &mut TxContext,
 ): Coin<Collateral> {
     protocol.assert_current();
-    self.state.assert_settled();
-    assert!(clock.timestamp_ms() <= deadline_at_ms, blast_boosts_aftermath::errors::deadline_expired!());
 
-    let output = self.state.shutdown_claim_quote(
-        self.terminal_cash.value(), self.total_share_supply(), self.locked_shares, shares.value(), minimum_collateral,
+    self.state.assert_settled();
+    assert!(
+        clock.timestamp_ms() <= deadline_at_ms,
+        blast_boosts_aftermath::errors::deadline_expired!()
     );
+
+    let output = self
+        .state
+        .shutdown_claim_quote(
+            self.terminal_cash.value(),
+            self.total_share_supply(),
+            self.locked_shares,
+            shares.value(),
+            minimum_collateral,
+        );
 
     let burned = self.burn_redeemed_shares(shares);
     let output_coin = self.terminal_cash.split(output).into_coin(ctx);
@@ -173,11 +199,18 @@ public fun set_fees<Product, Collateral>(
     protocol.assert_current();
 
     let (previous_mint, previous_redeem, previous_admin) =
-        self.state.set_fees(mint_fee_bps, redeem_fee_bps, admin_share_bps);
+        self
+        .state
+        .set_fees(mint_fee_bps, redeem_fee_bps, admin_share_bps);
 
     events::fees_updated<Product>(
-        self.id.to_inner(), previous_mint, previous_redeem, previous_admin,
-        mint_fee_bps, redeem_fee_bps, admin_share_bps,
+        self.id.to_inner(),
+        previous_mint,
+        previous_redeem,
+        previous_admin,
+        mint_fee_bps,
+        redeem_fee_bps,
+        admin_share_bps,
     );
 }
 
@@ -210,6 +243,7 @@ public fun update_metadata<Product, Collateral>(
     icon_url: String,
 ) {
     protocol.assert_current();
+
     assert!(
         currency.name() != name || currency.description() != description || currency.icon_url() != icon_url,
         blast_boosts_aftermath::errors::metadata_unchanged!(),
@@ -232,6 +266,7 @@ public fun withdraw_admin_fees<Product, Collateral>(
     ctx: &mut TxContext,
 ): Coin<Collateral> {
     protocol.assert_current();
+
     assert!(amount > 0, blast_boosts_aftermath::errors::zero_amount!());
 
     let available = self.admin_cash.value();
@@ -258,13 +293,22 @@ public(package) fun set_max_order_notional<Product, Collateral>(
     protocol: &Protocol,
     _: &AdminWitness<RiskAdmin>,
     max_order_notional: u64,
-    base_oracle: PriceObservation, collateral_oracle: PriceObservation, lot_size: u64, now_at_ms: u64,
+    base_oracle: PriceObservation,
+    collateral_oracle: PriceObservation,
+    lot_size: u64,
+    now_at_ms: u64,
 ) {
     protocol.assert_current();
 
-    let previous = self.state.set_max_order_notional(
-        max_order_notional, base_oracle, collateral_oracle, lot_size, now_at_ms,
-    );
+    let previous = self
+        .state
+        .set_max_order_notional(
+            max_order_notional,
+            base_oracle,
+            collateral_oracle,
+            lot_size,
+            now_at_ms,
+        );
 
     events::max_order_notional_updated<Product>(self.id.to_inner(), previous, max_order_notional);
 }
@@ -272,17 +316,27 @@ public(package) fun set_max_order_notional<Product, Collateral>(
 // --- Core And Venue ---
 
 /// The core accounting state; the adapter drives it directly and the Vault only stores it.
-public(package) fun state<Product, Collateral>(self: &Vault<Product, Collateral>): &State<Product> { &self.state }
+public(package) fun state<Product, Collateral>(self: &Vault<Product, Collateral>): &State<Product> {
+    &self.state
+}
 
-public(package) fun state_mut<Product, Collateral>(self: &mut Vault<Product, Collateral>): &mut State<Product> { &mut self.state }
+public(package) fun state_mut<Product, Collateral>(
+    self: &mut Vault<Product, Collateral>
+): &mut State<Product> { &mut self.state }
 
 /// The bound venue account: identity, last accepted checkpoint, and custody calls.
-public(package) fun venue<Product, Collateral>(self: &Vault<Product, Collateral>): &VenueAccount { &self.venue_account }
+public(package) fun venue<Product, Collateral>(self: &Vault<Product, Collateral>): &VenueAccount {
+    &self.venue_account
+}
 
-public(package) fun venue_mut<Product, Collateral>(self: &mut Vault<Product, Collateral>): &mut VenueAccount { &mut self.venue_account }
+public(package) fun venue_mut<Product, Collateral>(
+    self: &mut Vault<Product, Collateral>
+): &mut VenueAccount { &mut self.venue_account }
 
 /// The issuer's terms, which size and bound the seed position before the state exists.
-public(package) fun issuance<Product, Collateral>(self: &VaultIssuance<Product, Collateral>): &Issuance<Product> { &self.issuance }
+public(package) fun issuance<Product, Collateral>(
+    self: &VaultIssuance<Product, Collateral>
+): &Issuance<Product> { &self.issuance }
 
 // --- Initialization ---
 
@@ -336,7 +390,10 @@ public(package) fun mint_shares<Product, Collateral>(
 // --- Redemption ---
 
 /// Burns only through this Vault's retained native TreasuryCap.
-public(package) fun burn_redeemed_shares<Product, Collateral>(self: &mut Vault<Product, Collateral>, shares: Coin<BlastBoost<Product>>): u64 {
+public(package) fun burn_redeemed_shares<Product, Collateral>(
+    self: &mut Vault<Product, Collateral>,
+    shares: Coin<BlastBoost<Product>>
+): u64 {
     self.treasury_cap_mut().burn(shares)
 }
 
@@ -384,7 +441,9 @@ public(package) fun take_admin_cash<Product, Collateral>(
 }
 
 /// Native cash is authoritative; no mirrored numerical admin ledger is stored.
-public(package) fun admin_cash_balance<Product, Collateral>(self: &Vault<Product, Collateral>): u64 {
+public(package) fun admin_cash_balance<Product, Collateral>(
+    self: &Vault<Product, Collateral>
+): u64 {
     self.admin_cash.value()
 }
 
@@ -396,7 +455,9 @@ public(package) fun id<Product, Collateral>(self: &Vault<Product, Collateral>): 
 }
 
 /// Returns the authoritative leverage-currency supply from the retained cap.
-public(package) fun total_share_supply<Product, Collateral>(self: &Vault<Product, Collateral>): u64 {
+public(package) fun total_share_supply<Product, Collateral>(
+    self: &Vault<Product, Collateral>
+): u64 {
     self.treasury_cap().total_supply()
 }
 
@@ -414,18 +475,26 @@ public(package) fun locked_shares<Product, Collateral>(self: &Vault<Product, Col
 
 /// Six-decimal seed NAV atoms as nine-decimal share atoms; the seed is never dust.
 fun seed_shares(seed_nav: u64): u64 {
-    seed_nav.checked_mul(SEED_SHARE_SCALE).destroy_or!(abort blast_boosts_aftermath::errors::locked_shares_overflow!())
+    seed_nav
+        .checked_mul(SEED_SHARE_SCALE)
+        .destroy_or!(abort blast_boosts_aftermath::errors::locked_shares_overflow!())
 }
 
-fun treasury_cap<Product, Collateral>(self: &Vault<Product, Collateral>): &TreasuryCap<BlastBoost<Product>> {
+fun treasury_cap<Product, Collateral>(
+    self: &Vault<Product, Collateral>
+): &TreasuryCap<BlastBoost<Product>> {
     self.id.borrow_dynamic_object_field(TreasuryKey<Product>())
 }
 
-fun treasury_cap_mut<Product, Collateral>(self: &mut Vault<Product, Collateral>): &mut TreasuryCap<BlastBoost<Product>> {
+fun treasury_cap_mut<Product, Collateral>(
+    self: &mut Vault<Product, Collateral>
+): &mut TreasuryCap<BlastBoost<Product>> {
     self.id.borrow_dynamic_object_field_mut(TreasuryKey<Product>())
 }
 
-fun metadata_cap<Product, Collateral>(self: &Vault<Product, Collateral>): &MetadataCap<BlastBoost<Product>> {
+fun metadata_cap<Product, Collateral>(
+    self: &Vault<Product, Collateral>
+): &MetadataCap<BlastBoost<Product>> {
     self.id.borrow_dynamic_object_field(MetadataKey<Product>())
 }
 
@@ -447,12 +516,16 @@ public fun protected_cash_for_testing<Product, Collateral>(self: &Vault<Product,
 }
 
 #[test_only]
-public fun max_order_notional_for_testing<Product, Collateral>(self: &Vault<Product, Collateral>): u64 {
+public fun max_order_notional_for_testing<Product, Collateral>(
+    self: &Vault<Product, Collateral>
+): u64 {
     self.state.max_order_notional_for_testing()
 }
 
 #[test_only]
-public fun vault_policy_for_testing<Product, Collateral>(self: &Vault<Product, Collateral>): VaultPolicy {
+public fun vault_policy_for_testing<Product, Collateral>(
+    self: &Vault<Product, Collateral>
+): VaultPolicy {
     self.state.vault_policy_for_testing()
 }
 
@@ -462,7 +535,9 @@ public fun nav_cap_for_testing<Product, Collateral>(self: &Vault<Product, Collat
 }
 
 #[test_only]
-public fun fee_settings_for_testing<Product, Collateral>(self: &Vault<Product, Collateral>): (u64, u64, u64) {
+public fun fee_settings_for_testing<Product, Collateral>(
+    self: &Vault<Product, Collateral>
+): (u64, u64, u64) {
     self.state.fee_settings()
 }
 

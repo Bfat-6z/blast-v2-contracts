@@ -91,6 +91,7 @@ public fun new<Meme, Quote, Witness: drop>(
     pool_fee_rate: u64,
 ): LaunchInitializer<Meme, Quote> {
     package_version.assert_current();
+
     package_version.assert_not_paused(constants::create_pause_bit!());
     assert!(
         type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(),
@@ -197,6 +198,7 @@ public fun set_partner<Meme, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     let partner_id = object::id(partner);
     config.assert_partner(partner_id, clock.timestamp_ms());
 
@@ -216,6 +218,7 @@ public fun finalize<Meme, Quote>(
     ctx: &mut TxContext,
 ): Launch<Meme, Quote> {
     package_version.assert_current();
+
     package_version.assert_not_paused(constants::create_pause_bit!());
     let LaunchInitializer {
         ticket,
@@ -233,7 +236,10 @@ public fun finalize<Meme, Quote>(
     } = self;
 
     let creation_fee = creation_fee.into_balance();
-    assert!(creation_fee.value() == config.creation_fee(), blast_fun::errors::invalid_creation_fee!());
+    assert!(
+        creation_fee.value() == config.creation_fee(),
+        blast_fun::errors::invalid_creation_fee!()
+    );
 
     let virtual_quote = virtual_quote.destroy_some();
     let graduation_target = graduation_target.destroy_some();
@@ -324,10 +330,12 @@ public fun share<Meme, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     package_version.assert_not_paused(constants::create_pause_bit!());
     assert!(self.public_start_ms.is_none(), blast_fun::errors::invalid_launch_lifecycle!());
 
     let public_starts_at_ms = clock.timestamp_ms();
+
     self.public_start_ms = option::some(public_starts_at_ms);
 
     events::launch_shared(self.id.to_inner(), public_starts_at_ms);
@@ -359,6 +367,7 @@ public fun claim_creator_caps<Meme, Quote>(
     ctx: &mut TxContext,
 ): (CurveFeeCap<Meme>, BlastMetadataCap<Meme>) {
     package_version.assert_current();
+
     assert!(self.public_start_ms.is_some(), blast_fun::errors::invalid_launch_lifecycle!());
 
     let (curve_fee_cap, blast_metadata_cap) = creator_authority::claim_creator_caps<Meme>(
@@ -368,6 +377,7 @@ public fun claim_creator_caps<Meme, Quote>(
         clock,
         ctx,
     );
+
     self.curve_fee_cap_id = option::some(object::id(&curve_fee_cap));
     self.blast_metadata_cap_id = option::some(object::id(&blast_metadata_cap));
 
@@ -378,34 +388,69 @@ public fun claim_creator_caps<Meme, Quote>(
 
 /// Changes only this launch's curve fee cap notice, waiting its current delay.
 /// Apply through `reassign_curve_fee_cap`; a policy-only proposal transfers no cap.
-public fun schedule_curve_fee_cap_delay<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, delay_ms: u64, clock: &Clock) {
+public fun schedule_curve_fee_cap_delay<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CreatorAdmin>,
+    delay_ms: u64,
+    clock: &Clock
+) {
     package_version.assert_current();
-    let pending = delayed::new_pending(option::none(), self.curve_fee_cap_delay_ms, delay_ms, clock);
+
+    let pending = delayed::new_pending(
+        option::none(),
+        self.curve_fee_cap_delay_ms,
+        delay_ms,
+        clock
+    );
+
     self.pending_curve_fee_cap_recipient = option::some(pending);
+
     events::curve_fee_cap_delay_scheduled(self.id.to_inner(), delay_ms, pending.ready_at_ms());
 }
 
 /// Announces a replacement recipient without invalidating the current curve-fee cap.
 /// Unclaimed curve fees follow the fresh cap when applied.
 /// Preserves this operation's currently applied notice period.
-public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, clock: &Clock) {
+public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CreatorAdmin>,
+    recipient: address,
+    clock: &Clock
+) {
     package_version.assert_current();
+
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
+
     let delay_ms = self.curve_fee_cap_delay_ms;
     let pending = delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock);
+
     self.pending_curve_fee_cap_recipient = option::some(pending);
-    events::curve_fee_cap_reassignment_scheduled(self.id.to_inner(), recipient, pending.ready_at_ms(), delay_ms);
+
+    events::curve_fee_cap_reassignment_scheduled(
+        self.id.to_inner(),
+        recipient,
+        pending.ready_at_ms(),
+        delay_ms
+    );
 }
 
 /// Cancels the replacement without affecting either live creator cap.
-public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>
+) {
     package_version.assert_current();
+
     let recipient = self.pending_curve_fee_cap_recipient.extract().value();
     if (recipient.is_none()) {
         events::curve_fee_cap_delay_cancelled(self.id.to_inner());
         return
     };
     let recipient = recipient.destroy_some();
+
     events::curve_fee_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
 
@@ -416,18 +461,22 @@ public fun reassign_curve_fee_cap<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     let recipient = apply_cap_reassignment_delay(
         &mut self.pending_curve_fee_cap_recipient,
         &mut self.curve_fee_cap_delay_ms,
         clock,
     );
+
     events::curve_fee_cap_delay_changed(self.id.to_inner(), self.curve_fee_cap_delay_ms);
+
     if (recipient.is_none()) return;
     let recipient = recipient.destroy_some();
 
     self.creator = option::none();
     let curve_fee_cap = creator_authority::new_curve_fee_cap<Meme>(ctx);
     let curve_fee_cap_id = object::id(&curve_fee_cap);
+
     self.curve_fee_cap_id = option::some(curve_fee_cap_id);
     transfer::public_transfer(curve_fee_cap, recipient);
 
@@ -436,33 +485,63 @@ public fun reassign_curve_fee_cap<Meme, Quote>(
 
 /// Changes only this launch's metadata cap notice, waiting its current delay.
 /// Apply through `reassign_metadata_cap`; a policy-only proposal transfers no cap.
-public fun schedule_metadata_cap_delay<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, delay_ms: u64, clock: &Clock) {
+public fun schedule_metadata_cap_delay<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CreatorAdmin>,
+    delay_ms: u64,
+    clock: &Clock
+) {
     package_version.assert_current();
+
     let pending = delayed::new_pending(option::none(), self.metadata_cap_delay_ms, delay_ms, clock);
+
     self.pending_metadata_cap_recipient = option::some(pending);
+
     events::metadata_cap_delay_scheduled(self.id.to_inner(), delay_ms, pending.ready_at_ms());
 }
 
 /// Announces a replacement recipient without invalidating the current metadata cap.
 /// Preserves this operation's currently applied notice period.
-public fun schedule_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CreatorAdmin>, recipient: address, clock: &Clock) {
+public fun schedule_metadata_cap_reassignment<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CreatorAdmin>,
+    recipient: address,
+    clock: &Clock
+) {
     package_version.assert_current();
+
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
+
     let delay_ms = self.metadata_cap_delay_ms;
     let pending = delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock);
+
     self.pending_metadata_cap_recipient = option::some(pending);
-    events::metadata_cap_reassignment_scheduled(self.id.to_inner(), recipient, pending.ready_at_ms(), delay_ms);
+
+    events::metadata_cap_reassignment_scheduled(
+        self.id.to_inner(),
+        recipient,
+        pending.ready_at_ms(),
+        delay_ms
+    );
 }
 
 /// Cancels the replacement without affecting either live creator cap.
-public fun cancel_metadata_cap_reassignment<Meme, Quote>(self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+public fun cancel_metadata_cap_reassignment<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>
+) {
     package_version.assert_current();
+
     let recipient = self.pending_metadata_cap_recipient.extract().value();
     if (recipient.is_none()) {
         events::metadata_cap_delay_cancelled(self.id.to_inner());
         return
     };
     let recipient = recipient.destroy_some();
+
     events::metadata_cap_reassignment_cancelled(self.id.to_inner(), recipient);
 }
 
@@ -473,18 +552,22 @@ public fun reassign_metadata_cap<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     let recipient = apply_cap_reassignment_delay(
         &mut self.pending_metadata_cap_recipient,
         &mut self.metadata_cap_delay_ms,
         clock,
     );
+
     events::metadata_cap_delay_changed(self.id.to_inner(), self.metadata_cap_delay_ms);
+
     if (recipient.is_none()) return;
     let recipient = recipient.destroy_some();
 
     self.creator = option::none();
     let blast_metadata_cap = creator_authority::new_metadata_cap<Meme>(ctx);
     let blast_metadata_cap_id = object::id(&blast_metadata_cap);
+
     self.blast_metadata_cap_id = option::some(blast_metadata_cap_id);
     transfer::public_transfer(blast_metadata_cap, recipient);
 
@@ -546,18 +629,21 @@ public fun join_opening_round<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
         self.lifecycle == Lifecycle::OpeningRound,
         blast_fun::errors::invalid_launch_lifecycle!(),
     );
     assert!(!self.has_opening_round_ended(clock), blast_fun::errors::opening_round_ended!());
+
     let quote = quote_in.value();
     assert!(quote > 0, blast_fun::errors::zero_opening_round_bid!());
 
     let key = OpeningRoundBidKey(ctx.sender());
     if (!self.id.has_dynamic_field(key)) self.id.add_dynamic_field(key, 0u64);
     let bid = self.id.dynamic_field_mut<_, u64>(key);
+
     *bid = *bid + quote;
 
     self.opening_round_bids = self.opening_round_bids + quote;
@@ -576,6 +662,7 @@ public fun settle_opening_round<Meme, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
         self.lifecycle == Lifecycle::OpeningRound,
@@ -607,6 +694,7 @@ public fun deliver_opening_round<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     assert!(
         self.lifecycle != Lifecycle::OpeningRound,
         blast_fun::errors::invalid_launch_lifecycle!(),
@@ -635,6 +723,7 @@ public fun buy<Meme, Quote>(
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
     package_version.assert_current();
+
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(self.lifecycle == Lifecycle::Live, blast_fun::errors::invalid_launch_lifecycle!());
 
@@ -661,6 +750,7 @@ public fun sell<Meme, Quote>(
     ctx: &mut TxContext,
 ): Coin<Quote> {
     package_version.assert_current();
+
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
         self.public_start_ms.is_some() && self.lifecycle == Lifecycle::Live,
@@ -719,6 +809,7 @@ public fun claim_creator_fees<Meme, Quote>(
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
     package_version.assert_current();
+
     self.assert_curve_fee_cap(curve_fee_cap);
 
     let (meme, quote) = self.fee_ledger.claim_creator_fees(ctx);
@@ -737,6 +828,7 @@ public fun claim_protocol_fees<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     assert!(self.partner_id.is_none(), blast_fun::errors::partner_mismatch!());
 
     let blast_treasury = runtime_config.treasury();
@@ -773,6 +865,7 @@ public fun claim_protocol_fees_with_partner<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     assert!(self.partner_id.contains(&object::id(partner)), blast_fun::errors::partner_mismatch!());
 
     let blast_treasury = runtime_config.treasury();
@@ -812,6 +905,7 @@ public fun migrate<Meme, Quote, Witness: drop>(
     ctx: &mut TxContext,
 ): (Balance<Meme>, Balance<Quote>) {
     package_version.assert_current();
+
     package_version.assert_not_paused(constants::migration_pause_bit!());
     assert!(
         self.lifecycle == Lifecycle::MigrationReady,
@@ -823,10 +917,17 @@ public fun migrate<Meme, Quote, Witness: drop>(
     );
 
     let plan = self.allocation_plan;
-    let (_, lp_meme, protocol_meme_amount, recipient_meme) = plan
+    let (
+        _,
+        lp_meme,
+        protocol_meme_amount,
+        recipient_meme
+    ) = plan
         .apportion_meme(self.atomic_supply);
     let (lp_quote, protocol_quote_amount, recipient_quote) = plan
-        .apportion_quote(self.real_quote_reserve.value());
+        .apportion_quote(self
+        .real_quote_reserve
+        .value());
     let destinations = plan.destinations();
 
     destinations.length().do!(|i| {
@@ -836,10 +937,12 @@ public fun migrate<Meme, Quote, Witness: drop>(
         events::migration_allocation_paid(self.id.to_inner(), destination, meme, quote);
     });
 
-    self.fee_ledger.accrue_protocol_fees(
-        self.allocated_meme.split(protocol_meme_amount),
-        self.real_quote_reserve.split(protocol_quote_amount),
-    );
+    self
+        .fee_ledger
+        .accrue_protocol_fees(
+            self.allocated_meme.split(protocol_meme_amount),
+            self.real_quote_reserve.split(protocol_quote_amount),
+        );
     if (protocol_meme_amount > 0 || protocol_quote_amount > 0) {
         events::protocol_fees_accrued(
             self.id.to_inner(),
@@ -890,6 +993,7 @@ fun apply_cap_reassignment_delay(
     clock: &Clock,
 ): Option<address> {
     let (recipient, next_delay_ms) = (*pending).destroy_some().take_ready(clock);
+
     *pending = option::none();
     *delay_ms = next_delay_ms;
 
@@ -940,7 +1044,8 @@ fun buy_from_curve<Meme, Quote>(
         self.meme_fee_bps,
     );
 
-    let reaches_target = quote_in_gross - quote_fee
+    let reaches_target =
+        quote_in_gross - quote_fee
         == self.graduation_target - self.real_quote_reserve.value();
     if (meme_out_net == 0 && !reaches_target) return (balance::zero(), quote_in);
     assert!(meme_out_net >= min_meme_out, blast_fun::errors::slippage_exceeded!());
@@ -991,7 +1096,13 @@ fun pay_treasury<T>(fee: Balance<T>, treasury: address, ctx: &mut TxContext) {
 fun has_opening_round_ended<Meme, Quote>(self: &Launch<Meme, Quote>, clock: &Clock): bool {
     let opening_round_duration_ms = self.opening_round_ms;
 
-    self.public_start_ms.is_some_and!(|opening_round_starts_at_ms| clock.timestamp_ms() >= *opening_round_starts_at_ms + opening_round_duration_ms)
+    self
+        .public_start_ms
+        .is_some_and!(
+            |
+                opening_round_starts_at_ms
+            | clock.timestamp_ms() >= *opening_round_starts_at_ms + opening_round_duration_ms
+        )
 }
 
 // === Test-Only Functions ===

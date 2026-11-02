@@ -65,7 +65,10 @@ fun exact_trigger_matches_enumerating_every_accessible_burn() {
                     if (keep == 0 || base - keep >= 5) any_ordinary_exit = true;
                     burn = burn + 1;
                 };
-                assert_eq!(accounting_math::is_redemption_size_locked(base, supply, locked, 1, 5), !any_ordinary_exit);
+                assert_eq!(
+                    accounting_math::is_redemption_size_locked(base, supply, locked, 1, 5),
+                    !any_ordinary_exit
+                );
                 base = base + 1;
             };
             locked = locked + 1;
@@ -137,14 +140,21 @@ fun reachable_mint_then_redeem_cannot_gift_seed_cash_to_one_remaining_share() {
         let burn = minted - 1;
         let plan = state.prepare_redemption(position(side, 2_000, 4_000), burn, supply, 0, NOW);
         let after_base = 4_000 - plan.base_to_sell();
-        let (paid, _, _, _) = state.complete_redemption(plan, position(side, 2_000, after_base), NOW);
+        let (paid, _, _, _) = state.complete_redemption(
+            plan,
+            position(side, 2_000, after_base),
+            NOW
+        );
         assert_eq!(paid, 999);
         assert_eq!(after_base, 2_000);
         state.begin_protected_shutdown(after_base, 1, supply - burn, locked, NOW);
         let cash = 2_000 - paid;
         let (_, reserve, seed) = state.finalize_shutdown(supply - burn, locked, cash);
         assert_eq!(vector[reserve, seed], vector[0, cash]);
-        assert_eq!(state.shutdown_claim_quote(cash - reserve - seed, supply - burn, locked, 1, 0), 0);
+        assert_eq!(
+            state.shutdown_claim_quote(cash - reserve - seed, supply - burn, locked, 1, 0),
+            0
+        );
         state.destroy_for_testing();
     });
 }

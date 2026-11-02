@@ -4,6 +4,8 @@ from pathlib import Path
 import re
 import unittest
 
+from move_source import replace_code
+
 
 SOURCES = Path(__file__).resolve().parents[1] / "sources"
 
@@ -31,7 +33,7 @@ class FeeRoutingTests(unittest.TestCase):
 
     def test_comparing_the_stored_checkpoint_to_itself_is_rejected(self):
         operations = (SOURCES / "operations.move").read_text()
-        mutated = operations.replace("classify_preexisting(&capture.checkpoint())",
+        mutated = replace_code(operations, "classify_preexisting(&capture.checkpoint())",
                                      "classify_preexisting(vault.venue().checkpoint())")
         self.assertNotEqual(operations, mutated)
         with self.assertRaises(AssertionError):
@@ -41,11 +43,11 @@ class FeeRoutingTests(unittest.TestCase):
         operations = (SOURCES / "operations.move").read_text()
         snapshot = (SOURCES / "snapshot.move").read_text()
         mutations = [
-            (operations.replace("minimum_shares, clearing_house.live_venue_fee_bps()", "minimum_shares, 0"), snapshot),
-            (operations.replace("vault.state(), funding, clearing_house.live_venue_fee_bps()",
+            (replace_code(operations, "minimum_shares, clearing_house.live_venue_fee_bps()", "minimum_shares, 0"), snapshot),
+            (replace_code(operations, "vault.state(), funding, clearing_house.live_venue_fee_bps()",
                                 "vault.state(), funding, 0"), snapshot),
-            (operations, snapshot.replace("observation, settlement, margin_safe, venue_fee_bps", "observation, settlement, margin_safe, 0")),
-            (operations.replace("let plan = vault.state().prepare_mint(before", "// let plan = vault.state().prepare_mint(before"), snapshot),
+            (operations, replace_code(snapshot, "observation, settlement, margin_safe, venue_fee_bps", "observation, settlement, margin_safe, 0")),
+            (replace_code(operations, "let plan = vault.state().prepare_mint(before", "// let plan = vault.state().prepare_mint(before"), snapshot),
         ]
         for ops, snap in mutations:
             with self.subTest():

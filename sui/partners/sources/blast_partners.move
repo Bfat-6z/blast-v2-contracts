@@ -180,7 +180,12 @@ public fun new_scheduled_for_testing(
     Partner {
         id: object::new(ctx),
         recipient,
-        share_bps: timelock::new_scheduled_for_testing(before, after, at_ms, PARTNER_CHANGE_DELAY_MS),
+        share_bps: timelock::new_scheduled_for_testing(
+            before,
+            after,
+            at_ms,
+            PARTNER_CHANGE_DELAY_MS
+        ),
         cap_id: timelock::new(object::id_from_address(@0x0), PARTNER_CHANGE_DELAY_MS),
     }
 }
@@ -197,7 +202,9 @@ public fun partner_paid_fields<T>(self: &PartnerPaid<T>): (ID, u64) {
 }
 
 #[test_only]
-public fun partner_updated_fields(self: &PartnerUpdated): (ID, address, Timelocked<u64>, Timelocked<ID>) {
+public fun partner_updated_fields(
+    self: &PartnerUpdated
+): (ID, address, Timelocked<u64>, Timelocked<ID>) {
     (self.partner_id, self.recipient, self.share_bps, self.cap_id)
 }
 

@@ -213,7 +213,12 @@ fun new_policy(): FeePolicy {
     fee_policy::new_for_testing(&mut ctx)
 }
 
-fun set_fees_for_testing(raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64) {
+fun set_fees_for_testing(
+    raise_bps: u64,
+    token_bps: u64,
+    lp_fee_meme_bps: u64,
+    lp_fee_quote_bps: u64
+) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
@@ -226,7 +231,8 @@ fun set_fees_for_testing(raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, l
         bps::new(token_bps),
         bps::new(lp_fee_meme_bps),
         bps::new(lp_fee_quote_bps),
-     &mut sui::tx_context::dummy());
+        &mut sui::tx_context::dummy()
+    );
 
     policy.destroy_for_testing();
 

@@ -73,9 +73,20 @@ public fun new_position(
 ): PositionObservation {
     assert!(lot_size > 0, blast_boosts_core::errors::invalid_observation_lot_size!());
     assert!(mark_price > 0, blast_boosts_core::errors::invalid_price!());
-    assert!(position_base % lot_size == 0, blast_boosts_core::errors::invalid_position_observation!());
+    assert!(
+        position_base % lot_size == 0,
+        blast_boosts_core::errors::invalid_position_observation!()
+    );
 
-    PositionObservation { venue_equity, position_base, lot_size, observed_side, base_oracle, collateral_oracle, mark_price }
+    PositionObservation {
+        venue_equity,
+        position_base,
+        lot_size,
+        observed_side,
+        base_oracle,
+        collateral_oracle,
+        mark_price
+    }
 }
 
 /// Creates a credit funding outcome.
@@ -112,14 +123,19 @@ public(package) fun observed_side(self: &PositionObservation): PositionSide { se
 public(package) fun base_oracle(self: &PositionObservation): &PriceObservation { &self.base_oracle }
 
 /// Borrows the collateral's oracle price observation.
-public(package) fun collateral_oracle(self: &PositionObservation): &PriceObservation { &self.collateral_oracle }
+public(package) fun collateral_oracle(self: &PositionObservation): &PriceObservation {
+    &self.collateral_oracle
+}
 
 public(package) fun mark_price(self: &PositionObservation): u64 { self.mark_price }
 
 // --- Funding Settlement ---
 
 public(package) fun is_cost(self: &FundingSettlement): bool {
-    match (self) { FundingSettlement::Cost(_) => true, _ => false }
+    match (self) {
+        FundingSettlement::Cost(_) => true,
+        _ => false
+    }
 }
 
 /// Returns the settled amount.

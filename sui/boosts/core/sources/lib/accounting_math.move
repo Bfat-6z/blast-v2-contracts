@@ -109,8 +109,10 @@ public(package) fun is_redemption_size_locked(
     lot_size: u64,
     min_order_lots: u64,
 ): bool {
-    if (base == 0 || lot_size == 0 || min_order_lots == 0
-        || locked_shares == 0 || locked_shares >= total_share_supply) return false;
+    if (
+        base == 0 || lot_size == 0 || min_order_lots == 0
+        || locked_shares == 0 || locked_shares >= total_share_supply
+    ) return false;
     if (base % lot_size != 0) return false;
 
     let kept_base = base.mul_div(locked_shares, total_share_supply);
@@ -152,7 +154,11 @@ public(package) fun admin_share_down(fee: u64, admin_share_bps: u64): u64 {
 }
 
 /// Splits one ceiling-rounded fee; its allocation remainder belongs to reserve.
-public(package) fun fee_allocation(amount: u64, fee_bps: u64, admin_share_bps: u64): (u64, u64, u64) {
+public(package) fun fee_allocation(
+    amount: u64,
+    fee_bps: u64,
+    admin_share_bps: u64
+): (u64, u64, u64) {
     let fee = fee_up(amount, fee_bps);
     let admin = admin_share_down(fee, admin_share_bps);
 
@@ -429,9 +435,12 @@ public(package) fun redemption_base_bounds(
         blast_boosts_core::errors::order_below_min_lots!(),
     );
 
-    let planned_reduction = (
+    let planned_reduction =
+        (
         (required_reduction as u128).div_ceil(lot_size as u128) * (lot_size as u128),
-    ).min(base_before as u128) as u64;
+    ).min(
+            base_before as u128
+        ) as u64;
 
     (base_before - planned_reduction, max_final_base)
 }
@@ -752,12 +761,32 @@ public fun mint_quote_for_testing(contribution: u64, nav_before: u64, shares_bef
 }
 
 #[test_only]
-public fun mint_base_bounds_for_testing(expected_contribution: u64, actual_contribution: u64, base_before: u64, nav_before: u64, lot_size: u64, min_order_lots: u64): (u64, u64) {
-    mint_base_bounds(expected_contribution, actual_contribution, base_before, nav_before, lot_size, min_order_lots)
+public fun mint_base_bounds_for_testing(
+    expected_contribution: u64,
+    actual_contribution: u64,
+    base_before: u64,
+    nav_before: u64,
+    lot_size: u64,
+    min_order_lots: u64
+): (u64, u64) {
+    mint_base_bounds(
+        expected_contribution,
+        actual_contribution,
+        base_before,
+        nav_before,
+        lot_size,
+        min_order_lots
+    )
 }
 
 #[test_only]
-public fun redemption_quote_for_testing(shares_to_redeem: u64, nav_before: u64, nav_after_sell: u64, shares_before: u64, redeem_fee_bps: u64): (u64, u64, u64) {
+public fun redemption_quote_for_testing(
+    shares_to_redeem: u64,
+    nav_before: u64,
+    nav_after_sell: u64,
+    shares_before: u64,
+    redeem_fee_bps: u64
+): (u64, u64, u64) {
     redemption_quote(shares_to_redeem, nav_before, nav_after_sell, shares_before, redeem_fee_bps)
 }
 

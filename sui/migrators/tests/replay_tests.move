@@ -305,25 +305,51 @@ fun configure_policy(self: &mut ReplayFixture) {
             &f.version,
             &blast_acl::witness_for_testing<AdapterAdmin>(),
             true,
-         f.scenario.ctx());
+            f.scenario.ctx()
+        );
         config.set_trade_fees_for_testing(
             &f.version,
             &fee_admin,
             bps::new(QUOTE_FEE_BPS),
             bps::new(MEME_FEE_BPS),
-         f.scenario.ctx());
+            f.scenario.ctx()
+        );
         config.set_protocol_allocation_for_testing(
             &f.version,
             &treasury_admin,
             bps::new(500),
             bps::new(1_000),
-         f.scenario.ctx());
+            f.scenario.ctx()
+        );
         let version = &f.migrators_version;
-        policy.set_default_shares_for_testing(version, &fee_admin, bps::new(1_000), bps::new(2_000), f.scenario.ctx());
-        policy.set_coin_shares_for_testing<OtherMeme>(version, &fee_admin, bps::new(9), bps::new(9), f.scenario.ctx());
-        policy.set_coin_shares_for_testing<REPLAY_TESTS>(version, &fee_admin, bps::new(1_500), bps::new(2_500), f.scenario.ctx());
+        policy.set_default_shares_for_testing(
+            version,
+            &fee_admin,
+            bps::new(1_000),
+            bps::new(2_000),
+            f.scenario.ctx()
+        );
+        policy.set_coin_shares_for_testing<OtherMeme>(
+            version,
+            &fee_admin,
+            bps::new(9),
+            bps::new(9),
+            f.scenario.ctx()
+        );
+        policy.set_coin_shares_for_testing<REPLAY_TESTS>(
+            version,
+            &fee_admin,
+            bps::new(1_500),
+            bps::new(2_500),
+            f.scenario.ctx()
+        );
         policy.clear_coin_shares_for_testing<OtherMeme>(version, &fee_admin, f.scenario.ctx());
-        policy.set_protocol_destination_for_testing(version, &treasury_admin, FIRST_PROTOCOL_DESTINATION, f.scenario.ctx());
+        policy.set_protocol_destination_for_testing(
+            version,
+            &treasury_admin,
+            FIRST_PROTOCOL_DESTINATION,
+            f.scenario.ctx()
+        );
 
         test_scenario::return_shared(config);
         test_scenario::return_shared(policy);
@@ -543,8 +569,18 @@ fun change_blast_share(self: &mut ReplayFixture) {
         let admin = blast_acl::witness_for_testing<FeeAdmin>();
         let mut policy = f.take_policy();
 
-        policy.clear_coin_shares_for_testing<REPLAY_TESTS>(&f.migrators_version, &admin, f.scenario.ctx());
-        policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(3_000), bps::new(500), f.scenario.ctx());
+        policy.clear_coin_shares_for_testing<REPLAY_TESTS>(
+            &f.migrators_version,
+            &admin,
+            f.scenario.ctx()
+        );
+        policy.set_default_shares_for_testing(
+            &f.migrators_version,
+            &admin,
+            bps::new(3_000),
+            bps::new(500),
+            f.scenario.ctx()
+        );
 
         test_scenario::return_shared(policy);
     });
@@ -1630,8 +1666,17 @@ fun assert_policy(self: &Replay, policy: &LpFeePolicy) {
     assert_eq!(other_quote_bps.value(), self.default_shares.quote_bps);
 }
 
-fun assert_launch(self: &Replay, launch: &Launch<REPLAY_TESTS, QUOTE>, currency: &Currency<REPLAY_TESTS>) {
-    let (meme_reserve, real_quote_reserve, pending_burn, allocated_meme) = launch.balances_for_testing();
+fun assert_launch(
+    self: &Replay,
+    launch: &Launch<REPLAY_TESTS, QUOTE>,
+    currency: &Currency<REPLAY_TESTS>
+) {
+    let (
+        meme_reserve,
+        real_quote_reserve,
+        pending_burn,
+        allocated_meme
+    ) = launch.balances_for_testing();
 
     assert_eq!(object::id(launch), self.launch_id);
     assert_eq!(launch.is_opening_round_for_testing(), self.lifecycle == OPENING_ROUND);
@@ -1667,11 +1712,16 @@ fun assert_launch(self: &Replay, launch: &Launch<REPLAY_TESTS, QUOTE>, currency:
             bps::new(self.plan.curve_meme_bps),
             bps::new(self.plan.lp_meme_bps),
             bps::new(self.plan.lp_quote_bps),
-            self.plan.recipients.map_ref!(|entry| allocation::recipient(
-                entry.destination,
-                bps::new(entry.meme_bps),
-                bps::new(entry.quote_bps),
-            )),
+            self
+                .plan
+                .recipients
+                .map_ref!(
+                    |entry| allocation::recipient(
+                        entry.destination,
+                        bps::new(entry.meme_bps),
+                        bps::new(entry.quote_bps),
+                    )
+                ),
         ).add_protocol_for_testing(
             bps::new(self.plan.protocol_meme_bps),
             bps::new(self.plan.protocol_quote_bps),
@@ -1696,7 +1746,10 @@ fun assert_launch(self: &Replay, launch: &Launch<REPLAY_TESTS, QUOTE>, currency:
 fun assert_vault(self: &Replay, vault: &mut LpVault<REPLAY_TESTS, QUOTE>) {
     assert_eq!(object::id(vault), self.binding.vault_id);
     assert_eq!(vault.pool_id(), self.binding.pool_id);
-    assert_eq!(vault.position_id_for_testing<_, _, Venue>(), option::some(self.binding.position_id));
+    assert_eq!(
+        vault.position_id_for_testing<_, _, Venue>(),
+        option::some(self.binding.position_id)
+    );
     assert_eq!(self.venue, type_name::with_original_ids<Venue>().into_string());
     assert_eq!(vault.protocol_meme_residual_for_testing(), self.residual_meme);
     assert_eq!(vault.protocol_quote_residual_for_testing(), self.residual_quote);

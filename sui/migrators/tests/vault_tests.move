@@ -1248,7 +1248,12 @@ fun start_partnered(fee_split: FeeSplit, cut_bps: u64): VaultFixture {
 
 /// Opens the fixture launch under `ADMIN` with a partner whose cut is `cut_bps`, which the launch
 /// names when `names_partner`.
-fun open_fixture(fee_split: FeeSplit, burnable: bool, cut_bps: u64, names_partner: bool): VaultFixture {
+fun open_fixture(
+    fee_split: FeeSplit,
+    burnable: bool,
+    cut_bps: u64,
+    names_partner: bool
+): VaultFixture {
     let mut scenario = test_scenario::begin(PROTOCOL);
     let version = package_version::new_for_testing(scenario.ctx());
     let migrators_version = migrators_version::new_for_testing(scenario.ctx());
@@ -1260,23 +1265,26 @@ fun open_fixture(fee_split: FeeSplit, burnable: bool, cut_bps: u64, names_partne
     scenario.next_tx(ADMIN);
     config.admit<QUOTE, TestVenue>(&version, scenario.ctx());
     let otw = test_utils::create_one_time_witness<VAULT_TESTS>();
-    let (launch, currency) = if (names_partner) scenario.open_partnered_launch<_, QUOTE, _>(
-        otw,
-        &version,
-        &mut config,
-        TestVenue(),
-        fee_split,
-        burnable,
-        &partner,
-        &clock,
-    ) else scenario.open_launch<_, QUOTE, _>(
-        otw,
-        &version,
-        &config,
-        TestVenue(),
-        fee_split,
-        burnable,
-    );
+    let (launch, currency) = if (names_partner)
+        scenario.open_partnered_launch<_, QUOTE, _>(
+            otw,
+            &version,
+            &mut config,
+            TestVenue(),
+            fee_split,
+            burnable,
+            &partner,
+            &clock,
+        )
+    else
+        scenario.open_launch<_, QUOTE, _>(
+            otw,
+            &version,
+            &config,
+            TestVenue(),
+            fee_split,
+            burnable,
+        );
     destroy(config);
     destroy(version);
 

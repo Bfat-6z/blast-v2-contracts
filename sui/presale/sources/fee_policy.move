@@ -53,8 +53,17 @@ public fun schedule_fees(
 
     let value = protocol_fees(raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps);
     assert!(value != self.fees.value() || delay_ms != self.fees.delay_ms(), EFeesUnchanged);
+
     let ready_at_ms = self.fees.schedule(value, delay_ms, clock);
-    sui::event::emit(FeesScheduled { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value(), ready_at_ms, delay_ms });
+
+    sui::event::emit(FeesScheduled {
+        raise_bps: raise_bps.value(),
+        token_bps: token_bps.value(),
+        lp_fee_meme_bps: lp_fee_meme_bps.value(),
+        lp_fee_quote_bps: lp_fee_quote_bps.value(),
+        ready_at_ms,
+        delay_ms
+    });
 }
 
 /// Applies the scheduled fees permissionlessly once ready.
@@ -64,12 +73,19 @@ public fun apply_fees(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     let value = self.fees.apply(clock);
     let raise_bps = value.raise_bps;
     let token_bps = value.token_bps;
     let lp_fee_meme_bps = value.lp_fee_meme_bps;
     let lp_fee_quote_bps = value.lp_fee_quote_bps;
-    event::emit(FeesChanged { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value() });
+
+    event::emit(FeesChanged {
+        raise_bps: raise_bps.value(),
+        token_bps: token_bps.value(),
+        lp_fee_meme_bps: lp_fee_meme_bps.value(),
+        lp_fee_quote_bps: lp_fee_quote_bps.value()
+    });
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -79,12 +95,19 @@ public fun cancel_fees(
     _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
+
     let value = self.fees.cancel();
     let raise_bps = value.raise_bps;
     let token_bps = value.token_bps;
     let lp_fee_meme_bps = value.lp_fee_meme_bps;
     let lp_fee_quote_bps = value.lp_fee_quote_bps;
-    sui::event::emit(FeesCancelled { raise_bps: raise_bps.value(), token_bps: token_bps.value(), lp_fee_meme_bps: lp_fee_meme_bps.value(), lp_fee_quote_bps: lp_fee_quote_bps.value() });
+
+    sui::event::emit(FeesCancelled {
+        raise_bps: raise_bps.value(),
+        token_bps: token_bps.value(),
+        lp_fee_meme_bps: lp_fee_meme_bps.value(),
+        lp_fee_quote_bps: lp_fee_quote_bps.value()
+    });
 }
 
 /// Redirects every later protocol payout, including those of existing presales.
@@ -98,10 +121,17 @@ public fun schedule_destination(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     assert!(destination != @0x0, EInvalidDestination);
+
     let value = destination;
-    assert!(value != self.destination.value() || delay_ms != self.destination.delay_ms(), EInvalidDestination);
+    assert!(
+        value != self.destination.value() || delay_ms != self.destination.delay_ms(),
+        EInvalidDestination
+    );
+
     let ready_at_ms = self.destination.schedule(value, delay_ms, clock);
+
     sui::event::emit(DestinationScheduled { destination: destination, ready_at_ms, delay_ms });
 }
 
@@ -112,8 +142,10 @@ public fun apply_destination(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     let value = self.destination.apply(clock);
     let destination = value;
+
     event::emit(DestinationChanged { destination });
 }
 
@@ -124,8 +156,10 @@ public fun cancel_destination(
     _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
+
     let value = self.destination.cancel();
     let destination = value;
+
     sui::event::emit(DestinationCancelled { destination: destination });
 }
 
@@ -189,12 +223,15 @@ fun new(destination: address, delay_ms: u64, ctx: &mut TxContext): FeePolicy {
     FeePolicy {
         id: object::new(ctx),
         destination: delayed::new(destination, delay_ms),
-        fees: delayed::new(ProtocolFees {
-            raise_bps: bps::new(0),
-            token_bps: bps::new(0),
-            lp_fee_meme_bps: bps::new(0),
-            lp_fee_quote_bps: bps::new(0),
-        }, delay_ms),
+        fees: delayed::new(
+            ProtocolFees {
+                raise_bps: bps::new(0),
+                token_bps: bps::new(0),
+                lp_fee_meme_bps: bps::new(0),
+                lp_fee_quote_bps: bps::new(0),
+            },
+            delay_ms
+        ),
     }
 }
 
@@ -231,7 +268,16 @@ public fun set_fees_for_testing(
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
     let delay_ms = self.fees.delay_ms();
-    self.schedule_fees(package_version, admin, raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps, delay_ms, &clock);
+    self.schedule_fees(
+        package_version,
+        admin,
+        raise_bps,
+        token_bps,
+        lp_fee_meme_bps,
+        lp_fee_quote_bps,
+        delay_ms,
+        &clock
+    );
     clock.set_for_testing(172_800_000);
     self.apply_fees(package_version, &clock);
     clock.destroy_for_testing();
@@ -283,16 +329,32 @@ public fun destination_changed_fields(event: &DestinationChanged): address {
 // === Events ===
 
 /// Proposed values and Unix millisecond execution threshold.
-public struct DestinationScheduled has copy, drop { destination: address, ready_at_ms: u64, delay_ms: u64 }
+public struct DestinationScheduled has copy, drop {
+    destination: address,
+    ready_at_ms: u64,
+    delay_ms: u64
+}
 
 /// Values removed from the pending schedule.
 public struct DestinationCancelled has copy, drop { destination: address }
 
 /// Proposed values and Unix millisecond execution threshold.
-public struct FeesScheduled has copy, drop { raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64, ready_at_ms: u64, delay_ms: u64 }
+public struct FeesScheduled has copy, drop {
+    raise_bps: u64,
+    token_bps: u64,
+    lp_fee_meme_bps: u64,
+    lp_fee_quote_bps: u64,
+    ready_at_ms: u64,
+    delay_ms: u64
+}
 
 /// Values removed from the pending schedule.
-public struct FeesCancelled has copy, drop { raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64 }
+public struct FeesCancelled has copy, drop {
+    raise_bps: u64,
+    token_bps: u64,
+    lp_fee_meme_bps: u64,
+    lp_fee_quote_bps: u64
+}
 
 /// New presales snapshot these rates.
 public struct FeesChanged has copy, drop {

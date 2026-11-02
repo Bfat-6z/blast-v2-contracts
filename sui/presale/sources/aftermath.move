@@ -154,7 +154,10 @@ public fun migrate<Lp, Meme, Quote>(
         ctx,
     );
     assert_pool_balances!(
-        pool.balance_of<Lp, Meme>(), meme_amount, pool.balance_of<Lp, Quote>(), quote_amount,
+        pool.balance_of<Lp, Meme>(),
+        meme_amount,
+        pool.balance_of<Lp, Quote>(),
+        quote_amount,
     );
 
     let pool_id = object::id(&pool);
@@ -168,7 +171,10 @@ public fun migrate<Lp, Meme, Quote>(
         ctx,
     );
     assert_dao_fee_terms!(
-        dao_fee_pool.fee_bps(), dao_fee_bps, dao_fee_pool.fee_recipient(), vault_address,
+        dao_fee_pool.fee_bps(),
+        dao_fee_bps,
+        dao_fee_pool.fee_recipient(),
+        vault_address,
     );
 
     event::emit(DaoFeePoolCreated<Lp, Meme, Quote> {
@@ -209,12 +215,25 @@ public fun collect_fees<Meme, Quote>(
 // === Private Functions ===
 
 // Lazy arguments preserve short-circuit order for the external reads.
-macro fun assert_pool_balances($actual_meme: u64, $expected_meme: u64, $actual_quote: u64, $expected_quote: u64) {
+macro fun assert_pool_balances(
+    $actual_meme: u64,
+    $expected_meme: u64,
+    $actual_quote: u64,
+    $expected_quote: u64
+) {
     assert!($actual_meme == $expected_meme && $actual_quote == $expected_quote, EPoolMismatch);
 }
 
-macro fun assert_dao_fee_terms($actual_bps: u16, $expected_bps: u16, $actual_recipient: address, $expected_recipient: address) {
-    assert!($actual_bps == $expected_bps && $actual_recipient == $expected_recipient, EDaoFeePoolMismatch);
+macro fun assert_dao_fee_terms(
+    $actual_bps: u16,
+    $expected_bps: u16,
+    $actual_recipient: address,
+    $expected_recipient: address
+) {
+    assert!(
+        $actual_bps == $expected_bps && $actual_recipient == $expected_recipient,
+        EDaoFeePoolMismatch
+    );
 }
 
 /// Creates the 50/50 pool from the sale's tokens and Quote, in Aftermath's coin order.
@@ -339,12 +358,22 @@ public fun dao_fee_pool_created_fields<Lp, Meme, Quote>(
 }
 
 #[test_only]
-public fun assert_pool_balances_for_testing(actual_meme: u64, expected_meme: u64, actual_quote: u64, expected_quote: u64) {
+public fun assert_pool_balances_for_testing(
+    actual_meme: u64,
+    expected_meme: u64,
+    actual_quote: u64,
+    expected_quote: u64
+) {
     assert_pool_balances!(actual_meme, expected_meme, actual_quote, expected_quote);
 }
 
 #[test_only]
-public fun assert_dao_fee_terms_for_testing(actual_bps: u16, expected_bps: u16, actual_recipient: address, expected_recipient: address) {
+public fun assert_dao_fee_terms_for_testing(
+    actual_bps: u16,
+    expected_bps: u16,
+    actual_recipient: address,
+    expected_recipient: address
+) {
     assert_dao_fee_terms!(actual_bps, expected_bps, actual_recipient, expected_recipient);
 }
 

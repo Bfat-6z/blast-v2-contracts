@@ -28,7 +28,12 @@ public enum Case has copy, drop {
     Success,
 }
 
-public struct Fixture { version: PackageVersion, clock: Clock, policy: FeePolicy, vault: Vault<CoinA, CoinB>, }
+public struct Fixture {
+    version: PackageVersion,
+    clock: Clock,
+    policy: FeePolicy,
+    vault: Vault<CoinA, CoinB>,
+}
 
 public struct CoinA has drop {}
 public struct CoinB has drop {}
@@ -120,7 +125,10 @@ fun exercise(setting: Setting, case: Case) {
     f.clock.set_for_testing(START + DELAY - if (case == Case::Early) 1 else 0);
     assert_eq!(snapshot(&f, setting), initial);
     match (case) {
-        Case::Early => { apply(&mut f, setting); destroy(f); },
+        Case::Early => {
+            apply(&mut f, setting);
+            destroy(f);
+        },
         Case::Replacement => {
             schedule(&mut f, setting, 200);
             assert_notice(&f, setting, 200, true);
@@ -135,18 +143,30 @@ fun exercise(setting: Setting, case: Case) {
             apply(&mut f, setting);
             destroy(f);
         },
-        Case::Replay => { apply(&mut f, setting); apply(&mut f, setting); destroy(f); },
+        Case::Replay => {
+            apply(&mut f, setting);
+            apply(&mut f, setting);
+            destroy(f);
+        },
         Case::StaleSchedule => destroy(f),
-        Case::StaleApply => { f.version.set_for_testing(2); apply(&mut f, setting); destroy(f); },
-        Case::StaleCancel => { f.version.set_for_testing(2); cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false); destroy(f); },
+        Case::StaleApply => {
+            f.version.set_for_testing(2);
+            apply(&mut f, setting);
+            destroy(f);
+        },
+        Case::StaleCancel => {
+            f.version.set_for_testing(2);
+            cancel(&mut f, setting);
+            assert_notice(&f, setting, 100, false);
+            destroy(f);
+        },
         Case::Success => {
             // A ready proposal can still be cancelled; a later proposal receives a full delay.
             cancel(&mut f, setting);
             assert_notice(&f, setting, 100, false);
             assert_eq!(snapshot(&f, setting), initial);
             schedule(&mut f, setting, 100);
-    assert_notice(&f, setting, 100, true);
+            assert_notice(&f, setting, 100, true);
             f.clock.set_for_testing(START + 2 * DELAY);
             apply(&mut f, setting);
             assert_value(&f, setting, 100);
@@ -174,20 +194,62 @@ fun start(setting: Setting): Fixture {
     clock.set_for_testing(START);
     let _ = setting;
     let vault = presale_vault::new_for_testing<CoinA, CoinB>(
-        sui::object::id_from_address(@0xCAFE), sui::object::id_from_address(@0xCA9),
+        sui::object::id_from_address(@0xCAFE),
+        sui::object::id_from_address(@0xCA9),
         blast_presale::blast_presale::fee_split(vector[], bps::new(10_000)),
-        fee_policy::protocol_fees_for_testing(11, 12, 0, 0), option::none(), &mut ctx,
+        fee_policy::protocol_fees_for_testing(11, 12, 0, 0),
+        option::none(),
+        &mut ctx,
     );
     Fixture { version, clock, policy: fee_policy::new_for_testing(&mut ctx), vault }
 }
 
-fun prepare_again(f: &mut Fixture, setting: Setting) { let _ = f; let _ = setting; }
+fun prepare_again(f: &mut Fixture, setting: Setting) {
+    let _ = f;
+    let _ = setting;
+}
 
 fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
     match (setting) {
-        Setting::VaultFees => { f.vault.schedule_protocol_lp_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), 172_800_000, &f.clock); },
-        Setting::Fees => { f.policy.schedule_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), bps::new(n + 2), bps::new(n + 3), 172_800_000, &f.clock); },
-        Setting::Destination => { f.policy.schedule_destination(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300, 172_800_000, &f.clock); },
+        Setting::VaultFees => {
+            f
+                .vault
+                .schedule_protocol_lp_fees(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    bps::new(n),
+                    bps::new(n + 1),
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::Fees => {
+            f
+                .policy
+                .schedule_fees(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    bps::new(n),
+                    bps::new(n + 1),
+                    bps::new(n + 2),
+                    bps::new(n + 3),
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::Destination => {
+            f
+                .policy
+                .schedule_destination(
+                    &f.version,
+                    &blast_acl::witness_for_testing<TreasuryAdmin>(),
+                    if (n == 100) @0x100
+                    else if (n == 200) @0x200
+                    else @0x300,
+                    172_800_000,
+                    &f.clock
+                );
+        },
     }
 }
 
@@ -201,16 +263,47 @@ fun apply(f: &mut Fixture, setting: Setting) {
 
 fun cancel(f: &mut Fixture, setting: Setting) {
     match (setting) {
-        Setting::VaultFees => { f.vault.cancel_protocol_lp_fees(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::Fees => { f.policy.cancel_fees(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::Destination => { f.policy.cancel_destination(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
+        Setting::VaultFees => {
+            f
+                .vault
+                .cancel_protocol_lp_fees(
+                    &f.version,
+                    &blast_acl::witness_for_testing<CancelAdmin>()
+                );
+        },
+        Setting::Fees => {
+            f.policy.cancel_fees(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        },
+        Setting::Destination => {
+            f.policy.cancel_destination(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        },
     }
 }
 
 fun snapshot(f: &Fixture, setting: Setting): vector<u8> {
     match (setting) {
-        Setting::VaultFees => { let p = f.vault.protocol_fees_for_testing(); bcs::to_bytes(&vector[p.raise_bps().value(), p.token_bps().value(), p.lp_fee_meme_bps().value(), p.lp_fee_quote_bps().value()]) },
-        Setting::Fees => { let p = f.policy.fees(); bcs::to_bytes(&vector[p.raise_bps().value(), p.token_bps().value(), p.lp_fee_meme_bps().value(), p.lp_fee_quote_bps().value()]) },
+        Setting::VaultFees => {
+            let p = f.vault.protocol_fees_for_testing();
+            bcs::to_bytes(
+                &vector[
+                    p.raise_bps().value(),
+                    p.token_bps().value(),
+                    p.lp_fee_meme_bps().value(),
+                    p.lp_fee_quote_bps().value()
+                ]
+            )
+        },
+        Setting::Fees => {
+            let p = f.policy.fees();
+            bcs::to_bytes(
+                &vector[
+                    p.raise_bps().value(),
+                    p.token_bps().value(),
+                    p.lp_fee_meme_bps().value(),
+                    p.lp_fee_quote_bps().value()
+                ]
+            )
+        },
         Setting::Destination => { bcs::to_bytes(&f.policy.destination()) },
     }
 }
@@ -229,13 +322,24 @@ fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
     let mut expected = match (setting) {
         Setting::Fees => { u64_fields_bytes(vector[n, n + 1, n + 2, n + 3]) },
         Setting::Destination => { expected(setting, n) },
-        Setting::VaultFees => { let mut bytes = bcs::to_bytes(&sui::object::id(&f.vault)); bytes.append(u64_fields_bytes(vector[n, n + 1])); bytes },
+        Setting::VaultFees => {
+            let mut bytes = bcs::to_bytes(&sui::object::id(&f.vault));
+            bytes.append(u64_fields_bytes(vector[n, n + 1]));
+            bytes
+        },
     };
-    if (scheduled) { expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY))); let delay_ms = DELAY; expected.append(bcs::to_bytes(&delay_ms)); };
+    if (scheduled) {
+        expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY)));
+        let delay_ms = DELAY;
+        expected.append(bcs::to_bytes(&delay_ms));
+    };
     let actual = match (setting) {
-        Setting::Fees => if (scheduled) last_event<fee_policy::FeesScheduled>() else last_event<fee_policy::FeesCancelled>(),
-        Setting::Destination => if (scheduled) last_event<fee_policy::DestinationScheduled>() else last_event<fee_policy::DestinationCancelled>(),
-        Setting::VaultFees => if (scheduled) last_event<presale_vault::ProtocolLpFeesScheduled>() else last_event<presale_vault::ProtocolLpFeesCancelled>(),
+        Setting::Fees => if (scheduled) last_event<fee_policy::FeesScheduled>()
+        else last_event<fee_policy::FeesCancelled>(),
+        Setting::Destination => if (scheduled) last_event<fee_policy::DestinationScheduled>()
+        else last_event<fee_policy::DestinationCancelled>(),
+        Setting::VaultFees => if (scheduled) last_event<presale_vault::ProtocolLpFeesScheduled>()
+        else last_event<presale_vault::ProtocolLpFeesCancelled>(),
     };
     assert_eq!(actual, expected);
 }
@@ -246,7 +350,10 @@ fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     bytes
 }
 
-fun last_event<T: copy + drop>(): vector<u8> { let mut events = sui::event::events_by_type<T>(); bcs::to_bytes(&events.pop_back()) }
+fun last_event<T: copy + drop>(): vector<u8> {
+    let mut events = sui::event::events_by_type<T>();
+    bcs::to_bytes(&events.pop_back())
+}
 
 // === Imports ===
 

@@ -108,7 +108,9 @@ fun stale_delay_change_rejects_before_other_validation() {
 fun upgrade_policy_only_application_and_cancellation_preserve_custody() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UpgradeAdmin>();
+        let witness = blast_acl::witness_for_testing<
+            blast_presale::blast_presale_domain::UpgradeAdmin
+        >();
         f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
         f.admin.apply_upgrade_delay(&f.version, &f.clock);
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
@@ -129,7 +131,9 @@ fun upgrade_policy_only_application_and_cancellation_preserve_custody() {
 fun upgrade_policy_only_reduction_cannot_be_applied_early() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UpgradeAdmin>();
+        let witness = blast_acl::witness_for_testing<
+            blast_presale::blast_presale_domain::UpgradeAdmin
+        >();
         f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
         f.admin.apply_upgrade_delay(&f.version, &f.clock);
         f.admin.schedule_upgrade_delay(&f.version, &witness, 0, &f.clock);
@@ -143,7 +147,9 @@ fun upgrade_policy_only_reduction_cannot_be_applied_early() {
 fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<blast_presale::blast_presale_domain::AdapterAdmin>();
+        let witness = blast_acl::witness_for_testing<
+            blast_presale::blast_presale_domain::AdapterAdmin
+        >();
         f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_migration_delay(&f.version, &f.clock);
         f.config.schedule_migration_witness<Adapter>(&f.version, &witness, 0, &f.clock);
@@ -157,7 +163,9 @@ fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
 fun previously_accepted_admissions_keep_their_proposed_next_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<blast_presale::blast_presale_domain::AdapterAdmin>();
+        let witness = blast_acl::witness_for_testing<
+            blast_presale::blast_presale_domain::AdapterAdmin
+        >();
         f.config.schedule_migration_witness<Adapter>(&f.version, &witness, 25, &f.clock);
         f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_migration_delay(&f.version, &f.clock);
@@ -194,15 +202,45 @@ fun start(): AdminDelayFixture {
     scenario.next_tx(PUBLISHER);
     let version = scenario.take_shared();
     let clock = sui::clock::create_for_testing(scenario.ctx());
-    AdminDelayFixture { admin: scenario.take_shared(), version, clock, config: scenario.take_shared(), runtime: scenario.take_shared(), scenario }
+    AdminDelayFixture {
+        admin: scenario.take_shared(),
+        version,
+        clock,
+        config: scenario.take_shared(),
+        runtime: scenario.take_shared(),
+        scenario
+    }
 }
 
-fun schedule_fee(self: &mut AdminDelayFixture, value: u64, delay_ms: u64) { self.runtime.schedule_fees(&self.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(value), bps::new(0), bps::new(0), bps::new(0), delay_ms, &self.clock); }
+fun schedule_fee(self: &mut AdminDelayFixture, value: u64, delay_ms: u64) {
+    self
+        .runtime
+        .schedule_fees(
+            &self.version,
+            &blast_acl::witness_for_testing<FeeAdmin>(),
+            bps::new(value),
+            bps::new(0),
+            bps::new(0),
+            bps::new(0),
+            delay_ms,
+            &self.clock
+        );
+}
 fun apply_fee(self: &mut AdminDelayFixture) { self.runtime.apply_fees(&self.version, &self.clock); }
-fun cancel_fee(self: &mut AdminDelayFixture) { self.runtime.cancel_fees(&self.version, &blast_acl::witness_for_testing<CancelAdmin>()); }
+fun cancel_fee(self: &mut AdminDelayFixture) {
+    self.runtime.cancel_fees(&self.version, &blast_acl::witness_for_testing<CancelAdmin>());
+}
 fun fee(self: &AdminDelayFixture): u64 { self.runtime.fees().raise_bps().value() }
 fun configure_destination(self: &mut AdminDelayFixture) {
-    self.runtime.schedule_destination(&self.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), @0xB0B, 200, &self.clock);
+    self
+        .runtime
+        .schedule_destination(
+            &self.version,
+            &blast_acl::witness_for_testing<TreasuryAdmin>(),
+            @0xB0B,
+            200,
+            &self.clock
+        );
     self.runtime.apply_destination(&self.version, &self.clock);
     assert_eq!(self.runtime.destination(), @0xB0B);
 }

@@ -46,9 +46,18 @@ fun fractional_external_funding_rounds_credits_down_and_costs_up() {
                 let mut state = seeded(side, 200);
                 let ready = state.preview_rebalance(side, 1_100, 2_000, cost, raw);
                 let amount = (if (cost) raw.div_ceil(ATOM_SCALE) else raw / ATOM_SCALE) as u64;
-                state.settle_funding(if (cost) observation::funding_cost(amount) else observation::funding_credit(amount));
+                state.settle_funding(if (cost) observation::funding_cost(amount)
+                else observation::funding_credit(amount));
                 assert_eq!(state.maintenance_reserve(), if (cost) 200 - amount else 200 + amount);
-                assert_eq!(ready, capture(side, 1_100, 2_000).into_rebalance_readiness(&state, checkpoint::unchanged_change(), 10, NOW));
+                assert_eq!(
+                    ready,
+                    capture(side, 1_100, 2_000).into_rebalance_readiness(
+                        &state,
+                        checkpoint::unchanged_change(),
+                        10,
+                        NOW
+                    )
+                );
                 state.destroy_for_testing();
             });
         });
@@ -61,8 +70,17 @@ fun later_market_rates_do_not_hide_funding_already_settled() {
     // Position snapshots reached 1; market has subsequently advanced to 2.
     let before = checkpoint(1_000 * ATOM_SCALE, 0, 1);
     let after = checkpoint(1_200 * ATOM_SCALE, 1, 2);
-    let captured = snapshot::captured_position_for_testing(after, 1_100, 2_000 * BASE_PER_NOTIONAL, policy::long(), true, true);
-    assert!(captured.into_rebalance_readiness(&state, before.classify_preexisting(&after), 10, NOW));
+    let captured = snapshot::captured_position_for_testing(
+        after,
+        1_100,
+        2_000 * BASE_PER_NOTIONAL,
+        policy::long(),
+        true,
+        true
+    );
+    assert!(
+        captured.into_rebalance_readiness(&state, before.classify_preexisting(&after), 10, NOW)
+    );
     assert_eq!(state.maintenance_reserve(), 0);
     state.destroy_for_testing();
 }
@@ -74,7 +92,14 @@ fun unexplained_changes_are_rejected_before_unavailable_venue_admission() {
     let before = checkpoint(1_000 * ATOM_SCALE, 0, 1);
     // Collateral changed without a funding-snapshot refresh.
     let after = checkpoint(1_200 * ATOM_SCALE, 0, 1);
-    snapshot::captured_position_for_testing(after, 1_100, 2_000 * BASE_PER_NOTIONAL, policy::long(), true, false)
+    snapshot::captured_position_for_testing(
+        after,
+        1_100,
+        2_000 * BASE_PER_NOTIONAL,
+        policy::long(),
+        true,
+        false
+    )
         .into_rebalance_readiness(&state, before.classify_preexisting(&after), 10, NOW);
     state.destroy_for_testing();
 }
@@ -89,14 +114,33 @@ fun unrepresentable_external_funding_is_rejected_before_pricing() {
 
 // === Test Helpers ===
 
-fun preview_rebalance(state: &State<Product>, side: PositionSide, equity: u64, notional: u64, cost: bool, raw: u256): bool {
+fun preview_rebalance(
+    state: &State<Product>,
+    side: PositionSide,
+    equity: u64,
+    notional: u64,
+    cost: bool,
+    raw: u256
+): bool {
     let before = checkpoint(if (cost) raw else 0, 0, 1);
     let after = checkpoint(if (cost) 0 else raw, 1, 1);
     let stored_state = bcs::to_bytes(state);
     let stored_checkpoint = bcs::to_bytes(&before);
     let events_before = sui::event::num_events();
-    let captured = snapshot::captured_position_for_testing(after, equity, notional * BASE_PER_NOTIONAL, side, true, true);
-    let ready = captured.into_rebalance_readiness(state, before.classify_preexisting(&after), 10, NOW);
+    let captured = snapshot::captured_position_for_testing(
+        after,
+        equity,
+        notional * BASE_PER_NOTIONAL,
+        side,
+        true,
+        true
+    );
+    let ready = captured.into_rebalance_readiness(
+        state,
+        before.classify_preexisting(&after),
+        10,
+        NOW
+    );
     assert_eq!(stored_state, bcs::to_bytes(state));
     assert_eq!(stored_checkpoint, bcs::to_bytes(&before));
     assert_eq!(events_before, sui::event::num_events());
@@ -104,7 +148,25 @@ fun preview_rebalance(state: &State<Product>, side: PositionSide, equity: u64, n
 }
 
 fun checkpoint(allocated: u256, snapshot: u256, market: u256): Checkpoint {
-    checkpoint::checkpoint_for_testing(0, allocated, 1, 1, snapshot, snapshot, market, market, 1, 0, 0, 0, 0, false, 1, 1, 1)
+    checkpoint::checkpoint_for_testing(
+        0,
+        allocated,
+        1,
+        1,
+        snapshot,
+        snapshot,
+        market,
+        market,
+        1,
+        0,
+        0,
+        0,
+        0,
+        false,
+        1,
+        1,
+        1
+    )
 }
 
 

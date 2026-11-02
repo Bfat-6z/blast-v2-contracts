@@ -39,21 +39,34 @@ public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>
 
 /// Replaces the proposal and restarts the full currently applied delay.
 /// `delay_ms` is the NEXT notice period, never the wait for this proposal.
-public fun schedule<T: copy + drop + store>(self: &mut Delayed<T>, value: T, delay_ms: u64, clock: &Clock): u64 {
+public fun schedule<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    delay_ms: u64,
+    clock: &Clock
+): u64 {
     let pending = new_pending(value, self.delay_ms, delay_ms, clock);
     self.pending = option::some(pending);
     pending.ready_at_ms
 }
 
 /// Changes only the value, retaining the applied notice period.
-public fun schedule_value<T: copy + drop + store>(self: &mut Delayed<T>, value: T, clock: &Clock): u64 {
+public fun schedule_value<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    clock: &Clock
+): u64 {
     let delay_ms = self.delay_ms;
     self.schedule(value, delay_ms, clock)
 }
 
 /// Changes only the notice period, retaining the applied value.
 /// A reduction, including to zero, still waits the old notice period.
-public fun schedule_delay<T: copy + drop + store>(self: &mut Delayed<T>, delay_ms: u64, clock: &Clock): u64 {
+public fun schedule_delay<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    delay_ms: u64,
+    clock: &Clock
+): u64 {
     let value = self.value;
     self.schedule(value, delay_ms, clock)
 }
@@ -61,10 +74,13 @@ public fun schedule_delay<T: copy + drop + store>(self: &mut Delayed<T>, delay_m
 /// Applies both proposed fields once, only after the stored deadline.
 public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T {
     assert!(self.pending.is_some(), blast_admin::errors::no_pending!());
+
     let (value, delay_ms) = self.pending.destroy_some().take_ready(clock);
+
     self.pending = option::none();
     self.value = value;
     self.delay_ms = delay_ms;
+
     value
 }
 
@@ -76,11 +92,17 @@ public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T {
 
 /// Snapshots a standalone operation's applied delay and proposed next delay.
 /// Its owner must persist the returned next delay on successful application.
-public fun new_pending<T: copy + drop + store>(value: T, current_delay_ms: u64, delay_ms: u64, clock: &Clock): Pending<T> {
+public fun new_pending<T: copy + drop + store>(
+    value: T,
+    current_delay_ms: u64,
+    delay_ms: u64,
+    clock: &Clock
+): Pending<T> {
     let scheduled_at_ms = clock.timestamp_ms();
     let ready_at_ms = scheduled_at_ms.checked_add(current_delay_ms)
         .destroy_or!(abort blast_admin::errors::invalid_delay!());
     assert!(ready_at_ms.checked_add(delay_ms).is_some(), blast_admin::errors::invalid_delay!());
+
     Pending { value, delay_ms, ready_at_ms }
 }
 
@@ -88,7 +110,10 @@ public fun new_pending<T: copy + drop + store>(value: T, current_delay_ms: u64, 
 /// Future scheduling still checks its own timestamp addition as time advances.
 public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): (T, u64) {
     assert!(clock.timestamp_ms() >= self.ready_at_ms, blast_admin::errors::not_ready!());
-    assert!(clock.timestamp_ms().checked_add(self.delay_ms).is_some(), blast_admin::errors::invalid_delay!());
+    assert!(
+        clock.timestamp_ms().checked_add(self.delay_ms).is_some(),
+        blast_admin::errors::invalid_delay!()
+    );
     (self.value, self.delay_ms)
 }
 

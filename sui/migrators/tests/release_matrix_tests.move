@@ -41,7 +41,14 @@ fun start(): MatrixFixture {
 
 fun admit<MigrationWitness: drop>(self: &mut MatrixFixture) {
     let admin = blast_acl::witness_for_testing<AdapterAdmin>();
-    self.config.set_migration_witness_allowed_for_testing<MigrationWitness>(&self.version, &admin, true, self.scenario.ctx());
+    self
+        .config
+        .set_migration_witness_allowed_for_testing<MigrationWitness>(
+            &self.version,
+            &admin,
+            true,
+            self.scenario.ctx()
+        );
 }
 
 fun end(self: MatrixFixture) {

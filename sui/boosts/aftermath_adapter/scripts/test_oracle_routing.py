@@ -10,6 +10,8 @@ from pathlib import Path
 import re
 import unittest
 
+from move_source import replace_code
+
 
 SOURCES = Path(__file__).resolve().parents[1] / "sources"
 
@@ -190,8 +192,8 @@ class OracleRoutingTests(unittest.TestCase):
             with self.subTest(module=module, function=name, mutation=new):
                 sources = self.sources.copy()
                 original = body(sources[module], name, kind)
-                self.assertIn(old, original)
-                sources[module] = sources[module].replace(original, original.replace(old, new), 1)
+                mutated = replace_code(original, old, new)
+                sources[module] = sources[module].replace(original, mutated, 1)
                 with self.assertRaises(AssertionError):
                     for check in CHECKS:
                         check(sources)

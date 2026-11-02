@@ -31,7 +31,15 @@ fun capacity_matches_enumerated_quote_costs_and_rounds_down_to_lots() {
                         if (cost <= cap) expected = candidate;
                         candidate = candidate + lot;
                     };
-                    let actual = rebalance_math::base_for_execution_notional_down(cap, price, 2, lot, slippage, 1, 1);
+                    let actual = rebalance_math::base_for_execution_notional_down(
+                        cap,
+                        price,
+                        2,
+                        lot,
+                        slippage,
+                        1,
+                        1
+                    );
                     assert_eq!(actual, expected);
                     let fractional_quote = actual * (upper * 1_000 - 1);
                     assert!(fractional_quote.div_ceil(2_000) <= cap);
@@ -45,7 +53,18 @@ fun capacity_matches_enumerated_quote_costs_and_rounds_down_to_lots() {
 #[test]
 fun huge_caps_and_prices_keep_wide_arithmetic_and_narrow_only_whole_lots() {
     let max = std::u64::max_value!();
-    assert_eq!(rebalance_math::base_for_execution_notional_down(max, 1, max, 7, 9_999, 1_000_000_000_000_000_000, 1), max / 7 * 7);
+    assert_eq!(
+        rebalance_math::base_for_execution_notional_down(
+            max,
+            1,
+            max,
+            7,
+            9_999,
+            1_000_000_000_000_000_000,
+            1
+        ),
+        max / 7 * 7
+    );
     let base = rebalance_math::base_for_execution_notional_down(max, max, max, 1, 9_999, 1, 1);
     assert!(base > 0 && base < max);
     let upper = (max as u256) * 19_999 / 10_000 + 1;
@@ -64,9 +83,25 @@ fun a_large_target_at_a_tiny_price_still_places_a_representable_capped_order() {
 fun tighter_caps_or_wider_bounds_never_increase_order_capacity() {
     let mut previous = std::u64::max_value!();
     vector[0u64, 100, 250, 500, 9_999].do!(|slippage| {
-        let capacity = rebalance_math::base_for_execution_notional_down(10_000, 1_000, 1, 1, slippage, 1_000, 1);
+        let capacity = rebalance_math::base_for_execution_notional_down(
+            10_000,
+            1_000,
+            1,
+            1,
+            slippage,
+            1_000,
+            1
+        );
         assert!(capacity <= previous);
-        let tighter = rebalance_math::base_for_execution_notional_down(9_999, 1_000, 1, 1, slippage, 1_000, 1);
+        let tighter = rebalance_math::base_for_execution_notional_down(
+            9_999,
+            1_000,
+            1,
+            1,
+            slippage,
+            1_000,
+            1
+        );
         assert!(tighter <= capacity);
         previous = capacity;
     });
@@ -84,7 +119,9 @@ fun both_sides_close_over_multiple_transactions_after_a_live_lot_increase() {
         let before = vault.venue().base();
         assert_eq!(vault.unwind(16), 16);
         assert_eq!(vault.venue().base(), before - 16 * LARGE_LOT);
-        while (vault.venue().base() > 0) { vault.unwind(16); };
+        while (vault.venue().base() > 0) {
+            vault.unwind(16);
+        };
         assert!(vault.finalize() > 0);
         vault.destroy();
     });
@@ -92,7 +129,10 @@ fun both_sides_close_over_multiple_transactions_after_a_live_lot_increase() {
 
 #[test]
 fun cap_sized_short_shutdown_orders_accept_an_allowed_higher_fill() {
-    let mut vault = test_adapter::calm_venue().with_side(policy::short()).issue().activate(SEED, RESERVE);
+    let mut vault = test_adapter::calm_venue()
+        .with_side(policy::short())
+        .issue()
+        .activate(SEED, RESERVE);
     vault.venue_mut().set_slippage_bps(100);
     vault.begin_shutdown();
     assert!(vault.unwind(16) > 0);
@@ -103,21 +143,29 @@ fun cap_sized_short_shutdown_orders_accept_an_allowed_higher_fill() {
 
 #[test]
 fun short_shutdown_uses_the_widened_bound_when_sizing_cap_limited_buybacks() {
-    let mut vault = test_adapter::calm_venue().with_side(policy::short()).issue().activate(SEED, RESERVE);
+    let mut vault = test_adapter::calm_venue()
+        .with_side(policy::short())
+        .issue()
+        .activate(SEED, RESERVE);
     vault.set_max_order_notional(1_000 * USDC);
     vault.begin_shutdown();
     vault.venue_mut().advance(86_400_000);
     vault.venue_mut().set_slippage_bps(500);
     assert_eq!(vault.unwind(16), 16);
     assert!(vault.venue().base() > 0);
-    while (vault.venue().base() > 0) { vault.unwind(16); };
+    while (vault.venue().base() > 0) {
+        vault.unwind(16);
+    };
     assert!(vault.finalize() > 0);
     vault.destroy();
 }
 
 #[test]
 fun short_emergency_buybacks_reserve_the_wider_execution_price() {
-    let mut vault = test_adapter::calm_venue().with_side(policy::short()).issue().activate(SEED, RESERVE);
+    let mut vault = test_adapter::calm_venue()
+        .with_side(policy::short())
+        .issue()
+        .activate(SEED, RESERVE);
     vault.set_max_order_notional(1_000 * USDC);
     let price = vault.venue().base_price();
     vault.venue_mut().set_base_price(price * 125 / 100);

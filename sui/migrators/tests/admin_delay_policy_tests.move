@@ -160,16 +160,47 @@ fun start(): AdminDelayFixture {
     scenario.next_tx(PUBLISHER);
     let version = scenario.take_shared();
     let clock = sui::clock::create_for_testing(scenario.ctx());
-    AdminDelayFixture { admin: scenario.take_shared(), version, clock, policy: scenario.take_shared(), scenario }
+    AdminDelayFixture {
+        admin: scenario.take_shared(),
+        version,
+        clock,
+        policy: scenario.take_shared(),
+        scenario
+    }
 }
 
-fun schedule_fee(self: &mut AdminDelayFixture, value: u64, delay_ms: u64) { self.policy.schedule_default_shares(&self.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(value), bps::new(0), delay_ms, &self.clock); }
+fun schedule_fee(self: &mut AdminDelayFixture, value: u64, delay_ms: u64) {
+    self
+        .policy
+        .schedule_default_shares(
+            &self.version,
+            &blast_acl::witness_for_testing<FeeAdmin>(),
+            bps::new(value),
+            bps::new(0),
+            delay_ms,
+            &self.clock
+        );
+}
 fun apply_fee(self: &mut AdminDelayFixture) { self.policy.apply_default_shares(&self.version, &self.clock); }
-fun cancel_fee(self: &mut AdminDelayFixture) { self.policy.cancel_default_shares(&self.version, &blast_acl::witness_for_testing<CancelAdmin>()); }
-fun fee(self: &AdminDelayFixture): u64 { { let (meme, _) = self.policy.shares<SUI>(); meme.value() } }
+fun cancel_fee(self: &mut AdminDelayFixture) {
+    self
+        .policy
+        .cancel_default_shares(&self.version, &blast_acl::witness_for_testing<CancelAdmin>());
+}
+fun fee(self: &AdminDelayFixture): u64 {
+    { let (meme, _) = self.policy.shares<SUI>(); meme.value() }
+}
 fun configure_destination(self: &mut AdminDelayFixture) {
-    self.policy.schedule_protocol_destination(&self.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), @0xB0B, 200, &self.clock);
-        self.policy.apply_protocol_destination(&self.version, &self.clock);
+    self
+        .policy
+        .schedule_protocol_destination(
+            &self.version,
+            &blast_acl::witness_for_testing<TreasuryAdmin>(),
+            @0xB0B,
+            200,
+            &self.clock
+        );
+    self.policy.apply_protocol_destination(&self.version, &self.clock);
     assert_eq!(self.policy.protocol_destination(), @0xB0B);
 }
 

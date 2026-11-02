@@ -46,10 +46,17 @@ public fun schedule_protocol_destination(
     clock: &Clock,
 ) {
     migrators_version.assert_current();
+
     assert!(destination != @0x0, EProtocolDestinationUnchanged);
+
     let value = destination;
-    assert!(value != self.destination.value() || delay_ms != self.destination.delay_ms(), EProtocolDestinationUnchanged);
+    assert!(
+        value != self.destination.value() || delay_ms != self.destination.delay_ms(),
+        EProtocolDestinationUnchanged
+    );
+
     let ready_at_ms = self.destination.schedule(value, delay_ms, clock);
+
     blast_events::protocol_destination_scheduled(destination, ready_at_ms, delay_ms);
 }
 
@@ -60,9 +67,11 @@ public fun apply_protocol_destination(
     clock: &Clock,
 ) {
     migrators_version.assert_current();
+
     let old_destination = self.destination.value();
     let value = self.destination.apply(clock);
     let destination = value;
+
     blast_events::lp_fee_destination_changed(old_destination, destination);
 }
 
@@ -73,8 +82,10 @@ public fun cancel_protocol_destination(
     _: &AdminWitness<CancelAdmin>,
 ) {
     migrators_version.assert_current();
+
     let value = self.destination.cancel();
     let destination = value;
+
     blast_events::protocol_destination_cancelled(destination);
 }
 
@@ -92,9 +103,19 @@ public fun schedule_default_shares(
     migrators_version.assert_current();
 
     let value = SharePair { meme_bps, quote_bps };
-    assert!(value != self.defaults.value() || delay_ms != self.defaults.delay_ms(), EProtocolFeeSharesUnchanged);
+    assert!(
+        value != self.defaults.value() || delay_ms != self.defaults.delay_ms(),
+        EProtocolFeeSharesUnchanged
+    );
+
     let ready_at_ms = self.defaults.schedule(value, delay_ms, clock);
-    blast_events::default_shares_scheduled(meme_bps.value(), quote_bps.value(), ready_at_ms, delay_ms);
+
+    blast_events::default_shares_scheduled(
+        meme_bps.value(),
+        quote_bps.value(),
+        ready_at_ms,
+        delay_ms
+    );
 }
 
 /// Applies the scheduled default shares permissionlessly once ready.
@@ -104,11 +125,19 @@ public fun apply_default_shares(
     clock: &Clock,
 ) {
     migrators_version.assert_current();
+
     let old_defaults = self.defaults.value();
     let value = self.defaults.apply(clock);
     let meme_bps = value.meme_bps;
     let quote_bps = value.quote_bps;
-    blast_events::lp_fee_policy_changed(option::none(), option::some(old_defaults.meme_bps.value()), option::some(old_defaults.quote_bps.value()), option::some(meme_bps.value()), option::some(quote_bps.value()));
+
+    blast_events::lp_fee_policy_changed(
+        option::none(),
+        option::some(old_defaults.meme_bps.value()),
+        option::some(old_defaults.quote_bps.value()),
+        option::some(meme_bps.value()),
+        option::some(quote_bps.value())
+    );
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -118,48 +147,111 @@ public fun cancel_default_shares(
     _: &AdminWitness<CancelAdmin>,
 ) {
     migrators_version.assert_current();
+
     let value = self.defaults.cancel();
     let meme_bps = value.meme_bps;
     let quote_bps = value.quote_bps;
+
     blast_events::default_shares_cancelled(meme_bps.value(), quote_bps.value());
 }
 
 /// Schedules both shares for this original Meme type after the administrative delay.
 /// Setting the current defaults is a real transition because later default changes skip the coin.
-public fun schedule_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, delay_ms: u64, clock: &Clock) {
+public fun schedule_coin_shares<Meme>(
+    self: &mut LpFeePolicy,
+    migrators_version: &MigratorsVersion,
+    _: &AdminWitness<FeeAdmin>,
+    meme_bps: Bps,
+    quote_bps: Bps,
+    delay_ms: u64,
+    clock: &Clock
+) {
     migrators_version.assert_current();
+
     let meme = type_name::with_original_ids<Meme>();
     let proposed = option::some(SharePair { meme_bps, quote_bps });
-    if (!self.coins.contains(meme)) self.coins.add(meme, delayed::new(option::none(), self.defaults.delay_ms()));
-    assert!(self.coins[meme].value() != proposed || delay_ms != self.coins[meme].delay_ms(), EProtocolFeeSharesUnchanged);
+    if (!self.coins.contains(meme))
+        self.coins.add(meme, delayed::new(option::none(), self.defaults.delay_ms()));
+    assert!(
+        self.coins[meme].value() != proposed || delay_ms != self.coins[meme].delay_ms(),
+        EProtocolFeeSharesUnchanged
+    );
+
     let ready_at_ms = self.coins[meme].schedule(proposed, delay_ms, clock);
-    blast_events::coin_shares_scheduled(meme, option::some(meme_bps.value()), option::some(quote_bps.value()), ready_at_ms, delay_ms);
+
+    blast_events::coin_shares_scheduled(
+        meme,
+        option::some(meme_bps.value()),
+        option::some(quote_bps.value()),
+        ready_at_ms,
+        delay_ms
+    );
 }
 
 /// Removing an override may increase fees through defaults, so it also requires notice.
-public fun schedule_clear_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, delay_ms: u64, clock: &Clock) {
+public fun schedule_clear_coin_shares<Meme>(
+    self: &mut LpFeePolicy,
+    migrators_version: &MigratorsVersion,
+    _: &AdminWitness<FeeAdmin>,
+    delay_ms: u64,
+    clock: &Clock
+) {
     migrators_version.assert_current();
+
     let meme = type_name::with_original_ids<Meme>();
-    assert!(self.coins[meme].value().is_some() || delay_ms != self.coins[meme].delay_ms(), EProtocolFeeSharesUnchanged);
+    assert!(
+        self.coins[meme].value().is_some() || delay_ms != self.coins[meme].delay_ms(),
+        EProtocolFeeSharesUnchanged
+    );
+
     let ready_at_ms = self.coins[meme].schedule(option::none(), delay_ms, clock);
-    blast_events::coin_shares_scheduled(meme, option::none(), option::none(), ready_at_ms, delay_ms);
+
+    blast_events::coin_shares_scheduled(
+        meme,
+        option::none(),
+        option::none(),
+        ready_at_ms,
+        delay_ms
+    );
 }
 
 /// Applies either the approved override or the approved return to live defaults.
-public fun apply_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock) {
+public fun apply_coin_shares<Meme>(
+    self: &mut LpFeePolicy,
+    migrators_version: &MigratorsVersion,
+    clock: &Clock
+) {
     migrators_version.assert_current();
+
     let meme = type_name::with_original_ids<Meme>();
     let previous = self.coins[meme].value();
     let applied = self.coins[meme].apply(clock);
-    blast_events::lp_fee_policy_changed(option::some(meme), previous.map!(|p| p.meme_bps.value()), previous.map!(|p| p.quote_bps.value()), applied.map!(|p| p.meme_bps.value()), applied.map!(|p| p.quote_bps.value()));
+
+    blast_events::lp_fee_policy_changed(
+        option::some(meme),
+        previous.map!(|p| p.meme_bps.value()),
+        previous.map!(|p| p.quote_bps.value()),
+        applied.map!(|p| p.meme_bps.value()),
+        applied.map!(|p| p.quote_bps.value())
+    );
 }
 
 /// Cancels either pending operation without changing the live override.
-public fun cancel_coin_shares<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>) {
+public fun cancel_coin_shares<Meme>(
+    self: &mut LpFeePolicy,
+    migrators_version: &MigratorsVersion,
+    _: &AdminWitness<CancelAdmin>
+) {
     migrators_version.assert_current();
+
     let meme = type_name::with_original_ids<Meme>();
     let cancelled = self.coins[meme].cancel();
-    blast_events::coin_shares_cancelled(meme, cancelled.map!(|p| p.meme_bps.value()), cancelled.map!(|p| p.quote_bps.value()));
+
+    blast_events::coin_shares_cancelled(
+        meme,
+        cancelled.map!(|p| p.meme_bps.value()),
+        cancelled.map!(|p| p.quote_bps.value())
+    );
 }
 
 // === Package Functions ===
@@ -186,7 +278,10 @@ fun new(destination: address, delay_ms: u64, ctx: &mut TxContext): LpFeePolicy {
     LpFeePolicy {
         id: object::new(ctx),
         destination: delayed::new(destination, delay_ms),
-        defaults: delayed::new(SharePair { meme_bps: bps::new(0), quote_bps: bps::new(0) }, delay_ms),
+        defaults: delayed::new(
+            SharePair { meme_bps: bps::new(0), quote_bps: bps::new(0) },
+            delay_ms
+        ),
         coins: table::new(ctx),
     }
 }
@@ -194,18 +289,33 @@ fun new(destination: address, delay_ms: u64, ctx: &mut TxContext): LpFeePolicy {
 // === Test-Only Functions ===
 
 #[test_only]
-public fun set_coin_shares_for_testing<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, admin: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps,
+public fun set_coin_shares_for_testing<Meme>(
+    self: &mut LpFeePolicy,
+    migrators_version: &MigratorsVersion,
+    admin: &AdminWitness<FeeAdmin>,
+    meme_bps: Bps,
+    quote_bps: Bps,
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_coin_shares<Meme>(migrators_version, admin, meme_bps, quote_bps, 172_800_000, &clock);
+    self.schedule_coin_shares<Meme>(
+        migrators_version,
+        admin,
+        meme_bps,
+        quote_bps,
+        172_800_000,
+        &clock
+    );
     clock.set_for_testing(172_800_000);
     self.apply_coin_shares<Meme>(migrators_version, &clock);
     clock.destroy_for_testing();
 }
 
 #[test_only]
-public fun clear_coin_shares_for_testing<Meme>(self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, admin: &AdminWitness<FeeAdmin>,
+public fun clear_coin_shares_for_testing<Meme>(
+    self: &mut LpFeePolicy,
+    migrators_version: &MigratorsVersion,
+    admin: &AdminWitness<FeeAdmin>,
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);

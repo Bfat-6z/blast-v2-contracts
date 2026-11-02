@@ -11,6 +11,7 @@ public(package) fun node(left: vector<u8>, right: vector<u8>): vector<u8> {
     let mut bytes = vector[1u8];
     bytes.append(left);
     bytes.append(right);
+
     hash::blake2b256(&bytes)
 }
 
@@ -59,6 +60,7 @@ fun proof_depth(leaves: u64): u64 {
         width = width.div_ceil(2);
         depth = depth + 1;
     };
+
     depth
 }
 

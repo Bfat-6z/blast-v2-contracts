@@ -56,7 +56,12 @@ fun wrapping_enables_guarded_mutations_and_consumes_publication() {
     fixture.next_tx!(PUBLISHER, |f| {
         f
             .runtime
-            .set_destination_for_testing(&f.package_version, &blast_acl::witness_for_testing(), PROTOCOL_ADMIN, f.scenario.ctx());
+            .set_destination_for_testing(
+                &f.package_version,
+                &blast_acl::witness_for_testing(),
+                PROTOCOL_ADMIN,
+                f.scenario.ctx()
+            );
 
         assert_eq!(f.runtime.destination(), PROTOCOL_ADMIN);
         assert_eq!(f.package_version.version_for_testing(), 1);
@@ -273,7 +278,8 @@ fun compatible_upgrade_commits_and_advances_together() {
             &fixture.package_version,
             &upgrade_admin(),
             package_digest(),
-         &mut sui::tx_context::dummy());
+            &mut sui::tx_context::dummy()
+        );
     assert_eq!(ticket.ticket_policy(), package::compatible_policy());
     let receipt = ticket.test_upgrade();
     fixture
@@ -318,7 +324,8 @@ fun committed_upgrade_disables_old_bytecode() {
             &fixture.package_version,
             &upgrade_admin(),
             package_digest(),
-         &mut sui::tx_context::dummy());
+            &mut sui::tx_context::dummy()
+        );
     let receipt = ticket.test_upgrade();
     fixture
         .package_admin
@@ -333,7 +340,8 @@ fun committed_upgrade_disables_old_bytecode() {
             &fixture.package_version,
             &blast_acl::witness_for_testing(),
             PROTOCOL_ADMIN,
-         &mut sui::tx_context::dummy());
+            &mut sui::tx_context::dummy()
+        );
     destroy(owned);
 }
 

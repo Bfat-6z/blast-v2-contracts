@@ -68,20 +68,37 @@ fun exercise(case: Case) {
     clock.set_for_testing(1234);
     let admin = blast_acl::witness_for_testing<AdapterAdmin>();
     let cancel = blast_acl::witness_for_testing<CancelAdmin>();
-    config.set_quote_allowed<Quote>(&version, &blast_acl::witness_for_testing<ListingAdmin>(), true);
+    config.set_quote_allowed<Quote>(
+        &version,
+        &blast_acl::witness_for_testing<ListingAdmin>(),
+        true
+    );
     if (case == Case::StaleSchedule) version.set_for_testing(2);
     config.schedule_migration_witness<AdapterA>(&version, &admin, 172_800_000, &clock);
-    if (case == Case::StaleSchedule) { destroy(config); destroy(version); destroy(clock); return };
+    if (case == Case::StaleSchedule) {
+        destroy(config);
+        destroy(version);
+        destroy(clock);
+        return
+    };
     config.schedule_migration_witness<AdapterB>(&version, &admin, 172_800_000, &clock);
     clock.set_for_testing(1234 + DELAY - if (case == Case::Early) 1 else 0);
     if (case == Case::Replacement) {
         config.schedule_migration_witness<AdapterA>(&version, &admin, 172_800_000, &clock);
         clock.set_for_testing(1234 + 2 * DELAY - 1);
     };
-    if (case == Case::StaleCancel || case == Case::StaleRemove || case == Case::StaleApply) version.set_for_testing(2);
-    if (case == Case::Cancelled || case == Case::StaleCancel || case == Case::Success) config.cancel_migration_witness<AdapterA>(&version, &cancel);
-    if (case == Case::Removed || case == Case::StaleRemove) config.remove_migration_witness<AdapterA>(&version, &admin);
-    if (case == Case::StaleCancel || case == Case::StaleRemove) { destroy(config); destroy(version); destroy(clock); return };
+    if (case == Case::StaleCancel || case == Case::StaleRemove || case == Case::StaleApply)
+        version.set_for_testing(2);
+    if (case == Case::Cancelled || case == Case::StaleCancel || case == Case::Success)
+        config.cancel_migration_witness<AdapterA>(&version, &cancel);
+    if (case == Case::Removed || case == Case::StaleRemove)
+        config.remove_migration_witness<AdapterA>(&version, &admin);
+    if (case == Case::StaleCancel || case == Case::StaleRemove) {
+        destroy(config);
+        destroy(version);
+        destroy(clock);
+        return
+    };
     if (case == Case::Success) {
         // Cancelling A must not cancel B. Re-admission after removal gets a new full notice.
         config.apply_migration_witness<AdapterB>(&version, &clock);
@@ -92,7 +109,8 @@ fun exercise(case: Case) {
         config.schedule_migration_witness<AdapterA>(&version, &admin, 172_800_000, &clock);
         clock.set_for_testing(1234 + 3 * DELAY + 1);
         config.apply_migration_witness<AdapterA>(&version, &clock);
-        config.assert_allowed<Quote, AdapterA>(); config.assert_allowed<Quote, AdapterB>();
+        config.assert_allowed<Quote, AdapterA>();
+        config.assert_allowed<Quote, AdapterB>();
     } else {
         config.apply_migration_witness<AdapterA>(&version, &clock);
         if (case == Case::Replay) config.apply_migration_witness<AdapterA>(&version, &clock);

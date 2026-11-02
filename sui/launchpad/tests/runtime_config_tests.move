@@ -292,7 +292,14 @@ fun start(): ConfigFixture {
 fun config_set_protocol_fee_share(self: &mut ConfigFixture, protocol_fee_share_bps: Bps) {
     let admin_witness = blast_acl::witness_for_testing<FeeAdmin>();
 
-    self.config.set_protocol_fee_share_for_testing(&self.package_version, &admin_witness, protocol_fee_share_bps, self.scenario.ctx());
+    self
+        .config
+        .set_protocol_fee_share_for_testing(
+            &self.package_version,
+            &admin_witness,
+            protocol_fee_share_bps,
+            self.scenario.ctx()
+        );
 }
 
 fun config_set_creator_claim_signer(self: &mut ConfigFixture, signer_public_key: vector<u8>) {

@@ -29,9 +29,15 @@ const EPaused: vector<u8> = b"This operation is paused.";
 // === Public Types ===
 
 /// The requested bits and resulting pause mask.
-public struct Paused has copy, drop { bits: u8, paused: u8 }
+public struct Paused has copy, drop {
+    bits: u8,
+    paused: u8
+}
 /// The released bits and resulting pause mask.
-public struct Unpaused has copy, drop { bits: u8, paused: u8 }
+public struct Unpaused has copy, drop {
+    bits: u8,
+    paused: u8
+}
 
 /// One-time witness: it seeds the package generation and claims this package's Publisher.
 public struct BLAST_PRESALE_PACKAGE() has drop;
@@ -64,18 +70,22 @@ fun init(otw: BLAST_PRESALE_PACKAGE, ctx: &mut TxContext) {
 /// Freezes selected operations immediately; does not authorize unpausing.
 public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8) {
     self.assert_current();
+
     assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
     assert!((self.paused | bits) != self.paused, EPauseUnchanged);
     self.paused = self.paused | bits;
+
     sui::event::emit(Paused { bits, paused: self.paused });
 }
 
 /// Clears only the requested bits; claims and settlement never require unpausing.
 public fun unpause(self: &mut PackageVersion, _: &AdminWitness<UnpauseAdmin>, bits: u8) {
     self.assert_current();
+
     assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
     assert!((self.paused & bits) != 0, EPauseUnchanged);
     self.paused = self.paused ^ (self.paused & bits);
+
     sui::event::emit(Unpaused { bits, paused: self.paused });
 }
 
@@ -101,7 +111,11 @@ public(package) fun share_version(
     generation: OperationalVersion<BLAST_PRESALE_PACKAGE>,
     ctx: &mut TxContext,
 ) {
-    transfer::share_object(PackageVersion { paused: VALID_PAUSE_BITS, id: object::new(ctx), generation });
+    transfer::share_object(PackageVersion {
+        paused: VALID_PAUSE_BITS,
+        id: object::new(ctx),
+        generation
+    });
 }
 
 /// Rejects callable bytecode from every package generation except the active one.

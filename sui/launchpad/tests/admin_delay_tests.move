@@ -17,9 +17,17 @@ fun treasury_changes_only_on_permissionless_apply_and_events_record_the_schedule
     let mut config = runtime_config::new_disabled_for_testing(&mut ctx);
     let original = config.treasury();
     let mut clock = clock::create_for_testing(&mut ctx);
-    config.schedule_treasury(&version, &blast_acl::witness_for_testing<TreasuryAdmin>(), @0x123, 172_800_000, &clock);
+    config.schedule_treasury(
+        &version,
+        &blast_acl::witness_for_testing<TreasuryAdmin>(),
+        @0x123,
+        172_800_000,
+        &clock
+    );
     assert_eq!(config.treasury(), original);
-    let scheduled = sui::event::events_by_type<blast_fun::blast_events::Event<blast_fun::events::TreasuryScheduled>>();
+    let scheduled = sui::event::events_by_type<
+        blast_fun::blast_events::Event<blast_fun::events::TreasuryScheduled>
+    >();
     let mut expected = std::bcs::to_bytes(&@0x123);
     expected.append(std::bcs::to_bytes(&172_800_000u64));
     expected.append(std::bcs::to_bytes(&172_800_000u64));
@@ -40,7 +48,13 @@ fun treasury_cannot_change_before_the_full_delay() {
     let version = marker::new_for_testing(&mut ctx);
     let mut config = runtime_config::new_disabled_for_testing(&mut ctx);
     let mut clock = clock::create_for_testing(&mut ctx);
-    config.schedule_treasury(&version, &blast_acl::witness_for_testing<TreasuryAdmin>(), @0x123, 172_800_000, &clock);
+    config.schedule_treasury(
+        &version,
+        &blast_acl::witness_for_testing<TreasuryAdmin>(),
+        @0x123,
+        172_800_000,
+        &clock
+    );
     clock.set_for_testing(172_799_999);
     config.apply_treasury(&version, &clock);
     abort
@@ -53,7 +67,13 @@ fun cancel_admin_can_stop_a_ready_treasury_change() {
     let version = marker::new_for_testing(&mut ctx);
     let mut config = runtime_config::new_disabled_for_testing(&mut ctx);
     let mut clock = clock::create_for_testing(&mut ctx);
-    config.schedule_treasury(&version, &blast_acl::witness_for_testing<TreasuryAdmin>(), @0x123, 172_800_000, &clock);
+    config.schedule_treasury(
+        &version,
+        &blast_acl::witness_for_testing<TreasuryAdmin>(),
+        @0x123,
+        172_800_000,
+        &clock
+    );
     clock.set_for_testing(172_800_000);
     config.cancel_treasury(&version, &blast_acl::witness_for_testing<CancelAdmin>());
     config.apply_treasury(&version, &clock);
@@ -70,7 +90,12 @@ fun a_ready_digest_does_not_authorize_different_code() {
     let mut clock = clock::create_for_testing(&mut ctx);
     admin.schedule_upgrade(&version, &witness, vector::tabulate!(32, |_| 1u8), 172_800_000, &clock);
     clock.set_for_testing(172_800_000);
-    let ticket = admin.authorize_upgrade(&version, &witness, vector::tabulate!(32, |_| 2u8), &clock);
+    let ticket = admin.authorize_upgrade(
+        &version,
+        &witness,
+        vector::tabulate!(32, |_| 2u8),
+        &clock
+    );
     destroy(ticket);
     abort
 }
@@ -100,13 +125,27 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     let cancel = blast_acl::witness_for_testing<CancelAdmin>();
     let fee_admin = blast_acl::witness_for_testing<FeeAdmin>();
 
-    config.schedule_protocol_allocation(&version, &blast_acl::witness_for_testing<TreasuryAdmin>(), bps::new(333), bps::new(444), 172_800_000, &clock);
+    config.schedule_protocol_allocation(
+        &version,
+        &blast_acl::witness_for_testing<TreasuryAdmin>(),
+        bps::new(333),
+        bps::new(444),
+        172_800_000,
+        &clock
+    );
     let allocation_bytes = u64_fields(vector[333, 444]);
     assert_eq!(event_bytes<events::ProtocolAllocationScheduled>(), with_ready_at(allocation_bytes));
     config.cancel_protocol_allocation(&version, &cancel);
     assert_eq!(event_bytes<events::ProtocolAllocationCancelled>(), allocation_bytes);
 
-    config.schedule_trade_fees(&version, &fee_admin, bps::new(111), bps::new(222), 172_800_000, &clock);
+    config.schedule_trade_fees(
+        &version,
+        &fee_admin,
+        bps::new(111),
+        bps::new(222),
+        172_800_000,
+        &clock
+    );
     let fees_bytes = u64_fields(vector[111, 222]);
     assert_eq!(event_bytes<events::TradeFeesScheduled>(), with_ready_at(fees_bytes));
     config.cancel_trade_fees(&version, &cancel);
@@ -118,7 +157,12 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     config.cancel_creation_fee(&version, &cancel);
     assert_eq!(event_bytes<events::CreationFeeCancelled>(), creation_fee_bytes);
 
-    config.schedule_migration_witness<AdapterWitness>(&version, &blast_acl::witness_for_testing<AdapterAdmin>(), 172_800_000, &clock);
+    config.schedule_migration_witness<AdapterWitness>(
+        &version,
+        &blast_acl::witness_for_testing<AdapterAdmin>(),
+        172_800_000,
+        &clock
+    );
     let witness = std::type_name::with_original_ids<AdapterWitness>();
     let witness_bytes = std::bcs::to_bytes(&witness);
     assert_eq!(event_bytes<events::MigrationWitnessScheduled>(), with_ready_at(witness_bytes));

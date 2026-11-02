@@ -122,7 +122,15 @@ fun a_vendor_sale_can_change_its_blast_rates_before_its_share() {
 
     let (mut sale, _) = new_sale(&mut scenario, &creation_policy);
     let mut ceiling = blast_presale::fee_policy::new_for_testing(scenario.ctx());
-    ceiling.set_fees_for_testing(&package_version, &fee_admin(), bps::new(1_000), bps::new(100), bps::new(0), bps::new(0), scenario.ctx());
+    ceiling.set_fees_for_testing(
+        &package_version,
+        &fee_admin(),
+        bps::new(1_000),
+        bps::new(100),
+        bps::new(0),
+        bps::new(0),
+        scenario.ctx()
+    );
     sale.set_protocol_fees(
         &package_version,
         &fee_admin(),

@@ -10,8 +10,12 @@ module blast_boosts_aftermath::snapshot_tests;
 #[test]
 fun cash_liquidity_rounds_budget_down_and_shortfall_up() {
     let cash = snapshot::cash_liquidity_for_testing(
-        2, 1_999_999_999_999, 10_000_000_000_001, 100_999_999_999_999,
-        1_000_000_000_000_000_000, 0,
+        2,
+        1_999_999_999_999,
+        10_000_000_000_001,
+        100_999_999_999_999,
+        1_000_000_000_000_000_000,
+        0,
     );
     cash.assert_releasable(3);
     assert_eq!(cash.shortfall(), 9);
@@ -21,8 +25,12 @@ fun cash_liquidity_rounds_budget_down_and_shortfall_up() {
 #[test]
 fun cash_liquidity_applies_collateral_price_haircut_and_free_cash() {
     let cash = snapshot::cash_liquidity_for_testing(
-        3, 0, 20_000_000_000_000, 200_000_000_000_000,
-        2_000_000_000_000_000_000, 500_000_000_000_000_000,
+        3,
+        0,
+        20_000_000_000_000,
+        200_000_000_000_000,
+        2_000_000_000_000_000_000,
+        500_000_000_000_000_000,
     );
     assert_eq!(cash.shortfall(), 17);
     assert_eq!(cash.unrealized_profit(), 100);
@@ -42,8 +50,12 @@ fun cash_liquidity_free_cash_covers_deficit_without_paid_recovery() {
 #[test]
 fun cash_liquidity_does_not_treat_losses_or_spare_margin_as_profit_shortfall() {
     let cash = snapshot::cash_liquidity_for_testing(
-        0, 5_000_000_000_000, neg(5_000_000_000_000), neg(200_000_000_000_000),
-        1_000_000_000_000_000_000, 0,
+        0,
+        5_000_000_000_000,
+        neg(5_000_000_000_000),
+        neg(200_000_000_000_000),
+        1_000_000_000_000_000_000,
+        0,
     );
     assert_eq!(cash.shortfall(), 0);
     assert_eq!(cash.unrealized_profit(), 0);
@@ -79,7 +91,13 @@ fun signed_funding_cost_crosses_allocated_zero_without_becoming_unresolved() {
     let after = checkpoint(10, neg(3), 7, 8, 7, 8, 9);
     let change = before.preexisting(&after);
     let (has, cost, raw, amount, clean) =
-        (change.has_funding(), change.is_cost(), change.raw_amount(), change.amount(), change.is_clean());
+        (
+        change.has_funding(),
+        change.is_cost(),
+        change.raw_amount(),
+        change.amount(),
+        change.is_clean()
+    );
     assert!(has && cost && clean);
     assert_eq!(raw, 8);
     // A cost of 8 raw IFixed units rounds up to one collateral atom.
@@ -92,7 +110,13 @@ fun signed_funding_credit_crosses_allocated_zero_without_becoming_unresolved() {
     let after = checkpoint(10, 3, 7, 8, 7, 8, 9);
     let change = before.preexisting(&after);
     let (has, cost, raw, amount, clean) =
-        (change.has_funding(), change.is_cost(), change.raw_amount(), change.amount(), change.is_clean());
+        (
+        change.has_funding(),
+        change.is_cost(),
+        change.raw_amount(),
+        change.amount(),
+        change.is_clean()
+    );
     assert!(has && !cost && clean);
     assert_eq!(raw, 8);
     // A credit of 8 raw IFixed units floors to nothing.
@@ -105,7 +129,13 @@ fun signed_funding_less_negative_allocation_is_a_credit() {
     let after = checkpoint(10, neg(3), 7, 8, 7, 8, 9);
     let change = before.preexisting(&after);
     let (has, cost, raw, amount, clean) =
-        (change.has_funding(), change.is_cost(), change.raw_amount(), change.amount(), change.is_clean());
+        (
+        change.has_funding(),
+        change.is_cost(),
+        change.raw_amount(),
+        change.amount(),
+        change.is_clean()
+    );
     assert!(has && !cost && clean);
     assert_eq!(raw, 2);
     assert_eq!(amount, 0);
@@ -117,7 +147,13 @@ fun signed_funding_deeper_negative_allocation_is_a_cost() {
     let after = checkpoint(10, neg(5), 7, 8, 7, 8, 9);
     let change = before.preexisting(&after);
     let (has, cost, raw, amount, clean) =
-        (change.has_funding(), change.is_cost(), change.raw_amount(), change.amount(), change.is_clean());
+        (
+        change.has_funding(),
+        change.is_cost(),
+        change.raw_amount(),
+        change.amount(),
+        change.is_clean()
+    );
     assert!(has && cost && clean);
     assert_eq!(raw, 2);
     // A cost of 2 raw IFixed units rounds up to one collateral atom.
@@ -203,7 +239,11 @@ fun a_credit_that_rounds_to_zero_leaves_the_collateral_untouched() {
     let before = checkpoint(10, 1_000, 6, 6, 5, 8, 9);
     let refreshed = checkpoint(10, 1_000, 5, 8, 5, 8, 9);
     assert!(before.classify_change(&refreshed, 2).is_unchanged_for_testing());
-    assert!(before.classify_change(&checkpoint(10, 1_001, 5, 8, 5, 8, 9), 2).is_unexpected_for_testing());
+    assert!(
+        before
+            .classify_change(&checkpoint(10, 1_001, 5, 8, 5, 8, 9), 2)
+            .is_unexpected_for_testing()
+    );
 }
 
 #[test]
@@ -263,9 +303,63 @@ fun free_collateral_change_is_unexpected() {
 #[test]
 fun base_quote_and_pending_order_changes_are_unexpected() {
     let before = checkpoint(10, 1_000, 5, 6, 7, 8, 9);
-    let base_changed = checkpoint::checkpoint_for_testing(10, 1_000, 12, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, false, 14, 15, 16);
-    let quote_changed = checkpoint::checkpoint_for_testing(10, 1_000, 1, 13, 3, 4, 7, 8, 9, 10, 11, 12, 13, false, 14, 15, 16);
-    let order_changed = checkpoint::checkpoint_for_testing(10, 1_000, 1, 2, 3, 4, 7, 8, 9, 10, 11, 13, 13, false, 14, 15, 16);
+    let base_changed = checkpoint::checkpoint_for_testing(
+        10,
+        1_000,
+        12,
+        2,
+        3,
+        4,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        false,
+        14,
+        15,
+        16
+    );
+    let quote_changed = checkpoint::checkpoint_for_testing(
+        10,
+        1_000,
+        1,
+        13,
+        3,
+        4,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        false,
+        14,
+        15,
+        16
+    );
+    let order_changed = checkpoint::checkpoint_for_testing(
+        10,
+        1_000,
+        1,
+        2,
+        3,
+        4,
+        7,
+        8,
+        9,
+        10,
+        11,
+        13,
+        13,
+        false,
+        14,
+        15,
+        16
+    );
 
     assert!(before.classify_change(&base_changed, 1).is_unexpected_for_testing());
     assert!(before.classify_change(&quote_changed, 1).is_unexpected_for_testing());
@@ -276,13 +370,139 @@ fun base_quote_and_pending_order_changes_are_unexpected() {
 fun every_checkpoint_guard_field_blocks_an_otherwise_matching_funding_delta() {
     let before = checkpoint(10, 1_000, 1_007, 6, 7, 8, 9);
     let base_funding_after = checkpoint(10, 2_000, 7, 8, 7, 8, 9);
-    let pending_ask_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 8, 9, 99, 11, 12, 13, false, 14, 15, 16);
-    let pending_bid_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 8, 9, 10, 99, 12, 13, false, 14, 15, 16);
-    let pause_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 8, 9, 10, 11, 12, 99, false, 14, 15, 16);
-    let frozen_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 8, 9, 10, 11, 12, 13, true, 14, 15, 16);
-    let position_imr_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 8, 9, 10, 11, 12, 13, false, 99, 15, 16);
-    let market_imr_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 8, 9, 10, 11, 12, 13, false, 14, 99, 16);
-    let market_mmr_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 8, 9, 10, 11, 12, 13, false, 14, 15, 99);
+    let pending_ask_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        8,
+        9,
+        99,
+        11,
+        12,
+        13,
+        false,
+        14,
+        15,
+        16
+    );
+    let pending_bid_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        8,
+        9,
+        10,
+        99,
+        12,
+        13,
+        false,
+        14,
+        15,
+        16
+    );
+    let pause_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        99,
+        false,
+        14,
+        15,
+        16
+    );
+    let frozen_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        true,
+        14,
+        15,
+        16
+    );
+    let position_imr_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        false,
+        99,
+        15,
+        16
+    );
+    let market_imr_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        false,
+        14,
+        99,
+        16
+    );
+    let market_mmr_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        false,
+        14,
+        15,
+        99
+    );
 
     assert!(before.classify_change(&base_funding_after, 1).is_credit_for_testing());
     assert!(before.classify_change(&pending_ask_changed, 1).is_unexpected_for_testing());
@@ -297,9 +517,63 @@ fun every_checkpoint_guard_field_blocks_an_otherwise_matching_funding_delta() {
 #[test]
 fun market_rate_or_lot_change_blocks_funding_even_when_the_delta_matches() {
     let before = checkpoint(10, 1_000, 1_007, 6, 7, 8, 9);
-    let market_rate_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 99, 8, 9, 10, 11, 12, 13, false, 14, 15, 16);
-    let short_rate_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 99, 9, 10, 11, 12, 13, false, 14, 15, 16);
-    let lot_changed = checkpoint::checkpoint_for_testing(10, 2_000, 1, 2, 7, 8, 7, 8, 99, 10, 11, 12, 13, false, 14, 15, 16);
+    let market_rate_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        99,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        false,
+        14,
+        15,
+        16
+    );
+    let short_rate_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        99,
+        9,
+        10,
+        11,
+        12,
+        13,
+        false,
+        14,
+        15,
+        16
+    );
+    let lot_changed = checkpoint::checkpoint_for_testing(
+        10,
+        2_000,
+        1,
+        2,
+        7,
+        8,
+        7,
+        8,
+        99,
+        10,
+        11,
+        12,
+        13,
+        false,
+        14,
+        15,
+        16
+    );
 
     assert!(before.classify_change(&market_rate_changed, 1).is_unexpected_for_testing());
     assert!(before.classify_change(&short_rate_changed, 1).is_unexpected_for_testing());
@@ -446,7 +720,9 @@ fun venue_feed_prices_normalize_from_eighteen_to_nine_decimals() {
     assert_eq!(sui, 821_520_640);
     assert!(sui_ok);
     // A feed too wide for the 9-decimal unit is invalid, not an abort.
-    let (wide, wide_ok) = snapshot::normalize_price_for_testing((std::u64::max_value!() as u256 + 1) * 1_000_000_000);
+    let (wide, wide_ok) = snapshot::normalize_price_for_testing(
+        (std::u64::max_value!() as u256 + 1) * 1_000_000_000
+    );
     assert_eq!(wide, 0);
     assert!(!wide_ok);
 }
@@ -466,14 +742,26 @@ fun stablecoin_depeg_and_minimum_lot_vectors_keep_the_venue_scales() {
 fun usd_values_convert_to_collateral_units_at_the_authenticated_depeg_price() {
     // $1 converts to 1.052631578947368421 collateral at $0.95; credits floor
     // and costs ceil at the raw IFixed unit.
-    let (value_7, ok_7) = ifixed_math::usd_fixed_to_collateral_for_testing(1_000_000_000_000_000_000, 950_000_000_000_000_000, false);
+    let (value_7, ok_7) = ifixed_math::usd_fixed_to_collateral_for_testing(
+        1_000_000_000_000_000_000,
+        950_000_000_000_000_000,
+        false
+    );
     assert_eq!(value_7, 1_052_631_578_947_368_421);
     assert!(ok_7);
-    let (value_8, ok_8) = ifixed_math::usd_fixed_to_collateral_for_testing(1_000_000_000_000_000_000, 950_000_000_000_000_000, true);
+    let (value_8, ok_8) = ifixed_math::usd_fixed_to_collateral_for_testing(
+        1_000_000_000_000_000_000,
+        950_000_000_000_000_000,
+        true
+    );
     assert_eq!(value_8, 1_052_631_578_947_368_422);
     assert!(ok_8);
     // $1.50 notional at $1.20 collateral is exactly 1.25 collateral.
-    let (value_9, ok_9) = ifixed_math::usd_fixed_to_collateral_for_testing(1_500_000_000_000_000_000, 1_200_000_000_000_000_000, true);
+    let (value_9, ok_9) = ifixed_math::usd_fixed_to_collateral_for_testing(
+        1_500_000_000_000_000_000,
+        1_200_000_000_000_000_000,
+        true
+    );
     assert_eq!(value_9, 1_250_000_000_000_000_000);
     assert!(ok_9);
 }
@@ -514,14 +802,22 @@ fun health_usd_conversion_keeps_the_same_max_width_input_as_an_invalid_fact() {
 #[test]
 fun negative_allocated_collateral_is_a_liability_not_an_invalid_observation() {
     let (equity, valid) = snapshot::signed_equity_for_testing(
-        10, true, 2_000_000_000_001, false, 5_000_000_000_000,
+        10,
+        true,
+        2_000_000_000_001,
+        false,
+        5_000_000_000_000,
         1_000_000_000_000_000_000,
     );
     assert!(valid);
     // Round the liability up and the favorable PnL down.
     assert_eq!(equity, 12);
     let (value_10, ok_10) = snapshot::signed_equity_for_testing(
-        0, true, 2_000_000_000_000, false, 5_000_000_000_000,
+        0,
+        true,
+        2_000_000_000_000,
+        false,
+        5_000_000_000_000,
         1_000_000_000_000_000_000,
     );
     assert_eq!(value_10, 3);
@@ -571,17 +867,17 @@ fun health_negative_pnl_equity_rejects_the_first_net_value_above_u64() {
 #[test]
 fun usd_round_up_accepts_the_largest_representable_result_and_refuses_one_more() {
     let (value_11, ok_11) = ifixed_math::usd_fixed_to_collateral_for_testing(
-            115792089237316195307778895771371712429698999656952656186187599342272565600477,
-            999_999_999_999_999_999,
-            true,
-        );
+        115792089237316195307778895771371712429698999656952656186187599342272565600477,
+        999_999_999_999_999_999,
+        true,
+    );
     assert_eq!(value_11, std::u256::max_value!());
     assert!(ok_11);
     let (value_12, ok_12) = ifixed_math::usd_fixed_to_collateral_for_testing(
-            115792089237316195307778895771371712429698999656952656186187599342272565600478,
-            999_999_999_999_999_999,
-            true,
-        );
+        115792089237316195307778895771371712429698999656952656186187599342272565600478,
+        999_999_999_999_999_999,
+        true,
+    );
     assert_eq!(value_12, 0);
     assert!(!ok_12);
 }
@@ -759,10 +1055,18 @@ fun raw_normalization_round_up_refuses_the_first_value_past_u64() {
 
 #[test]
 fun usd_conversion_at_a_zero_collateral_price_is_invalid_in_both_rounding_directions() {
-    let (down, down_ok) = ifixed_math::usd_fixed_to_collateral_for_testing(1_000_000_000_000_000_000, 0, false);
+    let (down, down_ok) = ifixed_math::usd_fixed_to_collateral_for_testing(
+        1_000_000_000_000_000_000,
+        0,
+        false
+    );
     assert_eq!(down, 0);
     assert!(!down_ok);
-    let (up, up_ok) = ifixed_math::usd_fixed_to_collateral_for_testing(1_000_000_000_000_000_000, 0, true);
+    let (up, up_ok) = ifixed_math::usd_fixed_to_collateral_for_testing(
+        1_000_000_000_000_000_000,
+        0,
+        true
+    );
     assert_eq!(up, 0);
     assert!(!up_ok);
 }
@@ -770,12 +1074,18 @@ fun usd_conversion_at_a_zero_collateral_price_is_invalid_in_both_rounding_direct
 #[test]
 fun usd_conversion_is_invalid_when_either_scaled_part_overflows() {
     // The whole part times one IFixed overflows.
-    let (whole, whole_ok) = ifixed_math::usd_fixed_to_collateral_for_testing(std::u256::max_value!(), 1, false);
+    let (whole, whole_ok) = ifixed_math::usd_fixed_to_collateral_for_testing(
+        std::u256::max_value!(),
+        1,
+        false
+    );
     assert_eq!(whole, 0);
     assert!(!whole_ok);
     // The fractional part times one IFixed overflows.
     let (fraction, fraction_ok) = ifixed_math::usd_fixed_to_collateral_for_testing(
-        std::u256::max_value!() - 1, std::u256::max_value!(), false,
+        std::u256::max_value!() - 1,
+        std::u256::max_value!(),
+        false,
     );
     assert_eq!(fraction, 0);
     assert!(!fraction_ok);
@@ -856,8 +1166,17 @@ fun preexisting(stored: &Checkpoint, before: &Checkpoint): CheckpointChange {
 }
 
 /// Both edges of one synchronization netted, as `synchronize` applies them.
-fun sync_change(stored: &Checkpoint, before: &Checkpoint, after: &Checkpoint, collateral_price: u256): CheckpointChange {
-    let (preexisting_change, local_change) = stored.classify_sync_changes(before, after, collateral_price);
+fun sync_change(
+    stored: &Checkpoint,
+    before: &Checkpoint,
+    after: &Checkpoint,
+    collateral_price: u256
+): CheckpointChange {
+    let (preexisting_change, local_change) = stored.classify_sync_changes(
+        before,
+        after,
+        collateral_price
+    );
     preexisting_change.net_funding(local_change)
 }
 

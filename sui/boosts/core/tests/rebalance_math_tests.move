@@ -8,7 +8,10 @@ module blast_boosts_core::rebalance_math_tests;
 // === Test-Only Types ===
 
 /// One exact positive-denominator rational for the independent reference.
-public struct Ratio has copy, drop { numerator: u128, denominator: u128 }
+public struct Ratio has copy, drop {
+    numerator: u128,
+    denominator: u128
+}
 
 // === Tests ===
 
@@ -17,8 +20,26 @@ fun maximum_width_cost_and_conversion_keep_wide_intermediates() {
     let max = std::u64::max_value!();
     assert_eq!(rebalance_math::execution_cost_up(max, 10_000, 9_999), 55_336_542_872_313_912_935);
     assert_eq!(rebalance_math::oracle_notional_up(max, 1_000, 1, 1_000_000_000, 1_000_000), max);
-    assert_eq!(rebalance_math::base_for_oracle_notional_down(max, 1_000, 1, 1, 1_000_000_000, 1_000_000), max);
-    assert_eq!(rebalance_math::increase_base_down(max, max - 1, 10_000, 1_000, 1, 1, max, 0, 0, 1_000_000_000, 1_000_000), 1);
+    assert_eq!(
+        rebalance_math::base_for_oracle_notional_down(max, 1_000, 1, 1, 1_000_000_000, 1_000_000),
+        max
+    );
+    assert_eq!(
+        rebalance_math::increase_base_down(
+            max,
+            max - 1,
+            10_000,
+            1_000,
+            1,
+            1,
+            max,
+            0,
+            0,
+            1_000_000_000,
+            1_000_000
+        ),
+        1
+    );
     assert!(!rebalance_math::reduction_is_sufficient(max, max, max - 1, max, 20_000, max, max));
 }
 
@@ -39,13 +60,30 @@ fun whole_lot_increase_matches_exhaustive_small_domain_reference() {
                         while (candidate <= 8) {
                             let adverse = (candidate * tolerance + 9_999) / 10_000;
                             let charge = ((candidate + adverse) * fee + 9_999) / 10_000;
-                            if (candidate * (1_000 * (10_000 + tolerance) / 10_000 + 1) <= 8_000
-                                && adverse + charge < nav && notional + candidate <= 2 * (nav - adverse - charge)) {
+                            if (
+                                candidate * (1_000 * (10_000 + tolerance) / 10_000 + 1) <= 8_000
+                                && adverse + charge < nav && notional + candidate <= 2 * (nav - adverse - charge)
+                            ) {
                                 expected = candidate;
                             };
                             candidate = candidate + lot_size;
                         };
-                        assert_eq!(rebalance_math::increase_base_down(nav, notional, 20_000, 1_000, 1, lot_size, 8, fee, tolerance, 1_000_000_000, 1_000_000), expected);
+                        assert_eq!(
+                            rebalance_math::increase_base_down(
+                                nav,
+                                notional,
+                                20_000,
+                                1_000,
+                                1,
+                                lot_size,
+                                8,
+                                fee,
+                                tolerance,
+                                1_000_000_000,
+                                1_000_000
+                            ),
+                            expected
+                        );
                     });
                 });
                 lot_size = lot_size + 1;
@@ -74,7 +112,22 @@ fun sizing_handles_nav_below_at_and_above_the_old_target_limit() {
     vector[max / 2 - 1, max / 2, max / 2 + 1, max].do!(|nav| {
         // One base atom is one collateral atom. The execution-price allowance
         // makes a 1,001 cap permit exactly 1,000 base, even at an enormous NAV.
-        assert_eq!(rebalance_math::increase_base_down(nav, 0, 20_000, 1_000, 1, 1, 1_001, 0, 0, 1_000_000_000, 1_000_000), 1_000);
+        assert_eq!(
+            rebalance_math::increase_base_down(
+                nav,
+                0,
+                20_000,
+                1_000,
+                1,
+                1,
+                1_001,
+                0,
+                0,
+                1_000_000_000,
+                1_000_000
+            ),
+            1_000
+        );
     });
 }
 
@@ -82,9 +135,54 @@ fun sizing_handles_nav_below_at_and_above_the_old_target_limit() {
 fun an_oversized_target_still_bounds_the_resulting_notional() {
     let max = std::u64::max_value!();
     vector[20_000u64, max].do!(|target| {
-        assert_eq!(rebalance_math::increase_base_down(max, max - 7, target, 1_000, 1, 1, 1_001, 0, 0, 1_000_000_000, 1_000_000), 7);
-        assert_eq!(rebalance_math::increase_base_down(max, max - 7, target, 1_000, 1, 3, 1_001, 0, 0, 1_000_000_000, 1_000_000), 6);
-        assert_eq!(rebalance_math::increase_base_down(max, max, target, 1_000, 1, 1, 1_001, 0, 0, 1_000_000_000, 1_000_000), 0);
+        assert_eq!(
+            rebalance_math::increase_base_down(
+                max,
+                max - 7,
+                target,
+                1_000,
+                1,
+                1,
+                1_001,
+                0,
+                0,
+                1_000_000_000,
+                1_000_000
+            ),
+            7
+        );
+        assert_eq!(
+            rebalance_math::increase_base_down(
+                max,
+                max - 7,
+                target,
+                1_000,
+                1,
+                3,
+                1_001,
+                0,
+                0,
+                1_000_000_000,
+                1_000_000
+            ),
+            6
+        );
+        assert_eq!(
+            rebalance_math::increase_base_down(
+                max,
+                max,
+                target,
+                1_000,
+                1,
+                1,
+                1_001,
+                0,
+                0,
+                1_000_000_000,
+                1_000_000
+            ),
+            0
+        );
     });
 }
 
@@ -108,12 +206,29 @@ fun target_boundary_sizing_matches_independent_post_cost_enumeration() {
             let adverse = candidate.div_ceil(100);
             let fee = ((candidate + adverse) * 37).div_ceil(10_000);
             let final_notional = (notional as u128) + (candidate as u128);
-            if (candidate * 1_011 <= 2_002_000 && final_notional <= max as u128
-                && final_notional <= 2 * ((nav - adverse - fee) as u128)) expected = candidate;
+            if (
+                candidate * 1_011 <= 2_002_000 && final_notional <= max as u128
+                && final_notional <= 2 * ((nav - adverse - fee) as u128)
+            ) expected = candidate;
             candidate = candidate + 1;
         };
         assert!(expected > 0);
-        assert_eq!(rebalance_math::increase_base_down(nav, notional, 20_000, 1_000, 1, 1, 2_002, 37, 100, 1_000_000_000, 1_000_000), expected);
+        assert_eq!(
+            rebalance_math::increase_base_down(
+                nav,
+                notional,
+                20_000,
+                1_000,
+                1,
+                1,
+                2_002,
+                37,
+                100,
+                1_000_000_000,
+                1_000_000
+            ),
+            expected
+        );
     });
 }
 
@@ -228,21 +343,39 @@ fun reduction_predicate_matches_the_small_domain_reference() {
                         0u64.range_do!(8, |before_notional| {
                             0u64.range_do!(8, |after_notional| {
                                 let observed = rebalance_math::reduction_is_sufficient(
-                                    before_notional, before_nav, after_notional, after_nav,
-                                    target_bps, minimum_improvement_bps, lot_size,
+                                    before_notional,
+                                    before_nav,
+                                    after_notional,
+                                    after_nav,
+                                    target_bps,
+                                    minimum_improvement_bps,
+                                    lot_size,
                                 );
-                                let before_bps = leverage_distance_bps(before_notional, before_nav, target_bps);
-                                let after_bps = leverage_distance_bps(after_notional, after_nav, target_bps);
+                                let before_bps = leverage_distance_bps(
+                                    before_notional,
+                                    before_nav,
+                                    target_bps
+                                );
+                                let after_bps = leverage_distance_bps(
+                                    after_notional,
+                                    after_nav,
+                                    target_bps
+                                );
                                 let not_farther = after_bps.ratio_le(before_bps);
-                                let improved = (Ratio {
+                                let improved = (
+                                    Ratio {
                                         numerator: after_bps.numerator * before_bps.denominator
                                             + (minimum_improvement_bps as u128) * after_bps.denominator * before_bps.denominator,
                                         denominator: after_bps.denominator * before_bps.denominator,
-                                    }).ratio_le(
-                                        before_bps,
+                                    }
+                                ).ratio_le(
+                                    before_bps,
                                 );
                                 let within_lot = after_bps.ratio_le(
-                                    Ratio { numerator: (lot_size as u128) * 10_000, denominator: after_nav as u128 },
+                                    Ratio {
+                                    numerator: (lot_size as u128) * 10_000,
+                                    denominator: after_nav as u128
+                                },
                                 );
                                 assert_eq!(observed, (within_lot && not_farther) || improved);
                                 if (observed) { assert!(not_farther) };
@@ -282,17 +415,37 @@ fun index_notional_rejects_a_zero_collateral_price() {
 #[test]
 fun increase_reserves_adverse_execution_and_fee_headroom() {
     let base = rebalance_math::increase_base_down(
-        1_000_000, 1_000_000, 20_000, 10_000_000_000, 1_000_000_000,
-        1_000, 2_000_000, 10, 50,
-        1_000_000_000, 1_000_000,
+        1_000_000,
+        1_000_000,
+        20_000,
+        10_000_000_000,
+        1_000_000_000,
+        1_000,
+        2_000_000,
+        10,
+        50,
+        1_000_000_000,
+        1_000_000,
     );
     assert_eq!(base, 98_813_000);
-    let notional = rebalance_math::oracle_notional_up(base, 10_000_000_000, 1_000_000_000, 1_000_000_000, 1_000_000);
+    let notional = rebalance_math::oracle_notional_up(
+        base,
+        10_000_000_000,
+        1_000_000_000,
+        1_000_000_000,
+        1_000_000
+    );
     let cost = rebalance_math::execution_cost_up(notional, 10, 50);
     assert_eq!(notional, 988_130);
     assert_eq!(cost, 5_935);
     assert!((1_000_000u128 + (notional as u128)) * 10_000 <= 20_000 * (1_000_000 - cost));
-    let next = rebalance_math::oracle_notional_up(base + 1_000, 10_000_000_000, 1_000_000_000, 1_000_000_000, 1_000_000);
+    let next = rebalance_math::oracle_notional_up(
+        base + 1_000,
+        10_000_000_000,
+        1_000_000_000,
+        1_000_000_000,
+        1_000_000
+    );
     let next_cost = rebalance_math::execution_cost_up(next, 10, 50);
     assert!((1_000_000u128 + (next as u128)) * 10_000 > 20_000 * (1_000_000 - next_cost));
 }
@@ -300,16 +453,32 @@ fun increase_reserves_adverse_execution_and_fee_headroom() {
 #[test]
 fun increase_recomputes_headroom_after_each_order_cost() {
     let first = rebalance_math::increase_base_down(
-        1_000_000, 1_000_000, 20_000, 10_000_000_000, 1_000_000_000,
-        1_000, 500_000, 10, 50,
-        1_000_000_000, 1_000_000,
+        1_000_000,
+        1_000_000,
+        20_000,
+        10_000_000_000,
+        1_000_000_000,
+        1_000,
+        500_000,
+        10,
+        50,
+        1_000_000_000,
+        1_000_000,
     );
     assert_eq!(first, 49_751_000);
     assert_eq!(rebalance_math::execution_cost_up(497_510, 10, 50), 2_988);
     let second = rebalance_math::increase_base_down(
-        997_012, 1_497_510, 20_000, 10_000_000_000, 1_000_000_000,
-        1_000, 500_000, 10, 50,
-        1_000_000_000, 1_000_000,
+        997_012,
+        1_497_510,
+        20_000,
+        10_000_000_000,
+        1_000_000_000,
+        1_000,
+        500_000,
+        10,
+        50,
+        1_000_000_000,
+        1_000_000,
     );
     assert_eq!(second, 49_061_000);
 }
@@ -332,14 +501,30 @@ fun increase_returns_zero_when_a_whole_lot_cannot_leave_positive_nav() {
 #[test]
 fun generic_four_and_six_times_use_the_same_maximal_integer_search() {
     let four = rebalance_math::increase_base_down(
-        1_000_000, 1_000_000, 40_000, 10_000_000_000, 1_000_000_000,
-        1_000, 5_000_000, 0, 0,
-        1_000_000_000, 1_000_000,
+        1_000_000,
+        1_000_000,
+        40_000,
+        10_000_000_000,
+        1_000_000_000,
+        1_000,
+        5_000_000,
+        0,
+        0,
+        1_000_000_000,
+        1_000_000,
     );
     let six = rebalance_math::increase_base_down(
-        1_000_000, 1_000_000, 60_000, 10_000_000_000, 1_000_000_000,
-        1_000, 5_000_000, 0, 0,
-        1_000_000_000, 1_000_000,
+        1_000_000,
+        1_000_000,
+        60_000,
+        10_000_000_000,
+        1_000_000_000,
+        1_000,
+        5_000_000,
+        0,
+        0,
+        1_000_000_000,
+        1_000_000,
     );
     assert_eq!(four, 300_000_000);
     assert_eq!(six, 499_999_000);

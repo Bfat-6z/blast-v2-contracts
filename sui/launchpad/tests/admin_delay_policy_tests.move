@@ -194,15 +194,42 @@ fun start(): AdminDelayFixture {
     scenario.next_tx(PUBLISHER);
     let version = scenario.take_shared();
     let clock = sui::clock::create_for_testing(scenario.ctx());
-    AdminDelayFixture { admin: scenario.take_shared(), version, clock, config: scenario.take_shared(), runtime: scenario.take_shared(), scenario }
+    AdminDelayFixture {
+        admin: scenario.take_shared(),
+        version,
+        clock,
+        config: scenario.take_shared(),
+        runtime: scenario.take_shared(),
+        scenario
+    }
 }
 
-fun schedule_fee(self: &mut AdminDelayFixture, value: u64, delay_ms: u64) { self.config.schedule_creation_fee(&self.version, &blast_acl::witness_for_testing<FeeAdmin>(), value, delay_ms, &self.clock); }
+fun schedule_fee(self: &mut AdminDelayFixture, value: u64, delay_ms: u64) {
+    self
+        .config
+        .schedule_creation_fee(
+            &self.version,
+            &blast_acl::witness_for_testing<FeeAdmin>(),
+            value,
+            delay_ms,
+            &self.clock
+        );
+}
 fun apply_fee(self: &mut AdminDelayFixture) { self.config.apply_creation_fee(&self.version, &self.clock); }
-fun cancel_fee(self: &mut AdminDelayFixture) { self.config.cancel_creation_fee(&self.version, &blast_acl::witness_for_testing<CancelAdmin>()); }
+fun cancel_fee(self: &mut AdminDelayFixture) {
+    self.config.cancel_creation_fee(&self.version, &blast_acl::witness_for_testing<CancelAdmin>());
+}
 fun fee(self: &AdminDelayFixture): u64 { self.config.creation_fee() }
 fun configure_destination(self: &mut AdminDelayFixture) {
-    self.runtime.schedule_treasury(&self.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), @0xB0B, 200, &self.clock);
+    self
+        .runtime
+        .schedule_treasury(
+            &self.version,
+            &blast_acl::witness_for_testing<TreasuryAdmin>(),
+            @0xB0B,
+            200,
+            &self.clock
+        );
     self.runtime.apply_treasury(&self.version, &self.clock);
     assert_eq!(self.runtime.treasury(), @0xB0B);
 }

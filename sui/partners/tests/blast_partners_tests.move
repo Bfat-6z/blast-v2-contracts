@@ -70,7 +70,10 @@ fun registration_share_and_cap_are_live_immediately() {
     assert_eq!(recipient, RECIPIENT);
     assert_eq!(vector[share.value(&fixture.clock), share.scheduled()], vector[2_500, 2_500]);
     assert_eq!(vector[share.scheduled_at_ms(), share.delay_ms()], vector[0, delay()]);
-    assert_eq!(vector[live_cap.value(&fixture.clock), live_cap.scheduled()], vector[object::id(&cap), object::id(&cap)]);
+    assert_eq!(
+        vector[live_cap.value(&fixture.clock), live_cap.scheduled()],
+        vector[object::id(&cap), object::id(&cap)]
+    );
     assert_eq!(vector[live_cap.scheduled_at_ms(), live_cap.delay_ms()], vector[0, delay()]);
 
     fixture.next_tx!(ADMIN, |fixture| {
@@ -248,7 +251,10 @@ fun a_reissued_cap_goes_live_exactly_after_the_delay() {
         let reissued_at = fixture.now();
         let new_cap = fixture.reissue_cap(&mut partner);
         let (_, _, _, live_cap) = fixture.last_update().partner_updated_fields();
-        assert_eq!(vector[live_cap.value(&fixture.clock), live_cap.scheduled()], vector[object::id(&old_cap), object::id(&new_cap)]);
+        assert_eq!(
+            vector[live_cap.value(&fixture.clock), live_cap.scheduled()],
+            vector[object::id(&old_cap), object::id(&new_cap)]
+        );
         assert_eq!(live_cap.scheduled_at_ms(), reissued_at + delay());
         fixture.set_time(reissued_at + delay() - 1);
         fixture.set_recipient(&mut partner, &old_cap, NEW_RECIPIENT);

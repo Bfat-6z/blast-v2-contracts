@@ -110,11 +110,20 @@ public fun calm_venue(): Venue {
 
 public fun with_side(mut self: Venue, side: PositionSide): Venue { self.side = side; self }
 
-public fun with_fill_ratio_bps(mut self: Venue, fill_ratio_bps: u64): Venue { self.fill_ratio_bps = fill_ratio_bps; self }
+public fun with_fill_ratio_bps(mut self: Venue, fill_ratio_bps: u64): Venue {
+    self.fill_ratio_bps = fill_ratio_bps;
+    self
+}
 
-public fun with_slippage_bps(mut self: Venue, slippage_bps: u64): Venue { self.slippage_bps = slippage_bps; self }
+public fun with_slippage_bps(mut self: Venue, slippage_bps: u64): Venue {
+    self.slippage_bps = slippage_bps;
+    self
+}
 
-public fun with_taker_fee_bps(mut self: Venue, taker_fee_bps: u64): Venue { self.taker_fee_bps = taker_fee_bps; self }
+public fun with_taker_fee_bps(mut self: Venue, taker_fee_bps: u64): Venue {
+    self.taker_fee_bps = taker_fee_bps;
+    self
+}
 
 public fun equity(self: &Venue): u64 { self.equity }
 
@@ -254,9 +263,21 @@ public fun issue(self: Venue): Issued {
     self.issue_with(vault_policy, 5_000_000_000, 1_000_000_000_000)
 }
 
-public fun issue_with(self: Venue, vault_policy: VaultPolicy, max_order_notional: u64, nav_cap: u64): Issued {
+public fun issue_with(
+    self: Venue,
+    vault_policy: VaultPolicy,
+    max_order_notional: u64,
+    nav_cap: u64
+): Issued {
     let witness = blast_acl::witness_for_testing<VaultIssuer>();
-    let issuance = state::issue<Product>(&witness, vault_policy, max_order_notional, nav_cap, BASE_DECIMALS, COLLATERAL_DECIMALS);
+    let issuance = state::issue<Product>(
+        &witness,
+        vault_policy,
+        max_order_notional,
+        nav_cap,
+        BASE_DECIMALS,
+        COLLATERAL_DECIMALS
+    );
 
     Issued { issuance, venue: self }
 }
@@ -357,7 +378,16 @@ public fun mint(self: &mut Vault, deposit: u64, minimum_shares: u64): u64 {
     assert!(fee == admin_fee + reserve_fee);
 
     let now_at_ms = self.venue.now_ms;
-    let plan = self.state.prepare_mint(self.venue.observe(), deposit, self.supply, minimum_shares, self.venue.taker_fee_bps, now_at_ms);
+    let plan = self
+        .state
+        .prepare_mint(
+            self.venue.observe(),
+            deposit,
+            self.supply,
+            minimum_shares,
+            self.venue.taker_fee_bps,
+            now_at_ms
+        );
     assert!(plan.admin_fee() == admin_fee);
     let priced = plan.mint_position();
     assert!(priced.lot_size() == self.venue.lot_size);
@@ -374,14 +404,22 @@ public fun mint(self: &mut Vault, deposit: u64, minimum_shares: u64): u64 {
         let order = remaining.min(cap_base);
         let (executed, filled, actual_notional) = self.venue.fill(order, true);
         self.state.execution_bound().assert_execution(base_price, executed);
-        self.state.assert_order_notional_allowed(actual_notional, filled, self.venue.lot_size, false);
+        self
+            .state
+            .assert_order_notional_allowed(actual_notional, filled, self.venue.lot_size, false);
         remaining = remaining - filled;
         orders = orders + 1;
     };
 
-    let (shares, _, total_fee, admin, reserve_slice) = self.state.complete_mint(plan, self.venue.observe(), now_at_ms);
+    let (shares, _, total_fee, admin, reserve_slice) = self
+        .state
+        .complete_mint(plan, self.venue.observe(), now_at_ms);
     assert!(total_fee == fee && admin == admin_fee && reserve_slice == reserve_fee);
-    assert!(self.state.is_within_nav_cap_for_testing(self.venue.equity - self.state.maintenance_reserve()));
+    assert!(
+        self
+            .state
+            .is_within_nav_cap_for_testing(self.venue.equity - self.state.maintenance_reserve())
+    );
     self.supply = self.supply + shares;
     self.last_orders = orders;
 
@@ -425,7 +463,15 @@ public fun redeem(self: &mut Vault, shares: u64, minimum_output: u64): u64 {
 
 /// The keeper's dry run: whether the core would admit a rebalance right now.
 public fun needs_rebalance(self: &Vault): bool {
-    self.state.needs_rebalance(self.venue.observe(), observation::funding_credit(0), true, self.venue.taker_fee_bps, self.venue.now_ms)
+    self
+        .state
+        .needs_rebalance(
+            self.venue.observe(),
+            observation::funding_credit(0),
+            true,
+            self.venue.taker_fee_bps,
+            self.venue.now_ms
+        )
 }
 
 /// Runs one complete permissionless rebalance and returns the number of orders it placed.

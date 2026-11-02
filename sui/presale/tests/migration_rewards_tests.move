@@ -342,10 +342,21 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut policy = fee_policy::new_for_testing(scenario.ctx());
-    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, scenario.ctx());
+    policy.set_destination_for_testing(
+        &package_version,
+        &treasury_admin(),
+        TREASURY,
+        scenario.ctx()
+    );
     let mut vault = vault_paying_blast(option::none(), &mut scenario);
 
-    vault.set_protocol_lp_fees_for_testing(&package_version, &fee_admin(), bps::new(0), bps::new(5_000), scenario.ctx());
+    vault.set_protocol_lp_fees_for_testing(
+        &package_version,
+        &fee_admin(),
+        bps::new(0),
+        bps::new(5_000),
+        scenario.ctx()
+    );
 
     let (vault_id, lp_fee_meme_bps, lp_fee_quote_bps) = only_event<
         ProtocolLpFeesChanged<MEME, QUOTE>,
@@ -393,7 +404,13 @@ fun a_vault_lp_fee_update_must_change_the_rates() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut vault = vault_paying_blast(option::none(), &mut scenario);
 
-    vault.set_protocol_lp_fees_for_testing(&package_version, &fee_admin(), bps::new(1_000), bps::new(2_500), scenario.ctx());
+    vault.set_protocol_lp_fees_for_testing(
+        &package_version,
+        &fee_admin(),
+        bps::new(1_000),
+        bps::new(2_500),
+        scenario.ctx()
+    );
     std::unit_test::destroy(package_version);
     abort
 }
@@ -811,8 +828,12 @@ fun a_valid_creator_cap_cannot_claim_empty_migration_residuals() {
     let presale_id = object::id_from_address(@0xCAFE);
     let cap = presale::cap_for_testing(presale_id, &mut ctx);
     let mut vault = vault::new_for_testing<MEME, QUOTE>(
-        presale_id, object::id(&cap), presale::fee_split(vector[], bps::new(10_000)),
-        no_protocol_fees(), option::none(), &mut ctx,
+        presale_id,
+        object::id(&cap),
+        presale::fee_split(vector[], bps::new(10_000)),
+        no_protocol_fees(),
+        option::none(),
+        &mut ctx,
     );
     let version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (meme, quote) = vault.claim_migration_residuals(&version, &cap, &mut ctx);
@@ -945,7 +966,8 @@ fun policy_with_lp_fees(meme_bps: u64, quote_bps: u64, scenario: &mut Scenario):
             bps::new(0),
             bps::new(meme_bps),
             bps::new(quote_bps),
-         scenario.ctx());
+            scenario.ctx()
+        );
         policy
     };
     std::unit_test::destroy(package_version);

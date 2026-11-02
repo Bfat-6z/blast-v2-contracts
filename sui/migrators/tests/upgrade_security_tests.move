@@ -25,7 +25,11 @@ public enum Case has copy, drop {
     Late,
     Reschedule,
 }
-public struct Fixture { version: PackageVersion, admin: PackageAdmin, clock: Clock }
+public struct Fixture {
+    version: PackageVersion,
+    admin: PackageAdmin,
+    clock: Clock
+}
 
 // === Tests ===
 
@@ -107,7 +111,14 @@ fun upgrade_wrong_digest() {
     schedule(&mut f, false);
     f.clock.set_for_testing(START + DELAY);
     let r = &mut f;
-    destroy(r.admin.authorize_upgrade(&r.version, &blast_acl::witness_for_testing<UpgradeAdmin>(), vector::tabulate!(32, |_| 1u8), &r.clock));
+    destroy(r
+        .admin
+        .authorize_upgrade(
+            &r.version,
+            &blast_acl::witness_for_testing<UpgradeAdmin>(),
+            vector::tabulate!(32, |_| 1u8),
+            &r.clock
+        ));
     destroy(f);
 }
 
@@ -128,7 +139,15 @@ fun immutable_destroys_upgrade_authority() {
 fun upgrade_digest_rejects_0_bytes() {
     let mut f = start();
     let r = &mut f;
-    r.admin.schedule_upgrade(&r.version, &blast_acl::witness_for_testing<UpgradeAdmin>(), vector::tabulate!(0, |_| 0u8), DELAY, &r.clock);
+    r
+        .admin
+        .schedule_upgrade(
+            &r.version,
+            &blast_acl::witness_for_testing<UpgradeAdmin>(),
+            vector::tabulate!(0, |_| 0u8),
+            DELAY,
+            &r.clock
+        );
     destroy(f);
 }
 
@@ -137,7 +156,15 @@ fun upgrade_digest_rejects_0_bytes() {
 fun upgrade_digest_rejects_31_bytes() {
     let mut f = start();
     let r = &mut f;
-    r.admin.schedule_upgrade(&r.version, &blast_acl::witness_for_testing<UpgradeAdmin>(), vector::tabulate!(31, |_| 0u8), DELAY, &r.clock);
+    r
+        .admin
+        .schedule_upgrade(
+            &r.version,
+            &blast_acl::witness_for_testing<UpgradeAdmin>(),
+            vector::tabulate!(31, |_| 0u8),
+            DELAY,
+            &r.clock
+        );
     destroy(f);
 }
 
@@ -146,7 +173,15 @@ fun upgrade_digest_rejects_31_bytes() {
 fun upgrade_digest_rejects_33_bytes() {
     let mut f = start();
     let r = &mut f;
-    r.admin.schedule_upgrade(&r.version, &blast_acl::witness_for_testing<UpgradeAdmin>(), vector::tabulate!(33, |_| 0u8), DELAY, &r.clock);
+    r
+        .admin
+        .schedule_upgrade(
+            &r.version,
+            &blast_acl::witness_for_testing<UpgradeAdmin>(),
+            vector::tabulate!(33, |_| 0u8),
+            DELAY,
+            &r.clock
+        );
     destroy(f);
 }
 
@@ -156,7 +191,10 @@ fun exercise(immutable: bool, case: Case) {
     let mut f = start();
     if (case == Case::StaleSchedule) f.version.set_for_testing(2);
     if (case != Case::Missing) schedule(&mut f, immutable);
-    if (case == Case::StaleSchedule) { destroy(f); return };
+    if (case == Case::StaleSchedule) {
+        destroy(f);
+        return
+    };
     f.clock.set_for_testing(if (case == Case::Early) START + DELAY - 1 else START + DELAY);
     if (case == Case::StaleCancel) {
         f.version.set_for_testing(2);
@@ -207,7 +245,9 @@ fun apply(f: &mut Fixture, immutable: bool) {
     };
 }
 
-fun cancel(f: &mut Fixture) { f.admin.cancel_upgrade_action(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); }
+fun cancel(f: &mut Fixture) {
+    f.admin.cancel_upgrade_action(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+}
 
 fun digest(): vector<u8> { vector::tabulate!(32, |_| 0u8) }
 

@@ -71,7 +71,9 @@ public struct OpeningRoundFixture {
 fun security_pause_blocks_join_with_a_valid_bid() {
     let mut fixture = start();
     fixture.open(MIN_ROUND_DURATION_MS);
-    fixture.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    fixture
+        .package_version
+        .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
     fixture.join(ALICE, ALICE_BID);
     fixture.end();
 }
@@ -82,7 +84,9 @@ fun security_pause_blocks_settlement_of_a_funded_opening_round() {
     fixture.open(MIN_ROUND_DURATION_MS);
     fixture.join(ALICE, ALICE_BID);
     fixture.set_time(ROUND_ENDS_AT_MS);
-    fixture.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    fixture
+        .package_version
+        .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
     fixture.settle(KEEPER);
     fixture.end();
 }
@@ -92,13 +96,26 @@ fun security_partial_unpause_restores_join_and_settle_and_full_pause_preserves_d
     let mut fixture = start();
     fixture.open(MIN_ROUND_DURATION_MS);
     fixture.join(ALICE, ALICE_BID);
-    fixture.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
-    fixture.package_version.unpause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UnpauseAdmin>(), 2);
+    fixture
+        .package_version
+        .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
+    fixture
+        .package_version
+        .unpause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UnpauseAdmin>(), 2);
     fixture.join(BOB, BOB_BID);
     fixture.set_time(ROUND_ENDS_AT_MS);
     fixture.settle(KEEPER);
-    let (_, _, _, total_meme) = curve::quote_buy(CURVE_MEME, 0, VIRTUAL_QUOTE, ALICE_BID + BOB_BID, bps::new(QUOTE_FEE_BPS), bps::new(MEME_FEE_BPS));
-    fixture.package_version.pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    let (_, _, _, total_meme) = curve::quote_buy(
+        CURVE_MEME,
+        0,
+        VIRTUAL_QUOTE,
+        ALICE_BID + BOB_BID,
+        bps::new(QUOTE_FEE_BPS),
+        bps::new(MEME_FEE_BPS)
+    );
+    fixture
+        .package_version
+        .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
     fixture.deliver(KEEPER, ALICE);
     fixture.deliver(KEEPER, BOB);
     fixture.next_tx!(KEEPER, |f| {
@@ -109,7 +126,9 @@ fun security_partial_unpause_restores_join_and_settle_and_full_pause_preserves_d
         launch.assert_opening_round(0, 0, 0);
         assert!(!launch.has_opening_round_bid_for_testing(ALICE));
         assert!(!launch.has_opening_round_bid_for_testing(BOB));
-        destroy(alice); destroy(bob); launch.put_back();
+        destroy(alice);
+        destroy(bob);
+        launch.put_back();
     });
     fixture.end();
 }
@@ -792,7 +811,10 @@ fun has_coin<T>(_: &OpeningRoundFixture, owner: address): bool {
 }
 
 /// Migrates the launch as its stored adapter and discards the pool's share.
-fun migrate(self: &mut OpeningRoundFixture, launch: &mut Launch<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>) {
+fun migrate(
+    self: &mut OpeningRoundFixture,
+    launch: &mut Launch<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>
+) {
     let mut currency = self
         .scenario
         .take_from_address<Currency<LAUNCH_OPENING_ROUND_TESTS>>(COIN_REGISTRY);
@@ -889,7 +911,13 @@ fun intake(
     );
     initializer.set_opening_round(&self.package_version, opening_round_duration_ms);
     let creation_fee = coin::zero(self.scenario.ctx());
-    let launch = initializer.finalize(&self.package_version, &mut currency, &self.config, creation_fee, self.scenario.ctx());
+    let launch = initializer.finalize(
+        &self.package_version,
+        &mut currency,
+        &self.config,
+        creation_fee,
+        self.scenario.ctx()
+    );
     test_scenario::return_to_address(COIN_REGISTRY, currency);
 
     launch

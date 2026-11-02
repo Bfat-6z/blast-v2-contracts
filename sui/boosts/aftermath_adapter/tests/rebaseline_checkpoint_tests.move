@@ -95,7 +95,8 @@ fun recovery_accepts_realized_profit_from_adl() {
 fun recovery_accepts_realized_credit_against_negative_collateral() {
     let mut before = stored();
     let mut after = reduced();
-    before.allocated = negative(10); after.allocated = negative(5);
+    before.allocated = negative(10);
+    after.allocated = negative(5);
     before.checkpoint().assert_forced_reduction(&after.checkpoint());
 }
 
@@ -122,7 +123,8 @@ fun recovery_rejects_position_growth() {
 fun recovery_rejects_position_flip() {
     let before = stored();
     let mut after = reduced();
-    after.base = negative(after.base); after.quote = negative(after.quote);
+    after.base = negative(after.base);
+    after.quote = negative(after.quote);
     before.checkpoint().assert_forced_reduction(&after.checkpoint());
 }
 
@@ -131,7 +133,8 @@ fun recovery_rejects_position_flip() {
 fun recovery_rejects_flat_origin() {
     let mut before = stored();
     let after = reduced();
-    before.base = 0; before.quote = 0;
+    before.base = 0;
+    before.quote = 0;
     before.checkpoint().assert_forced_reduction(&after.checkpoint());
 }
 
@@ -248,7 +251,8 @@ fun recovery_rejects_unsettled_short_funding() {
 fun recovery_rejects_free_cash_loss() {
     let mut before = stored();
     let mut after = reduced();
-    before.free = 2; after.free = 1;
+    before.free = 2;
+    after.free = 1;
     before.checkpoint().assert_forced_reduction(&after.checkpoint());
 }
 

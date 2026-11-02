@@ -54,7 +54,14 @@ fun wrapping_enables_guarded_mutations_and_consumes_publication() {
     let mut fixture = start_custody();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        f.runtime.set_treasury_for_testing(&f.package_version, &blast_acl::witness_for_testing(), PROTOCOL_ADMIN, f.ctx!());
+        f
+            .runtime
+            .set_treasury_for_testing(
+                &f.package_version,
+                &blast_acl::witness_for_testing(),
+                PROTOCOL_ADMIN,
+                f.ctx!()
+            );
 
         assert_eq!(f.runtime.treasury(), PROTOCOL_ADMIN);
         assert_eq!(f.package_version.version_for_testing(), 1);

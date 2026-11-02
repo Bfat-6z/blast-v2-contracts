@@ -48,18 +48,28 @@ fun init(otw: BLAST_FUN, ctx: &mut TxContext) {
 /// Freezes selected operations immediately; does not authorize unpausing.
 public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8) {
     self.assert_current();
-    assert!(bits != 0 && (bits & constants::valid_pause_bits!()) == bits, blast_fun::errors::invalid_pause_bits!());
+
+    assert!(
+        bits != 0 && (bits & constants::valid_pause_bits!()) == bits,
+        blast_fun::errors::invalid_pause_bits!()
+    );
     assert!((self.paused | bits) != self.paused, blast_fun::errors::pause_unchanged!());
     self.paused = self.paused | bits;
+
     events::paused(bits, self.paused);
 }
 
 /// Clears only the requested bits; claims and settlement never require unpausing.
 public fun unpause(self: &mut PackageVersion, _: &AdminWitness<UnpauseAdmin>, bits: u8) {
     self.assert_current();
-    assert!(bits != 0 && (bits & constants::valid_pause_bits!()) == bits, blast_fun::errors::invalid_pause_bits!());
+
+    assert!(
+        bits != 0 && (bits & constants::valid_pause_bits!()) == bits,
+        blast_fun::errors::invalid_pause_bits!()
+    );
     assert!((self.paused & bits) != 0, blast_fun::errors::pause_unchanged!());
     self.paused = self.paused ^ (self.paused & bits);
+
     events::unpaused(bits, self.paused);
 }
 
@@ -80,7 +90,11 @@ public(package) fun destroy(self: Publication): (Publisher, OperationalVersion<B
 
 /// Publishes the usable generation in the same transaction that seals capability custody.
 public(package) fun share_version(generation: OperationalVersion<BLAST_FUN>, ctx: &mut TxContext) {
-    transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation });
+    transfer::share_object(PackageVersion {
+        paused: constants::valid_pause_bits!(),
+        id: object::new(ctx),
+        generation
+    });
 }
 
 /// Rejects callable bytecode from every package generation except the active one.

@@ -30,7 +30,12 @@ public enum Case has copy, drop {
     Success,
 }
 
-public struct Fixture { version: PackageVersion, clock: Clock, runtime: RuntimeConfig, config: LaunchConfig, }
+public struct Fixture {
+    version: PackageVersion,
+    clock: Clock,
+    runtime: RuntimeConfig,
+    config: LaunchConfig,
+}
 
 public struct CoinA has drop {}
 public struct CoinB has drop {}
@@ -170,7 +175,10 @@ fun exercise(setting: Setting, case: Case) {
     f.clock.set_for_testing(START + DELAY - if (case == Case::Early) 1 else 0);
     assert_eq!(snapshot(&f, setting), initial);
     match (case) {
-        Case::Early => { apply(&mut f, setting); destroy(f); },
+        Case::Early => {
+            apply(&mut f, setting);
+            destroy(f);
+        },
         Case::Replacement => {
             schedule(&mut f, setting, 200);
             assert_notice(&f, setting, 200, true);
@@ -185,18 +193,30 @@ fun exercise(setting: Setting, case: Case) {
             apply(&mut f, setting);
             destroy(f);
         },
-        Case::Replay => { apply(&mut f, setting); apply(&mut f, setting); destroy(f); },
+        Case::Replay => {
+            apply(&mut f, setting);
+            apply(&mut f, setting);
+            destroy(f);
+        },
         Case::StaleSchedule => destroy(f),
-        Case::StaleApply => { f.version.set_for_testing(2); apply(&mut f, setting); destroy(f); },
-        Case::StaleCancel => { f.version.set_for_testing(2); cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false); destroy(f); },
+        Case::StaleApply => {
+            f.version.set_for_testing(2);
+            apply(&mut f, setting);
+            destroy(f);
+        },
+        Case::StaleCancel => {
+            f.version.set_for_testing(2);
+            cancel(&mut f, setting);
+            assert_notice(&f, setting, 100, false);
+            destroy(f);
+        },
         Case::Success => {
             // A ready proposal can still be cancelled; a later proposal receives a full delay.
             cancel(&mut f, setting);
             assert_notice(&f, setting, 100, false);
             assert_eq!(snapshot(&f, setting), initial);
             schedule(&mut f, setting, 100);
-    assert_notice(&f, setting, 100, true);
+            assert_notice(&f, setting, 100, true);
             f.clock.set_for_testing(START + 2 * DELAY);
             apply(&mut f, setting);
             assert_value(&f, setting, 100);
@@ -223,19 +243,80 @@ fun start(setting: Setting): Fixture {
     let mut clock = sui::clock::create_for_testing(&mut ctx);
     clock.set_for_testing(START);
     let _ = setting;
-    Fixture { version, clock, runtime: runtime_config::new_disabled_for_testing(&mut ctx), config: launch_config::new_for_testing(&mut ctx) }
+    Fixture {
+        version,
+        clock,
+        runtime: runtime_config::new_disabled_for_testing(&mut ctx),
+        config: launch_config::new_for_testing(&mut ctx)
+    }
 }
 
-fun prepare_again(f: &mut Fixture, setting: Setting) { let _ = f; let _ = setting; }
+fun prepare_again(f: &mut Fixture, setting: Setting) {
+    let _ = f;
+    let _ = setting;
+}
 
 fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
     match (setting) {
-
-        Setting::ProtocolShare => { f.runtime.schedule_protocol_fee_share(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), 172_800_000, &f.clock); },
-        Setting::Treasury => { f.runtime.schedule_treasury(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300, 172_800_000, &f.clock); },
-        Setting::TradeFees => { f.config.schedule_trade_fees(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), bps::new(n), bps::new(n + 1), 172_800_000, &f.clock); },
-        Setting::Allocation => { f.config.schedule_protocol_allocation(&f.version, &blast_acl::witness_for_testing<TreasuryAdmin>(), bps::new(n), bps::new(n + 1), 172_800_000, &f.clock); },
-        Setting::CreationFee => { f.config.schedule_creation_fee(&f.version, &blast_acl::witness_for_testing<FeeAdmin>(), n, 172_800_000, &f.clock); },
+        Setting::ProtocolShare => {
+            f
+                .runtime
+                .schedule_protocol_fee_share(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    bps::new(n),
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::Treasury => {
+            f
+                .runtime
+                .schedule_treasury(
+                    &f.version,
+                    &blast_acl::witness_for_testing<TreasuryAdmin>(),
+                    if (n == 100) @0x100
+                    else if (n == 200) @0x200
+                    else @0x300,
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::TradeFees => {
+            f
+                .config
+                .schedule_trade_fees(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    bps::new(n),
+                    bps::new(n + 1),
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::Allocation => {
+            f
+                .config
+                .schedule_protocol_allocation(
+                    &f.version,
+                    &blast_acl::witness_for_testing<TreasuryAdmin>(),
+                    bps::new(n),
+                    bps::new(n + 1),
+                    172_800_000,
+                    &f.clock
+                );
+        },
+        Setting::CreationFee => {
+            f
+                .config
+                .schedule_creation_fee(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    n,
+                    172_800_000,
+                    &f.clock
+                );
+        },
     }
 }
 
@@ -252,22 +333,48 @@ fun apply(f: &mut Fixture, setting: Setting) {
 
 fun cancel(f: &mut Fixture, setting: Setting) {
     match (setting) {
-
-        Setting::ProtocolShare => { f.runtime.cancel_protocol_fee_share(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::Treasury => { f.runtime.cancel_treasury(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::TradeFees => { f.config.cancel_trade_fees(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::Allocation => { f.config.cancel_protocol_allocation(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
-        Setting::CreationFee => { f.config.cancel_creation_fee(&f.version, &blast_acl::witness_for_testing<CancelAdmin>()); },
+        Setting::ProtocolShare => {
+            f
+                .runtime
+                .cancel_protocol_fee_share(
+                    &f.version,
+                    &blast_acl::witness_for_testing<CancelAdmin>()
+                );
+        },
+        Setting::Treasury => {
+            f.runtime.cancel_treasury(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        },
+        Setting::TradeFees => {
+            f.config.cancel_trade_fees(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        },
+        Setting::Allocation => {
+            f
+                .config
+                .cancel_protocol_allocation(
+                    &f.version,
+                    &blast_acl::witness_for_testing<CancelAdmin>()
+                );
+        },
+        Setting::CreationFee => {
+            f
+                .config
+                .cancel_creation_fee(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        },
     }
 }
 
 fun snapshot(f: &Fixture, setting: Setting): vector<u8> {
     match (setting) {
-
         Setting::ProtocolShare => { bcs::to_bytes(&f.runtime.protocol_fee_share().value()) },
         Setting::Treasury => { bcs::to_bytes(&f.runtime.treasury()) },
-        Setting::TradeFees => { let (a, b) = f.config.rate_defaults_for_testing(); bcs::to_bytes(&vector[a, b]) },
-        Setting::Allocation => { let a = f.config.protocol_allocation(); bcs::to_bytes(&vector[a.meme_bps().value(), a.quote_bps().value()]) },
+        Setting::TradeFees => {
+            let (a, b) = f.config.rate_defaults_for_testing();
+            bcs::to_bytes(&vector[a, b])
+        },
+        Setting::Allocation => {
+            let a = f.config.protocol_allocation();
+            bcs::to_bytes(&vector[a.meme_bps().value(), a.quote_bps().value()])
+        },
         Setting::CreationFee => { bcs::to_bytes(&f.config.creation_fee()) },
     }
 }
@@ -287,21 +394,28 @@ fun assert_value(f: &Fixture, setting: Setting, n: u64) { assert_eq!(snapshot(f,
 
 fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
     let mut expected = match (setting) {
-
         Setting::ProtocolShare => { expected(setting, n) },
         Setting::Treasury => { expected(setting, n) },
         Setting::TradeFees => { u64_fields_bytes(vector[n, n + 1]) },
         Setting::Allocation => { u64_fields_bytes(vector[n, n + 1]) },
         Setting::CreationFee => { expected(setting, n) },
     };
-    if (scheduled) { expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY))); let delay_ms = DELAY; expected.append(bcs::to_bytes(&delay_ms)); };
+    if (scheduled) {
+        expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY)));
+        let delay_ms = DELAY;
+        expected.append(bcs::to_bytes(&delay_ms));
+    };
     let actual = match (setting) {
-
-        Setting::ProtocolShare => if (scheduled) last_event<events::ProtocolFeeShareScheduled>() else last_event<events::ProtocolFeeShareCancelled>(),
-        Setting::Treasury => if (scheduled) last_event<events::TreasuryScheduled>() else last_event<events::TreasuryCancelled>(),
-        Setting::TradeFees => if (scheduled) last_event<events::TradeFeesScheduled>() else last_event<events::TradeFeesCancelled>(),
-        Setting::Allocation => if (scheduled) last_event<events::ProtocolAllocationScheduled>() else last_event<events::ProtocolAllocationCancelled>(),
-        Setting::CreationFee => if (scheduled) last_event<events::CreationFeeScheduled>() else last_event<events::CreationFeeCancelled>(),
+        Setting::ProtocolShare => if (scheduled) last_event<events::ProtocolFeeShareScheduled>()
+        else last_event<events::ProtocolFeeShareCancelled>(),
+        Setting::Treasury => if (scheduled) last_event<events::TreasuryScheduled>()
+        else last_event<events::TreasuryCancelled>(),
+        Setting::TradeFees => if (scheduled) last_event<events::TradeFeesScheduled>()
+        else last_event<events::TradeFeesCancelled>(),
+        Setting::Allocation => if (scheduled) last_event<events::ProtocolAllocationScheduled>()
+        else last_event<events::ProtocolAllocationCancelled>(),
+        Setting::CreationFee => if (scheduled) last_event<events::CreationFeeScheduled>()
+        else last_event<events::CreationFeeCancelled>(),
     };
     assert_eq!(actual, expected);
 }
@@ -312,7 +426,10 @@ fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     bytes
 }
 
-fun last_event<T: copy + drop>(): vector<u8> { let mut events = sui::event::events_by_type<Event<T>>(); bcs::to_bytes(&events.pop_back().unwrap()) }
+fun last_event<T: copy + drop>(): vector<u8> {
+    let mut events = sui::event::events_by_type<Event<T>>();
+    bcs::to_bytes(&events.pop_back().unwrap())
+}
 
 // === Imports ===
 

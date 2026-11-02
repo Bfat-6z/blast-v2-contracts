@@ -72,6 +72,7 @@ public fun create_display(
     display.configure(&cap);
 
     display.share();
+
     cap
 }
 
@@ -117,7 +118,10 @@ public(package) fun assert_binding(
     expected_pool_id: ID,
 ) {
     assert!(self.vault_id == expected_vault_id, blast_sui::errors::wrong_receipt_vault!());
-    assert!(self.staked_sui.pool_id() == expected_pool_id, blast_sui::errors::wrong_receipt_pool!());
+    assert!(
+        self.staked_sui.pool_id() == expected_pool_id,
+        blast_sui::errors::wrong_receipt_pool!()
+    );
 }
 
 /// Deletes a validated receipt wrapper and releases its native stake.

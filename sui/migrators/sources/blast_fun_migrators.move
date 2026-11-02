@@ -42,7 +42,9 @@ fun init(otw: BLAST_FUN_MIGRATORS, ctx: &mut TxContext) {
 // === Package Functions ===
 
 /// Consumes the only initial setup authority; upgrades and pausing cannot recreate it.
-public(package) fun destroy(self: Publication): (Publisher, OperationalVersion<BLAST_FUN_MIGRATORS>) {
+public(package) fun destroy(
+    self: Publication
+): (Publisher, OperationalVersion<BLAST_FUN_MIGRATORS>) {
     let Publication { id, publisher, generation } = self;
     id.delete();
 
@@ -50,7 +52,10 @@ public(package) fun destroy(self: Publication): (Publisher, OperationalVersion<B
 }
 
 /// Publishes the operational generation only after native capability custody is sealed.
-public(package) fun share_version(generation: OperationalVersion<BLAST_FUN_MIGRATORS>, ctx: &mut TxContext) {
+public(package) fun share_version(
+    generation: OperationalVersion<BLAST_FUN_MIGRATORS>,
+    ctx: &mut TxContext
+) {
     transfer::share_object(PackageVersion { id: object::new(ctx), generation });
 }
 

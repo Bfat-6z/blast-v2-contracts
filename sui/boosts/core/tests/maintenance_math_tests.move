@@ -1095,16 +1095,26 @@ fun capped_mints_never_lower_existing_holders_nav_per_share_across_the_small_dom
                         let fee = reference_fee_up(deposit, mint_fee_bps);
                         if (deposit > fee && rise > 0) {
                             let expected_contribution = (deposit - fee).min(rise);
-                            let expected_shares = (
-                                (shares_before as u128) * (expected_contribution as u128)
+                            let expected_shares =
+                                (
+                                    (shares_before as u128) * (expected_contribution as u128)
                                     / (nav_before as u128),
-                            ) as u64;
+                                ) as u64;
                             if (expected_shares > 0) {
-                                let (nav_after, contribution, shares) =
+                                let (
+                                    nav_after,
+                                    contribution,
+                                    shares
+                                ) =
                                     accounting_math::allocated_mint_quote(
-                                        nav_before, nav_before + rise, 0, 0,
-                                        deposit - fee, shares_before, 0,
-                                    );
+                                    nav_before,
+                                    nav_before + rise,
+                                    0,
+                                    0,
+                                    deposit - fee,
+                                    shares_before,
+                                    0,
+                                );
                                 assert_eq!(nav_after, nav_before + rise);
                                 assert_eq!(contribution, expected_contribution);
                                 assert_eq!(shares, expected_shares);
@@ -1131,13 +1141,21 @@ fun capped_redemptions_never_lower_remaining_holders_nav_per_share_across_the_sm
             1u64.range_do!(shares_before, |shares_burned| {
                 0u64.range_do!(17, |nav_after_sell| {
                     let shares_after = shares_before - shares_burned;
-                    let equity_keep = ((nav_before as u128) * (shares_after as u128))
-                        .div_ceil(shares_before as u128) as u64;
+                    let equity_keep =
+                        ((nav_before as u128) * (shares_after as u128))
+                        .div_ceil(
+                            shares_before as u128
+                        ) as u64;
                     if (nav_after_sell.min(nav_before) > equity_keep) {
                         let (_, nav_kept, fee, net) =
                             accounting_math::redemption_accounting_quote(
-                                shares_burned, nav_before, nav_after_sell, 0, shares_before, 0,
-                            );
+                            shares_burned,
+                            nav_before,
+                            nav_after_sell,
+                            0,
+                            shares_before,
+                            0,
+                        );
                         assert_eq!(net, nav_after_sell.min(nav_before) - equity_keep);
                         assert!(net <= nav_before - equity_keep);
                         assert_eq!(fee, 0);
@@ -1606,10 +1624,23 @@ fun canonical_mint(
     let fee = accounting_math::fee_up_for_testing(deposit, mint_fee_bps);
     let reserve_after = accounting_math::credit_fee_for_testing(reserve_before, fee);
     let (nav_after, contribution, shares_out) = accounting_math::allocated_mint_quote(
-        venue_equity_before, venue_equity_after, reserve_before, reserve_after,
-        deposit - fee, shares_before, min_shares_out,
+        venue_equity_before,
+        venue_equity_after,
+        reserve_before,
+        reserve_after,
+        deposit - fee,
+        shares_before,
+        min_shares_out,
     );
-    (reserve_after, nav_before, nav_after, fee, contribution, shares_out, shares_before + shares_out)
+    (
+        reserve_after,
+        nav_before,
+        nav_after,
+        fee,
+        contribution,
+        shares_out,
+        shares_before + shares_out
+    )
 }
 
 // === Imports ===

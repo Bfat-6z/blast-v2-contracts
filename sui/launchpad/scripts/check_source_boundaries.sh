@@ -784,7 +784,7 @@ if [[ ! -f sources/launch_config.move ]] \
   || rg -Fq 'protocol_allocation: Option<' sources/launch_config.move \
   || ! rg -Fq 'meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999' <<<"$launch_config_source" \
   || ! rg -Fq 'value != self.protocol_allocation.value()' <<<"$launch_config_source" \
-  || ! rg -Fq 'protocol_allocation: delayed::new(allocation::protocol_allocation(bps::new(0), bps::new(0)), delay_ms)' <<<"$launch_config_source" \
+  || ! rg -q 'protocol_allocation: delayed::new\( *allocation::protocol_allocation\(bps::new\(0\), bps::new\(0\)\), delay_ms *\)' <<<"$launch_config_source" \
   || rg -n '\b(set_graduation_defaults|GraduationDefaultsChanged|protocol_(quote_migration|meme_graduation)_fee_bps|meme_liquidity_provision_bps|QuoteParameters|QuoteParametersChanged|min_graduation_target|max_graduation_target)\b' \
     sources/launch_config.move sources/lib/events.move \
   || rg -n '\b(AdminCap|ProtocolAuthority|sequence|schema_version|action_tag|nonce)\b' <<<"$launch_config_production"; then

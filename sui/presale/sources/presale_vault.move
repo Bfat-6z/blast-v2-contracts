@@ -76,26 +76,62 @@ public fun claim_migration_residuals<Meme, Quote>(
 
 /// Sets Blast's share of each asset in this vault's later LP-fee collections. Fees still in the
 /// pool are split at the new rates when collected; the creator's split of the rest is unchanged.
-public fun schedule_protocol_lp_fees<Meme, Quote>(self: &mut Vault<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<FeeAdmin>, lp_fee_meme_bps: Bps, lp_fee_quote_bps: Bps, delay_ms: u64, clock: &Clock) {
+public fun schedule_protocol_lp_fees<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &PackageVersion,
+    _: &AdminWitness<FeeAdmin>,
+    lp_fee_meme_bps: Bps,
+    lp_fee_quote_bps: Bps,
+    delay_ms: u64,
+    clock: &Clock
+) {
     package_version.assert_current();
+
     let proposed = self.protocol_fees.value().with_lp_fees(lp_fee_meme_bps, lp_fee_quote_bps);
-    assert!(proposed != self.protocol_fees.value() || delay_ms != self.protocol_fees.delay_ms(), EProtocolLpFeesUnchanged);
+    assert!(
+        proposed != self.protocol_fees.value() || delay_ms != self.protocol_fees.delay_ms(),
+        EProtocolLpFeesUnchanged
+    );
+
     let ready_at_ms = self.protocol_fees.schedule(proposed, delay_ms, clock);
-    event::emit(ProtocolLpFeesScheduled { vault_id: self.id.to_inner(), meme_bps: lp_fee_meme_bps.value(), quote_bps: lp_fee_quote_bps.value(), ready_at_ms, delay_ms });
+
+    event::emit(ProtocolLpFeesScheduled {
+        vault_id: self.id.to_inner(),
+        meme_bps: lp_fee_meme_bps.value(),
+        quote_bps: lp_fee_quote_bps.value(),
+        ready_at_ms,
+        delay_ms
+    });
 }
 
 /// Anyone may apply the announced LP rates once the complete notice has elapsed.
-public fun apply_protocol_lp_fees<Meme, Quote>(self: &mut Vault<Meme, Quote>, package_version: &PackageVersion, clock: &Clock) {
+public fun apply_protocol_lp_fees<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &PackageVersion,
+    clock: &Clock
+) {
     package_version.assert_current();
     let applied = self.protocol_fees.apply(clock);
-    event::emit(ProtocolLpFeesChanged<Meme, Quote> { vault_id: self.id.to_inner(), protocol_lp_fee_meme_bps: applied.lp_fee_meme_bps().value(), protocol_lp_fee_quote_bps: applied.lp_fee_quote_bps().value() });
+    event::emit(ProtocolLpFeesChanged<Meme, Quote> {
+        vault_id: self.id.to_inner(),
+        protocol_lp_fee_meme_bps: applied.lp_fee_meme_bps().value(),
+        protocol_lp_fee_quote_bps: applied.lp_fee_quote_bps().value()
+    });
 }
 
 /// Cancels even a ready LP-rate change.
-public fun cancel_protocol_lp_fees<Meme, Quote>(self: &mut Vault<Meme, Quote>, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+public fun cancel_protocol_lp_fees<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>
+) {
     package_version.assert_current();
     let cancelled = self.protocol_fees.cancel();
-    event::emit(ProtocolLpFeesCancelled { vault_id: self.id.to_inner(), meme_bps: cancelled.lp_fee_meme_bps().value(), quote_bps: cancelled.lp_fee_quote_bps().value() });
+    event::emit(ProtocolLpFeesCancelled {
+        vault_id: self.id.to_inner(),
+        meme_bps: cancelled.lp_fee_meme_bps().value(),
+        quote_bps: cancelled.lp_fee_quote_bps().value()
+    });
 }
 
 /// Pays the Blast LP fees this vault holds for its partner: the partner its cut of each asset in
@@ -303,9 +339,12 @@ public(package) fun split_fees<Meme, Quote>(
         holder_rewards_meme,
         holder_rewards_quote,
     });
+
     if (holder_rewards_meme > 0) {
         event::emit(HolderMemePaid<Meme, Quote> {
-            vault_id: self.id.to_inner(), treasury, meme_amount: holder_rewards_meme,
+            vault_id: self.id.to_inner(),
+            treasury,
+            meme_amount: holder_rewards_meme,
             unallocated_meme_remaining: self.holder_rewards_meme.value(),
         });
     };
@@ -434,6 +473,7 @@ fun pay_or_hold_protocol_lp_fees<Meme, Quote>(
     let protocol_destination = fee_policy.destination();
     protocol_meme.pay_all(protocol_destination, ctx);
     protocol_quote.pay_all(protocol_destination, ctx);
+
     option::some(protocol_destination)
 }
 
@@ -465,7 +505,14 @@ public fun set_protocol_lp_fees_for_testing<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_protocol_lp_fees(package_version, admin, lp_fee_meme_bps, lp_fee_quote_bps, 172_800_000, &clock);
+    self.schedule_protocol_lp_fees(
+        package_version,
+        admin,
+        lp_fee_meme_bps,
+        lp_fee_quote_bps,
+        172_800_000,
+        &clock
+    );
     clock.set_for_testing(172_800_000);
     self.apply_protocol_lp_fees(package_version, &clock);
     clock.destroy_for_testing();
@@ -619,7 +666,9 @@ public fun destroy_for_testing<Meme, Quote>(self: Vault<Meme, Quote>) {
 /// Seeds holder balances directly to exercise Merkle custody in tests.
 #[test_only]
 public fun credit_holder_for_testing<Meme, Quote>(
-    self: &mut Vault<Meme, Quote>, meme: Balance<Meme>, quote: Balance<Quote>,
+    self: &mut Vault<Meme, Quote>,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
 ) {
     self.holder_rewards_meme.join(meme);
     self.holder_rewards_quote.join(quote);
@@ -633,10 +682,20 @@ public fun holder_meme_paid_bytes<Meme, Quote>(payload: &HolderMemePaid<Meme, Qu
 // === Events ===
 
 /// LP rates publicly proposed for one vault.
-public struct ProtocolLpFeesScheduled has copy, drop { vault_id: ID, meme_bps: u64, quote_bps: u64, ready_at_ms: u64, delay_ms: u64 }
+public struct ProtocolLpFeesScheduled has copy, drop {
+    vault_id: ID,
+    meme_bps: u64,
+    quote_bps: u64,
+    ready_at_ms: u64,
+    delay_ms: u64
+}
 
 /// LP rates removed from one vault's pending schedule.
-public struct ProtocolLpFeesCancelled has copy, drop { vault_id: ID, meme_bps: u64, quote_bps: u64 }
+public struct ProtocolLpFeesCancelled has copy, drop {
+    vault_id: ID,
+    meme_bps: u64,
+    quote_bps: u64
+}
 
 public struct VaultCreated<phantom Meme, phantom Quote, phantom Venue> has copy, drop {
     vault_id: ID,

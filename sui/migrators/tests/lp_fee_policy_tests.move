@@ -41,13 +41,29 @@ fun pending_override_and_delayed_clear_preserve_in_force_shares() {
     let mut fixture = start_policy();
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let mut clock = sui::clock::create_for_testing(f.scenario.ctx());
-        f.policy.schedule_coin_shares<MemeA>(&f.migrators_version, &fee_admin(), bps::new(123), bps::new(456), 172_800_000, &clock);
+        f
+            .policy
+            .schedule_coin_shares<MemeA>(
+                &f.migrators_version,
+                &fee_admin(),
+                bps::new(123),
+                bps::new(456),
+                172_800_000,
+                &clock
+            );
         f.assert_shares<MemeA>(0, 0);
         clock.set_for_testing(172_800_000);
         f.assert_shares<MemeA>(0, 0);
         f.policy.apply_coin_shares<MemeA>(&f.migrators_version, &clock);
         f.assert_shares<MemeA>(123, 456);
-        f.policy.schedule_clear_coin_shares<MemeA>(&f.migrators_version, &fee_admin(), 172_800_000, &clock);
+        f
+            .policy
+            .schedule_clear_coin_shares<MemeA>(
+                &f.migrators_version,
+                &fee_admin(),
+                172_800_000,
+                &clock
+            );
         f.assert_shares<MemeA>(123, 456);
         clock.set_for_testing(345_600_000);
         f.policy.apply_coin_shares<MemeA>(&f.migrators_version, &clock);
@@ -144,7 +160,15 @@ fun active_admin_changes_independent_defaults_and_all_event_fields() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin = fee_admin();
-        f.policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(2_000), bps::new(7_000), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.migrators_version,
+                &admin,
+                bps::new(2_000),
+                bps::new(7_000),
+                f.scenario.ctx()
+            );
 
         f.assert_shares<MemeA>(2_000, 7_000);
         f.assert_shares<MemeB>(2_000, 7_000);
@@ -169,8 +193,24 @@ fun changing_either_asset_alone_is_a_real_default_update() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin = fee_admin();
-        f.policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(1), bps::new(0), f.scenario.ctx());
-        f.policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(1), bps::new(2), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.migrators_version,
+                &admin,
+                bps::new(1),
+                bps::new(0),
+                f.scenario.ctx()
+            );
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.migrators_version,
+                &admin,
+                bps::new(1),
+                bps::new(2),
+                f.scenario.ctx()
+            );
 
         f.assert_shares<MemeA>(1, 2);
         let changes = policy_changes();
@@ -323,14 +363,40 @@ fun default_shares_read_the_default_pair_whatever_coin_pairs_are_set() {
         let admin = fee_admin();
         f.assert_default_shares(0, 0);
 
-        f.policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(1_234), bps::new(9_876), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.migrators_version,
+                &admin,
+                bps::new(1_234),
+                bps::new(9_876),
+                f.scenario.ctx()
+            );
         let version = &f.migrators_version;
-        f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(11), bps::new(22), f.scenario.ctx());
+        f
+            .policy
+            .set_coin_shares_for_testing<MemeA>(
+                version,
+                &admin,
+                bps::new(11),
+                bps::new(22),
+                f.scenario.ctx()
+            );
         f.assert_default_shares(1_234, 9_876);
         f.assert_shares<MemeA>(11, 22);
 
-        f.policy.clear_coin_shares_for_testing<MemeA>(&f.migrators_version, &admin, f.scenario.ctx());
-        f.policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(5), bps::new(6), f.scenario.ctx());
+        f
+            .policy
+            .clear_coin_shares_for_testing<MemeA>(&f.migrators_version, &admin, f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.migrators_version,
+                &admin,
+                bps::new(5),
+                bps::new(6),
+                f.scenario.ctx()
+            );
         f.assert_default_shares(5, 6);
         f.assert_shares<MemeA>(5, 6);
     });
@@ -376,22 +442,86 @@ fun both_assets_accept_zero_and_full_share_independently() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin = fee_admin();
         let version = &f.migrators_version;
-        f.policy.set_default_shares_for_testing(version, &admin, bps::new(10_000), bps::new(0), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                version,
+                &admin,
+                bps::new(10_000),
+                bps::new(0),
+                f.scenario.ctx()
+            );
         f.assert_shares<MemeA>(10_000, 0);
-        f.policy.set_default_shares_for_testing(version, &admin, bps::new(0), bps::new(10_000), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                version,
+                &admin,
+                bps::new(0),
+                bps::new(10_000),
+                f.scenario.ctx()
+            );
         f.assert_shares<MemeA>(0, 10_000);
-        f.policy.set_default_shares_for_testing(version, &admin, bps::new(10_000), bps::new(10_000), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                version,
+                &admin,
+                bps::new(10_000),
+                bps::new(10_000),
+                f.scenario.ctx()
+            );
         f.assert_shares<MemeA>(10_000, 10_000);
-        f.policy.set_default_shares_for_testing(version, &admin, bps::new(0), bps::new(0), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                version,
+                &admin,
+                bps::new(0),
+                bps::new(0),
+                f.scenario.ctx()
+            );
         f.assert_shares<MemeA>(0, 0);
 
-        f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(10_000), bps::new(0), f.scenario.ctx());
+        f
+            .policy
+            .set_coin_shares_for_testing<MemeA>(
+                version,
+                &admin,
+                bps::new(10_000),
+                bps::new(0),
+                f.scenario.ctx()
+            );
         f.assert_shares<MemeA>(10_000, 0);
-        f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(0), bps::new(10_000), f.scenario.ctx());
+        f
+            .policy
+            .set_coin_shares_for_testing<MemeA>(
+                version,
+                &admin,
+                bps::new(0),
+                bps::new(10_000),
+                f.scenario.ctx()
+            );
         f.assert_shares<MemeA>(0, 10_000);
-        f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(10_000), bps::new(10_000), f.scenario.ctx());
+        f
+            .policy
+            .set_coin_shares_for_testing<MemeA>(
+                version,
+                &admin,
+                bps::new(10_000),
+                bps::new(10_000),
+                f.scenario.ctx()
+            );
         f.assert_shares<MemeA>(10_000, 10_000);
-        f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(0), bps::new(0), f.scenario.ctx());
+        f
+            .policy
+            .set_coin_shares_for_testing<MemeA>(
+                version,
+                &admin,
+                bps::new(0),
+                bps::new(0),
+                f.scenario.ctx()
+            );
         f.assert_shares<MemeA>(0, 0);
     });
 
@@ -408,7 +538,15 @@ fun unchanged_default_pair_is_rejected() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin = fee_admin();
-        f.policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(0), bps::new(0), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.migrators_version,
+                &admin,
+                bps::new(0),
+                bps::new(0),
+                f.scenario.ctx()
+            );
     });
 
     fixture.end();
@@ -473,7 +611,15 @@ fun stale_version_precedes_default_noop() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin = fee_admin();
         f.migrators_version.set_for_testing(2);
-        f.policy.set_default_shares_for_testing(&f.migrators_version, &admin, bps::new(0), bps::new(0), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.migrators_version,
+                &admin,
+                bps::new(0),
+                bps::new(0),
+                f.scenario.ctx()
+            );
     });
 
     fixture.end();
@@ -489,9 +635,25 @@ fun stale_version_precedes_coin_noop() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin = fee_admin();
-        f.policy.set_coin_shares_for_testing<MemeA>(&f.migrators_version, &admin, bps::new(0), bps::new(0), f.scenario.ctx());
+        f
+            .policy
+            .set_coin_shares_for_testing<MemeA>(
+                &f.migrators_version,
+                &admin,
+                bps::new(0),
+                bps::new(0),
+                f.scenario.ctx()
+            );
         f.migrators_version.set_for_testing(2);
-        f.policy.set_coin_shares_for_testing<MemeA>(&f.migrators_version, &admin, bps::new(0), bps::new(0), f.scenario.ctx());
+        f
+            .policy
+            .set_coin_shares_for_testing<MemeA>(
+                &f.migrators_version,
+                &admin,
+                bps::new(0),
+                bps::new(0),
+                f.scenario.ctx()
+            );
     });
 
     fixture.end();

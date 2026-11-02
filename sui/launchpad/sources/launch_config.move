@@ -9,7 +9,10 @@ module blast_fun::launch_config;
 // === Public Types ===
 
 /// The two trade rates change atomically.
-public struct TradeFees has copy, drop, store { quote_fee_bps: Bps, meme_fee_bps: Bps }
+public struct TradeFees has copy, drop, store {
+    quote_fee_bps: Bps,
+    meme_fee_bps: Bps
+}
 
 /// Admitted decimals, Quotes, and migration adapters; the trade fees; Blast's one-time migration
 /// allocation; the SUI every launch pays at creation; and the Blast partners new launches may
@@ -53,11 +56,26 @@ public fun schedule_protocol_allocation(
     clock: &Clock,
 ) {
     package_version.assert_current();
-    assert!(meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999, blast_fun::errors::invalid_protocol_allocation!());
+
+    assert!(
+        meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999,
+        blast_fun::errors::invalid_protocol_allocation!()
+    );
+
     let value = allocation::protocol_allocation(meme_bps, quote_bps);
-    assert!(value != self.protocol_allocation.value() || delay_ms != self.protocol_allocation.delay_ms(), blast_fun::errors::unchanged!());
+    assert!(
+        value != self.protocol_allocation.value() || delay_ms != self.protocol_allocation.delay_ms(),
+        blast_fun::errors::unchanged!()
+    );
+
     let ready_at_ms = self.protocol_allocation.schedule(value, delay_ms, clock);
-    events::protocol_allocation_scheduled(meme_bps.value(), quote_bps.value(), ready_at_ms, delay_ms);
+
+    events::protocol_allocation_scheduled(
+        meme_bps.value(),
+        quote_bps.value(),
+        ready_at_ms,
+        delay_ms
+    );
 }
 
 /// Applies the scheduled protocol allocation permissionlessly once ready.
@@ -67,9 +85,11 @@ public fun apply_protocol_allocation(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     let value = self.protocol_allocation.apply(clock);
     let meme_bps = value.meme_bps();
     let quote_bps = value.quote_bps();
+
     events::protocol_allocation_set(meme_bps.value(), quote_bps.value());
 }
 
@@ -80,9 +100,11 @@ public fun cancel_protocol_allocation(
     _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
+
     let value = self.protocol_allocation.cancel();
     let meme_bps = value.meme_bps();
     let quote_bps = value.quote_bps();
+
     events::protocol_allocation_cancelled(meme_bps.value(), quote_bps.value());
 }
 
@@ -108,9 +130,13 @@ public fun set_quote_allowed<Quote>(
     allowed: bool,
 ) {
     package_version.assert_current();
+
     let quote = type_name::with_original_ids<Quote>();
 
-    if (allowed) self.quotes.add(quote, true) else { self.quotes.remove(quote); };
+    if (allowed) self.quotes.add(quote, true)
+    else {
+        self.quotes.remove(quote);
+    };
 
     events::quote_set<Quote>(allowed);
 }
@@ -127,11 +153,26 @@ public fun schedule_trade_fees(
     clock: &Clock,
 ) {
     package_version.assert_current();
-    assert!(quote_fee_bps.value() <= constants::max_launch_fee_bps!() && meme_fee_bps.value() <= constants::max_launch_fee_bps!(), blast_fun::errors::invalid_trade_fee_bps!());
+
+    assert!(
+        quote_fee_bps.value() <= constants::max_launch_fee_bps!() && meme_fee_bps.value() <= constants::max_launch_fee_bps!(),
+        blast_fun::errors::invalid_trade_fee_bps!()
+    );
+
     let value = TradeFees { quote_fee_bps, meme_fee_bps };
-    assert!(value != self.trade_fees.value() || delay_ms != self.trade_fees.delay_ms(), blast_fun::errors::unchanged!());
+    assert!(
+        value != self.trade_fees.value() || delay_ms != self.trade_fees.delay_ms(),
+        blast_fun::errors::unchanged!()
+    );
+
     let ready_at_ms = self.trade_fees.schedule(value, delay_ms, clock);
-    events::trade_fees_scheduled(quote_fee_bps.value(), meme_fee_bps.value(), ready_at_ms, delay_ms);
+
+    events::trade_fees_scheduled(
+        quote_fee_bps.value(),
+        meme_fee_bps.value(),
+        ready_at_ms,
+        delay_ms
+    );
 }
 
 /// Applies the scheduled trade fees permissionlessly once ready.
@@ -141,9 +182,11 @@ public fun apply_trade_fees(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     let value = self.trade_fees.apply(clock);
     let quote_fee_bps = value.quote_fee_bps;
     let meme_fee_bps = value.meme_fee_bps;
+
     events::launch_trade_fees_changed(quote_fee_bps.value(), meme_fee_bps.value());
 }
 
@@ -154,9 +197,11 @@ public fun cancel_trade_fees(
     _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
+
     let value = self.trade_fees.cancel();
     let quote_fee_bps = value.quote_fee_bps;
     let meme_fee_bps = value.meme_fee_bps;
+
     events::trade_fees_cancelled(quote_fee_bps.value(), meme_fee_bps.value());
 }
 
@@ -173,8 +218,13 @@ public fun schedule_creation_fee(
     package_version.assert_current();
 
     let value = creation_fee;
-    assert!(value != self.creation_fee.value() || delay_ms != self.creation_fee.delay_ms(), blast_fun::errors::unchanged!());
+    assert!(
+        value != self.creation_fee.value() || delay_ms != self.creation_fee.delay_ms(),
+        blast_fun::errors::unchanged!()
+    );
+
     let ready_at_ms = self.creation_fee.schedule(value, delay_ms, clock);
+
     events::creation_fee_scheduled(creation_fee, ready_at_ms, delay_ms);
 }
 
@@ -185,8 +235,10 @@ public fun apply_creation_fee(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     let value = self.creation_fee.apply(clock);
     let creation_fee = value;
+
     events::creation_fee_changed(creation_fee);
 }
 
@@ -197,8 +249,10 @@ public fun cancel_creation_fee(
     _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
+
     let value = self.creation_fee.cancel();
     let creation_fee = value;
+
     events::creation_fee_cancelled(creation_fee);
 }
 
@@ -254,44 +308,81 @@ public fun remove_partner(
 ///
 /// Framework types are rejected because anyone can construct them.
 /// Admits an adapter only after a full administrative notice period.
-public fun schedule_migration_witness<MigrationWitness: drop>(self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<AdapterAdmin>, delay_ms: u64, clock: &Clock) {
+public fun schedule_migration_witness<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<AdapterAdmin>,
+    delay_ms: u64,
+    clock: &Clock
+) {
     package_version.assert_current();
+
     let witness = type_name::with_original_ids<MigrationWitness>();
     assert!(!witness.is_primitive(), blast_fun::errors::invalid_migration_witness_type!());
+
     let origin = type_name::original_id<MigrationWitness>();
     assert!(origin != @0x1 && origin != @0x2, blast_fun::errors::invalid_migration_witness_type!());
     assert!(!self.migration_witnesses.contains(&witness), blast_fun::errors::unchanged!());
+
     let pending = delayed::new_pending(true, self.witness_delay_ms, delay_ms, clock);
-    if (self.pending_witnesses.contains(&witness)) { self.pending_witnesses.remove(&witness); };
+
+    if (self.pending_witnesses.contains(&witness)) {
+        self.pending_witnesses.remove(&witness);
+    };
     self.pending_witnesses.insert(witness, pending);
+
     events::migration_witness_scheduled(witness, pending.ready_at_ms(), delay_ms);
 }
 
 /// Permissionlessly applies the approved adapter admission once ready.
-public fun apply_migration_witness<MigrationWitness: drop>(self: &mut LaunchConfig, package_version: &PackageVersion, clock: &Clock) {
+public fun apply_migration_witness<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    clock: &Clock
+) {
     package_version.assert_current();
+
     let witness = type_name::with_original_ids<MigrationWitness>();
     let (_, delay_ms) = self.pending_witnesses[&witness].take_ready(clock);
+
     self.witness_delay_ms = delay_ms;
+
     events::migration_delay_changed(delay_ms);
+
     self.pending_witnesses.remove(&witness);
     self.migration_witnesses.insert(witness);
+
     events::migration_witness_set<MigrationWitness>(true);
 }
 
 /// Cancels a pending adapter admission, including after its threshold.
-public fun cancel_migration_witness<MigrationWitness: drop>(self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+public fun cancel_migration_witness<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>
+) {
     package_version.assert_current();
+
     let witness = type_name::with_original_ids<MigrationWitness>();
+
     self.pending_witnesses.remove(&witness);
+
     events::migration_witness_cancelled(witness);
 }
 
 /// Immediately removes adapter authority and cancels any pending admission.
-public fun remove_migration_witness<MigrationWitness: drop>(self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<AdapterAdmin>) {
+public fun remove_migration_witness<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<AdapterAdmin>
+) {
     package_version.assert_current();
+
     let witness = type_name::with_original_ids<MigrationWitness>();
-    assert!(self.migration_witnesses.contains(&witness) || self.pending_witnesses.contains(&witness), blast_fun::errors::unchanged!());
+    assert!(
+        self.migration_witnesses.contains(&witness) || self.pending_witnesses.contains(&witness),
+        blast_fun::errors::unchanged!()
+    );
     if (self.pending_witnesses.contains(&witness)) {
         self.pending_witnesses.remove(&witness);
         events::migration_witness_cancelled(witness);
@@ -303,23 +394,43 @@ public fun remove_migration_witness<MigrationWitness: drop>(self: &mut LaunchCon
 }
 
 /// Proposes only the admission notice period. Existing admission deadlines remain fixed.
-public fun schedule_migration_delay(self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<AdapterAdmin>, delay_ms: u64, clock: &Clock) {
+public fun schedule_migration_delay(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<AdapterAdmin>,
+    delay_ms: u64,
+    clock: &Clock
+) {
     package_version.assert_current();
+
     let pending = delayed::new_pending(false, self.witness_delay_ms, delay_ms, clock);
+
     self.pending_witness_delay = option::some(pending);
+
     events::migration_delay_scheduled(delay_ms, pending.ready_at_ms());
 }
 
 /// Permissionlessly applies a ready admission-policy proposal.
-public fun apply_migration_delay(self: &mut LaunchConfig, package_version: &PackageVersion, clock: &Clock) {
+public fun apply_migration_delay(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    clock: &Clock
+) {
     package_version.assert_current();
+
     let (_, delay_ms) = self.pending_witness_delay.extract().take_ready(clock);
+
     self.witness_delay_ms = delay_ms;
+
     events::migration_delay_changed(delay_ms);
 }
 
 /// Cancels only the admission-policy proposal.
-public fun cancel_migration_delay(self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin>) {
+public fun cancel_migration_delay(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>
+) {
     package_version.assert_current();
     self.pending_witness_delay.extract();
     events::migration_delay_cancelled();
@@ -359,6 +470,7 @@ public(package) fun assert_partner(self: &LaunchConfig, partner_id: ID, now_at_m
     let key = PartnerKey(partner_id);
 
     assert!(self.id.has_dynamic_field(key), blast_fun::errors::partner_not_accepted!());
+
     let acceptance_ends_at_ms: u64 = *dynamic_field::borrow(&self.id, key);
     assert!(now_at_ms < acceptance_ends_at_ms, blast_fun::errors::partner_not_accepted!());
 }
@@ -370,12 +482,18 @@ fun new(delay_ms: u64, ctx: &mut TxContext): LaunchConfig {
         id: object::new(ctx),
         meme_decimals: vec_set::from_keys(vector[6, 9]),
         quotes: table::new(ctx),
-        trade_fees: delayed::new(TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) }, delay_ms),
+        trade_fees: delayed::new(
+            TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
+            delay_ms
+        ),
         migration_witnesses: vec_set::empty(),
         witness_delay_ms: delay_ms,
         pending_witness_delay: option::none(),
         pending_witnesses: vec_map::empty(),
-        protocol_allocation: delayed::new(allocation::protocol_allocation(bps::new(0), bps::new(0)), delay_ms),
+        protocol_allocation: delayed::new(
+            allocation::protocol_allocation(bps::new(0), bps::new(0)),
+            delay_ms
+        ),
         creation_fee: delayed::new(0, delay_ms),
     }
 }
@@ -383,8 +501,17 @@ fun new(delay_ms: u64, ctx: &mut TxContext): LaunchConfig {
 // === Test-Only Functions ===
 
 #[test_only]
-public fun set_migration_witness_allowed_for_testing<MigrationWitness: drop>(self: &mut LaunchConfig, package_version: &PackageVersion, admin: &AdminWitness<AdapterAdmin>, allowed: bool, ctx: &mut TxContext) {
-    if (!allowed) { self.remove_migration_witness<MigrationWitness>(package_version, admin); return };
+public fun set_migration_witness_allowed_for_testing<MigrationWitness: drop>(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<AdapterAdmin>,
+    allowed: bool,
+    ctx: &mut TxContext
+) {
+    if (!allowed) {
+        self.remove_migration_witness<MigrationWitness>(package_version, admin);
+        return
+    };
     let mut clock = sui::clock::create_for_testing(ctx);
     let delay_ms = self.witness_delay_ms;
     self.schedule_migration_witness<MigrationWitness>(package_version, admin, delay_ms, &clock);
@@ -405,7 +532,14 @@ public fun set_protocol_allocation_for_testing(
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
     let delay_ms = self.protocol_allocation.delay_ms();
-    self.schedule_protocol_allocation(package_version, admin, meme_bps, quote_bps, delay_ms, &clock);
+    self.schedule_protocol_allocation(
+        package_version,
+        admin,
+        meme_bps,
+        quote_bps,
+        delay_ms,
+        &clock
+    );
     clock.set_for_testing(172_800_000);
     self.apply_protocol_allocation(package_version, &clock);
     clock.destroy_for_testing();

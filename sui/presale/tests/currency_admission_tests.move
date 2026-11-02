@@ -22,7 +22,12 @@ fun unregulated_metadata_length_0_is_accepted() {
         let mut metadata = default_metadata();
         let field_bytes = &mut metadata[field];
         *field_bytes = vector::tabulate!(0, |_| 65);
-        let (treasury, currency) = currency_with_metadata((field * 85) as u8, metadata, option::none(), &mut ctx);
+        let (treasury, currency) = currency_with_metadata(
+            (field * 85) as u8,
+            metadata,
+            option::none(),
+            &mut ctx
+        );
         currency.assert_unregulated_currency_for_testing();
         destroy(treasury);
         destroy(currency);
@@ -37,7 +42,12 @@ fun unregulated_metadata_length_1_is_accepted() {
         let mut metadata = default_metadata();
         let field_bytes = &mut metadata[field];
         *field_bytes = vector::tabulate!(1, |_| 65);
-        let (treasury, currency) = currency_with_metadata((field * 85) as u8, metadata, option::none(), &mut ctx);
+        let (treasury, currency) = currency_with_metadata(
+            (field * 85) as u8,
+            metadata,
+            option::none(),
+            &mut ctx
+        );
         currency.assert_unregulated_currency_for_testing();
         destroy(treasury);
         destroy(currency);
@@ -52,7 +62,12 @@ fun unregulated_metadata_length_127_is_accepted() {
         let mut metadata = default_metadata();
         let field_bytes = &mut metadata[field];
         *field_bytes = vector::tabulate!(127, |_| 65);
-        let (treasury, currency) = currency_with_metadata((field * 85) as u8, metadata, option::none(), &mut ctx);
+        let (treasury, currency) = currency_with_metadata(
+            (field * 85) as u8,
+            metadata,
+            option::none(),
+            &mut ctx
+        );
         currency.assert_unregulated_currency_for_testing();
         destroy(treasury);
         destroy(currency);
@@ -67,7 +82,12 @@ fun unregulated_metadata_length_128_is_accepted() {
         let mut metadata = default_metadata();
         let field_bytes = &mut metadata[field];
         *field_bytes = vector::tabulate!(128, |_| 65);
-        let (treasury, currency) = currency_with_metadata((field * 85) as u8, metadata, option::none(), &mut ctx);
+        let (treasury, currency) = currency_with_metadata(
+            (field * 85) as u8,
+            metadata,
+            option::none(),
+            &mut ctx
+        );
         currency.assert_unregulated_currency_for_testing();
         destroy(treasury);
         destroy(currency);
@@ -82,7 +102,12 @@ fun unregulated_metadata_length_129_is_accepted() {
         let mut metadata = default_metadata();
         let field_bytes = &mut metadata[field];
         *field_bytes = vector::tabulate!(129, |_| 65);
-        let (treasury, currency) = currency_with_metadata((field * 85) as u8, metadata, option::none(), &mut ctx);
+        let (treasury, currency) = currency_with_metadata(
+            (field * 85) as u8,
+            metadata,
+            option::none(),
+            &mut ctx
+        );
         currency.assert_unregulated_currency_for_testing();
         destroy(treasury);
         destroy(currency);
@@ -97,7 +122,12 @@ fun unregulated_metadata_length_16383_is_accepted() {
         let mut metadata = default_metadata();
         let field_bytes = &mut metadata[field];
         *field_bytes = vector::tabulate!(16383, |_| 65);
-        let (treasury, currency) = currency_with_metadata((field * 85) as u8, metadata, option::none(), &mut ctx);
+        let (treasury, currency) = currency_with_metadata(
+            (field * 85) as u8,
+            metadata,
+            option::none(),
+            &mut ctx
+        );
         currency.assert_unregulated_currency_for_testing();
         destroy(treasury);
         destroy(currency);
@@ -112,7 +142,12 @@ fun unregulated_metadata_length_16384_is_accepted() {
         let mut metadata = default_metadata();
         let field_bytes = &mut metadata[field];
         *field_bytes = vector::tabulate!(16384, |_| 65);
-        let (treasury, currency) = currency_with_metadata((field * 85) as u8, metadata, option::none(), &mut ctx);
+        let (treasury, currency) = currency_with_metadata(
+            (field * 85) as u8,
+            metadata,
+            option::none(),
+            &mut ctx
+        );
         currency.assert_unregulated_currency_for_testing();
         destroy(treasury);
         destroy(currency);
@@ -127,7 +162,12 @@ fun unregulated_metadata_length_16385_is_accepted() {
         let mut metadata = default_metadata();
         let field_bytes = &mut metadata[field];
         *field_bytes = vector::tabulate!(16385, |_| 65);
-        let (treasury, currency) = currency_with_metadata((field * 85) as u8, metadata, option::none(), &mut ctx);
+        let (treasury, currency) = currency_with_metadata(
+            (field * 85) as u8,
+            metadata,
+            option::none(),
+            &mut ctx
+        );
         currency.assert_unregulated_currency_for_testing();
         destroy(treasury);
         destroy(currency);
@@ -250,7 +290,12 @@ fun regulated_pause_true_long_metadata_field_3_is_rejected() {
 #[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
 fun fixed_supply_0_is_rejected() {
     let mut ctx = tx_context::dummy();
-    let (mut treasury, mut currency) = currency_with_metadata(9, default_metadata(), option::none(), &mut ctx);
+    let (mut treasury, mut currency) = currency_with_metadata(
+        9,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     let coins = treasury.mint(0, &mut ctx);
     currency.make_supply_fixed(treasury);
     currency.assert_unregulated_currency_for_testing();
@@ -262,7 +307,12 @@ fun fixed_supply_0_is_rejected() {
 #[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
 fun fixed_supply_1_is_rejected() {
     let mut ctx = tx_context::dummy();
-    let (mut treasury, mut currency) = currency_with_metadata(9, default_metadata(), option::none(), &mut ctx);
+    let (mut treasury, mut currency) = currency_with_metadata(
+        9,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     let coins = treasury.mint(1, &mut ctx);
     currency.make_supply_fixed(treasury);
     currency.assert_unregulated_currency_for_testing();
@@ -274,7 +324,12 @@ fun fixed_supply_1_is_rejected() {
 #[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
 fun fixed_supply_257_is_rejected() {
     let mut ctx = tx_context::dummy();
-    let (mut treasury, mut currency) = currency_with_metadata(9, default_metadata(), option::none(), &mut ctx);
+    let (mut treasury, mut currency) = currency_with_metadata(
+        9,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     let coins = treasury.mint(257, &mut ctx);
     currency.make_supply_fixed(treasury);
     currency.assert_unregulated_currency_for_testing();
@@ -286,7 +341,12 @@ fun fixed_supply_257_is_rejected() {
 #[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
 fun fixed_supply_18446744073709551615_is_rejected() {
     let mut ctx = tx_context::dummy();
-    let (mut treasury, mut currency) = currency_with_metadata(9, default_metadata(), option::none(), &mut ctx);
+    let (mut treasury, mut currency) = currency_with_metadata(
+        9,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     let coins = treasury.mint(18446744073709551615, &mut ctx);
     currency.make_supply_fixed(treasury);
     currency.assert_unregulated_currency_for_testing();
@@ -298,7 +358,12 @@ fun fixed_supply_18446744073709551615_is_rejected() {
 #[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
 fun burn_only_supply_0_is_rejected() {
     let mut ctx = tx_context::dummy();
-    let (mut treasury, mut currency) = currency_with_metadata(9, default_metadata(), option::none(), &mut ctx);
+    let (mut treasury, mut currency) = currency_with_metadata(
+        9,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     let coins = treasury.mint(0, &mut ctx);
     currency.make_supply_burn_only(treasury);
     currency.assert_unregulated_currency_for_testing();
@@ -310,7 +375,12 @@ fun burn_only_supply_0_is_rejected() {
 #[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
 fun burn_only_supply_1_is_rejected() {
     let mut ctx = tx_context::dummy();
-    let (mut treasury, mut currency) = currency_with_metadata(9, default_metadata(), option::none(), &mut ctx);
+    let (mut treasury, mut currency) = currency_with_metadata(
+        9,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     let coins = treasury.mint(1, &mut ctx);
     currency.make_supply_burn_only(treasury);
     currency.assert_unregulated_currency_for_testing();
@@ -322,7 +392,12 @@ fun burn_only_supply_1_is_rejected() {
 #[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
 fun burn_only_supply_257_is_rejected() {
     let mut ctx = tx_context::dummy();
-    let (mut treasury, mut currency) = currency_with_metadata(9, default_metadata(), option::none(), &mut ctx);
+    let (mut treasury, mut currency) = currency_with_metadata(
+        9,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     let coins = treasury.mint(257, &mut ctx);
     currency.make_supply_burn_only(treasury);
     currency.assert_unregulated_currency_for_testing();
@@ -334,7 +409,12 @@ fun burn_only_supply_257_is_rejected() {
 #[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
 fun burn_only_supply_18446744073709551615_is_rejected() {
     let mut ctx = tx_context::dummy();
-    let (mut treasury, mut currency) = currency_with_metadata(9, default_metadata(), option::none(), &mut ctx);
+    let (mut treasury, mut currency) = currency_with_metadata(
+        9,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     let coins = treasury.mint(18446744073709551615, &mut ctx);
     currency.make_supply_burn_only(treasury);
     currency.assert_unregulated_currency_for_testing();
@@ -345,7 +425,12 @@ fun burn_only_supply_18446744073709551615_is_rejected() {
 #[test]
 fun metadata_content_and_suffix_mutations_do_not_change_admission() {
     let mut ctx = tx_context::dummy();
-    let (treasury, mut currency) = currency_with_metadata(255, default_metadata(), option::none(), &mut ctx);
+    let (treasury, mut currency) = currency_with_metadata(
+        255,
+        default_metadata(),
+        option::none(),
+        &mut ctx
+    );
     currency.assert_unregulated_currency_for_testing();
     let cap = currency.claim_metadata_cap(&treasury, &mut ctx);
     // Embedded tag-like bytes and multibyte UTF-8 must be skipped as string contents.
@@ -376,7 +461,13 @@ fun dynamic_currency_is_accepted() {
     let mut ctx = tx_context::dummy();
     let mut registry = coin_registry::create_coin_data_registry_for_testing(&mut ctx);
     let (initializer, treasury) = coin_registry::new_currency<DynamicCoin>(
-        &mut registry, 0, b"DYN".to_string(), b"".to_string(), b"".to_string(), b"".to_string(), &mut ctx,
+        &mut registry,
+        0,
+        b"DYN".to_string(),
+        b"".to_string(),
+        b"".to_string(),
+        b"".to_string(),
+        &mut ctx,
     );
     let currency = coin_registry::unwrap_for_testing(initializer);
     currency.assert_unregulated_currency_for_testing();
@@ -391,7 +482,13 @@ fun dynamic_regulated_currency_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut registry = coin_registry::create_coin_data_registry_for_testing(&mut ctx);
     let (mut initializer, treasury) = coin_registry::new_currency<DynamicCoin>(
-        &mut registry, 2, b"DYN".to_string(), b"".to_string(), b"".to_string(), b"".to_string(), &mut ctx,
+        &mut registry,
+        2,
+        b"DYN".to_string(),
+        b"".to_string(),
+        b"".to_string(),
+        b"".to_string(),
+        &mut ctx,
     );
     let deny_cap = initializer.make_regulated(false, &mut ctx);
     let currency = coin_registry::unwrap_for_testing(initializer);
@@ -409,10 +506,19 @@ fun ordinary_legacy_unknown_currency_is_rejected_even_with_registered_treasury()
     let mut ctx = tx_context::dummy();
     let (treasury, metadata) = coin::create_currency(
         test_utils::create_one_time_witness<CURRENCY_ADMISSION_TESTS>(),
-        1, b"LEGACY", b"Legacy", b"", option::none(), &mut ctx,
+        1,
+        b"LEGACY",
+        b"Legacy",
+        b"",
+        option::none(),
+        &mut ctx,
     );
     let mut registry = coin_registry::create_coin_data_registry_for_testing(&mut ctx);
-    let mut currency = coin_registry::migrate_legacy_metadata_for_testing(&mut registry, &metadata, &mut ctx);
+    let mut currency = coin_registry::migrate_legacy_metadata_for_testing(
+        &mut registry,
+        &metadata,
+        &mut ctx
+    );
     currency.set_treasury_cap_id(&treasury);
     assert!(!currency.is_regulated());
     currency.assert_unregulated_currency_for_testing();
@@ -436,7 +542,12 @@ fun initializer_with_metadata(
 ): (CurrencyInitializer<CURRENCY_ADMISSION_TESTS>, TreasuryCap<CURRENCY_ADMISSION_TESTS>) {
     coin_registry::new_currency_with_otw(
         test_utils::create_one_time_witness<CURRENCY_ADMISSION_TESTS>(),
-        decimals, metadata[1].to_string(), metadata[0].to_string(), metadata[2].to_string(), metadata[3].to_string(), ctx,
+        decimals,
+        metadata[1].to_string(),
+        metadata[0].to_string(),
+        metadata[2].to_string(),
+        metadata[3].to_string(),
+        ctx,
     )
 }
 

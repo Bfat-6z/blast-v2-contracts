@@ -188,7 +188,14 @@ fun start_rejected_tier(tick_spacing: u32, fee_rate: u64) {
 
 fun admit_bluefin(f: &mut BluefinFixture) {
     let admin = blast_acl::witness_for_testing<AdapterAdmin>();
-    f.config.set_migration_witness_allowed_for_testing<bluefin::Witness>(&f.version, &admin, true, &mut sui::tx_context::dummy());
+    f
+        .config
+        .set_migration_witness_allowed_for_testing<bluefin::Witness>(
+            &f.version,
+            &admin,
+            true,
+            &mut sui::tx_context::dummy()
+        );
 }
 
 fun new_ticket(f: &mut BluefinFixture): LaunchTicket<BLUEFIN_TESTS> {

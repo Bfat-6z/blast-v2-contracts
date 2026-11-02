@@ -26,11 +26,24 @@ fun init(ctx: &mut TxContext) {
 // === Public Functions ===
 
 /// Immediately assigns the backend claim signer under the live, revocable role.
-public fun set_creator_claim_signer(self: &mut RuntimeConfig, package_version: &PackageVersion, _: &AdminWitness<ClaimSignerAdmin>, signer_public_key: vector<u8>) {
+public fun set_creator_claim_signer(
+    self: &mut RuntimeConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<ClaimSignerAdmin>,
+    signer_public_key: vector<u8>
+) {
     package_version.assert_current();
-    assert!(signer_public_key.length() == constants::ed25519_public_key_length!(), blast_fun::errors::invalid_creator_claim_public_key!());
-    assert!(signer_public_key != self.creator_claim_signer_public_key, blast_fun::errors::unchanged!());
+
+    assert!(
+        signer_public_key.length() == constants::ed25519_public_key_length!(),
+        blast_fun::errors::invalid_creator_claim_public_key!()
+    );
+    assert!(
+        signer_public_key != self.creator_claim_signer_public_key,
+        blast_fun::errors::unchanged!()
+    );
     self.creator_claim_signer_public_key = signer_public_key;
+
     events::creator_claim_signer_set(signer_public_key);
 }
 
@@ -46,8 +59,13 @@ public fun schedule_protocol_fee_share(
     package_version.assert_current();
 
     let value = protocol_fee_share_bps;
-    assert!(value != self.protocol_fee_share_bps.value() || delay_ms != self.protocol_fee_share_bps.delay_ms(), blast_fun::errors::unchanged!());
+    assert!(
+        value != self.protocol_fee_share_bps.value() || delay_ms != self.protocol_fee_share_bps.delay_ms(),
+        blast_fun::errors::unchanged!()
+    );
+
     let ready_at_ms = self.protocol_fee_share_bps.schedule(value, delay_ms, clock);
+
     events::protocol_fee_share_scheduled(protocol_fee_share_bps.value(), ready_at_ms, delay_ms);
 }
 
@@ -58,8 +76,10 @@ public fun apply_protocol_fee_share(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     let value = self.protocol_fee_share_bps.apply(clock);
     let protocol_fee_share_bps = value;
+
     events::protocol_fee_share_changed(protocol_fee_share_bps.value());
 }
 
@@ -70,8 +90,10 @@ public fun cancel_protocol_fee_share(
     _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
+
     let value = self.protocol_fee_share_bps.cancel();
     let protocol_fee_share_bps = value;
+
     events::protocol_fee_share_cancelled(protocol_fee_share_bps.value());
 }
 
@@ -86,10 +108,17 @@ public fun schedule_treasury(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     assert!(treasury != @0x0, blast_fun::errors::invalid_destination!());
+
     let value = treasury;
-    assert!(value != self.treasury.value() || delay_ms != self.treasury.delay_ms(), blast_fun::errors::unchanged!());
+    assert!(
+        value != self.treasury.value() || delay_ms != self.treasury.delay_ms(),
+        blast_fun::errors::unchanged!()
+    );
+
     let ready_at_ms = self.treasury.schedule(value, delay_ms, clock);
+
     events::treasury_scheduled(treasury, ready_at_ms, delay_ms);
 }
 
@@ -100,8 +129,10 @@ public fun apply_treasury(
     clock: &Clock,
 ) {
     package_version.assert_current();
+
     let value = self.treasury.apply(clock);
     let treasury = value;
+
     events::treasury_changed(treasury);
 }
 
@@ -112,8 +143,10 @@ public fun cancel_treasury(
     _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
+
     let value = self.treasury.cancel();
     let treasury = value;
+
     events::treasury_cancelled(treasury);
 }
 
@@ -124,8 +157,10 @@ public fun revoke_creator_claim_signer(
     _: &AdminWitness<ClaimSignerAdmin>,
 ) {
     package_version.assert_current();
+
     assert!(!self.creator_claim_signer_public_key.is_empty(), blast_fun::errors::unchanged!());
     self.creator_claim_signer_public_key = vector[];
+
     events::creator_claim_signer_set(vector[]);
 }
 
@@ -186,7 +221,13 @@ public fun set_protocol_fee_share_for_testing(
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
     let delay_ms = self.protocol_fee_share_bps.delay_ms();
-    self.schedule_protocol_fee_share(package_version, admin, protocol_fee_share_bps, delay_ms, &clock);
+    self.schedule_protocol_fee_share(
+        package_version,
+        admin,
+        protocol_fee_share_bps,
+        delay_ms,
+        &clock
+    );
     clock.set_for_testing(172_800_000);
     self.apply_protocol_fee_share(package_version, &clock);
     clock.destroy_for_testing();

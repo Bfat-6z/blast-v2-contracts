@@ -61,7 +61,15 @@ fun a_stale_generation_rejects_an_lp_fee_policy_change() {
         let admin_witness = blast_acl::witness_for_testing<FeeAdmin>();
         f.package_version.set_for_testing(2);
 
-        f.policy.set_default_shares_for_testing(&f.package_version, &admin_witness, bps::new(1), bps::new(2), f.scenario.ctx());
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.package_version,
+                &admin_witness,
+                bps::new(1),
+                bps::new(2),
+                f.scenario.ctx()
+            );
     });
 
     fixture.end();
@@ -80,7 +88,14 @@ fun a_stale_generation_rejects_upgrade_authorization() {
         let admin_witness = upgrade_admin();
         f.package_version.set_for_testing(2);
 
-        let ticket = f.package_admin.authorize_upgrade_for_testing(&f.package_version, &admin_witness, DIGEST, f.scenario.ctx());
+        let ticket = f
+            .package_admin
+            .authorize_upgrade_for_testing(
+                &f.package_version,
+                &admin_witness,
+                DIGEST,
+                f.scenario.ctx()
+            );
         assert_eq!(*ticket.ticket_digest(), DIGEST);
         destroy(ticket);
     });
@@ -96,7 +111,14 @@ fun the_launchpad_upgrade_admin_reaches_this_packages_upgrade_cap() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = upgrade_admin();
 
-        let ticket = f.package_admin.authorize_upgrade_for_testing(&f.package_version, &admin_witness, DIGEST, f.scenario.ctx());
+        let ticket = f
+            .package_admin
+            .authorize_upgrade_for_testing(
+                &f.package_version,
+                &admin_witness,
+                DIGEST,
+                f.scenario.ctx()
+            );
         destroy(ticket);
     });
 

@@ -41,15 +41,20 @@ fun many_tiny_simulated_fills_do_not_earn_the_full_batch_exception() {
 #[test]
 fun cheaper_emergency_execution_commits_a_sixteenth_tail_fill_above_the_cap() {
     vector[policy::long(), policy::short()].do!(|side| {
-        let mut vault = test_adapter::calm_venue().with_side(side)
+        let mut vault = test_adapter::calm_venue()
+            .with_side(side)
             .issue_with(test_adapter::standard_policy(side), 3_000_000 * USDC, 2_000_000 * USDC)
             .activate(1_000_000 * USDC, 0);
         let venue = vault.venue();
         let notional = venue.notional() as u128;
         let equity = venue.equity() as u128;
         let leverage = if (side == policy::long()) { 30_003u128 } else { 30_002u128 };
-        let cash_basis = if (side == policy::long()) { notional - equity } else { notional + equity };
-        let denominator = if (side == policy::long()) { leverage - 10_000 } else { leverage + 10_000 };
+        let cash_basis = if (side == policy::long()) { notional - equity } else {
+            notional + equity
+        };
+        let denominator = if (side == policy::long()) { leverage - 10_000 } else {
+            leverage + 10_000
+        };
         let price = (venue.base_price() as u128) * leverage * cash_basis / (notional * denominator);
         vault.venue_mut().set_base_price(price as u64);
         vault.state_mut().set_nav_cap(10 * USDC);
@@ -69,10 +74,13 @@ fun cheaper_emergency_execution_commits_a_sixteenth_tail_fill_above_the_cap() {
 /// A valid issuance grows its live-to-limit ratio by lowering the deposit
 /// ceiling, then reducing the order cap. Both settings remain valid together.
 fun large_vault_with_small_orders(side: PositionSide): Vault {
-    let mut vault = test_adapter::calm_venue().with_side(side)
+    let mut vault = test_adapter::calm_venue()
+        .with_side(side)
         .issue_with(test_adapter::standard_policy(side), 3_000_000 * USDC, 2_000_000 * USDC)
         .activate(1_000_000 * USDC, 0);
-    vault.venue_mut().set_base_price(if (side == policy::long()) { 1_900_000_000 } else { 2_750_000_000 });
+    vault
+        .venue_mut()
+        .set_base_price(if (side == policy::long()) { 1_900_000_000 } else { 2_750_000_000 });
     assert!(vault.leverage_bps() > 26_000 && vault.leverage_bps() < 30_000);
     vault.state_mut().set_nav_cap(10 * USDC);
     vault.set_max_order_notional(10 * USDC);
