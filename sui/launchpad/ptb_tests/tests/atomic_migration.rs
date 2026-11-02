@@ -64,6 +64,7 @@ const RECIPIENT_CAPACITY_REACHED: u64 = 8;
 const INVALID_LAUNCH_LIFECYCLE: u64 = 15;
 const OPENING_ROUND_ENDED: u64 = 18;
 const OPENING_ROUND_NOT_ENDED: u64 = 19;
+const INVALID_CREATOR_RECIPIENT: u64 = 25;
 const ZERO_OPENING_ROUND_BID: u64 = 34;
 const INVALID_PAUSE_BITS: u64 = 38;
 const PAUSE_UNCHANGED: u64 = 39;
@@ -331,6 +332,85 @@ fn pause_roles_revocation_and_failed_sequences_preserve_state_and_events() -> Re
     for pausing in [true, false] {
         w.h.assert_rolled_back(w.pause_command(pausing, 1)?,
             Expected::Abort { package: w.admin, module: "blast_acl", code: 1 }, &watched, &[w.h.sender])?;
+    }
+    Ok(())
+}
+
+#[test]
+fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements() -> Result<()> {
+    let mut w = world("cap-recipient-authority")?;
+    let recipient = SuiAddress::from(DESTINATION);
+    for (cap, cap_type, scheduled_name, reassigned_name, metadata) in [
+        ("curve_fee_cap", "CurveFeeCap", "CurveFeeCapReassignmentScheduled", "CurveFeeCapReassigned", false),
+        ("metadata_cap", "BlastMetadataCap", "MetadataCapReassignmentScheduled", "MetadataCapReassigned", true),
+    ] {
+        let launch = w.open_launch(NO_OPENING_ROUND)?;
+        let watched = [launch.launch, launch.currency, w.version, w.acl, w.admin_cap, w.config];
+        let owners = [w.h.sender, recipient];
+        // A real live AdminCap with other roles cannot schedule either cap replacement.
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", recipient)?;
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &owners)?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "TreasuryAdmin", recipient)?;
+        w.h.assert_rolled_back(b.finish(), Expected::Error("TypeMismatch"), &watched, &owners)?;
+
+        w.change_role("CreatorAdmin", true)?;
+        let (_, scheduled_at_ms): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", recipient)?;
+        let scheduled = w.h.execute(b.finish())?;
+        scheduled.assert_success();
+        assert_eq!(scheduled.wrapped_payloads(w.blast), [scheduled_name]);
+        assert_eq!(scheduled.events_of("events", scheduled_name),
+            [bcs::to_bytes(&(launch.launch, recipient, scheduled_at_ms + ADMIN_DELAY_MS, ADMIN_DELAY_MS))?.as_slice()]);
+        assert!(scheduled.created(&w.h, "creator_authority", "CurveFeeCap").is_empty());
+        assert!(scheduled.created(&w.h, "creator_authority", "BlastMetadataCap").is_empty());
+
+        // Invalid replacements cannot erase the already accepted recipient or its deadline.
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", SuiAddress::ZERO)?;
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.blast, module: "launch", code: INVALID_CREATOR_RECIPIENT }, &watched, &owners)?;
+
+        // A later failing command rolls back the earlier reschedule and all its events.
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", w.h.sender)?;
+        let launch_arg = b.obj(w.h.shared(launch.launch, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, w.blast, "launch", &format!("reassign_{cap}"),
+            vec![launch.meme.clone(), sui()], vec![launch_arg, version, clock]);
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.admin, module: "delayed", code: 20 }, &watched, &owners)?;
+
+        w.change_role("CreatorAdmin", false)?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", w.h.sender)?;
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &owners)?;
+
+        // Revocation blocks new schedules; accepted proposals remain permissionlessly applicable.
+        w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS));
+        let mut b = ProgrammableTransactionBuilder::new();
+        let launch_arg = b.obj(w.h.shared(launch.launch, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, w.blast, "launch", &format!("reassign_{cap}"),
+            vec![launch.meme.clone(), sui()], vec![launch_arg, version, clock]);
+        let applied = w.h.execute(b.finish())?;
+        applied.assert_success();
+        assert_eq!(applied.wrapped_payloads(w.blast), ["CapDelayChanged", reassigned_name]);
+        assert_eq!(applied.events_of("events", "CapDelayChanged"),
+            [bcs::to_bytes(&(launch.launch, metadata, ADMIN_DELAY_MS))?.as_slice()]);
+        let caps = applied.created(&w.h, "creator_authority", cap_type);
+        assert_eq!(caps.len(), 1);
+        assert_eq!(w.h.object(caps[0]).owner().get_address_owner_address()?, recipient);
+        assert_eq!(applied.events_of("events", reassigned_name),
+            [bcs::to_bytes(&(launch.launch, caps[0], recipient))?.as_slice()]);
+        let other_cap = if metadata { "CurveFeeCap" } else { "BlastMetadataCap" };
+        assert!(applied.created(&w.h, "creator_authority", other_cap).is_empty());
     }
     Ok(())
 }
@@ -995,6 +1075,24 @@ impl World {
         let next_delay = b.pure(172_800_000u64)?;
         call(&mut b, self.blast, "runtime_config", "schedule_treasury", vec![], vec![config, version, witness, destination, next_delay, clock]);
         Ok(b.finish())
+    }
+
+    fn append_cap_recipient(
+        &self,
+        b: &mut ProgrammableTransactionBuilder,
+        launch: &Launch,
+        cap: &str,
+        role: &str,
+        recipient: SuiAddress,
+    ) -> Result<()> {
+        let witness = self.sign_in(b, role)?;
+        let launch_arg = b.obj(self.h.shared(launch.launch, true))?;
+        let version = b.obj(self.h.shared(self.version, false))?;
+        let recipient = b.pure(recipient)?;
+        let clock = b.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(b, self.blast, "launch", &format!("schedule_{cap}_reassignment"),
+            vec![launch.meme.clone(), sui()], vec![launch_arg, version, witness, recipient, clock]);
+        Ok(())
     }
 
     fn apply_setting(&self, module: &str, function: &str, object: ObjectID) -> Result<ProgrammableTransaction> {

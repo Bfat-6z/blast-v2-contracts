@@ -1722,6 +1722,195 @@ fun metadata_cap_reassignment_preserves_the_wait_for_the_next_recipient() {
 
 
 #[test]
+fun recipient_schedules_replace_pending_policy_without_adopting_its_notice() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        launch.schedule_curve_fee_cap_delay(&f.package_version, &creator_admin(), 0, &f.clock);
+        launch.schedule_metadata_cap_delay(&f.package_version, &creator_admin(), 0, &f.clock);
+        f.clock.set_for_testing(10);
+        launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+
+        let mut expected = bcs::to_bytes(&object::id(&launch));
+        let recipient = NEW_CREATOR;
+        expected.append(bcs::to_bytes(&recipient));
+        expected.append(bcs::to_bytes(&172_800_010u64));
+        expected.append(bcs::to_bytes(&172_800_000u64));
+        assert_eq!(bcs::to_bytes(&collect_one<events::CurveFeeCapReassignmentScheduled>()), expected);
+        assert_eq!(bcs::to_bytes(&collect_one<events::MetadataCapReassignmentScheduled>()), expected);
+
+        f.clock.set_for_testing(172_800_010);
+        launch.reassign_curve_fee_cap(&f.package_version, &f.clock, f.ctx!());
+        launch.reassign_metadata_cap(&f.package_version, &f.clock, f.ctx!());
+        assert!(launch.curve_fee_cap_id_for_testing().is_some());
+        assert!(launch.blast_metadata_cap_id_for_testing().is_some());
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test]
+fun policy_only_schedules_replace_recipients_and_preserve_the_creator_claim() {
+    let mut fixture = start();
+    fixture.next_tx!(CREATOR, |f| {
+        let launch = f.new_default_launch(CREATOR);
+        let mut launch = f.open_launch(launch);
+        launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        launch.schedule_curve_fee_cap_delay(&f.package_version, &creator_admin(), 0, &f.clock);
+        launch.schedule_metadata_cap_delay(&f.package_version, &creator_admin(), 0, &f.clock);
+        f.clock.set_for_testing(172_800_000);
+        launch.reassign_curve_fee_cap(&f.package_version, &f.clock, f.ctx!());
+        launch.reassign_metadata_cap(&f.package_version, &f.clock, f.ctx!());
+
+        assert!(launch.curve_fee_cap_id_for_testing().is_none());
+        assert!(launch.blast_metadata_cap_id_for_testing().is_none());
+        assert!(collect<events::CurveFeeCapReassigned>().is_empty());
+        assert!(collect<events::MetadataCapReassigned>().is_empty());
+        let (curve, metadata) = f.claim(&mut launch);
+        assert_eq!(launch.curve_fee_cap_id_for_testing(), option::some(object::id(&curve)));
+        assert_eq!(launch.blast_metadata_cap_id_for_testing(), option::some(object::id(&metadata)));
+        destroy(curve);
+        destroy(metadata);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test]
+fun recipient_schedules_preserve_zero_notice_across_repeated_reassignments() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        launch.schedule_curve_fee_cap_delay(&f.package_version, &creator_admin(), 0, &f.clock);
+        launch.schedule_metadata_cap_delay(&f.package_version, &creator_admin(), 0, &f.clock);
+        f.clock.set_for_testing(172_800_000);
+        launch.reassign_curve_fee_cap(&f.package_version, &f.clock, f.ctx!());
+        launch.reassign_metadata_cap(&f.package_version, &f.clock, f.ctx!());
+        launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        launch.reassign_curve_fee_cap(&f.package_version, &f.clock, f.ctx!());
+        launch.reassign_metadata_cap(&f.package_version, &f.clock, f.ctx!());
+        let curve = launch.curve_fee_cap_id_for_testing();
+        let metadata = launch.blast_metadata_cap_id_for_testing();
+
+        launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), BOB, &f.clock);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &creator_admin(), BOB, &f.clock);
+        launch.reassign_curve_fee_cap(&f.package_version, &f.clock, f.ctx!());
+        launch.reassign_metadata_cap(&f.package_version, &f.clock, f.ctx!());
+        assert!(launch.curve_fee_cap_id_for_testing() != curve);
+        assert!(launch.blast_metadata_cap_id_for_testing() != metadata);
+        assert_eq!(f.clock.timestamp_ms(), 172_800_000);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test]
+fun recipient_schedules_allow_the_last_representable_application_with_their_notice() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        f.clock.set_for_testing(std::u64::max_value!() - 345_600_000);
+        launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        f.clock.set_for_testing(std::u64::max_value!() - 172_800_000);
+        launch.reassign_curve_fee_cap(&f.package_version, &f.clock, f.ctx!());
+        launch.reassign_metadata_cap(&f.package_version, &f.clock, f.ctx!());
+        assert!(launch.curve_fee_cap_id_for_testing().is_some());
+        assert!(launch.blast_metadata_cap_id_for_testing().is_some());
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EInvalidCreatorRecipient, location = blast_fun::launch)]
+fun metadata_recipient_schedule_rejects_zero() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &creator_admin(), @0x0, &f.clock);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun curve_fee_cap_schedule_checks_version_before_zero_recipient() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        f.package_version.set_for_testing(2);
+        launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), @0x0, &f.clock);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
+fun curve_fee_cap_schedule_rejects_notice_overflow_at_its_deadline() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        f.clock.set_for_testing(std::u64::max_value!() - 172_800_000);
+        launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun curve_fee_cap_delay_reduction_to_zero_waits_the_old_notice() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        launch.schedule_curve_fee_cap_delay(&f.package_version, &creator_admin(), 0, &f.clock);
+        f.clock.set_for_testing(172_799_999);
+        launch.reassign_curve_fee_cap(&f.package_version, &f.clock, f.ctx!());
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun metadata_cap_schedule_checks_version_before_zero_recipient() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        f.package_version.set_for_testing(2);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &creator_admin(), @0x0, &f.clock);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
+fun metadata_cap_schedule_rejects_notice_overflow_at_its_deadline() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        f.clock.set_for_testing(std::u64::max_value!() - 172_800_000);
+        launch.schedule_metadata_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun metadata_cap_delay_reduction_to_zero_waits_the_old_notice() {
+    let mut fixture = start();
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+        launch.schedule_metadata_cap_delay(&f.package_version, &creator_admin(), 0, &f.clock);
+        f.clock.set_for_testing(172_799_999);
+        launch.reassign_metadata_cap(&f.package_version, &f.clock, f.ctx!());
+        destroy(launch);
+    });
+    fixture.end();
+}
+
+#[test]
 fun creator_cap_reassignment_events_record_schedules_and_cancellations() {
     let mut fixture = start();
 
