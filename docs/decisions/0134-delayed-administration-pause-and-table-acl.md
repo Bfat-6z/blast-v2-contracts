@@ -49,19 +49,23 @@ Standalone upgrade actions and cap reassignments retain their applied notice aft
 execution and cancellation. An explicit policy-only proposal can change the notice
 without upgrading code, destroying upgrade authority or transferring a creator cap.
 It follows the same old-delay rule and cannot be consumed as a different action.
-Cap reassignment schedules accept only the new recipient and preserve that
-operation's applied notice. Changing its notice requires an explicit policy-only
+Standalone action schedules accept only their action inputs: an upgrade digest,
+immutability decision or creator-cap recipient. They use and preserve the operation's
+applied notice. Changing its notice requires an explicit policy-only
 proposal; the two proposal kinds share the operation's single pending slot.
 Upgrades remain bound to an exact digest, live UpgradeAdmin role, package generation,
 capability custody and native upgrade receipt.
 
 Adapter admission retains a single persistent notice across witness types and separate
-pending admissions. A fresh witness type cannot reopen zero-notice setup. Each accepted
-admission binds its own next notice and immutable deadline. Applying an older admission
-may therefore apply its older proposed notice even after a policy-only change. The
-operator must settle or cancel all old admissions before completing setup; cancelling
-only the policy-only proposal does not cancel independent admissions. Immediate adapter
-removal clears that type's membership and pending admission without resetting its notice.
+pending admissions. A fresh witness type cannot reopen zero-notice setup. Admission
+schedules identify only the witness type and snapshot a deadline using the currently
+applied notice. Applying an admission changes only the allowlist; it cannot
+restore an older notice after an independent policy change. Only the explicit admission
+policy schedule/apply path changes the shared notice. Accepted deadlines remain fixed.
+The operator must settle or cancel old zero-notice admissions before completing setup;
+cancelling only the policy proposal does not cancel independent admissions. Immediate
+adapter removal clears that type's membership and pending admission without resetting
+its notice.
 
 Fresh creator-cap reassignment operations and presale-vault LP-fee operations start at
 48 hours. Their later notices can change independently after the current notice. A lazy
@@ -111,9 +115,12 @@ that burn Meme and holder-reward round publication remain outside delayed policy
 
 ### Replay
 
-Scheduling events include the next notice and absolute deadline with the proposed action
-or value. Application and cancellation facts identify which proposal becomes active or
-is discarded. Multi-instance operations retain object identity. The indexer reads live
+Scheduling events include the absolute deadline and notice with the proposed action
+or value. For value-and-policy replacements the notice is the proposed next period;
+for action-only proposals it records the unchanged notice used at scheduling. For
+upgrades and adapter admissions, only explicit policy application emits a delay-change
+fact. Application and cancellation identify which proposal becomes active or is
+discarded. Multi-instance operations retain object identity. The indexer reads live
 applied fields for current economics; readiness alone never activates a proposal.
 Curve-fee and metadata-cap policy events identify their operation through distinct
 payload types, keeping the event stream self-describing without a boolean discriminator.

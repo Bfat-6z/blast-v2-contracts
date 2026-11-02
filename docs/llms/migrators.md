@@ -445,8 +445,8 @@ generation.
 
 ### Delayed administration
 
-Each treasury, fee or upgrade operation owns its applied notice period. A schedule
-accepts a proposed value and **next** `delay_ms`, but its execution deadline is
+Each treasury, fee or upgrade operation owns its applied notice period. A delayed-value
+schedule accepts a proposed value and **next** `delay_ms`, but its execution deadline is
 `ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
 current wait. The proposed value and next notice become active together only after
 explicit application with the current version and canonical Clock. A value-only
@@ -458,13 +458,16 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
 later schedules check their own timestamp addition too. Scheduled events include the
-proposed next delay. Read the live operation's notice before relying on a cancellation window.
+proposed next delay for value/policy replacements, or the unchanged applied notice
+for action-only proposals. Read the live notice before relying on a cancellation window.
 
-`blast_fun_migrators::package_admin::schedule_upgrade` binds the exact digest and next notice.
+`blast_fun_migrators::package_admin::schedule_upgrade` takes the exact digest and
+uses the stored upgrade notice, with no delay argument.
 `blast_fun_migrators::package_admin::authorize_upgrade` consumes only a ready matching digest;
 its ticket must feed the native upgrade command and its receipt the ordinary finalizer.
 `blast_fun_migrators::package_admin::schedule_make_immutable` and
 `blast_fun_migrators::package_admin::make_immutable` govern destruction of upgrade authority.
+These action schedules accept no delay argument and their execution preserves the notice.
 `blast_fun_migrators::package_admin::schedule_upgrade_delay` uses UpgradeAdmin to propose only the
 notice period, replacing any pending action. Anyone applies it with
 `blast_fun_migrators::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.

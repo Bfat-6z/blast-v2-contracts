@@ -74,17 +74,17 @@ fun exercise(case: Case) {
         true
     );
     if (case == Case::StaleSchedule) version.set_for_testing(2);
-    config.schedule_migration_witness<AdapterA>(&version, &admin, 172_800_000, &clock);
+    config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
     if (case == Case::StaleSchedule) {
         destroy(config);
         destroy(version);
         destroy(clock);
         return
     };
-    config.schedule_migration_witness<AdapterB>(&version, &admin, 172_800_000, &clock);
+    config.schedule_migration_witness<AdapterB>(&version, &admin, &clock);
     clock.set_for_testing(1234 + DELAY - if (case == Case::Early) 1 else 0);
     if (case == Case::Replacement) {
-        config.schedule_migration_witness<AdapterA>(&version, &admin, 172_800_000, &clock);
+        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 2 * DELAY - 1);
     };
     if (case == Case::StaleCancel || case == Case::StaleRemove || case == Case::StaleApply)
@@ -102,11 +102,11 @@ fun exercise(case: Case) {
     if (case == Case::Success) {
         // Cancelling A must not cancel B. Re-admission after removal gets a new full notice.
         config.apply_migration_witness<AdapterB>(&version, &clock);
-        config.schedule_migration_witness<AdapterA>(&version, &admin, 172_800_000, &clock);
+        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 2 * DELAY);
         config.apply_migration_witness<AdapterA>(&version, &clock);
         config.remove_migration_witness<AdapterA>(&version, &admin);
-        config.schedule_migration_witness<AdapterA>(&version, &admin, 172_800_000, &clock);
+        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 3 * DELAY + 1);
         config.apply_migration_witness<AdapterA>(&version, &clock);
         config.snapshot_for_launch<Quote>(std::type_name::with_original_ids<AdapterA>(), 9);

@@ -88,7 +88,7 @@ fun a_ready_digest_does_not_authorize_different_code() {
     let mut admin = package_admin::new_for_testing(&mut ctx);
     let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
     let mut clock = clock::create_for_testing(&mut ctx);
-    admin.schedule_upgrade(&version, &witness, vector::tabulate!(32, |_| 1u8), 172_800_000, &clock);
+    admin.schedule_upgrade(&version, &witness, vector::tabulate!(32, |_| 1u8), &clock);
     clock.set_for_testing(172_800_000);
     let ticket = admin.authorize_upgrade(
         &version,
@@ -109,7 +109,7 @@ fun upgrade_authorization_cannot_be_issued_early() {
     let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
     let clock = clock::create_for_testing(&mut ctx);
     let digest = vector::tabulate!(32, |_| 1u8);
-    admin.schedule_upgrade(&version, &witness, digest, 172_800_000, &clock);
+    admin.schedule_upgrade(&version, &witness, digest, &clock);
     let ticket = admin.authorize_upgrade(&version, &witness, digest, &clock);
     destroy(ticket);
     abort
@@ -160,7 +160,6 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     config.schedule_migration_witness<AdapterWitness>(
         &version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
-        172_800_000,
         &clock
     );
     let witness = std::type_name::with_original_ids<AdapterWitness>();
@@ -185,7 +184,7 @@ fun upgrade_schedule_and_cancellation_preserve_the_exact_digest() {
     let mut action_bytes = vector[0u8];
     action_bytes.append(std::bcs::to_bytes(&digest));
 
-    admin.schedule_upgrade(&version, &blast_acl::witness_for_testing<UpgradeAdmin>(), digest, 172_800_000, &clock);
+    admin.schedule_upgrade(&version, &blast_acl::witness_for_testing<UpgradeAdmin>(), digest, &clock);
     assert_eq!(event_bytes<events::UpgradeActionScheduled>(), with_ready_at(action_bytes));
     admin.cancel_upgrade_action(&version, &blast_acl::witness_for_testing<CancelAdmin>());
     assert_eq!(event_bytes<events::UpgradeActionCancelled>(), action_bytes);
@@ -204,7 +203,7 @@ fun immutability_schedule_and_cancellation_preserve_the_action() {
     clock.set_for_testing(123);
     let action_bytes = vector[1u8];
 
-    admin.schedule_make_immutable(&version, &blast_acl::witness_for_testing<UpgradeAdmin>(), 172_800_000, &clock);
+    admin.schedule_make_immutable(&version, &blast_acl::witness_for_testing<UpgradeAdmin>(), &clock);
     assert_eq!(event_bytes<events::UpgradeActionScheduled>(), with_ready_at(action_bytes));
     admin.cancel_upgrade_action(&version, &blast_acl::witness_for_testing<CancelAdmin>());
     assert_eq!(event_bytes<events::UpgradeActionCancelled>(), action_bytes);

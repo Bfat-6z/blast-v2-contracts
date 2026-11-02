@@ -424,8 +424,8 @@ allow/remove toggles for Quotes, decimals, and adapters instead abort inside the
 
 ### Delayed administration
 
-Each treasury, fee or upgrade operation owns its applied notice period. A schedule
-accepts a proposed value and **next** `delay_ms`, but its execution deadline is
+Each treasury, fee or upgrade operation owns its applied notice period. A delayed-value
+schedule accepts a proposed value and **next** `delay_ms`, but its execution deadline is
 `ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
 current wait. The proposed value and next notice become active together only after
 explicit application with the current version and canonical Clock. A value-only
@@ -437,13 +437,16 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
 later schedules check their own timestamp addition too. Scheduled events include the
-proposed next delay. Read the live operation's notice before relying on a cancellation window.
+proposed next delay for value/policy replacements, or the unchanged applied notice
+for action-only proposals. Read the live notice before relying on a cancellation window.
 
-`blast_fun::package_admin::schedule_upgrade` binds the exact digest and next notice.
+`blast_fun::package_admin::schedule_upgrade` takes only the digest in addition to
+its state, authority and Clock inputs, and uses the stored upgrade notice.
 `blast_fun::package_admin::authorize_upgrade` consumes only a ready matching digest;
 its ticket must feed the native upgrade command and its receipt the ordinary finalizer.
 `blast_fun::package_admin::schedule_make_immutable` and
 `blast_fun::package_admin::make_immutable` govern destruction of upgrade authority.
+These action schedules accept no delay argument and their execution preserves the notice.
 `blast_fun::package_admin::schedule_upgrade_delay` uses UpgradeAdmin to propose only the
 notice period, replacing any pending action. Anyone applies it with
 `blast_fun::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
@@ -457,13 +460,15 @@ release. Raising a notice never changes previously scheduled deadlines or next d
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
 Adapter admissions share one persistent `witness_delay_ms` across witness types;
-a fresh type cannot reopen setup. Each pending admission also proposes the next
-admission notice. `launch_config::schedule_migration_delay` proposes only that notice
-under AdapterAdmin; anyone calls `launch_config::apply_migration_delay`, and CancelAdmin
-uses `launch_config::cancel_migration_delay`. Existing admissions remain independent:
-their application can apply their previously proposed next delay. Settle or cancel
-those admissions before finalizing setup. Immediate adapter removal cancels that
-type's pending admission and preserves the applied admission notice.
+a fresh type cannot reopen setup. `launch_config::schedule_migration_witness` accepts
+only the witness type in addition to its state, authority and Clock inputs. It snapshots
+the applied notice and deadline; application only admits that witness and preserves the
+live notice. `launch_config::schedule_migration_delay` proposes a new notice under
+AdapterAdmin; anyone calls `launch_config::apply_migration_delay`, and CancelAdmin uses
+`launch_config::cancel_migration_delay`. Applying admissions before or after a policy
+change cannot overwrite that policy. Existing admission deadlines remain fixed; settle
+or cancel all zero-notice admissions before completing setup. Immediate adapter removal
+cancels that type's pending admission and preserves the applied notice.
 
 Creator-claim signer assignment and revocation are immediate under ClaimSignerAdmin,
 using a plain key value. Creator-cap reassignment is a separate delayed operation:
@@ -690,7 +695,8 @@ original IDs), and admitted adapters in `migration_witnesses`. Its delayed econo
 | `creation_fee` | `creation_fee.value` is the creation fee in MIST |
 
 `pending_witnesses` maps original adapter type names to admission proposals with `value`,
-next `delay_ms` and `ready_at_ms`; admission becomes active only when applied to `migration_witnesses`. Accepted
+snapshotted `delay_ms` and `ready_at_ms`; applying admission never writes that delay back
+to the shared policy. Admission becomes active only when applied to `migration_witnesses`. Accepted
 partners are dynamic fields `launch_config::PartnerKey(ID)` holding `accepted_until_ms`.
 
 `RuntimeConfig` stores the plain `creator_claim_signer_public_key` as its active signer.
@@ -712,7 +718,7 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::TreasuryScheduled`, `blast_fun::events::TreasuryCancelled` | treasury schedule or cancel | proposed `treasury`; schedule includes `ready_at_ms` and next `delay_ms` |
 | `blast_fun::events::ProtocolFeeShareScheduled`, `blast_fun::events::ProtocolFeeShareCancelled` | fee-share schedule or cancel | proposed `protocol_fee_share_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
 | `blast_fun::events::CreatorClaimSignerSet` | immediate signer assignment or revocation | applied `signer_public_key`; empty means revoked |
-| `blast_fun::events::MigrationWitnessScheduled`, `blast_fun::events::MigrationWitnessCancelled` | adapter admission schedule, cancellation or removal | proposed `witness`; schedule includes `ready_at_ms` and next `delay_ms` |
+| `blast_fun::events::MigrationWitnessScheduled`, `blast_fun::events::MigrationWitnessCancelled` | adapter admission schedule, cancellation or removal | proposed `witness`; schedule includes `ready_at_ms` and the applied `delay_ms` used for its deadline |
 | `blast_fun::events::ProtocolAllocationScheduled`, `blast_fun::events::ProtocolAllocationCancelled` | protocol allocation schedule or cancel | proposed `meme_bps` and `quote_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
 | `blast_fun::events::CreationFeeScheduled`, `blast_fun::events::CreationFeeCancelled` | creation fee schedule or cancel | proposed `creation_fee`; schedule includes `ready_at_ms` and next `delay_ms` |
 | `blast_fun::events::TradeFeesScheduled`, `blast_fun::events::TradeFeesCancelled` | trade fee schedule or cancel | proposed `quote_fee_bps` and `meme_fee_bps`; schedule includes `ready_at_ms` and next `delay_ms` |

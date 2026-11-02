@@ -531,9 +531,11 @@ impl Harness {
         let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "AdapterAdmin")?;
         let allowed = b.pure(true)?;
         call(&mut b, package, "launch_config", "set_quote_allowed", vec![quote], vec![config, version_arg, listing, allowed]);
-        let next_delay = b.pure(172_800_000u64)?;
-        call(&mut b, package, "launch_config", "schedule_migration_witness", vec![witness.clone()], vec![config, version_arg, adapter, next_delay, clock]);
+        call(&mut b, package, "launch_config", "schedule_migration_witness", vec![witness.clone()], vec![config, version_arg, adapter, clock]);
         call(&mut b, package, "launch_config", "apply_migration_witness", vec![witness], vec![config, version_arg, clock]);
+        let delay = b.pure(172_800_000u64)?;
+        call(&mut b, package, "launch_config", "schedule_migration_delay", vec![], vec![config, version_arg, adapter, delay, clock]);
+        call(&mut b, package, "launch_config", "apply_migration_delay", vec![], vec![config, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
         // Set independent operation notices during publication setup using ordinary ACL roles.
         let mut b = ProgrammableTransactionBuilder::new();

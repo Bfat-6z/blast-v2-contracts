@@ -11,6 +11,8 @@ const PUBLISHER: address = @0xA11CE;
 // === Test-Only Types ===
 
 public struct Adapter has drop {}
+public struct OtherAdapter has drop {}
+public struct LaterAdapter has drop {}
 
 public struct AdminDelayFixture {
     scenario: Scenario,
@@ -108,9 +110,7 @@ fun stale_delay_change_rejects_before_other_validation() {
 fun upgrade_policy_only_application_and_cancellation_preserve_custody() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<
-            blast_presale::blast_presale_domain::UpgradeAdmin
-        >();
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
         f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
         f.admin.apply_upgrade_delay(&f.version, &f.clock);
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
@@ -131,9 +131,7 @@ fun upgrade_policy_only_application_and_cancellation_preserve_custody() {
 fun upgrade_policy_only_reduction_cannot_be_applied_early() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<
-            blast_presale::blast_presale_domain::UpgradeAdmin
-        >();
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
         f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
         f.admin.apply_upgrade_delay(&f.version, &f.clock);
         f.admin.schedule_upgrade_delay(&f.version, &witness, 0, &f.clock);
@@ -147,12 +145,10 @@ fun upgrade_policy_only_reduction_cannot_be_applied_early() {
 fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<
-            blast_presale::blast_presale_domain::AdapterAdmin
-        >();
+        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
         f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_migration_delay(&f.version, &f.clock);
-        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, 0, &f.clock);
+        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
         f.clock.set_for_testing(99);
         f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
     });
@@ -160,21 +156,128 @@ fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
 }
 
 #[test]
-fun previously_accepted_admissions_keep_their_proposed_next_notice() {
+fun old_admissions_preserve_a_new_policy_in_either_application_order() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<
-            blast_presale::blast_presale_domain::AdapterAdmin
-        >();
-        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, 25, &f.clock);
+        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
         f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_migration_delay(&f.version, &f.clock);
         f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
-        // The earlier accepted admission applied its stored next delay 25; a policy-only
-        // reduction therefore becomes ready at 25, not 0 or 100.
-        f.config.schedule_migration_delay(&f.version, &witness, 10, &f.clock);
-        f.clock.set_for_testing(25);
+        assert_eq!(f.config.migration_delay_ms_for_testing(), 100);
+
+        f.config.schedule_migration_witness<OtherAdapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_migration_delay(&f.version, &witness, 25, &f.clock);
+        f.clock.set_for_testing(100);
+        f.config.apply_migration_witness<OtherAdapter>(&f.version, &f.clock);
+        assert_eq!(f.config.migration_delay_ms_for_testing(), 100);
         f.config.apply_migration_delay(&f.version, &f.clock);
+        assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
+
+        assert_eq!(sui::event::events_by_type<creation_policy::MigrationDelayChanged>().length(), 2);
+    });
+    fixture.end();
+}
+
+#[test]
+fun multiple_admissions_cannot_restore_a_superseded_notice() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
+        f.config.apply_migration_delay(&f.version, &f.clock);
+        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_migration_witness<OtherAdapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_migration_delay(&f.version, &witness, 25, &f.clock);
+
+        f.clock.set_for_testing(100);
+        f.config.apply_migration_delay(&f.version, &f.clock);
+        f.config.apply_migration_witness<OtherAdapter>(&f.version, &f.clock);
+        f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
+        assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
+
+        f.config.schedule_migration_witness<LaterAdapter>(&f.version, &witness, &f.clock);
+        f.clock.set_for_testing(125);
+        f.config.apply_migration_witness<LaterAdapter>(&f.version, &f.clock);
+        assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
+        assert_eq!(sui::event::events_by_type<creation_policy::MigrationDelayChanged>().length(), 2);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun applying_an_old_admission_cannot_shorten_a_new_admissions_wait() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
+        f.config.apply_migration_delay(&f.version, &f.clock);
+        f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
+        f.config.schedule_migration_witness<OtherAdapter>(&f.version, &witness, &f.clock);
+
+        f.clock.set_for_testing(99);
+        f.config.apply_migration_witness<OtherAdapter>(&f.version, &f.clock);
+    });
+    fixture.end();
+}
+
+#[test]
+fun cancelling_policy_does_not_cancel_admission_or_change_its_notice() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
+        f.config.apply_migration_delay(&f.version, &f.clock);
+        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_migration_delay(&f.version, &witness, 0, &f.clock);
+        f.clock.set_for_testing(100);
+        f.config.cancel_migration_delay(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
+
+        assert_eq!(f.config.migration_delay_ms_for_testing(), 100);
+        assert_eq!(sui::event::events_by_type<creation_policy::MigrationDelayChanged>().length(), 1);
+    });
+    fixture.end();
+}
+
+#[test]
+fun an_upgrade_action_replaces_a_delay_proposal_without_changing_policy() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
+        f.admin.apply_upgrade_delay(&f.version, &f.clock);
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 25, &f.clock);
+
+        let digest = vector::tabulate!(32, |_| 1u8);
+        f.admin.schedule_upgrade(&f.version, &witness, digest, &f.clock);
+        f.clock.set_for_testing(100);
+        let ticket = f.admin.authorize_upgrade(&f.version, &witness, digest, &f.clock);
+        destroy(ticket);
+
+        assert_eq!(f.admin.upgrade_delay_ms(), 100);
+        assert!(f.admin.has_upgrade_cap_for_testing());
+        assert_eq!(sui::event::events_by_type<package_admin::UpgradeDelayChanged>().length(), 1);
+    });
+    fixture.end();
+}
+
+#[test]
+fun immutability_keeps_the_applied_notice_without_applying_a_replaced_policy() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
+        f.admin.apply_upgrade_delay(&f.version, &f.clock);
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 0, &f.clock);
+        f.admin.schedule_make_immutable(&f.version, &witness, &f.clock);
+
+        f.clock.set_for_testing(100);
+        f.admin.make_immutable(&f.version, &witness, &f.clock);
+        assert_eq!(f.admin.upgrade_delay_ms(), 100);
+        assert!(!f.admin.has_upgrade_cap_for_testing());
+        assert_eq!(sui::event::events_by_type<package_admin::UpgradeDelayChanged>().length(), 1);
     });
     fixture.end();
 }
@@ -248,6 +351,6 @@ fun configure_destination(self: &mut AdminDelayFixture) {
 // === Imports ===
 
 use blast_admin::blast_acl;
-use blast_presale::{blast_presale_package as marker, bps, creation_policy, fee_policy, package_admin, blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}};
+use blast_presale::{blast_presale_package as marker, bps, creation_policy, fee_policy, package_admin, blast_presale_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin}};
 use std::unit_test::{assert_eq, destroy};
 use sui::{clock::Clock, test_scenario::{Self, Scenario}};

@@ -165,6 +165,108 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
 }
 
 #[test]
+fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> {
+    let mut w = world("adapter-policy-order")?;
+    for (policy_first, old_delay, next_delay) in [
+        (true, ADMIN_DELAY_MS, 100u64),
+        (false, 100u64, 25u64),
+    ] {
+        let first = w.h.publish(w.adapter_code.clone())?.0;
+        let second = w.h.publish(w.adapter_code.clone())?.0;
+        let adapters = [first, second].map(|id| {
+            parse_sui_type_tag(&format!("{id}::mock_adapter::Venue")).unwrap()
+        });
+        let mut b = ProgrammableTransactionBuilder::new();
+        let admin = w.sign_in(&mut b, "AdapterAdmin")?;
+        let config = b.obj(w.h.shared(w.config, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        for adapter in &adapters {
+            call(&mut b, w.blast, "launch_config", "schedule_migration_witness",
+                vec![adapter.clone()], vec![config, version, admin, clock]);
+        }
+        let delay = b.pure(next_delay)?;
+        call(&mut b, w.blast, "launch_config", "schedule_migration_delay",
+            vec![], vec![config, version, admin, delay, clock]);
+        w.h.execute(b.finish())?.assert_success();
+
+        let mut apply = ProgrammableTransactionBuilder::new();
+        let config = apply.obj(w.h.shared(w.config, true))?;
+        let version = apply.obj(w.h.shared(w.version, false))?;
+        let clock = apply.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        if policy_first {
+            call(&mut apply, w.blast, "launch_config", "apply_migration_delay",
+                vec![], vec![config, version, clock]);
+        }
+        for adapter in adapters.iter().rev() {
+            call(&mut apply, w.blast, "launch_config", "apply_migration_witness",
+                vec![adapter.clone()], vec![config, version, clock]);
+        }
+        if !policy_first {
+            call(&mut apply, w.blast, "launch_config", "apply_migration_delay",
+                vec![], vec![config, version, clock]);
+        }
+        let apply = apply.finish();
+        let watched = [w.config, w.version, w.acl, w.admin_cap];
+        w.h.sim.advance_clock(Duration::from_millis(old_delay - 1));
+        w.h.assert_rolled_back(apply.clone(),
+            Expected::Abort { package: w.admin, module: "delayed", code: 20 },
+            &watched, &[w.h.sender])?;
+        w.h.sim.advance_clock(Duration::from_millis(1));
+        let applied = w.h.execute(apply)?;
+        applied.assert_success();
+        let expected = if policy_first {
+            ["MigrationDelayChanged", "MigrationWitnessSet", "MigrationWitnessSet"]
+        } else {
+            ["MigrationWitnessSet", "MigrationWitnessSet", "MigrationDelayChanged"]
+        };
+        assert_eq!(applied.wrapped_payloads(w.blast), expected);
+        assert_eq!(applied.events_of("events", "MigrationDelayChanged"),
+            [bcs::to_bytes(&next_delay)?.as_slice()]);
+        for (bytes, adapter) in applied.events_of("events", "MigrationWitnessSet")
+            .iter().zip(adapters.iter().rev()) {
+            let (witness, allowed): (String, bool) = bcs::from_bytes(bytes)?;
+            assert_eq!(witness, adapter.to_canonical_string(false));
+            assert!(allowed);
+        }
+
+        // A fresh admission uses the new policy, even after applying older admissions.
+        let later = w.h.publish(w.adapter_code.clone())?.0;
+        let later = parse_sui_type_tag(&format!("{later}::mock_adapter::Venue"))?;
+        let (_, now): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let admin = w.sign_in(&mut b, "AdapterAdmin")?;
+        let config = b.obj(w.h.shared(w.config, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, w.blast, "launch_config", "schedule_migration_witness",
+            vec![later.clone()], vec![config, version, admin, clock]);
+        let scheduled = w.h.execute(b.finish())?;
+        scheduled.assert_success();
+        let payloads = scheduled.events_of("events", "MigrationWitnessScheduled");
+        assert_eq!(payloads.len(), 1);
+        let (witness, ready_at_ms, delay_ms): (String, u64, u64) = bcs::from_bytes(payloads[0])?;
+        assert_eq!(witness, later.to_canonical_string(false));
+        assert_eq!((ready_at_ms, delay_ms), (now + next_delay, next_delay));
+
+        let mut b = ProgrammableTransactionBuilder::new();
+        let config = b.obj(w.h.shared(w.config, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, w.blast, "launch_config", "apply_migration_witness",
+            vec![later], vec![config, version, clock]);
+        let apply = b.finish();
+        w.h.sim.advance_clock(Duration::from_millis(next_delay - 1));
+        w.h.assert_rolled_back(apply.clone(),
+            Expected::Abort { package: w.admin, module: "delayed", code: 20 },
+            &watched, &[w.h.sender])?;
+        w.h.sim.advance_clock(Duration::from_millis(1));
+        w.h.execute(apply)?.assert_success();
+    }
+    Ok(())
+}
+
+#[test]
 fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Result<()> {
     let mut w = world("pause-security")?;
     w.change_role("PauseAdmin", true)?;
@@ -457,8 +559,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let version = schedule.obj(w.h.shared(w.version, false))?;
     let proposed = schedule.pure(digest.to_vec())?;
     let clock = schedule.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-    let next_delay = schedule.pure(172_800_000u64)?;
-    call(&mut schedule, original, "package_admin", "schedule_upgrade", vec![], vec![custody_arg, version, witness, proposed, next_delay, clock]);
+    call(&mut schedule, original, "package_admin", "schedule_upgrade", vec![], vec![custody_arg, version, witness, proposed, clock]);
     w.h.execute(schedule.finish())?.assert_success();
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, false))?;
@@ -510,8 +611,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let version = b.obj(w.h.shared(w.version, false))?;
 
     let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    let next_delay = b.pure(172_800_000u64)?;
-    call(&mut b, w.blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config, version, witness, next_delay, admin_clock]);
+    call(&mut b, w.blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config, version, witness, admin_clock]);
     w.h.execute(b.finish())?.assert_success();
     blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![(w.blast, "launch_config", "apply_migration_witness", vec![parse_sui_type_tag(&format!("{}::mock_adapter::Venue", w.adapter))?], w.config, w.version)])?;
 

@@ -107,7 +107,7 @@ fun stale_delay_change_rejects_before_other_validation() {
 fun upgrade_policy_only_application_and_cancellation_preserve_custody() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UpgradeAdmin>();
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
         f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
         f.admin.apply_upgrade_delay(&f.version, &f.clock);
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
@@ -128,12 +128,53 @@ fun upgrade_policy_only_application_and_cancellation_preserve_custody() {
 fun upgrade_policy_only_reduction_cannot_be_applied_early() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UpgradeAdmin>();
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
         f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
         f.admin.apply_upgrade_delay(&f.version, &f.clock);
         f.admin.schedule_upgrade_delay(&f.version, &witness, 0, &f.clock);
         f.clock.set_for_testing(99);
         f.admin.apply_upgrade_delay(&f.version, &f.clock);
+    });
+    fixture.end();
+}
+
+#[test]
+fun an_upgrade_action_replaces_a_delay_proposal_without_changing_policy() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
+        f.admin.apply_upgrade_delay(&f.version, &f.clock);
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 25, &f.clock);
+
+        let digest = vector::tabulate!(32, |_| 1u8);
+        f.admin.schedule_upgrade(&f.version, &witness, digest, &f.clock);
+        f.clock.set_for_testing(100);
+        let ticket = f.admin.authorize_upgrade(&f.version, &witness, digest, &f.clock);
+        destroy(ticket);
+
+        assert_eq!(f.admin.upgrade_delay_ms(), 100);
+        assert!(f.admin.has_upgrade_cap_for_testing());
+        assert_eq!(sui::event::events_by_type<blast_events::UpgradeDelayChanged>().length(), 1);
+    });
+    fixture.end();
+}
+
+#[test]
+fun immutability_keeps_the_applied_notice_without_applying_a_replaced_policy() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
+        f.admin.apply_upgrade_delay(&f.version, &f.clock);
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 0, &f.clock);
+        f.admin.schedule_make_immutable(&f.version, &witness, &f.clock);
+
+        f.clock.set_for_testing(100);
+        f.admin.make_immutable(&f.version, &witness, &f.clock);
+        assert_eq!(f.admin.upgrade_delay_ms(), 100);
+        assert!(!f.admin.has_upgrade_cap_for_testing());
+        assert_eq!(sui::event::events_by_type<blast_events::UpgradeDelayChanged>().length(), 1);
     });
     fixture.end();
 }
@@ -207,7 +248,7 @@ fun configure_destination(self: &mut AdminDelayFixture) {
 // === Imports ===
 
 use blast_admin::blast_acl;
-use blast_fun_migrators::{blast_fun_migrators as marker, lp_fee_policy, package_admin};
-use blast_fun::{blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}, bps};
+use blast_fun_migrators::{blast_fun_migrators as marker, blast_events, lp_fee_policy, package_admin};
+use blast_fun::{blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin}, bps};
 use std::unit_test::{assert_eq, destroy};
 use sui::{clock::Clock, sui::SUI, test_scenario::{Self, Scenario}};

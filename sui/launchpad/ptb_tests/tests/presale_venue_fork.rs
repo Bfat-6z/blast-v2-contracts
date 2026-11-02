@@ -488,9 +488,11 @@ impl World {
         let allowed = b.pure(true)?;
         let witness = tag(&format!("{presale}::{}::Witness", route.module()));
         call(&mut b, presale, "creation_policy", "set_quote_allowed", vec![quote_type.clone()], vec![policy, version_arg, listing, allowed]);
-        let next_delay = b.pure(172_800_000u64)?;
-        call(&mut b, presale, "creation_policy", "schedule_migration_witness", vec![witness.clone()], vec![policy, version_arg, adapter, next_delay, clock]);
+        call(&mut b, presale, "creation_policy", "schedule_migration_witness", vec![witness.clone()], vec![policy, version_arg, adapter, clock]);
         call(&mut b, presale, "creation_policy", "apply_migration_witness", vec![witness], vec![policy, version_arg, clock]);
+        let delay = b.pure(172_800_000u64)?;
+        call(&mut b, presale, "creation_policy", "schedule_migration_delay", vec![], vec![policy, version_arg, adapter, delay, clock]);
+        call(&mut b, presale, "creation_policy", "apply_migration_delay", vec![], vec![policy, version_arg, clock]);
         let fees = b.obj(h.shared(fee_policy[0], true))?;
         let destination = b.pure(h.sender)?;
         let next_delay = b.pure(172_800_000u64)?;

@@ -298,6 +298,7 @@ public struct ProtocolFeeShareCancelled has copy, drop {
 public struct MigrationWitnessScheduled has copy, drop {
     witness: TypeName,
     ready_at_ms: u64,
+    /// Applied admission notice when this deadline was scheduled.
     delay_ms: u64,
 }
 
@@ -350,6 +351,7 @@ public struct TradeFeesCancelled has copy, drop {
 public struct UpgradeActionScheduled has copy, drop {
     action: UpgradeAction,
     ready_at_ms: u64,
+    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
     delay_ms: u64,
 }
 

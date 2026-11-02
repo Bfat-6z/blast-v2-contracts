@@ -685,8 +685,8 @@ Integrators cannot call these; they explain state changes. Each takes the
 
 ### Delayed administration
 
-Each treasury, fee or upgrade operation owns its applied notice period. A schedule
-accepts a proposed value and **next** `delay_ms`, but its execution deadline is
+Each treasury, fee or upgrade operation owns its applied notice period. A delayed-value
+schedule accepts a proposed value and **next** `delay_ms`, but its execution deadline is
 `ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
 current wait. The proposed value and next notice become active together only after
 explicit application with the current version and canonical Clock. A value-only
@@ -698,13 +698,16 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
 later schedules check their own timestamp addition too. Scheduled events include the
-proposed next delay. Read the live operation's notice before relying on a cancellation window.
+proposed next delay for value/policy replacements, or the unchanged applied notice
+for action-only proposals. Read the live notice before relying on a cancellation window.
 
-`blast_presale::package_admin::schedule_upgrade` binds the exact digest and next notice.
+`blast_presale::package_admin::schedule_upgrade` takes only the digest in addition to
+its state, authority and Clock inputs, and uses the stored upgrade notice.
 `blast_presale::package_admin::authorize_upgrade` consumes only a ready matching digest;
 its ticket must feed the native upgrade command and its receipt the ordinary finalizer.
 `blast_presale::package_admin::schedule_make_immutable` and
 `blast_presale::package_admin::make_immutable` govern destruction of upgrade authority.
+These action schedules accept no delay argument and their execution preserves the notice.
 `blast_presale::package_admin::schedule_upgrade_delay` uses UpgradeAdmin to propose only the
 notice period, replacing any pending action. Anyone applies it with
 `blast_presale::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
@@ -718,13 +721,15 @@ release. Raising a notice never changes previously scheduled deadlines or next d
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
 Adapter admissions share one persistent `witness_delay_ms` across witness types;
-a fresh type cannot reopen setup. Each pending admission also proposes the next
-admission notice. `creation_policy::schedule_migration_delay` proposes only that notice
-under AdapterAdmin; anyone calls `creation_policy::apply_migration_delay`, and CancelAdmin
-uses `creation_policy::cancel_migration_delay`. Existing admissions remain independent:
-their application can apply their previously proposed next delay. Settle or cancel
-those admissions before finalizing setup. Immediate adapter removal cancels that
-type's pending admission and preserves the applied admission notice.
+a fresh type cannot reopen setup. `creation_policy::schedule_migration_witness` accepts
+only the witness type in addition to its state, authority and Clock inputs. It snapshots
+the applied notice and deadline; application only admits that witness and preserves the
+live notice. `creation_policy::schedule_migration_delay` proposes a new notice under
+AdapterAdmin; anyone calls `creation_policy::apply_migration_delay`, and CancelAdmin uses
+`creation_policy::cancel_migration_delay`. Applying admissions before or after a policy
+change cannot overwrite that policy. Existing admission deadlines remain fixed; settle
+or cancel all zero-notice admissions before completing setup. Immediate adapter removal
+cancels that type's pending admission and preserves the applied notice.
 
 New vaults start their own LP-fee notice at 48 hours; creating a fresh vault never
 reopens zero-notice setup. Vault fee changes can propose a different next notice,
@@ -910,7 +915,8 @@ positional struct wrapping one u64.
   `lp_fee_meme_bps` and `lp_fee_quote_bps`, each a `Bps`.
 - `CreationPolicy`: `allowed_quotes` and `allowed_migration_witnesses` (sets of type names with
   original package IDs); `pending_witnesses` maps adapter type names to admission proposals
-  with `value` and `ready_at_ms`. A pending admission becomes active when applied to
+  with `value`, snapshotted `delay_ms` and `ready_at_ms`. Admission application preserves
+  the live delay policy and becomes active when applied to
   `allowed_migration_witnesses`. Accepted partners are dynamic fields keyed by
   `creation_policy::PartnerKey` (the partner's ID) whose `u64` value is the time the partner stops
   being accepted (the maximum u64 while accepted).

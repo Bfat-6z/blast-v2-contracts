@@ -54,13 +54,19 @@ for package in ('launchpad', 'presale', 'migrators'):
         signature, body = fs[name]
         require(signature, '&AdminWitness<UpgradeAdmin>', 'clock: &Clock')
         assert body.startswith('package_version.assert_current();'), (package, name)
-    require(fs['schedule_upgrade'][1], 'digest.length() == 32', 'delayed::new_pending(action, self.delay_ms, delay_ms, clock)')
+    require(fs['schedule_upgrade'][1], 'digest.length() == 32')
+    for name in ('schedule_upgrade', 'schedule_make_immutable'):
+        assert 'delay_ms: u64' not in fs[name][0], (package, name)
+        require(fs[name][1], 'let delay_ms = self.delay_ms;',
+                'delayed::new_pending(action, delay_ms, delay_ms, clock)')
     for name, action in [('authorize_upgrade', 'Upgrade(digest)'), ('make_immutable', 'MakeImmutable')]:
         body = fs[name][1]
         action_expression = f'UpgradeAction::{action}'
         if package == 'launchpad':
             action_expression = 'events::upgrade_action(digest)' if name == 'authorize_upgrade' else 'events::immutability_action()'
-        require(body, f'action == {action_expression}', 'self.pending = option::none();', 'self.delay_ms = delay_ms;')
+        require(body, f'action == {action_expression}', 'self.pending = option::none();')
+        assert 'self.delay_ms =' not in body, (package, name)
+        assert 'upgrade_delay_changed' not in body and 'UpgradeDelayChanged' not in body
         assert body.index('self.pending = option::none();') < body.index('self.custody.'), name
     require(fs['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin>')
     require(fs['cancel_upgrade_action'][1], 'self.pending.extract()')
@@ -76,8 +82,16 @@ for package in ('launchpad', 'presale', 'migrators'):
 for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_policy')]:
     fs = functions(package, module)
     require(fs['schedule_migration_witness'][0], '&AdminWitness<AdapterAdmin>', 'clock: &Clock')
-    require(fs['schedule_migration_witness'][1], 'delayed::new_pending(true, self.witness_delay_ms, delay_ms, clock)')
-    require(fs['apply_migration_witness'][1], '.take_ready(clock)', 'self.witness_delay_ms = delay_ms;')
+    assert 'delay_ms: u64' not in fs['schedule_migration_witness'][0], package
+    require(fs['schedule_migration_witness'][1], 'let delay_ms = self.witness_delay_ms;',
+            'delayed::new_pending(true, delay_ms, delay_ms, clock)')
+    require(fs['apply_migration_witness'][1], '.take_ready(clock)')
+    assert 'self.witness_delay_ms =' not in fs['apply_migration_witness'][1], package
+    assert 'migration_delay_changed' not in fs['apply_migration_witness'][1]
+    assert 'MigrationDelayChanged' not in fs['apply_migration_witness'][1]
+    require(fs['schedule_migration_delay'][1],
+            'delayed::new_pending(false, self.witness_delay_ms, delay_ms, clock)')
+    require(fs['apply_migration_delay'][1], 'self.witness_delay_ms = delay_ms;')
     assert 'AdminWitness' not in fs['apply_migration_witness'][0]
     require(fs['cancel_migration_witness'][0], '&AdminWitness<CancelAdmin>')
     require(fs['remove_migration_witness'][1], 'self.pending_witnesses.remove')
@@ -148,8 +162,15 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
             if '.schedule(' not in body and 'delayed::new_pending(' not in body:
                 continue
             require(signature, 'clock: &Clock')
-            if not (package == 'launchpad' and path.stem == 'launch'
-                    and name in ('schedule_curve_fee_cap_reassignment', 'schedule_metadata_cap_reassignment')):
+            action_only = (
+                path.stem == 'package_admin' and name in ('schedule_upgrade', 'schedule_make_immutable')
+                or path.stem in ('launch_config', 'creation_policy') and name == 'schedule_migration_witness'
+                or package == 'launchpad' and path.stem == 'launch'
+                and name in ('schedule_curve_fee_cap_reassignment', 'schedule_metadata_cap_reassignment')
+            )
+            if action_only:
+                assert 'delay_ms: u64' not in signature, (path, name)
+            else:
                 require(signature, 'delay_ms: u64')
             assert 'admin_delay_ms()' not in body, (path, name)
 

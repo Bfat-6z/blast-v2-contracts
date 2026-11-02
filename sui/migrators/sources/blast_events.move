@@ -54,6 +54,7 @@ public struct UpgradeActionCancelled has copy, drop { digest: Option<vector<u8>>
 public struct UpgradeActionScheduled has copy, drop {
     digest: Option<vector<u8>>,
     ready_at_ms: u64,
+    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
     delay_ms: u64
 }
 

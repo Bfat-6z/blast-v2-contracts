@@ -307,12 +307,12 @@ public fun remove_partner(
 /// and receives their liquidity at migration; existing launches keep their witness.
 ///
 /// Framework types are rejected because anyone can construct them.
-/// Admits an adapter only after a full administrative notice period.
+/// Admits an adapter only after the currently applied admission notice.
+/// Scheduling and applying an admission preserve the shared delay policy.
 public fun schedule_migration_witness<MigrationWitness: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
     _: &AdminWitness<AdapterAdmin>,
-    delay_ms: u64,
     clock: &Clock
 ) {
     package_version.assert_current();
@@ -324,7 +324,8 @@ public fun schedule_migration_witness<MigrationWitness: drop>(
     assert!(origin != @0x1 && origin != @0x2, blast_fun::errors::invalid_migration_witness_type!());
     assert!(!self.migration_witnesses.contains(&witness), blast_fun::errors::unchanged!());
 
-    let pending = delayed::new_pending(true, self.witness_delay_ms, delay_ms, clock);
+    let delay_ms = self.witness_delay_ms;
+    let pending = delayed::new_pending(true, delay_ms, delay_ms, clock);
 
     if (self.pending_witnesses.contains(&witness)) {
         self.pending_witnesses.remove(&witness);
@@ -334,7 +335,7 @@ public fun schedule_migration_witness<MigrationWitness: drop>(
     events::migration_witness_scheduled(witness, pending.ready_at_ms(), delay_ms);
 }
 
-/// Permissionlessly applies the approved adapter admission once ready.
+/// Permissionlessly applies the approved admission once ready, preserving the live notice.
 public fun apply_migration_witness<MigrationWitness: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
@@ -343,11 +344,7 @@ public fun apply_migration_witness<MigrationWitness: drop>(
     package_version.assert_current();
 
     let witness = type_name::with_original_ids<MigrationWitness>();
-    let (_, delay_ms) = self.pending_witnesses[&witness].take_ready(clock);
-
-    self.witness_delay_ms = delay_ms;
-
-    events::migration_delay_changed(delay_ms);
+    self.pending_witnesses[&witness].take_ready(clock);
 
     self.pending_witnesses.remove(&witness);
     self.migration_witnesses.insert(witness);
@@ -501,6 +498,12 @@ fun new(delay_ms: u64, ctx: &mut TxContext): LaunchConfig {
 // === Test-Only Functions ===
 
 #[test_only]
+/// Reads the shared admission policy independently of pending admissions.
+public fun migration_delay_ms_for_testing(self: &LaunchConfig): u64 {
+    self.witness_delay_ms
+}
+
+#[test_only]
 public fun set_migration_witness_allowed_for_testing<MigrationWitness: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
@@ -513,8 +516,7 @@ public fun set_migration_witness_allowed_for_testing<MigrationWitness: drop>(
         return
     };
     let mut clock = sui::clock::create_for_testing(ctx);
-    let delay_ms = self.witness_delay_ms;
-    self.schedule_migration_witness<MigrationWitness>(package_version, admin, delay_ms, &clock);
+    self.schedule_migration_witness<MigrationWitness>(package_version, admin, &clock);
     clock.set_for_testing(172_800_000);
     self.apply_migration_witness<MigrationWitness>(package_version, &clock);
     clock.destroy_for_testing();

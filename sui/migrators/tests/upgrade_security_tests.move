@@ -145,7 +145,6 @@ fun upgrade_digest_rejects_0_bytes() {
             &r.version,
             &blast_acl::witness_for_testing<UpgradeAdmin>(),
             vector::tabulate!(0, |_| 0u8),
-            DELAY,
             &r.clock
         );
     destroy(f);
@@ -162,7 +161,6 @@ fun upgrade_digest_rejects_31_bytes() {
             &r.version,
             &blast_acl::witness_for_testing<UpgradeAdmin>(),
             vector::tabulate!(31, |_| 0u8),
-            DELAY,
             &r.clock
         );
     destroy(f);
@@ -179,7 +177,6 @@ fun upgrade_digest_rejects_33_bytes() {
             &r.version,
             &blast_acl::witness_for_testing<UpgradeAdmin>(),
             vector::tabulate!(33, |_| 0u8),
-            DELAY,
             &r.clock
         );
     destroy(f);
@@ -231,8 +228,8 @@ fun start(): Fixture {
 
 fun schedule(f: &mut Fixture, immutable: bool) {
     let admin = blast_acl::witness_for_testing<UpgradeAdmin>();
-    if (immutable) f.admin.schedule_make_immutable(&f.version, &admin, 172_800_000, &f.clock)
-    else f.admin.schedule_upgrade(&f.version, &admin, digest(), 172_800_000, &f.clock);
+    if (immutable) f.admin.schedule_make_immutable(&f.version, &admin, &f.clock)
+    else f.admin.schedule_upgrade(&f.version, &admin, digest(), &f.clock);
 }
 
 fun apply(f: &mut Fixture, immutable: bool) {

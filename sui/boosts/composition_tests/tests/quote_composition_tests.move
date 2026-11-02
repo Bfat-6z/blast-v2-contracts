@@ -58,7 +58,7 @@ fun quote_round_trip<Quote>(admit_exact: bool) {
     } else {
         config.set_quote_allowed<BlastBoost<Long2x>>(&version, &listing_admin, true);
     };
-    config.schedule_migration_witness<Migration>(&version, &adapter_admin, 0, &clock);
+    config.schedule_migration_witness<Migration>(&version, &adapter_admin, &clock);
     config.apply_migration_witness<Migration>(&version, &clock);
     let runtime = runtime_config::new_disabled_for_testing(scenario.ctx());
     let ticket = launch_ticket::new(

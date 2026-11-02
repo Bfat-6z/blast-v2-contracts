@@ -119,9 +119,11 @@ what each transaction leaves on chain.
 #### Upgrade a consumer package (Blast admin)
 
 Launchpad, presale and migrators first require `schedule_upgrade` with the exact
-digest, proposed next notice and `Clock`, followed by that package custody's applied upgrade notice. A `CancelAdmin` can cancel
+digest and `Clock`, followed by that package custody's applied upgrade notice. A `CancelAdmin` can cancel
 even a ready action. Their `authorize_upgrade` also takes `Clock` and consumes
-the matching ready action. Immutability follows the same scheduling rule.
+the matching ready action. Immutability follows the same scheduling rule. Action
+schedules retain the applied notice; only the explicit `schedule_upgrade_delay` /
+`apply_upgrade_delay` policy path changes it.
 
 For consumers other than the Boosts adapter, execution uses one PTB:
 
@@ -245,7 +247,9 @@ proposals; domain setters reject unchanged value-and-delay pairs where applicabl
 
 `delayed::new_pending` supports standalone actions: its owner supplies the stored
 current delay and proposed next delay. `delayed::take_ready` returns the value and
-next delay; the owner must atomically clear its pending slot and persist that delay.
+next delay. A value-and-policy or policy-only application clears its pending slot
+and persists that delay. An action-only application clears its proposal and preserves
+the live applied notice, even if independent policy has changed since scheduling.
 Overflow at scheduling or actual application aborts with registry code 22
 (`EInvalidDelay`). Later scheduling checks again because time continues advancing.
 The creator-claim backend signer is a plain value assigned and revoked immediately
