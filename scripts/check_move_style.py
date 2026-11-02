@@ -98,9 +98,41 @@ def section_for(path, test_module, kind, attributes, declaration, events):
     return "Private Functions"
 
 
+def check_event_types(path, items):
+    """Event modules own payload schemas, not storable or unrelated domain values."""
+    if not path.stem.endswith("events"):
+        return
+    production = [mask(declaration) for _, _, attributes, declaration in items
+                  if "#[test_only]" not in attributes]
+    types = {}
+    for _, kind, attributes, declaration in items:
+        if kind not in ("struct", "enum") or "#[test_only]" in attributes:
+            continue
+        text = mask(declaration)
+        name = re.search(r"\b(?:struct|enum)\s+(\w+)", text)[1]
+        header = text.split("{")[0].split(";")[0]
+        if re.search(r"\bhas\s+[^{};]*\b(?:key|store)\b", header):
+            raise ValueError(f"{name}: declare stored domain values in their owning module, not event modules")
+        types[name] = text
+    payloads = set(re.findall(r"\b(?:emit|emit_event)\(\s*(\w+)", "\n".join(production)))
+    # Event-only snapshots may be nested inside an emitted payload.
+    pending = list(payloads & types.keys())
+    reachable = set(pending)
+    while pending:
+        name = pending.pop()
+        type_names = set(re.findall(r"\b\w+\b", types[name]))
+        nested = (type_names & types.keys()) - reachable
+        reachable.update(nested)
+        pending.extend(nested)
+    unrelated = types.keys() - reachable
+    if unrelated:
+        raise ValueError(f"{', '.join(sorted(unrelated))}: event modules may declare only emitted payloads and event-only snapshots")
+
+
 def check(path):
     source = path.read_text()
     items = list(declarations(source))
+    check_event_types(path, items)
     module_start = re.search(r"\bmodule\b", mask(source)).start()
     test_module = "#[test_only]" in source[:module_start]
     headings = list(re.finditer(r"^// === (.*?) ===$", source, re.M))

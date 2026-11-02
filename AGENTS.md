@@ -31,6 +31,13 @@ module emits. Use `// === Title ===` headings. Keep imports
 and receiver aliases together at the end, overriding the generic skill's import
 placement. Keep domain subdivisions as ordinary comments within these sections.
 
+Declare stored domain values and types used by domain function parameters or
+returns in the module that owns their invariants. This is a hard rule even when
+those values also appear in events. Dedicated event modules contain only event
+payloads, envelopes and event-only snapshots, never domain value definitions.
+Keep payloads beside their domain owner when centralization would create a
+module dependency cycle; use the package's existing emission envelope.
+
 Group all constants together. In error registries, put all `#[test_only]`
 constants first, then all `macro public(package) fun` declarations in matching
 numeric order. Keep invariant-owned local errors in their owning module.

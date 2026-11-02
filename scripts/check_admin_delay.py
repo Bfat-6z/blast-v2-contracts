@@ -62,8 +62,6 @@ for package in ('launchpad', 'presale', 'migrators'):
     for name, action in [('authorize_upgrade', 'Upgrade(digest)'), ('make_immutable', 'MakeImmutable')]:
         body = fs[name][1]
         action_expression = f'UpgradeAction::{action}'
-        if package == 'launchpad':
-            action_expression = 'events::upgrade_action(digest)' if name == 'authorize_upgrade' else 'events::immutability_action()'
         require(body, f'action == {action_expression}', 'self.pending = option::none();')
         assert 'self.delay_ms =' not in body, (package, name)
         assert 'upgrade_delay_changed' not in body and 'UpgradeDelayChanged' not in body

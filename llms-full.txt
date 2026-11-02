@@ -2113,7 +2113,7 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::ProtocolAllocationScheduled`, `blast_fun::events::ProtocolAllocationCancelled` | protocol allocation schedule or cancel | proposed `meme_bps` and `quote_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
 | `blast_fun::events::CreationFeeScheduled`, `blast_fun::events::CreationFeeCancelled` | creation fee schedule or cancel | proposed `creation_fee`; schedule includes `ready_at_ms` and next `delay_ms` |
 | `blast_fun::events::TradeFeesScheduled`, `blast_fun::events::TradeFeesCancelled` | trade fee schedule or cancel | proposed `quote_fee_bps` and `meme_fee_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
-| `blast_fun::events::UpgradeActionScheduled`, `blast_fun::events::UpgradeActionCancelled` | upgrade or immutability schedule or cancel | `action` uses `blast_fun::events::UpgradeAction`; schedule includes `ready_at_ms` and next `delay_ms` |
+| `blast_fun::package_admin::UpgradeActionScheduled`, `blast_fun::package_admin::UpgradeActionCancelled` | upgrade or immutability schedule or cancel | `action` uses `blast_fun::package_admin::UpgradeAction`; schedule includes `ready_at_ms` and the applied notice, or next `delay_ms` for a delay-only proposal |
 | `blast_fun::events::LaunchTicketCreated` | coin publish | `ticket_id`, `meme` type, `decimals`, `metadata_cap_id`, `creator`, `burnable`, `sell_burn_bps` |
 | `blast_fun::events::LaunchCreated` | `launch::finalize` | `launch_id`, `ticket_id` (join to the ticket for the Meme type), `quote` type, `migration_witness`, pool tier, `lp_fee_split`, `virtual_quote`, `graduation_target`, both fee rates, the full `allocation_plan` with Blast's shares, `opening_round_ms`, `creation_fee`, `partner_id` |
 | `blast_fun::events::LaunchShared` | `launch::share` | `public_start_ms`; round end is this plus `opening_round_ms` |
@@ -7686,17 +7686,6 @@ Launchpad event payloads and their package-only emitters.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/lib/events.move
 
-#### Types
-
-```move
-/// The exact code digest or irreversible end of upgrades approved for execution.
-public enum UpgradeAction has copy, drop, store {
-    Upgrade(vector<u8>),
-    MakeImmutable,
-    DelayOnly,
-}
-```
-
 #### Events
 
 ```move
@@ -8032,19 +8021,6 @@ public struct TradeFeesScheduled has copy, drop {
 public struct TradeFeesCancelled has copy, drop {
     quote_fee_bps: u64,
     meme_fee_bps: u64,
-}
-
-/// A publicly announced upgrade action with its execution threshold.
-public struct UpgradeActionScheduled has copy, drop {
-    action: UpgradeAction,
-    ready_at_ms: u64,
-    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
-    delay_ms: u64,
-}
-
-/// A cancelled upgrade action, which can no longer execute.
-public struct UpgradeActionCancelled has copy, drop {
-    action: UpgradeAction,
 }
 
 /// Applied notice period for future upgrades and immutability.
@@ -8758,12 +8734,19 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 #### Types
 
 ```move
+/// A proposed upgrade, irreversible immutability, or delay policy change.
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+    DelayOnly,
+}
+
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_fun::BLAST_FUN>,
     delay_ms: u64,
-    pending: Option<blast_admin::delayed::Pending<events::UpgradeAction>>,
+    pending: Option<blast_admin::delayed::Pending<UpgradeAction>>,
 }
 ```
 
@@ -8844,6 +8827,23 @@ public fun apply_upgrade_delay(
 
 /// Returns the currently applied notice period for upgrade actions.
 public fun upgrade_delay_ms(self: &PackageAdmin): u64
+```
+
+#### Events
+
+```move
+/// A publicly announced upgrade action with its execution threshold.
+public struct UpgradeActionScheduled has copy, drop {
+    action: UpgradeAction,
+    ready_at_ms: u64,
+    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
+    delay_ms: u64,
+}
+
+/// A cancelled upgrade action, which can no longer execute.
+public struct UpgradeActionCancelled has copy, drop {
+    action: UpgradeAction,
+}
 ```
 
 ### `blast_fun::runtime_config`

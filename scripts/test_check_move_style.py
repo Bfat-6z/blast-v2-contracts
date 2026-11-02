@@ -27,6 +27,51 @@ class MoveStyleTests(unittest.TestCase):
             path.write_text(source)
             check(path)
 
+    def test_event_payload_and_nested_snapshot_pass(self):
+        source = """module example::events;
+// === Public Types ===
+public struct Snapshot has copy, drop { amount: u64 }
+public struct Changed has copy, drop { snapshot: Snapshot }
+// === Package Functions ===
+public(package) fun changed(amount: u64) {
+    sui::event::emit(Changed { snapshot: Snapshot { amount } });
+}
+"""
+        self.check_source(source, "events.move")
+
+    def test_storable_domain_values_in_event_modules_fail(self):
+        for filename in ("events.move", "blast_events.move", "blast_admin_events.move"):
+            for declaration in (
+                "public enum Action has copy, drop, store {\n    Change(u64),\n}",
+                "public struct Policy has store { amount: u64 }",
+                "public struct State has key { id: UID }",
+            ):
+                with self.subTest(filename=filename, declaration=declaration):
+                    source = f"module example::events;\n// === Public Types ===\n{declaration}\n"
+                    with self.assertRaisesRegex(ValueError, "stored domain values"):
+                        self.check_source(source, filename)
+
+    def test_unemitted_domain_value_in_event_module_fails(self):
+        source = """module example::events;
+// === Public Types ===
+public enum Action has copy, drop {
+    Change(u64),
+}
+// === Package Functions ===
+public(package) fun action(value: u64): Action { Action::Change(value) }
+"""
+        with self.assertRaisesRegex(ValueError, "only emitted payloads"):
+            self.check_source(source, "events.move")
+
+    def test_domain_value_in_owning_module_passes(self):
+        source = """module example::package_admin;
+// === Public Types ===
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+}
+"""
+        self.check_source(source, "package_admin.move")
+
     def test_grouped_registry_passes(self):
         self.check_source(REGISTRY)
 

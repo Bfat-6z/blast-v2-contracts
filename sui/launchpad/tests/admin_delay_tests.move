@@ -185,9 +185,9 @@ fun upgrade_schedule_and_cancellation_preserve_the_exact_digest() {
     action_bytes.append(std::bcs::to_bytes(&digest));
 
     admin.schedule_upgrade(&version, &blast_acl::witness_for_testing<UpgradeAdmin>(), digest, &clock);
-    assert_eq!(event_bytes<events::UpgradeActionScheduled>(), with_ready_at(action_bytes));
+    assert_eq!(event_bytes<package_admin::UpgradeActionScheduled>(), with_ready_at(action_bytes));
     admin.cancel_upgrade_action(&version, &blast_acl::witness_for_testing<CancelAdmin>());
-    assert_eq!(event_bytes<events::UpgradeActionCancelled>(), action_bytes);
+    assert_eq!(event_bytes<package_admin::UpgradeActionCancelled>(), action_bytes);
 
     destroy(admin);
     destroy(version);
@@ -204,9 +204,9 @@ fun immutability_schedule_and_cancellation_preserve_the_action() {
     let action_bytes = vector[1u8];
 
     admin.schedule_make_immutable(&version, &blast_acl::witness_for_testing<UpgradeAdmin>(), &clock);
-    assert_eq!(event_bytes<events::UpgradeActionScheduled>(), with_ready_at(action_bytes));
+    assert_eq!(event_bytes<package_admin::UpgradeActionScheduled>(), with_ready_at(action_bytes));
     admin.cancel_upgrade_action(&version, &blast_acl::witness_for_testing<CancelAdmin>());
-    assert_eq!(event_bytes<events::UpgradeActionCancelled>(), action_bytes);
+    assert_eq!(event_bytes<package_admin::UpgradeActionCancelled>(), action_bytes);
 
     destroy(admin);
     destroy(version);

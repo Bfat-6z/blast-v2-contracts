@@ -8,12 +8,32 @@ module blast_fun::package_admin;
 
 // === Public Types ===
 
+/// A proposed upgrade, irreversible immutability, or delay policy change.
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+    DelayOnly,
+}
+
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: UpgradeCustody<BLAST_FUN>,
     delay_ms: u64,
     pending: Option<Pending<UpgradeAction>>,
+}
+
+/// A publicly announced upgrade action with its execution threshold.
+public struct UpgradeActionScheduled has copy, drop {
+    action: UpgradeAction,
+    ready_at_ms: u64,
+    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
+    delay_ms: u64,
+}
+
+/// A cancelled upgrade action, which can no longer execute.
+public struct UpgradeActionCancelled has copy, drop {
+    action: UpgradeAction,
 }
 
 // === Public Functions ===
@@ -31,13 +51,13 @@ public fun schedule_upgrade(
 
     assert!(digest.length() == 32, blast_fun::errors::invalid_digest!());
 
-    let action = events::upgrade_action(digest);
+    let action = UpgradeAction::Upgrade(digest);
     let delay_ms = self.delay_ms;
     let pending = delayed::new_pending(action, delay_ms, delay_ms, clock);
 
     self.pending = option::some(pending);
 
-    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
 }
 
 /// Schedules the irreversible destruction of upgrade authority under the applied notice.
@@ -49,13 +69,13 @@ public fun schedule_make_immutable(
 ) {
     package_version.assert_current();
 
-    let action = events::immutability_action();
+    let action = UpgradeAction::MakeImmutable;
     let delay_ms = self.delay_ms;
     let pending = delayed::new_pending(action, delay_ms, delay_ms, clock);
 
     self.pending = option::some(pending);
 
-    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
 }
 
 /// Cancels any scheduled action, even after its execution threshold.
@@ -70,7 +90,7 @@ public fun cancel_upgrade_action(
 
     let action = self.pending.extract().value();
 
-    events::upgrade_action_cancelled(action);
+    upgrade_action_cancelled(action);
 }
 
 /// Consumes the unique publication proof and seals native custody before activation.
@@ -99,7 +119,7 @@ public fun authorize_upgrade(
     assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
 
     let (action, _) = self.pending.destroy_some().take_ready(clock);
-    assert!(action == events::upgrade_action(digest), blast_fun::errors::wrong_upgrade_action!());
+    assert!(action == UpgradeAction::Upgrade(digest), blast_fun::errors::wrong_upgrade_action!());
     self.pending = option::none();
 
     self.custody.authorize_upgrade(custodian_id, digest)
@@ -134,7 +154,7 @@ public fun make_immutable(
     assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
 
     let (action, _) = self.pending.destroy_some().take_ready(clock);
-    assert!(action == events::immutability_action(), blast_fun::errors::wrong_upgrade_action!());
+    assert!(action == UpgradeAction::MakeImmutable, blast_fun::errors::wrong_upgrade_action!());
     self.pending = option::none();
 
     self.custody.make_immutable(self.id.to_inner());
@@ -151,12 +171,12 @@ public fun schedule_upgrade_delay(
 ) {
     package_version.assert_current();
 
-    let action = events::delay_only_action();
+    let action = UpgradeAction::DelayOnly;
     let pending = delayed::new_pending(action, self.delay_ms, delay_ms, clock);
 
     self.pending = option::some(pending);
 
-    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
 }
 
 /// Applies a ready policy-only proposal; cannot consume an upgrade authorization.
@@ -170,7 +190,7 @@ public fun apply_upgrade_delay(
     assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
 
     let (action, delay_ms) = self.pending.destroy_some().take_ready(clock);
-    assert!(action == events::delay_only_action(), blast_fun::errors::wrong_upgrade_action!());
+    assert!(action == UpgradeAction::DelayOnly, blast_fun::errors::wrong_upgrade_action!());
     self.pending = option::none();
     self.delay_ms = delay_ms;
 
@@ -180,6 +200,20 @@ public fun apply_upgrade_delay(
 /// Returns the currently applied notice period for upgrade actions.
 public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
     self.delay_ms
+}
+
+// === Private Functions ===
+
+fun upgrade_action_scheduled(
+    action: UpgradeAction,
+    ready_at_ms: u64,
+    delay_ms: u64
+) {
+    blast_events::emit_event(UpgradeActionScheduled { action, ready_at_ms, delay_ms });
+}
+
+fun upgrade_action_cancelled(action: UpgradeAction) {
+    blast_events::emit_event(UpgradeActionCancelled { action });
 }
 
 // === Test-Only Functions ===
@@ -278,7 +312,8 @@ use blast_admin::{
 };
 
 use blast_fun::{
-    events::{Self, UpgradeAction},
+    blast_events,
+    events,
     blast_fun::{BLAST_FUN, Publication, PackageVersion},
     blast_fun_domain::{CancelAdmin, UpgradeAdmin},
 };

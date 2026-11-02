@@ -6,13 +6,6 @@ module blast_fun::events;
 
 // === Public Types ===
 
-/// The exact code digest or irreversible end of upgrades approved for execution.
-public enum UpgradeAction has copy, drop, store {
-    Upgrade(vector<u8>),
-    MakeImmutable,
-    DelayOnly,
-}
-
 /// Blast's one-time fee share of the Meme supply and final Quote reserve of launches finalized
 /// from now on. Finalized launches keep the shares recorded in `LaunchCreated.allocation_plan`.
 public struct ProtocolAllocationSet has copy, drop {
@@ -347,19 +340,6 @@ public struct TradeFeesCancelled has copy, drop {
     meme_fee_bps: u64,
 }
 
-/// A publicly announced upgrade action with its execution threshold.
-public struct UpgradeActionScheduled has copy, drop {
-    action: UpgradeAction,
-    ready_at_ms: u64,
-    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
-    delay_ms: u64,
-}
-
-/// A cancelled upgrade action, which can no longer execute.
-public struct UpgradeActionCancelled has copy, drop {
-    action: UpgradeAction,
-}
-
 /// Applied notice period for future upgrades and immutability.
 public struct UpgradeDelayChanged has copy, drop { delay_ms: u64 }
 
@@ -443,18 +423,7 @@ public(package) fun migration_delay_changed(delay_ms: u64) {
 }
 public(package) fun migration_delay_cancelled() { emit(MigrationDelayCancelled {}); }
 
-public(package) fun delay_only_action(): UpgradeAction { UpgradeAction::DelayOnly }
 public(package) fun upgrade_delay_changed(delay_ms: u64) { emit(UpgradeDelayChanged { delay_ms }); }
-
-/// The exact package digest an administrator proposes or checks.
-public(package) fun upgrade_action(digest: vector<u8>): UpgradeAction {
-    UpgradeAction::Upgrade(digest)
-}
-
-/// The irreversible end of upgrade authority an administrator proposes or checks.
-public(package) fun immutability_action(): UpgradeAction {
-    UpgradeAction::MakeImmutable
-}
 
 public(package) fun paused(bits: u8, paused: u8) {
     emit(Paused { bits, paused });
@@ -528,18 +497,6 @@ public(package) fun trade_fees_scheduled(
 
 public(package) fun trade_fees_cancelled(quote_fee_bps: u64, meme_fee_bps: u64) {
     emit(TradeFeesCancelled { quote_fee_bps, meme_fee_bps });
-}
-
-public(package) fun upgrade_action_scheduled(
-    action: UpgradeAction,
-    ready_at_ms: u64,
-    delay_ms: u64
-) {
-    emit(UpgradeActionScheduled { action, ready_at_ms, delay_ms });
-}
-
-public(package) fun upgrade_action_cancelled(action: UpgradeAction) {
-    emit(UpgradeActionCancelled { action });
 }
 
 public(package) fun protocol_allocation_set(meme_bps: u64, quote_bps: u64) {
