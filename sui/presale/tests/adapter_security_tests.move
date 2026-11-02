@@ -13,7 +13,18 @@ const DELAY: u64 = 172_800_000;
 public struct AdapterA() has drop;
 public struct AdapterB() has drop;
 public struct Quote() has drop;
-public enum Case has copy, drop { Early, Replacement, Cancelled, Removed, Replay, StaleSchedule, StaleApply, StaleCancel, StaleRemove, Success }
+public enum Case has copy, drop {
+    Early,
+    Replacement,
+    Cancelled,
+    Removed,
+    Replay,
+    StaleSchedule,
+    StaleApply,
+    StaleCancel,
+    StaleRemove,
+    Success,
+}
 
 // === Tests ===
 

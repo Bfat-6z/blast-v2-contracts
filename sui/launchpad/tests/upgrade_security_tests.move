@@ -11,7 +11,20 @@ const DELAY: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
-public enum Case has copy, drop { Missing, Early, Replacement, Cancelled, Replay, WrongKind, StaleSchedule, StaleApply, StaleCancel, Exact, Late, Reschedule }
+public enum Case has copy, drop {
+    Missing,
+    Early,
+    Replacement,
+    Cancelled,
+    Replay,
+    WrongKind,
+    StaleSchedule,
+    StaleApply,
+    StaleCancel,
+    Exact,
+    Late,
+    Reschedule,
+}
 public struct Fixture { version: PackageVersion, admin: PackageAdmin, clock: Clock }
 
 // === Tests ===

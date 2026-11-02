@@ -11,9 +11,22 @@ const DELAY: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
-public enum Setting has copy, drop, store { Fees, Destination, VaultFees }
+public enum Setting has copy, drop, store {
+    Fees,
+    Destination,
+    VaultFees,
+}
 
-public enum Case has copy, drop { Early, Replacement, Cancelled, Replay, StaleSchedule, StaleApply, StaleCancel, Success }
+public enum Case has copy, drop {
+    Early,
+    Replacement,
+    Cancelled,
+    Replay,
+    StaleSchedule,
+    StaleApply,
+    StaleCancel,
+    Success,
+}
 
 public struct Fixture { version: PackageVersion, clock: Clock, policy: FeePolicy, vault: Vault<CoinA, CoinB>, }
 

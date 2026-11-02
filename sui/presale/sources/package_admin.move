@@ -18,7 +18,11 @@ const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
 // === Public Types ===
 
 /// The exact code digest or irreversible end of upgrades approved for execution.
-public enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable, DelayOnly }
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+    DelayOnly,
+}
 /// A publicly announced upgrade action with its execution threshold.
 public struct UpgradeActionScheduled has copy, drop { action: UpgradeAction, ready_at_ms: u64, delay_ms: u64 }
 /// Applied notice period for subsequent upgrade actions.

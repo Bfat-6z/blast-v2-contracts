@@ -11,9 +11,23 @@ const DELAY: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
-public enum Setting has copy, drop, store { Destination, Defaults, CoinOverride, CoinClear }
+public enum Setting has copy, drop, store {
+    Destination,
+    Defaults,
+    CoinOverride,
+    CoinClear,
+}
 
-public enum Case has copy, drop { Early, Replacement, Cancelled, Replay, StaleSchedule, StaleApply, StaleCancel, Success }
+public enum Case has copy, drop {
+    Early,
+    Replacement,
+    Cancelled,
+    Replay,
+    StaleSchedule,
+    StaleApply,
+    StaleCancel,
+    Success,
+}
 
 public struct Fixture { version: PackageVersion, clock: Clock, policy: LpFeePolicy, }
 
