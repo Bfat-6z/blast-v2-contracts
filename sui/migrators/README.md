@@ -75,10 +75,14 @@ collection keeps each slice small (ADR 0089).
 ## Holder rewards
 
 Blast's off-chain system turns checkpointed holder balances into a Merkle
-allocation. A Blast administrator publishes it with
-`blast_holder_rewards::publish_round`, which reserves the round's budget from
-the vault's rewards balance into a shared `Round`. Anyone can relay a proof, and
-each leaf pays its committed beneficiary once before the round's claim deadline.
+allocation. A Blast administrator schedules it with
+`blast_holder_rewards::schedule_round` on the vault's delayed round-publication
+slot. Once the vault's round notice (zero by default) has elapsed, anyone calls
+`blast_holder_rewards::publish_round`, which re-checks the terms, reserves the
+round's budget from the vault's rewards balance into a shared `Round`, and opens
+claims for the scheduled window. `CancelAdmin` can cancel a scheduled round,
+which reserved nothing. Anyone can relay a proof, and each leaf pays its
+committed beneficiary once before the round's claim deadline.
 An optional Quote gas reserve is funded separately, with its treasury bound to
 the governed LP-fee destination at publication. `RewardsAdmin` may settle a capped
 reimbursement once; unused reserve returns to the vault. Anyone may close at the
@@ -87,8 +91,9 @@ checkpoint intervals may have gaps but must not overlap.
 
 **The administrator can assign unallocated rewards to any recipient in a new
 round.** Merkle proofs enforce the published allocation, not the truth of the
-off-chain holder accounting, so publish from a multisig with independent
-accounting review. Each round reserves its full declared budget and keeps a
+off-chain holder accounting, so schedule from a multisig with independent
+accounting review, and raise the round notice so a compromised administrator's
+round can be cancelled before anyone publishes it. Each round reserves its full declared budget and keeps a
 claim bitmap until closure. The administrator cannot rewrite a root or
 cancel its holder claims before the deadline; permissionless close recovers
 remaining custody at the deadline. The leaf commits the vault ID, the round number, the index, the

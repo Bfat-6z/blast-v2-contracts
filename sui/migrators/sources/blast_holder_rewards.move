@@ -4,8 +4,9 @@
 /// Holder rewards: rounds funded from a vault's rewards share and paid by Merkle proof.
 ///
 /// Blast's off-chain system turns checkpointed holder balances into a Merkle allocation, and a
-/// Blast administrator publishes it as a round that reserves its budget from the vault. Anyone can
-/// relay a proof afterwards; each leaf pays its committed beneficiary once.
+/// Blast administrator schedules it as a round on the vault. Once the vault's round notice has
+/// elapsed, anyone publishes it, reserving its budget from the vault. Anyone can relay a proof
+/// afterwards; each leaf pays its committed beneficiary once.
 module blast_fun_migrators::blast_holder_rewards;
 
 // === Public Types ===
@@ -27,14 +28,15 @@ public struct Round<phantom Meme, phantom Quote> has key {
 
 // === Public Functions ===
 
-/// Funds holder claims and optional gas custody separately, binding the expected governed treasury.
-/// Zero reserve disables reimbursement. Gas attribution remains off chain.
-public fun publish_round<Meme, Quote>(
+/// Schedules a round's terms for publication after the vault's applied round notice, replacing
+/// any scheduled round or notice change. The terms' static checks run when they are built; the
+/// round number, interval and budget are checked against the vault now to fail fast, and again at
+/// publication. The claim window is a duration that publication starts. Zero reserve disables
+/// reimbursement. Gas attribution remains off chain.
+public fun schedule_round<Meme, Quote>(
     vault: &mut LpVault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
     _: &AdminWitness<RewardsAdmin>,
-    lp_fee_policy: &LpFeePolicy,
-    expected_treasury: address,
     number: u64,
     start_checkpoint: u64,
     end_checkpoint: u64,
@@ -44,53 +46,69 @@ public fun publish_round<Meme, Quote>(
     meme_amount: u64,
     quote_amount: u64,
     gas_reserve_amount: u64,
-    claim_deadline_at_ms: u64,
+    claim_window_duration_ms: u64,
+    expected_treasury: address,
+    clock: &Clock,
+) {
+    migrators_version.assert_current();
+
+    let terms = vault::new_round_terms(
+        number,
+        start_checkpoint,
+        end_checkpoint,
+        root,
+        manifest_digest,
+        leaf_count,
+        meme_amount,
+        quote_amount,
+        gas_reserve_amount,
+        claim_window_duration_ms,
+        expected_treasury,
+    );
+    assert_fundable(vault, &terms);
+
+    vault.schedule_round_publication(terms, clock);
+}
+
+/// Anyone publishes the scheduled round once its notice has elapsed: the governed treasury must
+/// still be the expected one, and the round number, interval and budget must still fit the vault.
+/// Funds holder claims and optional gas custody separately, with claims open for the scheduled
+/// window from now.
+public fun publish_round<Meme, Quote>(
+    vault: &mut LpVault<Meme, Quote>,
+    migrators_version: &MigratorsVersion,
+    lp_fee_policy: &LpFeePolicy,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     migrators_version.assert_current();
 
+    let terms = vault.take_round_publication(clock);
     let treasury = lp_fee_policy.protocol_destination();
-    assert!(treasury == expected_treasury, ETreasuryChanged);
-    assert!(number == vault.next_round(), EWrongRound);
-    assert!(
-        start_checkpoint < end_checkpoint
-            && vault.last_checkpoint().is_none_or!(|prior_end| *prior_end <= start_checkpoint),
-        EInvalidInterval,
-    );
-    assert!(
-        root.length() == constants::digest_length!()
-            && manifest_digest.length() == constants::digest_length!(),
-        EInvalidCommitment,
-    );
-    assert!(leaf_count > 0 && leaf_count <= constants::max_reward_leaves!(), EInvalidLeafCount);
-    assert!(meme_amount > 0 || quote_amount > 0, EEmptyBudget);
-
-    assert!(claim_deadline_at_ms > clock.timestamp_ms(), EInvalidClaimDeadline);
-
-    let (available_meme, available_quote) = vault.rewards_balances();
-    assert!(
-        meme_amount <= available_meme && quote_amount <= available_quote
-            && gas_reserve_amount <= available_quote - quote_amount,
-        EInsufficientBudget,
-    );
+    assert!(treasury == terms.expected_treasury(), ETreasuryChanged);
+    assert_fundable(vault, &terms);
+    let claim_deadline_at_ms = clock
+        .timestamp_ms()
+        .checked_add(terms.claim_window_duration_ms())
+        .destroy_or!(abort EClaimDeadlineOverflow);
 
     let vault_id = object::id(vault);
+    let gas_reserve_amount = terms.gas_reserve_amount();
     let (meme, mut quote) = vault.fund_round(
-        end_checkpoint,
-        meme_amount,
-        quote_amount + gas_reserve_amount,
+        terms.end_checkpoint(),
+        terms.meme_amount(),
+        terms.quote_amount() + gas_reserve_amount,
     );
     let gas_reserve = if (gas_reserve_amount > 0) option::some(quote.split(gas_reserve_amount))
     else option::none();
     let round = Round {
         id: object::new(ctx),
         vault: vault_id,
-        number,
+        number: terms.number(),
         claim_deadline_at_ms,
-        root,
-        leaf_count,
-        claimed: unclaimed(leaf_count),
+        root: terms.root(),
+        leaf_count: terms.leaf_count(),
+        claimed: unclaimed(terms.leaf_count()),
         meme,
         quote,
         treasury,
@@ -104,20 +122,66 @@ public fun publish_round<Meme, Quote>(
     blast_events::round_published(
         vault_id,
         round_id,
-        number,
-        start_checkpoint,
-        end_checkpoint,
+        terms.number(),
+        terms.start_checkpoint(),
+        terms.end_checkpoint(),
         claim_deadline_at_ms,
-        root,
-        manifest_digest,
-        leaf_count,
-        meme_amount,
-        quote_amount,
+        terms.root(),
+        terms.manifest_digest(),
+        terms.leaf_count(),
+        terms.meme_amount(),
+        terms.quote_amount(),
         meme_unallocated,
         quote_unallocated,
         treasury,
         gas_reserve_amount,
     );
+}
+
+/// Cancels the scheduled round, even a ready one; nothing was reserved, so no balance moves.
+public fun cancel_round<Meme, Quote>(
+    vault: &mut LpVault<Meme, Quote>,
+    migrators_version: &MigratorsVersion,
+    _: &AdminWitness<CancelAdmin>,
+) {
+    migrators_version.assert_current();
+
+    vault.cancel_round_publication();
+}
+
+/// Schedules a new round notice, after the applied one; replaces any scheduled round.
+public fun schedule_round_delay<Meme, Quote>(
+    vault: &mut LpVault<Meme, Quote>,
+    migrators_version: &MigratorsVersion,
+    _: &AdminWitness<RewardsAdmin>,
+    delay_ms: u64,
+    clock: &Clock,
+) {
+    migrators_version.assert_current();
+
+    vault.schedule_round_publication_delay(delay_ms, clock);
+}
+
+/// Anyone applies a ready round-notice change.
+public fun apply_round_delay<Meme, Quote>(
+    vault: &mut LpVault<Meme, Quote>,
+    migrators_version: &MigratorsVersion,
+    clock: &Clock,
+) {
+    migrators_version.assert_current();
+
+    vault.apply_round_publication_delay(clock);
+}
+
+/// Cancels the pending round-notice change, even a ready one.
+public fun cancel_round_delay<Meme, Quote>(
+    vault: &mut LpVault<Meme, Quote>,
+    migrators_version: &MigratorsVersion,
+    _: &AdminWitness<CancelAdmin>,
+) {
+    migrators_version.assert_current();
+
+    vault.cancel_round_publication_delay();
 }
 
 /// Anyone may relay a proof; delivery is only to its committed beneficiary.
@@ -139,7 +203,7 @@ public fun claim<Meme, Quote>(
     let (word, bit) = claim_bit(index);
     assert!(self.claimed[word] & bit == 0, EAlreadyClaimed);
     assert!(beneficiary != @0x0, EInvalidBeneficiary);
-    assert!(meme_amount > 0 || quote_amount > 0, EEmptyBudget);
+    assert!(meme_amount > 0 || quote_amount > 0, EEmptyClaim);
 
     let leaf_digest =
         merkle::leaf(self.vault, self.number, index, beneficiary, meme_amount, quote_amount);
@@ -227,6 +291,22 @@ public fun close_round<Meme, Quote>(
 
 // === Private Functions ===
 
+/// Checks the terms against the vault: the next round number, an interval after the previous
+/// round's, and a holder budget plus gas reserve within the unreserved rewards.
+fun assert_fundable<Meme, Quote>(vault: &LpVault<Meme, Quote>, terms: &RoundTerms) {
+    assert!(terms.number() == vault.next_round(), EWrongRound);
+    assert!(
+        vault.last_checkpoint().is_none_or!(|prior_end| *prior_end <= terms.start_checkpoint()),
+        EOverlappingInterval,
+    );
+    let (available_meme, available_quote) = vault.rewards_balances();
+    assert!(
+        terms.meme_amount() <= available_meme && terms.quote_amount() <= available_quote
+            && terms.gas_reserve_amount() <= available_quote - terms.quote_amount(),
+        EInsufficientBudget,
+    );
+}
+
 /// A claim bitmap with every leaf's bit clear, 256 leaves per word.
 fun unclaimed(leaf_count: u64): vector<u256> {
     vector::tabulate!(leaf_count.div_ceil(256), |_| 0u256)
@@ -264,68 +344,62 @@ public fun gas_reserve_for_testing<Meme, Quote>(self: &Round<Meme, Quote>): Opti
 const EWrongRound: vector<u8> = b"Round number must match the vault's next round.";
 
 #[error(code = 1)]
-const EInvalidInterval: vector<u8> =
-    b"Checkpoint interval must be nonempty and not overlap the previous round.";
+const EOverlappingInterval: vector<u8> =
+    b"Checkpoint interval must not overlap the previous round.";
 
 #[error(code = 2)]
-const EInvalidCommitment: vector<u8> =
-    b"Root and manifest digest must each contain exactly 32 bytes.";
+const EEmptyClaim: vector<u8> = b"At least one claimed amount must be nonzero.";
 
 #[error(code = 3)]
-const EInvalidLeafCount: vector<u8> = b"Round must contain between 1 and 65,536 leaves.";
-
-#[error(code = 4)]
-const EEmptyBudget: vector<u8> = b"At least one reward amount must be nonzero.";
-
-#[error(code = 5)]
 const EInvalidIndex: vector<u8> = b"Claim index must be less than the committed leaf count.";
 
-#[error(code = 6)]
+#[error(code = 4)]
 const EAlreadyClaimed: vector<u8> = b"This allocation has already been paid.";
 
-#[error(code = 7)]
+#[error(code = 5)]
 const EInvalidBeneficiary: vector<u8> = b"Beneficiary must not be the zero address.";
 
-#[error(code = 8)]
+#[error(code = 6)]
 const EInvalidProof: vector<u8> = b"Proof must match the committed recipient, amounts and domain.";
 
+#[error(code = 7)]
+const ETreasuryChanged: vector<u8> =
+    b"Expected treasury must match the governed protocol destination.";
+
+#[error(code = 8)]
+const EClaimDeadlineOverflow: vector<u8> = b"The claim window must end within u64 milliseconds.";
+
 #[error(code = 9)]
-const ETreasuryChanged: vector<u8> = b"Expected treasury must match the governed protocol destination.";
+const EInsufficientBudget: vector<u8> =
+    b"Holder funding and gas reserve must fit the vault's available balances.";
 
 #[error(code = 10)]
-const EInvalidClaimDeadline: vector<u8> = b"Claim deadline must be in the future.";
-
-#[error(code = 11)]
-const EInsufficientBudget: vector<u8> = b"Holder funding and gas reserve must fit the vault's available balances.";
-
-#[error(code = 12)]
 const EClaimsClosed: vector<u8> = b"The claim deadline has been reached.";
 
-#[error(code = 13)]
+#[error(code = 11)]
 const EWrongVault: vector<u8> = b"Round must be settled or closed against its funding vault.";
 
-#[error(code = 14)]
+#[error(code = 12)]
 const EReserveSettled: vector<u8> = b"Gas reimbursement is disabled or already settled.";
 
-#[error(code = 15)]
+#[error(code = 13)]
 const EOverReserve: vector<u8> = b"Reimbursement must not exceed the bound gas reserve.";
 
-#[error(code = 16)]
+#[error(code = 14)]
 const EClaimsStillOpen: vector<u8> = b"Round can close only at or after its claim deadline.";
 
 // === Imports ===
 
 use blast_admin::blast_acl::AdminWitness;
 
-use blast_fun::blast_fun_domain::RewardsAdmin;
+use blast_fun::blast_fun_domain::{CancelAdmin, RewardsAdmin};
 
 use blast_fun_migrators::{
     blast_events,
-    constants,
     merkle,
     lp_fee_policy::LpFeePolicy,
     blast_fun_migrators::PackageVersion as MigratorsVersion,
-    vault::{Self, LpVault},
+    vault::{Self, LpVault, RoundTerms},
 };
 
 use sui::{balance::{Self, Balance}, clock::Clock};

@@ -333,6 +333,23 @@ pub struct DelayedAction<A> {
     pub pending: Option<Proposal<Change<A>>>,
 }
 
+/// Mirrors `blast_fun_migrators::vault::RoundTerms` and `blast_presale::presale_vault::RoundTerms`,
+/// the terms a vault's round-publication slot holds until anyone publishes the round.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct RoundTerms {
+    pub number: u64,
+    pub start_checkpoint: u64,
+    pub end_checkpoint: u64,
+    pub root: Vec<u8>,
+    pub manifest_digest: Vec<u8>,
+    pub leaf_count: u64,
+    pub meme_amount: u64,
+    pub quote_amount: u64,
+    pub gas_reserve_amount: u64,
+    pub claim_window_duration_ms: u64,
+    pub expected_treasury: SuiAddress,
+}
+
 /// Mirrors each package's `package_admin::UpgradeAction`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum UpgradeAction {

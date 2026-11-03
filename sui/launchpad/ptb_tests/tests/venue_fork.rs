@@ -33,8 +33,8 @@ use std::{collections::BTreeMap, sync::OnceLock};
 use anyhow::{Context, Result, bail, ensure};
 use blake2::{Blake2b, Digest, digest::consts::U32};
 use blast_launchpad_ptb_tests::{
-    ActionScheduled, Change, CompiledPackage, Delayed, DelayedApplied, Expected, Harness, Outcome,
-    UnlinkedPackage, build, build_timelock, build_unlinked, call,
+    ActionScheduled, Change, CompiledPackage, Delayed, DelayedAction, DelayedApplied, Expected, Harness,
+    Outcome, RoundTerms, UnlinkedPackage, build, build_timelock, build_unlinked, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusAddLiquidity, CetusCollectFee,
@@ -1797,8 +1797,8 @@ impl World {
         Ok(())
     }
 
-    /// An administrator publishes a two-leaf round from the rewards balance; a relayed proof pays
-    /// the first beneficiary once.
+    /// An administrator schedules a two-leaf round and, under the zero notice, publishes it in the
+    /// same PTB from the rewards balance; a relayed proof pays the first beneficiary once.
     fn holder_rewards(&mut self, launch: &Launch, m: &Migration) -> Result<()> {
         let before = self.vault(m)?;
         ensure!(before.rewards_meme > 1 && before.rewards_quote > 1, "rewards accrued");
@@ -1815,7 +1815,9 @@ impl World {
         let (start, end) = (1_000u64, 2_000u64);
         let gas_reserve = (before.rewards_quote / 4).max(1);
         let (_, now_at_ms): (ObjectID, u64) = bcs::from_bytes(&self.h.contents(SUI_CLOCK_OBJECT_ID))?;
-        let deadline_at_ms = now_at_ms + 1_000;
+        let claim_window_duration_ms = 1_000u64;
+        let deadline_at_ms = now_at_ms + claim_window_duration_ms;
+        ensure!(before.round_publication.delay_ms == 0 && before.round_publication.pending.is_none());
 
         let mut b = ProgrammableTransactionBuilder::new();
         let signed_in = self.sign_in(&mut b, "RewardsAdmin")?;
@@ -1827,8 +1829,6 @@ impl World {
             vault,
             migrators_version,
             signed_in,
-            policy,
-            b.pure(SuiAddress::from(LP_PROTOCOL))?,
             b.pure(0u64)?,
             b.pure(start)?,
             b.pure(end)?,
@@ -1838,20 +1838,28 @@ impl World {
             b.pure(meme)?,
             b.pure(quote)?,
             b.pure(gas_reserve)?,
-            b.pure(deadline_at_ms)?,
+            b.pure(claim_window_duration_ms)?,
+            b.pure(SuiAddress::from(LP_PROTOCOL))?,
             clock,
         ];
         let meme_type = launch.meme.clone();
+        call(&mut b, self.migrators, "blast_holder_rewards", "schedule_round", vec![meme_type.clone(), self.quote()], args);
         call(
             &mut b,
             self.migrators,
             "blast_holder_rewards",
             "publish_round",
             vec![meme_type.clone(), self.quote()],
-            args,
+            vec![vault, migrators_version, policy, clock],
         );
         let outcome = self.h.execute(b.finish())?;
         outcome.assert_success();
+        let scheduled: Vec<ActionScheduled<RoundTerms>> = outcome.delayed("ActionScheduled", "vault", "RoundPublicationKey")?;
+        ensure!(scheduled.len() == 1 && scheduled[0].owner == m.vault && scheduled[0].ready_at_ms == now_at_ms);
+        ensure!(matches!(&scheduled[0].change, Change::Action(terms) if terms.number == 0
+            && terms.root == root.to_vec() && terms.gas_reserve_amount == gas_reserve
+            && terms.claim_window_duration_ms == claim_window_duration_ms
+            && terms.expected_treasury == LP_PROTOCOL.into()));
         let rounds = outcome.created(&self.h, "blast_holder_rewards", "Round");
         ensure!(rounds.len() == 1 && self.h.object(rounds[0]).is_shared());
         let round = rounds[0];
@@ -1869,6 +1877,7 @@ impl World {
                 == (after.rewards_meme, after.rewards_quote)
         );
         ensure!(after.next_round == 1 && after.last_checkpoint == Some(end));
+        ensure!(after.round_publication.pending.is_none(), "publication consumed the scheduled round");
 
         let claim = |w: &Self| -> Result<ProgrammableTransaction> {
             let mut b = ProgrammableTransactionBuilder::new();
@@ -1903,7 +1912,7 @@ impl World {
         ];
         coins.sort();
         ensure!(outcome.coins_created_for(&self.h, beneficiary.into()) == coins);
-        let expected = Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 6 };
+        let expected = Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 4 };
         let pt = claim(self)?;
         self.h.assert_rolled_back(pt, expected, &[round], &[beneficiary.into()])?;
         // A valid settlement followed by a replay in one PTB must roll back both
@@ -1923,10 +1932,10 @@ impl World {
             Ok(b.finish())
         };
         let pt = settlement(self, round, gas_reserve + 1, false)?;
-        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 15 }, &[round, m.vault, self.admin_cap], &[LP_PROTOCOL.into()])?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 13 }, &[round, m.vault, self.admin_cap], &[LP_PROTOCOL.into()])?;
         let reimbursement = gas_reserve / 2;
         let pt = settlement(self, round, reimbursement, true)?;
-        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 14 }, &[round, m.vault, self.admin_cap], &[LP_PROTOCOL.into()])?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 12 }, &[round, m.vault, self.admin_cap], &[LP_PROTOCOL.into()])?;
         let pt = settlement(self, round, reimbursement, false)?;
         let settled = self.h.execute(pt)?;
         settled.assert_success();
@@ -1948,7 +1957,7 @@ impl World {
             Ok(b.finish())
         };
         let pt = close(self, round)?;
-        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 16 }, &[round, m.vault], &[])?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 14 }, &[round, m.vault], &[])?;
 
         // Publish another funded round after a deliberately skipped holding
         // interval. Its reserve stays unsettled until recovery after revocation.
@@ -1958,12 +1967,13 @@ impl World {
         let version = self.shared(&mut b, self.migrators_version, false)?;
         let policy = self.shared(&mut b, self.policy, false)?;
         let clock = self.clock(&mut b)?;
-        let args = vec![vault, version, signed_in, policy, b.pure(SuiAddress::from(LP_PROTOCOL))?,
+        let args = vec![vault, version, signed_in,
             b.pure(1u64)?, b.pure(end + 100)?, b.pure(end + 200)?,
             b.pure(vec![0xAAu8; 32])?, b.pure(vec![0xBBu8; 32])?,
             b.pure(1u64)?, b.pure(1u64)?, b.pure(0u64)?, b.pure(1u64)?,
-            b.pure(deadline_at_ms)?, clock];
-        call(&mut b, self.migrators, "blast_holder_rewards", "publish_round", vec![meme_type.clone(), self.quote()], args);
+            b.pure(claim_window_duration_ms)?, b.pure(SuiAddress::from(LP_PROTOCOL))?, clock];
+        call(&mut b, self.migrators, "blast_holder_rewards", "schedule_round", vec![meme_type.clone(), self.quote()], args);
+        call(&mut b, self.migrators, "blast_holder_rewards", "publish_round", vec![meme_type.clone(), self.quote()], vec![vault, version, policy, clock]);
         let second = self.h.execute(b.finish())?;
         second.assert_success();
         let second_rounds = second.created(&self.h, "blast_holder_rewards", "Round");
@@ -1985,7 +1995,7 @@ impl World {
         self.h.assert_rolled_back(pt, Expected::Abort { package: self.admin, module: "blast_acl", code: 5 }, &[second_round, m.vault, self.admin_cap], &[LP_PROTOCOL.into()])?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(1_000));
         let pt = claim(self)?;
-        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 12 }, &[round], &[beneficiary.into()])?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 10 }, &[round], &[beneficiary.into()])?;
         let pt = close(self, round)?;
         let closed = self.h.execute(pt)?;
         closed.assert_success();
@@ -2165,6 +2175,7 @@ struct Vault {
     burn_quote: u64,
     next_round: u64,
     last_checkpoint: Option<u64>,
+    round_publication: DelayedAction<RoundTerms>,
 }
 
 #[derive(Deserialize)]
