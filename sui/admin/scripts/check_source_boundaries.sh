@@ -67,9 +67,9 @@ dependency_names="$(awk '
 ' "$package_dir/Move.toml")"
 [[ "$dependency_names" == "$(printf '%s\n' Sui blast_fun_timelock)" ]] \
   || fail "blast_admin may depend only on the pinned Sui framework and Blast timelock."
-expected_timelock_dependency='blast_fun_timelock = { git = "https://github.com/interest-protocol/blast-util-contracts.git", subdir = "sui/timelock", rev = "63b6cf86c0e1a74f699610fe182b1de8d8789a14" }'
+expected_timelock_dependency='blast_fun_timelock = { local = "../timelock" }'
 grep -Fqx "$expected_timelock_dependency" "$package_dir/Move.toml" \
-  || fail "blast_admin must pin the published immutable Blast timelock revision."
+  || fail "blast_admin must use the local immutable Blast timelock package."
 if grep -qE '^\[dev-dependencies(\]|[.])' "$package_dir/Move.toml"; then
   fail "blast_admin may not add dev-only dependencies."
 fi

@@ -447,3 +447,11 @@ test passes, and none is asserted as a cited fact in the records.
 | [0128](0128-reserve-aware-rebalance-increases.md) | Reserve-aware rebalance increases | **accepted** |
 | [0130](0130-protected-permissionless-shutdown.md) | Protected permissionless shutdown of a size-locked Boost | **accepted** |
 | [0134](0134-delayed-administration-pause-and-table-acl.md) | Delayed administration, pause, and a Table-backed ACL | proposed |
+
+## Consolidated utility packages
+
+| ADR | Decision | Status |
+| --- | --- | --- |
+| [0052](0052-stepped-linear-vesting.md) | Stepped-linear vesting | accepted |
+| [0055](0055-global-vesting-package-and-checkpoints.md) | Global vesting package and checkpoints | accepted |
+| [0135](0135-utility-contracts-consolidation.md) | Utility contracts consolidation | accepted |

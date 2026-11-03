@@ -40,7 +40,7 @@ under an allowlist, since allowlisted wallets may commit any positive amount.
 Part of the raise can also be allocated to recipients in BPS; the LP seeds with
 the rest. Any token or raise recipient share may vest: its cliff, step period,
 and step count are fixed at creation, and migration locks it in an irrevocable
-[`blast_fun_vesting`](https://github.com/interest-protocol/blast-util-contracts/tree/main/sui/vesting)
+[`blast_fun_vesting`](../vesting/README.md)
 linear schedule that starts at migration instead of paying it out. Fee shares
 cannot vest. Participant tokens may vest too, under terms fixed at creation:
 each claim then locks the participant's tokens in its own irrevocable schedule

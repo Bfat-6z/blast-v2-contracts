@@ -157,8 +157,8 @@ edit 's/^    pending_super_admin: Timelocked<Option<address>>,$/    pending_supe
   "$case_dir/sources/blast_acl.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case unpinned_timelock)"
-edit 's/rev = "63b6cf86c0e1a74f699610fe182b1de8d8789a14"/rev = "main"/' "$case_dir/Move.toml"
+case_dir="$(new_case wrong_timelock_path)"
+edit 's|local = "../timelock"|local = "../vesting"|' "$case_dir/Move.toml"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case domain_typed_acl)"

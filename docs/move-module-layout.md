@@ -1,6 +1,6 @@
-# Move module layout
+# Immutable utility module layout
 
-Every module under `sui/` orders its sections top to bottom as follows, and skips any section it
+The preserved modules under `sui/otc`, `sui/vesting`, and `sui/timelock` orders its sections top to bottom as follows, and skips any section it
 does not need:
 
 1. `// === Constants ===`
@@ -16,3 +16,5 @@ Test modules follow the same rule: imports go last.
 
 `#[error]` abort codes encode source line numbers, so moving code in a published package changes
 its abort codes. Verify published source at its publish commit.
+
+For other packages, follow the repository [agent instructions](../AGENTS.md).
