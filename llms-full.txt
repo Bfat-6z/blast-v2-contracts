@@ -278,10 +278,10 @@ reference. Each admin call names exactly one role in its signature:
 | `blast_presale_domain::UnpauseAdmin` | `blast_presale_package::unpause` |
 | `blast_presale_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_presale_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `presale_vault::schedule_protocol_lp_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
-| `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination`, `holder_rewards::publish_round` |
+| `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
 | `blast_presale_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
 | `blast_presale_domain::AdapterAdmin` | `creation_policy::schedule_migration_witness` |
-| `blast_presale_domain::RewardsAdmin` | `holder_rewards::settle_gas_reserve` |
+| `blast_presale_domain::RewardsAdmin` | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` |
 | `blast_presale_domain::UpgradeAdmin` | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` |
 
 A role from another package, such as `blast_fun_domain::FeeAdmin`, is a different type and
@@ -799,9 +799,7 @@ who receives holder assets and whether each round reimburses gas. A single
 `holder_rewards::Round` holds its holder balances separately from its optional
 Quote gas reserve.
 
-1. `holder_rewards::publish_round`: *Blast treasury admin* (`TreasuryAdmin`). The
-   treasury multisig reviews the root, manifest digest and amounts before signing.
-   Grant the automated worker only `RewardsAdmin` for settlement. Publication takes the
+1. `holder_rewards::publish_round`: *Blast admin* (`RewardsAdmin`). It takes the
    mutable shared vault, shared governed `FeePolicy`, expected treasury address,
    interval and commitments,
    exact holder Meme/Quote amounts, an explicit gas reserve amount, future
@@ -5036,7 +5034,7 @@ Same-named roles in different packages are different types.
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
 | `blast_boosts_aftermath` | declares none | uses the four Boosts core roles |
 | `blast_partners` | `blast_partners` | `blast_partners::blast_partners::PartnerAdmin` (register partners, schedule shares and caps) |
-| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (govern upgrade notice, schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (govern the presale fee destination and fund holder-reward rounds), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (settle a funded round’s gas reserve), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
+| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (govern upgrade notice, schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (govern the presale fee destination), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (fund holder-reward rounds and settle their gas reserves), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
 
 ### Lifecycle
 
@@ -6247,7 +6245,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 /// Governs administrative delay and compatible upgrades with atomic version cutover.
 public struct UpgradeAdmin {}
 
-/// Governs the protocol fee destination and publishes holder-reward rounds.
+/// Sets the address every protocol fee is paid to.
 public struct TreasuryAdmin {}
 
 /// Sets Blast's rates for new sales, one sale before its start, and one migrated sale's vault, and
@@ -6260,7 +6258,7 @@ public struct ListingAdmin {}
 /// Admits or removes the migrators that may create sales and vaults.
 public struct AdapterAdmin {}
 
-/// Settles capped gas reserves in published holder-reward rounds.
+/// Publishes holder-reward rounds and settles capped gas reserves.
 public struct RewardsAdmin {}
 
 /// May set emergency pause bits, never clear them.
@@ -6914,7 +6912,7 @@ public struct DestinationChanged has copy, drop {
 
 ### `blast_presale::holder_rewards`
 
-Merkle rounds Blast's treasury administrator funds from a migrated presale vault's holder-reward fee share.
+Merkle rounds Blast's rewards administrator funds from a migrated presale vault's holder-reward fee share.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/holder_rewards.move
 
@@ -6948,7 +6946,7 @@ public struct Round<phantom Meme, phantom Quote> has key {
 public fun publish_round<Meme, Quote>(
     vault: &mut presale_vault::Vault<Meme, Quote>,
     package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::TreasuryAdmin>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::RewardsAdmin>,
     fee_policy: &fee_policy::FeePolicy,
     expected_treasury: address,
     number: u64,

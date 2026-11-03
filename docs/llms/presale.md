@@ -98,10 +98,10 @@ reference. Each admin call names exactly one role in its signature:
 | `blast_presale_domain::UnpauseAdmin` | `blast_presale_package::unpause` |
 | `blast_presale_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_presale_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `presale_vault::schedule_protocol_lp_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
-| `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination`, `holder_rewards::publish_round` |
+| `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
 | `blast_presale_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
 | `blast_presale_domain::AdapterAdmin` | `creation_policy::schedule_migration_witness` |
-| `blast_presale_domain::RewardsAdmin` | `holder_rewards::settle_gas_reserve` |
+| `blast_presale_domain::RewardsAdmin` | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` |
 | `blast_presale_domain::UpgradeAdmin` | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` |
 
 A role from another package, such as `blast_fun_domain::FeeAdmin`, is a different type and
@@ -619,9 +619,7 @@ who receives holder assets and whether each round reimburses gas. A single
 `holder_rewards::Round` holds its holder balances separately from its optional
 Quote gas reserve.
 
-1. `holder_rewards::publish_round`: *Blast treasury admin* (`TreasuryAdmin`). The
-   treasury multisig reviews the root, manifest digest and amounts before signing.
-   Grant the automated worker only `RewardsAdmin` for settlement. Publication takes the
+1. `holder_rewards::publish_round`: *Blast admin* (`RewardsAdmin`). It takes the
    mutable shared vault, shared governed `FeePolicy`, expected treasury address,
    interval and commitments,
    exact holder Meme/Quote amounts, an explicit gas reserve amount, future

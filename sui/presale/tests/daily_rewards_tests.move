@@ -115,7 +115,7 @@ fun publish(self: &mut DailyRewardsFixture, number: u64, start: u64, end: u64) {
     let policy = fee_policy::new_zero_fees_for_testing(self.scenario.ctx());
     self.vault.publish_round(
         &package_version,
-        &blast_acl::witness_for_testing<TreasuryAdmin>(),
+        &blast_acl::witness_for_testing<RewardsAdmin>(),
         &policy,
         policy.destination(),
         number,
@@ -183,7 +183,7 @@ use blast_admin::blast_acl;
 
 use blast_presale::{
     blast_presale as presale,
-    blast_presale_domain::TreasuryAdmin,
+    blast_presale_domain::RewardsAdmin,
     bps,
     fee_policy,
     holder_rewards::{Self as rewards, Round},
