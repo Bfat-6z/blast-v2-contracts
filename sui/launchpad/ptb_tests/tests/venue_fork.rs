@@ -150,26 +150,53 @@ fn bluefin_quote_larger_seed_fixes_quote() -> Result<()> {
 
 #[test]
 fn cetus_meme_a_partial_buybacks_burn_native_supply() -> Result<()> {
-    partial_buybacks_burn_native_supply(Case::CetusMemeA)
+    buybacks_burn_native_supply(Case::CetusMemeA, false)
 }
 
 #[test]
 fn cetus_meme_b_partial_buybacks_burn_native_supply() -> Result<()> {
-    partial_buybacks_burn_native_supply(Case::CetusMemeB)
+    buybacks_burn_native_supply(Case::CetusMemeB, false)
 }
 
 #[test]
 fn bluefin_partial_buybacks_burn_native_supply() -> Result<()> {
-    partial_buybacks_burn_native_supply(Case::Bluefin)
+    buybacks_burn_native_supply(Case::Bluefin, false)
 }
 
-fn partial_buybacks_burn_native_supply(case: Case) -> Result<()> {
-    let mut world = World::new(case)?;
-    let launch = world.start_launch_with_supply(&initial_split(), true)?;
+#[test]
+fn cetus_buyback_returns_unspent_swap_input() -> Result<()> {
+    buybacks_burn_native_supply(Case::CetusMemeA, true)
+}
+
+#[test]
+fn bluefin_buyback_returns_unspent_swap_input() -> Result<()> {
+    buybacks_burn_native_supply(Case::Bluefin, true)
+}
+
+fn buybacks_burn_native_supply(case: Case, exhaust_liquidity: bool) -> Result<()> {
+    let mut world = World::new_with_supply(case, true)?;
+    if exhaust_liquidity {
+        // Seed a shallow pool so its entire full-range liquidity is reachable with u64 input.
+        world.graduation_target = 20;
+        if case.is_cetus() {
+            world.use_cetus_terminal_tick_tier()?;
+        }
+    }
+    let launch = world.start_launch(&initial_split())?;
     world.graduate(&launch)?;
     let mut migration = world.migrate(&launch)?;
-    world.swap(&launch, &migration, Side::QuoteIn, 3 * case.quote_unit())?;
-    world.collect(&launch, &mut migration, None)?;
+    if exhaust_liquidity {
+        // Fund just the vault balance in the simulator. The pool and swap remain real venue state.
+        let mut vault = world.vault(&migration)?;
+        vault.burn_quote = u64::MAX / 2;
+        let mut object = world.h.object(migration.vault);
+        object.data.try_as_move_mut().context("LP vault")?
+            .set_contents_unsafe(bcs::to_bytes(&vault)?);
+        world.h.insert(object);
+    } else {
+        world.swap(&launch, &migration, Side::QuoteIn, 3 * case.quote_unit())?;
+        world.collect(&launch, &mut migration, None)?;
+    }
 
     let supply = |world: &World| -> Result<u64> {
         let currency: Currency = bcs::from_bytes(&world.h.contents(launch.currency))?;
@@ -179,9 +206,10 @@ fn partial_buybacks_burn_native_supply(case: Case) -> Result<()> {
         }
     };
 
-    for _ in 0..2 {
+    let attempts = if exhaust_liquidity { 1 } else { 2 };
+    for _ in 0..attempts {
         let mut expected_vault = world.vault(&migration)?;
-        let quote_in = expected_vault.burn_quote / 2;
+        let quote_in = if exhaust_liquidity { expected_vault.burn_quote } else { expected_vault.burn_quote / 2 };
         ensure!(quote_in > 0, "the previous buyback left spendable Quote");
         let supply_before = supply(&world)?;
         let pt = world.buyback_pt(&launch, &migration, migration.pool, quote_in, 1)?;
@@ -191,7 +219,7 @@ fn partial_buybacks_burn_native_supply(case: Case) -> Result<()> {
         let events: Vec<BuybackBurned> = world.events(&outcome, "BuybackBurned");
         ensure!(events.len() == 1);
         let burn = &events[0];
-        ensure!(burn.vault_id == migration.vault && burn.quote_spent == quote_in && burn.meme_burned > 0);
+        ensure!(burn.vault_id == migration.vault && burn.meme_burned > 0);
         let (module, name) = if case.is_cetus() { ("pool", "SwapEvent") } else { ("events", "AssetSwap") };
         let swaps: Vec<_> = outcome.events.iter()
             .filter(|event| event.type_.module.as_str() == module && event.type_.name.as_str() == name)
@@ -209,9 +237,14 @@ fn partial_buybacks_burn_native_supply(case: Case) -> Result<()> {
             (pool, direction, input, output)
         };
         ensure!(pool == migration.pool && a_to_b != case.meme_is_a(), "the swap bought Meme with Quote");
-        ensure!(amount_in == quote_in, "the venue spent exactly the requested Quote");
+        if exhaust_liquidity {
+            ensure!(amount_in > 0 && amount_in < quote_in, "the venue returned unspent input");
+        } else {
+            ensure!(amount_in == quote_in, "the venue spent exactly the requested Quote");
+        }
+        ensure!(burn.quote_spent == amount_in, "the burn records actual venue spend");
         ensure!(burn.meme_burned == amount_out, "the entire venue output was burned");
-        expected_vault.burn_quote -= quote_in;
+        expected_vault.burn_quote -= amount_in;
         ensure!(burn.quote_pending == expected_vault.burn_quote);
         ensure!(world.vault(&migration)? == expected_vault, "only the pending burn Quote changed");
         ensure!(supply_before.checked_sub(supply(&world)?) == Some(burn.meme_burned), "Meme was removed from native supply");
@@ -429,6 +462,7 @@ struct World {
     h: Harness,
     case: Case,
     graduation_target: u64,
+    cetus_tier: (u32, u64),
     checkpoint: u64,
     venue: BTreeMap<String, ObjectID>,
     admin: ObjectID,
@@ -444,6 +478,7 @@ struct World {
     root: ObjectID,
     admin_cap: ObjectID,
     project: CompiledPackage,
+    project_token: &'static str,
     coins: u64,
     shares: (u64, u64),
     lines: Vec<String>,
@@ -453,6 +488,10 @@ impl World {
     /// Inserts the snapshot, publishes the launchpad and the linked migrators, and configures
     /// both under the production admin path.
     fn new(case: Case) -> Result<Self> {
+        Self::new_with_supply(case, false)
+    }
+
+    fn new_with_supply(case: Case, burnable: bool) -> Result<Self> {
         let sui_dir = sui_dir();
         let work =
             blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(format!("venue_fork_{case:?}"));
@@ -512,8 +551,13 @@ impl World {
         ])?;
         let (version, custody) = h.wrap_launchpad(blast, &published, admin, &admin_published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
         h.unpause(blast, "blast_fun_domain", admin, &admin_published, version, custody, [runtime, config], 7)?;
+        let (fixture, project_token) = if burnable {
+            ("fixture/burnable_project", "burnable_token::BURNABLE_TOKEN")
+        } else {
+            ("fixture/project", "token::TOKEN")
+        };
         let project = build(
-            &blast_launchpad_ptb_tests::crate_dir().join("fixture/project"),
+            &blast_launchpad_ptb_tests::crate_dir().join(fixture),
             &[core[0], core[1], (launchpad_dir.as_path(), blast)],
             &work,
         )?;
@@ -542,6 +586,7 @@ impl World {
             h,
             case,
             graduation_target: 25 * case.quote_unit(),
+            cetus_tier: (CETUS_TICK_SPACING, CETUS_FEE_RATE),
             checkpoint,
             venue,
             admin,
@@ -557,6 +602,7 @@ impl World {
             root,
             admin_cap,
             project,
+            project_token,
             coins: 0,
             shares: DEFAULT_SHARES,
             lines: Vec::new(),
@@ -724,11 +770,10 @@ impl World {
 
     /// Publishes one generated project and finalizes its currency. On the Meme-B route the Meme's
     /// type name must sort below USDC's, so projects are published until one does.
-    fn publish_ticket(&mut self, burnable: bool) -> Result<(ObjectID, ObjectID, TypeTag)> {
+    fn publish_ticket(&mut self) -> Result<(ObjectID, ObjectID, TypeTag)> {
         for _ in 0..16 {
             let (project_id, published) = self.h.publish(self.project.clone())?;
-            let token = if burnable { "burnable_token::BURNABLE_TOKEN" } else { "token::TOKEN" };
-            let meme = tag(&format!("{project_id}::{token}"));
+            let meme = tag(&format!("{project_id}::{}", self.project_token));
             if meme_is_cetus_a(&meme, &self.quote()) != self.case.meme_is_a() && self.case.is_cetus() {
                 continue;
             }
@@ -821,6 +866,23 @@ impl World {
         Ok(b.finish())
     }
 
+    /// The pinned config already registers spacing 2. Admit SUI at that tier in the fixture
+    /// so the final initialized tick is MAX_TICK, beyond the adapter's price limit.
+    fn use_cetus_terminal_tick_tier(&mut self) -> Result<()> {
+        let config = self.venue("cetus_allowed_pair_config_sui");
+        let mut object = self.h.object(config);
+        let (field_id, pair, mut spacings): (ObjectID, String, Vec<u32>) =
+            bcs::from_bytes(&self.h.contents(config))?;
+        ensure!(field_id == config && spacings == [CETUS_TICK_SPACING]);
+        let spacing = 2;
+        spacings.push(spacing);
+        object.data.try_as_move_mut().context("Cetus quote allowlist")?
+            .set_contents_unsafe(bcs::to_bytes(&(field_id, pair, spacings))?);
+        self.h.insert(object);
+        self.cetus_tier = (spacing, 100);
+        Ok(())
+    }
+
     fn target(&self) -> u64 {
         self.graduation_target
     }
@@ -832,11 +894,7 @@ impl World {
     /// Rejects tiers the venue would refuse, rolled back, then starts the launch at a valid tier
     /// and checks what it records.
     fn start_launch(&mut self, split: &FeeSplit) -> Result<Launch> {
-        self.start_launch_with_supply(split, false)
-    }
-
-    fn start_launch_with_supply(&mut self, split: &FeeSplit, burnable: bool) -> Result<Launch> {
-        let (ticket, currency, meme) = self.publish_ticket(burnable)?;
+        let (ticket, currency, meme) = self.publish_ticket()?;
         let owners = [self.h.sender];
         if self.case.is_cetus() {
             let watched = [ticket, currency, self.venue_config, self.venue("cetus_pools")];
@@ -867,7 +925,7 @@ impl World {
         }
 
         let tier = if self.case.is_cetus() {
-            (CETUS_TICK_SPACING, CETUS_FEE_RATE)
+            self.cetus_tier
         } else {
             (BLUEFIN_TICK_SPACING, BLUEFIN_FEE_RATE)
         };
@@ -893,7 +951,7 @@ impl World {
             let minted: Vec<MintPoolCreationCap> = venue_events(&created, "factory", "MintPoolCreationCap");
             ensure!(reserved.len() == 1 && registered.len() == 1 && minted.len() == 1);
             let cap = reserved[0].pool_creation_cap_id;
-            ensure!(reserved[0].tick_spacing == CETUS_TICK_SPACING && registered[0].tick_spacing == CETUS_TICK_SPACING);
+            ensure!(reserved[0].tick_spacing == tier.0 && registered[0].tick_spacing == tier.0);
             ensure!(registered[0].cap == cap && minted[0].cap == cap);
             ensure!(
                 registered[0].coin_type == cetus_name(&launch.meme)
@@ -1133,10 +1191,10 @@ impl World {
 
         let (lower, upper, sqrt_price) = if self.case.is_cetus() {
             let pools: Vec<CreatePool> = venue_events(&outcome, "factory", "CreatePoolEvent");
-            ensure!(pools.len() == 1 && pools[0].pool_id == m.pool && pools[0].tick_spacing == CETUS_TICK_SPACING);
+            ensure!(pools.len() == 1 && pools[0].pool_id == m.pool && pools[0].tick_spacing == self.cetus_tier.0);
             let state = self.cetus_pool(&m)?;
             ensure!(
-                (state.tick_spacing, state.fee_rate) == (CETUS_TICK_SPACING, CETUS_FEE_RATE),
+                (state.tick_spacing, state.fee_rate) == self.cetus_tier,
                 "pool at the launch's tier"
             );
             ensure!(state.liquidity == m.liquidity);
@@ -1188,7 +1246,7 @@ impl World {
             ensure!(self.h.is_type(m.position, "position", "Position"));
             (provided[0].lower_tick as i32, provided[0].upper_tick as i32, pools[0].current_sqrt_price)
         };
-        let spacing = if self.case.is_cetus() { CETUS_TICK_SPACING } else { BLUEFIN_TICK_SPACING } as i32;
+        let spacing = if self.case.is_cetus() { self.cetus_tier.0 } else { BLUEFIN_TICK_SPACING } as i32;
         ensure!(lower == -(443_636 / spacing * spacing) && upper == 443_636 / spacing * spacing, "full range");
         ensure!(
             sqrt_price == expected_sqrt_price(LP_MEME, self.lp_quote(), self.case.meme_is_a()),
@@ -1199,8 +1257,8 @@ impl World {
             "migrate ({:?}): pool {} tier ({}, {}) ticks ({lower}, {upper}) sqrt_price {sqrt_price}; supplied=({}, {}) residual=({}, {}) liquidity {}; Blast and recipient allocations ({}, {}) each paid; {}",
             self.case,
             m.pool,
-            if self.case.is_cetus() { CETUS_TICK_SPACING } else { BLUEFIN_TICK_SPACING },
-            if self.case.is_cetus() { CETUS_FEE_RATE } else { BLUEFIN_FEE_RATE },
+            if self.case.is_cetus() { self.cetus_tier.0 } else { BLUEFIN_TICK_SPACING },
+            if self.case.is_cetus() { self.cetus_tier.1 } else { BLUEFIN_FEE_RATE },
             supplied.0,
             supplied.1,
             created.residual_meme,
@@ -2271,7 +2329,7 @@ struct Recipient {
 }
 
 /// Mirrors `blast_fun_migrators::vault::LpVault`; each `Balance` is one `u64`.
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 struct Vault {
     id: ObjectID,
     pool_id: ObjectID,

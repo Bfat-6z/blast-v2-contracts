@@ -1389,18 +1389,10 @@ impl World {
     /// ticket, the shared currency, and the Meme type.
     fn publish_ticket(&mut self) -> Result<(ObjectID, ObjectID, TypeTag)> {
         let (project_id, published) = self.h.publish(self.project.clone())?;
-        // The fixture also ships `burnable_token`, whose init issues a second ticket; use `token`'s.
-        assert_eq!(published.wrapped_payloads(self.blast), ["LaunchTicketCreated", "LaunchTicketCreated"]);
+        assert_eq!(published.wrapped_payloads(self.blast), ["LaunchTicketCreated"]);
+        let ticket = published.created(&self.h, "launch_ticket", "LaunchTicket")[0];
+        let pending_currency = published.created(&self.h, "coin_registry", "Currency")[0];
         let meme = parse_sui_type_tag(&format!("{project_id}::token::TOKEN"))?;
-        let created_for_meme = |module, name| -> ObjectID {
-            published.created(&self.h, module, name).into_iter().find(|id| {
-                self.h.object(*id).data.try_as_move().is_some_and(|object| {
-                    object.type_().type_params().first().is_some_and(|coin| coin.as_ref() == &meme)
-                })
-            }).unwrap_or_else(|| panic!("published {module}::{name} for {meme}"))
-        };
-        let ticket = created_for_meme("launch_ticket", "LaunchTicket");
-        let pending_currency = created_for_meme("coin_registry", "Currency");
 
         let mut builder = ProgrammableTransactionBuilder::new();
         let registry = builder.obj(self.h.shared(SUI_COIN_REGISTRY_OBJECT_ID, true))?;

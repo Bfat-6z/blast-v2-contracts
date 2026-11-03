@@ -38,8 +38,8 @@ policy before the chosen delay and release.
    `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
    unchanged at compatible (`0`). Record the newly shared `PackageVersion` from
    these finalization effects; its initial pause mask must be 11. Verify zero notice
-   on publication-owned policy and 172,800,000 ms (48 hours) on upgrade custody. Publication must be deleted and never available again. From the publish effects, record the
-   shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
+   on publication-owned policy and 48 hours on upgrade custody. Verify that wrapping
+   consumed the Publication. From the publish effects, record the shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
 5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
    (`blast_acl::grant_role` with each `blast_presale_domain` type) to the
    operations multisig's `AdminCap`, minting one with `blast_acl::grant_admin`

@@ -114,9 +114,9 @@ Require all of the following and retain the readbacks:
   current operational generation, initially `1`, and pause mask `7` (Create,
   Trading and Migrate). An aborted wrap leaves the
   Publication and cap unchanged and creates neither shared output.
-- Publication-owned policies have zero applied notice and no pending proposals;
-  upgrade custody reads 172,800,000 ms (48 hours). This setup state is not the
-  approved release policy.
+- Publication-owned policies start at zero notice. Upgrade custody starts at
+  48 hours. Verify that neither has a pending proposal. This setup state is not
+  the approved release policy.
 
 Write a normalized record under `deployments/sui/mainnet/` following
 [`deployments/README.md`](../../deployments/README.md). Include original and
@@ -135,10 +135,10 @@ Use the root to grant the approved role-specific AdminCaps. Sign in through the
 live ACL for ordinary policy operations with the current PackageVersion. Configure
 treasury, protocol fee share, trade/creation fees, allocation and claim signer;
 admit each approved Quote and reviewed adapter. Protected policies use ordinary
-schedule/apply calls with Clock. At zero notice both calls can share a PTB.
-Quote listing is immediate; claim-signer admission waits the signer set's notice
-(zero during setup) and revocation is immediate. Build validated Bps inputs
-in the PTB. Zero fees and an empty signer are legal but require explicit approval.
+schedule/apply calls with Clock. At zero notice both calls can share a PTB;
+Quote-listing changes are immediate. Claim-signer admission waits the signer
+set's notice (zero during setup) and revocation is immediate. Build validated
+Bps inputs in the PTB. Zero fees and an empty signer are legal but require explicit approval.
 Read back the chosen values, routes and applied-value events.
 
 Before release, apply or cancel every outstanding zero-notice proposal, including
