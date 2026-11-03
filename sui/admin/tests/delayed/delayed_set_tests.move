@@ -294,6 +294,57 @@ fun destruction_records_the_end_of_the_set_and_its_members() {
     clock.destroy_for_testing();
 }
 
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun creation_rejects_a_notice_above_the_ceiling() {
+    let set = new_witness_set(delayed::max_delay_ms() + 1);
+
+    set.destroy();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun a_proposed_notice_above_the_ceiling_rejects() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(10);
+
+    set.schedule_delay(delayed::max_delay_ms() + 1, &clock);
+
+    abort
+}
+
+#[test]
+fun a_set_is_guarded_only_with_a_nonzero_notice_and_nothing_pending() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(0);
+    assert!(!set.is_guarded());
+
+    set.schedule_add(@0xA, &clock);
+    set.schedule_delay(10, &clock);
+    set.apply_delay(&clock);
+    assert!(!set.is_guarded());
+
+    set.apply_add(@0xA, &clock);
+    assert!(set.is_guarded());
+
+    set.schedule_delay(0, &clock);
+    assert!(!set.is_guarded());
+
+    set.cancel_delay();
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun a_set_accepts_the_ceiling_notice() {
+    let set = new_witness_set(delayed::max_delay_ms());
+
+    assert_eq!(set.delay_ms(), delayed::max_delay_ms());
+    set.destroy();
+}
+
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.
@@ -329,6 +380,7 @@ fun collect<Event: copy + drop>(): Event {
 // === Imports ===
 
 use blast_admin::{
+    delayed,
     delayed_set::{
         Self,
         DelayedSet,

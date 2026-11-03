@@ -146,6 +146,11 @@ public(package) fun protocol_fees(
     ProtocolFees { raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps }
 }
 
+/// True when every fee policy notice is guarded (see `package_admin::unpause`).
+public(package) fun is_guarded(self: &FeePolicy): bool {
+    self.destination.is_guarded() && self.fees.is_guarded()
+}
+
 public(package) fun fees(self: &FeePolicy): ProtocolFees {
     self.fees.value()
 }

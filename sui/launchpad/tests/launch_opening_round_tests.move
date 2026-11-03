@@ -101,7 +101,7 @@ fun security_partial_unpause_restores_join_and_settle_and_full_pause_preserves_d
         .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
     fixture
         .package_version
-        .unpause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UnpauseAdmin>(), 2);
+        .clear_pause_bits(2);
     fixture.join(BOB, BOB_BID);
     fixture.set_time(ROUND_ENDS_AT_MS);
     fixture.settle(KEEPER);

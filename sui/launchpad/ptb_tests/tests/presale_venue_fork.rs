@@ -36,7 +36,7 @@ use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock, time::Duration};
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
     CompiledPackage, Delayed, DelayedAction, DelayedApplied, Expected, Harness, Outcome, RoundTerms, UnlinkedPackage,
-    build, build_unlinked, build_vesting, call,
+    append_unpause, build, build_unlinked, build_vesting, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusCollectFee, CetusOpenPosition,
@@ -800,7 +800,7 @@ impl World {
         call(&mut b, presale, "fee_policy", "schedule_fees", vec![], vec![fees, version_arg, fee_admin, zero_bps, zero_bps, zero_bps, zero_bps, next_delay, clock]);
         call(&mut b, presale, "fee_policy", "apply_fees", vec![], vec![fees, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
-        h.unpause(presale, "blast_presale_package", admin, &admin_published, version, 11)?;
+        h.unpause(presale, "blast_presale_domain", admin, &admin_published, version, custody[0], [fee_policy[0], creation_policy[0]], 11)?;
         ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
         Ok(World {
@@ -858,9 +858,12 @@ impl World {
 
     fn append_pause(&self, b: &mut ProgrammableTransactionBuilder, pause: bool, bits: u8, role: &str) -> Result<()> {
         let witness = self.sign_in(b, role)?;
+        if !pause {
+            return append_unpause(&self.h, b, self.presale, self.custody, self.version, witness, [self.fee_policy, self.creation_policy], bits);
+        }
         let version = b.obj(self.h.shared(self.version, true))?;
         let bits = b.pure(bits)?;
-        call(b, self.presale, "blast_presale_package", if pause { "pause" } else { "unpause" }, vec![], vec![version, witness, bits]);
+        call(b, self.presale, "blast_presale_package", "pause", vec![], vec![version, witness, bits]);
         Ok(())
     }
 

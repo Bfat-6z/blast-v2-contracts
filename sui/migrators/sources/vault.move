@@ -11,8 +11,11 @@ module blast_fun_migrators::vault;
 const DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 /// Initial notice before a scheduled holder-reward round may publish, or its next notice
-/// period may change. Zero lets a round schedule and publish in one transaction.
-const DEFAULT_ROUND_NOTICE_MS: u64 = 0;
+/// period may change: 2 hours, so CancelAdmin can stop a bad round while daily rounds still fit.
+const DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;
+
+/// Largest holder-reward gas reserve, in basis points of the round's holder Quote.
+const MAX_GAS_RESERVE_BPS: u64 = 1_000;
 
 // === Public Types ===
 
@@ -492,6 +495,10 @@ public(package) fun new_round_terms(
     assert!(meme_amount > 0 || quote_amount > 0, EEmptyBudget);
     assert!(start_checkpoint < end_checkpoint, EEmptyInterval);
     assert!(quote_amount.checked_add(gas_reserve_amount).is_some(), EBudgetOverflow);
+    assert!(
+        (gas_reserve_amount as u128) * 10_000 <= (quote_amount as u128) * (MAX_GAS_RESERVE_BPS as u128),
+        EGasReserveTooLarge,
+    );
     assert!(expected_treasury != @0x0, EZeroTreasury);
     assert!(claim_window_duration_ms > 0, EZeroClaimWindow);
 
@@ -914,6 +921,9 @@ const EZeroClaimWindow: vector<u8> = b"Claim window must be positive.";
 #[error(code = 13)]
 const EWrongRoundProposal: vector<u8> =
     b"The pending round publication is the other kind: a round, or a notice change.";
+
+#[error(code = 14)]
+const EGasReserveTooLarge: vector<u8> = b"Gas reserve must be at most 10% of the round's holder Quote.";
 
 // === Imports ===
 

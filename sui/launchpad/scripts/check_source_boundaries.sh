@@ -313,7 +313,7 @@ if [[ ! -f sources/blast_fun.move ]] \
   || ! rg -q '^const NEXT_PACKAGE_VERSION: u64 = 2;$' sources/blast_fun.move \
   || [[ "$(rg -c '^(public struct|fun) ' <<<"$blast_production")" != 4 ]] \
   || [[ "$(rg -c '^fun init\(' <<<"$blast_production")" != 1 ]] \
-  || [[ "$(rg -c '^public\(package\) fun (destroy|share_version|assert_current|assert_next|advance|assert_not_paused)\(' <<<"$blast_production")" != 6 ]] \
+  || [[ "$(rg -c '^public\(package\) fun (destroy|share_version|assert_current|assert_next|advance|assert_not_paused|clear_pause_bits)\(' <<<"$blast_production")" != 7 ]] \
   || rg -n '^public\(package\) fun activate\(' <<<"$blast_production" \
   || ! rg -Fq 'self.generation.assert_current(PACKAGE_VERSION);' sources/blast_fun.move \
   || ! rg -Fq 'self.generation.assert_next(NEXT_PACKAGE_VERSION);' sources/blast_fun.move \
@@ -331,7 +331,7 @@ if [[ "$(move_production_body init <<<"$(move_facts sources/blast_fun.move)")" \
     != 'let Publication { id, publisher, generation } = self; id.delete(); (publisher, generation)' ]] \
   || [[ "$(move_production_body share_version <<<"$(move_facts sources/blast_fun.move)")" \
     != 'transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation });' ]] \
-  || [[ "$(rg -c '^public\(package\) fun ' <<<"$blast_production")" != 6 ]] \
+  || [[ "$(rg -c '^public\(package\) fun ' <<<"$blast_production")" != 7 ]] \
   || [[ "$(rg -l '\bshare_version\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
     != 'sources/blast_fun.move sources/package_admin.move ' ]]; then
   echo 'Only wrap may activate the unique publication proof after sealing native capability custody.' >&2
@@ -404,7 +404,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'blast_fun:pause:PauseAdmin blast_fun:unpause:UnpauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_delay:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_delay:AdapterAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin package_admin:schedule_upgrade_delay:UpgradeAdmin runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin ' ]]; then
+  'blast_fun:pause:PauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_delay:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_delay:AdapterAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin package_admin:schedule_upgrade_delay:UpgradeAdmin package_admin:unpause:UnpauseAdmin runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))
@@ -422,6 +422,16 @@ fi
 
 package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/package_admin.move)"
 
+# Unpausing is the release gate: only package_admin::unpause clears pause bits, after the
+# version check and the guarded-notice check over every publication-owned policy.
+if [[ "$(rg -l '\bclear_pause_bits\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
+    != 'sources/blast_fun.move sources/package_admin.move ' ]] \
+  || [[ "$(move_production_body unpause <<<"$(move_facts sources/package_admin.move)")" \
+    != 'package_version.assert_current(); assert!( self.upgrade.is_guarded() && runtime_config.is_guarded() && launch_config.is_guarded(), blast_fun::errors::unguarded_notice!(), ); package_version.clear_pause_bits(bits);' ]]; then
+  echo 'Only package_admin::unpause may clear pause bits, after every notice is guarded.' >&2
+  failures=$((failures + 1))
+fi
+
 # Custody scheduling, exact action matching, and cancellation are checked by check_admin_delay.py.
 # The upgrade operation stores the primitive's one-shot action slot: no separate notice or
 # proposal field, and no notice-only placeholder action.
@@ -438,7 +448,7 @@ if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)"
     != 'struct PackageAdmin has key { id: UID, custody: UpgradeCustody<BLAST_FUN>, upgrade: DelayedAction<UpgradeKey, UpgradeAction>, }' ]] \
   || [[ "$(move_production_type UpgradeAction <<<"$(move_facts sources/package_admin.move)")" \
     != 'enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable, }' ]] \
-  || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 7 ]] \
+  || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 8 ]] \
   || [[ "$(move_facts sources/package_admin.move \
     | awk -F'\t' '$1 == "FN" && $2 == "commit_upgrade_and_advance" { print $10 }')" \
     != 'package_version.assert_next();'* ]] \

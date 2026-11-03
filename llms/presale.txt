@@ -269,7 +269,7 @@ reference. Each admin call names exactly one role in its signature:
 | Role | Calls |
 | --- | --- |
 | `blast_presale_domain::PauseAdmin` | `blast_presale_package::pause` |
-| `blast_presale_domain::UnpauseAdmin` | `blast_presale_package::unpause` |
+| `blast_presale_domain::UnpauseAdmin` | `blast_presale::package_admin::unpause` |
 | `blast_presale_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_presale_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `presale_vault::schedule_protocol_lp_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
 | `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
@@ -325,7 +325,11 @@ wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
    role to schedule and apply its intended value and next notice. Upgrade custody
    already holds its 48-hour notice from publication.
    Read back every operation's notice and configured value before release.
-5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11). Unpause is immediate.
+5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11) with
+   `blast_presale::package_admin::unpause`. Unpause is immediate once every notice is guarded:
+   the fee destination, the fee rates and the adapter set each need a nonzero applied notice, no
+   pending proposal that would set it to zero, and no pending adapter admission. Otherwise it
+   aborts with `blast_presale::package_admin::EUnguardedNotice` (2).
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
 policy or recreate Publication. An outstanding zero-delay proposal remains ready
@@ -802,7 +806,9 @@ Quote gas reserve.
    address and Clock. The terms' own checks run first: root and manifest digest
    are 32 bytes, with 1..=65,536 leaves, a positive holder budget, a nonempty
    checkpoint interval, a holder Quote plus reserve that fits in a `u64`, a
-   nonzero expected treasury and a positive claim window. Then, to fail fast,
+   reserve of at most 10% of the holder Quote
+   (`presale_vault::EGasReserveTooLarge`), a nonzero expected treasury and a
+   positive claim window. Then, to fail fast,
    the number must be the vault's next round (starting at zero), the interval
    must start at or after the previous round ended (skipped periods need no
    funded round or number), and holder funding plus reserve must fit the
@@ -825,8 +831,9 @@ Quote gas reserve.
    with the absolute deadline. Zero reserve disables reimbursement for this
    round and requires no settlement. A positive reserve creates separate
    pending custody. Blast may cover gas and allocate the entire holder Quote
-   budget to holder leaves. With the round notice at zero, one PTB can call
-   `holder_rewards::schedule_round` and then `holder_rewards::publish_round`.
+   budget to holder leaves. The round notice starts at two hours, so a round is
+   public and cancellable before it publishes; a daily cadence publishes each
+   round before scheduling the next, since a new schedule replaces a waiting one.
 3. `holder_rewards::cancel_round`: *Blast admin* (`CancelAdmin`). It discards
    the scheduled round, even a ready one, and emits
    `delayed_action::ActionCancelled` with its terms. Nothing was reserved, so no
@@ -838,7 +845,8 @@ Quote gas reserve.
    applies it once ready; `holder_rewards::cancel_round_delay` (*Blast admin*,
    `CancelAdmin`) discards it (`presale_vault::EWrongRoundProposal` while a
    round is scheduled instead). A shorter notice, zero included, still waits the
-   applied one. Every vault starts with a zero notice.
+   applied one. Every vault starts with a 7,200,000 ms (2-hour) notice; no notice
+   exceeds `blast_admin::delayed::max_delay_ms` (30 days).
 5. `holder_rewards::claim`: *anyone* may relay. It takes the mutable shared
    round and beneficiary/amount proof and pays that beneficiary only, once
    per index. It emits `holder_rewards::RewardClaimed` and leaves gas custody
@@ -953,7 +961,9 @@ Publication-owned policy singletons start with zero notice for ordinary
 role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
 no upgrade or immutability action can run without notice, even during setup. Configure
 and apply each other operation's intended notice, and drain or cancel all earlier setup
-proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
+proposals before release. `blast_presale::package_admin::unpause` enforces the minimum: it
+aborts unless the fee destination, fee rates and adapter set each have a nonzero applied
+notice, no pending proposal that would set one to zero, and no pending adapter admission. Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
 Adapter admissions share one applied notice across witness types, held in the
@@ -976,7 +986,9 @@ which waits the vault's currently applied notice.
 ### Emergency pause
 
 A `PauseAdmin` calls `blast_presale_package::pause` to set selected bits on the shared
-package version. Only `UnpauseAdmin` may clear bits with `blast_presale_package::unpause`.
+package version. Only `UnpauseAdmin` may clear bits, with `blast_presale::package_admin::unpause`,
+which takes the shared PackageAdmin, PackageVersion, FeePolicy and CreationPolicy and first checks
+that every policy notice is guarded (see above).
 CREATE is 1, BUY is 2, MIGRATE is 8.
 Pauses never expire. Claims, refunds and mandatory settlement remain callable.
 Presale creation/sharing, all three commitment paths and migration check their respective bits; claim, cancel_unlaunched and settle stay open.
@@ -1303,7 +1315,8 @@ it. Common ones by flow (module `blast_presale` unless named):
   `EAboveFeePolicy`, `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EInvalidDestination`,
   `creation_policy::EAllowanceUnchanged`, `creation_policy::EInvalidMigrationWitness`, and the
   the round-terms checks in `presale_vault` (`EInvalidCommitment`, `EInvalidLeafCount`,
-  `EEmptyBudget`, `EEmptyInterval`, `EBudgetOverflow`, `EZeroTreasury`, `EZeroClaimWindow`), the
+  `EEmptyBudget`, `EEmptyInterval`, `EBudgetOverflow`, `EZeroTreasury`, `EZeroClaimWindow`,
+  `EGasReserveTooLarge`), the
   `holder_rewards` schedule and publish checks (`EWrongRound`, `EOverlappingInterval`,
   `EInsufficientBudget`, and at publication `ETreasuryChanged` and `EClaimDeadlineOverflow`), and
   `presale_vault::EWrongRoundProposal` for a cancel of the other kind of round proposal.
@@ -2760,13 +2773,6 @@ public fun pause(
     _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::PauseAdmin>,
     bits: u8,
 )
-
-/// Clears only the requested bits; claims and settlement never require unpausing.
-public fun unpause(
-    self: &mut PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UnpauseAdmin>,
-    bits: u8,
-)
 ```
 
 #### Events
@@ -3591,6 +3597,19 @@ public fun make_immutable(
     clock: &Clock,
 )
 
+/// Clears the requested pause bits once every presale notice is guarded: nonzero, with no
+/// pending change that would set one to zero and no pending admission. A notice left at its
+/// zero publication value therefore blocks release instead of going live. Settlement,
+/// cancellation, refunds and claims never require unpausing.
+public fun unpause(
+    self: &PackageAdmin,
+    package_version: &mut blast_presale_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UnpauseAdmin>,
+    fee_policy: &fee_policy::FeePolicy,
+    creation_policy: &creation_policy::CreationPolicy,
+    bits: u8,
+)
+
 /// Changes only the upgrade notice period, after the currently applied notice.
 /// Replaces any pending upgrade or immutability action.
 public fun schedule_upgrade_delay(
@@ -3615,6 +3634,7 @@ public fun apply_upgrade_delay(
 | --- | --- | --- |
 | `EWrongUpgradeAction` | 0 | The ready action must match the requested upgrade digest or immutability. |
 | `EInvalidDigest` | 1 | A package digest must contain 32 bytes. |
+| `EUnguardedNotice` | 2 | Unpausing needs every policy notice nonzero, with no pending zero notice or admission. |
 
 #### Constants
 
@@ -3838,13 +3858,15 @@ public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
 | `EZeroTreasury` | 9 | Expected treasury must not be the zero address. |
 | `EZeroClaimWindow` | 10 | Claim window must be positive. |
 | `EWrongRoundProposal` | 11 | The pending round publication is the other kind: a round, or a notice change. |
+| `EGasReserveTooLarge` | 12 | Gas reserve must be at most 10% of the round's holder Quote. |
 
 #### Constants
 
 - `DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice before a creator split or its next notice period may change.
 - `DEFAULT_PROTOCOL_LP_FEE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice for protocol LP-fee changes: 48 hours in milliseconds.
-- `DEFAULT_ROUND_NOTICE_MS: u64 = 0`: Initial notice before a scheduled holder-reward round may publish, or its next notice period may change. Zero lets a round schedule and publish in one transaction.
+- `DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000`: Initial notice before a scheduled holder-reward round may publish, or its next notice period may change: 2 hours, so CancelAdmin can stop a bad round while daily rounds still fit.
 - `MAX_REWARD_LEAVES: u64 = 65_536`: The most leaves one holder-reward round may commit.
+- `MAX_GAS_RESERVE_BPS: u64 = 1_000`: Largest holder-reward gas reserve, in basis points of the round's holder Quote.
 
 ### `blast_presale::venue_config`
 
@@ -4368,7 +4390,7 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Settings that change only after their applied notice, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. Readers need no Clock.
+Settings that change only after their applied notice, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No notice exceeds `max_delay_ms`, so a notice can always be changed again. Readers need no Clock.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed.move
 
@@ -4410,11 +4432,18 @@ public fun new<K: copy + drop + store, T: copy + drop + store>(
     delay_ms: u64,
 ): Delayed<K, T>
 
+/// The longest notice any delayed type accepts, in milliseconds.
+public fun max_delay_ms(): u64
+
 /// The applied value.
 public fun value<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): T
 
 /// The applied notice in milliseconds.
 public fun delay_ms<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): u64
+
+/// True when every change still to come waits a nonzero notice: the applied notice is nonzero
+/// and no proposal would set it to zero.
+public fun is_guarded<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): bool
 
 /// The proposed replacement, if any.
 public fun pending<K: copy + drop + store, T: copy + drop + store>(
@@ -4526,6 +4555,10 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
 }
 ```
 
+#### Constants
+
+- `MAX_DELAY_MS: u64 = 30 * 24 * 60 * 60 * 1_000`: The longest notice any delayed value, action, set or map accepts: 30 days.
+
 ### `blast_admin::delayed_action`
 
 One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied notice. The slot also governs its own notice. See `delayed` for the rules every delayed type shares.
@@ -4564,6 +4597,12 @@ public fun new<K: copy + drop + store, A: copy + drop + store>(
 
 /// The applied notice in milliseconds.
 public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64
+
+/// True when every action still to come waits a nonzero notice: the applied notice is nonzero
+/// and no proposal would set it to zero.
+public fun is_guarded<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): bool
 
 /// The proposed action or notice change, if any.
 public fun pending<K: copy + drop + store, A: copy + drop + store>(
@@ -4888,6 +4927,10 @@ public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>
 public fun pending_count<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
 ): u64
+
+/// True when every admission still to come waits a nonzero notice: the applied notice is
+/// nonzero, no proposal would set it to zero, and no admission scheduled earlier is pending.
+public fun is_guarded<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): bool
 
 /// The proposed next notice, if any.
 public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(

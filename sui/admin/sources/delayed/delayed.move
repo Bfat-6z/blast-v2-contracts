@@ -17,7 +17,8 @@
 ///
 /// Every change, a shorter notice included, waits the notice applied when it was scheduled.
 /// A notice can start at zero, so a schedule and its apply in one transaction then act as a
-/// setter; there is no other mutation path. Readers need no Clock.
+/// setter; there is no other mutation path. No notice exceeds `max_delay_ms`, so a notice
+/// can always be changed again. Readers need no Clock.
 module blast_admin::delayed;
 
 // === Public Types ===
@@ -54,11 +55,17 @@ public fun new<K: copy + drop + store, T: copy + drop + store>(
     value: T,
     delay_ms: u64,
 ): Delayed<K, T> {
+    assert_delay(delay_ms);
     let owner = owner.to_inner();
 
     sui::event::emit(DelayedCreated { owner, key, value, delay_ms });
 
     Delayed { owner, key, value, delay_ms, pending: option::none() }
+}
+
+/// The longest notice any delayed type accepts, in milliseconds.
+public fun max_delay_ms(): u64 {
+    MAX_DELAY_MS
 }
 
 /// The applied value.
@@ -69,6 +76,12 @@ public fun value<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<
 /// The applied notice in milliseconds.
 public fun delay_ms<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): u64 {
     self.delay_ms
+}
+
+/// True when every change still to come waits a nonzero notice: the applied notice is nonzero
+/// and no proposal would set it to zero.
+public fun is_guarded<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): bool {
+    self.delay_ms > 0 && self.pending.is_none_or!(|proposal| proposal.delay_ms > 0)
 }
 
 /// The proposed replacement, if any.
@@ -199,8 +212,15 @@ public(package) fun new_notice(delay_ms: u64, ready_at_ms: u64): Notice {
     Notice { delay_ms, ready_at_ms }
 }
 
-/// The deadline `applied_delay_ms` from now; checks that `next_delay_ms` stays representable.
+/// Rejects a notice longer than `max_delay_ms`.
+public(package) fun assert_delay(delay_ms: u64) {
+    assert!(delay_ms <= MAX_DELAY_MS, blast_admin::errors::invalid_delay!());
+}
+
+/// The deadline `applied_delay_ms` from now; checks that `next_delay_ms` is within the
+/// ceiling and stays representable.
 public(package) fun ready_at_ms_after(applied_delay_ms: u64, next_delay_ms: u64, clock: &Clock): u64 {
+    assert_delay(next_delay_ms);
     let ready_at_ms = clock.timestamp_ms().checked_add(applied_delay_ms)
         .destroy_or!(abort blast_admin::errors::invalid_delay!());
     assert!(ready_at_ms.checked_add(next_delay_ms).is_some(), blast_admin::errors::invalid_delay!());
@@ -305,6 +325,11 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
     owner: ID,
     key: K,
 }
+
+// === Constants ===
+
+/// The longest notice any delayed value, action, set or map accepts: 30 days.
+const MAX_DELAY_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 // === Imports ===
 

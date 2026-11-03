@@ -230,6 +230,28 @@ impl Drop for GenesisFixture {
     fn drop(&mut self) { std::fs::write(&self.path, &self.original).expect("restore genesis fixture manifest"); }
 }
 
+/// Appends `package_admin::unpause`, which clears `bits` only while every notice of the package is
+/// guarded. `policies` are the two shared policies it reads (see `Harness::unpause`).
+#[allow(clippy::too_many_arguments)]
+pub fn append_unpause(
+    h: &Harness,
+    b: &mut ProgrammableTransactionBuilder,
+    package: ObjectID,
+    custody: ObjectID,
+    version: ObjectID,
+    witness: Argument,
+    policies: [ObjectID; 2],
+    bits: u8,
+) -> Result<()> {
+    let custody = b.obj(h.shared(custody, false))?;
+    let version = b.obj(h.shared(version, true))?;
+    let first = b.obj(h.shared(policies[0], false))?;
+    let second = b.obj(h.shared(policies[1], false))?;
+    let bits = b.pure(bits)?;
+    call(b, package, "package_admin", "unpause", vec![], vec![custody, version, witness, first, second, bits]);
+    Ok(())
+}
+
 /// Advance the simulator through the administrative delay, then execute public apply calls.
 pub fn apply_admin_changes(
     h: &mut Harness,
@@ -329,6 +351,18 @@ pub struct DelayedSet<E> {
 
 /// A `RuntimeConfig` in BCS field order: claim signers, protocol fee share and treasury.
 pub type RuntimeConfigContents = (ObjectID, DelayedSet<Vec<u8>>, Delayed<u64>, Delayed<SuiAddress>);
+
+/// A `LaunchConfig` in BCS field order: meme decimals, the quote `Table` (id, size), trade fees
+/// (quote, meme), migration witnesses, protocol allocation (meme, quote) and creation fee.
+pub type LaunchConfigContents = (
+    ObjectID,
+    Vec<u8>,
+    (ObjectID, u64),
+    Delayed<(u64, u64)>,
+    DelayedSet<String>,
+    Delayed<(u64, u64)>,
+    Delayed<u64>,
+);
 
 /// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
@@ -757,7 +791,7 @@ impl Harness {
             bcs::from_bytes(&self.contents(runtime_id)).context("decode fresh RuntimeConfig")?;
         assert!(signers.members.is_empty() && signers.admissions.is_empty(), "publication admits no claim signer");
         assert_eq!(signers.delay_ms, 0, "publication starts the signer notice at zero");
-        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin"])?;
+        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "ClaimSignerAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config = b.obj(self.shared(config_id, true))?;
         let version_arg = b.obj(self.shared(version[0], false))?;
@@ -772,7 +806,13 @@ impl Harness {
         call(&mut b, package, "launch_config", "schedule_migration_delay", vec![], vec![config, version_arg, adapter, delay, clock]);
         call(&mut b, package, "launch_config", "apply_migration_delay", vec![], vec![config, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
-        // Set independent operation notices during publication setup using ordinary ACL roles.
+        // Raise every remaining publication notice from zero to 48 hours, keeping each published
+        // value, through ordinary ACL roles: at zero applied notice schedule and apply share a PTB.
+        // `package_admin::unpause` refuses while any notice is unguarded.
+        let (_, _, _, trade_fees, _, allocation, creation_fee): LaunchConfigContents =
+            bcs::from_bytes(&self.contents(config_id)).context("decode LaunchConfig")?;
+        let (_, _, fee_share, _): RuntimeConfigContents =
+            bcs::from_bytes(&self.contents(runtime_id)).context("decode RuntimeConfig")?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config_arg = b.obj(self.shared(config_id, true))?;
         let runtime = b.obj(self.shared(runtime_id, true))?;
@@ -780,14 +820,45 @@ impl Harness {
         let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
         let fee = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "FeeAdmin")?;
         let treasury_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "TreasuryAdmin")?;
-        let zero = b.pure(0u64)?;
-        let delay = b.pure(172_800_000u64)?;
+        let signer_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "ClaimSignerAdmin")?;
+        let bps = |b: &mut ProgrammableTransactionBuilder, value: u64| -> Result<Argument> {
+            let value = b.pure(value)?;
+            Ok(call(b, package, "bps", "new", vec![], vec![value]))
+        };
+        let quote_fee = bps(&mut b, trade_fees.value.0)?;
+        let meme_fee = bps(&mut b, trade_fees.value.1)?;
+        let meme_allocation = bps(&mut b, allocation.value.0)?;
+        let quote_allocation = bps(&mut b, allocation.value.1)?;
+        let share = bps(&mut b, fee_share.value)?;
+        let creation_fee = b.pure(creation_fee.value)?;
+        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
         let destination = b.pure(treasury.value)?;
-        call(&mut b, package, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, zero, delay, clock]);
+        call(&mut b, package, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee, quote_fee, meme_fee, delay, clock]);
+        call(&mut b, package, "launch_config", "apply_trade_fees", vec![], vec![config_arg, version_arg, clock]);
+        call(&mut b, package, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_role, meme_allocation, quote_allocation, delay, clock]);
+        call(&mut b, package, "launch_config", "apply_protocol_allocation", vec![], vec![config_arg, version_arg, clock]);
+        call(&mut b, package, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, creation_fee, delay, clock]);
         call(&mut b, package, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
+        call(&mut b, package, "runtime_config", "schedule_protocol_fee_share", vec![], vec![runtime, version_arg, fee, share, delay, clock]);
+        call(&mut b, package, "runtime_config", "apply_protocol_fee_share", vec![], vec![runtime, version_arg, clock]);
         call(&mut b, package, "runtime_config", "schedule_treasury", vec![], vec![runtime, version_arg, treasury_role, destination, delay, clock]);
         call(&mut b, package, "runtime_config", "apply_treasury", vec![], vec![runtime, version_arg, clock]);
+        call(&mut b, package, "runtime_config", "schedule_creator_claim_signer_delay", vec![], vec![runtime, version_arg, signer_role, delay, clock]);
+        call(&mut b, package, "runtime_config", "apply_creator_claim_signer_delay", vec![], vec![runtime, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
+        let (_, _, _, trade_fees, witnesses, allocation, creation_fee): LaunchConfigContents =
+            bcs::from_bytes(&self.contents(config_id)).context("decode configured LaunchConfig")?;
+        let (_, signers, fee_share, treasury): RuntimeConfigContents =
+            bcs::from_bytes(&self.contents(runtime_id)).context("decode configured RuntimeConfig")?;
+        let applied = [trade_fees.delay_ms, allocation.delay_ms, creation_fee.delay_ms, fee_share.delay_ms, treasury.delay_ms];
+        let pending = [trade_fees.pending.is_some(), allocation.pending.is_some(), creation_fee.pending.is_some(),
+            fee_share.pending.is_some(), treasury.pending.is_some()];
+        ensure!(applied.iter().all(|delay| *delay == PUBLICATION_UPGRADE_NOTICE_MS) && !pending.contains(&true),
+            "every launchpad setting waits the 48-hour notice with nothing pending");
+        for set in [(witnesses.delay_ms, witnesses.admissions.len(), witnesses.pending_delay.is_some()),
+            (signers.delay_ms, signers.admissions.len(), signers.pending_delay.is_some())] {
+            ensure!(set == (PUBLICATION_UPGRADE_NOTICE_MS, 0, false), "every launchpad set waits 48 hours with nothing pending");
+        }
         Ok((version[0], package_admin[0]))
     }
 
@@ -861,13 +932,17 @@ impl Harness {
         Ok(version[0])
     }
 
-    /// Uses the real ACL and immediate UnpauseAdmin path without advancing the Clock.
-    pub fn unpause(&mut self, package: ObjectID, marker: &str, admin: ObjectID,
-        publication: &Outcome, version: ObjectID, bits: u8,
+    /// Uses the real ACL and immediate UnpauseAdmin path without advancing the Clock. `custody` is
+    /// the package's `PackageAdmin`; `policies` are the two shared policies its
+    /// `package_admin::unpause` requires guarded: `RuntimeConfig` and `LaunchConfig` for the
+    /// launchpad (`blast_fun_domain`), `FeePolicy` and `CreationPolicy` for the presale
+    /// (`blast_presale_domain`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn unpause(&mut self, package: ObjectID, domain: &str, admin: ObjectID,
+        publication: &Outcome, version: ObjectID, custody: ObjectID, policies: [ObjectID; 2], bits: u8,
     ) -> Result<()> {
         let acl = publication.created(self, "blast_acl", "ACL")[0];
         let root = publication.created(self, "blast_acl", "SuperAdminCap")[0];
-        let domain = if marker == "blast_fun" { "blast_fun_domain" } else { "blast_presale_domain" };
         let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::UnpauseAdmin"))?;
         let mut b = ProgrammableTransactionBuilder::new();
         let acl_arg = b.obj(self.shared(acl, true))?;
@@ -888,9 +963,7 @@ impl Harness {
         let acl_arg = b.obj(self.shared(acl, false))?;
         let cap_arg = b.obj(self.owned(cap))?;
         let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, cap_arg]);
-        let version_arg = b.obj(self.shared(version, true))?;
-        let bits = b.pure(bits)?;
-        call(&mut b, package, marker, "unpause", vec![], vec![version_arg, witness, bits]);
+        append_unpause(self, &mut b, package, custody, version, witness, policies, bits)?;
         self.execute(b.finish())?.assert_success();
         assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
         Ok(())

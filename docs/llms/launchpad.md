@@ -101,7 +101,7 @@ role authorizes only the functions that name it. The roles are types in `blast_f
 | Role | Launchpad functions it authorizes |
 | --- | --- |
 | `blast_fun_domain::PauseAdmin` | `blast_fun::pause` |
-| `blast_fun_domain::UnpauseAdmin` | `blast_fun::unpause` |
+| `blast_fun_domain::UnpauseAdmin` | `blast_fun::package_admin::unpause` |
 | `blast_fun_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_fun_domain::UpgradeAdmin` | `blast_fun::package_admin::authorize_upgrade`, `blast_fun::package_admin::commit_upgrade_and_advance`, `blast_fun::package_admin::make_immutable` |
 | `blast_fun_domain::CreatorAdmin` | `launch::schedule_curve_fee_cap_reassignment`, `launch::schedule_metadata_cap_reassignment`, `launch::schedule_curve_fee_cap_delay`, `launch::schedule_metadata_cap_delay` |
@@ -150,6 +150,8 @@ expiry, or refund path.
    reviewed adapter admission and the account-claim signer keys through the ordinary
    schedule/apply operations with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
+   Before release, raise every policy notice above zero and apply or cancel every pending
+   admission: `blast_fun::package_admin::unpause` refuses to clear any bit until then.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
    role to schedule and apply its intended value and next notice. Upgrade custody
    already holds its 48-hour notice from publication.
@@ -508,7 +510,14 @@ Publication-owned policy singletons start with zero notice for ordinary
 role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
 no upgrade or immutability action can run without notice, even during setup. Configure
 and apply each other operation's intended notice, and drain or cancel all earlier setup
-proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
+proposals before release. `blast_fun::package_admin::unpause` enforces the minimum: it aborts
+unless every notice it covers is guarded, meaning the applied notice is nonzero, no pending
+proposal would set it to zero, and (for the adapter and claim-signer sets) no admission is
+pending. It covers the upgrade notice, the claim-signer set, the protocol fee share, the
+treasury, trade fees, the adapter set, the protocol allocation and the creation fee. Later
+reductions remain possible: each one waits the applied notice and is visible while it waits.
+Every notice is at most `blast_admin::delayed::max_delay_ms` (30 days), so no notice can freeze a
+setting for good. Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
 Adapter admissions share one applied notice across witness types, held in the
@@ -540,7 +549,9 @@ launch's independently applied cap notice.
 ### Emergency pause
 
 A `PauseAdmin` calls `blast_fun::blast_fun::pause` to set selected bits on the shared
-package version. Only `UnpauseAdmin` may clear bits with `blast_fun::blast_fun::unpause`.
+package version. Only `UnpauseAdmin` may clear bits, with `blast_fun::package_admin::unpause`,
+which takes the shared PackageAdmin, PackageVersion, RuntimeConfig and LaunchConfig and first
+checks that every policy notice is guarded (see above).
 CREATE is 1, TRADING is 2, MIGRATE is 4; all flags together are 7.
 TRADING pauses buying and selling together. The package constants
 `create_pause_bit`, `trading_pause_bit`, and `migration_pause_bit` live in the
@@ -818,6 +829,7 @@ that detected it.
 | create, buy, sell, voluntary migration | 40 `blast_fun::errors::EPaused` (`blast_fun`) | wait for an `UnpauseAdmin` to clear the operation's bit |
 | claim signer scheduling | 43 `blast_fun::errors::ETooManyClaimSigners` (`runtime_config`) | revoke or cancel a key first; at most four live and pending keys |
 | package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; use a 32-byte digest |
+| unpause | 44 `blast_fun::errors::EUnguardedNotice` (`package_admin`) | raise every policy notice above zero, cancel any proposal that would set one to zero, and apply or cancel pending adapter and claim-signer admissions |
 | delayed administration (fees, allocation, treasury, adapters, claim signers, upgrades, cap reassignment) | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin (plain codes): 18 and 20 from the type's own module (`delayed`, `delayed_action` or `delayed_set`), 22 from `delayed_action`, 17 from `delayed_set` for an early admission and otherwise, like 19, from `delayed` | wait for `ready_at_ms`; schedule before applying or cancelling; choose a representable notice; change the value or notice; apply with the call matching the pending action or notice change |
 | publish | 9 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 25 `blast_fun::errors::EInvalidCreatorRecipient`, 26 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | start | 11 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |

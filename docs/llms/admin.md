@@ -269,12 +269,19 @@ Rules shared by all four:
   the full applied notice.
 - **Zero-notice bootstrap.** A notice can start at zero, so a schedule and its
   apply in one PTB act as a setter. Raising a notice from zero applies at once.
-  There is no other mutation path.
+  There is no other mutation path. `delayed::is_guarded`, `delayed_action::is_guarded`
+  and `delayed_set::is_guarded` report whether every change still to come waits a
+  nonzero notice (for a set, also that no admission is pending); the launchpad and
+  presale `unpause` require it of their policies.
+- **Ceiling.** No notice exceeds `delayed::max_delay_ms` (2,592,000,000 ms, 30 days):
+  constructors and every proposed next notice abort with code 19 above it, so any
+  notice can always be changed again.
 - **No-op rejection.** A `Delayed` proposal that changes neither value nor notice,
   a notice proposal equal to the applied notice, admitting a current member, and
   a map change to the entry's applied value abort with code 20.
-- **Overflow.** Scheduling and application abort with code 19 when a deadline or
-  the next notice would not fit in a `u64` millisecond timestamp.
+- **Overflow.** Scheduling and application abort with code 19 when a notice exceeds
+  the ceiling, or a deadline or the next notice would not fit in a `u64` millisecond
+  timestamp.
 
 `Delayed`: `delayed::schedule` proposes a value and the next notice together;
 `delayed::schedule_value` keeps the notice; `delayed::schedule_delay` keeps the
@@ -416,7 +423,7 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 16 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
 | 17 | `ENotReady` | `delayed`; `delayed_set` for `delayed_set::apply_add`, `delayed_map` for `delayed_map::apply` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
 | 18 | `ENoPending` | the type's module | applying or cancelling when nothing is pending |
-| 19 | `EInvalidDelay` | `delayed` | a deadline or the next notice would overflow a Unix millisecond timestamp; choose a representable notice |
+| 19 | `EInvalidDelay` | `delayed` | a notice above `delayed::max_delay_ms` (30 days), or a deadline or next notice that would overflow a Unix millisecond timestamp; choose a notice of at most 30 days |
 | 20 | `EUnchanged` | the type's module | the proposal changes nothing, the member is already admitted, `remove` names an unknown member, or a map change repeats the entry's applied value (clearing an absent entry included) |
 | 21 | `EProposalPending` | the type's module | destroying a delayed value, action slot, set or map while a proposal is pending; cancel it first |
 | 22 | `EWrongChange` | `delayed_action` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |

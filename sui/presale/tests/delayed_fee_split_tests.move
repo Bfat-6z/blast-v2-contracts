@@ -245,6 +245,14 @@ fun standalone_vault_has_no_creator_cap_authority() {
     destroy(f);
 }
 
+#[test]
+#[expected_failure(abort_code = presale::EInvalidFeeSplit, location = blast_presale::blast_presale)]
+fun scheduling_rechecks_a_split_built_without_the_current_rules() {
+    let mut f = start();
+    schedule(&mut f, presale::fee_split_unchecked_for_testing(vector[], bps::new(9_999)), NOTICE);
+    abort
+}
+
 // === Test Helpers ===
 
 fun initial_split(): FeeSplit {

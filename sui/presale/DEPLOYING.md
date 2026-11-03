@@ -6,7 +6,8 @@ Publication alone cannot activate presales. The publisher receives an owned Publ
 only wrapping it with the matching fresh UpgradeCap shares PackageVersion.
 Routine mutations and sale creation require the shared version (ADR 0117,
 amended by ADR 0134). Wrap starts fully paused with zero notice on publication-owned
-operations; ordinary ACL operations configure policy before the chosen delay and release.
+policies and a 48-hour notice on upgrade custody; ordinary ACL operations configure
+policy before the chosen delay and release.
 
 1. Retire the previous generation's link when a release changes presale logic.
    The live package, recorded in
@@ -21,7 +22,9 @@ operations; ordinary ACL operations configure policy before the chosen delay and
 2. `blast_admin` and `blast_partners` must already be published, with their
    `Published.toml` entries committed, so this build links to the one Blast ACL
    and the partner registry (see the partners
-   [README](../partners/README.md)). Run the complete `scripts/verify.sh` gate,
+   [README](../partners/README.md)). Set `blast_treasury` in `Move.toml` to the
+   approved treasury: it is a build-time named address, and publication aborts
+   while it is `0x0`. Run the complete `scripts/verify.sh` gate,
    then `scripts/publish.sh --preview`
    and `--execute`, which publish to mainnet. The sender receives the raw `UpgradeCap` and owned `blast_presale_package::Publication`; the
    package mints no administrator capability. Do not upgrade the package before custody finalization:
@@ -35,7 +38,7 @@ operations; ordinary ACL operations configure policy before the chosen delay and
    `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
    unchanged at compatible (`0`). Record the newly shared `PackageVersion` from
    these finalization effects; its initial pause mask must be 11. Verify zero notice
-   on publication-owned policy and upgrade custody. Publication must be deleted and never available again. From the publish effects, record the
+   on publication-owned policy and 172,800,000 ms (48 hours) on upgrade custody. Publication must be deleted and never available again. From the publish effects, record the
    shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
 5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
    (`blast_acl::grant_role` with each `blast_presale_domain` type) to the
@@ -48,7 +51,9 @@ operations; ordinary ACL operations configure policy before the chosen delay and
    sales it creates. Grant the automated rewards worker only `RewardsAdmin` to
    publish holder-reward rounds and settle their capped gas reserves.
    `UpgradeAdmin` governs the upgrade notice and compatible upgrades with atomic
-   generation cutover. Each call signs in
+   generation cutover. Grant `CancelAdmin` and `PauseAdmin` to the independent
+   incident-response multisig before release: revoking a role does not cancel
+   its pending proposals, so cancellation must be available. Each call signs in
    with `blast_acl::sign_in` in the same PTB. The root revokes a role or an
    administrator at once if a cap is lost or compromised.
 6. With the ordinary role witnesses and Clock, schedule/apply fee rates,
@@ -57,17 +62,24 @@ operations; ordinary ACL operations configure policy before the chosen delay and
    verify destinations, rates and route admission. Apply or cancel every outstanding
    zero-delay proposal. Use each operation’s role to schedule/apply its intended next
    notice
-   (172,800,000 ms = 48 hours for the R2 rollout), including an UpgradeAdmin
-   policy-only proposal for upgrade custody, and read each notice back. Then grant
-   UnpauseAdmin and clear the selected bits (all = 11). Unpause is immediate and
-   needs no Clock. Later changes snapshot the applied delay; delay-policy changes
+   (172,800,000 ms = 48 hours for the R2 rollout) and read each notice back.
+   Upgrade custody already holds 48 hours; do not propose it again (an unchanged
+   notice aborts). Then grant UnpauseAdmin and clear the selected bits (all = 11)
+   with `package_admin::unpause`, passing the shared PackageAdmin, PackageVersion,
+   FeePolicy and CreationPolicy. It aborts with `EUnguardedNotice` while any of
+   those notices is zero, a pending proposal would set one to zero, or an adapter
+   admission is pending. Unpause is immediate and needs no Clock. Later changes snapshot the applied delay; delay-policy changes
    themselves wait the old delay. Pausing never resets it.
 
 7. Before admitting Aftermath during initial configuration or later administration,
    run `sui/vendors/aftermath_dao_presale`'s `node scripts/check_mainnet_abi.mjs`,
    which pins the Aftermath AMM and DAO-fee revisions this package links to.
    Prove a mainnet dev-inspect of `aftermath::migrate` with a fresh LP coin for
-   both coin orders: the local stubs prove types, not behavior. Allow
+   both coin orders: the local stubs prove types, not behavior. Creation tooling
+   should also dev-inspect the venue's `migrate` with each new sale's own venue
+   terms before listing it: Bluefin tick spacing and fee rate, and the Aftermath
+   `Lp` and `CreatePoolCapV2` pairing, are checked only locally at creation, and a
+   sale the venue rejects refunds only at its liquidity deadline. Allow
    only Quote types whose deny-list and pause controls Blast accepts (owner,
    2026-10-02): payouts are pushed, so a denied fee recipient blocks that vault's
    collection and a denied raise recipient blocks migration until the LP deadline.

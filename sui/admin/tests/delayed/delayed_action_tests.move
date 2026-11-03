@@ -182,6 +182,56 @@ fun destruction_records_the_end_of_the_slot() {
     assert_eq!(slot_owner, owner());
 }
 
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun creation_rejects_a_notice_above_the_ceiling() {
+    let slot = new_slot(delayed::max_delay_ms() + 1);
+
+    slot.destroy();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun a_proposed_notice_above_the_ceiling_rejects() {
+    let clock = clock_at(0);
+    let mut slot = new_slot(10);
+
+    slot.schedule_delay(delayed::max_delay_ms() + 1, &clock);
+
+    abort
+}
+
+#[test]
+fun a_slot_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal() {
+    let clock = clock_at(0);
+    let mut slot = new_slot(0);
+    assert!(!slot.is_guarded());
+
+    slot.schedule_delay(10, &clock);
+    slot.apply_delay(&clock);
+    assert!(slot.is_guarded());
+
+    slot.schedule(1, &clock);
+    assert!(slot.is_guarded());
+
+    slot.schedule_delay(0, &clock);
+    assert!(!slot.is_guarded());
+
+    slot.cancel();
+    slot.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun a_slot_accepts_the_ceiling_notice() {
+    let slot = new_slot(delayed::max_delay_ms());
+
+    assert_eq!(slot.delay_ms(), delayed::max_delay_ms());
+    slot.destroy();
+}
+
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.
@@ -217,6 +267,7 @@ fun collect<Event: copy + drop>(): Event {
 // === Imports ===
 
 use blast_admin::{
+    delayed,
     delayed_action::{
         Self,
         ActionApplied,

@@ -14,8 +14,11 @@ const PARTNER_CUT_BPS: u64 = 4_000;
 const TREASURY: address = @0x7EA5;
 /// The claim window every helper schedules.
 const CLAIM_WINDOW_DURATION_MS: u64 = 1_000;
-/// The claim deadline of a round published at time zero.
-const CLAIM_DEADLINE_AT_MS: u64 = 1_000;
+/// The round notice every vault starts with.
+const ROUND_NOTICE_MS: u64 = 7_200_000;
+/// The claim deadline of a round scheduled at time zero and published once the default notice
+/// elapses.
+const CLAIM_DEADLINE_AT_MS: u64 = 7_201_000;
 
 // === Test-Only Types ===
 
@@ -428,7 +431,7 @@ fun the_admin_publishes_holder_rounds_from_the_holder_share() {
         balance::create_for_testing<MEME>(40),
         balance::create_for_testing<QUOTE>(5),
     );
-    let clock = clock::create_for_testing(scenario.ctx());
+    let mut clock = clock::create_for_testing(scenario.ctx());
 
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
     vault.schedule_round(
@@ -447,6 +450,7 @@ fun the_admin_publishes_holder_rounds_from_the_holder_share() {
         policy.destination(),
         &clock,
     );
+    clock.set_for_testing(ROUND_NOTICE_MS);
     vault.publish_round(&package_version, &policy, &clock, scenario.ctx());
     policy.destroy_for_testing();
 
@@ -990,7 +994,8 @@ fun funded_holder_vault(scenario: &mut Scenario): Vault<MEME, QUOTE> {
     vault
 }
 
-/// Publishes a one-leaf round that pays 1 Meme from the holder share.
+/// Publishes a one-leaf round that pays 1 Meme from the holder share, scheduled at time zero and
+/// published once the default notice elapses.
 fun publish_test_round(
     self: &mut Vault<MEME, QUOTE>,
     number: u64,
@@ -999,7 +1004,7 @@ fun publish_test_round(
     scenario: &mut Scenario,
 ) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let clock = clock::create_for_testing(scenario.ctx());
+    let mut clock = clock::create_for_testing(scenario.ctx());
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
     self.schedule_round(
         &package_version,
@@ -1017,6 +1022,7 @@ fun publish_test_round(
         policy.destination(),
         &clock,
     );
+    clock.set_for_testing(ROUND_NOTICE_MS);
     self.publish_round(&package_version, &policy, &clock, scenario.ctx());
     policy.destroy_for_testing();
     clock.destroy_for_testing();

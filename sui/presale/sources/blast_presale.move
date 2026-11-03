@@ -193,27 +193,18 @@ public fun open_eligibility(
     max_participants: u64,
     min_commitment: u64,
 ): EligibilityPolicy {
-    assert!(
-        min_commitment > 0
-            && min_commitment <= wallet_cap
-            && max_participants > 0
-            && max_participants <= MAX_PARTICIPANTS,
-        EInvalidEligibilityPolicy,
-    );
+    let policy = EligibilityPolicy::Open { wallet_cap, max_participants, min_commitment };
+    policy.assert_valid_eligibility();
 
-    EligibilityPolicy::Open { wallet_cap, max_participants, min_commitment }
+    policy
 }
 
 /// Creates one allowlist policy whose leaves are `(index, wallet, wallet_cap)`.
 public fun allowlisted_eligibility(root: vector<u8>, leaf_count: u64): EligibilityPolicy {
-    assert!(
-        root.length() == merkle_tree::digest_length()
-            && leaf_count > 0
-            && leaf_count <= MAX_PARTICIPANTS,
-        EInvalidEligibilityPolicy,
-    );
+    let policy = EligibilityPolicy::Allowlisted { root, leaf_count };
+    policy.assert_valid_eligibility();
 
-    EligibilityPolicy::Allowlisted { root, leaf_count }
+    policy
 }
 
 /// Lifts wallet caps for eligible wallets `start_delay_ms` into the window.
@@ -228,15 +219,13 @@ public fun uncapped_for_anyone(
     max_participants: u64,
     min_commitment: u64,
 ): UncappedPhase {
-    assert!(
-        min_commitment > 0 && max_participants > 0 && max_participants <= MAX_PARTICIPANTS,
-        EInvalidUncappedPhase,
-    );
-
-    UncappedPhase {
+    let phase = UncappedPhase {
         starts_after_ms: start_delay_ms,
         access: UncappedAccess::Anyone { max_participants, min_commitment },
-    }
+    };
+    phase.assert_valid_uncapped_access();
+
+    phase
 }
 
 /// One recipient's share in BPS. Presale creation validates each list of shares under that
@@ -262,33 +251,24 @@ public fun vesting_terms(
     vesting_period_duration_ms: u64,
     periods: u64,
 ): VestingTerms {
-    assert!(
-        vesting_period_duration_ms > 0
-            && periods > 0
-            && vesting_period_duration_ms <= MAX_VESTING_DURATION_MS / periods
-            && vesting_cliff_delay_ms <= vesting_period_duration_ms * periods,
-        EInvalidVestingTerms,
-    );
-
-    VestingTerms {
+    let terms = VestingTerms {
         cliff_ms: vesting_cliff_delay_ms,
         period_ms: vesting_period_duration_ms,
         periods
-    }
+    };
+    terms.assert_valid_vesting();
+
+    terms
 }
 
 /// The LP-fee split a sale and its vault pay collected fees under: at most `MAX_FEE_RECIPIENTS`
 /// distinct unvested recipients whose shares total exactly 10,000 BPS with the holder-reward
 /// share. The creator takes its LP fees as one of the recipients.
 public fun fee_split(fee_recipients: vector<RecipientShare>, holder_rewards_bps: Bps): FeeSplit {
-    assert!(
-        valid_shares(&fee_recipients, MAX_FEE_RECIPIENTS)
-            && fee_recipients.all!(|fee_recipient| fee_recipient.vesting.is_none())
-            && total_bps(&fee_recipients) + holder_rewards_bps.value() == bps::denominator(),
-        EInvalidFeeSplit,
-    );
+    let split = FeeSplit { fee_recipients, holder_rewards_bps };
+    split.assert_valid_fee_split();
 
-    FeeSplit { fee_recipients, holder_rewards_bps }
+    split
 }
 
 /// Starts a presale of `SaleToken` raising `Quote` for the migrator that constructs
@@ -524,6 +504,13 @@ public fun finalize<SaleToken, Quote>(
 
     let eligibility = eligibility.destroy_or!(abort EMissingSetting);
     let fee_split = fee_split.destroy_or!(abort EMissingSetting);
+    // Values built by superseded bytecode meet this generation's rules too.
+    eligibility.assert_valid_eligibility();
+    uncapped.do_ref!(|phase| phase.assert_valid_uncapped_access());
+    participant_vesting.do_ref!(|terms| terms.assert_valid_vesting());
+    recipient_allocations.do_ref!(|share| share.vesting.do_ref!(|terms| terms.assert_valid_vesting()));
+    raise_allocations.do_ref!(|share| share.vesting.do_ref!(|terms| terms.assert_valid_vesting()));
+    fee_split.assert_valid_fee_split();
     assert!(raise_target > 0, EInvalidRaiseTarget);
     assert_raise_allocations(&raise_allocations, protocol_fees.raise_bps());
     assert_token_allocations(
@@ -1054,6 +1041,18 @@ public(package) fun fee_recipients(self: &FeeSplit): &vector<RecipientShare> {
     &self.fee_recipients
 }
 
+/// Checks the split's rules: bounded distinct unvested recipients totalling 10,000 BPS with the
+/// holder-reward share. Every consumer rechecks, so a split built by superseded bytecode still
+/// meets this generation's rules.
+public(package) fun assert_valid_fee_split(self: &FeeSplit) {
+    assert!(
+        valid_shares(&self.fee_recipients, MAX_FEE_RECIPIENTS)
+            && self.fee_recipients.all!(|fee_recipient| fee_recipient.vesting.is_none())
+            && total_bps(&self.fee_recipients) + self.holder_rewards_bps.value() == bps::denominator(),
+        EInvalidFeeSplit,
+    );
+}
+
 /// The holder-reward share of every collected fee.
 public(package) fun holder_rewards_bps(self: &FeeSplit): Bps {
     self.holder_rewards_bps
@@ -1187,6 +1186,43 @@ fun assert_token_allocations(
 
 /// Whether there are at most `max` shares, each naming a distinct nonzero recipient and taking
 /// positive BPS.
+fun assert_valid_eligibility(self: &EligibilityPolicy) {
+    let valid = match (self) {
+        EligibilityPolicy::Open { wallet_cap, max_participants, min_commitment } => {
+            *min_commitment > 0
+                && *min_commitment <= *wallet_cap
+                && *max_participants > 0
+                && *max_participants <= MAX_PARTICIPANTS
+        },
+        EligibilityPolicy::Allowlisted { root, leaf_count } => {
+            root.length() == merkle_tree::digest_length()
+                && *leaf_count > 0
+                && *leaf_count <= MAX_PARTICIPANTS
+        },
+    };
+    assert!(valid, EInvalidEligibilityPolicy);
+}
+
+fun assert_valid_uncapped_access(self: &UncappedPhase) {
+    match (self.access) {
+        UncappedAccess::Anyone { max_participants, min_commitment } => assert!(
+            min_commitment > 0 && max_participants > 0 && max_participants <= MAX_PARTICIPANTS,
+            EInvalidUncappedPhase,
+        ),
+        UncappedAccess::Eligible => (),
+    }
+}
+
+fun assert_valid_vesting(self: &VestingTerms) {
+    assert!(
+        self.period_ms > 0
+            && self.periods > 0
+            && self.period_ms <= MAX_VESTING_DURATION_MS / self.periods
+            && self.cliff_ms <= self.period_ms * self.periods,
+        EInvalidVestingTerms,
+    );
+}
+
 fun valid_shares(shares: &vector<RecipientShare>, max: u64): bool {
     shares.length() <= max
         && shares.all!(|share| {
@@ -1750,6 +1786,25 @@ fun cancel<SaleToken, Quote>(self: &mut Presale<SaleToken, Quote>) {
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// Builds a split without its rules, as superseded bytecode could, to prove consumers recheck.
+public fun fee_split_unchecked_for_testing(
+    fee_recipients: vector<RecipientShare>,
+    holder_rewards_bps: Bps,
+): FeeSplit {
+    FeeSplit { fee_recipients, holder_rewards_bps }
+}
+
+#[test_only]
+/// Builds an open policy without its rules, as superseded bytecode could.
+public fun open_eligibility_unchecked_for_testing(
+    wallet_cap: u64,
+    max_participants: u64,
+    min_commitment: u64,
+): EligibilityPolicy {
+    EligibilityPolicy::Open { wallet_cap, max_participants, min_commitment }
+}
 
 #[test_only]
 public fun assert_unregulated_currency_for_testing<SaleToken>(currency: &Currency<SaleToken>) {

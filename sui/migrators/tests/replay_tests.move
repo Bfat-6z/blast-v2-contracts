@@ -667,8 +667,9 @@ fun claim_creator_fees(self: &mut ReplayFixture) {
     });
 }
 
-/// Schedules and publishes the next round, under the zero notice, with one leaf paying Alice half
-/// of each rewards balance and claims open for 1,000,000 ms.
+/// Schedules the next round, with one leaf paying Alice half of each rewards balance, a gas reserve
+/// of a tenth of that Quote and claims open for 1,000,000 ms, then publishes it once the applied
+/// notice elapses.
 fun publish_round(self: &mut ReplayFixture) {
     self.next_tx!(ADMIN, |f| {
         let admin = blast_acl::witness_for_testing<RewardsAdmin>();
@@ -689,11 +690,12 @@ fun publish_round(self: &mut ReplayFixture) {
             1,
             meme / 2,
             quote / 2,
-            quote / 4,
+            quote / 20,
             1_000_000,
             policy.protocol_destination(),
             &f.clock,
         );
+        f.clock.increment_for_testing(vault.round_publication_for_testing().delay_ms());
         vault.publish_round(&f.migrators_version, &policy, &f.clock, f.ctx!());
 
         test_scenario::return_shared(vault);

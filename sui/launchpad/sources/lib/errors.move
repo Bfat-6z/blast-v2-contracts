@@ -183,6 +183,10 @@ const EInvalidDigest: u64 = 42;
 /// The account-claim signer set already holds its most live and pending keys.
 const ETooManyClaimSigners: u64 = 43;
 
+#[test_only]
+/// Unpausing needs every policy notice nonzero, with no pending zero notice or admission.
+const EUnguardedNotice: u64 = 44;
+
 macro public(package) fun invalid_bps(): u64 { 0 }
 
 macro public(package) fun invalid_trade_fee_bps(): u64 { 1 }
@@ -270,3 +274,5 @@ macro public(package) fun wrong_upgrade_action(): u64 { 41 }
 macro public(package) fun invalid_digest(): u64 { 42 }
 
 macro public(package) fun too_many_claim_signers(): u64 { 43 }
+
+macro public(package) fun unguarded_notice(): u64 { 44 }

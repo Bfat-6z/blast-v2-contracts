@@ -835,15 +835,15 @@ fun start_init(): InitFixture {
     let destination = event::events_by_type<DelayedCreated<ProtocolDestinationKey, address>>();
     let (_, _, value, delay_ms) = destination[0].delayed_created_fields();
     assert_eq!(value, @blast_lp_fee_destination);
-    assert_eq!(delay_ms, 0);
+    assert_eq!(delay_ms, PUBLICATION_POLICY_NOTICE_MS);
     let defaults = event::events_by_type<DelayedCreated<DefaultSharesKey, SharePair>>();
     let (_, _, value, delay_ms) = defaults[0].delayed_created_fields();
     assert_eq!(bcs::to_bytes(&value), bcs::to_bytes(&pair(1_500, 1_500)));
-    assert_eq!(delay_ms, 0);
-    // The per-coin overrides start empty at the publication notice.
+    assert_eq!(delay_ms, PUBLICATION_POLICY_NOTICE_MS);
+    // The per-coin overrides start empty at the same publication notice.
     let coins = event::events_by_type<MapCreated<CoinSharesKey, TypeName, SharePair>>();
     let (_, _, delay_ms) = coins[0].map_created_fields();
-    assert_eq!(delay_ms, 0);
+    assert_eq!(delay_ms, PUBLICATION_POLICY_NOTICE_MS);
 
     scenario.next_tx(PUBLISHER);
     let policy = scenario.take_shared<LpFeePolicy>();
@@ -983,6 +983,9 @@ fun policy_end(self: PolicyFixture) {
 // === Constants ===
 
 const PUBLISHER: address = @0xA11CE;
+
+/// The notice every policy change waits from publication.
+const PUBLICATION_POLICY_NOTICE_MS: u64 = 172_800_000;
 
 const PROTOCOL_ADMIN: address = @0xAD;
 

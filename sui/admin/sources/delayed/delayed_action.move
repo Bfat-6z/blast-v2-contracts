@@ -32,6 +32,7 @@ public fun new<K: copy + drop + store, A: copy + drop + store>(
     owner: &UID,
     delay_ms: u64,
 ): DelayedAction<K, A> {
+    delayed::assert_delay(delay_ms);
     let owner = owner.to_inner();
 
     sui::event::emit(ActionCreated<K, A> { owner, key, delay_ms });
@@ -42,6 +43,14 @@ public fun new<K: copy + drop + store, A: copy + drop + store>(
 /// The applied notice in milliseconds.
 public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64 {
     self.delay_ms
+}
+
+/// True when every action still to come waits a nonzero notice: the applied notice is nonzero
+/// and no proposal would set it to zero.
+public fun is_guarded<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): bool {
+    self.delay_ms > 0 && self.pending.is_none_or!(|proposal| proposal.proposal_delay_ms() > 0)
 }
 
 /// The proposed action or notice change, if any.

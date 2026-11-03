@@ -194,6 +194,11 @@ public fun cancel_migration_delay(
 
 // === Package Functions ===
 
+/// True when the migrator allowlist's notice is guarded (see `package_admin::unpause`).
+public(package) fun is_guarded(self: &CreationPolicy): bool {
+    self.migration_witnesses.is_guarded()
+}
+
 /// Aborts unless a new presale, or a new vault without a presale, may use `Quote` and be created
 /// by `MigrationWitness`'s migrator.
 public(package) fun assert_allowed<Quote, MigrationWitness>(self: &CreationPolicy) {
@@ -265,6 +270,12 @@ public fun init_for_testing(ctx: &mut TxContext) {
 #[test_only]
 public fun new_for_testing(ctx: &mut TxContext): CreationPolicy {
     new(172_800_000, ctx)
+}
+
+#[test_only]
+/// The allowlist exactly as publication creates it, at zero notice.
+public fun new_publication_for_testing(ctx: &mut TxContext): CreationPolicy {
+    new(0, ctx)
 }
 
 /// A policy that allows exactly `Quote` and `MigrationWitness`, admitted at zero notice before the

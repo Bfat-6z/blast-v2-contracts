@@ -101,6 +101,10 @@ const RECIPIENT_A: ObjectID = address(&[0xA1]);
 const RECIPIENT_B: ObjectID = address(&[0xB2]);
 const RECIPIENT_C: ObjectID = address(&[0xC3]);
 const CAP_HOLDER: ObjectID = address(&[0xCA, 0xFE]);
+/// The vault's publication notice between scheduling and publishing a holder-reward round.
+const ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;
+/// The second round's holder Quote: the least that funds a one-unit gas reserve at the 10% cap.
+const SECOND_ROUND_QUOTE: u64 = 10;
 const BENEFICIARY_A: ObjectID = address(&[0xBE, 0x01]);
 const BENEFICIARY_B: ObjectID = address(&[0xBE, 0x02]);
 
@@ -480,7 +484,6 @@ impl World {
             dependencies,
         )?;
         let (migrators, migrators_publication) = h.publish(linked)?;
-        let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
         let initial_policy = one(&h, &migrators_publication, "lp_fee_policy", "LpFeePolicy");
         let venue_config = one(&h, &migrators_publication, "venue_config", "VenueConfig");
         let policy = initial_policy;
@@ -497,20 +500,18 @@ impl World {
         let meme_bps = call(&mut b, blast, "bps", "new", vec![], vec![meme_bps]);
         let quote_bps = b.pure(DEFAULT_SHARES.1)?;
         let quote_bps = call(&mut b, blast, "bps", "new", vec![], vec![quote_bps]);
+        // The policy publishes with a 48-hour notice on the destination, the default shares and
+        // the per-coin overrides, so the scheduled changes apply after the simulator advances.
         let next_delay = b.pure(172_800_000u64)?;
         call(&mut b, migrators, "lp_fee_policy", "schedule_protocol_destination", vec![], vec![policy_arg, version_arg, treasury, destination, next_delay, clock]);
-        call(&mut b, migrators, "lp_fee_policy", "apply_protocol_destination", vec![], vec![policy_arg, version_arg, clock]);
-        let next_delay = b.pure(172_800_000u64)?;
         call(&mut b, migrators, "lp_fee_policy", "schedule_default_shares", vec![], vec![policy_arg, version_arg, fee, meme_bps, quote_bps, next_delay, clock]);
-        call(&mut b, migrators, "lp_fee_policy", "apply_default_shares", vec![], vec![policy_arg, version_arg, clock]);
-        // Per-coin overrides keep a notice of their own, raised here from the publication notice.
-        let next_delay = b.pure(172_800_000u64)?;
-        call(&mut b, migrators, "lp_fee_policy", "schedule_coin_shares_delay", vec![], vec![policy_arg, version_arg, fee, next_delay, clock]);
-        call(&mut b, migrators, "lp_fee_policy", "apply_coin_shares_delay", vec![], vec![policy_arg, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
-        assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
-        let (version, _) = h.wrap_launchpad(blast, &published, admin, &admin_published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
-        h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
+        blast_launchpad_ptb_tests::apply_admin_changes(&mut h, vec![
+            (migrators, "lp_fee_policy", "apply_protocol_destination", vec![], initial_policy, migrators_version),
+            (migrators, "lp_fee_policy", "apply_default_shares", vec![], initial_policy, migrators_version),
+        ])?;
+        let (version, custody) = h.wrap_launchpad(blast, &published, admin, &admin_published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
+        h.unpause(blast, "blast_fun_domain", admin, &admin_published, version, custody, [runtime, config], 7)?;
         let project = build(
             &blast_launchpad_ptb_tests::crate_dir().join("fixture/project"),
             &[core[0], core[1], (launchpad_dir.as_path(), blast)],
@@ -1900,8 +1901,8 @@ impl World {
         Ok(())
     }
 
-    /// An administrator schedules a two-leaf round and, under the zero notice, publishes it in the
-    /// same PTB from the rewards balance; a relayed proof pays the first beneficiary once.
+    /// An administrator schedules a two-leaf round; after the vault's two-hour round notice anyone
+    /// publishes it from the rewards balance, and a relayed proof pays the first beneficiary once.
     fn holder_rewards(&mut self, launch: &Launch, m: &Migration) -> Result<()> {
         let before = self.vault(m)?;
         ensure!(before.rewards_meme > 1 && before.rewards_quote > 1, "rewards accrued");
@@ -1916,17 +1917,18 @@ impl World {
             .collect();
         let root = merkle_node(&digests[0], &digests[1]);
         let (start, end) = (1_000u64, 2_000u64);
-        let gas_reserve = (before.rewards_quote / 4).max(1);
+        // The gas reserve may be at most 10% of the round's holder Quote.
+        ensure!(quote >= 10, "rewards fund a gas reserve");
+        let gas_reserve = quote / 10;
         let (_, now_at_ms): (ObjectID, u64) = bcs::from_bytes(&self.h.contents(SUI_CLOCK_OBJECT_ID))?;
         let claim_window_duration_ms = 1_000u64;
-        let deadline_at_ms = now_at_ms + claim_window_duration_ms;
-        ensure!(before.round_publication.delay_ms == 0 && before.round_publication.pending.is_none());
+        let deadline_at_ms = now_at_ms + ROUND_NOTICE_MS + claim_window_duration_ms;
+        ensure!(before.round_publication.delay_ms == ROUND_NOTICE_MS && before.round_publication.pending.is_none());
 
         let mut b = ProgrammableTransactionBuilder::new();
         let signed_in = self.sign_in(&mut b, "RewardsAdmin")?;
         let vault = self.shared(&mut b, m.vault, true)?;
         let migrators_version = self.shared(&mut b, self.migrators_version, false)?;
-        let policy = self.shared(&mut b, self.policy, false)?;
         let clock = self.clock(&mut b)?;
         let args = vec![
             vault,
@@ -1947,22 +1949,29 @@ impl World {
         ];
         let meme_type = launch.meme.clone();
         call(&mut b, self.migrators, "blast_holder_rewards", "schedule_round", vec![meme_type.clone(), self.quote()], args);
-        call(
-            &mut b,
-            self.migrators,
-            "blast_holder_rewards",
-            "publish_round",
-            vec![meme_type.clone(), self.quote()],
-            vec![vault, migrators_version, policy, clock],
-        );
         let outcome = self.h.execute(b.finish())?;
         outcome.assert_success();
         let scheduled: Vec<ActionScheduled<RoundTerms>> = outcome.delayed("ActionScheduled", "vault", "RoundPublicationKey")?;
-        ensure!(scheduled.len() == 1 && scheduled[0].owner == m.vault && scheduled[0].ready_at_ms == now_at_ms);
+        ensure!(scheduled.len() == 1 && scheduled[0].owner == m.vault && scheduled[0].ready_at_ms == now_at_ms + ROUND_NOTICE_MS);
         ensure!(matches!(&scheduled[0].change, Change::Action(terms) if terms.number == 0
             && terms.root == root.to_vec() && terms.gas_reserve_amount == gas_reserve
             && terms.claim_window_duration_ms == claim_window_duration_ms
             && terms.expected_treasury == LP_PROTOCOL.into()));
+        let publish = |w: &Self| -> Result<ProgrammableTransaction> {
+            let mut b = ProgrammableTransactionBuilder::new();
+            let vault = w.shared(&mut b, m.vault, true)?;
+            let version = w.shared(&mut b, w.migrators_version, false)?;
+            let policy = w.shared(&mut b, w.policy, false)?;
+            let clock = w.clock(&mut b)?;
+            call(&mut b, w.migrators, "blast_holder_rewards", "publish_round", vec![launch.meme.clone(), w.quote()], vec![vault, version, policy, clock]);
+            Ok(b.finish())
+        };
+        self.h.sim.advance_clock(std::time::Duration::from_millis(ROUND_NOTICE_MS - 1));
+        let pt = publish(self)?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.admin, module: "delayed", code: 17 }, &[m.vault], &[LP_PROTOCOL.into()])?;
+        self.h.sim.advance_clock(std::time::Duration::from_millis(1));
+        let outcome = self.h.execute(publish(self)?)?;
+        outcome.assert_success();
         let rounds = outcome.created(&self.h, "blast_holder_rewards", "Round");
         ensure!(rounds.len() == 1 && self.h.object(rounds[0]).is_shared());
         let round = rounds[0];
@@ -2062,29 +2071,32 @@ impl World {
         let pt = close(self, round)?;
         self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: "blast_holder_rewards", code: 14 }, &[round, m.vault], &[])?;
 
-        // Publish another funded round after a deliberately skipped holding
-        // interval. Its reserve stays unsettled until recovery after revocation.
+        // Publish another funded round after a deliberately skipped holding interval, once its
+        // notice has elapsed and the first round's claims have closed. Its reserve, the most a
+        // ten-unit Quote budget allows, stays unsettled until recovery after revocation.
         let mut b = ProgrammableTransactionBuilder::new();
         let signed_in = self.sign_in(&mut b, "RewardsAdmin")?;
         let vault = self.shared(&mut b, m.vault, true)?;
         let version = self.shared(&mut b, self.migrators_version, false)?;
-        let policy = self.shared(&mut b, self.policy, false)?;
         let clock = self.clock(&mut b)?;
         let args = vec![vault, version, signed_in,
             b.pure(1u64)?, b.pure(end + 100)?, b.pure(end + 200)?,
             b.pure(vec![0xAAu8; 32])?, b.pure(vec![0xBBu8; 32])?,
-            b.pure(1u64)?, b.pure(1u64)?, b.pure(0u64)?, b.pure(1u64)?,
+            b.pure(1u64)?, b.pure(1u64)?, b.pure(SECOND_ROUND_QUOTE)?, b.pure(1u64)?,
             b.pure(claim_window_duration_ms)?, b.pure(SuiAddress::from(LP_PROTOCOL))?, clock];
         call(&mut b, self.migrators, "blast_holder_rewards", "schedule_round", vec![meme_type.clone(), self.quote()], args);
-        call(&mut b, self.migrators, "blast_holder_rewards", "publish_round", vec![meme_type.clone(), self.quote()], vec![vault, version, policy, clock]);
-        let second = self.h.execute(b.finish())?;
+        self.h.execute(b.finish())?.assert_success();
+        self.h.sim.advance_clock(std::time::Duration::from_millis(ROUND_NOTICE_MS));
+        let (_, second_published_at_ms): (ObjectID, u64) = bcs::from_bytes(&self.h.contents(SUI_CLOCK_OBJECT_ID))?;
+        let second = self.h.execute(publish(self)?)?;
         second.assert_success();
         let second_rounds = second.created(&self.h, "blast_holder_rewards", "Round");
         ensure!(second_rounds.len() == 1 && self.h.object(second_rounds[0]).is_shared());
         let second_round = second_rounds[0];
         let second_events: Vec<RoundPublished> = self.events(&second, "RoundPublished");
         ensure!(second_events.len() == 1 && second_events[0].gas_reserve_amount == 1);
-        ensure!(second_events[0].treasury == LP_PROTOCOL.into() && second_events[0].claim_deadline_at_ms == deadline_at_ms);
+        ensure!(second_events[0].treasury == LP_PROTOCOL.into()
+            && second_events[0].claim_deadline_at_ms == second_published_at_ms + claim_window_duration_ms);
 
         // Revoke the live role, prove settlement cannot sign in, then recover
         // all unclaimed holder funds permissionlessly at the exact deadline.
@@ -2114,7 +2126,7 @@ impl World {
         ensure!(events.len() == 1);
         let event = &events[0];
         ensure!(event.vault_id == m.vault && event.round_id == second_round && event.number == 1);
-        ensure!((event.meme_returned, event.quote_returned, event.gas_reserve_returned) == (1, 0, 1));
+        ensure!((event.meme_returned, event.quote_returned, event.gas_reserve_returned) == (1, SECOND_ROUND_QUOTE, 1));
         let final_vault = self.vault(m)?;
         ensure!((final_vault.rewards_meme, final_vault.rewards_quote) == (before.rewards_meme - meme_paid, before.rewards_quote - quote_paid - reimbursement));
         self.report(format!("holder rewards: isolated gas={gas_reserve}, reimbursement={reimbursement}, atomic replay rollback, ACL revocation, deadline claim rejection and permissionless close conserve both assets"));

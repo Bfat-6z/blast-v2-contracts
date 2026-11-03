@@ -34,6 +34,7 @@ public fun new<K: copy + drop + store, E: copy + drop + store>(
     owner: &UID,
     delay_ms: u64,
 ): DelayedSet<K, E> {
+    delayed::assert_delay(delay_ms);
     let owner = owner.to_inner();
 
     sui::event::emit(SetCreated<K, E> { owner, key, delay_ms });
@@ -77,6 +78,14 @@ public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>
 /// How many admissions are pending.
 public fun pending_count<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): u64 {
     self.admissions.length()
+}
+
+/// True when every admission still to come waits a nonzero notice: the applied notice is
+/// nonzero, no proposal would set it to zero, and no admission scheduled earlier is pending.
+public fun is_guarded<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): bool {
+    self.delay_ms > 0
+        && self.admissions.is_empty()
+        && self.pending_delay.is_none_or!(|notice| notice.notice_delay_ms() > 0)
 }
 
 /// The proposed next notice, if any.

@@ -580,15 +580,17 @@ fun a_stale_generation_rejects_a_claim_before_every_claim_check() {
 fun the_maximal_combined_quote_budget_is_supported_without_overflow() {
     let mut f = start();
     let maximum = 18_446_744_073_709_551_615;
+    let gas = maximum / 11;
+    let quote = maximum - gas;
     f.vault.restore_rewards(balance::zero(), balance::create_for_testing(maximum - FUNDED_QUOTE));
-    let root = f.leaf(0, 0, ALICE, 10, 20);
-    f.publish_reserved(0, 0, 10, root, digest(), 1, 10, 20, maximum - 20, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    let root = f.leaf(0, 0, ALICE, 10, quote);
+    f.publish_reserved(0, 0, 10, root, digest(), 1, 10, quote, gas, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     let id = published_round_id();
     assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, 0);
-    f.settle(id, maximum - 20);
-    f.claim(id, 0, ALICE, 10, 20, vector[]);
-    f.assert_received(PUBLISHER, 0, maximum - 20);
-    f.assert_received(ALICE, 10, 20);
+    f.settle(id, gas);
+    f.claim(id, 0, ALICE, 10, quote, vector[]);
+    f.assert_received(PUBLISHER, 0, gas);
+    f.assert_received(ALICE, 10, quote);
     f.close(id, DEADLINE_AT_MS);
     assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, 0);
     f.end();
@@ -623,7 +625,7 @@ fun permissionless_close_returns_unclaimed_holder_funds_and_unsettled_reserve() 
     assert_eq!(events.length(), 1);
     assert_eq!(bcs::to_bytes(&events[0]), bcs::to_bytes(&ExpectedRoundClosed {
         vault_id: object::id(&f.vault), round_id, number: 0,
-        meme_returned: 10, quote_returned: 20, gas_reserve_returned: 30,
+        meme_returned: 10, quote_returned: 300, gas_reserve_returned: 30,
     }));
     assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME, FUNDED_QUOTE);
     assert_eq!(f.vault.next_round(), 1);
@@ -648,9 +650,9 @@ fun zero_reserve_supports_claims_and_permissionless_close_without_settlement() {
     let mut f = start();
     let round_id = f.reserve_round(0);
     f.assert_reserve(round_id, option::none());
-    f.claim(round_id, 0, ALICE, 10, 20, vector[]);
+    f.claim(round_id, 0, ALICE, 10, 300, vector[]);
     f.close(round_id, DEADLINE_AT_MS + 1);
-    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 20);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 300);
     f.end();
 }
 
@@ -671,8 +673,8 @@ fun claims_work_one_millisecond_before_the_deadline() {
     let mut f = start();
     let round_id = f.reserve_round(30);
     f.clock.set_for_testing(DEADLINE_AT_MS - 1);
-    f.claim(round_id, 0, ALICE, 10, 20, vector[]);
-    f.assert_received(ALICE, 10, 20);
+    f.claim(round_id, 0, ALICE, 10, 300, vector[]);
+    f.assert_received(ALICE, 10, 300);
     f.end();
 }
 
@@ -729,7 +731,7 @@ fun claims_stop_after_the_deadline() {
     let mut f = start();
     let id = f.reserve_round(0);
     f.clock.set_for_testing(DEADLINE_AT_MS + 1);
-    f.claim(id, 0, ALICE, 10, 20, vector[]);
+    f.claim(id, 0, ALICE, 10, 300, vector[]);
     f.end();
 }
 
@@ -737,7 +739,7 @@ fun claims_stop_after_the_deadline() {
 #[expected_failure(abort_code = vault::EZeroClaimWindow, location = blast_fun_migrators::vault)]
 fun scheduling_requires_a_positive_claim_window() {
     let mut f = start();
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, 0, PUBLISHER);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 300, 30, 0, PUBLISHER);
     f.end();
 }
 
@@ -745,7 +747,7 @@ fun scheduling_requires_a_positive_claim_window() {
 #[expected_failure(abort_code = vault::EZeroTreasury, location = blast_fun_migrators::vault)]
 fun scheduling_requires_a_nonzero_expected_treasury() {
     let mut f = start();
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, @0x0);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 300, 30, CLAIM_WINDOW_DURATION_MS, @0x0);
     f.end();
 }
 
@@ -753,7 +755,7 @@ fun scheduling_requires_a_nonzero_expected_treasury() {
 #[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
 fun combined_holder_and_gas_budget_cannot_exceed_vault_quote() {
     let mut f = start();
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, FUNDED_QUOTE - 19, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, FUNDED_QUOTE - 180, 181, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     f.end();
 }
 
@@ -761,7 +763,32 @@ fun combined_holder_and_gas_budget_cannot_exceed_vault_quote() {
 #[expected_failure(abort_code = vault::EBudgetOverflow, location = blast_fun_migrators::vault)]
 fun a_holder_quote_and_gas_reserve_beyond_u64_are_rejected() {
     let mut f = start();
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 1, 18_446_744_073_709_551_615, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 18_446_744_073_709_551_615, 1, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.end();
+}
+
+#[test]
+fun a_gas_reserve_of_a_tenth_of_the_holder_quote_is_accepted() {
+    let mut f = start();
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 0, 300, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.assert_reserve(published_round_id(), option::some(30));
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME, FUNDED_QUOTE - 330);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EGasReserveTooLarge, location = blast_fun_migrators::vault)]
+fun a_gas_reserve_one_unit_above_a_tenth_of_the_holder_quote_is_rejected() {
+    let mut f = start();
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 0, 300, 31, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EGasReserveTooLarge, location = blast_fun_migrators::vault)]
+fun a_meme_only_round_cannot_reserve_gas() {
+    let mut f = start();
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 0, 1, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     f.end();
 }
 
@@ -770,7 +797,7 @@ fun a_holder_quote_and_gas_reserve_beyond_u64_are_rejected() {
 fun changed_treasury_rejects_publication_with_gas() {
     let mut f = start();
     f.change_treasury(BOB);
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 300, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     f.end();
 }
 
@@ -782,7 +809,7 @@ fun a_treasury_change_after_scheduling_rejects_publication_before_the_budget() {
     f.change_treasury(BOB);
     f.drain_rewards(0, FUNDED_QUOTE);
 
-    f.publish_scheduled();
+    f.publish_after_notice();
 
     f.end();
 }
@@ -821,37 +848,53 @@ fun stale_generation_rejects_close_before_deadline_checks() {
     let mut f = start();
     let id = f.reserve_round(30);
     f.migrators_version.set_for_testing(2);
-    f.close(id, 0);
+    f.close(id, ROUND_NOTICE_MS);
     f.end();
 }
 
 // Delayed publication
 
 #[test]
-fun a_round_schedules_and_publishes_in_one_transaction_at_the_zero_notice() {
+fun a_round_publishes_exactly_when_the_default_notice_elapses() {
     let mut f = start();
-    let root = f.leaf(0, 0, ALICE, 10, 20);
-    assert_eq!(f.vault.round_publication_for_testing().delay_ms(), 0);
+    let root = f.leaf(0, 0, ALICE, 10, 300);
+    assert_eq!(f.vault.round_publication_for_testing().delay_ms(), ROUND_NOTICE_MS);
 
     f.scenario.next_tx(ADMIN);
-    f.schedule_reserved(0, 0, 10, root, digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.schedule_reserved(0, 0, 10, root, digest(), 1, 10, 300, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
 
     let scheduled = event::events_by_type<ActionScheduled<RoundPublicationKey, RoundTerms>>();
     assert_eq!(scheduled.length(), 1);
     let (owner, _, change, delay_ms, ready_at_ms) = scheduled[0].action_scheduled_fields();
     assert_eq!(owner, object::id(&f.vault));
-    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, root, 1, 10, 20, 30)));
-    assert_eq!(delay_ms, 0);
-    assert_eq!(ready_at_ms, 0);
+    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, root, 1, 10, 300, 30)));
+    assert_eq!(delay_ms, ROUND_NOTICE_MS);
+    assert_eq!(ready_at_ms, ROUND_NOTICE_MS);
     assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME, FUNDED_QUOTE);
     assert_eq!(f.vault.next_round(), 0);
 
+    f.scenario.next_tx(BOT);
+    f.clock.set_for_testing(ROUND_NOTICE_MS);
     f.publish_scheduled();
 
     assert_eq!(event::events_by_type<ActionApplied<RoundPublicationKey, RoundTerms>>().length(), 1);
     assert_eq!(event::events_by_type<blast_events::RoundPublished>().length(), 1);
-    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 50);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 330);
     assert!(f.vault.round_publication_for_testing().pending().is_none());
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun a_round_cannot_publish_one_millisecond_before_the_default_notice_elapses() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.scenario.next_tx(BOT);
+    f.clock.set_for_testing(ROUND_NOTICE_MS - 1);
+    f.publish_scheduled();
+
     f.end();
 }
 
@@ -863,7 +906,7 @@ fun anyone_publishes_a_ready_round_in_a_later_transaction() {
     f.schedule_reserved(0, 0, 10, root, digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
 
     f.scenario.next_tx(BOT);
-    f.publish_scheduled();
+    f.publish_after_notice();
     let round_id = published_round_id();
 
     f.claim(round_id, 0, ALICE, 10, 20, vector[]);
@@ -918,7 +961,7 @@ fun a_claim_window_ending_beyond_u64_rejects_publication() {
     let mut f = start();
     f.scenario.next_tx(ADMIN);
     f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, 18_446_744_073_709_551_615, PUBLISHER);
-    f.clock.set_for_testing(1);
+    f.clock.set_for_testing(ROUND_NOTICE_MS);
 
     f.publish_scheduled();
 
@@ -932,7 +975,7 @@ fun a_raised_notice_makes_publication_wait_until_ready() {
     f.scenario.next_tx(ADMIN);
     f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
 
-    f.clock.set_for_testing(NOTICE_MS);
+    f.clock.set_for_testing(ROUND_NOTICE_MS + NOTICE_MS);
     f.publish_scheduled();
 
     assert_eq!(f.vault.next_round(), 1);
@@ -947,7 +990,7 @@ fun a_raised_notice_rejects_publication_one_millisecond_early() {
     f.scenario.next_tx(ADMIN);
     f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
 
-    f.clock.set_for_testing(NOTICE_MS - 1);
+    f.clock.set_for_testing(ROUND_NOTICE_MS + NOTICE_MS - 1);
     f.publish_scheduled();
 
     f.end();
@@ -957,14 +1000,14 @@ fun a_raised_notice_rejects_publication_one_millisecond_early() {
 fun a_cancelled_round_reserves_nothing_and_leaves_the_cursor() {
     let mut f = start();
     f.scenario.next_tx(ADMIN);
-    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 300, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
 
     f.cancel_round();
 
     let cancelled = event::events_by_type<ActionCancelled<RoundPublicationKey, RoundTerms>>();
     assert_eq!(cancelled.length(), 1);
     let (_, _, change, _, _) = cancelled[0].action_cancelled_fields();
-    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, digest(), 1, 10, 20, 30)));
+    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, digest(), 1, 10, 300, 30)));
     assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME, FUNDED_QUOTE);
     assert_eq!(f.vault.next_round(), 0);
     assert_eq!(f.vault.last_checkpoint(), option::none());
@@ -990,15 +1033,15 @@ fun rescheduling_replaces_the_pending_round_and_announces_its_cancellation() {
     let mut f = start();
     let replacement = f.leaf(0, 0, ALICE, 7, 9);
     f.scenario.next_tx(ADMIN);
-    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 300, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
 
     f.schedule_reserved(0, 0, 10, replacement, digest(), 1, 7, 9, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
 
     let cancelled = event::events_by_type<ActionCancelled<RoundPublicationKey, RoundTerms>>();
     assert_eq!(cancelled.length(), 1);
     let (_, _, change, _, _) = cancelled[0].action_cancelled_fields();
-    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, digest(), 1, 10, 20, 30)));
-    f.publish_scheduled();
+    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, digest(), 1, 10, 300, 30)));
+    f.publish_after_notice();
     let round_id = published_round_id();
     assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 7, FUNDED_QUOTE - 9);
     f.claim(round_id, 0, ALICE, 7, 9, vector[]);
@@ -1011,10 +1054,10 @@ fun rescheduling_replaces_the_pending_round_and_announces_its_cancellation() {
 fun publication_rechecks_the_budget_the_schedule_checked() {
     let mut f = start();
     f.scenario.next_tx(ADMIN);
-    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
-    f.drain_rewards(0, FUNDED_QUOTE - 49);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 300, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.drain_rewards(0, FUNDED_QUOTE - 329);
 
-    f.publish_scheduled();
+    f.publish_after_notice();
 
     f.end();
 }
@@ -1037,7 +1080,7 @@ fun a_shorter_notice_waits_the_applied_one() {
     f.scenario.next_tx(ADMIN);
     f.schedule_notice(0);
 
-    f.clock.set_for_testing(NOTICE_MS);
+    f.clock.set_for_testing(ROUND_NOTICE_MS + NOTICE_MS);
     f.apply_notice();
 
     assert_eq!(f.vault.round_publication_for_testing().delay_ms(), 0);
@@ -1052,7 +1095,7 @@ fun a_shorter_notice_cannot_apply_before_the_applied_one_elapses() {
     f.scenario.next_tx(ADMIN);
     f.schedule_notice(0);
 
-    f.clock.set_for_testing(NOTICE_MS - 1);
+    f.clock.set_for_testing(ROUND_NOTICE_MS + NOTICE_MS - 1);
     f.apply_notice();
 
     f.end();
@@ -1066,7 +1109,7 @@ fun a_cancelled_notice_change_keeps_the_applied_notice() {
 
     f.cancel_notice();
 
-    assert_eq!(f.vault.round_publication_for_testing().delay_ms(), 0);
+    assert_eq!(f.vault.round_publication_for_testing().delay_ms(), ROUND_NOTICE_MS);
     assert!(f.vault.round_publication_for_testing().pending().is_none());
     f.end();
 }
@@ -1213,8 +1256,8 @@ fun assert_reimbursement(reimbursement: u64) {
     let mut f = start();
     let round_id = f.reserve_round(30);
     f.assert_reserve(round_id, option::some(30));
-    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 50);
-    f.claim(round_id, 0, ALICE, 10, 20, vector[]);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 330);
+    f.claim(round_id, 0, ALICE, 10, 300, vector[]);
     f.assert_reserve(round_id, option::some(30));
     f.settle(round_id, reimbursement);
     let events = event::events_by_type<blast_events::GasReserveSettled>();
@@ -1223,13 +1266,13 @@ fun assert_reimbursement(reimbursement: u64) {
         vault_id: object::id(&f.vault), round_id, number: 0,
         treasury: PUBLISHER, reimbursement_amount: reimbursement,
         reserve_returned: 30 - reimbursement,
-        quote_unallocated: FUNDED_QUOTE - 20 - reimbursement,
+        quote_unallocated: FUNDED_QUOTE - 300 - reimbursement,
     }));
     f.assert_reserve(round_id, option::none());
     f.assert_received(PUBLISHER, 0, reimbursement);
-    f.assert_received(ALICE, 10, 20);
+    f.assert_received(ALICE, 10, 300);
     f.close(round_id, DEADLINE_AT_MS);
-    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 20 - reimbursement);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 300 - reimbursement);
     f.end();
 }
 
@@ -1308,8 +1351,8 @@ fun publish(
         meme_amount, quote_amount, 0, CLAIM_WINDOW_DURATION_MS, treasury);
 }
 
-/// Schedules with explicit reserve, claim window and treasury commitment, then publishes at once
-/// under the zero notice.
+/// Schedules with explicit reserve, claim window and treasury commitment, then publishes once the
+/// applied notice elapses.
 fun publish_reserved(
     self: &mut RewardsFixture,
     number: u64,
@@ -1337,7 +1380,7 @@ fun publish_reserved(
         claim_window_duration_ms,
         expected_treasury,
     );
-    self.publish_scheduled();
+    self.publish_after_notice();
 }
 
 /// Schedules a round as the rewards admin in the current transaction.
@@ -1376,6 +1419,14 @@ fun schedule_reserved(
 /// Publishes the scheduled round permissionlessly in the current transaction.
 fun publish_scheduled(self: &mut RewardsFixture) {
     self.vault.publish_round(&self.migrators_version, &self.policy, &self.clock, self.scenario.ctx());
+}
+
+/// Advances the clock by the applied notice, then publishes the round scheduled at the current
+/// time.
+fun publish_after_notice(self: &mut RewardsFixture) {
+    let delay_ms = self.vault.round_publication_for_testing().delay_ms();
+    self.clock.increment_for_testing(delay_ms);
+    self.publish_scheduled();
 }
 
 /// Schedules the default one-leaf round under `admin`.
@@ -1433,10 +1484,11 @@ fun cancel_notice_as(self: &mut RewardsFixture, admin: &AdminWitness<CancelAdmin
     self.vault.cancel_round_delay(&self.migrators_version, admin);
 }
 
-/// Raises the round notice from zero, which applies in the same transaction.
+/// Raises the round notice from the default, which applies once the default elapses.
 fun raise_notice(self: &mut RewardsFixture, delay_ms: u64) {
     self.scenario.next_tx(ADMIN);
     self.schedule_notice(delay_ms);
+    self.clock.set_for_testing(ROUND_NOTICE_MS);
     self.apply_notice();
     assert_eq!(self.vault.round_publication_for_testing().delay_ms(), delay_ms);
 }
@@ -1487,17 +1539,17 @@ fun round(self: &mut RewardsFixture, number: u64, meme: u64, quote: u64): ID {
 
 /// Publishes one holder allocation with independent gas custody.
 fun reserve_round(self: &mut RewardsFixture, gas: u64): ID {
-    let root = self.leaf(0, 0, ALICE, 10, 20);
+    let root = self.leaf(0, 0, ALICE, 10, 300);
     self.scenario.next_tx(ADMIN);
     let treasury = self.policy.protocol_destination();
-    self.publish_reserved(0, 0, 10, root, digest(), 1, 10, 20, gas, CLAIM_WINDOW_DURATION_MS, treasury);
+    self.publish_reserved(0, 0, 10, root, digest(), 1, 10, 300, gas, CLAIM_WINDOW_DURATION_MS, treasury);
     let id = published_round_id();
     let events = event::events_by_type<blast_events::RoundPublished>();
     assert_eq!(bcs::to_bytes(&events[0]), bcs::to_bytes(&ExpectedRoundPublished {
         vault_id: object::id(&self.vault), round_id: id, number: 0,
         start_checkpoint: 0, end_checkpoint: 10, claim_deadline_at_ms: DEADLINE_AT_MS,
-        root, manifest_digest: digest(), leaf_count: 1, meme_amount: 10, quote_amount: 20,
-        meme_unallocated: FUNDED_MEME - 10, quote_unallocated: FUNDED_QUOTE - 20 - gas,
+        root, manifest_digest: digest(), leaf_count: 1, meme_amount: 10, quote_amount: 300,
+        meme_unallocated: FUNDED_MEME - 10, quote_unallocated: FUNDED_QUOTE - 300 - gas,
         treasury, gas_reserve_amount: gas,
     }));
     id
@@ -1681,17 +1733,22 @@ const POOL: address = @0x9001;
 /// Rewards the fixture vault holds before any round.
 const FUNDED_MEME: u64 = 1_000;
 
-/// The claim window every helper schedules.
-const CLAIM_WINDOW_DURATION_MS: u64 = 1_000;
+/// The round notice every vault starts with.
+const ROUND_NOTICE_MS: u64 = 7_200_000;
 
-/// The claim deadline of a round published at time zero with the default window.
-const DEADLINE_AT_MS: u64 = 1_000;
+/// The claim window every helper schedules; it outlasts the notice, so earlier rounds stay
+/// claimable while later ones publish.
+const CLAIM_WINDOW_DURATION_MS: u64 = 86_400_000;
+
+/// The claim deadline of a round scheduled at time zero and published once the default notice
+/// elapses.
+const DEADLINE_AT_MS: u64 = 93_600_000;
 
 /// A raised round notice.
-const NOTICE_MS: u64 = 5_000;
+const NOTICE_MS: u64 = 10_800_000;
 
-/// A publication time well after scheduling.
-const LATE_AT_MS: u64 = 50_000;
+/// A publication time well after the default notice elapses.
+const LATE_AT_MS: u64 = 50_000_000;
 
 const FUNDED_QUOTE: u64 = 2_000;
 
