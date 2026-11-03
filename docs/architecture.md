@@ -369,7 +369,7 @@ calls take no Clock for the partner. See ADR 0095.
 
 ## Utility source ownership
 
-OTC, vesting, and timelock remain independently published immutable packages,
+OTC and vesting remain independently published immutable packages,
 maintained in this repository with their SDK and release records. Internal
 consumers use local package dependencies. Repository consolidation changes no
 on-chain ownership or ABI; [ADR 0135](decisions/0135-utility-contracts-consolidation.md)

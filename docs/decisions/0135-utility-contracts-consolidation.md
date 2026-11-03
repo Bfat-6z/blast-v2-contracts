@@ -2,6 +2,8 @@
 
 - Status: accepted
 - Date: 2026-11-03
+- Amended: 2026-11-03 — the timelock source is removed once `blast_partners`, its last
+  consumer, moves to `blast_admin`'s delayed modules; its records and archival tag remain
 
 ## Decision
 

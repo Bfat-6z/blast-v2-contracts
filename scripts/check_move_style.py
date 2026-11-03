@@ -152,7 +152,7 @@ def check(path):
     events = set(re.findall(r"event::emit\(\s*(\w+)", mask(source))) if "Events" in names else set()
     utility_layout = any(
         path.resolve().is_relative_to(ROOT / "sui" / package)
-        for package in ("otc", "vesting", "timelock")
+        for package in ("otc", "vesting")
     ) and in_order(UTILITY_SECTIONS)
     if not (in_order(SECTIONS) or in_order(TAIL_SECTIONS) or utility_layout):
         raise ValueError("sections must occur once, in the order in AGENTS.md")

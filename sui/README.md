@@ -12,7 +12,7 @@ for the durable boundaries.
 One-off partner packages live under [`vendors/`](vendors/README.md), one
 directory per contract.
 
-Immutable utilities live in [`otc/`](otc/README.md),
-[`vesting/`](vesting/README.md), and [`timelock/`](timelock/README.md).
+Immutable utilities live in [`otc/`](otc/README.md) and
+[`vesting/`](vesting/README.md).
 Their source, deployment provenance, and SDK are maintained here; see the
 [utility integration guide](../docs/utilities.md).

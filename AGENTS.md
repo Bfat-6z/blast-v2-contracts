@@ -21,8 +21,11 @@ The [October 28 mainnet deployment](deployments/sui/mainnet/2026-10-28-canonical
 records immutable ACL and partners and compatible-upgrade custody for launchpad,
 migrators, and presale. ADR 0134 targets a fresh lineage for that stack.
 Keep its publication metadata separate from the October deployment records.
-The published immutable OTC, vesting, and timelock packages retain their
-source, abort identities, and publication metadata. External venue interfaces
+The published immutable OTC and vesting packages retain their source, abort
+identities, and publication metadata. The immutable timelock package's source was
+removed once no package depended on it; its mainnet records remain in
+`deployments/` and its publication source under the archival tag in
+[utility integration](docs/utilities.md). External venue interfaces
 follow their upstream ABI.
 
 ## Module layout

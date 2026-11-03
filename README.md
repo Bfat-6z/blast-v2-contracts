@@ -14,7 +14,7 @@ Load deeper documentation only when the task requires it:
 - [deployment records](deployments/README.md)
 - [security audits](audits/README.md), including Asymptotic's October 2026 launchpad report
 - [Sui packages](sui/README.md)
-- [OTC, vesting, timelock and their SDK](docs/utilities.md)
+- [OTC, vesting and their SDK](docs/utilities.md)
 
 Package source, tests, manifests, and lockfiles are authoritative for current
 implementation and dependency details.
@@ -39,7 +39,7 @@ Third-party dependencies and the venue interfaces under
 are excluded from this license grant. This change does not revoke rights in
 copies previously distributed under MIT or another license.
 
-The imported `sui/otc/`, `sui/vesting/`, `sui/timelock/`, and `sdk/` retain
+The imported `sui/otc/`, `sui/vesting/`, and `sdk/` retain
 their MIT license, with the original notice in each directory. Their imported
 documentation, vectors, and deployment records retain the same terms; see
 [ADR 0135](docs/decisions/0135-utility-contracts-consolidation.md).
