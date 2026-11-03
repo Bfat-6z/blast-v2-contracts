@@ -234,5 +234,5 @@ for package in ('launchpad', 'presale', 'migrators'):
     require(fs['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
     require(fs['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
     assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]
-    require(fs['wrap'][1], 'delayed::new_action(UpgradeKey(), &id, 0)')
+    require(fs['wrap'][1], 'delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS)')
 print('Per-operation notices, no bypass, immediate signer, and publication custody: OK')

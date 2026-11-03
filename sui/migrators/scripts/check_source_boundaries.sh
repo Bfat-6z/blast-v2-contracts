@@ -1175,8 +1175,8 @@ EOF
     fail "PackageAdmin must store upgrade custody's notice and proposal as one keyed DelayedAction of digest or immutability"
 [[ "$(package_admin_body authorize_upgrade)" == 'package_version.assert_current();letcustodian_id=self.id.to_inner();letaction=self.upgrade.take_action(clock);assert!(action==UpgradeAction::Upgrade(digest),EWrongUpgradeAction);self.custody.authorize_upgrade(custodian_id,digest)' ]] \
     && [[ "$(package_admin_body make_immutable)" == 'package_version.assert_current();letaction=self.upgrade.take_action(clock);assert!(action==UpgradeAction::MakeImmutable,EWrongUpgradeAction);self.custody.make_immutable(self.id.to_inner());' ]] \
-    && [[ "$(package_admin_body wrap)" == *'letupgrade=delayed::new_action(UpgradeKey(),&id,0);transfer::share_object(PackageAdmin{id,custody,upgrade});'* ]] || \
-    fail "upgrade custody must start at zero notice and act only on the exact ready action it asked for"
+    && [[ "$(package_admin_body wrap)" == *'letupgrade=delayed::new_action(UpgradeKey(),&id,INITIAL_UPGRADE_DELAY_MS);transfer::share_object(PackageAdmin{id,custody,upgrade});'* ]] || \
+    fail "upgrade custody must start at its 48-hour notice and act only on the exact ready action it asked for"
 require_errors "$SOURCE_DIR/package_admin.move" "package_admin must use sequential codes 0-1 for its action and digest checks" <<'EOF'
 0 EWrongUpgradeAction The ready action must match the requested upgrade digest or immutability.
 1 EInvalidDigest A package digest must contain 32 bytes.

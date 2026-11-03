@@ -433,7 +433,7 @@ package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # would end upgradeability silently.
 # Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
 if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); let upgrade = delayed::new_action(UpgradeKey(), &id, 0); transfer::share_object(PackageAdmin { id, custody, upgrade }); generation.share_version(ctx);' ]] \
+    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); let upgrade = delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS); transfer::share_object(PackageAdmin { id, custody, upgrade }); generation.share_version(ctx);' ]] \
   || [[ "$(move_production_type PackageAdmin <<<"$(move_facts sources/package_admin.move)")" \
     != 'struct PackageAdmin has key { id: UID, custody: UpgradeCustody<BLAST_FUN>, upgrade: DelayedAction<UpgradeKey, UpgradeAction>, }' ]] \
   || [[ "$(move_production_type UpgradeAction <<<"$(move_facts sources/package_admin.move)")" \

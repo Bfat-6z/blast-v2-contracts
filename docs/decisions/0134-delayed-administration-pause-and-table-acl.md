@@ -158,7 +158,8 @@ Wrapping consumes that proof and seals the matching never-upgraded UpgradeCap be
 sharing the operational generation. The proof never authorizes policy setters. Launchpad
 and presale start fully paused; migrators relies on launchpad migration gating.
 
-Publication-owned policy operations and upgrade custody begin with zero notice. Ordinary
+Publication-owned policy operations begin with zero notice (amended 2026-11-03: upgrade custody
+begins at 48 hours, so no upgrade or immutability action ever runs without notice). Ordinary
 ACL roles may configure their values and intended notices in schedule/apply PTBs. There
 are no special bootstrap setters. Before release, settle or cancel every outstanding
 zero-notice proposal, configure and verify **each operation's** intended notice, then
@@ -276,6 +277,10 @@ Upgrade custody, creator-cap reassignment and the ACL root transfer use
 unchanged: configure with schedule-and-apply pairs, then raise each notice.
 
 ### Consequences
+
+Upgrade custody starts at a 48-hour notice instead of zero. Setup never needs an
+upgrade, so this closes the one window in which a compromised UpgradeAdmin could
+replace code or seal a package without notice.
 
 Package initialization is no longer eventless: every delayed value created in
 `init` emits `DelayedCreated` or `ActionCreated`. This is deliberate. Each

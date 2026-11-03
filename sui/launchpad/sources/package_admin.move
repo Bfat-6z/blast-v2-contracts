@@ -6,6 +6,11 @@
 /// Shared custody of this package's Publisher and UpgradeCap, driven by package administrators.
 module blast_fun::package_admin;
 
+// === Constants ===
+
+/// The notice every upgrade or immutability action waits from publication until changed.
+const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
+
 // === Public Types ===
 
 /// A proposed upgrade or irreversible immutability.
@@ -71,7 +76,7 @@ public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxC
     let (publisher, generation) = publication.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap);
-    let upgrade = delayed::new_action(UpgradeKey(), &id, 0);
+    let upgrade = delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
 
     transfer::share_object(PackageAdmin { id, custody, upgrade });
     generation.share_version(ctx);
@@ -210,7 +215,7 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    let upgrade = delayed::new_action(UpgradeKey(), &id, 172_800_000);
+    let upgrade = delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
 
     PackageAdmin { id, custody, upgrade }
 }

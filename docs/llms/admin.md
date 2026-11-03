@@ -202,7 +202,8 @@ gates authorization behind its upgrade role. Boosts receipt commit instead carri
 the native authorized receipt. Wrap in launchpad, presale and migrators consumes their
 unique Publication and matching fresh UpgradeCap. Publication carries
 provenance only and is permanently consumed at wrap. Ordinary ACL operations
-configure policies using each publication-owned operation's initial zero notice. Each operation
+configure policies using each publication-owned policy operation's initial zero notice; upgrade
+custody starts at 48 hours. Each operation
 stores its own notice in a `delayed` value; see "Delayed values, actions and sets".
 
 Blast SUI's `new` and `share`
