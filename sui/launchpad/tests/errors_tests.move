@@ -82,8 +82,7 @@ fun pause_error_registry_is_stable() {
 #[test]
 fun upgrade_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::wrong_upgrade_action!(), 41);
-    assert_eq!(blast_fun::errors::no_pending_action!(), 42);
-    assert_eq!(blast_fun::errors::invalid_digest!(), 43);
+    assert_eq!(blast_fun::errors::invalid_digest!(), 42);
 }
 
 // === Imports ===

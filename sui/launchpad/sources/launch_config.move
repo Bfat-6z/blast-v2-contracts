@@ -21,15 +21,24 @@ public struct LaunchConfig has key {
     id: UID,
     meme_decimals: VecSet<u8>,
     quotes: Table<TypeName, bool>,
-    trade_fees: Delayed<TradeFees>,
-    migration_witnesses: VecSet<TypeName>,
-    witness_delay_ms: u64,
-    pending_witness_delay: Option<Pending<bool>>,
-    pending_witnesses: VecMap<TypeName, Pending<bool>>,
-    protocol_allocation: Delayed<ProtocolAllocation>,
+    trade_fees: Delayed<TradeFeesKey, TradeFees>,
+    migration_witnesses: DelayedSet<MigrationWitnessKey, TypeName>,
+    protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>,
     /// In MIST.
-    creation_fee: Delayed<u64>,
+    creation_fee: Delayed<CreationFeeKey, u64>,
 }
+
+/// Keys the trade fees' delayed lifecycle.
+public struct TradeFeesKey() has copy, drop, store;
+
+/// Keys the migration-adapter admissions' delayed lifecycle.
+public struct MigrationWitnessKey() has copy, drop, store;
+
+/// Keys Blast's migration allocation's delayed lifecycle.
+public struct ProtocolAllocationKey() has copy, drop, store;
+
+/// Keys the creation fee's delayed lifecycle.
+public struct CreationFeeKey() has copy, drop, store;
 
 /// Dynamic-field key of a Blast partner new launches may name. Its value is the time the partner
 /// stops being accepted: `u64::MAX` until Blast removes it.
@@ -68,19 +77,7 @@ public fun schedule_protocol_allocation(
     );
 
     let value = allocation::protocol_allocation(meme_bps, quote_bps);
-    assert!(
-        value != self.protocol_allocation.value() || delay_ms != self.protocol_allocation.delay_ms(),
-        blast_fun::errors::unchanged!()
-    );
-
-    let ready_at_ms = self.protocol_allocation.schedule(value, delay_ms, clock);
-
-    events::protocol_allocation_scheduled(
-        meme_bps.value(),
-        quote_bps.value(),
-        ready_at_ms,
-        delay_ms
-    );
+    self.protocol_allocation.schedule(value, delay_ms, clock);
 }
 
 /// Applies the scheduled protocol allocation permissionlessly once ready.
@@ -91,11 +88,7 @@ public fun apply_protocol_allocation(
 ) {
     package_version.assert_current();
 
-    let value = self.protocol_allocation.apply(clock);
-    let meme_bps = value.meme_bps();
-    let quote_bps = value.quote_bps();
-
-    events::protocol_allocation_set(meme_bps.value(), quote_bps.value());
+    self.protocol_allocation.apply(clock);
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -106,11 +99,7 @@ public fun cancel_protocol_allocation(
 ) {
     package_version.assert_current();
 
-    let value = self.protocol_allocation.cancel();
-    let meme_bps = value.meme_bps();
-    let quote_bps = value.quote_bps();
-
-    events::protocol_allocation_cancelled(meme_bps.value(), quote_bps.value());
+    self.protocol_allocation.cancel();
 }
 
 public fun set_meme_decimals_allowed(
@@ -164,20 +153,7 @@ public fun schedule_trade_fees(
         blast_fun::errors::invalid_trade_fee_bps!()
     );
 
-    let value = TradeFees { quote_fee_bps, meme_fee_bps };
-    assert!(
-        value != self.trade_fees.value() || delay_ms != self.trade_fees.delay_ms(),
-        blast_fun::errors::unchanged!()
-    );
-
-    let ready_at_ms = self.trade_fees.schedule(value, delay_ms, clock);
-
-    events::trade_fees_scheduled(
-        quote_fee_bps.value(),
-        meme_fee_bps.value(),
-        ready_at_ms,
-        delay_ms
-    );
+    self.trade_fees.schedule(TradeFees { quote_fee_bps, meme_fee_bps }, delay_ms, clock);
 }
 
 /// Applies the scheduled trade fees permissionlessly once ready.
@@ -188,11 +164,7 @@ public fun apply_trade_fees(
 ) {
     package_version.assert_current();
 
-    let value = self.trade_fees.apply(clock);
-    let quote_fee_bps = value.quote_fee_bps;
-    let meme_fee_bps = value.meme_fee_bps;
-
-    events::launch_trade_fees_changed(quote_fee_bps.value(), meme_fee_bps.value());
+    self.trade_fees.apply(clock);
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -203,11 +175,7 @@ public fun cancel_trade_fees(
 ) {
     package_version.assert_current();
 
-    let value = self.trade_fees.cancel();
-    let quote_fee_bps = value.quote_fee_bps;
-    let meme_fee_bps = value.meme_fee_bps;
-
-    events::trade_fees_cancelled(quote_fee_bps.value(), meme_fee_bps.value());
+    self.trade_fees.cancel();
 }
 
 /// Sets the SUI, in MIST, every launch created afterward pays.
@@ -222,15 +190,7 @@ public fun schedule_creation_fee(
 ) {
     package_version.assert_current();
 
-    let value = creation_fee;
-    assert!(
-        value != self.creation_fee.value() || delay_ms != self.creation_fee.delay_ms(),
-        blast_fun::errors::unchanged!()
-    );
-
-    let ready_at_ms = self.creation_fee.schedule(value, delay_ms, clock);
-
-    events::creation_fee_scheduled(creation_fee, ready_at_ms, delay_ms);
+    self.creation_fee.schedule(creation_fee, delay_ms, clock);
 }
 
 /// Applies the scheduled creation fee permissionlessly once ready.
@@ -241,10 +201,7 @@ public fun apply_creation_fee(
 ) {
     package_version.assert_current();
 
-    let value = self.creation_fee.apply(clock);
-    let creation_fee = value;
-
-    events::creation_fee_changed(creation_fee);
+    self.creation_fee.apply(clock);
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -255,10 +212,7 @@ public fun cancel_creation_fee(
 ) {
     package_version.assert_current();
 
-    let value = self.creation_fee.cancel();
-    let creation_fee = value;
-
-    events::creation_fee_cancelled(creation_fee);
+    self.creation_fee.cancel();
 }
 
 /// Lets new launches name `partner`, at once. Adding a partner whose removal is pending cancels
@@ -308,12 +262,11 @@ public fun remove_partner(
     events::partner_removed(partner_id, acceptance_ends_at_ms);
 }
 
-/// Admits or removes a migration adapter's witness type. An admitted adapter can start launches
-/// and receives their liquidity at migration; existing launches keep their witness.
+/// Admits a migration adapter's witness type after the applied admission notice. An admitted
+/// adapter can start launches and receives their liquidity at migration; existing launches keep
+/// their witness. Rescheduling a pending admission restarts its notice.
 ///
 /// Framework types are rejected because anyone can construct them.
-/// Admits an adapter only after the currently applied admission notice.
-/// Scheduling and applying an admission preserve the shared delay policy.
 public fun schedule_migration_witness<MigrationWitness: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
@@ -327,20 +280,11 @@ public fun schedule_migration_witness<MigrationWitness: drop>(
 
     let origin = type_name::original_id<MigrationWitness>();
     assert!(origin != @0x1 && origin != @0x2, blast_fun::errors::invalid_migration_witness_type!());
-    assert!(!self.migration_witnesses.contains(&witness), blast_fun::errors::unchanged!());
 
-    let delay_ms = self.witness_delay_ms;
-    let pending = delayed::new_pending(true, delay_ms, delay_ms, clock);
-
-    if (self.pending_witnesses.contains(&witness)) {
-        self.pending_witnesses.remove(&witness);
-    };
-    self.pending_witnesses.insert(witness, pending);
-
-    events::migration_witness_scheduled(witness, pending.ready_at_ms(), delay_ms);
+    self.migration_witnesses.schedule_add(witness, clock);
 }
 
-/// Permissionlessly applies the approved admission once ready, preserving the live notice.
+/// Permissionlessly applies the approved admission once ready.
 public fun apply_migration_witness<MigrationWitness: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
@@ -348,13 +292,7 @@ public fun apply_migration_witness<MigrationWitness: drop>(
 ) {
     package_version.assert_current();
 
-    let witness = type_name::with_original_ids<MigrationWitness>();
-    self.pending_witnesses[&witness].take_ready(clock);
-
-    self.pending_witnesses.remove(&witness);
-    self.migration_witnesses.insert(witness);
-
-    events::migration_witness_set<MigrationWitness>(true);
+    self.migration_witnesses.apply_add(type_name::with_original_ids<MigrationWitness>(), clock);
 }
 
 /// Cancels a pending adapter admission, including after its threshold.
@@ -365,11 +303,7 @@ public fun cancel_migration_witness<MigrationWitness: drop>(
 ) {
     package_version.assert_current();
 
-    let witness = type_name::with_original_ids<MigrationWitness>();
-
-    self.pending_witnesses.remove(&witness);
-
-    events::migration_witness_cancelled(witness);
+    self.migration_witnesses.cancel_add(type_name::with_original_ids<MigrationWitness>());
 }
 
 /// Immediately removes adapter authority and cancels any pending admission.
@@ -380,22 +314,10 @@ public fun remove_migration_witness<MigrationWitness: drop>(
 ) {
     package_version.assert_current();
 
-    let witness = type_name::with_original_ids<MigrationWitness>();
-    assert!(
-        self.migration_witnesses.contains(&witness) || self.pending_witnesses.contains(&witness),
-        blast_fun::errors::unchanged!()
-    );
-    if (self.pending_witnesses.contains(&witness)) {
-        self.pending_witnesses.remove(&witness);
-        events::migration_witness_cancelled(witness);
-    };
-    if (self.migration_witnesses.contains(&witness)) {
-        self.migration_witnesses.remove(&witness);
-        events::migration_witness_set<MigrationWitness>(false);
-    };
+    self.migration_witnesses.remove(type_name::with_original_ids<MigrationWitness>());
 }
 
-/// Proposes only the admission notice period. Existing admission deadlines remain fixed.
+/// Proposes only the admission notice. Pending admissions keep their deadlines.
 public fun schedule_migration_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
@@ -405,14 +327,10 @@ public fun schedule_migration_delay(
 ) {
     package_version.assert_current();
 
-    let pending = delayed::new_pending(false, self.witness_delay_ms, delay_ms, clock);
-
-    self.pending_witness_delay = option::some(pending);
-
-    events::migration_delay_scheduled(delay_ms, pending.ready_at_ms());
+    self.migration_witnesses.schedule_delay(delay_ms, clock);
 }
 
-/// Permissionlessly applies a ready admission-policy proposal.
+/// Permissionlessly applies a ready admission-notice proposal.
 public fun apply_migration_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
@@ -420,22 +338,18 @@ public fun apply_migration_delay(
 ) {
     package_version.assert_current();
 
-    let (_, delay_ms) = self.pending_witness_delay.extract().take_ready(clock);
-
-    self.witness_delay_ms = delay_ms;
-
-    events::migration_delay_changed(delay_ms);
+    self.migration_witnesses.apply_delay(clock);
 }
 
-/// Cancels only the admission-policy proposal.
+/// Cancels only the admission-notice proposal.
 public fun cancel_migration_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
     _: &AdminWitness<CancelAdmin>
 ) {
     package_version.assert_current();
-    self.pending_witness_delay.extract();
-    events::migration_delay_cancelled();
+
+    self.migration_witnesses.cancel_delay();
 }
 
 // === Package Functions ===
@@ -485,26 +399,33 @@ fun new(
     delay_ms: u64,
     ctx: &mut TxContext,
 ): LaunchConfig {
+    let id = object::new(ctx);
+    let owner = id.to_inner();
+
     LaunchConfig {
-        id: object::new(ctx),
+        id,
         meme_decimals: vec_set::from_keys(vector[6, 9]),
         quotes: table::new(ctx),
-        trade_fees: delayed::new(trade_fees, delay_ms),
-        migration_witnesses: vec_set::empty(),
-        witness_delay_ms: delay_ms,
-        pending_witness_delay: option::none(),
-        pending_witnesses: vec_map::empty(),
-        protocol_allocation: delayed::new(protocol_allocation, delay_ms),
-        creation_fee: delayed::new(0, delay_ms),
+        trade_fees: delayed::new(TradeFeesKey(), owner, trade_fees, delay_ms),
+        migration_witnesses: delayed::new_set(MigrationWitnessKey(), owner, delay_ms),
+        protocol_allocation: delayed::new(ProtocolAllocationKey(), owner, protocol_allocation, delay_ms),
+        creation_fee: delayed::new(CreationFeeKey(), owner, 0, delay_ms),
     }
 }
 
 // === Test-Only Functions ===
 
 #[test_only]
-/// Reads the shared admission policy independently of pending admissions.
+/// Reads the applied admission notice independently of pending admissions.
 public fun migration_delay_ms_for_testing(self: &LaunchConfig): u64 {
-    self.witness_delay_ms
+    self.migration_witnesses.delay_ms()
+}
+
+#[test_only]
+public fun migration_witnesses_for_testing(
+    self: &LaunchConfig,
+): &DelayedSet<MigrationWitnessKey, TypeName> {
+    &self.migration_witnesses
 }
 
 #[test_only]
@@ -630,18 +551,15 @@ public fun rate_defaults_for_testing(self: &LaunchConfig): (u64, u64) {
 
 #[test_only]
 public fun allowed_migration_witness_count_for_testing(self: &LaunchConfig): u64 {
-    self.migration_witnesses.length()
+    self.migration_witnesses.members().length()
 }
 
 // === Imports ===
 
-use sui::{
-    vec_map::{Self, VecMap},
-    clock::Clock, dynamic_field, table::{Self, Table}, vec_set::{Self, VecSet},
-};
+use sui::{clock::Clock, dynamic_field, table::{Self, Table}, vec_set::{Self, VecSet}};
 
 use blast_admin::{
-    delayed::{Self, Delayed, Pending},
+    delayed::{Self, Delayed, DelayedSet},
     blast_acl::AdminWitness,
 };
 

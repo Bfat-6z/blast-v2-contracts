@@ -255,6 +255,84 @@ fn sui_move_build(package: &Path, work: &Path) -> Result<Command> {
     Ok(command)
 }
 
+// === blast_admin::delayed mirrors (BCS field order) ===
+//
+// Every key is a zero-field positional struct such as `TradeFeesKey()`, which Move compiles with
+// one `dummy_field: bool`, so each `key` is one BCS byte.
+
+/// Mirrors `blast_admin::delayed::Proposal<T>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Proposal<T> {
+    pub value: T,
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed::Change<A>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum Change<A> {
+    Action(A),
+    Delay,
+}
+
+/// Mirrors `blast_admin::delayed::Delayed<K, T>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Delayed<T> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub value: T,
+    pub delay_ms: u64,
+    pub pending: Option<Proposal<T>>,
+}
+
+/// Mirrors `blast_admin::delayed::DelayedAction<K, A>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DelayedAction<A> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub delay_ms: u64,
+    pub pending: Option<Proposal<Change<A>>>,
+}
+
+/// Mirrors `blast_admin::delayed::DelayedScheduled<K, T>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DelayedScheduled<T> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub value: T,
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed::DelayedApplied<K, T>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DelayedApplied<T> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub previous_value: T,
+    pub value: T,
+    pub delay_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed::ActionScheduled<K, A>` and `ActionCancelled<K, A>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct ActionScheduled<A> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub change: Change<A>,
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed::ActionApplied<K, A>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct ActionApplied<A> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub change: Change<A>,
+    pub delay_ms: u64,
+}
+
 /// Everything one executed transaction produced.
 pub struct Outcome {
     pub transaction: Transaction,
@@ -302,11 +380,48 @@ impl Outcome {
             .collect()
     }
 
-    /// Payload type names of every event, in native order. Each event must be a `package` payload
-    /// inside `package`'s `blast_events::Event<T>` envelope, so a bare or foreign event fails.
+    /// Contents of `blast_admin::delayed::<name>` lifecycle events keyed by `key_module::key_name`,
+    /// in native order. The primitive emits these bare, generic in the owner's key type.
+    pub fn delayed_events(&self, name: &str, key_module: &str, key_name: &str) -> Vec<&[u8]> {
+        self.events
+            .iter()
+            .filter(|event| {
+                event.type_.module.as_str() == "delayed"
+                    && event.type_.name.as_str() == name
+                    && matches!(
+                        event.type_.type_params.first(),
+                        Some(sui_types::TypeTag::Struct(key))
+                            if key.module.as_str() == key_module && key.name.as_str() == key_name
+                    )
+            })
+            .map(|event| event.contents.as_slice())
+            .collect()
+    }
+
+    /// Decodes `delayed_events` into a mirror, which must consume each payload exactly.
+    pub fn delayed<T: serde::de::DeserializeOwned>(
+        &self, name: &str, key_module: &str, key_name: &str,
+    ) -> Result<Vec<T>> {
+        self.delayed_events(name, key_module, key_name)
+            .into_iter()
+            .map(|bytes| bcs::from_bytes(bytes).with_context(|| format!("decode delayed::{name}<{key_module}::{key_name}>")))
+            .collect()
+    }
+
+    /// Payload type names of every Blast event, in native order. Each must be a `package` payload
+    /// inside `package`'s `blast_events::Event<T>` envelope, so a bare or foreign event fails. The
+    /// only exception is a `blast_admin::delayed` lifecycle event keyed by a `package` type, which
+    /// is bare by design and skipped here; read it with `delayed_events`.
     pub fn wrapped_payloads(&self, package: ObjectID) -> Vec<String> {
         self.events
             .iter()
+            .filter(|event| {
+                !(event.type_.module.as_str() == "delayed"
+                    && matches!(
+                        event.type_.type_params.first(),
+                        Some(sui_types::TypeTag::Struct(key)) if ObjectID::from(key.address) == package
+                    ))
+            })
             .map(|event| {
                 let envelope = &event.type_;
                 assert!(
@@ -508,12 +623,13 @@ impl Harness {
         assert_eq!(package_admin.len(), 1);
         self.shared(package_admin[0], false);
         #[derive(serde::Deserialize)]
-        enum UpgradeAction { Upgrade { _digest: Vec<u8> }, MakeImmutable, DelayOnly }
-        let (admin_id, sealed_publisher, sealed_caps, delay_ms, pending):
-            (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, u64, Option<(UpgradeAction, u64, u64)>) =
+        enum UpgradeAction { Upgrade { _digest: Vec<u8> }, MakeImmutable }
+        let (admin_id, sealed_publisher, sealed_caps, upgrade):
+            (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, DelayedAction<UpgradeAction>) =
             bcs::from_bytes(&self.contents(package_admin[0])).context("decode fresh PackageAdmin")?;
-        assert!(pending.is_none(), "fresh custody has no scheduled action");
-        assert_eq!(delay_ms, 0);
+        assert!(upgrade.pending.is_none(), "fresh custody has no scheduled action");
+        assert_eq!(upgrade.delay_ms, 0);
+        assert_eq!(upgrade.owner, package_admin[0]);
         assert_eq!(admin_id, package_admin[0]);
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
@@ -521,7 +637,7 @@ impl Harness {
         let (version_id, paused, active_generation): (ObjectID, u8, u64) =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
         assert_eq!((version_id, paused, active_generation), (version[0], 7, generation));
-        let (_, _, _, treasury): (ObjectID, Vec<u8>, (u64, u64, Option<(u64, u64, u64)>), (SuiAddress, u64, Option<(SuiAddress, u64, u64)>)) = bcs::from_bytes(&self.contents(runtime_id))?;
+        let (_, _, _, treasury): (ObjectID, Vec<u8>, Delayed<u64>, Delayed<SuiAddress>) = bcs::from_bytes(&self.contents(runtime_id))?;
         let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "UpgradeAdmin", "FeeAdmin", "TreasuryAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config = b.obj(self.shared(config_id, true))?;
@@ -547,7 +663,7 @@ impl Harness {
         let treasury_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "TreasuryAdmin")?;
         let zero = b.pure(0u64)?;
         let delay = b.pure(172_800_000u64)?;
-        let destination = b.pure(treasury.0)?;
+        let destination = b.pure(treasury.value)?;
         call(&mut b, package, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, zero, delay, clock]);
         call(&mut b, package, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
         call(&mut b, package, "runtime_config", "schedule_treasury", vec![], vec![runtime, version_arg, treasury_role, destination, delay, clock]);
@@ -805,9 +921,9 @@ fn git_dependency_dir(package: &str, name: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// The cached checkout of `blast_fun_timelock`, which `blast_admin` links.
+/// The cached checkout of `blast_fun_timelock`, which `blast_partners` links.
 pub fn timelock_dir() -> Result<PathBuf> {
-    git_dependency_dir("admin", "blast_fun_timelock")
+    git_dependency_dir("partners", "blast_fun_timelock")
 }
 
 /// The cached checkout of `blast_fun_vesting`, which `blast_presale` links.

@@ -174,7 +174,7 @@ fun old_admissions_preserve_a_new_policy_in_either_application_order() {
         f.config.apply_migration_delay(&f.version, &f.clock);
         assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
 
-        assert_eq!(sui::event::events_by_type<Event<MigrationDelayChanged>>().length(), 2);
+        assert_eq!(migration_delay_changes(), 2);
     });
     fixture.end();
 }
@@ -200,7 +200,7 @@ fun multiple_admissions_cannot_restore_a_superseded_notice() {
         f.clock.set_for_testing(125);
         f.config.apply_migration_witness<LaterAdapter>(&f.version, &f.clock);
         assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
-        assert_eq!(sui::event::events_by_type<Event<MigrationDelayChanged>>().length(), 2);
+        assert_eq!(migration_delay_changes(), 2);
     });
     fixture.end();
 }
@@ -236,7 +236,7 @@ fun cancelling_policy_does_not_cancel_admission_or_change_its_notice() {
         f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
 
         assert_eq!(f.config.migration_delay_ms_for_testing(), 100);
-        assert_eq!(sui::event::events_by_type<Event<MigrationDelayChanged>>().length(), 1);
+        assert_eq!(migration_delay_changes(), 1);
     });
     fixture.end();
 }
@@ -258,7 +258,7 @@ fun an_upgrade_action_replaces_a_delay_proposal_without_changing_policy() {
 
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
         assert!(f.admin.has_upgrade_cap_for_testing());
-        assert_eq!(sui::event::events_by_type<Event<UpgradeDelayChanged>>().length(), 1);
+        assert_eq!(upgrade_delay_changes(), 1);
     });
     fixture.end();
 }
@@ -277,7 +277,7 @@ fun immutability_keeps_the_applied_notice_without_applying_a_replaced_policy() {
         f.admin.make_immutable(&f.version, &witness, &f.clock);
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
         assert!(!f.admin.has_upgrade_cap_for_testing());
-        assert_eq!(sui::event::events_by_type<Event<UpgradeDelayChanged>>().length(), 1);
+        assert_eq!(upgrade_delay_changes(), 1);
     });
     fixture.end();
 }
@@ -345,17 +345,31 @@ fun configure_destination(self: &mut AdminDelayFixture) {
     assert_eq!(self.runtime.treasury(), @0xB0B);
 }
 
+/// Counts applied admission-notice changes, ignoring applied admissions.
+fun migration_delay_changes(): u64 {
+    sui::event::events_by_type<ActionApplied<MigrationWitnessKey, TypeName>>().count!(|applied| {
+        let (_, _, change, _) = applied.action_applied_fields();
+        change.action().is_none()
+    })
+}
+
+/// Counts applied upgrade-notice changes, ignoring consumed upgrade actions.
+fun upgrade_delay_changes(): u64 {
+    sui::event::events_by_type<ActionApplied<UpgradeKey, UpgradeAction>>().count!(|applied| {
+        let (_, _, change, _) = applied.action_applied_fields();
+        change.action().is_none()
+    })
+}
+
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_admin::{blast_acl, delayed::ActionApplied};
 use blast_fun::{
     blast_fun as marker,
-    blast_events::Event,
     blast_fun_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin},
-    events::{MigrationDelayChanged, UpgradeDelayChanged},
-    launch_config,
-    package_admin,
+    launch_config::{Self, MigrationWitnessKey},
+    package_admin::{Self, UpgradeAction, UpgradeKey},
     runtime_config
 };
-use std::unit_test::{assert_eq, destroy};
+use std::{type_name::TypeName, unit_test::{assert_eq, destroy}};
 use sui::{clock::Clock, test_scenario::{Self, Scenario}};

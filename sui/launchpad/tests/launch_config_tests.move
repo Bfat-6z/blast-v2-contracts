@@ -111,7 +111,7 @@ fun protocol_allocation_updates_and_emits_rates() {
         let mut expected = u64_bytes(500);
         expected.append(u64_bytes(250));
 
-        assert_eq!(bcs::to_bytes(&collect_one<events::ProtocolAllocationSet>()), expected);
+        assert_eq!(bcs::to_bytes(&applied_one<ProtocolAllocationKey, ProtocolAllocation>()), expected);
         assert_eq!(
             f.config.protocol_allocation(),
             allocation::protocol_allocation(bps::new(500), bps::new(250)),
@@ -172,7 +172,7 @@ fun protocol_allocation_can_be_updated_for_future_launches() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_fun::errors::EUnchanged, location = blast_fun::launch_config)]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun protocol_allocation_rejects_an_unchanged_value() {
     let mut fixture = start();
 
@@ -565,7 +565,7 @@ fun admin_sets_trade_fees_for_future_launch_snapshots() {
 
         assert_eq!(quote_fee_bps.value(), QUOTE_FEE_BPS);
         assert_eq!(meme_fee_bps.value(), MEME_FEE_BPS);
-        assert_eq!(bcs::to_bytes(&collect_one<events::LaunchTradeFeesChanged>()), expected);
+        assert_eq!(bcs::to_bytes(&applied_one<TradeFeesKey, TradeFees>()), expected);
     });
 
     fixture.end();
@@ -591,7 +591,7 @@ fun trade_fees_accept_zero_and_launch_ceiling_boundaries() {
 
         let (quote_fee_bps, meme_fee_bps) = f.config.rate_defaults_for_testing();
 
-        assert_eq!(collect<events::LaunchTradeFeesChanged>().length(), 3);
+        assert_eq!(applied<TradeFeesKey, TradeFees>().length(), 3);
         assert_eq!(quote_fee_bps, 0);
         assert_eq!(meme_fee_bps, 1);
     });
@@ -654,8 +654,8 @@ fun trade_fees_reject_meme_rate_above_ceiling() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_fun::errors::EUnchanged,
-        location = blast_fun::launch_config,
+        abort_code = blast_admin::errors::EUnchanged,
+        location = blast_admin::delayed,
     ),
 ]
 fun trade_fees_reject_unchanged_pair() {
@@ -698,17 +698,19 @@ fun stale_package_version_rejects_trade_fees_before_their_bounds() {
 }
 
 #[test]
-fun admin_allows_migration_witness_and_emits_its_original_type_name() {
+fun admin_allows_migration_witness_and_the_primitive_records_its_original_type_name() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.allow_test_migration_witness();
 
-        let mut expected = bcs::to_bytes(&test_witness());
-        expected.append(bcs::to_bytes(&true));
+        let admissions = event::events_by_type<ActionApplied<MigrationWitnessKey, TypeName>>();
+        assert_eq!(admissions.length(), 1);
+        let (owner, _, change, _) = admissions[0].action_applied_fields();
 
         assert_eq!(f.config.allowed_migration_witness_count_for_testing(), 1);
-        assert_eq!(bcs::to_bytes(&collect_one<events::MigrationWitnessSet>()), expected);
+        assert_eq!(owner, object::id(&f.config));
+        assert_eq!(change.action(), option::some(test_witness()));
     });
 
     fixture.end();
@@ -731,13 +733,12 @@ fun disallowing_migration_witness_does_not_change_an_existing_launch_snapshot() 
                 false,
              f.ctx!());
 
-        let set = collect<events::MigrationWitnessSet>();
-        let mut expected = bcs::to_bytes(&test_witness());
-        expected.append(bcs::to_bytes(&false));
+        let removed = event::events_by_type<MemberRemoved<MigrationWitnessKey, TypeName>>();
+        assert_eq!(removed.length(), 1);
+        let (_, _, member) = removed[0].member_removed_fields();
 
         assert_eq!(f.config.allowed_migration_witness_count_for_testing(), 0);
-        assert_eq!(set.length(), 2);
-        assert_eq!(bcs::to_bytes(&set[1]), expected);
+        assert_eq!(member, test_witness());
     });
 
     fixture.end();
@@ -746,8 +747,8 @@ fun disallowing_migration_witness_does_not_change_an_existing_launch_snapshot() 
 #[test]
 #[
     expected_failure(
-        abort_code = blast_fun::errors::EUnchanged,
-        location = blast_fun::launch_config,
+        abort_code = blast_admin::errors::EUnchanged,
+        location = blast_admin::delayed,
     ),
 ]
 fun disallowing_migration_witness_rejects_unlisted_type() {
@@ -771,8 +772,8 @@ fun disallowing_migration_witness_rejects_unlisted_type() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_fun::errors::EUnchanged,
-        location = blast_fun::launch_config,
+        abort_code = blast_admin::errors::EUnchanged,
+        location = blast_admin::delayed,
     ),
 ]
 fun allowing_migration_witness_rejects_duplicate_type() {
@@ -885,11 +886,11 @@ fun allowing_migration_witness_rejects_a_sui_framework_type() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_fun::errors::EUnchanged,
-        location = blast_fun::launch_config,
+        abort_code = blast_admin::errors::EUnchanged,
+        location = blast_admin::delayed,
     ),
 ]
-fun disallowing_a_framework_type_rejects_the_type_before_the_unchanged_check() {
+fun disallowing_a_framework_type_reports_it_as_unlisted() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
@@ -958,7 +959,7 @@ fun admin_sets_the_creation_fee_and_it_emits_the_new_value() {
 
         assert_eq!(f.config.creation_fee(), 2_000_000_000);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::CreationFeeChanged>()),
+            bcs::to_bytes(&applied_one<CreationFeeKey, u64>()),
             bcs::to_bytes(&2_000_000_000u64),
         );
     });
@@ -966,7 +967,7 @@ fun admin_sets_the_creation_fee_and_it_emits_the_new_value() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EUnchanged, location = blast_fun::launch_config)]
+#[test, expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun creation_fee_rejects_the_current_value() {
     let mut fixture = start();
 
@@ -1178,6 +1179,20 @@ fun collect_one<T: copy + drop>(): T {
     payloads.pop_back()
 }
 
+/// The values the primitive applied to the setting keyed by `K`, in order.
+fun applied<K: copy + drop + store, T: copy + drop + store>(): vector<T> {
+    event::events_by_type<DelayedApplied<K, T>>().map!(|applied| {
+        let (_, _, _, value, _) = applied.delayed_applied_fields();
+        value
+    })
+}
+
+fun applied_one<K: copy + drop + store, T: copy + drop + store>(): T {
+    let mut values = applied<K, T>();
+    assert_eq!(values.length(), 1);
+    values.pop_back()
+}
+
 macro fun init_next_tx($fixture: &mut InitFixture, $sender: address, $fn: |&mut InitFixture|) {
     let fixture = $fixture;
 
@@ -1200,7 +1215,8 @@ fun start_init(): InitFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     launch_config::init_for_testing(scenario.ctx());
 
-    assert_eq!(event::num_events(), 0);
+    // Only the primitive's creation records of the four delayed operations.
+    assert_eq!(event::num_events(), 4);
 
     scenario.next_tx(PUBLISHER);
     let config = scenario.take_shared<launch_config::LaunchConfig>();
@@ -1290,16 +1306,26 @@ fun config_end(self: ConfigFixture) {
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminWitness};
+use blast_admin::{
+    blast_acl::{Self, AdminWitness},
+    delayed::{ActionApplied, DelayedApplied, MemberRemoved},
+};
 
 use blast_fun::{
-    allocation,
+    allocation::{Self, ProtocolAllocation},
     blast_events::Event,
     blast_fun_domain::{AdapterAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
     bps,
     constants,
     events,
-    launch_config,
+    launch_config::{
+        Self,
+        CreationFeeKey,
+        MigrationWitnessKey,
+        ProtocolAllocationKey,
+        TradeFees,
+        TradeFeesKey,
+    },
     blast_fun::{Self as package_version},
 };
 

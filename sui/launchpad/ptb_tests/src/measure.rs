@@ -125,6 +125,9 @@ fn payload_layout(payload: &StructTag) -> Layout {
         "OpeningRoundJoined" => Struct(vec![id(), U64, U64]),
         "OpeningRoundSettled" => Struct(vec![id(), U64, U64, U64]),
         "OpeningRoundDelivered" => Struct(vec![id(), Address, U64, U64, U64]),
+        // `blast_admin::delayed::ActionCreated<K, A>`: owner, a zero-field key (one `dummy_field`),
+        // and the applied notice. Finalize creates both creator-cap reassignment slots.
+        "ActionCreated" if payload.module.as_str() == "delayed" => Struct(vec![id(), Struct(vec![Bool]), U64]),
         other => panic!("no layout for event payload {other}"),
     }
 }

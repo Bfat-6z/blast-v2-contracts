@@ -35,10 +35,11 @@ def governed(package, module, fields, version='package_version'):
             if phase == 'apply':
                 assert 'AdminWitness' not in signature, (module, name)
                 require(signature, 'clock: &Clock')
-                assert '.apply(clock)' in body or '.take_ready(clock)' in body, (module, name)
+                require(body, '.apply(clock)')
             else:
                 require(signature, f'&AdminWitness<{role if phase == "schedule" else "CancelAdmin"}>')
                 if phase == 'schedule': require(signature, 'delay_ms: u64', 'clock: &Clock')
+                require(body, '.schedule(' if phase == 'schedule' else '.cancel()')
         assert f'set_{field}' not in fs, (module, field)
 
 
@@ -50,24 +51,23 @@ governed('migrators', 'lp_fee_policy', {'protocol_destination': 'TreasuryAdmin',
 
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
+    source = (ROOT / 'sui' / package / 'sources' / 'package_admin.move').read_text()
+    require(source, 'upgrade: DelayedAction<UpgradeKey, UpgradeAction>,', 'public struct UpgradeKey() has copy, drop, store;')
+    assert 'DelayOnly' not in source and 'delay_ms: u64,\n' not in source.split('public struct PackageAdmin')[1].split('}')[0], package
     for name in ('schedule_upgrade', 'schedule_make_immutable', 'authorize_upgrade', 'make_immutable'):
         signature, body = fs[name]
         require(signature, '&AdminWitness<UpgradeAdmin>', 'clock: &Clock')
         assert body.startswith('package_version.assert_current();'), (package, name)
-    require(fs['schedule_upgrade'][1], 'digest.length() == 32')
+    require(fs['schedule_upgrade'][1], 'digest.length() == 32', 'self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock)')
+    require(fs['schedule_make_immutable'][1], 'self.upgrade.schedule(UpgradeAction::MakeImmutable, clock)')
     for name in ('schedule_upgrade', 'schedule_make_immutable'):
         assert 'delay_ms: u64' not in fs[name][0], (package, name)
-        require(fs[name][1], 'let delay_ms = self.delay_ms;',
-                'delayed::new_pending(action, delay_ms, delay_ms, clock)')
     for name, action in [('authorize_upgrade', 'Upgrade(digest)'), ('make_immutable', 'MakeImmutable')]:
         body = fs[name][1]
-        action_expression = f'UpgradeAction::{action}'
-        require(body, f'action == {action_expression}', 'self.pending = option::none();')
-        assert 'self.delay_ms =' not in body, (package, name)
-        assert 'upgrade_delay_changed' not in body and 'UpgradeDelayChanged' not in body
-        assert body.index('self.pending = option::none();') < body.index('self.custody.'), name
+        require(body, 'self.upgrade.take_action(clock)', f'action == UpgradeAction::{action}')
+        assert body.index('self.upgrade.take_action(clock)') < body.index(f'action == UpgradeAction::{action}') < body.index('self.custody.'), name
     require(fs['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin>')
-    require(fs['cancel_upgrade_action'][1], 'self.pending.extract()')
+    require(fs['cancel_upgrade_action'][1], 'self.upgrade.cancel()')
     require(fs['wrap'][1], 'upgrade_custody::new')
     require(fs['wrap'][0], 'publication: Publication')
     require(fs['wrap'][1], 'publication.destroy()', 'generation.share_version(ctx)')
@@ -79,37 +79,42 @@ for package in ('launchpad', 'presale', 'migrators'):
 
 for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_policy')]:
     fs = functions(package, module)
+    source = (ROOT / 'sui' / package / 'sources' / f'{module}.move').read_text()
+    require(source, 'migration_witnesses: DelayedSet<MigrationWitnessKey, TypeName>,')
+    assert 'witness_delay_ms' not in source and 'pending_witness' not in source, package
     require(fs['schedule_migration_witness'][0], '&AdminWitness<AdapterAdmin>', 'clock: &Clock')
     assert 'delay_ms: u64' not in fs['schedule_migration_witness'][0], package
-    require(fs['schedule_migration_witness'][1], 'let delay_ms = self.witness_delay_ms;',
-            'delayed::new_pending(true, delay_ms, delay_ms, clock)')
-    require(fs['apply_migration_witness'][1], '.take_ready(clock)')
-    assert 'self.witness_delay_ms =' not in fs['apply_migration_witness'][1], package
-    assert 'migration_delay_changed' not in fs['apply_migration_witness'][1]
-    assert 'MigrationDelayChanged' not in fs['apply_migration_witness'][1]
-    require(fs['schedule_migration_delay'][1],
-            'delayed::new_pending(false, self.witness_delay_ms, delay_ms, clock)')
-    require(fs['apply_migration_delay'][1], 'self.witness_delay_ms = delay_ms;')
+    body = fs['schedule_migration_witness'][1]
+    require(body, 'witness.is_primitive()', 'origin != @0x1 && origin != @0x2', 'self.migration_witnesses.schedule_add(witness, clock)')
+    assert body.index('origin != @0x1') < body.index('schedule_add'), package
+    require(fs['apply_migration_witness'][1], 'self.migration_witnesses.apply_add(')
     assert 'AdminWitness' not in fs['apply_migration_witness'][0]
     require(fs['cancel_migration_witness'][0], '&AdminWitness<CancelAdmin>')
-    require(fs['remove_migration_witness'][1], 'self.pending_witnesses.remove')
+    require(fs['cancel_migration_witness'][1], 'self.migration_witnesses.cancel_add(')
+    require(fs['remove_migration_witness'][0], '&AdminWitness<AdapterAdmin>')
+    require(fs['remove_migration_witness'][1], 'self.migration_witnesses.remove(')
+    require(fs['schedule_migration_delay'][0], '&AdminWitness<AdapterAdmin>', 'delay_ms: u64', 'clock: &Clock')
+    require(fs['schedule_migration_delay'][1], 'self.migration_witnesses.schedule_delay(delay_ms, clock)')
+    require(fs['apply_migration_delay'][1], 'self.migration_witnesses.apply_delay(clock)')
+    assert 'AdminWitness' not in fs['apply_migration_delay'][0]
+    require(fs['cancel_migration_delay'][0], '&AdminWitness<CancelAdmin>')
     assert 'set_migration_witness_allowed' not in fs
 
 fs = functions('launchpad', 'launch')
-require(fs['apply_cap_reassignment_delay'][1],
-        '(*pending).destroy_some().take_ready(clock)', '*pending = option::none();',
-        '*delay_ms = next_delay_ms;')
-assert 'events::' not in fs['apply_cap_reassignment_delay'][1]
+source = (ROOT / 'sui/launchpad/sources/launch.move').read_text()
+assert 'apply_cap_reassignment_delay' not in fs and '_delay_ms: u64,' not in source.split('public struct Launch<')[1].split('\n}')[0]
 for cap in ['curve_fee_cap', 'metadata_cap']:
     require(fs[f'schedule_{cap}_reassignment'][0], '&AdminWitness<CreatorAdmin>', 'clock: &Clock')
     assert 'delay_ms: u64' not in fs[f'schedule_{cap}_reassignment'][0], cap
-    require(fs[f'schedule_{cap}_reassignment'][1], f'let delay_ms = self.{cap}_delay_ms;',
-            'delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock)')
+    require(fs[f'schedule_{cap}_reassignment'][1], f'.schedule(recipient, clock)')
     require(fs[f'cancel_{cap}_reassignment'][0], '&AdminWitness<CancelAdmin>')
-    require(fs[f'apply_{cap}_update'][1],
-            f'apply_cap_reassignment_delay( &mut self.pending_{cap}_recipient, &mut self.{cap}_delay_ms, clock, )',
-            f'events::{cap}_delay_changed(self.id.to_inner(), self.{cap}_delay_ms);')
-    assert 'AdminWitness' not in fs[f'apply_{cap}_update'][0]
+    require(fs[f'cancel_{cap}_reassignment'][1], '.cancel()')
+    require(fs[f'schedule_{cap}_delay'][0], '&AdminWitness<CreatorAdmin>', 'delay_ms: u64', 'clock: &Clock')
+    require(fs[f'schedule_{cap}_delay'][1], '.schedule_delay(delay_ms, clock)')
+    require(fs[f'apply_{cap}_reassignment'][1], '.take_action(clock)')
+    require(fs[f'apply_{cap}_delay'][1], '.apply_delay(clock)')
+    for phase in ('reassignment', 'delay'):
+        assert 'AdminWitness' not in fs[f'apply_{cap}_{phase}'][0], (cap, phase)
 
 for package, module, actions in [
     ('launchpad', 'launch', {
@@ -132,9 +137,8 @@ for package, module, actions in [
         if name not in actions: assert 'assert_not_paused' not in body, (package, name)
 
 acl = (ROOT / 'sui/admin/sources/blast_acl.move').read_text()
-require(acl, 'admins: Table<ID, VecSet<TypeName>>,')
-assert 'MAX_ADMINS' not in acl
-require((ROOT / 'sui/admin/sources/delayed.move').read_text(), 'scheduled_at_ms.checked_add(current_delay_ms)', 'clock.timestamp_ms() >= self.ready_at_ms')
+require(acl, 'admins: Table<ID, VecSet<TypeName>>,', 'super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,')
+assert 'MAX_ADMINS' not in acl and 'Timelocked' not in acl
 print('ADR 0134 administration boundaries: OK')
 
 # Publication proves unique native custody intake; it never authorizes policy changes.
@@ -157,7 +161,7 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
         if path.stem not in (marker, 'package_admin'):
             assert 'Publication' not in production, path
         for name, (signature, body) in functions(package, str(path.relative_to(ROOT / 'sui' / package / 'sources').with_suffix(''))).items():
-            if '.schedule(' not in body and 'delayed::new_pending(' not in body:
+            if not re.search(r'\.schedule(_add|_value)?\(', body):
                 continue
             require(signature, 'clock: &Clock')
             action_only = (
@@ -171,20 +175,23 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
             else:
                 require(signature, 'delay_ms: u64')
             assert 'admin_delay_ms()' not in body, (path, name)
+            assert 'new_pending' not in body and 'take_ready' not in body, (path, name)
 
 primitive = functions('admin', 'delayed')
-assert 'set_now' not in primitive and 'apply_delay' not in primitive and 'borrow' not in primitive
-require(primitive['schedule'][1], 'new_pending(value, self.delay_ms, delay_ms, clock)')
-require(primitive['apply'][1], 'take_ready(clock)', 'self.delay_ms = delay_ms;', 'self.value = value;', 'self.pending = option::none();')
-require(primitive['new_pending'][1], 'scheduled_at_ms.checked_add(current_delay_ms)', '.destroy_or!(abort blast_admin::errors::invalid_delay!())', 'ready_at_ms.checked_add(delay_ms).is_some()')
-require(primitive['take_ready'][1], 'clock.timestamp_ms() >= self.ready_at_ms', 'clock.timestamp_ms().checked_add(self.delay_ms).is_some()')
+assert not any(name.startswith(('set_', 'force', 'bypass')) for name in primitive)
+assert 'new_pending' not in primitive and 'take_ready' not in primitive
+require(primitive['ready_at_ms_after'][1], 'clock.timestamp_ms().checked_add(applied_delay_ms)', '.destroy_or!(abort blast_admin::errors::invalid_delay!())', 'ready_at_ms.checked_add(next_delay_ms).is_some()')
+require(primitive['assert_ready_at'][1], 'clock.timestamp_ms() >= ready_at_ms', 'clock.timestamp_ms().checked_add(next_delay_ms).is_some()')
+require(primitive['schedule'][1], 'ready_at_ms_after(self.delay_ms, delay_ms, clock)')
+require(primitive['schedule_add'][1], 'ready_at_ms_after(self.delay_ms, 0, clock)')
+require(primitive['apply'][1], 'self.assert_ready(clock)', 'self.value = value;', 'self.delay_ms = delay_ms;')
 for name in ('schedule_value', 'schedule_delay'):
     require(primitive[name][1], 'self.schedule(value, delay_ms, clock)')
 
 # Creator-controlled migrated-vault policy follows the same delayed value invariant,
 # but its authority is the operation-specific live creator cap rather than an admin role.
-require(primitive['assert_ready'][0], 'self: &Delayed<T>', 'clock: &Clock')
-require(primitive['assert_ready'][1], 'self.pending.is_some()', 'errors::no_pending!()', 'take_ready(clock)')
+require(primitive['assert_ready'][0], 'self: &Delayed<K, T>', 'clock: &Clock')
+require(primitive['assert_ready'][1], 'self.pending.is_some()', 'errors::no_pending!()', 'assert_ready_at(')
 assert 'self.pending =' not in primitive['assert_ready'][1]
 for package, module, version, authority in (
     ('migrators', 'vault', 'migrators_version', 'launch.assert_curve_fee_cap(curve_fee_cap);'),
@@ -192,12 +199,12 @@ for package, module, version, authority in (
 ):
     fs = functions(package, module)
     source = (ROOT / 'sui' / package / 'sources' / f'{module}.move').read_text()
-    require(source, 'fee_split: Delayed<FeeSplit>', 'DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000')
+    require(source, 'fee_split: Delayed<FeeSplitKey, FeeSplit>', 'DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000')
     for name in ('schedule_fee_split', 'cancel_fee_split'):
         signature, body = fs[name]
         assert body.startswith(f'{version}.assert_current(); {authority}'), (package, name)
         assert 'AdminWitness' not in signature
-    require(fs['schedule_fee_split'][1], 'proposed != self.fee_split.value() || delay_ms != self.fee_split.delay_ms()', 'self.fee_split.schedule(proposed, delay_ms, clock)')
+    require(fs['schedule_fee_split'][1], 'self.fee_split.schedule(proposed, delay_ms, clock)')
     require(fs['cancel_fee_split'][1], 'self.fee_split.cancel()')
     require(fs['assert_fee_split_ready'][1], 'self.fee_split.assert_ready(clock)')
     require(fs['apply_fee_split'][1], 'self.fee_split.apply(clock)')
@@ -220,11 +227,12 @@ for name in ('set_creator_claim_signer', 'revoke_creator_claim_signer'):
     assert signer[name][1].startswith('package_version.assert_current();')
     assert 'creator_claim_signer_public_key =' in signer[name][1]
 assert 'schedule_creator_claim_signer' not in signer
-require((ROOT / 'sui/migrators/sources/lp_fee_policy.move').read_text(), 'delayed::new(option::none(), self.defaults.delay_ms())')
+require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'delayed::new( CoinSharesKey(meme), self.id.to_inner(), option::none(), self.defaults.delay_ms(), )')
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
     require(fs['schedule_upgrade_delay'][0], '&AdminWitness<UpgradeAdmin>', 'delay_ms: u64')
-    require(fs['apply_upgrade_delay'][1], 'take_ready(clock)', 'self.delay_ms = delay_ms;', 'self.pending = option::none();')
+    require(fs['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
+    require(fs['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
     assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]
-    require(fs['wrap'][1], 'delay_ms: 0')
+    require(fs['wrap'][1], 'delayed::new_action(UpgradeKey(), id.to_inner(), 0)')
 print('Per-operation notices, no bypass, immediate signer, and publication custody: OK')

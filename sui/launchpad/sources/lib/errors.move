@@ -176,12 +176,8 @@ const EPaused: u64 = 40;
 const EWrongUpgradeAction: u64 = 41;
 
 #[test_only]
-/// No upgrade action is scheduled.
-const ENoPendingAction: u64 = 42;
-
-#[test_only]
 /// The package digest is not 32 bytes.
-const EInvalidDigest: u64 = 43;
+const EInvalidDigest: u64 = 42;
 
 macro public(package) fun invalid_bps(): u64 { 0 }
 
@@ -267,6 +263,4 @@ macro public(package) fun paused(): u64 { 40 }
 
 macro public(package) fun wrong_upgrade_action(): u64 { 41 }
 
-macro public(package) fun no_pending_action(): u64 { 42 }
-
-macro public(package) fun invalid_digest(): u64 { 43 }
+macro public(package) fun invalid_digest(): u64 { 42 }

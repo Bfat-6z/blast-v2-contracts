@@ -13,9 +13,15 @@ module blast_fun::runtime_config;
 public struct RuntimeConfig has key {
     id: UID,
     creator_claim_signer_public_key: vector<u8>,
-    protocol_fee_share_bps: Delayed<Bps>,
-    treasury: Delayed<address>,
+    protocol_fee_share_bps: Delayed<ProtocolFeeShareKey, Bps>,
+    treasury: Delayed<TreasuryKey, address>,
 }
+
+/// Keys the protocol fee share's delayed lifecycle.
+public struct ProtocolFeeShareKey() has copy, drop, store;
+
+/// Keys the treasury's delayed lifecycle.
+public struct TreasuryKey() has copy, drop, store;
 
 // === Private Initialization ===
 
@@ -58,15 +64,7 @@ public fun schedule_protocol_fee_share(
 ) {
     package_version.assert_current();
 
-    let value = protocol_fee_share_bps;
-    assert!(
-        value != self.protocol_fee_share_bps.value() || delay_ms != self.protocol_fee_share_bps.delay_ms(),
-        blast_fun::errors::unchanged!()
-    );
-
-    let ready_at_ms = self.protocol_fee_share_bps.schedule(value, delay_ms, clock);
-
-    events::protocol_fee_share_scheduled(protocol_fee_share_bps.value(), ready_at_ms, delay_ms);
+    self.protocol_fee_share_bps.schedule(protocol_fee_share_bps, delay_ms, clock);
 }
 
 /// Applies the scheduled protocol fee share permissionlessly once ready.
@@ -77,10 +75,7 @@ public fun apply_protocol_fee_share(
 ) {
     package_version.assert_current();
 
-    let value = self.protocol_fee_share_bps.apply(clock);
-    let protocol_fee_share_bps = value;
-
-    events::protocol_fee_share_changed(protocol_fee_share_bps.value());
+    self.protocol_fee_share_bps.apply(clock);
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -91,10 +86,7 @@ public fun cancel_protocol_fee_share(
 ) {
     package_version.assert_current();
 
-    let value = self.protocol_fee_share_bps.cancel();
-    let protocol_fee_share_bps = value;
-
-    events::protocol_fee_share_cancelled(protocol_fee_share_bps.value());
+    self.protocol_fee_share_bps.cancel();
 }
 
 /// Redirects every later protocol fee claim to `treasury`.
@@ -111,15 +103,7 @@ public fun schedule_treasury(
 
     assert!(treasury != @0x0, blast_fun::errors::invalid_destination!());
 
-    let value = treasury;
-    assert!(
-        value != self.treasury.value() || delay_ms != self.treasury.delay_ms(),
-        blast_fun::errors::unchanged!()
-    );
-
-    let ready_at_ms = self.treasury.schedule(value, delay_ms, clock);
-
-    events::treasury_scheduled(treasury, ready_at_ms, delay_ms);
+    self.treasury.schedule(treasury, delay_ms, clock);
 }
 
 /// Applies the scheduled treasury permissionlessly once ready.
@@ -130,10 +114,7 @@ public fun apply_treasury(
 ) {
     package_version.assert_current();
 
-    let value = self.treasury.apply(clock);
-    let treasury = value;
-
-    events::treasury_changed(treasury);
+    self.treasury.apply(clock);
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -144,10 +125,7 @@ public fun cancel_treasury(
 ) {
     package_version.assert_current();
 
-    let value = self.treasury.cancel();
-    let treasury = value;
-
-    events::treasury_cancelled(treasury);
+    self.treasury.cancel();
 }
 
 /// Revokes the backend claim signer immediately.
@@ -183,11 +161,14 @@ public(package) fun treasury(self: &RuntimeConfig): address {
 /// Initializes the explicit genesis destination; an unset destination prevents publication.
 fun new(ctx: &mut TxContext): RuntimeConfig {
     assert!(@blast_treasury != @0x0, blast_fun::errors::invalid_destination!());
+    let id = object::new(ctx);
+    let owner = id.to_inner();
+
     RuntimeConfig {
-        id: object::new(ctx),
+        id,
         creator_claim_signer_public_key: vector[],
-        protocol_fee_share_bps: delayed::new(bps::new(5_000), 0),
-        treasury: delayed::new(@blast_treasury, 0),
+        protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), owner, bps::new(5_000), 0),
+        treasury: delayed::new(TreasuryKey(), owner, @blast_treasury, 0),
     }
 }
 
@@ -250,11 +231,14 @@ public fun new_zero_fee_share_with_signer_for_testing(
     signer_public_key: vector<u8>,
     ctx: &mut TxContext,
 ): RuntimeConfig {
+    let id = object::new(ctx);
+    let owner = id.to_inner();
+
     RuntimeConfig {
-        id: object::new(ctx),
+        id,
         creator_claim_signer_public_key: signer_public_key,
-        protocol_fee_share_bps: delayed::new(bps::new(0), 172_800_000),
-        treasury: delayed::new(ctx.sender(), 172_800_000),
+        protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), owner, bps::new(0), 172_800_000),
+        treasury: delayed::new(TreasuryKey(), owner, ctx.sender(), 172_800_000),
     }
 }
 

@@ -29,7 +29,8 @@ use std::{collections::{BTreeMap, BTreeSet}, path::Path, sync::OnceLock, time::D
 
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
-    CompiledPackage, Expected, Harness, Outcome, UnlinkedPackage, build, build_timelock, build_unlinked, build_vesting, call,
+    CompiledPackage, Delayed, DelayedApplied, Expected, Harness, Outcome, UnlinkedPackage, build, build_timelock,
+    build_unlinked, build_vesting, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusCollectFee, CetusOpenPosition,
@@ -144,7 +145,7 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
                     let pt = w.pause_command(pausing, bits)?;
                     let rejected = if generation != 1 {
                         stale += 1;
-                        Some(Expected::Abort { package: w.admin, module: "operational_version", code: 12 })
+                        Some(Expected::Abort { package: w.admin, module: "operational_version", code: 9 })
                     } else if bits == 0 || requested.iter().sum::<u8>() != bits {
                         invalid += 1;
                         Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: 0 })
@@ -579,7 +580,7 @@ impl World {
         let admin_dir = sui_dir().join("admin");
         let partners_dir = sui_dir().join("partners");
         let (timelock, _) = h.publish(build_timelock(&work)?)?;
-        let (admin, admin_published) = h.publish(build(&admin_dir, &[(&timelock_dir, timelock)], &work)?)?;
+        let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
         let (partners, _) =
             h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
         let (vesting, _) = h.publish(build_vesting(&work)?)?;
@@ -1543,11 +1544,12 @@ impl World {
             "holder Meme paid exactly to the treasury"
         );
         if apply {
-            let changes: Vec<FeeSplitChanged> = self.events(&outcome, "presale_vault", "FeeSplitChanged");
-            ensure!(changes.len() == 1 && changes[0].vault_id == m.vault);
-            ensure!(changes[0].old_fee_split == before.fee_split.0 && changes[0].new_fee_split == after.fee_split.0);
-            ensure!(changes[0].delay_ms == after.fee_split.1 && after.fee_split.2.is_none());
-            let (recipients, holders) = &changes[0].new_fee_split;
+            let changes: Vec<DelayedApplied<(Vec<RecipientShare>, u64)>> =
+                outcome.delayed("DelayedApplied", "presale_vault", "FeeSplitKey")?;
+            ensure!(changes.len() == 1 && changes[0].owner == m.vault);
+            ensure!(changes[0].previous_value == before.fee_split.value && changes[0].value == after.fee_split.value);
+            ensure!(changes[0].delay_ms == after.fee_split.delay_ms && after.fee_split.pending.is_none());
+            let (recipients, holders) = &changes[0].value;
             self.projected_fee_weights = [recipients[0].bps, recipients[1].bps, *holders];
         }
         ensure!(after.holder_rewards_quote > before.holder_rewards_quote);
@@ -1582,30 +1584,30 @@ impl World {
         let pt = self.schedule_split_pt(sale, m, 0)?;
         let scheduled = self.h.execute(pt)?;
         scheduled.assert_success();
-        ensure!(self.vault(m)?.fee_split.0 == old.0, "scheduling retains the old recipients");
+        ensure!(self.vault(m)?.fee_split.value == old.value, "scheduling retains the old recipients");
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
         let watched = [m.vault, m.pool];
         self.set_pause_generation_for_fixture(2)?;
         let stale = self.collect_route_pt(sale, m, m.pool, true)?;
-        self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "operational_version", code: 12}, &watched, &owners)?;
+        self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "operational_version", code: 9}, &watched, &owners)?;
         self.set_pause_generation_for_fixture(1)?;
         let early = self.collect_route_pt(sale, m, m.pool, true)?;
-        self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 20}, &watched, &owners)?;
+        self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 17}, &watched, &owners)?;
         // An Aftermath endpoint cannot bypass collectible position settlement.
         let mut b = ProgrammableTransactionBuilder::new();
         let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?, self.clock(&mut b)?];
         call(&mut b, self.presale, "aftermath", "apply_fee_split", self.pair(sale), args);
         self.h.assert_rolled_back(b.finish(), Expected::Abort {package: self.presale, module: "aftermath", code: 4}, &watched, &owners)?;
-        self.h.sim.advance_clock(std::time::Duration::from_millis(old.1));
+        self.h.sim.advance_clock(std::time::Duration::from_millis(old.delay_ms));
         self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
         self.swap(sale, m, Side::MemeIn, terms.lp_tokens() / 100)?;
         let mut rollback = self.collect_route_pt(sale, m, m.pool, true)?;
         rollback.commands.push(rollback.commands.last().expect("apply").clone());
-        self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 21}, &watched, &owners)?;
+        self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 18}, &watched, &owners)?;
         self.collect_impl(sale, m, true)?; // Existing payout oracle uses the OLD split.
         let active = self.vault(m)?.fee_split;
-        ensure!(active.0.0[0].bps == 3_000 && active.0.0[1].bps == 2_000 && active.0.1 == 5_000);
-        ensure!(active.1 == 0 && active.2.is_none());
+        ensure!(active.value.0[0].bps == 3_000 && active.value.0[1].bps == 2_000 && active.value.1 == 5_000);
+        ensure!(active.delay_ms == 0 && active.pending.is_none());
         self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
         self.collect(sale, m)?; // The same oracle now reads the explicitly applied split.
         self.report("48-hour creator split: early apply and wrong-venue Aftermath rejected; later PTB abort restores fees/proposal; settled apply pays old recipients; next collection uses new split".into());
@@ -1952,14 +1954,6 @@ struct ProtocolFees {
     _lp_fee_quote_bps: u64,
 }
 
-#[derive(Deserialize)]
-struct FeeSplitChanged {
-    vault_id: ObjectID,
-    old_fee_split: (Vec<RecipientShare>, u64),
-    new_fee_split: (Vec<RecipientShare>, u64),
-    delay_ms: u64,
-}
-
 /// Mirrors `blast_presale::presale_vault::Vault`.
 #[derive(Debug, Deserialize)]
 struct VaultState {
@@ -1967,9 +1961,8 @@ struct VaultState {
     presale_id: ObjectID,
     presale_cap_id: ObjectID,
     pool_id: ObjectID,
-    fee_split: ((Vec<RecipientShare>, u64), u64, Option<((Vec<RecipientShare>, u64), u64, u64)>),
-    // Delayed<ProtocolFees>: applied value and notice, then optional (proposal, notice, ready_at_ms).
-    _protocol_fees: (ProtocolFees, u64, Option<(ProtocolFees, u64, u64)>),
+    fee_split: Delayed<(Vec<RecipientShare>, u64)>,
+    _protocol_fees: Delayed<ProtocolFees>,
     _partner_id: Option<ObjectID>,
     _unpaid_protocol_meme: u64,
     _unpaid_protocol_quote: u64,

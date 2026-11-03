@@ -8,19 +8,20 @@ module blast_fun::package_admin;
 
 // === Public Types ===
 
-/// A proposed upgrade, irreversible immutability, or delay policy change.
+/// A proposed upgrade or irreversible immutability.
 public enum UpgradeAction has copy, drop, store {
     Upgrade(vector<u8>),
     MakeImmutable,
-    DelayOnly,
 }
+
+/// Keys the upgrade custody's delayed lifecycle.
+public struct UpgradeKey() has copy, drop, store;
 
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: UpgradeCustody<BLAST_FUN>,
-    delay_ms: u64,
-    pending: Option<Pending<UpgradeAction>>,
+    upgrade: DelayedAction<UpgradeKey, UpgradeAction>,
 }
 
 // === Public Functions ===
@@ -38,13 +39,7 @@ public fun schedule_upgrade(
 
     assert!(digest.length() == 32, blast_fun::errors::invalid_digest!());
 
-    let action = UpgradeAction::Upgrade(digest);
-    let delay_ms = self.delay_ms;
-    let pending = delayed::new_pending(action, delay_ms, delay_ms, clock);
-
-    self.pending = option::some(pending);
-
-    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock);
 }
 
 /// Schedules the irreversible destruction of upgrade authority under the applied notice.
@@ -56,16 +51,10 @@ public fun schedule_make_immutable(
 ) {
     package_version.assert_current();
 
-    let action = UpgradeAction::MakeImmutable;
-    let delay_ms = self.delay_ms;
-    let pending = delayed::new_pending(action, delay_ms, delay_ms, clock);
-
-    self.pending = option::some(pending);
-
-    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    self.upgrade.schedule(UpgradeAction::MakeImmutable, clock);
 }
 
-/// Cancels any scheduled action, even after its execution threshold.
+/// Cancels any scheduled action or notice change, even after its execution threshold.
 public fun cancel_upgrade_action(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
@@ -73,11 +62,7 @@ public fun cancel_upgrade_action(
 ) {
     package_version.assert_current();
 
-    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
-
-    let action = self.pending.extract().value();
-
-    events::upgrade_action_cancelled(action);
+    self.upgrade.cancel();
 }
 
 /// Consumes the unique publication proof and seals native custody before activation.
@@ -86,8 +71,9 @@ public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxC
     let (publisher, generation) = publication.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap);
+    let upgrade = delayed::new_action(UpgradeKey(), id.to_inner(), 0);
 
-    transfer::share_object(PackageAdmin { id, custody, delay_ms: 0, pending: option::none() });
+    transfer::share_object(PackageAdmin { id, custody, upgrade });
     generation.share_version(ctx);
 }
 
@@ -103,11 +89,8 @@ public fun authorize_upgrade(
 
     let custodian_id = self.id.to_inner();
 
-    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
-
-    let (action, _) = self.pending.destroy_some().take_ready(clock);
+    let action = self.upgrade.take_action(clock);
     assert!(action == UpgradeAction::Upgrade(digest), blast_fun::errors::wrong_upgrade_action!());
-    self.pending = option::none();
 
     self.custody.authorize_upgrade(custodian_id, digest)
 }
@@ -138,11 +121,8 @@ public fun make_immutable(
 ) {
     package_version.assert_current();
 
-    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
-
-    let (action, _) = self.pending.destroy_some().take_ready(clock);
+    let action = self.upgrade.take_action(clock);
     assert!(action == UpgradeAction::MakeImmutable, blast_fun::errors::wrong_upgrade_action!());
-    self.pending = option::none();
 
     self.custody.make_immutable(self.id.to_inner());
 }
@@ -158,12 +138,7 @@ public fun schedule_upgrade_delay(
 ) {
     package_version.assert_current();
 
-    let action = UpgradeAction::DelayOnly;
-    let pending = delayed::new_pending(action, self.delay_ms, delay_ms, clock);
-
-    self.pending = option::some(pending);
-
-    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+    self.upgrade.schedule_delay(delay_ms, clock);
 }
 
 /// Applies a ready policy-only proposal; cannot consume an upgrade authorization.
@@ -174,14 +149,7 @@ public fun apply_upgrade_delay(
 ) {
     package_version.assert_current();
 
-    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
-
-    let (action, delay_ms) = self.pending.destroy_some().take_ready(clock);
-    assert!(action == UpgradeAction::DelayOnly, blast_fun::errors::wrong_upgrade_action!());
-    self.pending = option::none();
-    self.delay_ms = delay_ms;
-
-    events::upgrade_delay_changed(delay_ms);
+    self.upgrade.apply_delay(clock);
 }
 
 // === Test-Only Functions ===
@@ -189,7 +157,12 @@ public fun apply_upgrade_delay(
 #[test_only]
 /// Returns the currently applied notice period for upgrade actions.
 public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
-    self.delay_ms
+    self.upgrade.delay_ms()
+}
+
+#[test_only]
+public fun upgrade_for_testing(self: &PackageAdmin): &DelayedAction<UpgradeKey, UpgradeAction> {
+    &self.upgrade
 }
 
 #[test_only]
@@ -237,7 +210,9 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    PackageAdmin { id, custody, delay_ms: 172_800_000, pending: option::none() }
+    let upgrade = delayed::new_action(UpgradeKey(), id.to_inner(), 172_800_000);
+
+    PackageAdmin { id, custody, upgrade }
 }
 
 #[test_only]
@@ -280,13 +255,12 @@ public fun has_upgrade_cap_for_testing(self: &PackageAdmin): bool {
 
 use blast_admin::{
     blast_acl::AdminWitness,
-    delayed::{Self, Pending},
+    delayed::{Self, DelayedAction},
     operational_version::OperationalVersion,
     upgrade_custody::{Self, UpgradeCustody},
 };
 
 use blast_fun::{
-    events,
     blast_fun::{BLAST_FUN, Publication, PackageVersion},
     blast_fun_domain::{CancelAdmin, UpgradeAdmin},
 };
