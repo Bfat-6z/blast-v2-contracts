@@ -48,6 +48,14 @@ for package in "$@"; do
  sui move lint --path "sui/$package" --build-env mainnet --warnings-are-errors
  sui move test --path "sui/$package" --build-env mainnet --threads 1 --lint --warnings-are-errors "${coverage_args[@]}" ${MOVE_TEST_FILTER:+"$MOVE_TEST_FILTER"}
  if [ "${#coverage_args[@]}" -gt 0 ]; then
-  sui move coverage summary --path "sui/$package" --build-env mainnet --summarize-functions
+  if [ -n "${BLAST_FORK_COVERAGE_DIR:-}" ] && [[ "$package" = presale || "$package" = migrators ]]; then
+   repo_root=$PWD
+   fork_trace_dir=$(realpath "$BLAST_FORK_COVERAGE_DIR")
+   (
+    cd sui/launchpad/ptb_tests
+    cargo run --locked --offline --features fork-coverage --bin merge-fork-coverage -- "$fork_trace_dir" "$repo_root/sui/$package"
+   )
+  fi
+  sui move coverage summary --path "sui/$package" --build-env mainnet --test --summarize-functions
  fi
 done

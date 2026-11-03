@@ -145,6 +145,33 @@ fun upgrade_policy_only_application_and_cancellation_preserve_custody() {
     fixture.end();
 }
 
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
+fun upgrade_notice_cannot_be_applied_twice() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 100, &f.clock);
+        f.clock.set_for_testing(PUBLICATION_UPGRADE_NOTICE_MS);
+        f.admin.apply_upgrade_delay(&f.version, &f.clock);
+
+        f.admin.apply_upgrade_delay(&f.version, &f.clock);
+    });
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::EWrongChange, location = blast_admin::delayed_action)]
+fun a_ready_immutability_action_cannot_be_applied_as_a_notice_update() {
+    let mut fixture = start();
+    fixture.run!(|f| {
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
+        f.admin.schedule_make_immutable(&f.version, &witness, &f.clock);
+        f.clock.set_for_testing(PUBLICATION_UPGRADE_NOTICE_MS);
+
+        f.admin.apply_upgrade_delay(&f.version, &f.clock);
+    });
+    fixture.end();
+}
+
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun upgrade_policy_only_reduction_cannot_be_applied_early() {
     let mut fixture = start();

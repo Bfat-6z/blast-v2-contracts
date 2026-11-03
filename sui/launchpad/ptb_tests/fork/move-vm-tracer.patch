@@ -1,0 +1,34 @@
+--- src/execution/tracing/tracer.rs
++++ src/execution/tracing/tracer.rs
+@@ -869,0 +870,3 @@
++        // Resolve every argument before changing the location of any global reference.
++        // A later argument can borrow from the same root as an earlier argument,
++        // and the callee's locals are not visible until its frame is entered.
+@@ -872,8 +875 @@
+-            .enumerate()
+-            .map(|(local_idx, stack_idx)| {
+-                let val = self.resolve_stack_value(vtables, machine, stack_idx)?;
+-                // NB: it is important for us to resolve the value _before_ we register that any
+-                // global is stored there.
+-                self.store_global(machine, new_frame_idx, stack_idx, local_idx)?;
+-                Some(val)
+-            })
++            .map(|stack_idx| self.resolve_stack_value(vtables, machine, stack_idx))
+@@ -880,0 +877,8 @@
++        let globals_stored = call_args.as_ref().and_then(|_| {
++            (0..arg_count)
++                .rev()
++                .enumerate()
++                .try_for_each(|(local_idx, stack_idx)| {
++                    self.store_global(machine, new_frame_idx, stack_idx, local_idx)
++                })
++        });
+@@ -881,0 +886 @@
++        // Always remove arguments from the type stack, even if tracing them failed.
+@@ -883,4 +887,0 @@
+-        // Split argument types off the tracer stack before any fallible return from resolving the
+-        // call arguments. At this point the VM has already moved the arguments off its operand
+-        // stack; returning with the types still present would leave `type_stack` longer than the VM
+-        // operand stack and corrupt subsequent tracing callbacks.
+@@ -887,0 +889 @@
++        globals_stored?;

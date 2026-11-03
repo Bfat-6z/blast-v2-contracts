@@ -17,5 +17,20 @@ move-core-types = { git = "https://github.com/MystenLabs/sui.git", rev = "51d177
 simulacrum = { git = "https://github.com/MystenLabs/sui.git", rev = "51d177ad7d65102fc368b582408f466d97b31548" }
 sui-types = { git = "https://github.com/MystenLabs/sui.git", rev = "51d177ad7d65102fc368b582408f466d97b31548" }
 
+move-coverage = { git = "https://github.com/MystenLabs/sui.git", rev = "51d177ad7d65102fc368b582408f466d97b31548", optional = true }
+move-trace-format = { git = "https://github.com/MystenLabs/sui.git", rev = "51d177ad7d65102fc368b582408f466d97b31548", optional = true }
+prometheus = { version = "0.14", optional = true }
+sui-config = { git = "https://github.com/MystenLabs/sui.git", rev = "51d177ad7d65102fc368b582408f466d97b31548", optional = true }
+sui-execution = { git = "https://github.com/MystenLabs/sui.git", rev = "51d177ad7d65102fc368b582408f466d97b31548", optional = true, features = ["tracing"] }
+sui-transaction-checks = { git = "https://github.com/MystenLabs/sui.git", rev = "51d177ad7d65102fc368b582408f466d97b31548", optional = true }
+
+[features]
+fork-coverage = ["dep:move-coverage", "dep:move-trace-format", "dep:prometheus", "dep:sui-config", "dep:sui-execution", "dep:sui-transaction-checks"]
+
 [profile.dev]
 debug = 0
+
+[[bin]]
+name = "merge-fork-coverage"
+path = "src/bin/merge_fork_coverage.rs"
+required-features = ["fork-coverage"]

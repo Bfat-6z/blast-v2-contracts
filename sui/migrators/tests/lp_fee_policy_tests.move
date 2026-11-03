@@ -59,6 +59,7 @@ fun pending_override_and_delayed_clear_preserve_in_force_shares() {
         clock.set_for_testing(345_600_000);
         f.policy.apply_coin_shares<MemeA>(&f.migrators_version, &clock);
         f.assert_shares<MemeA>(0, 0);
+
         destroy(clock);
     });
     fixture.end();
@@ -474,6 +475,30 @@ fun unchanged_coin_pair_is_rejected() {
         let version = &f.migrators_version;
         f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(23), bps::new(45), f.scenario.ctx());
         f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(23), bps::new(45), f.scenario.ctx());
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed_map)]
+fun scheduling_clear_after_an_override_was_cleared_is_rejected() {
+    let mut fixture = start_policy();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        let admin = fee_admin();
+        let version = &f.migrators_version;
+        let mut clock = sui::clock::create_for_testing(f.scenario.ctx());
+        f.policy.schedule_coin_shares<MemeA>(version, &admin, bps::new(23), bps::new(45), &clock);
+        clock.set_for_testing(172_800_000);
+        f.policy.apply_coin_shares<MemeA>(version, &clock);
+        f.policy.schedule_clear_coin_shares<MemeA>(version, &admin, &clock);
+        clock.set_for_testing(345_600_000);
+        f.policy.apply_coin_shares<MemeA>(version, &clock);
+
+        f.policy.schedule_clear_coin_shares<MemeA>(version, &admin, &clock);
+
+        clock.destroy_for_testing();
     });
 
     fixture.end();

@@ -1,5 +1,5 @@
-//! Venue-fork gate for `blast_presale`: the presale's Cetus and Bluefin adapters against real
-//! Cetus CLMM, Cetus LP Burn, and Bluefin Spot mainnet bytecode, offline.
+//! Venue-fork gate for `blast_presale` against pinned Cetus CLMM, Cetus LP Burn, Bluefin Spot,
+//! and Aftermath AMM and DAO-fee mainnet bytecode, offline.
 //!
 //! Each world inserts the committed mainnet snapshot (`fork/`, see `blast_launchpad_ptb_tests::fork`)
 //! into the in-memory simulator at the real IDs, then publishes the local admin, partner, vesting, and
@@ -17,6 +17,12 @@
 //! real swaps accrue fees, permissionless collections pay every fee recipient and grow the vault's
 //! holder Quote share and pay holder Meme to the treasury by the exact apportionment. Collection
 //! against another pool of the same type is refused, and the creator claims the migration residuals.
+//!
+//! Aftermath publishes a fresh LP coin from the pinned SDK template, shares its reservation,
+//! then aborts after pool creation and retries with the same reservation. Successful migration
+//! consumes the reservation, shares the pool and vault, sends the LP coin to the zero address,
+//! and leaves the participant's claim intact for either coin order. Swaps in both directions
+//! accrue DAO fees, then collection reconciles recipient payouts and holder reward custody.
 //!
 //! The fix-side tests seed each route with a raise and LP allocation of about 2^62 atoms whose
 //! larger side, if fixed, makes the venue demand one atom more of the smaller side than the
@@ -46,6 +52,7 @@ use sui_types::{
     base_types::{ObjectID, SuiAddress},
     digests::TransactionDigest,
     effects::TransactionEffectsAPI,
+    execution_status::ExecutionStatus,
     object::{MoveObject, OBJECT_START_VERSION, Object, Owner},
     programmable_transaction_builder::ProgrammableTransactionBuilder,
     transaction::{Argument, Command, ObjectArg, ProgrammableTransaction},
@@ -298,6 +305,121 @@ fn presale_bluefin_with_an_arbitrary_meme_quote_against_mainnet_bytecode() -> Re
     run_world(World::new_with_quote(Route::Bluefin, true)?)
 }
 
+#[test]
+fn presale_bluefin_quote_larger_seed_fixes_quote() -> Result<()> {
+    let mut world = World::new_with_quote(Route::Bluefin, true)?;
+    let mut terms = Terms::standard(Route::Bluefin);
+    terms.supply = terms.raise;
+    let sale = world.open_sale(&terms)?;
+    let migration = world.migrate(&sale, &terms)?;
+    ensure!(migration.residual.0 > 0, "the venue did not need all of Meme");
+    ensure!(migration.residual.1 <= 1, "the venue used the fixed Quote side");
+    Ok(())
+}
+
+#[test]
+fn presale_aftermath_sui_first_migrates_against_mainnet_bytecode() -> Result<()> {
+    run_aftermath(false)
+}
+
+#[test]
+fn presale_aftermath_meme_first_migrates_against_mainnet_bytecode() -> Result<()> {
+    run_aftermath(true)
+}
+
+fn run_aftermath(meme_first: bool) -> Result<()> {
+    let mut world = World::new_with_quote(Route::Aftermath, meme_first)?;
+    let terms = Terms::standard(Route::Aftermath);
+    let (lp, cap) = world.publish_aftermath_lp()?;
+    let quote_name = world.quote().to_canonical_string(false);
+    let mut token = None;
+    for _ in 0..32 {
+        let candidate = world.publish_token()?;
+        if (candidate.2.to_canonical_string(false) < quote_name) == meme_first {
+            token = Some(candidate);
+            break;
+        }
+    }
+    let (treasury, currency, meme) = token.context("no sale token with the required Aftermath order")?;
+    let create = world.create_presale_pt(treasury, currency, &meme, &terms, Some((lp.clone(), cap)))?;
+    let created = world.h.execute(create)?;
+    created.assert_success();
+    let reservations = created.created(&world.h, "aftermath", "PoolCreation");
+    ensure!(reservations.len() == 1 && world.h.object(reservations[0]).is_shared());
+    let sale = world.fund_sale(created, meme, currency, &terms)?;
+    let reservation = reservations[0];
+    let registry = world.venue("aftermath_pool_registry");
+    let mut b = ProgrammableTransactionBuilder::new();
+    let args = vec![
+        world.shared(&mut b, sale.presale, true)?,
+        world.shared(&mut b, world.version, false)?,
+        world.shared(&mut b, reservation, true)?,
+        world.shared(&mut b, world.fee_policy, false)?,
+        world.shared(&mut b, world.venue_config, false)?,
+        world.shared(&mut b, registry, true)?,
+        world.shared(&mut b, world.venue("aftermath_dao_fee_version"), false)?,
+        world.clock(&mut b)?,
+    ];
+    call(&mut b, world.presale, "aftermath", "migrate", vec![lp.clone(), sale.meme.clone(), world.quote()], args);
+
+    let before = world.sale_state(&sale)?;
+    ensure!(before.lifecycle == Lifecycle::Funded);
+    let migration = b.finish();
+    let mut rollback = ProgrammableTransactionBuilder::new();
+    for input in migration.inputs.iter().cloned() {
+        rollback.input(input)?;
+    }
+    rollback.command(migration.commands[0].clone());
+    // Split a zero balance after migration to force a late abort.
+    let zero = call(&mut rollback, SUI_FRAMEWORK_PACKAGE_ID, "balance", "zero", vec![sui()], vec![]);
+    let amount = rollback.pure(1u64)?;
+    let split = call(&mut rollback, SUI_FRAMEWORK_PACKAGE_ID, "balance", "split", vec![sui()], vec![zero, amount]);
+    for balance in [split, zero] {
+        call(&mut rollback, SUI_FRAMEWORK_PACKAGE_ID, "balance", "destroy_zero", vec![sui()], vec![balance]);
+    }
+    let watched = [
+        sale.presale,
+        sale.currency,
+        reservation,
+        registry,
+        world.venue("aftermath_pool_registry_state"),
+        world.venue("aftermath_pool_registry_state_field"),
+    ];
+    let owners = [world.h.sender, RECIPIENT_A.into(), RECIPIENT_B.into(), SuiAddress::ZERO];
+    let expected = Expected::Abort { package: SUI_FRAMEWORK_PACKAGE_ID, module: "balance", code: 2 };
+    let failed = world.h.assert_rolled_back(rollback.finish(), expected, &watched, &owners)?;
+    ensure!(matches!(
+        failed.effects.status(),
+        ExecutionStatus::Failure(failure) if failure.command == Some(2)
+    ), "the injected split failed after migration");
+    ensure!(world.sale_state(&sale)? == before);
+    ensure!(world.h.object(reservation).is_shared());
+
+    let migrated = world.h.execute(migration)?;
+    migrated.assert_success();
+    let events: Vec<DaoFeePoolCreated> = world.events(&migrated, "aftermath", "DaoFeePoolCreated");
+    ensure!(events.len() == 1);
+    let DaoFeePoolCreated { vault, base_pool, pool, owner_cap, lp_coin } = events[0];
+    let vaults: Vec<VaultCreated> = world.events(&migrated, "presale_vault", "VaultCreated");
+    ensure!(vaults.len() == 1);
+    let created_vault = &vaults[0];
+    ensure!((created_vault.vault_id, created_vault.presale_id) == (vault, sale.presale));
+    ensure!((created_vault.pool_id, created_vault.position_id) == (base_pool, owner_cap));
+    ensure!((created_vault.migration_meme_residual, created_vault.migration_quote_residual) == (0, 0));
+    ensure!(world.h.object(pool).is_shared() && world.h.object(vault).is_shared());
+    ensure!(*world.h.object(lp_coin).owner() == Owner::AddressOwner(ObjectID::ZERO.into()));
+    ensure!(migrated.effects.deleted().iter().any(|object| object.0 == reservations[0]));
+    ensure!(world.sale_state(&sale)?.lifecycle == Lifecycle::Migrated);
+    let releases: Vec<PresaleMigrated> = world.events(&migrated, "blast_presale", "PresaleMigrated");
+    ensure!(releases.len() == 1 && releases[0].presale_id == sale.presale);
+    ensure!((releases[0].liquidity_tokens, releases[0].liquidity_quote) == (terms.lp_tokens(), terms.raise));
+    world.claim(&sale, &terms)?;
+    world.swap_aftermath(pool, &lp, world.quote(), sale.meme.clone(), 1_000_000_000)?;
+    world.swap_aftermath(pool, &lp, sale.meme.clone(), world.quote(), 1_000_000_000_000_000)?;
+    world.collect_aftermath_fees(&sale, vault)?;
+    Ok(())
+}
+
 /// The whole lifecycle of one presale on `route`.
 fn run(route: Route) -> Result<()> {
     run_world(World::new(route)?)
@@ -343,7 +465,7 @@ fn run_near_equal(route: Route) -> Result<()> {
     let (meme, quote) = (terms.lp_tokens(), terms.raise);
     ensure!(meme.max(quote) == LARGE && meme.min(quote) == SMALL, "the seed is ({meme}, {quote})");
 
-    w.larger_side_fix_aborts(meme, quote)?;
+    let (direct_token, direct_pool, direct_position) = w.larger_side_fix_aborts(meme, quote)?;
 
     let sale = w.open_sale(&terms)?;
     let m = w.migrate(&sale, &terms)?;
@@ -363,6 +485,14 @@ fn run_near_equal(route: Route) -> Result<()> {
         m.residual,
         m.liquidity,
     ));
+
+    w.standalone_vault_rejects_wrong_pool_then_locks(
+        &sale.meme,
+        m.pool,
+        &direct_token,
+        direct_pool,
+        direct_position,
+    )?;
 
     w.print_report();
     Ok(())
@@ -394,6 +524,7 @@ enum Route {
     CetusMemeA,
     CetusMemeB,
     Bluefin,
+    Aftermath,
 }
 
 impl Route {
@@ -412,7 +543,7 @@ impl Route {
     }
 
     fn is_cetus(self) -> bool {
-        self != Route::Bluefin
+        matches!(self, Route::CetusMemeA | Route::CetusMemeB)
     }
 
     /// Whether Meme is the pool's coin A.
@@ -421,11 +552,17 @@ impl Route {
     }
 
     fn module(self) -> &'static str {
-        if self.is_cetus() { "cetus" } else { "bluefin" }
+        match self {
+            Self::CetusMemeA | Self::CetusMemeB => "cetus",
+            Self::Bluefin => "bluefin",
+            Self::Aftermath => "aftermath",
+        }
     }
 
     fn tier(self) -> (u32, u64) {
-        if self.is_cetus() {
+        if self == Self::Aftermath {
+            (0, 200)
+        } else if self.is_cetus() {
             (CETUS_TICK_SPACING, CETUS_FEE_RATE)
         } else {
             (BLUEFIN_TICK_SPACING, BLUEFIN_FEE_RATE)
@@ -880,13 +1017,160 @@ impl World {
         bail!("no published token had the route's Cetus coin order")
     }
 
-    /// One PTB: the route's `new` with open eligibility, then `share`; the cap goes to the sender.
+    /// Trades through the DAO-fee pool and checks that the sender received the output.
+    fn swap_aftermath(
+        &mut self,
+        pool: ObjectID,
+        lp: &TypeTag,
+        input: TypeTag,
+        output: TypeTag,
+        amount: u64,
+    ) -> Result<()> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let quote = self.quote();
+        let direction = match (input == quote, quote == sui()) {
+            (true, true) => "SUI to Meme",
+            (false, true) => "Meme to SUI",
+            (true, false) => "Quote to Meme",
+            (false, false) => "Meme to Quote",
+        };
+        let coin = if input == sui() {
+            Argument::GasCoin
+        } else {
+            b.obj(self.h.owned(self.largest_coin(&input)?))?
+        };
+        let amount = b.pure(amount)?;
+        let Argument::Result(split) = b.command(Command::SplitCoins(coin, vec![amount])) else {
+            unreachable!()
+        };
+        let args = vec![
+            self.shared(&mut b, pool, true)?,
+            self.shared(&mut b, self.venue("aftermath_dao_fee_version"), false)?,
+            self.shared(&mut b, self.venue("aftermath_pool_registry"), false)?,
+            self.shared(&mut b, self.venue("aftermath_protocol_fee_vault"), false)?,
+            self.shared(&mut b, self.venue("aftermath_treasury"), true)?,
+            self.shared(&mut b, self.venue("aftermath_insurance_fund"), true)?,
+            self.shared(&mut b, self.venue("aftermath_referral_vault"), false)?,
+            Argument::NestedResult(split, 0),
+            b.pure(1u64)?,
+            b.pure(1_000_000_000_000_000_000u64)?,
+        ];
+        let dao_fee = id(blast_launchpad_ptb_tests::fork::AFTERMATH_DAO_FEE);
+        let out = call(&mut b, dao_fee, "swap", "swap_exact_in", vec![lp.clone(), input, output.clone()], args);
+        b.transfer_arg(self.h.sender, out);
+        let swapped = self.h.execute(b.finish())?;
+        swapped.assert_success();
+        ensure!(swapped.coins_created_for(&self.h, self.h.sender).iter().any(|(coin, amount)| {
+            coin == &output.to_canonical_string(true) && *amount > 0
+        }));
+        self.report(format!(
+            "Aftermath swap {direction} transaction {}",
+            swapped.effects.transaction_digest()
+        ));
+        Ok(())
+    }
+
+    fn collect_aftermath_fees(&mut self, sale: &Sale, vault: ObjectID) -> Result<()> {
+        let before: VaultState = bcs::from_bytes(&self.h.contents(vault))?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let vault_arg = self.shared(&mut b, vault, true)?;
+        let version = self.shared(&mut b, self.version, false)?;
+        let fee_policy = self.shared(&mut b, self.fee_policy, false)?;
+        let coins = self.h.owned_by(vault.into());
+        let mut fees = Vec::new();
+        let mut totals = Vec::new();
+        for asset in self.pair(sale) {
+            let mut inputs = Vec::new();
+            let mut total = 0u64;
+            for coin in coins.iter().filter(|coin| coin.coin_type_maybe().as_ref() == Some(&asset)) {
+                inputs.push(b.obj(ObjectArg::Receiving(coin.compute_object_reference()))?);
+                total += coin.get_coin_value_unsafe();
+            }
+            ensure!(total > 0, "swaps must send {asset} fees to the vault");
+            let receiving = tag(&format!("0x2::transfer::Receiving<0x2::coin::Coin<{asset}>>"));
+            fees.push(b.command(Command::make_move_vec(Some(receiving), inputs)));
+            totals.push(total);
+        }
+        call(&mut b, self.presale, "aftermath", "collect_fees", self.pair(sale),
+             vec![vault_arg, version, fee_policy, fees[0], fees[1]]);
+        let collected = self.h.execute(b.finish())?;
+        collected.assert_success();
+        let events: Vec<FeesCollected> = self.events(&collected, "presale_vault", "FeesCollected");
+        ensure!(events.len() == 1 && events[0].vault_id == vault);
+        let event = &events[0];
+        ensure!((event.gross_meme, event.gross_quote) == (totals[0], totals[1]));
+        ensure!(event.protocol_meme == 0 && event.protocol_quote == 0);
+        let weights = [FEE_BPS[0], FEE_BPS[1], HOLDER_REWARDS_BPS];
+        let meme = apportion(&weights, totals[0]);
+        let quote = apportion(&weights, totals[1]);
+        ensure!(event.fee_recipient_meme == meme[..2] && event.holder_rewards_meme == meme[2]);
+        ensure!(event.fee_recipient_quote == quote[..2] && event.holder_rewards_quote == quote[2]);
+        for (index, recipient) in [CREATOR, FEE_B].into_iter().enumerate() {
+            ensure!(
+                collected.coins_created_for(&self.h, recipient.into()) == self.coins(&sale.meme, meme[index], quote[index]),
+                "Aftermath fee recipient {recipient} was paid"
+            );
+        }
+        ensure!(
+            collected.coins_created_for(&self.h, self.h.sender) == self.coins(&sale.meme, meme[2], 0),
+            "Aftermath holder Meme was paid to the treasury"
+        );
+        let after: VaultState = bcs::from_bytes(&self.h.contents(vault))?;
+        ensure!(after.holder_rewards_meme == before.holder_rewards_meme);
+        ensure!(after.holder_rewards_quote == before.holder_rewards_quote + quote[2]);
+        ensure!(self.h.owned_by(vault.into()).iter().all(|coin| coin.coin_type_maybe().is_none()));
+        Ok(())
+    }
+
+    fn publish_aftermath_lp(&mut self) -> Result<(TypeTag, ObjectID)> {
+        // The SDK's unmodified mainnet LP template, originally published by transaction
+        // 5FE2eVoacFwnLfixqRAGftH9UwWotxDt3BJUqkWHxWwQ.
+        let package = CompiledPackage {
+            modules: vec![include_bytes!("../fixture/aftermath_lp.mv").to_vec()],
+            dependencies: [
+                "0x1",
+                "0x2",
+                "0xf948935b111990c2b604900c9b2eeb8f24dcf9868a45d1ea1653a5f282c10e29",
+                "0xbc7b2c577ad9362fbb0dba397d17f3bcc81bf7aa916559f99a77eaee05d0947c",
+                "0xa6baab1e668c7868991c1c3c11e144100f5734c407d020f72a01b9d1a8bcb97f",
+                "0x2d9316f1f1a95f6d7c85a4e690ef7c359e6649773ef2c37ad7d9857adb6bef06",
+                "0xc66fabf1a9253e43c70f1cc02d40a1d18db183140ecaae2a3f58fa6b66c55acf",
+                "0x64213b0e4a52bac468d4ac3f140242f70714381653a1919a6d57cd49c628207a",
+                "0x73baa782c55003b3a359dec04b189312565d18e7309d4a51f5f112f891e3b2ab",
+            ].map(id).to_vec(),
+        };
+        let (package, published) = self.h.publish(package)?;
+        let caps = published.created(&self.h, "pool", "CreatePoolCapV2");
+        ensure!(caps.len() == 1);
+        Ok((tag(&format!("{package}::af_lp::AF_LP")), caps[0]))
+    }
+
+    fn initial_fee_split(&self, b: &mut ProgrammableTransactionBuilder) -> Result<Argument> {
+        let mut fee_recipients = Vec::new();
+        for (recipient, bps) in [(CREATOR, FEE_BPS[0]), (FEE_B, FEE_BPS[1])] {
+            let args = vec![b.pure(SuiAddress::from(recipient))?, self.bps(b, bps)?];
+            fee_recipients.push(call(b, self.presale, "blast_presale", "recipient_share", vec![], args));
+        }
+        let fee_type = self.presale_tag("blast_presale", "RecipientShare");
+        let fee_recipients = b.command(Command::make_move_vec(Some(fee_type), fee_recipients));
+        let holder_bps = self.bps(b, HOLDER_REWARDS_BPS)?;
+        Ok(call(
+            b,
+            self.presale,
+            "blast_presale",
+            "fee_split",
+            vec![],
+            vec![fee_recipients, holder_bps],
+        ))
+    }
+
     fn create_presale_pt(
         &self,
         treasury_cap: ObjectID,
         currency: ObjectID,
         meme: &TypeTag,
         terms: &Terms,
+        aftermath_lp: Option<(TypeTag, ObjectID)>,
     ) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
         let pair = vec![meme.clone(), self.quote()];
@@ -899,20 +1183,13 @@ impl World {
         let recipients = b.command(Command::make_move_vec(Some(allocation_type.clone()), recipients));
         // No share of the raise goes to recipients, and there is no uncapped phase.
         let raise_allocations = b.command(Command::make_move_vec(Some(allocation_type), vec![]));
-        let mut fee_recipients = Vec::new();
-        for (recipient, bps) in [(CREATOR, FEE_BPS[0]), (FEE_B, FEE_BPS[1])] {
-            let args = vec![b.pure(SuiAddress::from(recipient))?, self.bps(&mut b, bps)?];
-            fee_recipients.push(call(&mut b, self.presale, "blast_presale", "recipient_share", vec![], args));
-        }
-        let fee_type = self.presale_tag("blast_presale", "RecipientShare");
-        let fee_recipients = b.command(Command::make_move_vec(Some(fee_type), fee_recipients));
         let eligibility_args =
             vec![b.pure(terms.wallet_cap)?, b.pure(terms.max_participants)?, b.pure(terms.min_commitment)?];
         let eligibility = call(&mut b, self.presale, "blast_presale", "open_eligibility", vec![], eligibility_args);
 
         let version = self.shared(&mut b, self.version, false)?;
         let mut args = vec![b.obj(self.h.owned(treasury_cap))?, version];
-        if !self.route.is_cetus() {
+        if self.route == Route::Bluefin {
             args.push(self.shared(&mut b, currency, true)?);
         }
         args.extend([
@@ -927,10 +1204,18 @@ impl World {
                 self.shared(&mut b, self.venue("cetus_pools"), true)?,
                 b.pure(tick_spacing)?,
             ]);
+        } else if self.route == Route::Aftermath {
+            args.push(b.pure(fee_rate as u16)?);
         } else {
             args.extend([b.pure(tick_spacing)?, b.pure(fee_rate)?]);
         }
-        let init = call(&mut b, self.presale, self.route.module(), "new", pair.clone(), args);
+        let result = call(&mut b, self.presale, self.route.module(), "new", pair.clone(), args);
+        let (init, ticket) = if aftermath_lp.is_some() {
+            let Argument::Result(index) = result else { unreachable!() };
+            (Argument::NestedResult(index, 0), Some(Argument::NestedResult(index, 1)))
+        } else {
+            (result, None)
+        };
         let supply = b.pure(terms.supply)?;
         let burnable = b.pure(false)?;
         let sale_bps = self.bps(&mut b, terms.sale_bps)?;
@@ -938,15 +1223,7 @@ impl World {
         let raise = b.pure(terms.raise)?;
         let duration = b.pure(DURATION_MS)?;
         let window = b.pure(LIQUIDITY_WINDOW_MS)?;
-        let holder_bps = self.bps(&mut b, HOLDER_REWARDS_BPS)?;
-        let split = call(
-            &mut b,
-            self.presale,
-            "blast_presale",
-            "fee_split",
-            vec![],
-            vec![fee_recipients, holder_bps],
-        );
+        let split = self.initial_fee_split(&mut b)?;
         for (function, arguments) in [
             ("set_supply", vec![init, version, supply, burnable]),
             ("set_token_allocations", vec![init, version, sale_bps, lp_bps, recipients]),
@@ -958,16 +1235,18 @@ impl World {
             call(&mut b, self.presale, "blast_presale", function, pair.clone(), arguments);
         }
         let currency = self.shared(&mut b, currency, true)?;
-        let Argument::Result(created) = call(
-            &mut b,
-            self.presale,
-            "blast_presale",
-            "finalize",
-            pair.clone(),
-            vec![init, version, currency],
-        ) else {
+        let (module, types, args) = if let Some((lp, cap)) = aftermath_lp {
+            ("aftermath", vec![lp, meme.clone(), self.quote()],
+             vec![init, version, ticket.context("Aftermath finalize ticket")?, currency, b.obj(self.h.owned(cap))?])
+        } else {
+            ("blast_presale", pair.clone(), vec![init, version, currency])
+        };
+        let Argument::Result(created) = call(&mut b, self.presale, module, "finalize", types.clone(), args) else {
             unreachable!()
         };
+        if ticket.is_some() {
+            call(&mut b, self.presale, "aftermath", "share", types, vec![Argument::NestedResult(created, 2), version]);
+        }
         let clock = self.clock(&mut b)?;
         let start = b.pure(0u64)?;
         call(&mut b, self.presale, "blast_presale", "share", pair, vec![Argument::NestedResult(created, 0), version, start, clock]);
@@ -979,8 +1258,12 @@ impl World {
     /// Creates and shares the presale, commits past the raise, and settles it after the window.
     fn open_sale(&mut self, terms: &Terms) -> Result<Sale> {
         let (treasury_cap, currency, meme) = self.publish_token()?;
-        let pt = self.create_presale_pt(treasury_cap, currency, &meme, terms)?;
+        let pt = self.create_presale_pt(treasury_cap, currency, &meme, terms, None)?;
         let created = self.h.execute(pt)?;
+        self.fund_sale(created, meme, currency, terms)
+    }
+
+    fn fund_sale(&mut self, created: Outcome, meme: TypeTag, currency: ObjectID, terms: &Terms) -> Result<Sale> {
         created.assert_success();
         let presales = created.created(&self.h, "blast_presale", "Presale");
         let caps = self.h.owned_of_type(self.h.sender, "blast_presale", "PresaleCap");
@@ -1738,11 +2021,12 @@ impl World {
     /// A fresh token seeded at the near-equal amounts straight into the venue: fixing the larger
     /// side aborts in the venue, and fixing the smaller side succeeds, at the same price and range
     /// the presale migration uses.
-    fn larger_side_fix_aborts(&mut self, meme: u64, quote: u64) -> Result<()> {
+    fn larger_side_fix_aborts(&mut self, meme: u64, quote: u64) -> Result<(TypeTag, ObjectID, ObjectID)> {
         let (treasury_cap, _, token) = self.publish_token()?;
         let meme_is_a = self.route.meme_is_a();
         let larger_is_a = (meme > quote) == meme_is_a;
         let sqrt_price = expected_sqrt_price(meme, quote, meme_is_a);
+        let mut direct_position = None;
         for fix_a in [larger_is_a, !larger_is_a] {
             let quote_id = self.mint(self.quote(), quote);
             let mut b = ProgrammableTransactionBuilder::new();
@@ -1836,7 +2120,12 @@ impl World {
             };
             b.transfer_args(self.h.sender, created);
             if fix_a != larger_is_a {
-                self.h.execute(b.finish())?.assert_success();
+                let outcome = self.h.execute(b.finish())?;
+                outcome.assert_success();
+                let pools = outcome.created(&self.h, "pool", "Pool");
+                let positions = outcome.created(&self.h, "position", "Position");
+                ensure!(pools.len() == 1 && positions.len() == 1);
+                direct_position = Some((token.clone(), pools[0], positions[0]));
                 continue;
             }
             let (expected, watched) = if self.route.is_cetus() {
@@ -1856,6 +2145,81 @@ impl World {
             if self.route.is_cetus() { "Cetus factory 5: coin A below the amount the fixed coin B needs" } else { "Bluefin utils 1004 EInsufficientCoinBalance" },
         ));
 
+        direct_position.context("direct venue pool and position")
+    }
+
+    fn standalone_vault_pt(
+        &self,
+        meme: &TypeTag,
+        pool: ObjectID,
+        position: ObjectID,
+    ) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let split = self.initial_fee_split(&mut b)?;
+        let no_partner = call(&mut b, id("0x1"), "option", "none", vec![tag("0x2::object::ID")], vec![]);
+        let mut args = vec![
+            b.obj(self.h.owned(position))?,
+            self.shared(&mut b, self.version, false)?,
+            split,
+            no_partner,
+            self.shared(&mut b, self.creation_policy, false)?,
+            self.shared(&mut b, self.fee_policy, false)?,
+            self.shared(&mut b, pool, false)?,
+        ];
+        let mut types = vec![meme.clone(), self.quote()];
+        if self.route.is_cetus() {
+            types.extend(self.pool_pair(meme));
+            args.push(self.shared(&mut b, self.venue("cetus_burn_manager"), true)?);
+        }
+        args.push(self.clock(&mut b)?);
+        call(&mut b, self.presale, self.route.module(), "new_vault", types, args);
+        Ok(b.finish())
+    }
+
+    fn standalone_vault_rejects_wrong_pool_then_locks(
+        &mut self,
+        wrong_meme: &TypeTag,
+        wrong_pool: ObjectID,
+        meme: &TypeTag,
+        pool: ObjectID,
+        position: ObjectID,
+    ) -> Result<()> {
+        let wrong = self.standalone_vault_pt(wrong_meme, wrong_pool, position)?;
+        let code = if self.route.is_cetus() {
+            CETUS_POSITION_POOL_MISMATCH
+        } else {
+            BLUEFIN_POSITION_POOL_MISMATCH
+        };
+        let mut watched = vec![wrong_pool, pool, position];
+        if self.route.is_cetus() {
+            watched.push(self.venue("cetus_burn_manager"));
+        }
+        self.h.assert_rolled_back(
+            wrong,
+            Expected::Abort { package: self.presale, module: self.route.module(), code },
+            &watched,
+            &[self.h.sender],
+        )?;
+
+        let correct = self.standalone_vault_pt(meme, pool, position)?;
+        let outcome = self.h.execute(correct)?;
+        outcome.assert_success();
+        let vaults: Vec<VaultCreated> = self.events(&outcome, "presale_vault", "VaultCreated");
+        ensure!(vaults.len() == 1);
+        let vault = &vaults[0];
+        ensure!(vault.presale_id == ObjectID::ZERO && vault.pool_id == pool && vault.liquidity > 0);
+        ensure!(self.h.object(vault.vault_id).is_shared());
+        if self.route.is_cetus() {
+            ensure!(outcome.effects.wrapped().iter().any(|object| object.0 == position));
+            let proof: BurnProof = bcs::from_bytes(&self.h.contents(vault.position_id))?;
+            ensure!((proof.position.id, proof.position.pool) == (position, pool));
+        } else {
+            ensure!(vault.position_id == position);
+        }
+        let Owner::ObjectOwner(field) = self.h.object(vault.position_id).owner().clone() else {
+            bail!("vault position is not a child object");
+        };
+        ensure!(*self.h.object(field.into()).owner() == Owner::ObjectOwner(vault.vault_id.into()));
         Ok(())
     }
 
@@ -2015,6 +2379,15 @@ struct Claimed {
     quote_refund: u64,
     remaining_participants: u64,
     vesting_id: Option<ObjectID>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+struct DaoFeePoolCreated {
+    vault: ObjectID,
+    base_pool: ObjectID,
+    pool: ObjectID,
+    owner_cap: ObjectID,
+    lp_coin: ObjectID,
 }
 
 #[derive(Deserialize)]

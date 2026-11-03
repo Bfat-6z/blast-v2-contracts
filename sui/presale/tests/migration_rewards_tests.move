@@ -815,6 +815,23 @@ fun generic_merkle_proofs_preserve_left_and_right_order() {
 }
 
 #[test]
+fun merkle_proofs_reject_malformed_digests_and_wrong_depth() {
+    let left = hash::blake2b256(&b"left");
+    let right = hash::blake2b256(&b"right");
+    let root = merkle_tree::node(left, right);
+    let short_digest = vector::tabulate!(31, |_| 0u8);
+
+    assert!(merkle_tree::verify(left, left, 0, 1, &vector[]));
+    assert!(!merkle_tree::verify(short_digest, left, 0, 2, &vector[right]));
+    assert!(!merkle_tree::verify(root, short_digest, 0, 2, &vector[right]));
+    assert!(!merkle_tree::verify(root, left, 0, 0, &vector[right]));
+    assert!(!merkle_tree::verify(root, left, 0, 2, &vector[]));
+    assert!(!merkle_tree::verify(root, left, 0, 2, &vector[right, right]));
+    assert!(!merkle_tree::verify(root, left, 0, 2, &vector[short_digest]));
+    assert!(!merkle_tree::verify(root, left, 1, 2, &vector[right]));
+}
+
+#[test]
 #[expected_failure(abort_code = vault::ENoMigrationResiduals, location = blast_presale::presale_vault)]
 fun a_valid_creator_cap_cannot_claim_empty_migration_residuals() {
     let mut ctx = sui::tx_context::dummy();

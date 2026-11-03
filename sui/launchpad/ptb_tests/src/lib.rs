@@ -10,6 +10,8 @@
 //! packages and objects at their real IDs; see `fork`, `tests/venue_fork.rs`, and
 //! `tests/presale_venue_fork.rs`.
 
+#[cfg(feature = "fork-coverage")]
+pub mod coverage;
 pub mod fork;
 pub mod measure;
 
@@ -38,8 +40,8 @@ use sui_types::{
     object::{Object, Owner},
     programmable_transaction_builder::ProgrammableTransactionBuilder,
     transaction::{
-        Argument, ObjectArg, ProgrammableTransaction, SharedObjectMutability, Transaction,
-        TransactionData,
+        Argument, ObjectArg, ProgrammableTransaction, SharedObjectMutability,
+        Transaction, TransactionData,
     },
 };
 
@@ -132,7 +134,11 @@ pub fn build_unlinked(package: &Path, local: &[&str], work: &Path) -> Result<Unl
         .context("package name")?;
     let _genesis = GenesisFixture::configure(package)?;
     let mut command = sui_move_build(package, work)?;
-    let output = command.args(["-e", "mainnet"]).output().context("run the sui CLI")?;
+    let output = command
+        .args(["-e", "mainnet", "--install-dir"])
+        .arg(work)
+        .output()
+        .context("run the sui CLI")?;
     if !output.status.success() {
         bail!(
             "building {} failed:\n{}\n{}",
@@ -141,7 +147,7 @@ pub fn build_unlinked(package: &Path, local: &[&str], work: &Path) -> Result<Unl
             String::from_utf8_lossy(&output.stderr),
         );
     }
-    let bytecode = package.join("build").join(name).join("bytecode_modules");
+    let bytecode = work.join("build").join(name).join("bytecode_modules");
     let read = |directory: &Path| -> Result<Vec<CompiledModule>> {
         let mut modules = Vec::new();
         for entry in std::fs::read_dir(directory)? {
@@ -563,13 +569,22 @@ pub struct Harness {
     pub sender: SuiAddress,
     key: AccountKeyPair,
     gas: ObjectID,
+    #[cfg(feature = "fork-coverage")]
+    replay: coverage::ReplayEngine,
 }
 
 impl Harness {
     pub fn new() -> Result<Self> {
         let mut sim = Simulacrum::new_with_rng(StdRng::seed_from_u64(0xB1A57));
         let (sender, key, gas) = sim.funded_account(1_000 * MIST_PER_SUI)?;
-        Ok(Self { sim, sender, key, gas: gas.0 })
+        Ok(Self {
+            sim,
+            sender,
+            key,
+            gas: gas.0,
+            #[cfg(feature = "fork-coverage")]
+            replay: coverage::ReplayEngine::default(),
+        })
     }
 
     pub fn gas_id(&self) -> ObjectID {
@@ -645,7 +660,13 @@ impl Harness {
             self.sim.reference_gas_price(),
         );
         let transaction = Transaction::from_data_and_signer(data, vec![&self.key]);
+        #[cfg(feature = "fork-coverage")]
+        let trace = self.replay.run(&self.sim, &transaction)?;
         let (effects, error) = self.sim.execute_transaction(transaction.clone())?;
+        #[cfg(feature = "fork-coverage")]
+        if let Some(trace) = trace {
+            trace.save(&self.sim, &effects)?;
+        }
         let events = self
             .sim
             .store()
@@ -669,7 +690,13 @@ impl Harness {
             sender, vec![gas], pt, 50 * MIST_PER_SUI, self.sim.reference_gas_price(),
         );
         let transaction = Transaction::from_data(data, vec![]);
+        #[cfg(feature = "fork-coverage")]
+        let trace = self.replay.run(&self.sim, &transaction)?;
         let (effects, error) = self.sim.execute_transaction_impersonating(transaction.clone())?;
+        #[cfg(feature = "fork-coverage")]
+        if let Some(trace) = trace {
+            trace.save(&self.sim, &effects)?;
+        }
         let events = self.sim.store().get_transaction_events(effects.transaction_digest())
             .map(|events| events.data.clone()).unwrap_or_default();
 
@@ -899,7 +926,7 @@ impl Harness {
         expected: Expected,
         objects: &[ObjectID],
         owners: &[SuiAddress],
-    ) -> Result<()> {
+    ) -> Result<Outcome> {
         let before = self.snapshot(objects, owners);
         let outcome = self.execute(pt)?;
         match (outcome.effects.status(), &expected) {
@@ -929,7 +956,7 @@ impl Harness {
         }
         assert_eq!(self.snapshot(objects, owners), before, "failed transaction changed state");
 
-        Ok(())
+        Ok(outcome)
     }
 }
 
@@ -984,6 +1011,12 @@ pub fn call(
 /// A cached binary can have been compiled in a different checkout.
 pub fn crate_dir() -> PathBuf {
     let dir = std::env::current_dir().expect("native PTB test working directory");
+    // The tracer overlay is a generated Cargo project nested under the real crate.
+    let dir = if dir.ends_with("target/fork-coverage-build") {
+        dir.join("../..").canonicalize().expect("native PTB crate directory")
+    } else {
+        dir
+    };
     assert!(
         dir.join("Cargo.toml").is_file() && dir.ends_with("launchpad/ptb_tests"),
         "run native PTB tests from the launchpad/ptb_tests crate: {}",

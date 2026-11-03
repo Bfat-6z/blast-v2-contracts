@@ -242,7 +242,13 @@ fun is_meme_seed_side<Meme, Quote>(
         prefer_meme,
     );
 
-    if (needed_meme <= meme_amount && needed_quote <= quote_amount) prefer_meme else !prefer_meme
+    migration_math::seed_fixed_side(
+        prefer_meme,
+        meme_amount,
+        quote_amount,
+        needed_meme,
+        needed_quote,
+    )
 }
 
 /// Locks the seeded position and the residuals in a new vault.

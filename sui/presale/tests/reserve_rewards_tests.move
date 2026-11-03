@@ -271,6 +271,19 @@ fun publication_cannot_overcommit_holder_and_reserve_quote() {
 
 #[test]
 #[expected_failure(
+    abort_code = rewards::EInsufficientBudget,
+    location = blast_presale::holder_rewards,
+)]
+fun holder_quote_cannot_exceed_the_vault_before_reserve_is_checked() {
+    let mut fixture = start_reserve_rewards();
+
+    fixture.publish_budget(1_001, 1);
+
+    abort
+}
+
+#[test]
+#[expected_failure(
     abort_code = rewards::EClaimsStillOpen,
     location = blast_presale::holder_rewards,
 )]
@@ -367,7 +380,7 @@ fun reserve_holder_payment_cannot_be_redirected() {
 #[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_presale::presale_vault)]
 fun round_rejects_a_short_merkle_root() {
     let mut f = start_reserve_rewards();
-    f.publish_commitment(vector[0u8], hash::blake2b256(&b"manifest"), 1, 1);
+    f.publish_commitment(vector[0u8], hash::blake2b256(&b"manifest"), 1, 0, 1);
     abort
 }
 
@@ -375,7 +388,7 @@ fun round_rejects_a_short_merkle_root() {
 #[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_presale::presale_vault)]
 fun round_rejects_a_short_manifest_digest() {
     let mut f = start_reserve_rewards();
-    f.publish_commitment(hash::blake2b256(&b"root"), vector[0u8], 1, 1);
+    f.publish_commitment(hash::blake2b256(&b"root"), vector[0u8], 1, 0, 1);
     abort
 }
 
@@ -383,7 +396,7 @@ fun round_rejects_a_short_manifest_digest() {
 #[expected_failure(abort_code = vault::EInvalidLeafCount, location = blast_presale::presale_vault)]
 fun round_rejects_zero_leaves() {
     let mut f = start_reserve_rewards();
-    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 0, 1);
+    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 0, 0, 1);
     abort
 }
 
@@ -391,7 +404,7 @@ fun round_rejects_zero_leaves() {
 #[expected_failure(abort_code = vault::EInvalidLeafCount, location = blast_presale::presale_vault)]
 fun round_rejects_the_first_leaf_above_capacity() {
     let mut f = start_reserve_rewards();
-    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 65_537, 1);
+    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 65_537, 0, 1);
     abort
 }
 
@@ -399,7 +412,15 @@ fun round_rejects_the_first_leaf_above_capacity() {
 #[expected_failure(abort_code = vault::EEmptyBudget, location = blast_presale::presale_vault)]
 fun round_rejects_an_empty_asset_budget() {
     let mut f = start_reserve_rewards();
-    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 1, 0);
+    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 1, 0, 0);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EInsufficientBudget, location = blast_presale::holder_rewards)]
+fun round_rejects_a_meme_budget_above_the_vault_balance() {
+    let mut f = start_reserve_rewards();
+    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 1, 1, 0);
     abort
 }
 
@@ -907,7 +928,8 @@ fun publish_commitment(
     root: vector<u8>,
     manifest: vector<u8>,
     leaves: u64,
-    amount: u64
+    meme_amount: u64,
+    quote_amount: u64,
 ) {
     let version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
     self
@@ -921,8 +943,8 @@ fun publish_commitment(
             root,
             manifest,
             leaves,
-            0,
-            amount,
+            meme_amount,
+            quote_amount,
             0,
             CLAIM_WINDOW_DURATION_MS,
             TREASURY,

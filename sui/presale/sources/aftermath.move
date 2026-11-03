@@ -235,7 +235,8 @@ macro fun assert_pool_balances(
     $actual_quote: u64,
     $expected_quote: u64
 ) {
-    assert!($actual_meme == $expected_meme && $actual_quote == $expected_quote, EPoolMismatch);
+    assert_pool_balance($actual_meme, $expected_meme);
+    assert_pool_balance($actual_quote, $expected_quote);
 }
 
 macro fun assert_dao_fee_terms(
@@ -244,10 +245,16 @@ macro fun assert_dao_fee_terms(
     $actual_recipient: address,
     $expected_recipient: address
 ) {
-    assert!(
-        $actual_bps == $expected_bps && $actual_recipient == $expected_recipient,
-        EDaoFeePoolMismatch
-    );
+    assert_dao_fee_term($actual_bps, $expected_bps);
+    assert_dao_fee_term($actual_recipient, $expected_recipient);
+}
+
+fun assert_pool_balance(actual: u64, expected: u64) {
+    assert!(actual == expected, EPoolMismatch);
+}
+
+fun assert_dao_fee_term<T: drop>(actual: T, expected: T) {
+    assert!(actual == expected, EDaoFeePoolMismatch);
 }
 
 /// Creates the 50/50 pool from the sale's tokens and Quote, in Aftermath's coin order.

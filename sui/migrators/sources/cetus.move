@@ -260,7 +260,7 @@ fun is_coin_a_seed_side(
         prefer_a,
     );
 
-    if (needed_a <= amount_a && needed_b <= amount_b) prefer_a else !prefer_a
+    migration_math::seed_fixed_side(prefer_a, amount_a, amount_b, needed_a, needed_b)
 }
 
 /// Burns the position and locks its burn proof and the residuals in a new vault.

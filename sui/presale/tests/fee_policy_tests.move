@@ -145,6 +145,51 @@ fun a_destination_update_must_change_the_address() {
 
 #[test]
 #[expected_failure(
+    abort_code = blast_admin::errors::EUnchanged,
+    location = blast_admin::delayed,
+)]
+fun a_destination_update_must_change_the_address_or_notice() {
+    let mut ctx = tx_context::dummy();
+    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut policy = new_policy();
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    let admin = treasury_admin();
+    policy.schedule_destination(&package_version, &admin, @0xB0B, 0, &clock);
+    clock.set_for_testing(172_800_000);
+    policy.apply_destination(&package_version, &clock);
+
+    policy.schedule_destination(&package_version, &admin, @0xB0B, 0, &clock);
+
+    clock.destroy_for_testing();
+    policy.destroy_for_testing();
+    std::unit_test::destroy(package_version);
+}
+
+#[test]
+fun destination_notice_can_change_without_redirecting_fees() {
+    let mut ctx = tx_context::dummy();
+    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut policy = new_policy();
+    let mut clock = sui::clock::create_for_testing(&mut ctx);
+    let admin = treasury_admin();
+    policy.schedule_destination(&package_version, &admin, @0xB0B, 0, &clock);
+    clock.set_for_testing(172_800_000);
+    policy.apply_destination(&package_version, &clock);
+    policy.schedule_destination(&package_version, &admin, @0xB0B, 10, &clock);
+    policy.apply_destination(&package_version, &clock);
+
+    policy.schedule_destination(&package_version, &admin, @0xCAFE, 0, &clock);
+    clock.set_for_testing(172_800_010);
+    policy.apply_destination(&package_version, &clock);
+    assert_eq!(policy.destination(), @0xCAFE);
+
+    clock.destroy_for_testing();
+    policy.destroy_for_testing();
+    std::unit_test::destroy(package_version);
+}
+
+#[test]
+#[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
     location = blast_admin::operational_version,
 )]

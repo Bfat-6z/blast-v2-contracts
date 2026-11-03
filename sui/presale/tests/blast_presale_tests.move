@@ -725,6 +725,50 @@ fun an_allowlist_proof_cannot_change_its_wallet_cap() {
 
 #[test]
 #[expected_failure(
+    abort_code = presale::EWrongEligibilityPolicy,
+    location = blast_presale::blast_presale,
+)]
+fun the_allowlisted_commit_function_rejects_an_open_policy() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+
+    fixture.commit_allowlisted(ALICE, RAISE_TARGET, 0, RAISE_TARGET, vector[]);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityProof,
+    location = blast_presale::blast_presale,
+)]
+fun a_valid_allowlist_proof_cannot_admit_a_zero_wallet_cap() {
+    let root = presale::allowlist_leaf_for_testing(0, ALICE, 0);
+    let mut fixture = start_sale(presale::allowlisted_eligibility(root, 1));
+
+    fixture.commit_allowlisted(ALICE, 500, 0, 0, vector[]);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityProof,
+    location = blast_presale::blast_presale,
+)]
+fun two_valid_leaves_cannot_change_an_existing_wallet_cap() {
+    let first = presale::allowlist_leaf_for_testing(0, ALICE, 500);
+    let second = presale::allowlist_leaf_for_testing(1, ALICE, 600);
+    let root = presale::merkle_node_for_testing(first, second);
+    let mut fixture = start_sale(presale::allowlisted_eligibility(root, 2));
+    fixture.commit_allowlisted(ALICE, 100, 0, 500, vector[second]);
+
+    fixture.commit_allowlisted(ALICE, 100, 1, 600, vector[first]);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(
     abort_code = presale::EWalletCapExceeded,
     location = blast_presale::blast_presale,
 )]
@@ -793,6 +837,87 @@ fun a_wallet_above_the_minimum_may_top_up_by_any_amount() {
 /// Filling every open slot at the minimum must fund the raise, or dust could block the sale.
 fun an_open_sale_whose_slots_cannot_reach_the_raise_is_rejected() {
     start_sale(presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2 - 1)).end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityPolicy,
+    location = blast_presale::blast_presale,
+)]
+fun open_eligibility_rejects_a_zero_minimum() {
+    presale::open_eligibility(100, 1, 0);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityPolicy,
+    location = blast_presale::blast_presale,
+)]
+fun open_eligibility_rejects_zero_slots() {
+    presale::open_eligibility(100, 0, 100);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityPolicy,
+    location = blast_presale::blast_presale,
+)]
+fun open_eligibility_rejects_the_first_slot_count_over_the_limit() {
+    presale::open_eligibility(100, 65_537, 100);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityPolicy,
+    location = blast_presale::blast_presale,
+)]
+fun allowlist_rejects_a_truncated_root() {
+    presale::allowlisted_eligibility(vector::tabulate!(31, |_| 0u8), 1);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityPolicy,
+    location = blast_presale::blast_presale,
+)]
+fun allowlist_rejects_zero_leaves() {
+    presale::allowlisted_eligibility(vector::tabulate!(32, |_| 0u8), 0);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityPolicy,
+    location = blast_presale::blast_presale,
+)]
+fun allowlist_rejects_the_first_leaf_count_over_the_limit() {
+    presale::allowlisted_eligibility(vector::tabulate!(32, |_| 0u8), 65_537);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidUncappedPhase,
+    location = blast_presale::blast_presale,
+)]
+fun uncapped_access_rejects_a_zero_minimum() {
+    presale::uncapped_for_anyone(1, 1, 0);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidUncappedPhase,
+    location = blast_presale::blast_presale,
+)]
+fun uncapped_access_rejects_zero_slots() {
+    presale::uncapped_for_anyone(1, 0, 1);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidUncappedPhase,
+    location = blast_presale::blast_presale,
+)]
+fun uncapped_access_rejects_the_first_slot_count_over_the_limit() {
+    presale::uncapped_for_anyone(1, 65_537, 1);
 }
 
 #[test]
@@ -1381,6 +1506,22 @@ fun raise_allocations_must_leave_the_lp_a_share() {
 }
 
 #[test]
+#[expected_failure(abort_code = presale::EInvalidRaiseAllocation, location = blast_presale::blast_presale)]
+fun a_positive_raise_share_cannot_round_to_zero_for_its_recipient() {
+    start_with_raise_allocations(vector[
+        presale::recipient_share(RAISE_RECIPIENT, bps::new(1)),
+    ]).end();
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidRaiseAllocation, location = blast_presale::blast_presale)]
+fun a_positive_liquidity_share_cannot_round_to_zero_quote() {
+    start_with_raise_allocations(vector[
+        presale::recipient_share(RAISE_RECIPIENT, bps::new(9_999)),
+    ]).end();
+}
+
+#[test]
 #[expected_failure(
     abort_code = presale::EInvalidRaiseAllocation,
     location = blast_presale::blast_presale,
@@ -1655,6 +1796,59 @@ fun configured_allocation_bps_must_produce_positive_atomic_amounts() {
 }
 
 #[test]
+#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+fun token_supply_must_be_positive_even_with_a_complete_split() {
+    let mut terms = valid_sale_terms();
+    terms.token_supply = 0;
+
+    create_sale<QUOTE>(terms);
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+fun the_buyers_must_have_a_positive_token_share() {
+    let mut terms = valid_sale_terms();
+    terms.token_allocation_bps = 0;
+    terms.liquidity_token_allocation_bps = 6_000;
+
+    create_sale<QUOTE>(terms);
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+fun the_lp_must_have_a_positive_token_share() {
+    let mut terms = valid_sale_terms();
+    terms.token_allocation_bps = 6_000;
+    terms.liquidity_token_allocation_bps = 0;
+
+    create_sale<QUOTE>(terms);
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+fun a_positive_buyers_share_cannot_round_to_zero_tokens() {
+    let mut terms = valid_sale_terms();
+    terms.token_supply = 1;
+    terms.token_allocation_bps = 1_000;
+    terms.liquidity_token_allocation_bps = 9_000;
+    terms.recipient_allocations = vector[];
+
+    create_sale<QUOTE>(terms);
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+fun a_positive_recipient_share_cannot_round_to_zero_tokens() {
+    let mut terms = valid_sale_terms();
+    terms.token_supply = 2;
+    terms.token_allocation_bps = 5_000;
+    terms.liquidity_token_allocation_bps = 4_999;
+    terms.recipient_allocations = vector[presale::recipient_share(RECIPIENT_A, bps::new(1))];
+
+    create_sale<QUOTE>(terms);
+}
+
+#[test]
 #[expected_failure(abort_code = presale::EInvalidFeeSplit, location = blast_presale::blast_presale)]
 fun fee_recipient_and_holder_shares_must_total_full_bps() {
     create_with_fee_split(fee_recipients(), HOLDER_REWARDS_BPS - 1);
@@ -1899,6 +2093,12 @@ fun a_start_that_has_passed_opens_the_window_at_the_share() {
         COMMITMENT_ENDS_AT_MS,
         option::none()
     );
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidWindow, location = blast_presale::blast_presale)]
+fun a_start_whose_commitment_deadline_overflows_is_rejected() {
+    share_new_sale(std::u64::max_value!() - COMMITMENT_DURATION_MS + 1, COMMITMENT_STARTS_AT_MS);
 }
 
 #[test]
@@ -3241,6 +3441,98 @@ fun uncapped_commitments_reject_zero_quote() {
 }
 
 #[test]
+#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+fun a_migrated_sales_rates_cannot_change() {
+    let mut fixture = start_funded_sale();
+    fixture.migrate();
+
+    fixture.set_protocol_fees(vector[1_000, 0, 0, 0]);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+fun a_cancelled_sales_rates_cannot_change() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    fixture.set_time(COMMITMENT_ENDS_AT_MS);
+    fixture.settle(KEEPER);
+
+    fixture.set_protocol_fees(vector[1_000, 0, 0, 0]);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+fun an_open_sale_cannot_be_shared_again() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    let version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
+
+    fixture.next_tx!(ADMIN, |f| {
+        let sale = f.take_presale();
+        sale.share(&version, COMMITMENT_STARTS_AT_MS, &f.clock);
+    });
+
+    destroy(version);
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EAboveFeePolicy, location = blast_presale::blast_presale)]
+fun token_rate_cannot_exceed_its_policy_ceiling() {
+    propose_rates_under_zero_fee_policy(1, 0);
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EAboveFeePolicy, location = blast_presale::blast_presale)]
+fun meme_lp_rate_cannot_exceed_its_policy_ceiling() {
+    propose_rates_under_zero_fee_policy(0, 1);
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+fun a_funded_presale_cannot_settle_twice() {
+    let mut fixture = start_funded_sale();
+
+    fixture.settle(KEEPER);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+fun an_open_presale_cannot_be_cancelled_as_unlaunched() {
+    let mut fixture = start_sale(single_wallet_eligibility());
+    fixture.set_time(LIQUIDITY_DEADLINE_AT_MS);
+
+    fixture.cancel_unlaunched(KEEPER);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+fun a_funded_presale_cannot_destroy_its_creator_cap() {
+    let mut fixture = start_funded_sale();
+
+    fixture.destroy_cancelled_cap();
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EWalletCapExceeded, location = blast_presale::blast_presale)]
+fun one_wallet_cannot_overflow_its_commitment_before_the_aggregate_check() {
+    let mut fixture = start_sale(presale::open_eligibility(std::u64::max_value!(), 2, RAISE_TARGET / 2));
+    fixture.commit_open(ALICE, std::u64::max_value!());
+
+    fixture.commit_open(ALICE, 1);
+
+    abort
+}
+
+#[test]
 #[expected_failure(abort_code = presale::ETotalCommitmentOverflow, location = blast_presale::blast_presale)]
 fun aggregate_commitments_reject_u64_overflow_before_joining_quote() {
     let mut fixture = start_sale(presale::open_eligibility(std::u64::max_value!(), 2, RAISE_TARGET / 2));
@@ -3310,6 +3602,34 @@ fun bluefin_rejects_fee_above_max() {
 }
 
 // === Test Helpers ===
+
+fun propose_rates_under_zero_fee_policy(token_rate: u64, meme_lp_rate: u64) {
+    let mut ctx = tx_context::dummy();
+    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let clock = clock::create_for_testing(&mut ctx);
+    let (treasury_cap, mut currency) = new_currency(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let (mut sale, _cap) = new_presale<QUOTE>(
+        treasury_cap,
+        &mut currency,
+        valid_sale_terms(),
+        &creation_policy,
+        &fee_policy,
+        &mut ctx,
+    );
+    sale.set_protocol_fees(
+        &package_version,
+        &fee_admin(),
+        &fee_policy,
+        bps::new(0),
+        bps::new(token_rate),
+        bps::new(meme_lp_rate),
+        bps::new(0),
+        &clock,
+    );
+    abort
+}
 
 /// Starts a fee-free sale under `eligibility` with no raise allocations or uncapped phase.
 fun start_sale(eligibility: EligibilityPolicy): Fixture {

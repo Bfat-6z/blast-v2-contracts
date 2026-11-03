@@ -48,6 +48,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sui_types::{
     SUI_CLOCK_OBJECT_ID, SUI_COIN_REGISTRY_OBJECT_ID, SUI_FRAMEWORK_PACKAGE_ID, TypeTag,
     base_types::{ObjectID, SuiAddress},
+    coin_registry::{Currency, SupplyState},
     digests::TransactionDigest,
     effects::TransactionEffectsAPI,
     object::{MoveObject, OBJECT_START_VERSION, Object, Owner},
@@ -130,11 +131,94 @@ fn bluefin_with_sui_against_mainnet_bytecode() -> Result<()> {
     run(Case::Bluefin)
 }
 
-/// The whole lifecycle of one launch on `case`.
-fn run(case: Case) -> Result<()> {
-    let mut w = World::new(case)?;
-    w.report(format!("snapshot checkpoint {}", w.checkpoint));
-    let split = FeeSplit {
+#[test]
+fn bluefin_quote_larger_seed_fixes_quote() -> Result<()> {
+    let mut world = World::new(Case::Bluefin)?;
+    world.graduation_target = 3 * LP_MEME;
+    let launch = world.start_launch(&initial_split())?;
+    world.graduate(&launch)?;
+    let migration = world.migrate(&launch)?;
+    let vault = world.vault(&migration)?;
+    ensure!(vault.protocol_meme_residual > 0, "the venue did not need all of Meme");
+    ensure!(vault.protocol_quote_residual <= 1, "the venue used the fixed Quote side");
+    Ok(())
+}
+
+#[test]
+fn cetus_meme_a_partial_buybacks_burn_native_supply() -> Result<()> {
+    partial_buybacks_burn_native_supply(Case::CetusMemeA)
+}
+
+#[test]
+fn cetus_meme_b_partial_buybacks_burn_native_supply() -> Result<()> {
+    partial_buybacks_burn_native_supply(Case::CetusMemeB)
+}
+
+#[test]
+fn bluefin_partial_buybacks_burn_native_supply() -> Result<()> {
+    partial_buybacks_burn_native_supply(Case::Bluefin)
+}
+
+fn partial_buybacks_burn_native_supply(case: Case) -> Result<()> {
+    let mut world = World::new(case)?;
+    let launch = world.start_launch_with_supply(&initial_split(), true)?;
+    world.graduate(&launch)?;
+    let mut migration = world.migrate(&launch)?;
+    world.swap(&launch, &migration, Side::QuoteIn, 3 * case.quote_unit())?;
+    world.collect(&launch, &mut migration, None)?;
+
+    let supply = |world: &World| -> Result<u64> {
+        let currency: Currency = bcs::from_bytes(&world.h.contents(launch.currency))?;
+        match currency.supply {
+            Some(SupplyState::BurnOnly(value)) => Ok(value),
+            _ => bail!("expected a burn-only currency"),
+        }
+    };
+
+    for _ in 0..2 {
+        let mut expected_vault = world.vault(&migration)?;
+        let quote_in = expected_vault.burn_quote / 2;
+        ensure!(quote_in > 0, "the previous buyback left spendable Quote");
+        let supply_before = supply(&world)?;
+        let pt = world.buyback_pt(&launch, &migration, migration.pool, quote_in, 1)?;
+        let outcome = world.h.execute(pt)?;
+        outcome.assert_success();
+
+        let events: Vec<BuybackBurned> = world.events(&outcome, "BuybackBurned");
+        ensure!(events.len() == 1);
+        let burn = &events[0];
+        ensure!(burn.vault_id == migration.vault && burn.quote_spent == quote_in && burn.meme_burned > 0);
+        let (module, name) = if case.is_cetus() { ("pool", "SwapEvent") } else { ("events", "AssetSwap") };
+        let swaps: Vec<_> = outcome.events.iter()
+            .filter(|event| event.type_.module.as_str() == module && event.type_.name.as_str() == name)
+            .collect();
+        ensure!(swaps.len() == 1, "the buyback ran one venue swap");
+        // Decode the fixed prefix through amount_out from each pinned venue's swap event.
+        let payload = &swaps[0].contents;
+        let (pool, a_to_b, amount_in, amount_out) = if case.is_cetus() {
+            let (direction, pool, _, input, output): (bool, ObjectID, ObjectID, u64, u64) =
+                bcs::from_bytes(payload.get(..81).context("Cetus swap event prefix")?)?;
+            (pool, direction, input, output)
+        } else {
+            let (pool, direction, input, output): (ObjectID, bool, u64, u64) =
+                bcs::from_bytes(payload.get(..49).context("Bluefin swap event prefix")?)?;
+            (pool, direction, input, output)
+        };
+        ensure!(pool == migration.pool && a_to_b != case.meme_is_a(), "the swap bought Meme with Quote");
+        ensure!(amount_in == quote_in, "the venue spent exactly the requested Quote");
+        ensure!(burn.meme_burned == amount_out, "the entire venue output was burned");
+        expected_vault.burn_quote -= quote_in;
+        ensure!(burn.quote_pending == expected_vault.burn_quote);
+        ensure!(world.vault(&migration)? == expected_vault, "only the pending burn Quote changed");
+        ensure!(supply_before.checked_sub(supply(&world)?) == Some(burn.meme_burned), "Meme was removed from native supply");
+        ensure!(outcome.coins_created_for(&world.h, SuiAddress::ZERO).is_empty(), "no disposal transfer");
+    }
+
+    Ok(())
+}
+
+fn initial_split() -> FeeSplit {
+    FeeSplit {
         creator_bps: 2_500,
         auto_lp_bps: 2_000,
         rewards_bps: 1_000,
@@ -143,7 +227,14 @@ fn run(case: Case) -> Result<()> {
             Recipient { destination: RECIPIENT_A.into(), bps: 2_500 },
             Recipient { destination: RECIPIENT_B.into(), bps: 1_500 },
         ],
-    };
+    }
+}
+
+/// The whole lifecycle of one launch on `case`.
+fn run(case: Case) -> Result<()> {
+    let mut w = World::new(case)?;
+    w.report(format!("snapshot checkpoint {}", w.checkpoint));
+    let split = initial_split();
 
     let launch = w.start_launch(&split)?;
     w.graduate(&launch)?;
@@ -333,6 +424,7 @@ impl Collection {
 struct World {
     h: Harness,
     case: Case,
+    graduation_target: u64,
     checkpoint: u64,
     venue: BTreeMap<String, ObjectID>,
     admin: ObjectID,
@@ -448,6 +540,7 @@ impl World {
         let mut w = World {
             h,
             case,
+            graduation_target: 25 * case.quote_unit(),
             checkpoint,
             venue,
             admin,
@@ -630,15 +723,23 @@ impl World {
 
     /// Publishes one generated project and finalizes its currency. On the Meme-B route the Meme's
     /// type name must sort below USDC's, so projects are published until one does.
-    fn publish_ticket(&mut self) -> Result<(ObjectID, ObjectID, TypeTag)> {
+    fn publish_ticket(&mut self, burnable: bool) -> Result<(ObjectID, ObjectID, TypeTag)> {
         for _ in 0..16 {
             let (project_id, published) = self.h.publish(self.project.clone())?;
-            let meme = tag(&format!("{project_id}::token::TOKEN"));
+            let token = if burnable { "burnable_token::BURNABLE_TOKEN" } else { "token::TOKEN" };
+            let meme = tag(&format!("{project_id}::{token}"));
             if meme_is_cetus_a(&meme, &self.quote()) != self.case.meme_is_a() && self.case.is_cetus() {
                 continue;
             }
-            let ticket = published.created(&self.h, "launch_ticket", "LaunchTicket")[0];
-            let pending = published.created(&self.h, "coin_registry", "Currency")[0];
+            let created_for_meme = |module, name| -> Result<ObjectID> {
+                published.created(&self.h, module, name).into_iter().find(|id| {
+                    self.h.object(*id).data.try_as_move().is_some_and(|object| {
+                        object.type_().type_params().first().is_some_and(|coin| coin.as_ref() == &meme)
+                    })
+                }).with_context(|| format!("published {module}::{name} for {meme}"))
+            };
+            let ticket = created_for_meme("launch_ticket", "LaunchTicket")?;
+            let pending = created_for_meme("coin_registry", "Currency")?;
             let mut b = ProgrammableTransactionBuilder::new();
             let registry = self.shared(&mut b, SUI_COIN_REGISTRY_OBJECT_ID, true)?;
             let receiving = b.obj(ObjectArg::Receiving(self.h.object(pending).compute_object_reference()))?;
@@ -720,7 +821,7 @@ impl World {
     }
 
     fn target(&self) -> u64 {
-        25 * self.case.quote_unit()
+        self.graduation_target
     }
 
     fn lp_quote(&self) -> u64 {
@@ -730,7 +831,11 @@ impl World {
     /// Rejects tiers the venue would refuse, rolled back, then starts the launch at a valid tier
     /// and checks what it records.
     fn start_launch(&mut self, split: &FeeSplit) -> Result<Launch> {
-        let (ticket, currency, meme) = self.publish_ticket()?;
+        self.start_launch_with_supply(split, false)
+    }
+
+    fn start_launch_with_supply(&mut self, split: &FeeSplit, burnable: bool) -> Result<Launch> {
+        let (ticket, currency, meme) = self.publish_ticket(burnable)?;
         let owners = [self.h.sender];
         if self.case.is_cetus() {
             let watched = [ticket, currency, self.venue_config, self.venue("cetus_pools")];
@@ -2154,7 +2259,7 @@ struct Recipient {
 }
 
 /// Mirrors `blast_fun_migrators::vault::LpVault`; each `Balance` is one `u64`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 struct Vault {
     id: ObjectID,
     pool_id: ObjectID,

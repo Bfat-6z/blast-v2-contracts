@@ -1362,7 +1362,11 @@ fun vesting_terms_of(shares: &vector<RecipientShare>): vector<Option<VestingTerm
 /// prefix to require `Unregulated` instead. Recheck this layout when changing the Sui pin.
 /// Holding the TreasuryCap proves supply is still Some(Unknown); reject any other layout.
 fun assert_unregulated_currency<SaleToken>(currency: &Currency<SaleToken>) {
-    let mut bytes = sui::bcs::new(bcs::to_bytes(currency));
+    assert_unregulated_currency_bytes(bcs::to_bytes(currency));
+}
+
+fun assert_unregulated_currency_bytes(serialized: vector<u8>) {
+    let mut bytes = sui::bcs::new(serialized);
     bytes.peel_address(); // UID
     bytes.peel_u8(); // decimals
     bytes.peel_vec_u8(); // name
@@ -1750,6 +1754,11 @@ fun cancel<SaleToken, Quote>(self: &mut Presale<SaleToken, Quote>) {
 #[test_only]
 public fun assert_unregulated_currency_for_testing<SaleToken>(currency: &Currency<SaleToken>) {
     currency.assert_unregulated_currency();
+}
+
+#[test_only]
+public fun assert_unregulated_currency_bytes_for_testing(serialized: vector<u8>) {
+    assert_unregulated_currency_bytes(serialized);
 }
 
 #[test_only]

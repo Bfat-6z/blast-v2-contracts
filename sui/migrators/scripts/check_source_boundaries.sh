@@ -228,6 +228,7 @@ lp_fee_policy:public:fun schedule_protocol_destination( self: &mut LpFeePolicy, 
 merkle:package:fun leaf( vault: ID, round: u64, index: u64, beneficiary: address, meme: u64, quote: u64, ): vector<u8>
 merkle:package:fun verify( root: vector<u8>, mut digest: vector<u8>, mut index: u64, leaves: u64, proof: &vector<vector<u8>>, ): bool
 migration_math:package:fun auto_lp_fixed_side( sqrt_lower: u128, sqrt_price: u128, sqrt_upper: u128, amount_a: u64, amount_b: u64, ): (bool, u64)
+migration_math:package:fun seed_fixed_side( preferred: bool, available_a: u64, available_b: u64, needed_a: u64, needed_b: u64, ): bool
 migration_math:package:fun sqrt_price_x64( meme_amount: u64, quote_amount: u64, meme_is_coin_a: bool, ): u128
 package_admin:public:fun apply_upgrade_delay( self: &mut PackageAdmin, package_version: &PackageVersion, clock: &Clock )
 package_admin:public:fun authorize_upgrade( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock, ): UpgradeTicket
@@ -401,11 +402,11 @@ for module in $matrix_witness_modules; do
     fi
 done
 
-# Migration math is the venues' shared seed-price derivation and auto-LP side selection, and
+# Migration math is the venues' shared seed-price derivation and liquidity side selection, and
 # nothing else: pure package-only arithmetic.
 [[ "$(rg -o '^public\(package\) fun \w+' "$MIGRATION_MATH_SOURCE" | LC_ALL=C sort | tr '\n' ';')" \
-    == 'public(package) fun auto_lp_fixed_side;public(package) fun sqrt_price_x64;' ]] || \
-    fail "migration math must expose exactly its package-only seed price and auto-LP side selection"
+    == 'public(package) fun auto_lp_fixed_side;public(package) fun seed_fixed_side;public(package) fun sqrt_price_x64;' ]] || \
+    fail "migration math must expose exactly its package-only seed price and liquidity side selection"
 if rg -q '^public fun |^entry fun |^public entry fun ' "$MIGRATION_MATH_SOURCE"; then
     fail "migration math must not expose a public transaction or composition ABI"
 fi
@@ -428,6 +429,8 @@ math_body() {
     move_facts "$MIGRATION_MATH_SOURCE" | awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name { print $10 }' \
         | tr -d '[:space:]'
 }
+[[ "$(math_body seed_fixed_side)" == 'if(needed_a<=available_a&&needed_b<=available_b)preferredelse!preferred' ]] || \
+    fail "seed side selection must keep the preference only when both quoted requirements fit"
 [[ "$(constant_body auto_lp_margin)" == '2' ]] \
     && [[ "$(math_body auto_lp_fixed_side)" == 'if(sqrt_price<=sqrt_lower||sqrt_price>=sqrt_upper)return(true,0);let(lower,price,upper)=(sqrt_lowerasu256,sqrt_priceasu256,sqrt_upperasu256);if(can_fix_a(lower,price,upper,amount_a,amount_b))return(true,amount_a);if(can_fix_b(lower,price,upper,amount_a,amount_b))return(false,amount_b);(true,0)' ]] \
     && [[ "$(math_body can_fix_a)" == 'letone=1u256<<constants::q64_shift!();letliquidity=(amount_aasu256)*(price*upper/one)/(upper-price);if(liquidity==0||liquidity>=(1u256<<constants::q128_shift!()))returnfalse;letneeded_b=(liquidity*(price-lower)).div_ceil(one);needed_b+constants::auto_lp_margin!()<=(amount_basu256)' ]] \
@@ -950,7 +953,7 @@ bluefin_migrate_body="$(bluefin_body migrate)"
 # Bluefin's own liquidity math, at the position's bounds and the new pool's price, says the
 # preferred side would overdraw its partner; nearly equal amounts can do that by one atom.
 [[ "$(bluefin_body seed)" == 'letfix_meme=pool.is_meme_seed_side(position,meme.value(),quote.value());letfixed_amount=if(fix_meme)meme.value()elsequote.value();let(_,_,residual_meme,residual_quote)=pool::add_liquidity_with_fixed_amount(clock,bluefin_config,pool,position,meme,quote,fixed_amount,fix_meme);(residual_meme,residual_quote)' ]] \
-    && [[ "$(bluefin_body is_meme_seed_side)" == 'letprefer_meme=meme_amount>=quote_amount;let(_,needed_meme,needed_quote)=pool::get_liquidity_by_amount(position.lower_tick(),position.upper_tick(),pool.current_tick_index(),pool.current_sqrt_price(),if(prefer_meme)meme_amountelsequote_amount,prefer_meme);if(needed_meme<=meme_amount&&needed_quote<=quote_amount)prefer_memeelse!prefer_meme' ]] || \
+    && [[ "$(bluefin_body is_meme_seed_side)" == 'letprefer_meme=meme_amount>=quote_amount;let(_,needed_meme,needed_quote)=pool::get_liquidity_by_amount(position.lower_tick(),position.upper_tick(),pool.current_tick_index(),pool.current_sqrt_price(),if(prefer_meme)meme_amountelsequote_amount,prefer_meme);migration_math::seed_fixed_side(prefer_meme,meme_amount,quote_amount,needed_meme,needed_quote)' ]] || \
     fail "Bluefin migrate must fix the larger side, Meme on a tie, unless Bluefin's own math says it overdraws the other side"
 # Both fee exits settle through one helper: collect the position's fees, split them through the
 # vault, and add the auto-LP share back. Application checks the stored proposal readiness first
@@ -1074,7 +1077,7 @@ pair_proof='letmeme_is_a=is_meme_coin_a<Meme,Quote,CoinA,CoinB>();'
         'launch.burn_into_vault(burn_manager,position,residual_meme,residual_quote,ctx);' \
         <<<"$(cetus_body migrate)" \
     && [[ "$(cetus_body migrate)" == *'ctx);' ]] \
-    && [[ "$(cetus_body is_coin_a_seed_side)" == 'let(amount_a,amount_b)=if(meme_is_a)(meme_amount,quote_amount)else(quote_amount,meme_amount);letprefer_a=(meme_amount>=quote_amount)==meme_is_a;let(_,needed_a,needed_b)=clmm_math::get_liquidity_by_amount(i32::from_u32(tick_lower),i32::from_u32(tick_upper),i32::zero(),sqrt_price,if(prefer_a)amount_aelseamount_b,prefer_a);if(needed_a<=amount_a&&needed_b<=amount_b)prefer_aelse!prefer_a' ]] || \
+    && [[ "$(cetus_body is_coin_a_seed_side)" == 'let(amount_a,amount_b)=if(meme_is_a)(meme_amount,quote_amount)else(quote_amount,meme_amount);letprefer_a=(meme_amount>=quote_amount)==meme_is_a;let(_,needed_a,needed_b)=clmm_math::get_liquidity_by_amount(i32::from_u32(tick_lower),i32::from_u32(tick_upper),i32::zero(),sqrt_price,if(prefer_a)amount_aelseamount_b,prefer_a);migration_math::seed_fixed_side(prefer_a,amount_a,amount_b,needed_a,needed_b)' ]] || \
     fail "cetus::migrate must check the generation, Cetus's coin order, and the pair first, then create the pool in that order with the reserved cap at the launch's tick spacing, fix the larger side (Meme on a tie) unless Cetus's own math says it overdraws the other, and burn into a vault"
 [[ "$(cetus_body settle_fees)" == 'let(meme_fee,quote_fee)=self.collect_position_fees(cetus_config,burn_manager,pool,meme_is_a,ctx);self.split_fees(policy,currency,meme_fee,quote_fee,ctx);self.compound(cetus_config,pool,meme_is_a,clock,ctx);' ]] \
     && [[ "$(cetus_body collect_fees)" == "migrators_version.assert_current();${pair_proof}self.settle_fees(policy,currency,cetus_config,burn_manager,pool,meme_is_a,clock,ctx);" ]] || \

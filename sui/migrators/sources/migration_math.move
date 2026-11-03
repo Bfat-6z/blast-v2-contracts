@@ -18,6 +18,17 @@ public(package) fun sqrt_price_x64(
     integer_sqrt(ratio_q128(meme_amount, quote_amount, meme_is_coin_a))
 }
 
+/// Keeps the preferred seed side if the venue's rounded requirements fit both balances.
+public(package) fun seed_fixed_side(
+    preferred: bool,
+    available_a: u64,
+    available_b: u64,
+    needed_a: u64,
+    needed_b: u64,
+): bool {
+    if (needed_a <= available_a && needed_b <= available_b) preferred else !preferred
+}
+
 /// Chooses the side a fixed-amount liquidity add fixes so the venue never needs more of the other
 /// asset than is available, from the pool's and the position's bound sqrt prices (Q64.64).
 ///
