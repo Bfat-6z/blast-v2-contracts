@@ -116,7 +116,7 @@ fun an_admin_without_the_presale_role_cannot_sign_in_to_it() {
     abort_code = blast_admin::errors::EAdminRoleNotGranted,
     location = blast_admin::blast_acl,
 )]
-fun a_rewards_operator_cannot_authorize_round_publication() {
+fun a_rewards_operator_cannot_authorize_treasury_governance() {
     let mut fixture = start();
     fixture.grant<RewardsAdmin>();
     let _: AdminWitness<RewardsAdmin> = fixture.acl.sign_in(&fixture.admin_cap);

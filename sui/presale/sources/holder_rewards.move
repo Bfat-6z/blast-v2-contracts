@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Merkle rounds Blast's treasury administrator funds from a migrated presale
+/// Merkle rounds Blast's rewards administrator funds from a migrated presale
 /// vault's holder-reward fee share.
 module blast_presale::holder_rewards;
 
@@ -32,7 +32,7 @@ public struct Round<phantom Meme, phantom Quote> has key {
 public fun publish_round<Meme, Quote>(
     vault: &mut Vault<Meme, Quote>,
     package_version: &PackageVersion,
-    _: &AdminWitness<TreasuryAdmin>,
+    _: &AdminWitness<RewardsAdmin>,
     fee_policy: &FeePolicy,
     expected_treasury: address,
     number: u64,
@@ -467,7 +467,7 @@ use blast_admin::blast_acl::AdminWitness;
 
 use blast_presale::{
     blast_presale,
-    blast_presale_domain::{RewardsAdmin, TreasuryAdmin},
+    blast_presale_domain::RewardsAdmin,
     blast_presale_package::PackageVersion,
     fee_policy::FeePolicy,
     merkle_tree,
