@@ -35,8 +35,8 @@ operations; ordinary ACL operations configure policy before the chosen delay and
    `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
    unchanged at compatible (`0`). Record the newly shared `PackageVersion` from
    these finalization effects; its initial pause mask must be 11. Verify zero notice
-   on publication-owned policy and upgrade custody. Publication must be deleted and never available again. From the publish effects, record the
-   shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
+   on publication-owned policy and 48 hours on upgrade custody. Verify that wrapping
+   consumed the Publication. From the publish effects, record the shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
 5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
    (`blast_acl::grant_role` with each `blast_presale_domain` type) to the
    operations multisig's `AdminCap`, minting one with `blast_acl::grant_admin`
@@ -56,9 +56,8 @@ operations; ordinary ACL operations configure policy before the chosen delay and
    At zero delay scheduling and application can share a PTB. Zero fees are valid;
    verify destinations, rates and route admission. Apply or cancel every outstanding
    zero-delay proposal. Use each operation’s role to schedule/apply its intended next
-   notice
-   (172,800,000 ms = 48 hours for the R2 rollout), including an UpgradeAdmin
-   policy-only proposal for upgrade custody, and read each notice back. Then grant
+   notice (172,800,000 ms = 48 hours for the R2 rollout) and read each notice
+   back. Verify the initial 48-hour upgrade notice separately. Then grant
    UnpauseAdmin and clear the selected bits (all = 11). Unpause is immediate and
    needs no Clock. Later changes snapshot the applied delay; delay-policy changes
    themselves wait the old delay. Pausing never resets it.

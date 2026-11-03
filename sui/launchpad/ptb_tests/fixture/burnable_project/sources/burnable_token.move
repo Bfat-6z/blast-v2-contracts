@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 /// Generated Meme with a burn-only supply for the real venue buyback tests.
-module ptb_project::burnable_token;
+module ptb_burnable_project::burnable_token;
 
 // === Public Types ===
 

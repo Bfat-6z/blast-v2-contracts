@@ -285,7 +285,7 @@ pub fn is_delayed_module(module: &str) -> bool {
 }
 
 /// Mirrors `blast_admin::delayed::Proposal<T>`.
-#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct Proposal<T> {
     pub value: T,
     pub delay_ms: u64,
@@ -293,14 +293,14 @@ pub struct Proposal<T> {
 }
 
 /// Mirrors `blast_admin::delayed_action::Change<A>`.
-#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub enum Change<A> {
     Action(A),
     Delay,
 }
 
 /// Mirrors `blast_admin::delayed::Delayed<K, T>`.
-#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct Delayed<T> {
     pub owner: ObjectID,
     pub key: bool,
@@ -331,7 +331,7 @@ pub struct DelayedSet<E> {
 pub type RuntimeConfigContents = (ObjectID, DelayedSet<Vec<u8>>, Delayed<u64>, Delayed<SuiAddress>);
 
 /// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
-#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct DelayedAction<A> {
     pub owner: ObjectID,
     pub key: bool,
@@ -341,7 +341,7 @@ pub struct DelayedAction<A> {
 
 /// Mirrors `blast_fun_migrators::vault::RoundTerms` and `blast_presale::presale_vault::RoundTerms`,
 /// the terms a vault's round-publication slot holds until anyone publishes the round.
-#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct RoundTerms {
     pub number: u64,
     pub start_checkpoint: u64,
