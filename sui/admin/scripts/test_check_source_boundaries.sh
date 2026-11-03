@@ -152,13 +152,29 @@ edit \
   "$case_dir/sources/blast_acl.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case untimelocked_nominee)"
-edit 's/^    pending_super_admin: Timelocked<Option<address>>,$/    pending_super_admin: Option<address>,/' \
+case_dir="$(new_case undelayed_nominee)"
+edit 's/^    super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,$/    super_admin_transfer: Option<address>,/' \
   "$case_dir/sources/blast_acl.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case wrong_timelock_path)"
-edit 's|local = "../timelock"|local = "../vesting"|' "$case_dir/Move.toml"
+case_dir="$(new_case changeable_root_transfer_delay)"
+printf '\nfun rogue(self: &mut ACL, clock: &Clock) { self.super_admin_transfer.schedule_delay(0, clock); }\n' \
+  >> "$case_dir/sources/blast_acl.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case extra_dependency)"
+awk '{ print } /^\[dependencies\]$/ { print "blast_fun_timelock = { local = \"../timelock\" }" }' \
+  "$case_dir/Move.toml" > "$case_dir/Move.toml.next"
+mv "$case_dir/Move.toml.next" "$case_dir/Move.toml"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case map_immediate_setter)"
+printf '\npublic fun force_value(self: &mut u64) { *self = 0; }\n' >> "$case_dir/sources/delayed_map.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case delayed_immediate_setter)"
+printf '\npublic fun set_value<K: copy + drop + store, T: copy + drop + store>(self: &mut Delayed<K, T>, value: T) { self.value = value; }\n' \
+  >> "$case_dir/sources/delayed.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case domain_typed_acl)"

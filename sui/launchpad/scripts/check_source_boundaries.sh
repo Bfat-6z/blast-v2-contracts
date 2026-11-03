@@ -423,6 +423,8 @@ fi
 package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/package_admin.move)"
 
 # Custody scheduling, exact action matching, and cancellation are checked by check_admin_delay.py.
+# The upgrade operation stores the primitive's one-shot action slot: no separate notice or
+# proposal field, and no notice-only placeholder action.
 
 # Every governed custody transition asserts the current generation first, before
 # it reaches the shared custody value. Commit-and-advance is the post-upgrade
@@ -431,7 +433,11 @@ package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # would end upgradeability silently.
 # Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
 if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); transfer::share_object(PackageAdmin { id, custody, delay_ms: 0, pending: option::none() }); generation.share_version(ctx);' ]] \
+    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); let upgrade = delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS); transfer::share_object(PackageAdmin { id, custody, upgrade }); generation.share_version(ctx);' ]] \
+  || [[ "$(move_production_type PackageAdmin <<<"$(move_facts sources/package_admin.move)")" \
+    != 'struct PackageAdmin has key { id: UID, custody: UpgradeCustody<BLAST_FUN>, upgrade: DelayedAction<UpgradeKey, UpgradeAction>, }' ]] \
+  || [[ "$(move_production_type UpgradeAction <<<"$(move_facts sources/package_admin.move)")" \
+    != 'enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable, }' ]] \
   || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 7 ]] \
   || [[ "$(move_facts sources/package_admin.move \
     | awk -F'\t' '$1 == "FN" && $2 == "commit_upgrade_and_advance" { print $10 }')" \
@@ -750,18 +756,20 @@ runtime_config_source="$(move_normalized_source <<<"$runtime_config_facts")"
 events_facts="$(move_facts sources/lib/events.move)"
 
 runtime_config_mutation_event_payloads="$(awk -F'\t' '
-  $1 == "TYPE" && $5 == 0 \
-    && ($2 == "ProtocolFeeShareChanged" || $2 == "CreatorClaimSignerSet" || $2 == "TreasuryChanged") {
-      print $8
-    }
+  $1 == "TYPE" && $5 == 0 && $2 == "CreatorClaimSignerSet" { print $8 }
 ' <<<"$events_facts")"
 
-if [[ "$(wc -l <<<"$runtime_config_mutation_event_payloads")" != 3 ]] \
+# The immediate signer has its own typed replay fact. Each delayed setting stores the primitive
+# keyed by its own operation, whose lifecycle events replace any consumer copy.
+if [[ "$(wc -l <<<"$runtime_config_mutation_event_payloads")" != 1 ]] \
   || rg -q '\b(sequence|schema_version|action_tag|nonce)\b' \
     <<<"$runtime_config_mutation_event_payloads" \
   || rg -q '\bruntime_config_id\b' <<<"$runtime_config_mutation_event_payloads" \
-  || rg -q '\bRuntimeConfigCreated\b' <<<"$events_facts"; then
-  echo 'Runtime-config creation must stay eventless and every mutation must emit unswapped typed replay facts without repeated singleton, ordering, or schema fields.' >&2
+  || rg -q '\b(RuntimeConfigCreated|ProtocolFeeShare[A-Z]\w*|Treasury(Scheduled|Changed|Cancelled))\b' <<<"$events_facts" \
+  || ! rg -Fq 'protocol_fee_share_bps: Delayed<ProtocolFeeShareKey, Bps>,' sources/runtime_config.move \
+  || ! rg -Fq 'treasury: Delayed<TreasuryKey, address>,' sources/runtime_config.move \
+  || rg -n 'events::' <<<"$(move_production_body new <<<"$runtime_config_facts")"; then
+  echo 'Runtime-config creation must emit no consumer event; the signer emits its typed replay fact and each delayed setting stores the primitive keyed by its own operation.' >&2
   failures=$((failures + 1))
 fi
 
@@ -785,14 +793,16 @@ launch_config_source="$(move_normalized_source <<<"$launch_config_facts")"
 launch_config_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/launch_config.move)"
 
 # Blast's allocation starts at the map's 250/150 BPS and may change only for future launches while
-# leaving room for the curve and the pool.
+# leaving room for the curve and the pool. Every delayed policy, adapter admission included, stores
+# the primitive keyed by its own operation.
 if [[ ! -f sources/launch_config.move ]] \
   || [[ "$(move_production_function_contract schedule_protocol_allocation <<<"$launch_config_facts")" != 'public:0:0:fun schedule_protocol_allocation( self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<TreasuryAdmin>,'* ]] \
-  || ! rg -Fq 'protocol_allocation: Delayed<ProtocolAllocation>,' sources/launch_config.move \
+  || [[ "$(move_production_type LaunchConfig <<<"$launch_config_facts")" \
+    != 'struct LaunchConfig has key { id: UID, meme_decimals: VecSet<u8>, quotes: Table<TypeName, bool>, trade_fees: Delayed<TradeFeesKey, TradeFees>, migration_witnesses: DelayedSet<MigrationWitnessKey, TypeName>, protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>, creation_fee: Delayed<CreationFeeKey, u64>, }' ]] \
   || rg -Fq 'protocol_allocation: Option<' sources/launch_config.move \
   || ! rg -Fq 'meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999' <<<"$launch_config_source" \
-  || ! rg -Fq 'value != self.protocol_allocation.value()' <<<"$launch_config_source" \
-  || ! rg -Fq 'protocol_allocation: delayed::new(protocol_allocation, delay_ms)' <<<"$launch_config_source" \
+  || ! rg -Fq 'self.protocol_allocation.schedule(value, delay_ms, clock);' <<<"$launch_config_source" \
+  || ! rg -Fq 'protocol_allocation: delayed::new(ProtocolAllocationKey(), &id, protocol_allocation, delay_ms)' <<<"$launch_config_source" \
   || ! rg -Fq 'allocation::protocol_allocation(bps::new(250), bps::new(150))' <<<"$(move_production_body init <<<"$launch_config_facts")" \
   || rg -n '\b(set_graduation_defaults|GraduationDefaultsChanged|protocol_(quote_migration|meme_graduation)_fee_bps|meme_liquidity_provision_bps|QuoteParameters|QuoteParametersChanged|min_graduation_target|max_graduation_target)\b' \
     sources/launch_config.move sources/lib/events.move \
@@ -853,13 +863,16 @@ if ! rg -U -q \
   failures=$((failures + 1))
 fi
 
-protocol_allocation_event_payload="$(sed -n -e '/^public struct ProtocolAllocationSet/,/^}/p' sources/lib/events.move)"
+# The allocation's replay fact is the primitive's keyed lifecycle event, whose value is the
+# allocation itself; no consumer copy may restate it.
+protocol_allocation_payload="$(sed -n -e '/^public struct ProtocolAllocation has/,/^}/p' sources/allocation.move)"
 
-if [[ -z "$protocol_allocation_event_payload" ]] \
-  || ! rg -q '^[[:space:]]+meme_bps: u64,' <<<"$protocol_allocation_event_payload" \
-  || ! rg -q '^[[:space:]]+quote_bps: u64,' <<<"$protocol_allocation_event_payload" \
-  || rg -n '\b(destination|config_id|sequence|schema_version|action_tag|nonce)\b' <<<"$protocol_allocation_event_payload"; then
-  echo 'The Blast migration-fee allocation policy must emit its complete primitive replay fact without singleton or ordering noise.' >&2
+if [[ -z "$protocol_allocation_payload" ]] \
+  || ! rg -q '^[[:space:]]+meme_bps: Bps,' <<<"$protocol_allocation_payload" \
+  || ! rg -q '^[[:space:]]+quote_bps: Bps,' <<<"$protocol_allocation_payload" \
+  || [[ "$(rg -c ':' <<<"$protocol_allocation_payload")" != 2 ]] \
+  || rg -n '^public struct ProtocolAllocation\w*' sources/lib/events.move; then
+  echo 'The Blast migration-fee allocation must be replayed only from its keyed primitive events, whose value carries both shares without singleton or ordering noise.' >&2
   failures=$((failures + 1))
 fi
 
@@ -1012,7 +1025,8 @@ if [[ ! -f sources/launch.move ]] \
     'Launch {' \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
-  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), metadata_cap_delay_ms: DEFAULT_CAP_REASSIGNMENT_DELAY_MS, pending_metadata_cap_recipient: option::none(), curve_fee_cap_delay_ms: DEFAULT_CAP_REASSIGNMENT_DELAY_MS, pending_curve_fee_cap_recipient: option::none(), curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
+  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, metadata_cap_reassignment, curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
+  || [[ "$launch_finalize_body" != *'let id = object::new(ctx); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
   || [[ "$launch_finalize_body" != *'fee_ledger: fees::new(creation_fee),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \
@@ -1046,10 +1060,10 @@ launch_authority_violations=''
 # record authority, claim from either ledger owner, retire the pending claim, reach the native
 # MetadataCap, or transfer value outside the approved paths (ADR 0082).
 for authority_spec in \
-  'self.curve_fee_cap_id = |apply_curve_fee_cap_update claim_creator_caps ' \
-  'self.blast_metadata_cap_id = |apply_metadata_cap_update claim_creator_caps ' \
+  'self.curve_fee_cap_id = |apply_curve_fee_cap_reassignment claim_creator_caps ' \
+  'self.blast_metadata_cap_id = |apply_metadata_cap_reassignment claim_creator_caps ' \
   'self.creator.extract()|claim_creator_caps ' \
-  'self.creator = |apply_curve_fee_cap_update apply_metadata_cap_update ' \
+  'self.creator = |apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment ' \
   'self.fee_ledger.claim_creator_fees(|claim_creator_fees ' \
   'self.fee_ledger.claim_protocol_fees(|claim_protocol_fees claim_protocol_fees_with_partner ' \
   'partner.pay(|claim_protocol_fees_with_partner ' \
@@ -1059,7 +1073,7 @@ for authority_spec in \
   'self.assert_curve_fee_cap(|claim_creator_fees ' \
   'self.assert_metadata_update(|set_description set_icon_url set_name ' \
   '&self.metadata_cap|set_description set_icon_url set_name ' \
-  'transfer::public_transfer(|apply_curve_fee_cap_update apply_metadata_cap_update migrate pay pay_treasury ' \
+  'transfer::public_transfer(|apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment migrate pay pay_treasury ' \
   '.opening_round_meme.pay(|deliver_opening_round ' \
   '.opening_round_quote.pay(|deliver_opening_round ' \
   '.allocated_meme.pay(|migrate ' \
@@ -1072,6 +1086,15 @@ for authority_spec in \
     launch_authority_violations+="  '${authority_needle}' is used by '${authority_actual}' instead of '${authority_expected}'"$'\n'
   fi
 done
+# Each creator-cap reassignment stores the primitive's one-shot action slot, whose action is the
+# recipient; only the ready action reaches the reassignment that records new authority.
+if ! rg -Fq 'curve_fee_cap_reassignment: DelayedAction<CurveFeeCapReassignment, address>,' sources/launch.move \
+  || ! rg -Fq 'metadata_cap_reassignment: DelayedAction<MetadataCapReassignment, address>,' sources/launch.move \
+  || rg -n '\b(cap_delay_ms|pending_(curve_fee|metadata)_cap_recipient|apply_cap_reassignment_delay)\b' sources/launch.move \
+  || [[ "$(launch_functions_containing 'self.curve_fee_cap_reassignment.take_action(clock)')" != 'apply_curve_fee_cap_reassignment ' ]] \
+  || [[ "$(launch_functions_containing 'self.metadata_cap_reassignment.take_action(clock)')" != 'apply_metadata_cap_reassignment ' ]]; then
+  launch_authority_violations+='  creator-cap reassignments must store the primitive action slot and take its ready recipient only on reassignment'$'\n'
+fi
 # The package-only cap constructors are reached only from the owning module and the launch that
 # records the resulting authority; only the launch claims from the ledger.
 if [[ "$(rg -l '\bnew_curve_fee_cap\b' sources | sort | tr '\n' ' ')" \
@@ -1261,7 +1284,7 @@ receiver_syntax_violations="$(
       | move_normalized_source \
       | sed 's/ *:: */::/g; s/ *(/(/g' \
       | rg -o \
-        '\b(blast_acl::(grant_admin|revoke_admin|destroy_admin_cap|begin_super_admin_transfer|cancel_super_admin_transfer|accept_super_admin_transfer|destroy_retired_super_admin_cap|sign_in)|runtime_config::((schedule|apply|cancel)_(creator_claim_signer|protocol_fee_share|treasury)|revoke_creator_claim_signer|creator_claim_signer|protocol_fee_share|treasury)|launch_config::(set_meme_decimals_allowed|set_quote_allowed|(schedule|apply|cancel)_(trade_fees|protocol_allocation|migration_witness|creation_fee)|remove_migration_witness|snapshot_for_launch|protocol_allocation|allowed_meme_decimals_count_for_testing|allowed_quote_count_for_testing|allowed_migration_witness_count_for_testing)|allocation::(recipients|apportion_fee_split|add_protocol|apportion_meme|apportion_quote|destinations|destination)|launch::(treasury_cap_mut|set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_protection|finalize|share|pool_tier|lp_fee_split|partner_id|claim_creator_caps|apply_curve_fee_cap_update|apply_metadata_cap_update|assert_curve_fee_cap|set_name|set_description|set_icon_url)|launch_ticket::(destroy|treasury_cap_mut|decimals)|fees::(accrue|claim_creator_fees|claim_protocol_fees)|package::test_upgrade|package_admin::(authorize_upgrade|commit_upgrade|publisher_id_for_testing|upgrade_cap_id_for_testing|package_id_for_testing|version_for_testing|policy_for_testing))(<[^>]+>)?\(' \
+        '\b(blast_acl::(grant_admin|revoke_admin|destroy_admin_cap|begin_super_admin_transfer|cancel_super_admin_transfer|accept_super_admin_transfer|destroy_retired_super_admin_cap|sign_in)|runtime_config::((schedule|apply|cancel)_(creator_claim_signer|protocol_fee_share|treasury)|revoke_creator_claim_signer|creator_claim_signer|protocol_fee_share|treasury)|launch_config::(set_meme_decimals_allowed|set_quote_allowed|(schedule|apply|cancel)_(trade_fees|protocol_allocation|migration_witness|creation_fee)|remove_migration_witness|snapshot_for_launch|protocol_allocation|allowed_meme_decimals_count_for_testing|allowed_quote_count_for_testing|allowed_migration_witness_count_for_testing)|allocation::(recipients|apportion_fee_split|add_protocol|apportion_meme|apportion_quote|destinations|destination)|launch::(treasury_cap_mut|set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_protection|finalize|share|pool_tier|lp_fee_split|partner_id|claim_creator_caps|apply_curve_fee_cap_(reassignment|delay)|apply_metadata_cap_(reassignment|delay)|assert_curve_fee_cap|set_name|set_description|set_icon_url)|launch_ticket::(destroy|treasury_cap_mut|decimals)|fees::(accrue|claim_creator_fees|claim_protocol_fees)|package::test_upgrade|package_admin::(authorize_upgrade|commit_upgrade|publisher_id_for_testing|upgrade_cap_id_for_testing|package_id_for_testing|version_for_testing|policy_for_testing))(<[^>]+>)?\(' \
       || true; } | sed "s|^|  ${move_file}: |"
   done
 )"
@@ -1435,6 +1458,7 @@ fi
 # T-013: each success event in the replay schema is emitted only after the state write or native
 # transfer it records, inside its writer's own production body. Only order anchors are pinned:
 # the written field, the called operation, or the constructed type, never a local or argument name.
+# Delayed settings have no consumer success event: the primitive emits after its own write.
 events_follow_mutations() {
   local file="$1" function="$2"
   shift 2
@@ -1449,10 +1473,10 @@ if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'eve
     'self.fee_ledger.claim_protocol_fees(' 'events::protocol_fees_claimed(' \
   || ! events_follow_mutations sources/launch.move claim_protocol_fees_with_partner \
     'self.fee_ledger.claim_protocol_fees(' 'events::protocol_fees_claimed(' \
-  || ! events_follow_mutations sources/runtime_config.move apply_treasury \
-    'self.treasury.apply(clock)' 'events::treasury_changed(' \
-  || ! events_follow_mutations sources/launch_config.move apply_creation_fee \
-    'self.creation_fee.apply(clock)' 'events::creation_fee_changed(' \
+  || ! events_follow_mutations sources/launch.move apply_curve_fee_cap_reassignment \
+    'self.curve_fee_cap_id = option::some(' 'transfer::public_transfer(' 'events::curve_fee_cap_reassigned(' \
+  || ! events_follow_mutations sources/launch.move apply_metadata_cap_reassignment \
+    'self.blast_metadata_cap_id = option::some(' 'transfer::public_transfer(' 'events::metadata_cap_reassigned(' \
   || ! events_follow_mutations sources/launch_config.move add_partner \
     '.add_dynamic_field(' 'events::partner_added(' \
   || ! events_follow_mutations sources/launch_config.move remove_partner \
@@ -1479,9 +1503,7 @@ if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'eve
     'self.fee_ledger.accrue_protocol_fees(' \
     'events::protocol_fees_accrued(' \
     'currency.burn_balance(' \
-    'events::migrated(' \
-  || ! events_follow_mutations sources/launch_config.move apply_protocol_allocation \
-    'self.protocol_allocation.apply(clock)' 'events::protocol_allocation_set('; then
+    'events::migrated('; then
   echo 'Every replay-schema success event must follow the state write or native transfer it records.' >&2
   failures=$((failures + 1))
 fi

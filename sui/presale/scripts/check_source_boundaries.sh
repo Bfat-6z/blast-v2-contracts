@@ -124,4 +124,25 @@ aftermath_finalize_body="$(sed -n '/^public fun finalize</,/^}/p' <<<"$aftermath
   && rg -q '^    let FinalizeTicket\(\) = ticket;$' <<<"$aftermath_finalize_body" \
   || fail "aftermath::FinalizeTicket is constructed only by new and consumed only by finalize."
 
+# 8. Every delayed operation stores blast_admin's primitive under a key its owning module declares,
+#    so only that module can create or drive it and the primitive alone records its lifecycle.
+require_field() {
+  grep -Fqx "    $2" "$sources/$1.move" || fail "$1 must store ${2%,}."
+  grep -Eq "^public struct $3\(\) has copy, drop, store;$" "$sources/$1.move" \
+    || fail "$1 must declare its delayed-operation key $3."
+}
+require_field fee_policy 'destination: Delayed<DestinationKey, address>,' DestinationKey
+require_field fee_policy 'fees: Delayed<FeesKey, ProtocolFees>,' FeesKey
+require_field presale_vault 'fee_split: Delayed<FeeSplitKey, FeeSplit>,' FeeSplitKey
+require_field presale_vault 'protocol_fees: Delayed<ProtocolLpFeesKey, ProtocolFees>,' ProtocolLpFeesKey
+require_field package_admin 'upgrade: DelayedAction<UpgradeKey, UpgradeAction>,' UpgradeKey
+require_field creation_policy 'migration_witnesses: DelayedSet<MigrationWitnessKey, TypeName>,' MigrationWitnessKey
+if rg -n '\b(Pending|new_pending|take_ready|witness_delay_ms|pending_witness\w*|DelayOnly)\b|self\.(delay_ms|pending)\b' "$sources"/{fee_policy,presale_vault,package_admin,creation_policy}.move; then
+  fail "Delayed operations keep no notice or proposal outside blast_admin's primitive."
+fi
+if rg -n '^public struct \w*(Scheduled|Cancelled|Changed|DelayChanged|WitnessSet)\b' \
+  "$sources"/{fee_policy,presale_vault,package_admin,creation_policy}.move; then
+  fail "The delayed primitive alone emits schedule, cancel and apply events."
+fi
+
 printf 'blast_presale source boundaries hold.\n'

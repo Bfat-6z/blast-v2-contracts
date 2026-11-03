@@ -123,7 +123,7 @@ Pending --share--> Open --settle (total >= raise)--> Funded --migrate--> Migrate
 | State | Exists | Allows |
 | --- | --- | --- |
 | `Pending` | Only inside the creation PTB, between `finalize` and `share` | `blast_presale::blast_presale::set_protocol_fees` (admin, when the creation PTB also signs in as `FeeAdmin`), `blast_presale::blast_presale::share` |
-| `Open` | From `share` until `settle` | Before `start_ms`: `blast_presale::blast_presale::set_protocol_fees` (admin). From `start_ms` until `end_ms`: commits. From `end_ms`, or earlier once the raise is full under a hard cap that closes the sale when filled: `blast_presale::blast_presale::settle` |
+| `Open` | From `share` until `settle` | Before `start_ms`: `blast_presale::blast_presale::set_protocol_fees` (admin), which may only keep or lower each rate. From `start_ms` until `end_ms`: commits. From `end_ms`, or earlier once the raise is full under a hard cap that closes the sale when filled: `blast_presale::blast_presale::settle` |
 | `Funded` | After a settle that met the raise | Migration at any time; `blast_presale::blast_presale::cancel_unlaunched` from the LP deadline |
 | `Migrated` | After migration | `blast_presale::blast_presale::claim` (tokens + overflow refund), `blast_presale::blast_presale::pay_protocol_fees_with_partner` once on a partnered sale |
 | `Cancelled` | After an underfunded settle or `cancel_unlaunched` | `blast_presale::blast_presale::claim` (full refund), `blast_presale::blast_presale::destroy_cap` |
@@ -146,8 +146,8 @@ wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
-   role to schedule and apply its intended value and next notice. Use UpgradeAdmin's
-   policy-only upgrade proposal to enable upgrade notice without a code change.
+   role to schedule and apply its intended value and next notice. Upgrade custody
+   already holds its 48-hour notice from publication.
    Read back every operation's notice and configured value before release.
 5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11). Unpause is immediate.
 
@@ -670,12 +670,12 @@ Integrators cannot call these; they explain state changes. Each takes the
 
 | Call | Effect |
 | --- | --- |
-| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise rate < 10,000 BPS; token rate <= 9,998. Application emits `fee_policy::FeesChanged`. |
-| `fee_policy::schedule_destination` | Redirects every later Blast payout, existing sales included. Application emits `fee_policy::DestinationChanged`. |
-| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), or while `Open` and before `start_ms`. Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
-| `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Application emits `presale_vault::ProtocolLpFeesChanged`. |
+| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise rate < 10,000 BPS; token rate <= 9,998. Application emits `delayed::DelayedApplied<fee_policy::FeesKey, fee_policy::ProtocolFees>`. |
+| `fee_policy::schedule_destination` | Redirects every later Blast payout, existing sales included; rejects `0x0`. Application emits `delayed::DelayedApplied<fee_policy::DestinationKey, address>`. |
+| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`EProtocolFeesIncreased` otherwise). Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
+| `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Application emits `delayed::DelayedApplied<presale_vault::ProtocolLpFeesKey, fee_policy::ProtocolFees>`. |
 | `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `creation_policy::QuoteSet`. |
-| `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `creation_policy::MigrationWitnessSet`; `remove_migration_witness` removes immediately and cancels pending admission. |
+| `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `delayed_set::SetApplied<creation_policy::MigrationWitnessKey, TypeName>`; `remove_migration_witness` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted witness) and cancels pending admission. |
 | `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `creation_policy::PartnerAdded`. |
 | `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `creation_policy::PartnerRemoved`. |
 | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` | See above. |
@@ -697,9 +697,38 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 `CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
-later schedules check their own timestamp addition too. Scheduled events include the
-proposed next delay for value/policy replacements, or the unchanged applied notice
-for action-only proposals. Read the live notice before relying on a cancellation window.
+later schedules check their own timestamp addition too. A value proposal that changes neither
+value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 20
+(`EUnchanged`) from Blast admin's `delayed` module (`delayed_action` for the upgrade notice,
+`delayed_set` for the admission notice).
+Read the live notice before relying on a cancellation window.
+
+Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, the
+`delayed_action::DelayedAction` upgrade slot, or the `delayed_set::DelayedSet` of adapters. The
+module of each type emits every schedule, cancel and apply event; the presale package emits none
+of its own. The events are generic in the operation's key and value type and carry `owner` (the
+ID of the object that stores the field) and `key`. A value schedule emits
+`delayed::DelayedScheduled` (after `delayed::DelayedCancelled` for a replaced proposal), a cancel
+emits `delayed::DelayedCancelled`, and an application emits `delayed::DelayedApplied` with the
+previous and new value and the applied notice. Creating a setting emits
+`delayed::DelayedCreated` (so creating a vault emits it for the vault's two fields), the upgrade
+slot `delayed_action::ActionCreated`, and the admission set `delayed_set::SetCreated`. Upgrade
+actions and their notice changes emit `delayed_action::ActionScheduled`,
+`delayed_action::ActionCancelled` and `delayed_action::ActionApplied`, whose `change` is
+`Action(...)` or `Delay` (a notice change). Adapter admissions and their notice changes emit
+`delayed_set::SetScheduled`, `delayed_set::SetCancelled` and `delayed_set::SetApplied`, whose
+`change` is `Admission(...)` or `Delay`. Their `delay_ms` is the proposed next notice for a
+notice change and the applied notice for an action or admission. `delayed_set::MemberRemoved`
+records an immediate adapter removal.
+
+| Operation | Object and field | Key | Value or action type |
+| --- | --- | --- | --- |
+| Blast's rates | `FeePolicy.fees` | `fee_policy::FeesKey` | `fee_policy::ProtocolFees` |
+| Blast's payee | `FeePolicy.destination` | `fee_policy::DestinationKey` | `address` |
+| A vault's Blast LP-fee rates | `Vault.protocol_fees` | `presale_vault::ProtocolLpFeesKey` | `fee_policy::ProtocolFees` |
+| A vault's creator split | `Vault.fee_split` | `presale_vault::FeeSplitKey` | `blast_presale::blast_presale::FeeSplit` |
+| Upgrades and immutability | `PackageAdmin.upgrade` | `blast_presale::package_admin::UpgradeKey` | `blast_presale::package_admin::UpgradeAction` |
+| Adapter admissions | `CreationPolicy.migration_witnesses` | `creation_policy::MigrationWitnessKey` | `TypeName` |
 
 `blast_presale::package_admin::schedule_upgrade` takes only the digest in addition to
 its state, authority and Clock inputs, and uses the stored upgrade notice.
@@ -713,22 +742,25 @@ notice period, replacing any pending action. Anyone applies it with
 `blast_presale::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
 `blast_presale::package_admin::cancel_upgrade_action` cancels any of these proposals.
 
-Publication-owned policy singletons and package custody start with zero notice for
-ordinary role-authorized setup. Configure and apply each operation's intended notice
-(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
-release. Raising a notice never changes previously scheduled deadlines or next delays.
+Publication-owned policy singletons start with zero notice for ordinary
+role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
+no upgrade or immutability action can run without notice, even during setup. Configure
+and apply each other operation's intended notice, and drain or cancel all earlier setup
+proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
-Adapter admissions share one persistent `witness_delay_ms` across witness types;
-a fresh type cannot reopen setup. `creation_policy::schedule_migration_witness` accepts
-only the witness type in addition to its state, authority and Clock inputs. It snapshots
+Adapter admissions share one applied notice across witness types, held in the
+`delayed_set::DelayedSet` `CreationPolicy.migration_witnesses`; a fresh type cannot reopen setup.
+`creation_policy::schedule_migration_witness` accepts only the witness type in addition to its state, authority and Clock inputs. It snapshots
 the applied notice and deadline; application only admits that witness and preserves the
 live notice. `creation_policy::schedule_migration_delay` proposes a new notice under
 AdapterAdmin; anyone calls `creation_policy::apply_migration_delay`, and CancelAdmin uses
 `creation_policy::cancel_migration_delay`. Applying admissions before or after a policy
 change cannot overwrite that policy. Existing admission deadlines remain fixed; settle
 or cancel all zero-notice admissions before completing setup. Immediate adapter removal
-cancels that type's pending admission and preserves the applied notice.
+cancels that type's pending admission and preserves the applied notice. Scheduling an
+admitted witness, or removing one that is neither admitted nor pending, aborts with code 20
+from `delayed_set`.
 
 New vaults start their own LP-fee notice at 48 hours; creating a fresh vault never
 reopens zero-notice setup. Vault fee changes can propose a different next notice,
@@ -745,6 +777,8 @@ Presale creation/sharing, all three commitment paths and migration check their r
 `blast_presale::blast_presale::set_protocol_fees` remains immediate before the
 sale starts, but now takes the live `FeePolicy`; every rate must be at or below
 its applied rates. Scheduled increases cannot authorize larger sale overrides.
+Once a sale is shared it is public, so an override there may only keep or lower
+each of its four rates; only the creation PTB may raise one.
 AdapterAdmin may immediately remove an adapter with `creation_policy::remove_migration_witness`.
 Genesis treasury is configured before publication, never defaulted to the publisher.
 
@@ -810,7 +844,8 @@ charged at creation, on commitment, on refund, or when a sale does not migrate.
   can change them later.
 - Every payout goes to `FeePolicy.destination` as it is when paid.
 
-Per-sale changes before the start (`blast_presale::blast_presale::set_protocol_fees`): a changed raise rate
+Per-sale changes before the start (`blast_presale::blast_presale::set_protocol_fees`): a rate may rise
+only in the creation PTB; on a shared sale each rate may only stay or fall. A changed raise rate
 becomes `floor(R × raise_bps / 10,000)` and takes from or gives to the LP's Quote; a changed token
 rate becomes `floor(supply × token_bps / 10,000)` and takes from or gives to the buyers'
 allocation `A`. A rate equal to the sale's current one keeps its current amount (the creation
@@ -839,7 +874,8 @@ schedule a replacement through `presale_vault::schedule_fee_split`, supplying th
 `FeeSplit`, next notice in milliseconds and `Clock`. The initial notice is 48 hours
 (`172_800_000` milliseconds). The full applied notice governs every change, including a reduction
 to zero; replacing a proposal restarts that wait. Both value and notice stay applied until explicit
-activation. A delay-only change is valid; unchanged value and notice abort with `EFeeSplitUnchanged`.
+activation. A delay-only change is valid; unchanged value and notice abort with code 20
+(`EUnchanged`) from Blast admin's `delayed` module.
 
 The same cap holder may call `presale_vault::cancel_fee_split` even when the proposal is ready.
 Cancellation retains applied policy. At or after readiness, anyone may call
@@ -857,9 +893,10 @@ sent before activation but received afterward. Expiry alone keeps the old split 
 collection-time accounting, rather than accrual-time allocation. Indexers must expose that boundary.
 
 Standalone vaults have no matching presale cap and retain their creation split. The events
-`presale_vault::FeeSplitScheduled`, `presale_vault::FeeSplitCancelled`, and
-`presale_vault::FeeSplitChanged` record proposed values/deadline, discarded proposal, and applied
-old/new values and notice, respectively. Schedule and cancel validate the version first and the
+`delayed::DelayedScheduled`, `delayed::DelayedCancelled`, and `delayed::DelayedApplied`, keyed by
+`presale_vault::FeeSplitKey` with the vault ID as `owner`, record the proposed split, next notice
+and deadline; the discarded proposal; and the previous and new split with the applied notice,
+respectively. Schedule and cancel validate the version first and the
 exact stored cap ID second; application validates the version before venue and readiness.
 
 #### Seed price bound
@@ -882,7 +919,8 @@ All times are Unix milliseconds from `Clock`.
   after the end: `EPresaleEnded`.
 - Caps lift at `now >= uncapped start`.
 - `blast_presale::blast_presale::set_protocol_fees`: in the creation PTB before `share`, or after it while
-  `now < start_ms`. A sale shared with a start in the past can be repriced only in its creation PTB.
+  `now < start_ms`, when it may only lower rates. A sale shared with a start in the past can be
+  repriced only in its creation PTB. After the start, `EPresaleStarted` precedes the rate checks.
 - `blast_presale::blast_presale::settle`: from `now >= end_ms`, at any later time, or earlier once the sale can close
   early.
 - Migration: any time while `Funded`, including after the LP deadline, until someone cancels.
@@ -931,23 +969,25 @@ Common answers:
 
 Other objects:
 
-Delayed policy fields contain the applied `value`, applied `delay_ms`, and an optional `pending` record with the
-proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
+Delayed policy fields are Blast admin `delayed::Delayed` values. A `Delayed<K, T>` contains `owner` (the ID of
+the object that stores it), `key`, the applied `value`, applied `delay_ms`, and an optional `pending`
+proposal with the proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
 pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
 positional struct wrapping one u64.
 
-- `FeePolicy`: `destination` is `Delayed<address>`, so `destination.value` is the current payee.
-  `fees` is `Delayed<ProtocolFees>`; `fees.value` holds the applied `raise_bps`, `token_bps`,
+- `FeePolicy`: `destination` is `Delayed<DestinationKey, address>`, so `destination.value` is the
+  current payee. `fees` is `Delayed<FeesKey, ProtocolFees>`; `fees.value` holds the applied `raise_bps`, `token_bps`,
   `lp_fee_meme_bps` and `lp_fee_quote_bps`, each a `Bps`.
-- `CreationPolicy`: `allowed_quotes` and `allowed_migration_witnesses` (sets of type names with
-  original package IDs); `pending_witnesses` maps adapter type names to admission proposals
-  with `value`, snapshotted `delay_ms` and `ready_at_ms`. Admission application preserves
-  the live delay policy and becomes active when applied to
-  `allowed_migration_witnesses`. Accepted partners are dynamic fields keyed by
+- `CreationPolicy`: `allowed_quotes` (a set of type names with original package IDs) and
+  `migration_witnesses`, a `DelayedSet<MigrationWitnessKey, TypeName>`. Its `members` holds the
+  admitted witness type names (original package IDs), `delay_ms` the applied admission notice,
+  `admissions` maps each pending type name to its snapshotted `delay_ms` and `ready_at_ms`, and
+  `pending_delay` holds a proposed next notice. An admission becomes active only when applied
+  into `members`, which preserves the applied notice. Accepted partners are dynamic fields keyed by
   `creation_policy::PartnerKey` (the partner's ID) whose `u64` value is the time the partner stops
   being accepted (the maximum u64 while accepted).
-- `Vault`: `presale_id`, `presale_cap_id`, `pool_id`, `fee_split`, `protocol_fees`
-  (`Delayed<ProtocolFees>`; read `protocol_fees.value.lp_fee_meme_bps` and
+- `Vault`: `presale_id`, `presale_cap_id`, `pool_id`, `fee_split` (`Delayed<FeeSplitKey, FeeSplit>`),
+  `protocol_fees` (`Delayed<ProtocolLpFeesKey, ProtocolFees>`; read `protocol_fees.value.lp_fee_meme_bps` and
   `protocol_fees.value.lp_fee_quote_bps` for the applied LP rates), `partner_id`,
   `unpaid_protocol_meme`, `unpaid_protocol_quote`,
   `migration_meme_residual`, `migration_quote_residual`, `holder_rewards_meme`,
@@ -987,7 +1027,7 @@ directly (no envelope).
 | Rounds | `holder_rewards::RoundPublished`, `holder_rewards::RewardClaimed`, `holder_rewards::GasReserveSettled`, `holder_rewards::RoundClosed` | Holder funding separate from optional gas reserve, snapshotted treasury, exact reimbursement and returns; zero reserve disables reimbursement. |
 | Vesting | `VestingCreated`, `VestingClaimed` (from `blast_fun_vesting`) | Schedule terms and releases. |
 
-Admin events are listed in "Blast admin operations".
+Admin events are listed in "Blast admin operations" and "Delayed administration".
 
 ### Aborts
 
@@ -1045,12 +1085,21 @@ it. Common ones by flow (module `blast_presale` unless named):
   `holder_rewards::EClaimsStillOpen`. An overcommitted root aborts in the framework's balance
   split when the round runs out.
 - Admin-only: `blast_acl::sign_in` aborts for a revoked `AdminCap` or one without the role;
-  then `EPresaleStarted`,
-  `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EFeesUnchanged`,
-  `fee_policy::EInvalidDestination`, `presale_vault::EProtocolLpFeesUnchanged`,
+  then `EPresaleStarted`, `EProtocolFeesIncreased` (a shared sale's override raises a rate),
+  `EAboveFeePolicy`, `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EInvalidDestination`,
   `creation_policy::EAllowanceUnchanged`, `creation_policy::EInvalidMigrationWitness`, and the
   `holder_rewards` publish checks (`EWrongRound`, `EInvalidInterval`, `EInvalidCommitment`,
   `EInvalidLeafCount`, `EEmptyBudget`, `EInvalidClaimDeadline`).
+- Delayed administration (fee split, LP-fee rates, policy fees and payee, adapter admission,
+  upgrades): Blast admin's delayed modules abort with plain codes. 17 `ENotReady`: applied
+  before `ready_at_ms` (from `delayed_set` for an early admission, otherwise from `delayed`).
+  18 `ENoPending`: applied or cancelled with nothing pending (from the type's own module:
+  `delayed` for a setting, `delayed_action` for an upgrade, `delayed_set` for an admission). 19
+  `EInvalidDelay`: a deadline or notice would overflow (from `delayed`). 20 `EUnchanged`: the
+  proposal changes nothing, the witness is already admitted, or the removed witness is unknown
+  (from the type's own module). 22 `EWrongChange` (from `delayed_action`):
+  `authorize_upgrade` or `make_immutable` while a notice change is pending, or
+  `apply_upgrade_delay` while an action is pending.
 
 ### Pitfalls
 
@@ -1146,7 +1195,8 @@ Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale:
    can never migrate and refunds after its LP deadline. It aborts with
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongMigrator` when the initializer was started by another
    migrator (it reads `blast_presale::blast_presale::migration_witness`).
-6. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, which needs
+6. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, the only
+   point where they may rise (up to the applied policy), which needs
    Blast's presale `FeeAdmin` signed in within the same transaction; then
    `blast_presale::blast_presale::share(presale, commitment_starts_at_ms, clock)`.
 

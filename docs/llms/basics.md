@@ -26,7 +26,7 @@ blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
 blast_sui                    -> blast_admin, Sui system
-blast_admin                  -> blast_fun_timelock
+blast_admin                  -> Sui framework only
 ```
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
@@ -34,8 +34,9 @@ composes with it inside one PTB. Presale uses typed roles from the shared
 `blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
 Use the presale guide for presale calls.
 
-`blast_fun_timelock` and `blast_fun_vesting` live in this repository at
-`sui/timelock` and `sui/vesting`; both are immutable on mainnet. The standalone
+`blast_fun_timelock` (used only by `blast_partners`) and `blast_fun_vesting` live
+in this repository at `sui/timelock` and `sui/vesting`; both are immutable on
+mainnet. The standalone
 OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values

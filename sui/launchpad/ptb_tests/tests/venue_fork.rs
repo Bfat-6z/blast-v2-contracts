@@ -33,7 +33,8 @@ use std::{collections::BTreeMap, sync::OnceLock};
 use anyhow::{Context, Result, bail, ensure};
 use blake2::{Blake2b, Digest, digest::consts::U32};
 use blast_launchpad_ptb_tests::{
-    CompiledPackage, Expected, Harness, Outcome, UnlinkedPackage, build, build_timelock, build_unlinked, call,
+    ActionScheduled, Change, CompiledPackage, Delayed, DelayedApplied, Expected, Harness, Outcome,
+    UnlinkedPackage, build, build_timelock, build_unlinked, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusAddLiquidity, CetusCollectFee,
@@ -77,7 +78,7 @@ const MIGRATED: u8 = 3;
 const INVALID_LAUNCH_LIFECYCLE: u64 = 15;
 const CREATOR_CAP_NOT_LIVE: u64 = 22;
 /// `blast_fun_migrators::vault` code.
-const BUYBACK_BELOW_MINIMUM: u64 = 5;
+const BUYBACK_BELOW_MINIMUM: u64 = 4;
 /// `blast_fun_migrators::cetus` codes.
 const INVALID_COIN_ORDER: u64 = 0;
 const WRONG_COIN_PAIR: u64 = 2;
@@ -366,7 +367,7 @@ impl World {
         let admin_dir = sui_dir.join("admin");
         let launchpad_dir = sui_dir.join("launchpad");
         let (timelock, _) = h.publish(build_timelock(&work)?)?;
-        let (admin, admin_published) = h.publish(build(&admin_dir, &[(&timelock_dir, timelock)], &work)?)?;
+        let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
         let partners_dir = sui_dir.join("partners");
         let (partners, _) = h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
         let core = [(timelock_dir.as_path(), timelock), (admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
@@ -412,6 +413,10 @@ impl World {
         let next_delay = b.pure(172_800_000u64)?;
         call(&mut b, migrators, "lp_fee_policy", "schedule_default_shares", vec![], vec![policy_arg, version_arg, fee, meme_bps, quote_bps, next_delay, clock]);
         call(&mut b, migrators, "lp_fee_policy", "apply_default_shares", vec![], vec![policy_arg, version_arg, clock]);
+        // Per-coin overrides keep a notice of their own, raised here from the publication notice.
+        let next_delay = b.pure(172_800_000u64)?;
+        call(&mut b, migrators, "lp_fee_policy", "schedule_coin_shares_delay", vec![], vec![policy_arg, version_arg, fee, next_delay, clock]);
+        call(&mut b, migrators, "lp_fee_policy", "apply_coin_shares_delay", vec![], vec![policy_arg, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
         assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
         let (version, _) = h.wrap_launchpad(blast, &published, admin, &admin_published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
@@ -1257,18 +1262,18 @@ impl World {
                 .set_contents_unsafe(bcs::to_bytes(&(self.migrators_version, 2u64))?);
             self.h.insert(stale);
             let stale_apply = self.collect_pt(launch, m, m.pool, update)?;
-            self.h.assert_rolled_back(stale_apply, Expected::Abort {package: self.admin, module: "operational_version", code: 12},
+            self.h.assert_rolled_back(stale_apply, Expected::Abort {package: self.admin, module: "operational_version", code: 9},
                 &[m.vault, m.pool, launch.currency], &[self.h.sender, LP_PROTOCOL.into()])?;
             self.h.insert(original);
             let early = self.collect_pt(launch, m, m.pool, update)?;
-            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 20 };
+            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 17 };
             self.h.assert_rolled_back(early, expected, &[m.vault, m.pool, launch.currency], &[self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()])?;
             self.h.sim.advance_clock(std::time::Duration::from_millis(before.delay_ms));
             // A later failing command must roll back the ready application, venue collection,
             // payouts, and proposal consumption together.
             let mut rollback = self.collect_pt(launch, m, m.pool, update)?;
             rollback.commands.push(rollback.commands.last().expect("apply").clone());
-            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 21 };
+            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 18 };
             self.h.assert_rolled_back(rollback, expected, &[m.vault, m.pool, launch.currency], &[self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()])?;
         }
         let before = self.vault(m)?;
@@ -1397,11 +1402,13 @@ impl World {
 
         let names = migrators_event_names(&outcome, self.migrators);
         if let Some((_, split)) = update {
-            let changed: Vec<FeeSplitChanged> = self.events(&outcome, "FeeSplitChanged");
-            ensure!(changed.len() == 1 && names.last().map(String::as_str) == Some("FeeSplitChanged"), "{names:?}");
+            // The primitive records the split change after the venue settled the old split's fees.
+            let changed: Vec<DelayedApplied<FeeSplit>> = outcome.delayed("DelayedApplied", "vault", "FeeSplitKey")?;
+            ensure!(changed.len() == 1, "{names:?}");
             ensure!(names.first().map(String::as_str) == Some("FeesCollected"), "settles first: {names:?}");
+            ensure!(fee_split_applied_after_settlement(&outcome, self.migrators), "settles before applying");
             let changed = &changed[0];
-            ensure!(changed.old_fee_split == before.fee_split.value && changed.new_fee_split == *split);
+            ensure!(changed.owner == m.vault && changed.previous_value == before.fee_split.value && changed.value == *split);
             ensure!(after.fee_split.value == *split && after.fee_split.pending.is_none() && changed.delay_ms == after.fee_split.delay_ms);
         } else {
             ensure!(after.fee_split == before.fee_split);
@@ -1418,8 +1425,7 @@ impl World {
         let meme_bps = self.bps(&mut b, shares.0)?;
         let quote_bps = self.bps(&mut b, shares.1)?;
         let admin_clock = b.obj(self.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        let next_delay = b.pure(172_800_000u64)?;
-        call(&mut b, self.migrators, "lp_fee_policy", "schedule_coin_shares", vec![launch.meme.clone()], vec![policy, migrators_version, signed_in, meme_bps, quote_bps, next_delay, admin_clock]);
+        call(&mut b, self.migrators, "lp_fee_policy", "schedule_coin_shares", vec![launch.meme.clone()], vec![policy, migrators_version, signed_in, meme_bps, quote_bps, admin_clock]);
         self.h.execute(b.finish())?.assert_success();
         blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![(self.migrators, "lp_fee_policy", "apply_coin_shares", vec![launch.meme.clone()], self.policy, self.migrators_version)])?;
 
@@ -1527,19 +1533,17 @@ impl World {
         }
         let scheduled = self.h.execute(b.finish())?;
         scheduled.assert_success();
-        ensure!(scheduled.wrapped_payloads(self.blast)
-            == ["CurveFeeCapReassignmentScheduled", "MetadataCapReassignmentScheduled"]);
-        for event in ["CurveFeeCapReassignmentScheduled", "MetadataCapReassignmentScheduled"] {
-            let payloads = scheduled.events_of("events", event);
-            ensure!(payloads.len() == 1);
-            let (id, recipient, _, delay_ms): (ObjectID, SuiAddress, u64, u64) = bcs::from_bytes(payloads[0])?;
-            ensure!(id == launch.launch && recipient == SuiAddress::from(CAP_HOLDER));
-            ensure!(delay_ms == 172_800_000, "recipient-only schedules retain the applied notice");
+        ensure!(scheduled.wrapped_payloads(self.blast).is_empty());
+        for key in ["CurveFeeCapReassignment", "MetadataCapReassignment"] {
+            let proposals: Vec<ActionScheduled<SuiAddress>> = scheduled.delayed("ActionScheduled", "launch", key)?;
+            ensure!(proposals.len() == 1);
+            ensure!(proposals[0].owner == launch.launch && proposals[0].change == Change::Action(SuiAddress::from(CAP_HOLDER)));
+            ensure!(proposals[0].delay_ms == 172_800_000, "recipient-only schedules retain the applied notice");
         }
         let pair = self.pair(launch);
         blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![
-            (self.blast, "launch", "apply_curve_fee_cap_update", pair.clone(), launch.launch, self.version),
-            (self.blast, "launch", "apply_metadata_cap_update", pair, launch.launch, self.version),
+            (self.blast, "launch", "apply_curve_fee_cap_reassignment", pair.clone(), launch.launch, self.version),
+            (self.blast, "launch", "apply_metadata_cap_reassignment", pair, launch.launch, self.version),
         ])?;
 
         let owners = [self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()];
@@ -1567,8 +1571,8 @@ impl World {
         let pt = self.collect_pt(launch, m, m.pool, Some((cap, &next)))?;
         let applied = self.h.execute(pt)?;
         applied.assert_success();
-        let changes: Vec<FeeSplitChanged> = self.events(&applied, "FeeSplitChanged");
-        ensure!(changes.len() == 1 && changes[0].old_fee_split == *split && changes[0].new_fee_split == next);
+        let changes: Vec<DelayedApplied<FeeSplit>> = applied.delayed("DelayedApplied", "vault", "FeeSplitKey")?;
+        ensure!(changes.len() == 1 && changes[0].previous_value == *split && changes[0].value == next);
         let active = self.vault(m)?.fee_split;
         ensure!(active.value == next && active.pending.is_none());
         self.report("after cap reassignment the retired cap cannot schedule, cancel or claim; accepted ready split applies without a creator-cap input".into());
@@ -2101,6 +2105,21 @@ fn merkle_node(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
 
 // === Event and object mirrors (BCS field order) ===
 
+/// Whether the vault's split change follows the venue settlement in native event order.
+fn fee_split_applied_after_settlement(outcome: &Outcome, migrators: ObjectID) -> bool {
+    let position = |found: &dyn Fn(&sui_types::event::Event) -> bool| outcome.events.iter().position(found);
+    let settled = position(&|event| {
+        ObjectID::from(event.type_.address) == migrators && event.type_.name.as_str() == "FeesCollected"
+    });
+    let applied = position(&|event| {
+        event.type_.module.as_str() == "delayed"
+            && event.type_.name.as_str() == "DelayedApplied"
+            && matches!(event.type_.type_params.first(),
+                Some(TypeTag::Struct(key)) if key.module.as_str() == "vault" && key.name.as_str() == "FeeSplitKey")
+    });
+    matches!((settled, applied), (Some(settled), Some(applied)) if settled < applied)
+}
+
 fn migrators_event_names(outcome: &Outcome, migrators: ObjectID) -> Vec<String> {
     outcome
         .events
@@ -2125,11 +2144,6 @@ struct Recipient {
     destination: SuiAddress,
     bps: u64,
 }
-
-#[derive(Debug, Deserialize, PartialEq)]
-struct Delayed<T> { value: T, delay_ms: u64, pending: Option<Pending<T>> }
-#[derive(Debug, Deserialize, PartialEq)]
-struct Pending<T> { value: T, delay_ms: u64, ready_at_ms: u64 }
 
 /// Mirrors `blast_fun_migrators::vault::LpVault`; each `Balance` is one `u64`.
 #[derive(Debug, Deserialize)]
@@ -2265,14 +2279,6 @@ struct AutoLiquidityAdded {
 struct AutoLpPositionOpened {
     _vault_id: ObjectID,
     position_id: ObjectID,
-}
-
-#[derive(Deserialize)]
-struct FeeSplitChanged {
-    _vault_id: ObjectID,
-    old_fee_split: FeeSplit,
-    new_fee_split: FeeSplit,
-    delay_ms: u64,
 }
 
 #[derive(Deserialize)]

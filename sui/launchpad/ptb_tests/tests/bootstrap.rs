@@ -1,7 +1,9 @@
 //! Publication must remain inactive until the original, never-upgraded cap enters custody.
 
 use anyhow::Result;
-use blast_launchpad_ptb_tests::{Expected, Harness, Outcome, build, build_timelock, call, sui_dir, timelock_dir};
+use blast_launchpad_ptb_tests::{
+    DelayedScheduled, Expected, Harness, Outcome, build, build_timelock, call, sui_dir, timelock_dir,
+};
 use sui_types::{
     base_types::{ObjectID, SuiAddress},
     move_package::{MovePackage, UpgradeCap},
@@ -19,7 +21,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let partners_dir = sui.join("partners");
     let mut h = Harness::new()?;
     let (timelock, _) = h.publish(build_timelock(&work)?)?;
-    let (admin, admin_publication) = h.publish(build(&admin_dir, &[(&timelock_dir, timelock)], &work)?)?;
+    let (admin, admin_publication) = h.publish(build(&admin_dir, &[], &work)?)?;
     let (partners, _) = h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
     assert_initial_partner_payment(&mut h, admin, &admin_publication, partners)?;
     let code = build(
@@ -43,7 +45,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     call(&mut b, blast, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
-        Expected::Abort { package: admin, module: "upgrade_custody", code: 15 },
+        Expected::Abort { package: admin, module: "upgrade_custody", code: 12 },
         &[bootstrap, cap, foreign_cap, config],
         &[h.sender],
     )?;
@@ -84,7 +86,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     call(&mut b, unwrapped, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
-        Expected::Abort { package: admin, module: "upgrade_custody", code: 15 },
+        Expected::Abort { package: admin, module: "upgrade_custody", code: 12 },
         &[bootstrap, cap, config],
         &[h.sender],
     )?;
@@ -113,7 +115,7 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
     let config_arg = b.obj(h.shared(config, true))?;
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
-    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 20 }, &[config], &[])?;
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 17 }, &[config], &[])?;
     h.sim.advance_clock(std::time::Duration::from_millis(1));
     for must_abort in [true, false] {
         let mut b = ProgrammableTransactionBuilder::new();
@@ -127,12 +129,15 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
         call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, next_delay, clock]);
         if must_abort {
             call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
-            h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 20 }, &[config, cap], &[])?;
+            h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 17 }, &[config, cap], &[])?;
         } else {
             let applied = h.execute(b.finish())?;
             applied.assert_success();
-            let scheduled = applied.events.iter().find(|event| event.type_.type_params.iter().any(|tag| tag.to_canonical_string(true).ends_with("::events::CreationFeeScheduled"))).expect("scheduled creation fee");
-            assert_eq!(bcs::from_bytes::<(u64, u64, u64)>(&scheduled.contents)?, (123, scheduled_at_ms + 172_800_000 + 25, 0));
+            let scheduled: Vec<DelayedScheduled<u64>> =
+                applied.delayed("DelayedScheduled", "launch_config", "CreationFeeKey")?;
+            assert_eq!(scheduled.len(), 1, "scheduled creation fee");
+            assert_eq!((scheduled[0].owner, scheduled[0].value), (config, 123));
+            assert_eq!((scheduled[0].ready_at_ms, scheduled[0].delay_ms), (scheduled_at_ms + 172_800_000 + 25, 0));
         }
     }
     h.sim.advance_clock(std::time::Duration::from_millis(25));

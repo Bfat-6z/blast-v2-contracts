@@ -43,13 +43,14 @@ fun init_shares_one_acl_and_delivers_its_root_to_the_configured_address_without_
 
     let effects = scenario.next_tx(@blast_acl_root);
     assert_eq!(effects.shared().length(), 1);
-    assert_eq!(effects.num_user_events(), 0);
+    // The root transfer slot records its fixed notice.
+    assert_eq!(effects.num_user_events(), 1);
     assert_eq!(test_scenario::ids_for_address<SuperAdminCap>(PUBLISHER).length(), 0);
     let root = scenario.take_from_sender<SuperAdminCap>();
     let acl = scenario.take_shared<ACL>();
     assert_eq!(acl.active_super_admin_cap_id_for_testing(), root.super_admin_cap_id_for_testing());
     assert_eq!(acl.admin_count_for_testing(), 0);
-    assert!(!acl.has_pending_transfer_for_testing());
+    assert!(acl.super_admin_transfer_for_testing().pending().is_none());
     assert_eq!(blast_acl::max_roles_per_admin_for_testing(), MAX_ROLES_PER_ADMIN);
 
     test_scenario::return_shared(acl);

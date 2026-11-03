@@ -15,6 +15,12 @@ module blast_presale::presale_vault;
 /// Sealed field name binding one venue position type to a vault.
 public struct PositionKey<phantom Venue>() has copy, drop, store;
 
+/// Keys the delayed lifecycle of a vault's creator fee split.
+public struct FeeSplitKey() has copy, drop, store;
+
+/// Keys the delayed lifecycle of a vault's Blast LP-fee rates.
+public struct ProtocolLpFeesKey() has copy, drop, store;
+
 /// Shared custody for one LP position and its explicitly applied fee split: a presale's, after migration, or
 /// an owner's own position locked here directly, with zero presale and creator-capability IDs.
 ///
@@ -30,8 +36,8 @@ public struct Vault<phantom Meme, phantom Quote> has key {
     presale_id: ID,
     presale_cap_id: ID,
     pool_id: ID,
-    fee_split: Delayed<FeeSplit>,
-    protocol_fees: Delayed<ProtocolFees>,
+    fee_split: Delayed<FeeSplitKey, FeeSplit>,
+    protocol_fees: Delayed<ProtocolLpFeesKey, ProtocolFees>,
     /// The Blast partner the sale named, paid its cut of Blast's LP fees. It never changes.
     partner_id: Option<ID>,
     unpaid_protocol_meme: Balance<Meme>,
@@ -58,16 +64,8 @@ public fun schedule_fee_split<Meme, Quote>(
 ) {
     package_version.assert_current();
     self.assert_cap(cap);
-    assert!(
-        proposed != self.fee_split.value() || delay_ms != self.fee_split.delay_ms(),
-        EFeeSplitUnchanged,
-    );
 
-    let ready_at_ms = self.fee_split.schedule(proposed, delay_ms, clock);
-
-    event::emit(FeeSplitScheduled {
-        vault_id: self.id.to_inner(), proposed, ready_at_ms, delay_ms,
-    });
+    self.fee_split.schedule(proposed, delay_ms, clock);
 }
 
 /// Cancels even a ready split proposal with this presale's creator cap.
@@ -79,9 +77,7 @@ public fun cancel_fee_split<Meme, Quote>(
     package_version.assert_current();
     self.assert_cap(cap);
 
-    let proposed = self.fee_split.cancel();
-
-    event::emit(FeeSplitCancelled { vault_id: self.id.to_inner(), proposed });
+    self.fee_split.cancel();
 }
 
 /// Claims the pool's one-time migration residuals with the creator capability.
@@ -126,20 +122,8 @@ public fun schedule_protocol_lp_fees<Meme, Quote>(
     package_version.assert_current();
 
     let proposed = self.protocol_fees.value().with_lp_fees(lp_fee_meme_bps, lp_fee_quote_bps);
-    assert!(
-        proposed != self.protocol_fees.value() || delay_ms != self.protocol_fees.delay_ms(),
-        EProtocolLpFeesUnchanged
-    );
 
-    let ready_at_ms = self.protocol_fees.schedule(proposed, delay_ms, clock);
-
-    event::emit(ProtocolLpFeesScheduled {
-        vault_id: self.id.to_inner(),
-        meme_bps: lp_fee_meme_bps.value(),
-        quote_bps: lp_fee_quote_bps.value(),
-        ready_at_ms,
-        delay_ms
-    });
+    self.protocol_fees.schedule(proposed, delay_ms, clock);
 }
 
 /// Anyone may apply the announced LP rates once the complete notice has elapsed.
@@ -149,12 +133,8 @@ public fun apply_protocol_lp_fees<Meme, Quote>(
     clock: &Clock
 ) {
     package_version.assert_current();
-    let applied = self.protocol_fees.apply(clock);
-    event::emit(ProtocolLpFeesChanged<Meme, Quote> {
-        vault_id: self.id.to_inner(),
-        protocol_lp_fee_meme_bps: applied.lp_fee_meme_bps().value(),
-        protocol_lp_fee_quote_bps: applied.lp_fee_quote_bps().value()
-    });
+
+    self.protocol_fees.apply(clock);
 }
 
 /// Cancels even a ready LP-rate change.
@@ -164,12 +144,8 @@ public fun cancel_protocol_lp_fees<Meme, Quote>(
     _: &AdminWitness<CancelAdmin>
 ) {
     package_version.assert_current();
-    let cancelled = self.protocol_fees.cancel();
-    event::emit(ProtocolLpFeesCancelled {
-        vault_id: self.id.to_inner(),
-        meme_bps: cancelled.lp_fee_meme_bps().value(),
-        quote_bps: cancelled.lp_fee_quote_bps().value()
-    });
+
+    self.protocol_fees.cancel();
 }
 
 /// Pays the Blast LP fees this vault holds for its partner: the partner its cut of each asset in
@@ -401,14 +377,7 @@ public(package) fun assert_fee_split_ready<Meme, Quote>(
 
 /// Applies the stored ready split after the venue's required settlement boundary.
 public(package) fun apply_fee_split<Meme, Quote>(self: &mut Vault<Meme, Quote>, clock: &Clock) {
-    let old_fee_split = self.fee_split.value();
-
-    let new_fee_split = self.fee_split.apply(clock);
-
-    event::emit(FeeSplitChanged<Meme, Quote> {
-        vault_id: self.id.to_inner(), old_fee_split, new_fee_split,
-        delay_ms: self.fee_split.delay_ms(),
-    });
+    self.fee_split.apply(clock);
 }
 
 public(package) fun pool_id<Meme, Quote>(self: &Vault<Meme, Quote>): ID {
@@ -464,13 +433,19 @@ fun build<Meme, Quote>(
     migration_quote_residual: Balance<Quote>,
     ctx: &mut TxContext,
 ): Vault<Meme, Quote> {
+    let id = object::new(ctx);
+
     Vault {
-        id: object::new(ctx),
         presale_id,
         presale_cap_id,
         pool_id,
-        fee_split: delayed::new(fee_split, DEFAULT_FEE_SPLIT_DELAY_MS),
-        protocol_fees: delayed::new(protocol_fees, DEFAULT_PROTOCOL_LP_FEE_DELAY_MS),
+        fee_split: delayed::new(FeeSplitKey(), &id, fee_split, DEFAULT_FEE_SPLIT_DELAY_MS),
+        protocol_fees: delayed::new(
+            ProtocolLpFeesKey(),
+            &id,
+            protocol_fees,
+            DEFAULT_PROTOCOL_LP_FEE_DELAY_MS,
+        ),
         partner_id,
         unpaid_protocol_meme: balance::zero(),
         unpaid_protocol_quote: balance::zero(),
@@ -480,6 +455,7 @@ fun build<Meme, Quote>(
         holder_rewards_quote: balance::zero(),
         next_round: 0,
         last_checkpoint: option::none(),
+        id,
     }
 }
 
@@ -584,13 +560,19 @@ public fun new_for_testing<Meme, Quote>(
     partner_id: Option<ID>,
     ctx: &mut TxContext,
 ): Vault<Meme, Quote> {
+    let id = object::new(ctx);
+
     Vault {
-        id: object::new(ctx),
         presale_id,
         presale_cap_id,
         pool_id: object::id_from_address(@0x1),
-        fee_split: delayed::new(fee_split, DEFAULT_FEE_SPLIT_DELAY_MS),
-        protocol_fees: delayed::new(protocol_fees, DEFAULT_PROTOCOL_LP_FEE_DELAY_MS),
+        fee_split: delayed::new(FeeSplitKey(), &id, fee_split, DEFAULT_FEE_SPLIT_DELAY_MS),
+        protocol_fees: delayed::new(
+            ProtocolLpFeesKey(),
+            &id,
+            protocol_fees,
+            DEFAULT_PROTOCOL_LP_FEE_DELAY_MS,
+        ),
         partner_id,
         unpaid_protocol_meme: balance::zero(),
         unpaid_protocol_quote: balance::zero(),
@@ -600,6 +582,7 @@ public fun new_for_testing<Meme, Quote>(
         holder_rewards_quote: balance::zero(),
         next_round: 0,
         last_checkpoint: option::none(),
+        id,
     }
 }
 
@@ -612,7 +595,7 @@ public fun protocol_fees_for_testing<Meme, Quote>(self: &Vault<Meme, Quote>): Pr
 /// Returns the applied creator split, its notice and its pending proposal.
 public fun fee_split_policy_for_testing<Meme, Quote>(
     self: &Vault<Meme, Quote>,
-): (FeeSplit, u64, Option<Pending<FeeSplit>>) {
+): (FeeSplit, u64, Option<Proposal<FeeSplit>>) {
     (self.fee_split.value(), self.fee_split.delay_ms(), self.fee_split.pending())
 }
 
@@ -668,13 +651,6 @@ public fun unpaid_protocol_lp_fees_for_testing<Meme, Quote>(self: &Vault<Meme, Q
 }
 
 #[test_only]
-public fun protocol_lp_fees_changed_fields<Meme, Quote>(
-    event: &ProtocolLpFeesChanged<Meme, Quote>,
-): (ID, u64, u64) {
-    (event.vault_id, event.protocol_lp_fee_meme_bps, event.protocol_lp_fee_quote_bps)
-}
-
-#[test_only]
 /// Attaches `position` under `venue` to an unshared vault `new_for_testing` built.
 public fun attach_position_for_testing<Meme, Quote, Venue, Position: key + store>(
     self: &mut Vault<Meme, Quote>,
@@ -718,8 +694,8 @@ public fun destroy_for_testing<Meme, Quote>(self: Vault<Meme, Quote>) {
         next_round: _,
         last_checkpoint: _,
     } = self;
-    fee_split.destroy_for_testing();
-    protocol_fees.destroy_for_testing();
+    std::unit_test::destroy(fee_split);
+    std::unit_test::destroy(protocol_fees);
     id.delete();
     unpaid_protocol_meme.destroy_zero();
     unpaid_protocol_quote.destroy_zero();
@@ -746,44 +722,6 @@ public fun holder_meme_paid_bytes<Meme, Quote>(payload: &HolderMemePaid<Meme, Qu
 }
 
 // === Events ===
-
-/// Creator split and next notice proposed under the applied notice period.
-public struct FeeSplitScheduled has copy, drop {
-    vault_id: ID,
-    proposed: FeeSplit,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// A creator discarded a pending split without changing applied policy.
-public struct FeeSplitCancelled has copy, drop {
-    vault_id: ID,
-    proposed: FeeSplit,
-}
-
-/// A ready creator split and notice became explicitly active.
-public struct FeeSplitChanged<phantom Meme, phantom Quote> has copy, drop {
-    vault_id: ID,
-    old_fee_split: FeeSplit,
-    new_fee_split: FeeSplit,
-    delay_ms: u64,
-}
-
-/// LP rates publicly proposed for one vault.
-public struct ProtocolLpFeesScheduled has copy, drop {
-    vault_id: ID,
-    meme_bps: u64,
-    quote_bps: u64,
-    ready_at_ms: u64,
-    delay_ms: u64
-}
-
-/// LP rates removed from one vault's pending schedule.
-public struct ProtocolLpFeesCancelled has copy, drop {
-    vault_id: ID,
-    meme_bps: u64,
-    quote_bps: u64
-}
 
 public struct VaultCreated<phantom Meme, phantom Quote, phantom Venue> has copy, drop {
     vault_id: ID,
@@ -833,13 +771,6 @@ public struct ProtocolLpFeesPaid<phantom Meme, phantom Quote> has copy, drop {
     partner_quote: u64,
 }
 
-/// Every later collection from `vault_id` pays Blast at these rates.
-public struct ProtocolLpFeesChanged<phantom Meme, phantom Quote> has copy, drop {
-    vault_id: ID,
-    protocol_lp_fee_meme_bps: u64,
-    protocol_lp_fee_quote_bps: u64,
-}
-
 /// The holder Meme allocation in `FeesCollected` was paid rather than accrued.
 public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
     vault_id: ID,
@@ -868,18 +799,12 @@ const EZeroLiquidity: vector<u8> = b"The vault's position must hold liquidity.";
 const EWrongPresaleCap: vector<u8> = b"The creator capability belongs to a different presale vault.";
 
 #[error(code = 3)]
-const EProtocolLpFeesUnchanged: vector<u8> = b"An LP-fee update must change the vault's Blast rates.";
-
-#[error(code = 4)]
 const EWrongPartner: vector<u8> = b"The partner is not the one this vault's presale named at creation.";
-
-#[error(code = 5)]
-const EFeeSplitUnchanged: vector<u8> = b"Fee split or its notice must differ from the applied values.";
 
 // === Imports ===
 
 use blast_admin::{
-    delayed::{Self, Delayed, Pending},
+    delayed::{Self, Delayed, Proposal},
     blast_acl::AdminWitness,
 };
 

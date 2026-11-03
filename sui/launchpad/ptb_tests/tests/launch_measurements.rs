@@ -201,7 +201,7 @@ impl World {
         let admin_dir = sui_dir.join("admin");
         let launchpad_dir = sui_dir.join("launchpad");
         let (timelock, _) = h.publish(build_timelock(&work)?)?;
-        let (admin, admin_published) = h.publish(build(&admin_dir, &[(&timelock_dir, timelock)], &work)?)?;
+        let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
         let partners_dir = sui_dir.join("partners");
         let (partners, _) = h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
         let core = [(timelock_dir.as_path(), timelock), (admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
@@ -401,13 +401,14 @@ impl World {
         let outcome = self.h.execute(self.open(ticket, shape)?)?;
         outcome.assert_success();
         let names: Vec<_> = outcome.events.iter().map(payload_name).collect();
+        // Finalize first creates both creator-cap reassignment slots, which the primitive records.
         let expected: &[&str] = match (shape.creator_purchase, shape.opening_round_ms) {
-            (false, _) => &["LaunchCreated", "LaunchShared"],
-            (true, NO_OPENING_ROUND) => &["LaunchCreated", "Bought", "LaunchShared"],
-            (true, _) => &["LaunchCreated", "OpeningRoundJoined", "LaunchShared"],
+            (false, _) => &["ActionCreated", "ActionCreated", "LaunchCreated", "LaunchShared"],
+            (true, NO_OPENING_ROUND) => &["ActionCreated", "ActionCreated", "LaunchCreated", "Bought", "LaunchShared"],
+            (true, _) => &["ActionCreated", "ActionCreated", "LaunchCreated", "OpeningRoundJoined", "LaunchShared"],
         };
         assert_eq!(names, expected, "{name}");
-        let created: LaunchCreated = bcs::from_bytes(&outcome.events[0].contents)?;
+        let created: LaunchCreated = bcs::from_bytes(&outcome.events[2].contents)?;
         assert_eq!(created.opening_round_ms, shape.opening_round_ms, "{name}: opening round");
         assert_eq!(created.plan_recipients.len(), shape.plan_recipients, "{name}: plan recipients");
         let [meme_bps, quote_bps] = self.protocol;

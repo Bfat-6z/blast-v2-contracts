@@ -47,6 +47,8 @@ use sui_types::{
 /// be built from the same revision, or bytecode and framework could disagree.
 const PINNED_SUI_REVISION: &str = "51d177ad7d65";
 pub const TEST_GENESIS_RECIPIENT: &str = "0xa";
+/// The upgrade notice each package's `package_admin::wrap` applies at publication.
+pub const PUBLICATION_UPGRADE_NOTICE_MS: u64 = 172_800_000;
 
 /// Keep fixture output with its checkout even when Cargo's compiler cache is shared.
 pub fn test_work_dir() -> PathBuf {
@@ -261,6 +263,130 @@ fn sui_move_build(package: &Path, work: &Path) -> Result<Command> {
     Ok(command)
 }
 
+// === blast_admin delayed-module mirrors (BCS field order) ===
+//
+// Every key is a zero-field positional struct such as `TradeFeesKey()`, which Move compiles with
+// one `dummy_field: bool`, so each `key` is one BCS byte.
+
+/// The `blast_admin` modules that emit delayed lifecycle events: settings in `delayed`, one-shot
+/// actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.
+/// Their event names are distinct, so a name alone selects one module's event.
+pub const DELAYED_MODULES: [&str; 4] = ["delayed", "delayed_action", "delayed_set", "delayed_map"];
+
+/// Whether `module` is one of `blast_admin`'s delayed modules.
+pub fn is_delayed_module(module: &str) -> bool {
+    DELAYED_MODULES.contains(&module)
+}
+
+/// Mirrors `blast_admin::delayed::Proposal<T>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Proposal<T> {
+    pub value: T,
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed_action::Change<A>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum Change<A> {
+    Action(A),
+    Delay,
+}
+
+/// Mirrors `blast_admin::delayed::Delayed<K, T>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Delayed<T> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub value: T,
+    pub delay_ms: u64,
+    pub pending: Option<Proposal<T>>,
+}
+
+/// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DelayedAction<A> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub delay_ms: u64,
+    pub pending: Option<Proposal<Change<A>>>,
+}
+
+/// Mirrors each package's `package_admin::UpgradeAction`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum UpgradeAction {
+    Upgrade(Vec<u8>),
+    MakeImmutable,
+}
+
+/// A `PackageAdmin` in BCS field order, with its `UpgradeCustody` flattened.
+pub type PackageAdminContents = (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, DelayedAction<UpgradeAction>);
+
+/// Mirrors `blast_admin::delayed::DelayedScheduled<K, T>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DelayedScheduled<T> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub value: T,
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed::DelayedApplied<K, T>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DelayedApplied<T> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub previous_value: T,
+    pub value: T,
+    pub delay_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed_action::ActionScheduled<K, A>` and `ActionCancelled<K, A>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct ActionScheduled<A> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub change: Change<A>,
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed_action::ActionApplied<K, A>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct ActionApplied<A> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub change: Change<A>,
+    pub delay_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed_set::SetChange<E>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum SetChange<E> {
+    Admission(E),
+    Delay,
+}
+
+/// Mirrors `blast_admin::delayed_set::SetScheduled<K, E>` and `SetCancelled<K, E>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct SetScheduled<E> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub change: SetChange<E>,
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed_set::SetApplied<K, E>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct SetApplied<E> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub change: SetChange<E>,
+    pub delay_ms: u64,
+}
+
 /// Everything one executed transaction produced.
 pub struct Outcome {
     pub transaction: Transaction,
@@ -308,11 +434,49 @@ impl Outcome {
             .collect()
     }
 
-    /// Payload type names of every event, in native order. Each event must be a `package` payload
-    /// inside `package`'s `blast_events::Event<T>` envelope, so a bare or foreign event fails.
+    /// Contents of the `<name>` lifecycle events of `blast_admin`'s delayed modules keyed by
+    /// `key_module::key_name`, in native order. The primitives emit these bare, generic in the
+    /// owner's key type.
+    pub fn delayed_events(&self, name: &str, key_module: &str, key_name: &str) -> Vec<&[u8]> {
+        self.events
+            .iter()
+            .filter(|event| {
+                is_delayed_module(event.type_.module.as_str())
+                    && event.type_.name.as_str() == name
+                    && matches!(
+                        event.type_.type_params.first(),
+                        Some(sui_types::TypeTag::Struct(key))
+                            if key.module.as_str() == key_module && key.name.as_str() == key_name
+                    )
+            })
+            .map(|event| event.contents.as_slice())
+            .collect()
+    }
+
+    /// Decodes `delayed_events` into a mirror, which must consume each payload exactly.
+    pub fn delayed<T: serde::de::DeserializeOwned>(
+        &self, name: &str, key_module: &str, key_name: &str,
+    ) -> Result<Vec<T>> {
+        self.delayed_events(name, key_module, key_name)
+            .into_iter()
+            .map(|bytes| bcs::from_bytes(bytes).with_context(|| format!("decode {name}<{key_module}::{key_name}>")))
+            .collect()
+    }
+
+    /// Payload type names of every Blast event, in native order. Each must be a `package` payload
+    /// inside `package`'s `blast_events::Event<T>` envelope, so a bare or foreign event fails. The
+    /// only exception is a lifecycle event of a `blast_admin` delayed module keyed by a `package`
+    /// type, which is bare by design and skipped here; read it with `delayed_events`.
     pub fn wrapped_payloads(&self, package: ObjectID) -> Vec<String> {
         self.events
             .iter()
+            .filter(|event| {
+                !(is_delayed_module(event.type_.module.as_str())
+                    && matches!(
+                        event.type_.type_params.first(),
+                        Some(sui_types::TypeTag::Struct(key)) if ObjectID::from(key.address) == package
+                    ))
+            })
             .map(|event| {
                 let envelope = &event.type_;
                 assert!(
@@ -513,13 +677,10 @@ impl Harness {
         let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
         assert_eq!(package_admin.len(), 1);
         self.shared(package_admin[0], false);
-        #[derive(serde::Deserialize)]
-        enum UpgradeAction { Upgrade { _digest: Vec<u8> }, MakeImmutable, DelayOnly }
-        let (admin_id, sealed_publisher, sealed_caps, delay_ms, pending):
-            (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, u64, Option<(UpgradeAction, u64, u64)>) =
-            bcs::from_bytes(&self.contents(package_admin[0])).context("decode fresh PackageAdmin")?;
-        assert!(pending.is_none(), "fresh custody has no scheduled action");
-        assert_eq!(delay_ms, 0);
+        let (admin_id, sealed_publisher, sealed_caps, upgrade) = self.package_admin(package_admin[0])?;
+        assert!(upgrade.pending.is_none(), "fresh custody has no scheduled action");
+        assert_eq!(upgrade.delay_ms, PUBLICATION_UPGRADE_NOTICE_MS, "publication starts at the 48-hour upgrade notice");
+        assert_eq!(upgrade.owner, package_admin[0]);
         assert_eq!(admin_id, package_admin[0]);
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
@@ -527,8 +688,8 @@ impl Harness {
         let (version_id, paused, active_generation): (ObjectID, u8, u64) =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
         assert_eq!((version_id, paused, active_generation), (version[0], 7, generation));
-        let (_, _, _, treasury): (ObjectID, Vec<u8>, (u64, u64, Option<(u64, u64, u64)>), (SuiAddress, u64, Option<(SuiAddress, u64, u64)>)) = bcs::from_bytes(&self.contents(runtime_id))?;
-        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "UpgradeAdmin", "FeeAdmin", "TreasuryAdmin"])?;
+        let (_, _, _, treasury): (ObjectID, Vec<u8>, Delayed<u64>, Delayed<SuiAddress>) = bcs::from_bytes(&self.contents(runtime_id))?;
+        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config = b.obj(self.shared(config_id, true))?;
         let version_arg = b.obj(self.shared(version[0], false))?;
@@ -553,13 +714,12 @@ impl Harness {
         let treasury_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "TreasuryAdmin")?;
         let zero = b.pure(0u64)?;
         let delay = b.pure(172_800_000u64)?;
-        let destination = b.pure(treasury.0)?;
+        let destination = b.pure(treasury.value)?;
         call(&mut b, package, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, zero, delay, clock]);
         call(&mut b, package, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
         call(&mut b, package, "runtime_config", "schedule_treasury", vec![], vec![runtime, version_arg, treasury_role, destination, delay, clock]);
         call(&mut b, package, "runtime_config", "apply_treasury", vec![], vec![runtime, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
-        self.configure_upgrade_delay(package, "blast_fun", admin, admin_publication, config_cap, version[0], package_admin[0], 172_800_000)?;
         Ok((version[0], package_admin[0]))
     }
 
@@ -599,20 +759,17 @@ impl Harness {
         Ok(call(b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, cap_arg]))
     }
 
-    /// Schedules and applies through real ACL authority; only usable at the old policy's readiness.
-    pub fn configure_upgrade_delay(&mut self, package: ObjectID, marker: &str, admin: ObjectID,
-        publication: &Outcome, cap: ObjectID, version: ObjectID, custody: ObjectID, delay_ms: u64,
-    ) -> Result<()> {
-        let domain = if marker == "blast_presale_package" { "blast_presale_domain" } else { "blast_fun_domain" };
-        let mut b = ProgrammableTransactionBuilder::new();
-        let witness = self.configuration_witness(&mut b, admin, publication, cap, package, domain, "UpgradeAdmin")?;
-        let version_arg = b.obj(self.shared(version, true))?;
-        let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        let delay = b.pure(delay_ms)?;
-        let custody = b.obj(self.shared(custody, true))?;
-        call(&mut b, package, "package_admin", "schedule_upgrade_delay", vec![], vec![custody, version_arg, witness, delay, clock]);
-        call(&mut b, package, "package_admin", "apply_upgrade_delay", vec![], vec![custody, version_arg, clock]);
-        self.execute(b.finish())?.assert_success();
+    /// Decodes any package's `PackageAdmin`: its id, sealed Publisher, sealed caps and upgrade slot.
+    pub fn package_admin(&self, custody: ObjectID) -> Result<PackageAdminContents> {
+        bcs::from_bytes(&self.contents(custody)).context("decode PackageAdmin")
+    }
+
+    /// A fresh `PackageAdmin` waits the 48-hour publication notice with nothing scheduled.
+    pub fn assert_publication_upgrade_notice(&self, custody: ObjectID) -> Result<()> {
+        let (admin_id, _, sealed_caps, upgrade) = self.package_admin(custody)?;
+        ensure!(admin_id == custody && upgrade.owner == custody && sealed_caps.len() == 1);
+        ensure!(upgrade.pending.is_none(), "fresh custody has no scheduled action");
+        ensure!(upgrade.delay_ms == PUBLICATION_UPGRADE_NOTICE_MS, "publication starts at the 48-hour upgrade notice");
         Ok(())
     }
 
@@ -630,6 +787,9 @@ impl Harness {
         assert!(outcome.effects.deleted().iter().any(|object| object.0 == bootstrap));
         let version = outcome.created(self, "blast_fun_migrators", "PackageVersion");
         assert_eq!(version.len(), 1);
+        let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
+        assert_eq!(package_admin.len(), 1);
+        self.assert_publication_upgrade_notice(package_admin[0])?;
         Ok(version[0])
     }
 
@@ -796,7 +956,7 @@ pub fn sui_dir() -> PathBuf {
     crate_dir().join("../..").canonicalize().expect("sui directory")
 }
 
-/// The local immutable timelock package linked by `blast_admin`.
+/// The local immutable timelock package linked by `blast_partners`.
 pub fn timelock_dir() -> Result<PathBuf> {
     Ok(sui_dir().join("timelock").canonicalize()?)
 }

@@ -406,16 +406,16 @@ fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
         expected.append(bcs::to_bytes(&delay_ms));
     };
     let actual = match (setting) {
-        Setting::ProtocolShare => if (scheduled) last_event<events::ProtocolFeeShareScheduled>()
-        else last_event<events::ProtocolFeeShareCancelled>(),
-        Setting::Treasury => if (scheduled) last_event<events::TreasuryScheduled>()
-        else last_event<events::TreasuryCancelled>(),
-        Setting::TradeFees => if (scheduled) last_event<events::TradeFeesScheduled>()
-        else last_event<events::TradeFeesCancelled>(),
-        Setting::Allocation => if (scheduled) last_event<events::ProtocolAllocationScheduled>()
-        else last_event<events::ProtocolAllocationCancelled>(),
-        Setting::CreationFee => if (scheduled) last_event<events::CreationFeeScheduled>()
-        else last_event<events::CreationFeeCancelled>(),
+        Setting::ProtocolShare => if (scheduled) last_scheduled<ProtocolFeeShareKey, Bps>()
+        else last_cancelled<ProtocolFeeShareKey, Bps>(),
+        Setting::Treasury => if (scheduled) last_scheduled<TreasuryKey, address>()
+        else last_cancelled<TreasuryKey, address>(),
+        Setting::TradeFees => if (scheduled) last_scheduled<TradeFeesKey, TradeFees>()
+        else last_cancelled<TradeFeesKey, TradeFees>(),
+        Setting::Allocation => if (scheduled) last_scheduled<ProtocolAllocationKey, ProtocolAllocation>()
+        else last_cancelled<ProtocolAllocationKey, ProtocolAllocation>(),
+        Setting::CreationFee => if (scheduled) last_scheduled<CreationFeeKey, u64>()
+        else last_cancelled<CreationFeeKey, u64>(),
     };
     assert_eq!(actual, expected);
 }
@@ -426,19 +426,40 @@ fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     bytes
 }
 
-fun last_event<T: copy + drop>(): vector<u8> {
-    let mut events = sui::event::events_by_type<Event<T>>();
-    bcs::to_bytes(&events.pop_back().unwrap())
+/// The latest proposal's value, deadline and next notice, in the retired payload's order.
+fun last_scheduled<K: copy + drop + store, T: copy + drop + store>(): vector<u8> {
+    let mut events = sui::event::events_by_type<DelayedScheduled<K, T>>();
+    let (_, _, value, delay_ms, ready_at_ms) = events.pop_back().delayed_scheduled_fields();
+    let mut bytes = bcs::to_bytes(&value);
+    bytes.append(bcs::to_bytes(&ready_at_ms));
+    bytes.append(bcs::to_bytes(&delay_ms));
+    bytes
+}
+
+fun last_cancelled<K: copy + drop + store, T: copy + drop + store>(): vector<u8> {
+    let mut events = sui::event::events_by_type<DelayedCancelled<K, T>>();
+    let (_, _, value, _, _) = events.pop_back().delayed_cancelled_fields();
+    bcs::to_bytes(&value)
 }
 
 // === Imports ===
 
 use blast_fun::{
-    events, blast_events::Event,
-    blast_fun::{Self as package_version, PackageVersion}, blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}, bps, launch_config::{Self, LaunchConfig}, runtime_config::{Self, RuntimeConfig}
+    allocation::ProtocolAllocation,
+    blast_fun::{Self as package_version, PackageVersion},
+    blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin},
+    bps::{Self, Bps},
+    launch_config::{
+        Self,
+        CreationFeeKey,
+        LaunchConfig,
+        ProtocolAllocationKey,
+        TradeFees,
+        TradeFeesKey,
+    },
+    runtime_config::{Self, ProtocolFeeShareKey, RuntimeConfig, TreasuryKey},
 };
 
-
-use blast_admin::blast_acl;
+use blast_admin::{blast_acl, delayed::{DelayedCancelled, DelayedScheduled}};
 use std::{bcs, unit_test::{assert_eq, destroy}};
 use sui::clock::Clock;

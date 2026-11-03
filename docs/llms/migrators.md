@@ -48,7 +48,7 @@ Calls also take objects from other packages:
   the ID of the one live cap. Its holder claims the creator's LP fees and changes the fee split. The
   creator gets it from `launch::claim_creator_caps`. A Blast admin with
   `blast_fun_domain::CreatorAdmin` can retire it and issue a new one with
-  `launch::apply_curve_fee_cap_update`; the new cap then controls the vault too.
+  `launch::apply_curve_fee_cap_reassignment`; the new cap then controls the vault too.
 - Blast admin roles. An admin calls `blast_acl::sign_in` (type argument `Role`) with the shared
   `blast_acl::ACL` and its own `blast_acl::AdminCap`, which yields a droppable
   `blast_acl::AdminWitness` (`AdminWitness<Role>`). Each admin call takes the witness for exactly
@@ -56,7 +56,9 @@ Calls also take objects from other packages:
   - `blast_fun_domain::BuybackAdmin`: buyback and burn.
   - `blast_fun_domain::RewardsAdmin`: publish holder-reward rounds and settle their gas reserves.
   - `blast_fun_domain::TreasuryAdmin`: claim migration residuals; set the LP-fee destination.
-  - `blast_fun_domain::FeeAdmin`: set Blast's default and per-coin LP-fee shares.
+  - `blast_fun_domain::FeeAdmin`: set Blast's default and per-coin LP-fee shares and the per-coin
+    notice.
+  - `blast_fun_domain::CancelAdmin`: cancel a pending LP-fee policy or upgrade proposal.
   - `blast_fun_domain::UpgradeAdmin`: govern upgrade notice and authorize package upgrades.
 
   These role types belong to the launchpad; this package declares no roles of its own. Integrators
@@ -79,7 +81,9 @@ Calls also take objects from other packages:
 | `blast_holder_rewards::publish_round`, `blast_holder_rewards::settle_gas_reserve` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
 | `lp_fee_policy::schedule_protocol_destination` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares` | Blast admin: `FeeAdmin` |
+| `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares`, `lp_fee_policy::schedule_coin_shares_delay` | Blast admin: `FeeAdmin` |
+| `lp_fee_policy::cancel_default_shares`, `lp_fee_policy::cancel_coin_shares`, `lp_fee_policy::cancel_coin_shares_delay`, `lp_fee_policy::cancel_protocol_destination` | Blast admin: `CancelAdmin` |
+| `lp_fee_policy::apply_default_shares`, `lp_fee_policy::apply_coin_shares`, `lp_fee_policy::apply_coin_shares_delay`, `lp_fee_policy::apply_protocol_destination` | anyone, once the proposal is ready |
 | `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` | Blast admin: `UpgradeAdmin` |
 | `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publication` and native `UpgradeCap` (done once at deployment) |
 
@@ -100,7 +104,7 @@ Calls also take objects from other packages:
 - `auto_lp_meme`, `auto_lp_quote`: auto-LP amounts the pool has not taken yet.
 - `rewards_meme`, `rewards_quote`: holder-reward funds not yet reserved by a round.
 - `burn_quote`: Quote waiting for a buyback.
-- `fee_split`: a delayed policy containing applied `value`, `delay_ms` and optional `pending` (the launch's split at migration, with a 48-hour notice).
+- `fee_split`: a `Delayed<FeeSplitKey, FeeSplit>` containing applied `value`, `delay_ms` and optional `pending` (the launch's split at migration, with a 48-hour notice).
 - `pool_id`, `partner_id` (copied from the launch, never changes), `next_round`, `last_checkpoint`.
 
 No function removes or transfers a position. No function withdraws the auto-LP, rewards, or burn
@@ -160,8 +164,8 @@ balances except the flows below.
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation’s role
-   to schedule and apply its intended value and next notice. Configure upgrade notice
-   through UpgradeAdmin’s policy-only proposal. Read each applied notice before release.
+   to schedule and apply its intended value and next notice. Upgrade custody already
+   holds its 48-hour notice from publication. Read each applied notice before release.
 5. Finish launchpad configuration and enable each operation’s notice before unpausing migration. Migrators has no independent pause switch.
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
@@ -345,7 +349,8 @@ ready; collections keep using the applied split until an explicit settlement and
    mutable vault, migrators version, read-only launch, live curve-fee cap, proposed split,
    **next** notice in milliseconds, and `Clock`. Both applied fields remain unchanged. The
    proposal waits the full currently applied notice, even when reducing the next notice to zero.
-   A replacement restarts that wait. An unchanged value and notice abort with `EFeeSplitUnchanged`.
+   A replacement restarts that wait. An unchanged value and notice abort with code 20
+   (`EUnchanged`) from Blast admin's `delayed` module.
 3. At or after the stored threshold, **anyone** calls
    `blast_fun_migrators::cetus::settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>` or
    `blast_fun_migrators::bluefin::settle_and_apply_fee_split<Meme, Quote>`. Supply the same vault,
@@ -358,8 +363,9 @@ it discards the proposal and retains the applied split and notice. Cap reassignm
 accepted proposal: its ready application stays permissionless, and only the new live cap may
 cancel or replace it. A delay-only change uses the same settlement boundary. Zero fees still allow
 activation. Already allocated creator, holder, burn and auto-LP balances retain their allocation.
-`FeeSplitScheduled`, `FeeSplitCancelled` and `FeeSplitChanged` identify each transition; the last
-includes old/new splits and the newly applied notice.
+`delayed::DelayedScheduled`, `delayed::DelayedCancelled` and `delayed::DelayedApplied`, keyed by
+`blast_fun_migrators::vault::FeeSplitKey` with the vault ID as `owner`, identify each transition;
+the last includes the previous and new splits and the newly applied notice.
 
 #### Buyback and burn (Blast admin)
 
@@ -463,13 +469,26 @@ sits in the launch and is claimed through the launchpad.
 #### LP-fee policy (Blast admin)
 
 - `lp_fee_policy::schedule_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
-  coin without its own pair. Aborts with `EProtocolFeeSharesUnchanged` if unchanged.
+  coin without its own pair. Aborts with code 20 from Blast admin's `delayed` module if neither
+  the pair nor the notice changes.
 - `lp_fee_policy::schedule_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
-  keyed by its original type name. A pair equal to the defaults is still a real entry: later default
-  changes skip that coin. Aborts if it equals the coin's current pair.
-- `lp_fee_policy::schedule_clear_coin_shares` (type argument `Meme`; `FeeAdmin`): schedules a return to live defaults. The table entry remains with an applied `None` after application; there is no immediate deletion.
+  keyed by its original type name, after the coin overrides' notice; it takes no notice argument.
+  A pair equal to the defaults is still a real entry: later default changes skip that coin. Aborts
+  with code 20 from Blast admin's `delayed_map` module if the pair equals the coin's applied pair.
+- `lp_fee_policy::schedule_clear_coin_shares` (type argument `Meme`; `FeeAdmin`): schedules a return
+  to live defaults, also after the coin overrides' notice. Applying it deletes the coin's entry;
+  there is no immediate deletion. Aborts with code 20 from `delayed_map` when the coin has no
+  applied pair.
+- `lp_fee_policy::apply_coin_shares` (type argument `Meme`; anyone) applies either ready change;
+  `lp_fee_policy::cancel_coin_shares` (`CancelAdmin`) discards it, even when ready.
+- `lp_fee_policy::schedule_coin_shares_delay` (`FeeAdmin`): proposes the one notice every later
+  coin override and clear waits, ready after the applied one. Anyone applies it with
+  `lp_fee_policy::apply_coin_shares_delay`; `CancelAdmin` discards it with
+  `lp_fee_policy::cancel_coin_shares_delay`. Aborts with code 20 from `delayed_map` when the
+  notice equals the applied one.
 - `lp_fee_policy::schedule_protocol_destination` (`TreasuryAdmin`): redirects every later Blast payout.
-  Aborts with `EProtocolDestinationUnchanged` for `@0x0` or the current address.
+  Aborts with `EInvalidProtocolDestination` for `@0x0`, and with code 20 from `delayed` if neither
+  the address nor the notice changes.
 
 Each takes effect only after its delay and explicit application. At publication the defaults are 1,500 BPS (15%)
 for both assets and the destination is the configured genesis recipient; read the live object for current values.
@@ -497,9 +516,37 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 `CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
-later schedules check their own timestamp addition too. Scheduled events include the
-proposed next delay for value/policy replacements, or the unchanged applied notice
-for action-only proposals. Read the live notice before relying on a cancellation window.
+later schedules check their own timestamp addition too. A value proposal that changes neither
+value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 20
+(`EUnchanged`) from Blast admin's `delayed` module (`delayed_map` for the coin overrides,
+`delayed_action` for the upgrade notice).
+Read the live notice before relying on a cancellation window.
+
+Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, the
+`delayed_map::DelayedMap` of per-coin overrides, or the `delayed_action::DelayedAction` upgrade
+slot. The module of each type emits every schedule, cancel and apply event; this package emits
+none of its own. The events are generic in the operation's key and value type and carry `owner`
+(the ID of the object that stores the field) and `key`. A value schedule emits
+`delayed::DelayedScheduled` (after `delayed::DelayedCancelled` for a replaced proposal), a
+cancel emits `delayed::DelayedCancelled`, and an application emits `delayed::DelayedApplied`
+with the previous and new value and the applied notice. Creating a setting emits
+`delayed::DelayedCreated` (a migration does so for the new vault's split), the coin overrides
+`delayed_map::MapCreated` at publication, and the upgrade slot `delayed_action::ActionCreated`.
+Upgrade actions and their notice changes emit `delayed_action::ActionScheduled`,
+`delayed_action::ActionCancelled` and `delayed_action::ActionApplied`, whose `change` is
+`Action(...)` or `Delay` (a notice change). Coin overrides, clears and the coin notice emit
+`delayed_map::MapScheduled`, `delayed_map::MapCancelled` and `delayed_map::MapApplied` with
+key `lp_fee_policy::CoinSharesKey`; their `change` is `Entry { entry, value }` (the Meme's
+original type name and its new pair, or none for a clear) or `Delay`. Their `delay_ms` is the
+proposed next notice for a notice change and the applied notice for an action or entry change.
+
+| Operation | Object and field | Key | Value or action type |
+| --- | --- | --- | --- |
+| Default shares | `LpFeePolicy.defaults` | `lp_fee_policy::DefaultSharesKey` | `lp_fee_policy::SharePair` |
+| Per-coin pairs and their notice | `LpFeePolicy.coins` | `lp_fee_policy::CoinSharesKey` (a unit key; each event's entry is the Meme's original type name) | `SharePair` per `TypeName` entry |
+| Blast's payee | `LpFeePolicy.destination` | `lp_fee_policy::ProtocolDestinationKey` | `address` |
+| A vault's creator split | `LpVault.fee_split` | `blast_fun_migrators::vault::FeeSplitKey` | `allocation::FeeSplit` |
+| Upgrades and immutability | `PackageAdmin.upgrade` | `blast_fun_migrators::package_admin::UpgradeKey` | `blast_fun_migrators::package_admin::UpgradeAction` |
 
 `blast_fun_migrators::package_admin::schedule_upgrade` takes the exact digest and
 uses the stored upgrade notice, with no delay argument.
@@ -513,15 +560,18 @@ notice period, replacing any pending action. Anyone applies it with
 `blast_fun_migrators::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
 `blast_fun_migrators::package_admin::cancel_upgrade_action` cancels any of these proposals.
 
-Publication-owned policy singletons and package custody start with zero notice for
-ordinary role-authorized setup. Configure and apply each operation's intended notice
-(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
-release. Raising a notice never changes previously scheduled deadlines or next delays.
+Publication-owned policy singletons start with zero notice for ordinary
+role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
+no upgrade or immutability action can run without notice, even during setup. Configure
+and apply each other operation's intended notice, and drain or cancel all earlier setup
+proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
-A newly introduced coin override inherits the defaults operation's applied notice.
-Clearing or cancelling an override retains its table entry and its applied notice;
-a fresh override cannot obtain a zero-delay first update once defaults are protected.
+Per-coin overrides share one notice of their own, which starts at the policy's publication
+notice and changes only through `lp_fee_policy::schedule_coin_shares_delay`. Every override
+and clear, for a new coin or an existing one, waits the coin notice applied when it was
+scheduled, so an override set during zero-notice setup gains no zero-delay later update once
+that notice is raised. The coin notice is independent of the defaults' notice: protect both.
 
 ### Economics
 
@@ -614,7 +664,8 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 
 This package has no public getters for its objects. Read object fields over RPC or GraphQL.
 
-`Delayed<T>` contains the applied `value`, applied `delay_ms` and an optional `pending` record with the proposed
+A `Delayed<K, T>` (from `blast_admin::delayed`) contains `owner` (the ID of the object that stores it),
+`key`, the applied `value`, applied `delay_ms` and an optional `pending` proposal with the proposed
 `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
 economics: the proposal becomes applied only when its apply call succeeds.
 
@@ -626,11 +677,14 @@ economics: the proposal becomes applied only when its apply call succeeds.
 - **Find a launch's vault:** scan `VaultCreated` events for its `meme` type name, or read the
   objects the migrate transaction created. Each Meme type has exactly one launch, so `LpVault<Meme,
   Quote>` is unique per Meme.
-- **Blast's live share for a coin:** `LpFeePolicy.coins` is a table keyed by the standard library's
-  `TypeName` holding the Meme's original type name (64 hex digits without `0x`, then the module and
-  type names, each after two colons). Each entry holds `Delayed<Option<SharePair>>`. Read the
-  entry's applied `value`: use the pair when it is `Some`, and use `defaults.value` when it is
-  `None` or the table entry is absent. Each pair contains `meme_bps` and `quote_bps`, each a `Bps`
+- **Blast's live share for a coin:** `LpFeePolicy.coins` is a
+  `delayed_map::DelayedMap<CoinSharesKey, TypeName, SharePair>`. Its `entries` field is a `Table`
+  keyed by the standard library's `TypeName` holding the Meme's original type name (64 hex digits
+  without `0x`, then the module and type names, each after two colons), with the applied
+  `SharePair` as value. Use the coin's pair when its entry exists, and `defaults.value`
+  otherwise. `coins.delay_ms` is the coin notice, `coins.pending` maps each coin to its pending
+  change (the proposed pair, or none for a clear, and its notice and `ready_at_ms`), and
+  `coins.pending_delay` holds a proposed coin notice. Each pair contains `meme_bps` and `quote_bps`, each a `Bps`
   positional struct wrapping one u64. `destination.value` is the current payee. Both `defaults`
   and `destination` are delayed fields; their pending proposals do not affect these reads.
 - **Round** (`Round<Meme, Quote>`): `vault`, `number`, `claim_deadline_at_ms`, `root`,
@@ -649,12 +703,12 @@ economics: the proposal becomes applied only when its apply call succeeds.
 For example, with applied defaults of 100/200 BPS for Meme/Quote and a proposed override of
 300/400 BPS:
 
-| Coin policy state | Applied entry value | Live Meme/Quote BPS |
+| Coin policy state | Table entry | Live Meme/Quote BPS |
 | --- | --- | --- |
-| No entry | Absent | 100/200 from applied defaults |
-| First override scheduled, including after readiness but before application | `None` | 100/200 from applied defaults |
-| Override applied, including while its clear is pending | `Some` pair | 300/400 from the applied override |
-| Clear applied; the table entry remains | `None` | 100/200 from applied defaults |
+| No override | Absent | 100/200 from applied defaults |
+| First override scheduled, including after readiness but before application | Absent | 100/200 from applied defaults |
+| Override applied, including while its clear is pending | The pair | 300/400 from the applied override |
+| Clear applied | Absent | 100/200 from applied defaults |
 
 When using defaults, always read their current applied value. If defaults change during a
 clear's notice period, applying that clear restores those updated defaults.
@@ -663,6 +717,8 @@ clear's notice period, applying that clear restores those updated defaults.
 
 This package emits its events directly, with no envelope. The launchpad wraps its own events in
 `blast_fun::blast_events::Event`. All events below are in this package's `blast_events` module.
+Fee-split, LP-fee policy and upgrade schedules, cancellations and applications emit Blast
+admin's delayed-module events instead; see "Delayed administration" for their keys.
 
 | Event | Emitted by | Fields |
 | --- | --- | --- |
@@ -671,9 +727,6 @@ This package emits its events directly, with no envelope. The launchpad wraps it
 | `FeesCollected` | nonzero collection | `vault_id`, `gross_meme`, `gross_quote`, `protocol_destination` (none when held for a partner), `protocol_meme`, `protocol_quote`, `creator_*`, `auto_lp_*`, `rewards_*`, `burn_meme` (burned), `burn_quote` (waits), `recipient_meme`, `recipient_quote` (split order) |
 | `AutoLpPositionOpened` | first Cetus collection with both auto-LP balances nonzero | `vault_id`, `position_id` |
 | `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `meme_pending`, `quote_pending` |
-| `FeeSplitScheduled` | creator schedule | `vault_id`, `proposed`, `ready_at_ms`, next `delay_ms` |
-| `FeeSplitCancelled` | creator cancellation | `vault_id`, discarded `proposed` |
-| `FeeSplitChanged` | settled application | `vault_id`, `old_fee_split`, `new_fee_split`, applied `delay_ms` |
 | `CreatorFeesClaimed` | creator LP-fee claim | `vault_id`, `meme_amount`, `quote_amount` |
 | `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `quote_pending` |
 | `RoundPublished` | round publish | `vault_id`, `round_id`, `number`, `start_checkpoint`, `end_checkpoint`, `claim_deadline_at_ms`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`, `quote_amount`, `meme_unallocated`, `quote_unallocated`, `treasury`, `gas_reserve_amount` |
@@ -682,12 +735,11 @@ This package emits its events directly, with no envelope. The launchpad wraps it
 | `RewardPaid` | reward claim | `round_id`, `index`, `beneficiary`, `meme_amount`, `quote_amount`, `meme_remaining`, `quote_remaining` |
 | `ProtocolFeesClaimed` | residual claim | `vault_id`, `meme`, `quote` (type names), `claimant`, `meme_amount`, `quote_amount` |
 | `ProtocolLpFeesClaimed` | partner payout | `vault_id`, `protocol_destination`, `protocol_meme`, `protocol_quote`, `partner_meme`, `partner_quote` |
-| `LpFeePolicyChanged` | policy share change | `meme` (none for defaults), `old_meme_bps`, `old_quote_bps`, `new_meme_bps`, `new_quote_bps` (the old pair is none when a coin pair is created, the new pair none when it is removed) |
-| `LpFeeDestinationChanged` | destination change | `old_destination`, `new_destination` |
 
 Event order inside one call: a collection emits `FeesCollected`, then possibly
-`AutoLpPositionOpened`, then possibly `AutoLiquidityAdded`; a split update adds `FeeSplitChanged`
-last. Venue events from Cetus or Bluefin appear alongside. A partner payout emits
+`AutoLpPositionOpened`, then possibly `AutoLiquidityAdded`; a split update adds
+`delayed::DelayedApplied` (key `blast_fun_migrators::vault::FeeSplitKey`) last. Venue events
+from Cetus or Bluefin appear alongside. A partner payout emits
 `blast_partners::blast_partners::PartnerPaid` (per nonzero asset) before `ProtocolLpFeesClaimed`. A
 migrate transaction carries the launchpad's wrapped `blast_fun::events::MigrationAllocationPaid` (one
 per allocation recipient), `blast_fun::events::ProtocolFeesAccrued` (only when Blast's migration fee
@@ -707,7 +759,8 @@ residual_quote`. Then reduce:
   `recipient_meme[i]` and `recipient_quote[i]`.
 - `AutoLiquidityAdded`: auto-LP balances become `meme_pending`/`quote_pending`; principal rises by
   the added amounts. It can appear without `FeesCollected`, when only earlier leftovers were added.
-- `FeeSplitChanged`: adopt `new_fee_split`.
+- `delayed::DelayedApplied` with key `blast_fun_migrators::vault::FeeSplitKey` and the vault's ID as
+  `owner`: adopt its `value` as the split.
 - `CreatorFeesClaimed`, `ProtocolFeesClaimed`, `ProtocolLpFeesClaimed`: the matching balances become
   zero (each claim takes everything). `CreatorFeesClaimed` names no recipient; the coins go wherever
   the PTB sends them.
@@ -731,24 +784,25 @@ Blast admin abort with plain numeric codes from the named module.
 
 | Flow | Abort | Fix |
 | --- | --- | --- |
-| any | code 12 from Blast admin's `operational_version` module | Call the current package address with the current `PackageVersion` objects; pass the launchpad's too on `new`/`migrate`. |
+| any | code 9 from Blast admin's `operational_version` module | Call the current package address with the current `PackageVersion` objects; pass the launchpad's too on `new`/`migrate`. |
 | Cetus `migrate` | `EInvalidCoinOrder` (0, module `cetus`) | Swap `CoinA` and `CoinB`. |
 | Cetus routes | `EWrongCoinPair` (2, module `cetus`) | `CoinA`/`CoinB` must be exactly the launch's Meme and Quote. |
 | collect, settle, buyback | `EPositionPoolMismatch` (Cetus 1, Bluefin 0) | Pass the pool whose ID is the vault's `pool_id`. |
 | Bluefin `new` | `EInvalidTier` (1, module `bluefin`) | Tick spacing 1..=400, fee rate 1..=20,000. |
 | `migrate` | code 15 from the launchpad's `launch` module | The launch is not `MigrationReady` (not graduated, or already migrated). |
 | `migrate` | code 21 from the launchpad's `launch` module | Use the venue the launch started with. |
-| `migrate` | `EZeroLiquidity` (3, module `vault`) | The seed produced no liquidity; nothing to fix by retrying. |
+| `migrate` | `EZeroLiquidity` (2, module `vault`) | The seed produced no liquidity; nothing to fix by retrying. |
 | creator claim, split update | code 22 from the launchpad's `launch` module | Use the launch's live `CurveFeeCap`. |
-| creator claim | `ENoCreatorFees` (2, module `vault`) | Collect first, or wait for fees. |
-| split update | `EFeeSplitUnchanged` (1, module `vault`) | Propose a different split. |
+| creator claim | `ENoCreatorFees` (1, module `vault`) | Collect first, or wait for fees. |
+| split update, policy | code 20 (`EUnchanged`) from Blast admin's `delayed` module (`delayed_map` for a coin override, clear or coin notice; `delayed_action` for the upgrade notice) | Change the value or the notice; clear only a coin that has a pair. |
+| apply, cancel (split, policy, upgrades) | codes 17 (`ENotReady`), 18 (`ENoPending`), 22 (`EWrongChange`) from Blast admin: 17 from `delayed`, or from `delayed_map` for an early coin override or clear; 18 from the type's own module (`delayed`, `delayed_map` or `delayed_action`); 22 from `delayed_action` | Wait for `ready_at_ms`; check a proposal is pending; use the call matching the pending action or notice change. |
 | split construction | codes 6, 7, 8, 24 from the launchpad's `allocation` module; 0 from its `bps` module | Nonzero destination, sum exactly 10,000, at most 16 recipients, no duplicates, each BPS ≤ 10,000. |
-| partner payout | `EPartnerMismatch` (6, module `vault`) | Pass the `Partner` whose ID is the vault's `partner_id`; vaults without a partner have no payout. |
-| buyback | `EBuybackQuoteOutOfRange` (4), `EBuybackBelowMinimum` (5), module `vault` | Pass a `quote_in` between 1 and the vault's `burn_quote`; lower `min_meme_out` or retry at a better price. |
+| partner payout | `EPartnerMismatch` (5, module `vault`) | Pass the `Partner` whose ID is the vault's `partner_id`; vaults without a partner have no payout. |
+| buyback | `EBuybackQuoteOutOfRange` (3), `EBuybackBelowMinimum` (4), module `vault` | Pass a `quote_in` between 1 and the vault's `burn_quote`; lower `min_meme_out` or retry at a better price. |
 | residual claim | `ENothingClaimable` (0, module `vault`) | Nothing left to claim. |
 | publish round | `EWrongRound` (0), `EInvalidInterval` (1), `EInvalidCommitment` (2), `EInvalidLeafCount` (3), `EEmptyBudget` (4), `ETreasuryChanged` (9), `EInvalidClaimDeadline` (10), `EInsufficientBudget` (11) in `blast_holder_rewards` | Use `next_round`, a nonoverlapping interval, 32-byte digests, 1..=65,536 leaves, and a nonzero holder budget. Match the governed treasury, choose a future deadline, and fit holder Quote plus reserve within the rewards balance. |
 | reward claim | `EInvalidIndex` (5), `EAlreadyClaimed` (6), `EInvalidBeneficiary` (7), `EEmptyBudget` (4), `EInvalidProof` (8) in `blast_holder_rewards` | Pass the leaf exactly as committed with its full-depth proof; each leaf pays once. |
-| policy | `EProtocolDestinationUnchanged` (0), `EProtocolFeeSharesUnchanged` (1) in `lp_fee_policy` | Change the stored value. |
+| policy | `EInvalidProtocolDestination` (0) in `lp_fee_policy` | Pass a nonzero destination. |
 
 Venue-side aborts (Cetus or Bluefin refusing a tier, a pair, or a fee amount) carry the venue's own
 codes.

@@ -3,6 +3,8 @@
 - Status: accepted
 - Date: 2026-10-31
 - Amended: 2026-11-02 — operation-owned notices, delayed creator splits, and bonding reward custody
+- Amended: 2026-11-03 — keyed delayed primitives in four modules that own their lifecycle events, a
+  `DelayedMap` for per-coin LP overrides; root transfer on `delayed_action`
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
   [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
   [0007](0007-acl-pause-and-versioning.md) (pause),
@@ -10,7 +12,9 @@
   [0034](0034-remove-premature-governance-cutover.md) (upgrades),
   [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage),
   [0114](0114-launchpad-custody-before-activation.md) and
-  [0117](0117-presale-versioning-and-activation.md) (one-time bootstrap and paused release)
+  [0117](0117-presale-versioning-and-activation.md) (one-time bootstrap and paused release),
+  [0097](0097-one-singleton-acl-with-typed-roles.md) (timelocked root transfer),
+  [0058](0058-eventless-package-initialization.md) (eventless initialization)
 - Supersedes: the 2026-10-28 canonical stack, which holds no user assets
 
 ## Context
@@ -70,9 +74,14 @@ adapter removal clears that type's membership and pending admission without rese
 its notice.
 
 Fresh creator-cap reassignment operations and presale-vault LP-fee operations start at
-48 hours. Their later notices can change independently after the current notice. A lazy
-per-coin LP override inherits the accepted defaults notice; clearing and cancelling keep
-the entry and its applied notice. New objects cannot reopen publication bootstrap.
+48 hours. Their later notices can change independently after the current notice. Per-coin
+LP overrides share one notice of their own (amended 2026-11-03), held by a `DelayedMap` that
+starts at the policy's publication notice and changes only through its own schedule/apply
+path, independently of the defaults' notice. Every override and every clear, for a new coin or
+an existing one, waits the map notice applied when it was scheduled, so an override set during
+zero-notice setup keeps no zero notice once the map notice is raised. Clearing is a delayed
+change that removes the entry; cancelling keeps the applied override. New objects cannot reopen
+publication bootstrap.
 
 ### Delayed migrated-vault creator splits
 
@@ -155,7 +164,8 @@ Wrapping consumes that proof and seals the matching never-upgraded UpgradeCap be
 sharing the operational generation. The proof never authorizes policy setters. Launchpad
 and presale start fully paused; migrators relies on launchpad migration gating.
 
-Publication-owned policy operations and upgrade custody begin with zero notice. Ordinary
+Publication-owned policy operations begin with zero notice (amended 2026-11-03: upgrade custody
+begins at 48 hours, so no upgrade or immutability action ever runs without notice). Ordinary
 ACL roles may configure their values and intended notices in schedule/apply PTBs. There
 are no special bootstrap setters. Before release, settle or cancel every outstanding
 zero-notice proposal, configure and verify **each operation's** intended notice, then
@@ -225,3 +235,77 @@ Native PTBs cover application followed by a failing schedule/application, provin
 of values, notices, proposals and events. Existing pause, custody, claims and ACL tests
 remain required. Source boundary gates reject bypass APIs and missing owner persistence;
 integrator guides and generated references must match source.
+
+## Amendment 2026-11-03: keyed primitives that own their events
+
+### Context
+
+Owners re-implemented the delayed state machine around a bare `Pending` record,
+encoded notice-only proposals with placeholder values (`DelayOnly`, `false`,
+`option::none()`), passed the same notice twice, persisted the next notice by hand
+under source-gate protection, and each emitted its own scheduled, cancelled and
+changed events. The ACL root transfer used the separate immutable
+`blast_fun_timelock` package, whose values switch by themselves at a deadline,
+only as a deadline holder.
+
+### Decision
+
+Four `blast_admin` modules each own one delayed type and its lifecycle events:
+`delayed` (which also holds `Proposal`, `Notice` and the deadline rules every type
+shares), `delayed_action`, `delayed_set` and `delayed_map`. Each type stores its
+`owner` object ID and an owner-defined key `K`. Constructors take the owner's `&UID`
+rather than an `ID`, so only code that creates or holds an object can attribute
+delayed values and events to it:
+
+- `Delayed<K, T>`: a setting with its notice and one proposal (unchanged rules).
+- `DelayedAction<K, A>`: a notice and one proposal that is either `Action(A)` or
+  a notice change. `take_action` hands a ready action to the owner;
+  `apply_delay` applies a ready notice change; each rejects the other kind. The
+  primitive persists notice changes itself.
+- `DelayedSet<K, E>`: an allowlist whose admissions each snapshot a deadline from
+  the applied notice; a notice change never moves accepted deadlines; removal is
+  immediate.
+- `DelayedMap<K, E, V>`: keyed values under one shared notice, stored in a `Table`
+  so the map grows without bound and a read costs one entry. Each entry change,
+  setting or clearing, snapshots its deadline from the applied notice; a notice
+  change never moves accepted deadlines. Clearing is a delayed change like setting.
+
+Only the module that defines `K` can pack it, so only that module can create a
+value keyed by it. Each type's module emits every lifecycle fact of that type,
+generic in `K` and the value, action, member or entry types: `Delayed*` from
+`delayed`, `Action*` from `delayed_action`, `Set*` and `MemberRemoved` from
+`delayed_set`, and `Map*` from `delayed_map`, each family with `Created`,
+`Scheduled`, `Cancelled`, `Applied` and `Destroyed`. A map event's change names
+its entry, so one map keyed by a unit `K` records every entry's lifecycle. An
+error a type raises in its own call is located in its module; readiness and
+overflow checked through the shared deadline rules are located in `delayed`. A
+replacement emits `Cancelled` for the displaced proposal before `Scheduled`, so
+every proposal ends in exactly one `Applied` or `Cancelled`. Destroying a value with a pending proposal aborts, and destruction
+emits its own event, so no proposal or membership ends silently. Owners emit only their own side
+effects. The primitive rejects proposals that change nothing.
+
+Upgrade custody, creator-cap reassignment and the ACL root transfer use
+`DelayedAction`; migration-witness admission uses `DelayedSet`; per-coin LP-fee
+overrides use `DelayedMap`; settings use `Delayed`. The raw `Pending` API is removed. The root transfer is a
+`DelayedAction` with a fixed seven-day notice and no notice-change path, and
+`blast_admin` no longer depends on `blast_fun_timelock`. Zero-notice bootstrap is
+unchanged: configure with schedule-and-apply pairs, then raise each notice.
+
+### Consequences
+
+Upgrade custody starts at a 48-hour notice instead of zero. Setup never needs an
+upgrade, so this closes the one window in which a compromised UpgradeAdmin could
+replace code or seal a package without notice.
+
+Package initialization is no longer eventless: every delayed value created in
+`init` emits its type's `Created` event. This is deliberate. Each
+operation's stream then starts with its own initial value and notice, so replay
+no longer reads initial notices from published bytecode. Consumer `init`
+functions still emit no events of their own.
+
+Every delayed field gains `owner` and `key`; delayed, consumer and event layouts
+change, and the replay stream for delay lifecycle moves to the event types of
+`blast_admin`'s four delayed modules. SDK, indexer and admin console decoders must follow, with a fresh
+publication of the stack. Keys must be structs without public constructors, and
+owner objects must not expose their `&UID`; otherwise another package could emit
+events under that key or owner.

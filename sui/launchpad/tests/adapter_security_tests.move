@@ -28,19 +28,19 @@ public enum Case has copy, drop {
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
 fun adapter_early() { exercise(Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
 fun adapter_replacement() { exercise(Case::Replacement); }
 
-#[test, expected_failure(abort_code = sui::vec_map::EKeyDoesNotExist, location = sui::vec_map)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_set)]
 fun adapter_cancelled() { exercise(Case::Cancelled); }
 
-#[test, expected_failure(abort_code = sui::vec_map::EKeyDoesNotExist, location = sui::vec_map)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_set)]
 fun adapter_removed() { exercise(Case::Removed); }
 
-#[test, expected_failure(abort_code = sui::vec_map::EKeyDoesNotExist, location = sui::vec_map)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_set)]
 fun adapter_replay() { exercise(Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]

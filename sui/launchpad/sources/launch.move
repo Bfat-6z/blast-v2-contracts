@@ -55,10 +55,8 @@ public struct Launch<phantom Meme, phantom Quote> has key {
     allocated_meme: Balance<Meme>,
     fee_ledger: FeeLedger<Meme, Quote>,
     metadata_cap: MetadataCap<Meme>,
-    curve_fee_cap_delay_ms: u64,
-    pending_curve_fee_cap_recipient: Option<Pending<Option<address>>>,
-    metadata_cap_delay_ms: u64,
-    pending_metadata_cap_recipient: Option<Pending<Option<address>>>,
+    curve_fee_cap_reassignment: DelayedAction<CurveFeeCapReassignment, address>,
+    metadata_cap_reassignment: DelayedAction<MetadataCapReassignment, address>,
     creator: Option<CreatorRecipient>,
     curve_fee_cap_id: Option<ID>,
     blast_metadata_cap_id: Option<ID>,
@@ -66,6 +64,12 @@ public struct Launch<phantom Meme, phantom Quote> has key {
     /// launch. It never changes.
     partner_id: Option<ID>,
 }
+
+/// Keys the curve-fee cap reassignment's delayed lifecycle; its action is the recipient.
+public struct CurveFeeCapReassignment() has copy, drop, store;
+
+/// Keys the metadata cap reassignment's delayed lifecycle; its action is the recipient.
+public struct MetadataCapReassignment() has copy, drop, store;
 
 /// Hot potato from `new` to `finalize`, collecting the creator's settings.
 public struct LaunchInitializer<phantom Meme, phantom Quote> {
@@ -271,9 +275,20 @@ public fun finalize<Meme, Quote>(
     let (curve_meme, _, _, _) = allocation_plan.apportion_meme(atomic_supply);
     let creation_fee_amount = creation_fee.value();
     let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(currency, atomic_supply);
+    let id = object::new(ctx);
+    let curve_fee_cap_reassignment = delayed_action::new(
+        CurveFeeCapReassignment(),
+        &id,
+        DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
+    );
+    let metadata_cap_reassignment = delayed_action::new(
+        MetadataCapReassignment(),
+        &id,
+        DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
+    );
 
     let launch = Launch {
-        id: object::new(ctx),
+        id,
         lifecycle: if (opening_round_duration_ms == 0) Lifecycle::Live else Lifecycle::OpeningRound,
         public_start_ms: option::none(),
         opening_round_ms: opening_round_duration_ms,
@@ -298,10 +313,8 @@ public fun finalize<Meme, Quote>(
         fee_ledger: fees::new(creation_fee),
         metadata_cap,
         creator: option::some(creator),
-        metadata_cap_delay_ms: DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
-        pending_metadata_cap_recipient: option::none(),
-        curve_fee_cap_delay_ms: DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
-        pending_curve_fee_cap_recipient: option::none(),
+        curve_fee_cap_reassignment,
+        metadata_cap_reassignment,
         curve_fee_cap_id: option::none(),
         blast_metadata_cap_id: option::none(),
         partner_id,
@@ -391,8 +404,8 @@ public fun claim_creator_caps<Meme, Quote>(
     (curve_fee_cap, blast_metadata_cap)
 }
 
-/// Changes only this launch's curve fee cap notice, waiting its current delay.
-/// Apply through `apply_curve_fee_cap_update`; a policy-only proposal transfers no cap.
+/// Changes only this launch's curve-fee cap notice, after its applied notice.
+/// Apply through `apply_curve_fee_cap_delay`; replaces any pending reassignment.
 public fun schedule_curve_fee_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -402,21 +415,11 @@ public fun schedule_curve_fee_cap_delay<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    let pending = delayed::new_pending(
-        option::none(),
-        self.curve_fee_cap_delay_ms,
-        delay_ms,
-        clock
-    );
-
-    self.pending_curve_fee_cap_recipient = option::some(pending);
-
-    events::curve_fee_cap_delay_scheduled(self.id.to_inner(), delay_ms, pending.ready_at_ms());
+    self.curve_fee_cap_reassignment.schedule_delay(delay_ms, clock);
 }
 
-/// Announces a replacement recipient without invalidating the current curve-fee cap.
-/// Unclaimed curve fees follow the fresh cap when applied.
-/// Preserves this operation's currently applied notice period.
+/// Announces a replacement recipient without invalidating the current curve-fee cap, after
+/// the applied notice. Unclaimed curve fees follow the fresh cap when applied.
 public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -428,20 +431,10 @@ public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
 
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
 
-    let delay_ms = self.curve_fee_cap_delay_ms;
-    let pending = delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock);
-
-    self.pending_curve_fee_cap_recipient = option::some(pending);
-
-    events::curve_fee_cap_reassignment_scheduled(
-        self.id.to_inner(),
-        recipient,
-        pending.ready_at_ms(),
-        delay_ms
-    );
+    self.curve_fee_cap_reassignment.schedule(recipient, clock);
 }
 
-/// Cancels the replacement without affecting either live creator cap.
+/// Cancels the pending reassignment or notice change without affecting either live creator cap.
 public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -449,20 +442,23 @@ public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    let recipient = self.pending_curve_fee_cap_recipient.extract().value();
-    if (recipient.is_none()) {
-        events::curve_fee_cap_delay_cancelled(self.id.to_inner());
-        return
-    };
-    let recipient = recipient.destroy_some();
-
-    events::curve_fee_cap_reassignment_cancelled(self.id.to_inner(), recipient);
+    self.curve_fee_cap_reassignment.cancel();
 }
 
-/// Applies a ready curve-fee cap proposal. A delay-only proposal changes the notice;
-/// a reassignment issues a fresh cap to the recipient and retires the old authority.
-/// Anyone may apply after the scheduled deadline.
-public fun apply_curve_fee_cap_update<Meme, Quote>(
+/// Permissionlessly applies a ready curve-fee cap notice change.
+public fun apply_curve_fee_cap_delay<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+
+    self.curve_fee_cap_reassignment.apply_delay(clock);
+}
+
+/// Permissionlessly applies a ready reassignment: issues a fresh curve-fee cap to the
+/// recipient and retires the old authority.
+public fun apply_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
     clock: &Clock,
@@ -470,16 +466,7 @@ public fun apply_curve_fee_cap_update<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    let recipient = apply_cap_reassignment_delay(
-        &mut self.pending_curve_fee_cap_recipient,
-        &mut self.curve_fee_cap_delay_ms,
-        clock,
-    );
-
-    events::curve_fee_cap_delay_changed(self.id.to_inner(), self.curve_fee_cap_delay_ms);
-
-    if (recipient.is_none()) return;
-    let recipient = recipient.destroy_some();
+    let recipient = self.curve_fee_cap_reassignment.take_action(clock);
 
     self.creator = option::none();
     let curve_fee_cap = creator_authority::new_curve_fee_cap<Meme>(ctx);
@@ -491,8 +478,8 @@ public fun apply_curve_fee_cap_update<Meme, Quote>(
     events::curve_fee_cap_reassigned(self.id.to_inner(), curve_fee_cap_id, recipient);
 }
 
-/// Changes only this launch's metadata cap notice, waiting its current delay.
-/// Apply through `apply_metadata_cap_update`; a policy-only proposal transfers no cap.
+/// Changes only this launch's metadata cap notice, after its applied notice.
+/// Apply through `apply_metadata_cap_delay`; replaces any pending reassignment.
 public fun schedule_metadata_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -502,15 +489,11 @@ public fun schedule_metadata_cap_delay<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    let pending = delayed::new_pending(option::none(), self.metadata_cap_delay_ms, delay_ms, clock);
-
-    self.pending_metadata_cap_recipient = option::some(pending);
-
-    events::metadata_cap_delay_scheduled(self.id.to_inner(), delay_ms, pending.ready_at_ms());
+    self.metadata_cap_reassignment.schedule_delay(delay_ms, clock);
 }
 
-/// Announces a replacement recipient without invalidating the current metadata cap.
-/// Preserves this operation's currently applied notice period.
+/// Announces a replacement recipient without invalidating the current metadata cap, after
+/// the applied notice.
 public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -522,20 +505,10 @@ public fun schedule_metadata_cap_reassignment<Meme, Quote>(
 
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
 
-    let delay_ms = self.metadata_cap_delay_ms;
-    let pending = delayed::new_pending(option::some(recipient), delay_ms, delay_ms, clock);
-
-    self.pending_metadata_cap_recipient = option::some(pending);
-
-    events::metadata_cap_reassignment_scheduled(
-        self.id.to_inner(),
-        recipient,
-        pending.ready_at_ms(),
-        delay_ms
-    );
+    self.metadata_cap_reassignment.schedule(recipient, clock);
 }
 
-/// Cancels the replacement without affecting either live creator cap.
+/// Cancels the pending reassignment or notice change without affecting either live creator cap.
 public fun cancel_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -543,20 +516,23 @@ public fun cancel_metadata_cap_reassignment<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    let recipient = self.pending_metadata_cap_recipient.extract().value();
-    if (recipient.is_none()) {
-        events::metadata_cap_delay_cancelled(self.id.to_inner());
-        return
-    };
-    let recipient = recipient.destroy_some();
-
-    events::metadata_cap_reassignment_cancelled(self.id.to_inner(), recipient);
+    self.metadata_cap_reassignment.cancel();
 }
 
-/// Applies a ready metadata cap proposal. A delay-only proposal changes the notice;
-/// a reassignment issues a fresh cap to the recipient and retires the old authority.
-/// Anyone may apply after the scheduled deadline.
-public fun apply_metadata_cap_update<Meme, Quote>(
+/// Permissionlessly applies a ready metadata cap notice change.
+public fun apply_metadata_cap_delay<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+
+    self.metadata_cap_reassignment.apply_delay(clock);
+}
+
+/// Permissionlessly applies a ready reassignment: issues a fresh metadata cap to the
+/// recipient and retires the old authority.
+public fun apply_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
     clock: &Clock,
@@ -564,16 +540,7 @@ public fun apply_metadata_cap_update<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    let recipient = apply_cap_reassignment_delay(
-        &mut self.pending_metadata_cap_recipient,
-        &mut self.metadata_cap_delay_ms,
-        clock,
-    );
-
-    events::metadata_cap_delay_changed(self.id.to_inner(), self.metadata_cap_delay_ms);
-
-    if (recipient.is_none()) return;
-    let recipient = recipient.destroy_some();
+    let recipient = self.metadata_cap_reassignment.take_action(clock);
 
     self.creator = option::none();
     let blast_metadata_cap = creator_authority::new_metadata_cap<Meme>(ctx);
@@ -997,20 +964,6 @@ public fun assert_curve_fee_cap<Meme, Quote>(
 
 // === Private Functions ===
 
-/// Commits a ready cap proposal's notice and returns its optional reassignment recipient.
-fun apply_cap_reassignment_delay(
-    pending: &mut Option<Pending<Option<address>>>,
-    delay_ms: &mut u64,
-    clock: &Clock,
-): Option<address> {
-    let (recipient, next_delay_ms) = (*pending).destroy_some().take_ready(clock);
-
-    *pending = option::none();
-    *delay_ms = next_delay_ms;
-
-    recipient
-}
-
 fun assert_metadata_update<Meme, Quote>(
     self: &Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -1129,7 +1082,7 @@ public fun reassign_metadata_cap_for_testing<Meme, Quote>(
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_metadata_cap_reassignment(package_version, admin, recipient, &clock);
     clock.set_for_testing(DEFAULT_CAP_REASSIGNMENT_DELAY_MS);
-    self.apply_metadata_cap_update(package_version, &clock, ctx);
+    self.apply_metadata_cap_reassignment(package_version, &clock, ctx);
     clock.destroy_for_testing();
 }
 
@@ -1144,7 +1097,7 @@ public fun reassign_curve_fee_cap_for_testing<Meme, Quote>(
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_curve_fee_cap_reassignment(package_version, admin, recipient, &clock);
     clock.set_for_testing(DEFAULT_CAP_REASSIGNMENT_DELAY_MS);
-    self.apply_curve_fee_cap_update(package_version, &clock, ctx);
+    self.apply_curve_fee_cap_reassignment(package_version, &clock, ctx);
     clock.destroy_for_testing();
 }
 
@@ -1162,6 +1115,20 @@ public fun balances_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): (u64, 
 #[test_only]
 public fun policy_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): (u64, u64) {
     (self.quote_fee_bps.value(), self.meme_fee_bps.value())
+}
+
+#[test_only]
+public fun curve_fee_cap_reassignment_for_testing<Meme, Quote>(
+    self: &Launch<Meme, Quote>,
+): &DelayedAction<CurveFeeCapReassignment, address> {
+    &self.curve_fee_cap_reassignment
+}
+
+#[test_only]
+public fun metadata_cap_reassignment_for_testing<Meme, Quote>(
+    self: &Launch<Meme, Quote>,
+): &DelayedAction<MetadataCapReassignment, address> {
+    &self.metadata_cap_reassignment
 }
 
 #[test_only]
@@ -1286,7 +1253,7 @@ public fun migration_witness_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>
 // === Imports ===
 
 use blast_admin::{
-    delayed::{Self, Pending},
+    delayed_action::{Self, DelayedAction},
     blast_acl::AdminWitness,
 };
 

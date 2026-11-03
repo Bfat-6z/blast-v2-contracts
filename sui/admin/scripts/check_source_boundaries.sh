@@ -65,11 +65,8 @@ dependency_names="$(awk '
     print line
   }
 ' "$package_dir/Move.toml")"
-[[ "$dependency_names" == "$(printf '%s\n' Sui blast_fun_timelock)" ]] \
-  || fail "blast_admin may depend only on the pinned Sui framework and Blast timelock."
-expected_timelock_dependency='blast_fun_timelock = { local = "../timelock" }'
-grep -Fqx "$expected_timelock_dependency" "$package_dir/Move.toml" \
-  || fail "blast_admin must use the local immutable Blast timelock package."
+[[ "$dependency_names" == "Sui" ]] \
+  || fail "blast_admin may depend only on the pinned Sui framework."
 if grep -qE '^\[dev-dependencies(\]|[.])' "$package_dir/Move.toml"; then
   fail "blast_admin may not add dev-only dependencies."
 fi
@@ -126,7 +123,7 @@ for environment, address in entries:
 PY
 fi
 
-for module in blast_acl operational_version upgrade_custody errors blast_admin_events; do
+for module in blast_acl delayed delayed_action delayed_set delayed_map operational_version upgrade_custody errors blast_admin_events; do
   [[ -f "$package_dir/sources/$module.move" ]] \
     || fail "Missing required blast_admin module: $module.move"
 done
@@ -166,8 +163,8 @@ if grep -rniE '\b(fee|pause|migration|creator|pool|venue)\b' "$package_dir/sourc
   fail "Consumer product policy must not enter blast_admin production source."
 fi
 if grep -rn 'sui::event::emit' "$package_dir/sources" \
-  | grep -v "$package_dir/sources/blast_admin_events.move"; then
-  fail "Only blast_admin_events.move may emit shared administration events."
+  | grep -vE "$package_dir/sources/(blast_admin_events|delayed|delayed_action|delayed_set|delayed_map)\.move"; then
+  fail "Only blast_admin_events.move and the delayed modules may emit shared administration events."
 fi
 if grep -rnE 'public(\(package\))?[[:space:]]+(entry[[:space:]]+)?fun[[:space:]]+[^ (]*(release|borrow|take|extract|transfer)[^ (]*' \
   "$package_dir/sources/upgrade_custody.move"; then
@@ -203,8 +200,11 @@ grep -Fqx 'public struct AdminWitness<phantom Role>() has drop;' "$acl_file" \
   || fail "AdminWitness must be a drop-only, role-typed proof."
 grep -Fqx '    admins: Table<ID, VecSet<TypeName>>,' "$acl_file" \
   || fail "ACL must store each live admin and its roles in a Table."
-grep -Fqx '    pending_super_admin: Timelocked<Option<address>>,' "$acl_file" \
-  || fail "A nominated super admin must wait out the timelock before it can accept."
+grep -Fqx '    super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,' "$acl_file" \
+  || fail "A nominated super admin must wait out the fixed delay before it can accept."
+if grep -qE '\.schedule_delay\(|\.apply_delay\(|schedule_action_delay|apply_action_delay' "$acl_file"; then
+  fail "The root transfer delay is a fixed constant with no change path."
+fi
 [[ "$(grep -c '^fun init(ctx: &mut TxContext) {$' "$acl_file")" -eq 1 ]] \
   || fail "The singleton must be created only by package initialization."
 if grep -qE 'types::is_one_time_witness|fun new<' "$acl_file"; then
@@ -228,6 +228,29 @@ expected_acl_public="$(printf '%s\n' \
   | sort)"
 [[ "$actual_acl_public" == "$expected_acl_public" ]] \
   || fail "The production ACL surface changed without boundary review."
+
+for delayed_module in delayed delayed_action delayed_set delayed_map; do
+  if production_lines "$package_dir/sources/$delayed_module.move" \
+    | grep -Eq 'fun[[:space:]]+(set|force|replace|bypass)[a-z_]*[[:space:]]*[<(]'; then
+    fail "Delayed values must expose no immediate setter or bypass ($delayed_module)."
+  fi
+done
+expect_delayed_surface() {
+  local module="$1"; shift
+  local actual expected
+  actual="$(externally_callable_function_names "$package_dir/sources/$module.move" | sort)"
+  expected="$(printf '%s\n' "$@" | sort)"
+  [[ "$actual" == "$expected" ]] || fail "The production $module surface changed without boundary review."
+}
+expect_delayed_surface delayed apply assert_ready cancel delay_ms destroy new notice_delay_ms \
+  notice_ready_at_ms pending proposal_delay_ms proposal_value ready_at_ms schedule schedule_delay \
+  schedule_value value
+expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy new pending schedule \
+  schedule_delay take_action
+expect_delayed_surface delayed_set admission_ready_at_ms apply_add apply_delay cancel_add cancel_delay \
+  contains delay_ms destroy members new pending_delay remove schedule_add schedule_delay
+expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay delay_ms destroy \
+  entry_proposal_notice entry_proposal_value new pending pending_delay schedule schedule_delay value
 
 version_file="$package_dir/sources/operational_version.move"
 if production_lines "$version_file" | grep -Eq 'fun[[:space:]]+(activate|set_generation|set_version)'; then

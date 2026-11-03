@@ -53,7 +53,7 @@ blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
 blast_sui                    -> blast_admin, Sui system
-blast_admin                  -> blast_fun_timelock
+blast_admin                  -> Sui framework only
 ```
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
@@ -61,8 +61,9 @@ composes with it inside one PTB. Presale uses typed roles from the shared
 `blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
 Use the presale guide for presale calls.
 
-`blast_fun_timelock` and `blast_fun_vesting` live in this repository at
-`sui/timelock` and `sui/vesting`; both are immutable on mainnet. The standalone
+`blast_fun_timelock` (used only by `blast_partners`) and `blast_fun_vesting` live
+in this repository at `sui/timelock` and `sui/vesting`; both are immutable on
+mainnet. The standalone
 OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values
@@ -297,7 +298,7 @@ Pending --share--> Open --settle (total >= raise)--> Funded --migrate--> Migrate
 | State | Exists | Allows |
 | --- | --- | --- |
 | `Pending` | Only inside the creation PTB, between `finalize` and `share` | `blast_presale::blast_presale::set_protocol_fees` (admin, when the creation PTB also signs in as `FeeAdmin`), `blast_presale::blast_presale::share` |
-| `Open` | From `share` until `settle` | Before `start_ms`: `blast_presale::blast_presale::set_protocol_fees` (admin). From `start_ms` until `end_ms`: commits. From `end_ms`, or earlier once the raise is full under a hard cap that closes the sale when filled: `blast_presale::blast_presale::settle` |
+| `Open` | From `share` until `settle` | Before `start_ms`: `blast_presale::blast_presale::set_protocol_fees` (admin), which may only keep or lower each rate. From `start_ms` until `end_ms`: commits. From `end_ms`, or earlier once the raise is full under a hard cap that closes the sale when filled: `blast_presale::blast_presale::settle` |
 | `Funded` | After a settle that met the raise | Migration at any time; `blast_presale::blast_presale::cancel_unlaunched` from the LP deadline |
 | `Migrated` | After migration | `blast_presale::blast_presale::claim` (tokens + overflow refund), `blast_presale::blast_presale::pay_protocol_fees_with_partner` once on a partnered sale |
 | `Cancelled` | After an underfunded settle or `cancel_unlaunched` | `blast_presale::blast_presale::claim` (full refund), `blast_presale::blast_presale::destroy_cap` |
@@ -320,8 +321,8 @@ wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
-   role to schedule and apply its intended value and next notice. Use UpgradeAdmin's
-   policy-only upgrade proposal to enable upgrade notice without a code change.
+   role to schedule and apply its intended value and next notice. Upgrade custody
+   already holds its 48-hour notice from publication.
    Read back every operation's notice and configured value before release.
 5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11). Unpause is immediate.
 
@@ -844,12 +845,12 @@ Integrators cannot call these; they explain state changes. Each takes the
 
 | Call | Effect |
 | --- | --- |
-| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise rate < 10,000 BPS; token rate <= 9,998. Application emits `fee_policy::FeesChanged`. |
-| `fee_policy::schedule_destination` | Redirects every later Blast payout, existing sales included. Application emits `fee_policy::DestinationChanged`. |
-| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), or while `Open` and before `start_ms`. Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
-| `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Application emits `presale_vault::ProtocolLpFeesChanged`. |
+| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise rate < 10,000 BPS; token rate <= 9,998. Application emits `delayed::DelayedApplied<fee_policy::FeesKey, fee_policy::ProtocolFees>`. |
+| `fee_policy::schedule_destination` | Redirects every later Blast payout, existing sales included; rejects `0x0`. Application emits `delayed::DelayedApplied<fee_policy::DestinationKey, address>`. |
+| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`EProtocolFeesIncreased` otherwise). Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
+| `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Application emits `delayed::DelayedApplied<presale_vault::ProtocolLpFeesKey, fee_policy::ProtocolFees>`. |
 | `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `creation_policy::QuoteSet`. |
-| `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `creation_policy::MigrationWitnessSet`; `remove_migration_witness` removes immediately and cancels pending admission. |
+| `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `delayed_set::SetApplied<creation_policy::MigrationWitnessKey, TypeName>`; `remove_migration_witness` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted witness) and cancels pending admission. |
 | `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `creation_policy::PartnerAdded`. |
 | `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `creation_policy::PartnerRemoved`. |
 | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` | See above. |
@@ -871,9 +872,38 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 `CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
-later schedules check their own timestamp addition too. Scheduled events include the
-proposed next delay for value/policy replacements, or the unchanged applied notice
-for action-only proposals. Read the live notice before relying on a cancellation window.
+later schedules check their own timestamp addition too. A value proposal that changes neither
+value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 20
+(`EUnchanged`) from Blast admin's `delayed` module (`delayed_action` for the upgrade notice,
+`delayed_set` for the admission notice).
+Read the live notice before relying on a cancellation window.
+
+Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, the
+`delayed_action::DelayedAction` upgrade slot, or the `delayed_set::DelayedSet` of adapters. The
+module of each type emits every schedule, cancel and apply event; the presale package emits none
+of its own. The events are generic in the operation's key and value type and carry `owner` (the
+ID of the object that stores the field) and `key`. A value schedule emits
+`delayed::DelayedScheduled` (after `delayed::DelayedCancelled` for a replaced proposal), a cancel
+emits `delayed::DelayedCancelled`, and an application emits `delayed::DelayedApplied` with the
+previous and new value and the applied notice. Creating a setting emits
+`delayed::DelayedCreated` (so creating a vault emits it for the vault's two fields), the upgrade
+slot `delayed_action::ActionCreated`, and the admission set `delayed_set::SetCreated`. Upgrade
+actions and their notice changes emit `delayed_action::ActionScheduled`,
+`delayed_action::ActionCancelled` and `delayed_action::ActionApplied`, whose `change` is
+`Action(...)` or `Delay` (a notice change). Adapter admissions and their notice changes emit
+`delayed_set::SetScheduled`, `delayed_set::SetCancelled` and `delayed_set::SetApplied`, whose
+`change` is `Admission(...)` or `Delay`. Their `delay_ms` is the proposed next notice for a
+notice change and the applied notice for an action or admission. `delayed_set::MemberRemoved`
+records an immediate adapter removal.
+
+| Operation | Object and field | Key | Value or action type |
+| --- | --- | --- | --- |
+| Blast's rates | `FeePolicy.fees` | `fee_policy::FeesKey` | `fee_policy::ProtocolFees` |
+| Blast's payee | `FeePolicy.destination` | `fee_policy::DestinationKey` | `address` |
+| A vault's Blast LP-fee rates | `Vault.protocol_fees` | `presale_vault::ProtocolLpFeesKey` | `fee_policy::ProtocolFees` |
+| A vault's creator split | `Vault.fee_split` | `presale_vault::FeeSplitKey` | `blast_presale::blast_presale::FeeSplit` |
+| Upgrades and immutability | `PackageAdmin.upgrade` | `blast_presale::package_admin::UpgradeKey` | `blast_presale::package_admin::UpgradeAction` |
+| Adapter admissions | `CreationPolicy.migration_witnesses` | `creation_policy::MigrationWitnessKey` | `TypeName` |
 
 `blast_presale::package_admin::schedule_upgrade` takes only the digest in addition to
 its state, authority and Clock inputs, and uses the stored upgrade notice.
@@ -887,22 +917,25 @@ notice period, replacing any pending action. Anyone applies it with
 `blast_presale::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
 `blast_presale::package_admin::cancel_upgrade_action` cancels any of these proposals.
 
-Publication-owned policy singletons and package custody start with zero notice for
-ordinary role-authorized setup. Configure and apply each operation's intended notice
-(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
-release. Raising a notice never changes previously scheduled deadlines or next delays.
+Publication-owned policy singletons start with zero notice for ordinary
+role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
+no upgrade or immutability action can run without notice, even during setup. Configure
+and apply each other operation's intended notice, and drain or cancel all earlier setup
+proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
-Adapter admissions share one persistent `witness_delay_ms` across witness types;
-a fresh type cannot reopen setup. `creation_policy::schedule_migration_witness` accepts
-only the witness type in addition to its state, authority and Clock inputs. It snapshots
+Adapter admissions share one applied notice across witness types, held in the
+`delayed_set::DelayedSet` `CreationPolicy.migration_witnesses`; a fresh type cannot reopen setup.
+`creation_policy::schedule_migration_witness` accepts only the witness type in addition to its state, authority and Clock inputs. It snapshots
 the applied notice and deadline; application only admits that witness and preserves the
 live notice. `creation_policy::schedule_migration_delay` proposes a new notice under
 AdapterAdmin; anyone calls `creation_policy::apply_migration_delay`, and CancelAdmin uses
 `creation_policy::cancel_migration_delay`. Applying admissions before or after a policy
 change cannot overwrite that policy. Existing admission deadlines remain fixed; settle
 or cancel all zero-notice admissions before completing setup. Immediate adapter removal
-cancels that type's pending admission and preserves the applied notice.
+cancels that type's pending admission and preserves the applied notice. Scheduling an
+admitted witness, or removing one that is neither admitted nor pending, aborts with code 20
+from `delayed_set`.
 
 New vaults start their own LP-fee notice at 48 hours; creating a fresh vault never
 reopens zero-notice setup. Vault fee changes can propose a different next notice,
@@ -919,6 +952,8 @@ Presale creation/sharing, all three commitment paths and migration check their r
 `blast_presale::blast_presale::set_protocol_fees` remains immediate before the
 sale starts, but now takes the live `FeePolicy`; every rate must be at or below
 its applied rates. Scheduled increases cannot authorize larger sale overrides.
+Once a sale is shared it is public, so an override there may only keep or lower
+each of its four rates; only the creation PTB may raise one.
 AdapterAdmin may immediately remove an adapter with `creation_policy::remove_migration_witness`.
 Genesis treasury is configured before publication, never defaulted to the publisher.
 
@@ -984,7 +1019,8 @@ charged at creation, on commitment, on refund, or when a sale does not migrate.
   can change them later.
 - Every payout goes to `FeePolicy.destination` as it is when paid.
 
-Per-sale changes before the start (`blast_presale::blast_presale::set_protocol_fees`): a changed raise rate
+Per-sale changes before the start (`blast_presale::blast_presale::set_protocol_fees`): a rate may rise
+only in the creation PTB; on a shared sale each rate may only stay or fall. A changed raise rate
 becomes `floor(R × raise_bps / 10,000)` and takes from or gives to the LP's Quote; a changed token
 rate becomes `floor(supply × token_bps / 10,000)` and takes from or gives to the buyers'
 allocation `A`. A rate equal to the sale's current one keeps its current amount (the creation
@@ -1013,7 +1049,8 @@ schedule a replacement through `presale_vault::schedule_fee_split`, supplying th
 `FeeSplit`, next notice in milliseconds and `Clock`. The initial notice is 48 hours
 (`172_800_000` milliseconds). The full applied notice governs every change, including a reduction
 to zero; replacing a proposal restarts that wait. Both value and notice stay applied until explicit
-activation. A delay-only change is valid; unchanged value and notice abort with `EFeeSplitUnchanged`.
+activation. A delay-only change is valid; unchanged value and notice abort with code 20
+(`EUnchanged`) from Blast admin's `delayed` module.
 
 The same cap holder may call `presale_vault::cancel_fee_split` even when the proposal is ready.
 Cancellation retains applied policy. At or after readiness, anyone may call
@@ -1031,9 +1068,10 @@ sent before activation but received afterward. Expiry alone keeps the old split 
 collection-time accounting, rather than accrual-time allocation. Indexers must expose that boundary.
 
 Standalone vaults have no matching presale cap and retain their creation split. The events
-`presale_vault::FeeSplitScheduled`, `presale_vault::FeeSplitCancelled`, and
-`presale_vault::FeeSplitChanged` record proposed values/deadline, discarded proposal, and applied
-old/new values and notice, respectively. Schedule and cancel validate the version first and the
+`delayed::DelayedScheduled`, `delayed::DelayedCancelled`, and `delayed::DelayedApplied`, keyed by
+`presale_vault::FeeSplitKey` with the vault ID as `owner`, record the proposed split, next notice
+and deadline; the discarded proposal; and the previous and new split with the applied notice,
+respectively. Schedule and cancel validate the version first and the
 exact stored cap ID second; application validates the version before venue and readiness.
 
 #### Seed price bound
@@ -1056,7 +1094,8 @@ All times are Unix milliseconds from `Clock`.
   after the end: `EPresaleEnded`.
 - Caps lift at `now >= uncapped start`.
 - `blast_presale::blast_presale::set_protocol_fees`: in the creation PTB before `share`, or after it while
-  `now < start_ms`. A sale shared with a start in the past can be repriced only in its creation PTB.
+  `now < start_ms`, when it may only lower rates. A sale shared with a start in the past can be
+  repriced only in its creation PTB. After the start, `EPresaleStarted` precedes the rate checks.
 - `blast_presale::blast_presale::settle`: from `now >= end_ms`, at any later time, or earlier once the sale can close
   early.
 - Migration: any time while `Funded`, including after the LP deadline, until someone cancels.
@@ -1105,23 +1144,25 @@ Common answers:
 
 Other objects:
 
-Delayed policy fields contain the applied `value`, applied `delay_ms`, and an optional `pending` record with the
-proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
+Delayed policy fields are Blast admin `delayed::Delayed` values. A `Delayed<K, T>` contains `owner` (the ID of
+the object that stores it), `key`, the applied `value`, applied `delay_ms`, and an optional `pending`
+proposal with the proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
 pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
 positional struct wrapping one u64.
 
-- `FeePolicy`: `destination` is `Delayed<address>`, so `destination.value` is the current payee.
-  `fees` is `Delayed<ProtocolFees>`; `fees.value` holds the applied `raise_bps`, `token_bps`,
+- `FeePolicy`: `destination` is `Delayed<DestinationKey, address>`, so `destination.value` is the
+  current payee. `fees` is `Delayed<FeesKey, ProtocolFees>`; `fees.value` holds the applied `raise_bps`, `token_bps`,
   `lp_fee_meme_bps` and `lp_fee_quote_bps`, each a `Bps`.
-- `CreationPolicy`: `allowed_quotes` and `allowed_migration_witnesses` (sets of type names with
-  original package IDs); `pending_witnesses` maps adapter type names to admission proposals
-  with `value`, snapshotted `delay_ms` and `ready_at_ms`. Admission application preserves
-  the live delay policy and becomes active when applied to
-  `allowed_migration_witnesses`. Accepted partners are dynamic fields keyed by
+- `CreationPolicy`: `allowed_quotes` (a set of type names with original package IDs) and
+  `migration_witnesses`, a `DelayedSet<MigrationWitnessKey, TypeName>`. Its `members` holds the
+  admitted witness type names (original package IDs), `delay_ms` the applied admission notice,
+  `admissions` maps each pending type name to its snapshotted `delay_ms` and `ready_at_ms`, and
+  `pending_delay` holds a proposed next notice. An admission becomes active only when applied
+  into `members`, which preserves the applied notice. Accepted partners are dynamic fields keyed by
   `creation_policy::PartnerKey` (the partner's ID) whose `u64` value is the time the partner stops
   being accepted (the maximum u64 while accepted).
-- `Vault`: `presale_id`, `presale_cap_id`, `pool_id`, `fee_split`, `protocol_fees`
-  (`Delayed<ProtocolFees>`; read `protocol_fees.value.lp_fee_meme_bps` and
+- `Vault`: `presale_id`, `presale_cap_id`, `pool_id`, `fee_split` (`Delayed<FeeSplitKey, FeeSplit>`),
+  `protocol_fees` (`Delayed<ProtocolLpFeesKey, ProtocolFees>`; read `protocol_fees.value.lp_fee_meme_bps` and
   `protocol_fees.value.lp_fee_quote_bps` for the applied LP rates), `partner_id`,
   `unpaid_protocol_meme`, `unpaid_protocol_quote`,
   `migration_meme_residual`, `migration_quote_residual`, `holder_rewards_meme`,
@@ -1161,7 +1202,7 @@ directly (no envelope).
 | Rounds | `holder_rewards::RoundPublished`, `holder_rewards::RewardClaimed`, `holder_rewards::GasReserveSettled`, `holder_rewards::RoundClosed` | Holder funding separate from optional gas reserve, snapshotted treasury, exact reimbursement and returns; zero reserve disables reimbursement. |
 | Vesting | `VestingCreated`, `VestingClaimed` (from `blast_fun_vesting`) | Schedule terms and releases. |
 
-Admin events are listed in "Blast admin operations".
+Admin events are listed in "Blast admin operations" and "Delayed administration".
 
 ### Aborts
 
@@ -1219,12 +1260,21 @@ it. Common ones by flow (module `blast_presale` unless named):
   `holder_rewards::EClaimsStillOpen`. An overcommitted root aborts in the framework's balance
   split when the round runs out.
 - Admin-only: `blast_acl::sign_in` aborts for a revoked `AdminCap` or one without the role;
-  then `EPresaleStarted`,
-  `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EFeesUnchanged`,
-  `fee_policy::EInvalidDestination`, `presale_vault::EProtocolLpFeesUnchanged`,
+  then `EPresaleStarted`, `EProtocolFeesIncreased` (a shared sale's override raises a rate),
+  `EAboveFeePolicy`, `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EInvalidDestination`,
   `creation_policy::EAllowanceUnchanged`, `creation_policy::EInvalidMigrationWitness`, and the
   `holder_rewards` publish checks (`EWrongRound`, `EInvalidInterval`, `EInvalidCommitment`,
   `EInvalidLeafCount`, `EEmptyBudget`, `EInvalidClaimDeadline`).
+- Delayed administration (fee split, LP-fee rates, policy fees and payee, adapter admission,
+  upgrades): Blast admin's delayed modules abort with plain codes. 17 `ENotReady`: applied
+  before `ready_at_ms` (from `delayed_set` for an early admission, otherwise from `delayed`).
+  18 `ENoPending`: applied or cancelled with nothing pending (from the type's own module:
+  `delayed` for a setting, `delayed_action` for an upgrade, `delayed_set` for an admission). 19
+  `EInvalidDelay`: a deadline or notice would overflow (from `delayed`). 20 `EUnchanged`: the
+  proposal changes nothing, the witness is already admitted, or the removed witness is unknown
+  (from the type's own module). 22 `EWrongChange` (from `delayed_action`):
+  `authorize_upgrade` or `make_immutable` while a notice change is pending, or
+  `apply_upgrade_delay` while an action is pending.
 
 ### Pitfalls
 
@@ -1320,7 +1370,8 @@ Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale:
    can never migrate and refunds after its LP deadline. It aborts with
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongMigrator` when the initializer was started by another
    migrator (it reads `blast_presale::blast_presale::migration_witness`).
-6. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, which needs
+6. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, the only
+   point where they may rise (up to the applied policy), which needs
    Blast's presale `FeeAdmin` signed in within the same transaction; then
    `blast_presale::blast_presale::share(presale, commitment_starts_at_ms, clock)`.
 
@@ -2244,10 +2295,11 @@ public fun share<SaleToken, Quote>(
 )
 
 /// Replaces this sale's snapshot of Blast's rates before its window starts, while nobody can have
-/// committed: in its creation transaction before `share`, or once shared until its start. A
-/// changed token rate reapportions Blast's tokens against the buyers' sale allocation and a
-/// changed raise rate its Quote against the LP's, each rounded down; an unchanged rate keeps its
-/// amount, and every recipient keeps its amount.
+/// committed: in its creation transaction before `share`, or once shared until its start. Once
+/// shared the sale is public, so each rate may only stay or fall; only the creation transaction
+/// may raise one, up to the applied fee policy. A changed token rate reapportions Blast's tokens
+/// against the buyers' sale allocation and a changed raise rate its Quote against the LP's, each
+/// rounded down; an unchanged rate keeps its amount, and every recipient keeps its amount.
 public fun set_protocol_fees<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &blast_presale_package::PackageVersion,
@@ -2547,6 +2599,7 @@ public struct Claimed<phantom SaleToken, phantom Quote> has copy, drop {
 | `EMissingSetting` | 34 | A presale needs its eligibility policy and LP-fee split set before it is finalized. |
 | `ESaleTokenNotUnregulated` | 35 | The sale currency must be confirmed unregulated; regulated and unknown legacy currencies are not allowed. |
 | `EAboveFeePolicy` | 36 | A sale fee override cannot exceed the currently applied fee policy. |
+| `EProtocolFeesIncreased` | 37 | A shared sale's fee override may only keep or lower each of its rates. |
 
 #### Constants
 
@@ -2922,11 +2975,11 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 public struct CreationPolicy has key {
     id: UID,
     allowed_quotes: VecSet<TypeName>,
-    allowed_migration_witnesses: VecSet<TypeName>,
-    witness_delay_ms: u64,
-    pending_witness_delay: Option<blast_admin::delayed::Pending<bool>>,
-    pending_witnesses: VecMap<TypeName, blast_admin::delayed::Pending<bool>>,
+    migration_witnesses: blast_admin::delayed_set::DelayedSet<MigrationWitnessKey, TypeName>,
 }
+
+/// Keys the delayed lifecycle of migration-witness admissions and their notice.
+public struct MigrationWitnessKey() has copy, drop, store;
 
 /// Dynamic-field key of a Blast partner new presales may name. Its value is the time the partner
 /// stops being accepted: `u64::MAX` until Blast removes it.
@@ -2953,7 +3006,6 @@ public fun set_quote_allowed<Quote>(
 /// reviewed migrator and keeps its constructor private. A primitive, a vector, or a framework type,
 /// any of which a caller can construct, is rejected.
 /// Admits an adapter only after the currently applied admission notice.
-/// Scheduling and applying an admission preserve the shared delay policy.
 public fun schedule_migration_witness<MigrationWitness: drop>(
     self: &mut CreationPolicy,
     package_version: &blast_presale_package::PackageVersion,
@@ -2961,7 +3013,7 @@ public fun schedule_migration_witness<MigrationWitness: drop>(
     clock: &Clock,
 )
 
-/// Permissionlessly applies the approved admission once ready, preserving the live notice.
+/// Permissionlessly applies the approved admission once ready.
 public fun apply_migration_witness<MigrationWitness: drop>(
     self: &mut CreationPolicy,
     package_version: &blast_presale_package::PackageVersion,
@@ -3028,43 +3080,9 @@ public fun cancel_migration_delay(
 #### Events
 
 ```move
-/// Proposed admission notice period and fixed execution deadline.
-public struct MigrationDelayScheduled has copy, drop {
-    delay_ms: u64,
-    ready_at_ms: u64,
-}
-
-/// Applied admission notice period.
-public struct MigrationDelayChanged has copy, drop {
-    delay_ms: u64,
-}
-
-/// Cancelled admission-policy proposal.
-public struct MigrationDelayCancelled() has copy, drop;
-
-/// The admitted type and Unix millisecond execution threshold.
-public struct MigrationWitnessScheduled has copy, drop {
-    witness: TypeName,
-    ready_at_ms: u64,
-    /// Applied admission notice when this deadline was scheduled.
-    delay_ms: u64,
-}
-
-/// An adapter admission removed from the pending set.
-public struct MigrationWitnessCancelled has copy, drop {
-    witness: TypeName,
-}
-
 /// Presales created afterward may (`allowed`) or may not raise `quote`.
 public struct QuoteSet has copy, drop {
     quote: TypeName,
-    allowed: bool,
-}
-
-/// The migrator identified by `migration_witness` may (`allowed`) or may not create presales
-/// afterward.
-public struct MigrationWitnessSet has copy, drop {
-    migration_witness: TypeName,
     allowed: bool,
 }
 
@@ -3103,9 +3121,15 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 /// Shared singleton holding the rates new presales snapshot and the address paid Blast's fees.
 public struct FeePolicy has key {
     id: UID,
-    destination: blast_admin::delayed::Delayed<address>,
-    fees: blast_admin::delayed::Delayed<ProtocolFees>,
+    destination: blast_admin::delayed::Delayed<DestinationKey, address>,
+    fees: blast_admin::delayed::Delayed<FeesKey, ProtocolFees>,
 }
+
+/// Keys the delayed lifecycle of the address paid Blast's fees.
+public struct DestinationKey() has copy, drop, store;
+
+/// Keys the delayed lifecycle of the rates new presales snapshot.
+public struct FeesKey() has copy, drop, store;
 
 /// Blast's rates, in BPS: of the accepted raise, of the token supply, and of each collected
 /// LP-fee asset.
@@ -3174,60 +3198,12 @@ public fun cancel_destination(
 )
 ```
 
-#### Events
-
-```move
-/// Proposed values and Unix millisecond execution threshold.
-public struct DestinationScheduled has copy, drop {
-    destination: address,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct DestinationCancelled has copy, drop {
-    destination: address,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct FeesScheduled has copy, drop {
-    raise_bps: u64,
-    token_bps: u64,
-    lp_fee_meme_bps: u64,
-    lp_fee_quote_bps: u64,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct FeesCancelled has copy, drop {
-    raise_bps: u64,
-    token_bps: u64,
-    lp_fee_meme_bps: u64,
-    lp_fee_quote_bps: u64,
-}
-
-/// New presales snapshot these rates.
-public struct FeesChanged has copy, drop {
-    raise_bps: u64,
-    token_bps: u64,
-    lp_fee_meme_bps: u64,
-    lp_fee_quote_bps: u64,
-}
-
-/// Every later protocol payout goes to `destination`.
-public struct DestinationChanged has copy, drop {
-    destination: address,
-}
-```
-
 #### Errors
 
 | Constant | Code | Message |
 | --- | --- | --- |
 | `EInvalidFees` | 0 | Blast's raise share must be below 10,000 BPS and its token share at most 9,998. |
-| `EFeesUnchanged` | 1 | A fee update must change the stored rates. |
-| `EInvalidDestination` | 2 | The protocol destination must be a new nonzero address. |
+| `EInvalidDestination` | 1 | The protocol destination must be a nonzero address. |
 
 #### Constants
 
@@ -3430,15 +3406,16 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 public enum UpgradeAction has copy, drop, store {
     Upgrade(vector<u8>),
     MakeImmutable,
-    DelayOnly,
 }
+
+/// Keys the delayed lifecycle of this package's upgrade actions and their notice.
+public struct UpgradeKey() has copy, drop, store;
 
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_presale_package::BLAST_PRESALE_PACKAGE>,
-    delay_ms: u64,
-    pending: Option<blast_admin::delayed::Pending<UpgradeAction>>,
+    upgrade: blast_admin::delayed_action::DelayedAction<UpgradeKey, UpgradeAction>,
 }
 ```
 
@@ -3521,35 +3498,16 @@ public fun apply_upgrade_delay(
 )
 ```
 
-#### Events
-
-```move
-/// A publicly announced upgrade action with its execution threshold.
-public struct UpgradeActionScheduled has copy, drop {
-    action: UpgradeAction,
-    ready_at_ms: u64,
-    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
-    delay_ms: u64,
-}
-
-/// Applied notice period for subsequent upgrade actions.
-public struct UpgradeDelayChanged has copy, drop {
-    delay_ms: u64,
-}
-
-/// A cancelled upgrade action, which can no longer execute.
-public struct UpgradeActionCancelled has copy, drop {
-    action: UpgradeAction,
-}
-```
-
 #### Errors
 
 | Constant | Code | Message |
 | --- | --- | --- |
 | `EWrongUpgradeAction` | 0 | The ready action must match the requested upgrade digest or immutability. |
-| `ENoPendingAction` | 1 | No upgrade action is scheduled. |
-| `EInvalidDigest` | 2 | A package digest must contain 32 bytes. |
+| `EInvalidDigest` | 1 | A package digest must contain 32 bytes. |
+
+#### Constants
+
+- `INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: The notice every upgrade or immutability action waits from publication until changed.
 
 ### `blast_presale::presale_vault`
 
@@ -3562,6 +3520,12 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 ```move
 /// Sealed field name binding one venue position type to a vault.
 public struct PositionKey<phantom Venue>() has copy, drop, store;
+
+/// Keys the delayed lifecycle of a vault's creator fee split.
+public struct FeeSplitKey() has copy, drop, store;
+
+/// Keys the delayed lifecycle of a vault's Blast LP-fee rates.
+public struct ProtocolLpFeesKey() has copy, drop, store;
 
 /// Shared custody for one LP position and its explicitly applied fee split: a presale's, after migration, or
 /// an owner's own position locked here directly, with zero presale and creator-capability IDs.
@@ -3578,8 +3542,8 @@ public struct Vault<phantom Meme, phantom Quote> has key {
     presale_id: ID,
     presale_cap_id: ID,
     pool_id: ID,
-    fee_split: blast_admin::delayed::Delayed<blast_presale::FeeSplit>,
-    protocol_fees: blast_admin::delayed::Delayed<fee_policy::ProtocolFees>,
+    fee_split: blast_admin::delayed::Delayed<FeeSplitKey, blast_presale::FeeSplit>,
+    protocol_fees: blast_admin::delayed::Delayed<ProtocolLpFeesKey, fee_policy::ProtocolFees>,
     /// The Blast partner the sale named, paid its cut of Blast's LP fees. It never changes.
     partner_id: Option<ID>,
     unpaid_protocol_meme: Balance<Meme>,
@@ -3665,44 +3629,6 @@ public fun pay_protocol_lp_fees_with_partner<Meme, Quote>(
 #### Events
 
 ```move
-/// Creator split and next notice proposed under the applied notice period.
-public struct FeeSplitScheduled has copy, drop {
-    vault_id: ID,
-    proposed: blast_presale::FeeSplit,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// A creator discarded a pending split without changing applied policy.
-public struct FeeSplitCancelled has copy, drop {
-    vault_id: ID,
-    proposed: blast_presale::FeeSplit,
-}
-
-/// A ready creator split and notice became explicitly active.
-public struct FeeSplitChanged<phantom Meme, phantom Quote> has copy, drop {
-    vault_id: ID,
-    old_fee_split: blast_presale::FeeSplit,
-    new_fee_split: blast_presale::FeeSplit,
-    delay_ms: u64,
-}
-
-/// LP rates publicly proposed for one vault.
-public struct ProtocolLpFeesScheduled has copy, drop {
-    vault_id: ID,
-    meme_bps: u64,
-    quote_bps: u64,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// LP rates removed from one vault's pending schedule.
-public struct ProtocolLpFeesCancelled has copy, drop {
-    vault_id: ID,
-    meme_bps: u64,
-    quote_bps: u64,
-}
-
 public struct VaultCreated<phantom Meme, phantom Quote, phantom Venue> has copy, drop {
     vault_id: ID,
     /// Zero for a vault created without a presale.
@@ -3751,13 +3677,6 @@ public struct ProtocolLpFeesPaid<phantom Meme, phantom Quote> has copy, drop {
     partner_quote: u64,
 }
 
-/// Every later collection from `vault_id` pays Blast at these rates.
-public struct ProtocolLpFeesChanged<phantom Meme, phantom Quote> has copy, drop {
-    vault_id: ID,
-    protocol_lp_fee_meme_bps: u64,
-    protocol_lp_fee_quote_bps: u64,
-}
-
 /// The holder Meme allocation in `FeesCollected` was paid rather than accrued.
 public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
     vault_id: ID,
@@ -3774,9 +3693,7 @@ public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
 | `ENoMigrationResiduals` | 0 | No migration residuals are available to claim. |
 | `EZeroLiquidity` | 1 | The vault's position must hold liquidity. |
 | `EWrongPresaleCap` | 2 | The creator capability belongs to a different presale vault. |
-| `EProtocolLpFeesUnchanged` | 3 | An LP-fee update must change the vault's Blast rates. |
-| `EWrongPartner` | 4 | The partner is not the one this vault's presale named at creation. |
-| `EFeeSplitUnchanged` | 5 | Fee split or its notice must differ from the applied values. |
+| `EWrongPartner` | 3 | The partner is not the one this vault's presale named at creation. |
 
 #### Constants
 
@@ -4082,22 +3999,22 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 4 | `EAdminRoleAlreadyGranted` |  |
 | 5 | `EAdminRoleNotGranted` |  |
 | 6 | `EInvalidSuperAdminRecipient` |  |
-| 7 | `ESuperAdminTransferUnchanged` |  |
-| 8 | `ENoPendingSuperAdminTransfer` |  |
-| 9 | `ENotPendingSuperAdminRecipient` |  |
-| 10 | `ESuperAdminTransferNotReady` |  |
-| 11 | `ESuperAdminCapStillActive` |  |
-| 12 | `EOperationalVersionMismatch` |  |
-| 13 | `EOperationalVersionOverflow` |  |
-| 14 | `EInvalidPackagePublisher` |  |
-| 15 | `EInvalidUpgradeCap` |  |
-| 16 | `EInvalidPackageDigest` |  |
-| 17 | `EUpgradeCapUnavailable` |  |
-| 18 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 19 | `EInvalidPackageMarker` |  |
-| 20 | `ENotReady` |  |
-| 21 | `ENoPending` |  |
-| 22 | `EInvalidDelay` |  |
+| 7 | `ENotPendingSuperAdminRecipient` |  |
+| 8 | `ESuperAdminCapStillActive` |  |
+| 9 | `EOperationalVersionMismatch` |  |
+| 10 | `EOperationalVersionOverflow` |  |
+| 11 | `EInvalidPackagePublisher` |  |
+| 12 | `EInvalidUpgradeCap` |  |
+| 13 | `EInvalidPackageDigest` |  |
+| 14 | `EUpgradeCapUnavailable` |  |
+| 15 | `EUpgradePolicyNotMoreRestrictive` |  |
+| 16 | `EInvalidPackageMarker` |  |
+| 17 | `ENotReady` |  |
+| 18 | `ENoPending` |  |
+| 19 | `EInvalidDelay` |  |
+| 20 | `EUnchanged` |  |
+| 21 | `EProposalPending` |  |
+| 22 | `EWrongChange` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -4113,8 +4030,8 @@ public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
     admins: Table<ID, VecSet<TypeName>>,
-    /// The nominated next super admin: none until the transfer delay passes.
-    pending_super_admin: blast_fun_timelock::Timelocked<Option<address>>,
+    /// The nominated next super admin, acceptable once the fixed transfer delay passes.
+    super_admin_transfer: delayed_action::DelayedAction<SuperAdminTransfer, address>,
 }
 
 /// Cold root authority for membership, roles, and delayed root replacement only.
@@ -4126,6 +4043,9 @@ public struct SuperAdminCap has key {
 public struct AdminCap has key, store {
     id: UID,
 }
+
+/// Keys the root transfer's delayed lifecycle events.
+public struct SuperAdminTransfer() has copy, drop, store;
 
 /// Transaction-local proof that a live `AdminCap` holding `Role` signed in.
 public struct AdminWitness<phantom Role>() has drop;
@@ -4155,7 +4075,7 @@ public fun revoke_role<Role>(self: &mut ACL, root: &SuperAdminCap, admin_cap_id:
 public fun destroy_admin_cap(self: &mut ACL, admin_cap: AdminCap)
 
 /// Nominates `recipient` as the next super admin; it may accept once the transfer delay
-/// passes. A new nomination replaces a pending one and restarts the delay.
+/// passes. A new nomination cancels a pending one and restarts the delay.
 public fun begin_super_admin_transfer(
     self: &mut ACL,
     root: &SuperAdminCap,
@@ -4215,16 +4135,6 @@ public struct AdminDestroyed has copy, drop {
     admin_cap_id: ID,
     roles: vector<TypeName>,
     was_active: bool,
-}
-
-public struct SuperAdminTransferStarted has copy, drop {
-    recipient: address,
-    execute_after_ms: u64,
-}
-
-public struct SuperAdminTransferCancelled has copy, drop {
-    recipient: address,
-    execute_after_ms: u64,
 }
 
 public struct SuperAdminTransferred has copy, drop {
@@ -4293,24 +4203,32 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Explicit changes that always wait their operation's currently applied notice period.
+Settings that change only after their applied notice, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. Readers need no Clock.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
 
 #### Types
 
 ```move
-/// Applied value and notice period, with at most one atomic replacement.
-/// Readers need no Clock. There is no immediate mutation or bypass operation.
-public struct Delayed<T: copy + drop + store> has store {
+/// An applied setting, its applied notice and at most one proposed replacement.
+public struct Delayed<K: copy + drop + store, T: copy + drop + store> has store {
+    owner: ID,
+    key: K,
     value: T,
     delay_ms: u64,
-    pending: Option<Pending<T>>,
+    pending: Option<Proposal<T>>,
 }
 
-/// Proposed value and next notice period, bound to a Unix millisecond threshold.
-public struct Pending<T: copy + drop + store> has copy, drop, store {
+/// A proposed value and the notice in force once it applies, ready from `ready_at_ms`.
+public struct Proposal<T: copy + drop + store> has copy, drop, store {
     value: T,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A notice period and the time it elapses: the notice an admission or entry change waits,
+/// or a proposed next notice. Either is ready from `ready_at_ms`.
+public struct Notice has copy, drop, store {
     delay_ms: u64,
     ready_at_ms: u64,
 }
@@ -4319,73 +4237,594 @@ public struct Pending<T: copy + drop + store> has copy, drop, store {
 #### Functions
 
 ```move
-/// Initializes a value and the notice period anchored at each future scheduling time.
-public fun new<T: copy + drop + store>(value: T, delay_ms: u64): Delayed<T>
+/// A setting in force at once; every later change waits the applied notice.
+public fun new<K: copy + drop + store, T: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    value: T,
+    delay_ms: u64,
+): Delayed<K, T>
 
-/// Returns the explicitly applied value.
-public fun value<T: copy + drop + store>(self: &Delayed<T>): T
+/// The applied value.
+public fun value<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): T
 
-/// Returns this operation's currently applied notice period in milliseconds.
-public fun delay_ms<T: copy + drop + store>(self: &Delayed<T>): u64
+/// The applied notice in milliseconds.
+public fun delay_ms<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): u64
 
-/// Returns the current proposal, if any.
-public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
+/// The proposed replacement, if any.
+public fun pending<K: copy + drop + store, T: copy + drop + store>(
+    self: &Delayed<K, T>,
+): Option<Proposal<T>>
 
-/// Replaces the proposal and restarts the full currently applied delay.
-/// `delay_ms` is the NEXT notice period, never the wait for this proposal.
-public fun schedule<T: copy + drop + store>(
-    self: &mut Delayed<T>,
+/// Proposes `value` and the next notice `delay_ms`, ready after the applied notice, and
+/// returns when. A replaced proposal is cancelled and the full applied notice restarts.
+/// Aborts when the proposal would change neither the value nor the notice.
+public fun schedule<K: copy + drop + store, T: copy + drop + store>(
+    self: &mut Delayed<K, T>,
     value: T,
     delay_ms: u64,
     clock: &Clock,
 ): u64
 
-/// Changes only the value, retaining the applied notice period.
-public fun schedule_value<T: copy + drop + store>(
-    self: &mut Delayed<T>,
+/// Proposes only a new value, keeping the applied notice.
+public fun schedule_value<K: copy + drop + store, T: copy + drop + store>(
+    self: &mut Delayed<K, T>,
     value: T,
     clock: &Clock,
 ): u64
 
-/// Changes only the notice period, retaining the applied value.
-/// A reduction, including to zero, still waits the old notice period.
-public fun schedule_delay<T: copy + drop + store>(
-    self: &mut Delayed<T>,
+/// Proposes only a new notice, keeping the applied value. A shorter notice, zero included,
+/// still waits the applied one.
+public fun schedule_delay<K: copy + drop + store, T: copy + drop + store>(
+    self: &mut Delayed<K, T>,
     delay_ms: u64,
     clock: &Clock,
 ): u64
 
-/// Checks that an application can proceed without consuming the stored proposal.
-/// Adapters use this before settling accrued economics under the currently applied value.
-public fun assert_ready<T: copy + drop + store>(self: &Delayed<T>, clock: &Clock)
+/// Checks that `apply` would succeed now, changing nothing. Owners call it before
+/// settling accrued economics under the applied value in the same transaction.
+public fun assert_ready<K: copy + drop + store, T: copy + drop + store>(
+    self: &Delayed<K, T>,
+    clock: &Clock,
+)
 
-/// Applies both proposed fields once, only after the stored deadline.
-public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
+/// Applies the ready proposal's value and notice together and returns the new value.
+public fun apply<K: copy + drop + store, T: copy + drop + store>(
+    self: &mut Delayed<K, T>,
+    clock: &Clock,
+): T
 
-/// Cancels even a ready proposal without changing the applied value or delay.
-public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
+/// Discards the proposal, even a ready one, leaving the applied value and notice.
+public fun cancel<K: copy + drop + store, T: copy + drop + store>(self: &mut Delayed<K, T>)
 
-/// Snapshots a standalone operation's applied delay and proposed next delay.
-/// Its owner must persist the returned next delay on successful application.
-public fun new_pending<T: copy + drop + store>(
+/// Deletes a setting with no proposal and records its end; cancel a proposal first.
+public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>)
+
+/// The proposed value, or the proposed change for an action slot.
+public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T
+
+/// The notice in force once the proposal applies.
+public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64
+
+/// The Unix millisecond time from which the proposal can apply.
+public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
+
+/// The notice waited, or the proposed next notice.
+public fun notice_delay_ms(self: &Notice): u64
+
+/// The Unix millisecond time from which the change can apply.
+public fun notice_ready_at_ms(self: &Notice): u64
+```
+
+#### Events
+
+```move
+/// A setting was created with its first applied value and notice.
+public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
     value: T,
-    current_delay_ms: u64,
+    delay_ms: u64,
+}
+
+/// A replacement value and next notice were proposed, ready from `ready_at_ms`.
+public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    value: T,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposal was discarded, by cancellation or by a replacing schedule.
+public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    value: T,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A ready proposal became the applied value and notice.
+public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    previous_value: T,
+    value: T,
+    delay_ms: u64,
+}
+
+/// A setting was deleted with nothing pending.
+public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+```
+
+### `blast_admin::delayed_action`
+
+One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied notice. The slot also governs its own notice. See `delayed` for the rules every delayed type shares.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_action.move
+
+#### Types
+
+```move
+/// An applied notice and at most one proposed one-shot action or notice change.
+public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+    pending: Option<delayed::Proposal<Change<A>>>,
+}
+
+/// What a proposal does once applied.
+public enum Change<A: copy + drop + store> has copy, drop, store {
+    /// Hands the owner its action; the notice stays as applied.
+    Action(A),
+    /// Changes only the notice, to the proposal's `delay_ms`.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An action slot with nothing proposed; every action waits the applied notice.
+public fun new<K: copy + drop + store, A: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+): DelayedAction<K, A>
+
+/// The applied notice in milliseconds.
+public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64
+
+/// The proposed action or notice change, if any.
+public fun pending<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<delayed::Proposal<Change<A>>>
+
+/// Proposes `action`, ready after the applied notice, and returns when. A replaced
+/// proposal is cancelled and the full applied notice restarts.
+public fun schedule<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    action: A,
+    clock: &Clock,
+): u64
+
+/// Proposes only a new notice, ready after the applied one, replacing any proposed action.
+public fun schedule_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
     delay_ms: u64,
     clock: &Clock,
-): Pending<T>
+): u64
 
-/// Returns a ready proposal's value and next delay. Rechecks representability at actual application.
-/// Future scheduling still checks its own timestamp addition as time advances.
-public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): (T, u64)
+/// Consumes the ready proposed action and returns it for the owner to perform.
+/// Aborts when the proposal is a notice change.
+public fun take_action<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    clock: &Clock,
+): A
 
-/// Returns the proposed value for cancellation and diagnostics.
-public fun pending_value<T: copy + drop + store>(self: &Pending<T>): T
+/// Applies the ready proposed notice. Aborts when the proposal is an action.
+public fun apply_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    clock: &Clock,
+)
 
-/// Returns the proposed next notice period.
-public fun pending_delay_ms<T: copy + drop + store>(self: &Pending<T>): u64
+/// Discards the proposal, even a ready one, leaving the applied notice.
+public fun cancel<K: copy + drop + store, A: copy + drop + store>(self: &mut DelayedAction<K, A>)
 
-/// Returns the Unix millisecond execution threshold.
-public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
+/// Deletes an action slot with no proposal and records its end; cancel a proposal first.
+public fun destroy<K: copy + drop + store, A: copy + drop + store>(self: DelayedAction<K, A>)
+
+/// The proposed action, or none for a notice change.
+public fun action<A: copy + drop + store>(self: &Change<A>): Option<A>
+```
+
+#### Events
+
+```move
+/// An action slot was created with its first applied notice.
+public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+}
+
+/// An action or notice change was proposed, ready from `ready_at_ms`; `delay_ms` is the
+/// notice in force once it applies.
+public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: Change<A>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposed action or notice change was discarded, by cancellation or replacement.
+public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: Change<A>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A ready action was handed to its owner, or a notice change applied.
+public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: Change<A>,
+    delay_ms: u64,
+}
+
+/// An action slot was deleted with nothing pending.
+public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+```
+
+### `blast_admin::delayed_map`
+
+Keyed values under one shared notice, such as per-coin overrides. Every entry change, setting or clearing, waits the notice applied when it was scheduled, and its deadline is fixed then; a later notice change never moves it. See `delayed` for the shared rules.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_map.move
+
+#### Types
+
+```move
+/// Applied values by entry, one applied notice, at most one pending change per entry, and at
+/// most one proposed notice. Values live in a Table, so reads cost one entry and the map
+/// grows without bound; pending changes are few and live inline.
+public struct DelayedMap<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    entries: Table<E, V>,
+    delay_ms: u64,
+    pending: VecMap<E, EntryProposal<V>>,
+    pending_delay: Option<delayed::Notice>,
+}
+
+/// A proposed entry value, or none to clear the entry, and the notice it waits.
+public struct EntryProposal<V: copy + drop + store> has copy, drop, store {
+    value: Option<V>,
+    notice: delayed::Notice,
+}
+
+/// What a map proposal does once applied.
+public enum MapChange<E: copy + drop + store, V: copy + drop + store> has copy, drop, store {
+    /// Sets the entry to `value`, or clears it when `value` is none.
+    Entry {
+        entry: E,
+        value: Option<V>,
+    },
+    /// Changes the notice for later entry changes.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An empty map; every entry change waits the applied notice.
+public fun new<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+    ctx: &mut TxContext,
+): DelayedMap<K, E, V>
+
+/// The applied value of `entry`, or none when it has none.
+public fun value<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): Option<V>
+
+/// The applied notice for entry changes, in milliseconds.
+public fun delay_ms<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): u64
+
+/// The pending change of `entry`, if any.
+public fun pending<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): Option<EntryProposal<V>>
+
+/// The proposed next notice, if any.
+public fun pending_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): Option<delayed::Notice>
+
+/// Proposes setting `entry` to `value` (none clears it) after the applied notice, and
+/// returns when. A replaced change is cancelled and the full notice restarts. Aborts when
+/// `value` is already the applied value.
+public fun schedule<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+    value: Option<V>,
+    clock: &Clock,
+): u64
+
+/// Applies `entry`'s ready change: sets its value or clears it.
+public fun apply<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+    clock: &Clock,
+)
+
+/// Discards `entry`'s pending change, even a ready one.
+public fun cancel<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+)
+
+/// Proposes only a new notice, ready after the applied one, and returns when. Pending
+/// entry changes keep their deadlines.
+public fun schedule_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Applies the ready proposed notice to later entry changes.
+public fun apply_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    clock: &Clock,
+)
+
+/// Discards the proposed notice, even a ready one.
+public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+)
+
+/// Deletes a map with no pending change and records its end, which also ends every
+/// remaining entry.
+public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: DelayedMap<K, E, V>,
+)
+
+/// The proposed value, or none when the change clears the entry.
+public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>): Option<V>
+
+/// The notice the change waits and when it becomes ready.
+public fun entry_proposal_notice<V: copy + drop + store>(self: &EntryProposal<V>): delayed::Notice
+```
+
+#### Events
+
+```move
+/// A map was created empty with its first applied notice.
+public struct MapCreated<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+}
+
+/// An entry change or notice change was proposed, ready from `ready_at_ms`. `delay_ms` is
+/// the notice an entry change waits, or the proposed next notice.
+public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposed change was discarded, by cancellation or replacement; its fields match its
+/// `MapScheduled`.
+public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// An entry was set or cleared, or a notice change applied; `delay_ms` matches its
+/// `MapScheduled`.
+public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+}
+
+/// A map was deleted with nothing pending; its remaining entries end with it.
+public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+```
+
+### `blast_admin::delayed_set`
+
+Allowlists whose members join only after the applied notice and leave at once. See `delayed` for the rules every delayed type shares.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_set.move
+
+#### Types
+
+```move
+/// Admitted members, one applied notice for new admissions, pending admissions with fixed
+/// deadlines, and at most one proposed notice. A notice change never moves a deadline.
+public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    members: VecSet<E>,
+    delay_ms: u64,
+    admissions: VecMap<E, delayed::Notice>,
+    pending_delay: Option<delayed::Notice>,
+}
+
+/// What a set proposal does once applied.
+public enum SetChange<E: copy + drop + store> has copy, drop, store {
+    /// Admits the member.
+    Admission(E),
+    /// Changes the notice for later admissions.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An empty set; every admission waits the applied notice.
+public fun new<K: copy + drop + store, E: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+): DelayedSet<K, E>
+
+/// Whether `member` has been admitted and not removed.
+public fun contains<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): bool
+
+/// The admitted members.
+public fun members<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): VecSet<E>
+
+/// The applied notice for new admissions, in milliseconds.
+public fun delay_ms<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): u64
+
+/// When `member`'s pending admission becomes ready, if one is pending.
+public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): Option<u64>
+
+/// The proposed next notice, if any.
+public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): Option<delayed::Notice>
+
+/// Proposes admitting `member` after the applied notice (never a proposed one) and returns
+/// when. Rescheduling a pending member cancels its admission and restarts the notice.
+/// Aborts when `member` is already admitted.
+public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+    clock: &Clock,
+): u64
+
+/// Admits `member` once its admission is ready.
+public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+    clock: &Clock,
+)
+
+/// Discards `member`'s pending admission, even a ready one.
+public fun cancel_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+)
+
+/// Removes `member` at once and discards its pending admission, leaving the notice.
+/// Aborts when `member` is neither admitted nor pending.
+public fun remove<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+)
+
+/// Proposes only a new notice, ready after the applied one, and returns when. Pending
+/// admissions keep their deadlines.
+public fun schedule_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Applies the ready proposed notice to later admissions.
+public fun apply_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    clock: &Clock,
+)
+
+/// Discards the proposed notice, even a ready one.
+public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(self: &mut DelayedSet<K, E>)
+
+/// Deletes a set with no pending admission or notice change and records its end, which
+/// also ends every remaining membership.
+public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: DelayedSet<K, E>)
+```
+
+#### Events
+
+```move
+/// A set was created empty with its first applied notice.
+public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+}
+
+/// An admission or notice change was proposed, ready from `ready_at_ms`. `delay_ms` is the
+/// notice an admission waits, or the proposed next notice.
+public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposed admission or notice change was discarded, by cancellation, replacement or
+/// removal; its fields match its `SetScheduled`.
+public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A member was admitted, or a notice change applied; `delay_ms` matches its `SetScheduled`.
+public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+}
+
+/// A member left the set at once.
+public struct MemberRemoved<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    member: E,
+}
+
+/// A set was deleted with nothing pending; its remaining members leave with it.
+public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
 ```
 
 ### `blast_admin::operational_version`

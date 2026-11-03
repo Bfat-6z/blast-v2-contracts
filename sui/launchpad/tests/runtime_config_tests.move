@@ -24,11 +24,12 @@ public struct ConfigFixture {
 // === Tests ===
 
 #[test]
-/// Package initialization disables account claims, splits trade fees 50/50, and uses the genesis treasury.
+/// Package initialization disables account claims, splits trade fees 50/50, and uses the genesis
+/// treasury. Its only events are the primitive's creation records of the two delayed settings.
 fun package_init_uses_a_half_protocol_share_and_genesis_treasury_without_signer() {
     let (events, signer_public_key, protocol_fee_share_bps, treasury) = published_config();
 
-    assert_eq!(events, 0);
+    assert_eq!(events, 2);
     assert!(signer_public_key.is_empty());
     assert_eq!(protocol_fee_share_bps, 5_000);
     assert_eq!(treasury, @blast_treasury);
@@ -45,7 +46,7 @@ fun admin_sets_the_protocol_fee_share_and_it_emits_the_new_value() {
 
         assert_eq!(f.config.protocol_fee_share().value(), 7_000);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::ProtocolFeeShareChanged>()),
+            bcs::to_bytes(&applied_one<ProtocolFeeShareKey, Bps>()),
             bcs::to_bytes(&7_000u64),
         );
     });
@@ -64,7 +65,7 @@ fun protocol_fee_share_accepts_both_percentage_boundaries() {
         f.set_protocol_fee_share_for_testing(bps::new(0));
         assert_eq!(f.config.protocol_fee_share().value(), 0);
 
-        let changes = collect<events::ProtocolFeeShareChanged>();
+        let changes = applied<ProtocolFeeShareKey, Bps>();
         assert_eq!(changes.length(), 2);
         assert_eq!(bcs::to_bytes(&changes[0]), bcs::to_bytes(&10_000u64));
         assert_eq!(bcs::to_bytes(&changes[1]), bcs::to_bytes(&0u64));
@@ -73,7 +74,7 @@ fun protocol_fee_share_accepts_both_percentage_boundaries() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EUnchanged, location = blast_fun::runtime_config)]
+#[test, expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun protocol_fee_share_rejects_the_current_value() {
     let mut fixture = start();
 
@@ -196,7 +197,7 @@ fun admin_sets_the_treasury_and_it_emits_the_new_address() {
 
         assert_eq!(f.config.treasury(), TREASURY);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::TreasuryChanged>()),
+            bcs::to_bytes(&applied_one<TreasuryKey, address>()),
             address_bytes(TREASURY),
         );
     });
@@ -206,7 +207,7 @@ fun admin_sets_the_treasury_and_it_emits_the_new_address() {
 
         assert_eq!(f.config.treasury(), PUBLISHER);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::TreasuryChanged>()),
+            bcs::to_bytes(&applied_one<TreasuryKey, address>()),
             address_bytes(PUBLISHER),
         );
     });
@@ -225,7 +226,7 @@ fun treasury_rejects_the_zero_address() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EUnchanged, location = blast_fun::runtime_config)]
+#[test, expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun treasury_rejects_the_current_address() {
     let mut fixture = start();
 
@@ -337,9 +338,23 @@ fun collect_one<T: copy + drop>(): T {
     payloads.pop_back()
 }
 
+/// The values the primitive applied to the setting keyed by `K`, in order.
+fun applied<K: copy + drop + store, T: copy + drop + store>(): vector<T> {
+    event::events_by_type<DelayedApplied<K, T>>().map!(|applied| {
+        let (_, _, _, value, _) = applied.delayed_applied_fields();
+        value
+    })
+}
+
+fun applied_one<K: copy + drop + store, T: copy + drop + store>(): T {
+    let mut values = applied<K, T>();
+    assert_eq!(values.length(), 1);
+    values.pop_back()
+}
+
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_admin::{blast_acl, delayed::DelayedApplied};
 
 use blast_fun::{
     blast_events::Event,
@@ -347,7 +362,7 @@ use blast_fun::{
     bps::{Self, Bps},
     events,
     blast_fun::{Self as package_version, PackageVersion},
-    runtime_config::{Self, RuntimeConfig},
+    runtime_config::{Self, ProtocolFeeShareKey, RuntimeConfig, TreasuryKey},
 };
 
 use std::{bcs, unit_test::{assert_eq, destroy}};

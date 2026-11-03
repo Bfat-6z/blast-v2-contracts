@@ -53,7 +53,7 @@ blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
 blast_sui                    -> blast_admin, Sui system
-blast_admin                  -> blast_fun_timelock
+blast_admin                  -> Sui framework only
 ```
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
@@ -61,8 +61,9 @@ composes with it inside one PTB. Presale uses typed roles from the shared
 `blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
 Use the presale guide for presale calls.
 
-`blast_fun_timelock` and `blast_fun_vesting` live in this repository at
-`sui/timelock` and `sui/vesting`; both are immutable on mainnet. The standalone
+`blast_fun_timelock` (used only by `blast_partners`) and `blast_fun_vesting` live
+in this repository at `sui/timelock` and `sui/vesting`; both are immutable on
+mainnet. The standalone
 OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values
@@ -325,8 +326,8 @@ expiry, or refund path.
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
-   role to schedule and apply its intended value and next notice. Use UpgradeAdmin's
-   policy-only upgrade proposal to enable upgrade notice without a code change.
+   role to schedule and apply its intended value and next notice. Upgrade custody
+   already holds its 48-hour notice from publication.
    Read back every operation's notice and configured value before release.
 5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 7). Unpause is immediate.
 
@@ -557,22 +558,25 @@ in place. The opening-round balances awaiting delivery are untouched.
 #### Admin operations (Blast admin)
 
 Each setter takes the object it changes, `PackageVersion`, and the role's `AdminWitness`, and
-emits an event. Value setters abort with `blast_fun::errors::EUnchanged` when nothing would change. The
-allow/remove toggles for Quotes, decimals, and adapters instead abort inside the Sui collection
-(`sui::dynamic_field` or `sui::vec_set`) when the entry already has the requested state.
+emits an event. Delayed schedules abort with code 20 from the Blast admin delayed module of
+their type (`delayed` for a setting, `delayed_set` for an adapter admission) when nothing would
+change; "Delayed administration" lists their events. The allow/remove toggles for
+Quotes and decimals instead abort inside the Sui collection (`sui::dynamic_field` or
+`sui::vec_set`) when the entry already has the requested state.
 
 - `launch_config::set_quote_allowed<Quote>` (ListingAdmin), with `allowed: bool`: admits or removes
   a Quote for new launches; existing launches keep trading. Emits `blast_fun::events::QuoteSet`.
 - `launch_config::set_meme_decimals_allowed` (ListingAdmin), with `decimals: u8` and `allowed`.
   Emits `blast_fun::events::MemeDecimalsSet`.
-- `launch_config::schedule_migration_witness<Witness>` (AdapterAdmin), with `Clock`: schedules admission; rejects types defined at `0x1` or `0x2`. `apply_migration_witness` admits it after the snapshotted deadline. `remove_migration_witness` removes it immediately and cancels pending admission. Existing launches keep their adapter.
+- `launch_config::schedule_migration_witness<Witness>` (AdapterAdmin), with `Clock`: schedules admission; rejects types defined at `0x1` or `0x2`. `apply_migration_witness` admits it after the snapshotted deadline. `remove_migration_witness` removes it immediately and cancels pending admission. Scheduling an admitted adapter, or removing one that is neither admitted nor pending, aborts with code 20 from `delayed_set`. Existing launches keep their adapter.
 - `launch_config::schedule_trade_fees` (FeeAdmin), with Quote and Meme fee `Bps`, each at most 1,000;
-  only launches started afterward use them. Application emits `blast_fun::events::LaunchTradeFeesChanged`.
-- `launch_config::schedule_creation_fee` (FeeAdmin), with an amount in MIST. Emits
-  `blast_fun::events::CreationFeeChanged`.
+  only launches started afterward use them. Application emits
+  `delayed::DelayedApplied<launch_config::TradeFeesKey, launch_config::TradeFees>`.
+- `launch_config::schedule_creation_fee` (FeeAdmin), with an amount in MIST. Application emits
+  `delayed::DelayedApplied<launch_config::CreationFeeKey, u64>`.
 - `launch_config::schedule_protocol_allocation` (TreasuryAdmin), with Meme and Quote `Bps`: Blast's
   one-time share for launches finalized afterward; Meme at most 9,998 and Quote at most 9,999.
-  Application emits `blast_fun::events::ProtocolAllocationSet`.
+  Application emits `delayed::DelayedApplied<launch_config::ProtocolAllocationKey, allocation::ProtocolAllocation>`.
 - `launch_config::add_partner` (FeeAdmin), with a `Partner`: new launches may name it at once;
   cancels a pending removal. Emits `blast_fun::events::PartnerAdded`.
 - `launch_config::remove_partner` (FeeAdmin), with a `Partner` and `Clock`: new launches may still
@@ -580,13 +584,16 @@ allow/remove toggles for Quotes, decimals, and adapters instead abort inside the
   keep paying it. Aborts with `EPartnerNotAccepted` when it is not accepted now. Emits
   `blast_fun::events::PartnerRemoved`.
 - `runtime_config::schedule_protocol_fee_share` (FeeAdmin), with a `Bps`: Blast's share of every trade
-  fee on every launch, from the next trade. Application emits `blast_fun::events::ProtocolFeeShareChanged`.
+  fee on every launch, from the next trade. Application emits
+  `delayed::DelayedApplied<runtime_config::ProtocolFeeShareKey, blast_fun::bps::Bps>`.
 - `runtime_config::schedule_treasury` (TreasuryAdmin), with a non-zero address: every later Blast fee
-  claim on every launch pays it. Application emits `blast_fun::events::TreasuryChanged`.
+  claim on every launch pays it. Application emits
+  `delayed::DelayedApplied<runtime_config::TreasuryKey, address>`.
 - `runtime_config::set_creator_claim_signer` (ClaimSignerAdmin), with a 32-byte Ed25519 public key,
   with immediate revocation handled by the separate revoke operation. Application emits `blast_fun::events::CreatorClaimSignerSet`.
-- `launch::apply_curve_fee_cap_update` and `launch::apply_metadata_cap_update` (anyone after the delay)
-  apply the pending proposal. A delay-only proposal updates the notice and keeps the live cap.
+- `launch::apply_curve_fee_cap_reassignment` and `launch::apply_metadata_cap_reassignment` (anyone
+  after the delay) apply a pending reassignment; `launch::apply_curve_fee_cap_delay` and
+  `launch::apply_metadata_cap_delay` apply a pending notice change and keep the live cap.
   A reassignment mints a fresh cap, records it as the live one, sends it to the scheduled non-zero
   recipient, and cancels any unclaimed creator claim. The old cap stops working; unclaimed curve
   fees follow the new cap. Reassignments emit `blast_fun::events::CurveFeeCapReassigned` or
@@ -611,9 +618,41 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 `CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
-later schedules check their own timestamp addition too. Scheduled events include the
-proposed next delay for value/policy replacements, or the unchanged applied notice
-for action-only proposals. Read the live notice before relying on a cancellation window.
+later schedules check their own timestamp addition too. A value proposal that changes neither
+value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 20
+(`EUnchanged`) from Blast admin's `delayed` module (`delayed_action` for an upgrade or
+cap-reassignment notice, `delayed_set` for the admission notice).
+Read the live notice before relying on a cancellation window.
+
+Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, a
+`delayed_action::DelayedAction` slot, or the `delayed_set::DelayedSet` of adapters. The module
+of each type emits every schedule, cancel and apply event; the launchpad emits none of its own,
+and these events are not wrapped in `blast_fun::blast_events::Event`. They are generic in the
+operation's key and value type and carry `owner` (the ID of the object that stores the field)
+and `key`. A value schedule emits `delayed::DelayedScheduled` (after `delayed::DelayedCancelled`
+for a replaced proposal), a cancel emits `delayed::DelayedCancelled`, and an application emits
+`delayed::DelayedApplied` with the previous and new value and the applied notice. Creating a
+setting emits `delayed::DelayedCreated`, an action slot `delayed_action::ActionCreated` (so
+`launch::finalize` emits it for both cap-reassignment slots), and the admission set
+`delayed_set::SetCreated`. Upgrade actions, cap reassignments and their notice changes emit
+`delayed_action::ActionScheduled`, `delayed_action::ActionCancelled` and
+`delayed_action::ActionApplied`, whose `change` is `Action(...)` or `Delay` (a notice change).
+Adapter admissions and their notice changes emit `delayed_set::SetScheduled`,
+`delayed_set::SetCancelled` and `delayed_set::SetApplied`, whose `change` is `Admission(...)` or
+`Delay`. Their `delay_ms` is the proposed next notice for a notice change and the applied notice
+for an action or admission. `delayed_set::MemberRemoved` records an immediate adapter removal.
+
+| Operation | Object and field | Key | Value or action type |
+| --- | --- | --- | --- |
+| Trade fees | `LaunchConfig.trade_fees` | `launch_config::TradeFeesKey` | `launch_config::TradeFees` |
+| Migration allocation | `LaunchConfig.protocol_allocation` | `launch_config::ProtocolAllocationKey` | `allocation::ProtocolAllocation` |
+| Creation fee | `LaunchConfig.creation_fee` | `launch_config::CreationFeeKey` | `u64` |
+| Adapter admissions | `LaunchConfig.migration_witnesses` | `launch_config::MigrationWitnessKey` | `TypeName` |
+| Blast's trade-fee share | `RuntimeConfig.protocol_fee_share_bps` | `runtime_config::ProtocolFeeShareKey` | `blast_fun::bps::Bps` |
+| Blast's treasury | `RuntimeConfig.treasury` | `runtime_config::TreasuryKey` | `address` |
+| Upgrades and immutability | `PackageAdmin.upgrade` | `blast_fun::package_admin::UpgradeKey` | `blast_fun::package_admin::UpgradeAction` |
+| Curve-fee cap reassignment | `Launch.curve_fee_cap_reassignment` | `launch::CurveFeeCapReassignment` | `address` (the recipient) |
+| Metadata cap reassignment | `Launch.metadata_cap_reassignment` | `launch::MetadataCapReassignment` | `address` (the recipient) |
 
 `blast_fun::package_admin::schedule_upgrade` takes only the digest in addition to
 its state, authority and Clock inputs, and uses the stored upgrade notice.
@@ -627,15 +666,16 @@ notice period, replacing any pending action. Anyone applies it with
 `blast_fun::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
 `blast_fun::package_admin::cancel_upgrade_action` cancels any of these proposals.
 
-Publication-owned policy singletons and package custody start with zero notice for
-ordinary role-authorized setup. Configure and apply each operation's intended notice
-(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
-release. Raising a notice never changes previously scheduled deadlines or next delays.
+Publication-owned policy singletons start with zero notice for ordinary
+role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
+no upgrade or immutability action can run without notice, even during setup. Configure
+and apply each other operation's intended notice, and drain or cancel all earlier setup
+proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
-Adapter admissions share one persistent `witness_delay_ms` across witness types;
-a fresh type cannot reopen setup. `launch_config::schedule_migration_witness` accepts
-only the witness type in addition to its state, authority and Clock inputs. It snapshots
+Adapter admissions share one applied notice across witness types, held in the
+`delayed_set::DelayedSet` `LaunchConfig.migration_witnesses`; a fresh type cannot reopen setup.
+`launch_config::schedule_migration_witness` accepts only the witness type in addition to its state, authority and Clock inputs. It snapshots
 the applied notice and deadline; application only admits that witness and preserves the
 live notice. `launch_config::schedule_migration_delay` proposes a new notice under
 AdapterAdmin; anyone calls `launch_config::apply_migration_delay`, and CancelAdmin uses
@@ -647,7 +687,7 @@ cancels that type's pending admission and preserves the applied notice.
 Creator-claim signer assignment and revocation are immediate under ClaimSignerAdmin,
 using a plain key value. Creator-cap reassignment is a separate delayed operation:
 each new launch starts both cap notices at 48 hours. The cap delay-only scheduling
-helpers propose no recipient; the matching reassignment application applies the notice
+helpers propose no recipient; the matching delay application applies the notice
 without issuing, retiring or transferring a cap. Subsequent reassignments use that
 launch's independently applied cap notice.
 
@@ -669,18 +709,17 @@ CreatorAdmin schedules each cap replacement separately with
 that operation's applied notice. CreatorAdmin changes only the notice with
 `launch::schedule_curve_fee_cap_delay` or `launch::schedule_metadata_cap_delay`;
 the change waits the old notice. Each operation has one pending proposal, so either
-kind of schedule replaces its previous proposal. Anyone executes the corresponding
-`launch::apply_curve_fee_cap_update` or `launch::apply_metadata_cap_update` after the delay.
+kind of schedule replaces its previous proposal. After the delay anyone executes a
+reassignment with `launch::apply_curve_fee_cap_reassignment` or
+`launch::apply_metadata_cap_reassignment`, and a notice change with
+`launch::apply_curve_fee_cap_delay` or `launch::apply_metadata_cap_delay`; calling the
+other kind's apply aborts with code 22 from `delayed_action`.
 Delay-only execution keeps the current cap's authority; reassignment retires it.
 CancelAdmin can cancel either proposal.
-Delay policy has distinct event types for each cap: scheduling emits
-`blast_fun::events::CurveFeeCapDelayScheduled` or
-`blast_fun::events::MetadataCapDelayScheduled`; applying emits
-`blast_fun::events::CurveFeeCapDelayChanged` or
-`blast_fun::events::MetadataCapDelayChanged`; cancelling a policy-only proposal emits
-`blast_fun::events::CurveFeeCapDelayCancelled` or
-`blast_fun::events::MetadataCapDelayCancelled`. Applying a recipient proposal also
-emits its cap's delay-changed event before the reassignment event.
+Both caps record their lifecycle with the `delayed_action` events, keyed by
+`launch::CurveFeeCapReassignment` or `launch::MetadataCapReassignment` with the launch ID as
+`owner`. Applying a reassignment emits `delayed_action::ActionApplied` before
+`blast_fun::events::CurveFeeCapReassigned` or `blast_fun::events::MetadataCapReassigned`.
 ClaimSignerAdmin may immediately revoke the signer with
 `runtime_config::revoke_creator_claim_signer`; assignment and revocation take effect immediately.
 AdapterAdmin may immediately remove an adapter with `launch_config::remove_migration_witness`.
@@ -857,13 +896,14 @@ object's type arguments.
 | Is this cap live? | its object ID equals `curve_fee_cap_id` or `blast_metadata_cap_id` |
 | Coin metadata, supply mode, total supply | the shared `Currency<Meme>` |
 
-A `Delayed<T>` stores the applied `value`, applied `delay_ms`, and an optional `pending` record containing the
+A `Delayed<K, T>` (from `blast_admin::delayed`) stores `owner` (the ID of the object that stores it),
+`key`, the applied `value`, applied `delay_ms`, and an optional `pending` proposal containing the
 proposed `value`, next `delay_ms` and `ready_at_ms` (Unix milliseconds). Read the applied
 `value` for live economics. Reaching `ready_at_ms` makes a proposal executable; the matching
 apply call must still succeed before it becomes the applied value.
 
 `LaunchConfig` keeps `meme_decimals`, `quotes` (a `Table` keyed by the Quote `TypeName` with
-original IDs), and admitted adapters in `migration_witnesses`. Its delayed economic fields are:
+original IDs), and adapters in `migration_witnesses`. Its delayed economic fields are:
 
 | Field | Applied value |
 | --- | --- |
@@ -871,14 +911,18 @@ original IDs), and admitted adapters in `migration_witnesses`. Its delayed econo
 | `protocol_allocation` | `protocol_allocation.value` contains `meme_bps` and `quote_bps`, each a `Bps` |
 | `creation_fee` | `creation_fee.value` is the creation fee in MIST |
 
-`pending_witnesses` maps original adapter type names to admission proposals with `value`,
-snapshotted `delay_ms` and `ready_at_ms`; applying admission never writes that delay back
-to the shared policy. Admission becomes active only when applied to `migration_witnesses`. Accepted
+`migration_witnesses` is a `DelayedSet<MigrationWitnessKey, TypeName>`: `members` holds the
+admitted original adapter type names, `delay_ms` the applied admission notice, `admissions` maps
+each pending type name to its snapshotted `delay_ms` and `ready_at_ms`, and `pending_delay` holds
+a proposed next notice. Applying an admission never writes its delay back to the applied notice;
+admission becomes active only when applied into `members`. Accepted
 partners are dynamic fields `launch_config::PartnerKey(ID)` holding `accepted_until_ms`.
 
 `RuntimeConfig` stores the plain `creator_claim_signer_public_key` as its active signer.
 Its delayed fields are `protocol_fee_share_bps`, whose applied value is a `Bps`, and
-`treasury`, whose applied value is the current payee. A `Bps` is a positional struct wrapping one u64. Preview a trade exactly
+`treasury`, whose applied value is the current payee. A launch's `curve_fee_cap_reassignment`
+and `metadata_cap_reassignment` are `DelayedAction`s holding each cap's applied notice
+(`delay_ms`) and any `pending` reassignment or notice change. A `Bps` is a positional struct wrapping one u64. Preview a trade exactly
 by dev-inspecting `launch::buy` or `launch::sell` against the live launch.
 
 ### Events
@@ -892,14 +936,7 @@ the transaction sender; take it from the transaction.
 | Event | Emitted by | Key fields and what to derive |
 | --- | --- | --- |
 | `blast_fun::events::Paused`, `blast_fun::events::Unpaused` | pause admin or unpause admin | requested `bits`, resulting `paused` mask |
-| `blast_fun::events::TreasuryScheduled`, `blast_fun::events::TreasuryCancelled` | treasury schedule or cancel | proposed `treasury`; schedule includes `ready_at_ms` and next `delay_ms` |
-| `blast_fun::events::ProtocolFeeShareScheduled`, `blast_fun::events::ProtocolFeeShareCancelled` | fee-share schedule or cancel | proposed `protocol_fee_share_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
 | `blast_fun::events::CreatorClaimSignerSet` | immediate signer assignment or revocation | applied `signer_public_key`; empty means revoked |
-| `blast_fun::events::MigrationWitnessScheduled`, `blast_fun::events::MigrationWitnessCancelled` | adapter admission schedule, cancellation or removal | proposed `witness`; schedule includes `ready_at_ms` and the applied `delay_ms` used for its deadline |
-| `blast_fun::events::ProtocolAllocationScheduled`, `blast_fun::events::ProtocolAllocationCancelled` | protocol allocation schedule or cancel | proposed `meme_bps` and `quote_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
-| `blast_fun::events::CreationFeeScheduled`, `blast_fun::events::CreationFeeCancelled` | creation fee schedule or cancel | proposed `creation_fee`; schedule includes `ready_at_ms` and next `delay_ms` |
-| `blast_fun::events::TradeFeesScheduled`, `blast_fun::events::TradeFeesCancelled` | trade fee schedule or cancel | proposed `quote_fee_bps` and `meme_fee_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
-| `blast_fun::events::UpgradeActionScheduled<blast_fun::package_admin::UpgradeAction>`, `blast_fun::events::UpgradeActionCancelled<blast_fun::package_admin::UpgradeAction>` | upgrade or immutability schedule or cancel | `action` uses `blast_fun::package_admin::UpgradeAction`; schedule includes `ready_at_ms` and the applied notice, or next `delay_ms` for a delay-only proposal |
 | `blast_fun::events::LaunchTicketCreated` | coin publish | `ticket_id`, `meme` type, `decimals`, `metadata_cap_id`, `creator`, `burnable`, `sell_burn_bps` |
 | `blast_fun::events::LaunchCreated` | `launch::finalize` | `launch_id`, `ticket_id` (join to the ticket for the Meme type), `quote` type, `migration_witness`, pool tier, `lp_fee_split`, `virtual_quote`, `graduation_target`, both fee rates, the full `allocation_plan` with Blast's shares, `opening_round_ms`, `creation_fee`, `partner_id` |
 | `blast_fun::events::LaunchShared` | `launch::share` | `public_start_ms`; round end is this plus `opening_round_ms` |
@@ -909,8 +946,6 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::Bought` | buy, settlement | `quote_in` (gross used), `meme_out_gross`, `meme_out_net`, `quote_refund`, the four fee parts, reserves after; graduated when `real_quote_reserve >= graduation_target`. A `Bought` before `LaunchShared` in the creation transaction is the creator's buy; the one beside `OpeningRoundSettled` is the pot's |
 | `blast_fun::events::Sold` | sell | `meme_in_gross`, `pending_burn` added, `quote_out_gross`, the four fee parts, reserves after |
 | `blast_fun::events::CreatorCapsClaimed` | creator claim | `meme` type and both cap IDs (no launch ID: one launch per Meme type) |
-| `blast_fun::events::CurveFeeCapReassignmentScheduled`, `blast_fun::events::MetadataCapReassignmentScheduled` | creator admin schedules replacement | `launch_id`, proposed `recipient`, `ready_at_ms`, next `delay_ms` |
-| `blast_fun::events::CurveFeeCapReassignmentCancelled`, `blast_fun::events::MetadataCapReassignmentCancelled` | cancel admin cancels replacement | `launch_id`, cancelled `recipient` |
 | `blast_fun::events::CurveFeeCapReassigned`, `blast_fun::events::MetadataCapReassigned` | anyone applying a ready proposal | `launch_id`, new cap ID, `recipient` |
 | `blast_fun::events::MemeMetadataUpdated` | metadata setters | `launch_id`, current `name`, `description`, `icon_url` |
 | `blast_fun::events::CreatorFeesClaimed` | creator fee claim | `launch_id`, `meme_amount`, `quote_amount` |
@@ -920,11 +955,9 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::Migrated` | migration | `meme`, `quote` handed to the pool, `disposed_meme`, `total_supply_after` |
 
 Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSet`,
-`blast_fun::events::MigrationWitnessSet`, `blast_fun::events::LaunchTradeFeesChanged`,
-`blast_fun::events::CreationFeeChanged`, `blast_fun::events::ProtocolAllocationSet`,
 `blast_fun::events::PartnerAdded`, `blast_fun::events::PartnerRemoved`,
-`blast_fun::events::ProtocolFeeShareChanged`, `blast_fun::events::TreasuryChanged`,
-`blast_fun::events::CreatorClaimSignerSet`. Outside the envelope: the Cetus adapter's
+`blast_fun::events::CreatorClaimSignerSet`. Outside the envelope: every delayed schedule,
+cancel and apply event from the Blast admin delayed modules (see "Delayed administration"), the Cetus adapter's
 `blast_fun_migrators::blast_events::CetusPoolReserved` at creation, and
 `blast_partners::blast_partners::PartnerPaid` for each partner payout.
 
@@ -935,10 +968,11 @@ that detected it.
 
 | Flow | Code, constant (module) | Fix |
 | --- | --- | --- |
-| any | 12 in `blast_admin::operational_version` | call the launchpad's current package ID |
+| any | 9 in `blast_admin::operational_version` | call the launchpad's current package ID |
 | pause, unpause | 38 `blast_fun::errors::EInvalidPauseBits`, 39 `blast_fun::errors::EPauseUnchanged` (`blast_fun`) | select nonzero supported bits that change the active mask |
 | create, buy, sell, voluntary migration | 40 `blast_fun::errors::EPaused` (`blast_fun`) | wait for an `UnpauseAdmin` to clear the operation's bit |
-| package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::ENoPendingAction`, 43 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; schedule before applying or cancelling; use a 32-byte digest |
+| package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; use a 32-byte digest |
+| delayed administration (fees, allocation, treasury, adapters, upgrades, cap reassignment) | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin (plain codes): 18 and 20 from the type's own module (`delayed`, `delayed_action` or `delayed_set`), 22 from `delayed_action`, 17 from `delayed_set` for an early admission and otherwise, like 19, from `delayed` | wait for `ready_at_ms`; schedule before applying or cancelling; choose a representable notice; change the value or notice; apply with the call matching the pending action or notice change |
 | publish | 9 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 25 `blast_fun::errors::EInvalidCreatorRecipient`, 26 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | start | 11 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 32 `blast_fun::errors::EQuoteNotAllowed`, 3 `blast_fun::errors::EMigrationWitnessNotAllowed`, 2 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, adapter, and decimals |
@@ -1091,7 +1125,7 @@ Calls also take objects from other packages:
   the ID of the one live cap. Its holder claims the creator's LP fees and changes the fee split. The
   creator gets it from `launch::claim_creator_caps`. A Blast admin with
   `blast_fun_domain::CreatorAdmin` can retire it and issue a new one with
-  `launch::apply_curve_fee_cap_update`; the new cap then controls the vault too.
+  `launch::apply_curve_fee_cap_reassignment`; the new cap then controls the vault too.
 - Blast admin roles. An admin calls `blast_acl::sign_in` (type argument `Role`) with the shared
   `blast_acl::ACL` and its own `blast_acl::AdminCap`, which yields a droppable
   `blast_acl::AdminWitness` (`AdminWitness<Role>`). Each admin call takes the witness for exactly
@@ -1099,7 +1133,9 @@ Calls also take objects from other packages:
   - `blast_fun_domain::BuybackAdmin`: buyback and burn.
   - `blast_fun_domain::RewardsAdmin`: publish holder-reward rounds and settle their gas reserves.
   - `blast_fun_domain::TreasuryAdmin`: claim migration residuals; set the LP-fee destination.
-  - `blast_fun_domain::FeeAdmin`: set Blast's default and per-coin LP-fee shares.
+  - `blast_fun_domain::FeeAdmin`: set Blast's default and per-coin LP-fee shares and the per-coin
+    notice.
+  - `blast_fun_domain::CancelAdmin`: cancel a pending LP-fee policy or upgrade proposal.
   - `blast_fun_domain::UpgradeAdmin`: govern upgrade notice and authorize package upgrades.
 
   These role types belong to the launchpad; this package declares no roles of its own. Integrators
@@ -1122,7 +1158,9 @@ Calls also take objects from other packages:
 | `blast_holder_rewards::publish_round`, `blast_holder_rewards::settle_gas_reserve` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
 | `lp_fee_policy::schedule_protocol_destination` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares` | Blast admin: `FeeAdmin` |
+| `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares`, `lp_fee_policy::schedule_coin_shares_delay` | Blast admin: `FeeAdmin` |
+| `lp_fee_policy::cancel_default_shares`, `lp_fee_policy::cancel_coin_shares`, `lp_fee_policy::cancel_coin_shares_delay`, `lp_fee_policy::cancel_protocol_destination` | Blast admin: `CancelAdmin` |
+| `lp_fee_policy::apply_default_shares`, `lp_fee_policy::apply_coin_shares`, `lp_fee_policy::apply_coin_shares_delay`, `lp_fee_policy::apply_protocol_destination` | anyone, once the proposal is ready |
 | `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` | Blast admin: `UpgradeAdmin` |
 | `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publication` and native `UpgradeCap` (done once at deployment) |
 
@@ -1143,7 +1181,7 @@ Calls also take objects from other packages:
 - `auto_lp_meme`, `auto_lp_quote`: auto-LP amounts the pool has not taken yet.
 - `rewards_meme`, `rewards_quote`: holder-reward funds not yet reserved by a round.
 - `burn_quote`: Quote waiting for a buyback.
-- `fee_split`: a delayed policy containing applied `value`, `delay_ms` and optional `pending` (the launch's split at migration, with a 48-hour notice).
+- `fee_split`: a `Delayed<FeeSplitKey, FeeSplit>` containing applied `value`, `delay_ms` and optional `pending` (the launch's split at migration, with a 48-hour notice).
 - `pool_id`, `partner_id` (copied from the launch, never changes), `next_round`, `last_checkpoint`.
 
 No function removes or transfers a position. No function withdraws the auto-LP, rewards, or burn
@@ -1203,8 +1241,8 @@ balances except the flows below.
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation’s role
-   to schedule and apply its intended value and next notice. Configure upgrade notice
-   through UpgradeAdmin’s policy-only proposal. Read each applied notice before release.
+   to schedule and apply its intended value and next notice. Upgrade custody already
+   holds its 48-hour notice from publication. Read each applied notice before release.
 5. Finish launchpad configuration and enable each operation’s notice before unpausing migration. Migrators has no independent pause switch.
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
@@ -1388,7 +1426,8 @@ ready; collections keep using the applied split until an explicit settlement and
    mutable vault, migrators version, read-only launch, live curve-fee cap, proposed split,
    **next** notice in milliseconds, and `Clock`. Both applied fields remain unchanged. The
    proposal waits the full currently applied notice, even when reducing the next notice to zero.
-   A replacement restarts that wait. An unchanged value and notice abort with `EFeeSplitUnchanged`.
+   A replacement restarts that wait. An unchanged value and notice abort with code 20
+   (`EUnchanged`) from Blast admin's `delayed` module.
 3. At or after the stored threshold, **anyone** calls
    `blast_fun_migrators::cetus::settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>` or
    `blast_fun_migrators::bluefin::settle_and_apply_fee_split<Meme, Quote>`. Supply the same vault,
@@ -1401,8 +1440,9 @@ it discards the proposal and retains the applied split and notice. Cap reassignm
 accepted proposal: its ready application stays permissionless, and only the new live cap may
 cancel or replace it. A delay-only change uses the same settlement boundary. Zero fees still allow
 activation. Already allocated creator, holder, burn and auto-LP balances retain their allocation.
-`FeeSplitScheduled`, `FeeSplitCancelled` and `FeeSplitChanged` identify each transition; the last
-includes old/new splits and the newly applied notice.
+`delayed::DelayedScheduled`, `delayed::DelayedCancelled` and `delayed::DelayedApplied`, keyed by
+`blast_fun_migrators::vault::FeeSplitKey` with the vault ID as `owner`, identify each transition;
+the last includes the previous and new splits and the newly applied notice.
 
 #### Buyback and burn (Blast admin)
 
@@ -1506,13 +1546,26 @@ sits in the launch and is claimed through the launchpad.
 #### LP-fee policy (Blast admin)
 
 - `lp_fee_policy::schedule_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
-  coin without its own pair. Aborts with `EProtocolFeeSharesUnchanged` if unchanged.
+  coin without its own pair. Aborts with code 20 from Blast admin's `delayed` module if neither
+  the pair nor the notice changes.
 - `lp_fee_policy::schedule_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
-  keyed by its original type name. A pair equal to the defaults is still a real entry: later default
-  changes skip that coin. Aborts if it equals the coin's current pair.
-- `lp_fee_policy::schedule_clear_coin_shares` (type argument `Meme`; `FeeAdmin`): schedules a return to live defaults. The table entry remains with an applied `None` after application; there is no immediate deletion.
+  keyed by its original type name, after the coin overrides' notice; it takes no notice argument.
+  A pair equal to the defaults is still a real entry: later default changes skip that coin. Aborts
+  with code 20 from Blast admin's `delayed_map` module if the pair equals the coin's applied pair.
+- `lp_fee_policy::schedule_clear_coin_shares` (type argument `Meme`; `FeeAdmin`): schedules a return
+  to live defaults, also after the coin overrides' notice. Applying it deletes the coin's entry;
+  there is no immediate deletion. Aborts with code 20 from `delayed_map` when the coin has no
+  applied pair.
+- `lp_fee_policy::apply_coin_shares` (type argument `Meme`; anyone) applies either ready change;
+  `lp_fee_policy::cancel_coin_shares` (`CancelAdmin`) discards it, even when ready.
+- `lp_fee_policy::schedule_coin_shares_delay` (`FeeAdmin`): proposes the one notice every later
+  coin override and clear waits, ready after the applied one. Anyone applies it with
+  `lp_fee_policy::apply_coin_shares_delay`; `CancelAdmin` discards it with
+  `lp_fee_policy::cancel_coin_shares_delay`. Aborts with code 20 from `delayed_map` when the
+  notice equals the applied one.
 - `lp_fee_policy::schedule_protocol_destination` (`TreasuryAdmin`): redirects every later Blast payout.
-  Aborts with `EProtocolDestinationUnchanged` for `@0x0` or the current address.
+  Aborts with `EInvalidProtocolDestination` for `@0x0`, and with code 20 from `delayed` if neither
+  the address nor the notice changes.
 
 Each takes effect only after its delay and explicit application. At publication the defaults are 1,500 BPS (15%)
 for both assets and the destination is the configured genesis recipient; read the live object for current values.
@@ -1540,9 +1593,37 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 `CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
-later schedules check their own timestamp addition too. Scheduled events include the
-proposed next delay for value/policy replacements, or the unchanged applied notice
-for action-only proposals. Read the live notice before relying on a cancellation window.
+later schedules check their own timestamp addition too. A value proposal that changes neither
+value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 20
+(`EUnchanged`) from Blast admin's `delayed` module (`delayed_map` for the coin overrides,
+`delayed_action` for the upgrade notice).
+Read the live notice before relying on a cancellation window.
+
+Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, the
+`delayed_map::DelayedMap` of per-coin overrides, or the `delayed_action::DelayedAction` upgrade
+slot. The module of each type emits every schedule, cancel and apply event; this package emits
+none of its own. The events are generic in the operation's key and value type and carry `owner`
+(the ID of the object that stores the field) and `key`. A value schedule emits
+`delayed::DelayedScheduled` (after `delayed::DelayedCancelled` for a replaced proposal), a
+cancel emits `delayed::DelayedCancelled`, and an application emits `delayed::DelayedApplied`
+with the previous and new value and the applied notice. Creating a setting emits
+`delayed::DelayedCreated` (a migration does so for the new vault's split), the coin overrides
+`delayed_map::MapCreated` at publication, and the upgrade slot `delayed_action::ActionCreated`.
+Upgrade actions and their notice changes emit `delayed_action::ActionScheduled`,
+`delayed_action::ActionCancelled` and `delayed_action::ActionApplied`, whose `change` is
+`Action(...)` or `Delay` (a notice change). Coin overrides, clears and the coin notice emit
+`delayed_map::MapScheduled`, `delayed_map::MapCancelled` and `delayed_map::MapApplied` with
+key `lp_fee_policy::CoinSharesKey`; their `change` is `Entry { entry, value }` (the Meme's
+original type name and its new pair, or none for a clear) or `Delay`. Their `delay_ms` is the
+proposed next notice for a notice change and the applied notice for an action or entry change.
+
+| Operation | Object and field | Key | Value or action type |
+| --- | --- | --- | --- |
+| Default shares | `LpFeePolicy.defaults` | `lp_fee_policy::DefaultSharesKey` | `lp_fee_policy::SharePair` |
+| Per-coin pairs and their notice | `LpFeePolicy.coins` | `lp_fee_policy::CoinSharesKey` (a unit key; each event's entry is the Meme's original type name) | `SharePair` per `TypeName` entry |
+| Blast's payee | `LpFeePolicy.destination` | `lp_fee_policy::ProtocolDestinationKey` | `address` |
+| A vault's creator split | `LpVault.fee_split` | `blast_fun_migrators::vault::FeeSplitKey` | `allocation::FeeSplit` |
+| Upgrades and immutability | `PackageAdmin.upgrade` | `blast_fun_migrators::package_admin::UpgradeKey` | `blast_fun_migrators::package_admin::UpgradeAction` |
 
 `blast_fun_migrators::package_admin::schedule_upgrade` takes the exact digest and
 uses the stored upgrade notice, with no delay argument.
@@ -1556,15 +1637,18 @@ notice period, replacing any pending action. Anyone applies it with
 `blast_fun_migrators::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
 `blast_fun_migrators::package_admin::cancel_upgrade_action` cancels any of these proposals.
 
-Publication-owned policy singletons and package custody start with zero notice for
-ordinary role-authorized setup. Configure and apply each operation's intended notice
-(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
-release. Raising a notice never changes previously scheduled deadlines or next delays.
+Publication-owned policy singletons start with zero notice for ordinary
+role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
+no upgrade or immutability action can run without notice, even during setup. Configure
+and apply each other operation's intended notice, and drain or cancel all earlier setup
+proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
-A newly introduced coin override inherits the defaults operation's applied notice.
-Clearing or cancelling an override retains its table entry and its applied notice;
-a fresh override cannot obtain a zero-delay first update once defaults are protected.
+Per-coin overrides share one notice of their own, which starts at the policy's publication
+notice and changes only through `lp_fee_policy::schedule_coin_shares_delay`. Every override
+and clear, for a new coin or an existing one, waits the coin notice applied when it was
+scheduled, so an override set during zero-notice setup gains no zero-delay later update once
+that notice is raised. The coin notice is independent of the defaults' notice: protect both.
 
 ### Economics
 
@@ -1657,7 +1741,8 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 
 This package has no public getters for its objects. Read object fields over RPC or GraphQL.
 
-`Delayed<T>` contains the applied `value`, applied `delay_ms` and an optional `pending` record with the proposed
+A `Delayed<K, T>` (from `blast_admin::delayed`) contains `owner` (the ID of the object that stores it),
+`key`, the applied `value`, applied `delay_ms` and an optional `pending` proposal with the proposed
 `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
 economics: the proposal becomes applied only when its apply call succeeds.
 
@@ -1669,11 +1754,14 @@ economics: the proposal becomes applied only when its apply call succeeds.
 - **Find a launch's vault:** scan `VaultCreated` events for its `meme` type name, or read the
   objects the migrate transaction created. Each Meme type has exactly one launch, so `LpVault<Meme,
   Quote>` is unique per Meme.
-- **Blast's live share for a coin:** `LpFeePolicy.coins` is a table keyed by the standard library's
-  `TypeName` holding the Meme's original type name (64 hex digits without `0x`, then the module and
-  type names, each after two colons). Each entry holds `Delayed<Option<SharePair>>`. Read the
-  entry's applied `value`: use the pair when it is `Some`, and use `defaults.value` when it is
-  `None` or the table entry is absent. Each pair contains `meme_bps` and `quote_bps`, each a `Bps`
+- **Blast's live share for a coin:** `LpFeePolicy.coins` is a
+  `delayed_map::DelayedMap<CoinSharesKey, TypeName, SharePair>`. Its `entries` field is a `Table`
+  keyed by the standard library's `TypeName` holding the Meme's original type name (64 hex digits
+  without `0x`, then the module and type names, each after two colons), with the applied
+  `SharePair` as value. Use the coin's pair when its entry exists, and `defaults.value`
+  otherwise. `coins.delay_ms` is the coin notice, `coins.pending` maps each coin to its pending
+  change (the proposed pair, or none for a clear, and its notice and `ready_at_ms`), and
+  `coins.pending_delay` holds a proposed coin notice. Each pair contains `meme_bps` and `quote_bps`, each a `Bps`
   positional struct wrapping one u64. `destination.value` is the current payee. Both `defaults`
   and `destination` are delayed fields; their pending proposals do not affect these reads.
 - **Round** (`Round<Meme, Quote>`): `vault`, `number`, `claim_deadline_at_ms`, `root`,
@@ -1692,12 +1780,12 @@ economics: the proposal becomes applied only when its apply call succeeds.
 For example, with applied defaults of 100/200 BPS for Meme/Quote and a proposed override of
 300/400 BPS:
 
-| Coin policy state | Applied entry value | Live Meme/Quote BPS |
+| Coin policy state | Table entry | Live Meme/Quote BPS |
 | --- | --- | --- |
-| No entry | Absent | 100/200 from applied defaults |
-| First override scheduled, including after readiness but before application | `None` | 100/200 from applied defaults |
-| Override applied, including while its clear is pending | `Some` pair | 300/400 from the applied override |
-| Clear applied; the table entry remains | `None` | 100/200 from applied defaults |
+| No override | Absent | 100/200 from applied defaults |
+| First override scheduled, including after readiness but before application | Absent | 100/200 from applied defaults |
+| Override applied, including while its clear is pending | The pair | 300/400 from the applied override |
+| Clear applied | Absent | 100/200 from applied defaults |
 
 When using defaults, always read their current applied value. If defaults change during a
 clear's notice period, applying that clear restores those updated defaults.
@@ -1706,6 +1794,8 @@ clear's notice period, applying that clear restores those updated defaults.
 
 This package emits its events directly, with no envelope. The launchpad wraps its own events in
 `blast_fun::blast_events::Event`. All events below are in this package's `blast_events` module.
+Fee-split, LP-fee policy and upgrade schedules, cancellations and applications emit Blast
+admin's delayed-module events instead; see "Delayed administration" for their keys.
 
 | Event | Emitted by | Fields |
 | --- | --- | --- |
@@ -1714,9 +1804,6 @@ This package emits its events directly, with no envelope. The launchpad wraps it
 | `FeesCollected` | nonzero collection | `vault_id`, `gross_meme`, `gross_quote`, `protocol_destination` (none when held for a partner), `protocol_meme`, `protocol_quote`, `creator_*`, `auto_lp_*`, `rewards_*`, `burn_meme` (burned), `burn_quote` (waits), `recipient_meme`, `recipient_quote` (split order) |
 | `AutoLpPositionOpened` | first Cetus collection with both auto-LP balances nonzero | `vault_id`, `position_id` |
 | `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `meme_pending`, `quote_pending` |
-| `FeeSplitScheduled` | creator schedule | `vault_id`, `proposed`, `ready_at_ms`, next `delay_ms` |
-| `FeeSplitCancelled` | creator cancellation | `vault_id`, discarded `proposed` |
-| `FeeSplitChanged` | settled application | `vault_id`, `old_fee_split`, `new_fee_split`, applied `delay_ms` |
 | `CreatorFeesClaimed` | creator LP-fee claim | `vault_id`, `meme_amount`, `quote_amount` |
 | `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `quote_pending` |
 | `RoundPublished` | round publish | `vault_id`, `round_id`, `number`, `start_checkpoint`, `end_checkpoint`, `claim_deadline_at_ms`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`, `quote_amount`, `meme_unallocated`, `quote_unallocated`, `treasury`, `gas_reserve_amount` |
@@ -1725,12 +1812,11 @@ This package emits its events directly, with no envelope. The launchpad wraps it
 | `RewardPaid` | reward claim | `round_id`, `index`, `beneficiary`, `meme_amount`, `quote_amount`, `meme_remaining`, `quote_remaining` |
 | `ProtocolFeesClaimed` | residual claim | `vault_id`, `meme`, `quote` (type names), `claimant`, `meme_amount`, `quote_amount` |
 | `ProtocolLpFeesClaimed` | partner payout | `vault_id`, `protocol_destination`, `protocol_meme`, `protocol_quote`, `partner_meme`, `partner_quote` |
-| `LpFeePolicyChanged` | policy share change | `meme` (none for defaults), `old_meme_bps`, `old_quote_bps`, `new_meme_bps`, `new_quote_bps` (the old pair is none when a coin pair is created, the new pair none when it is removed) |
-| `LpFeeDestinationChanged` | destination change | `old_destination`, `new_destination` |
 
 Event order inside one call: a collection emits `FeesCollected`, then possibly
-`AutoLpPositionOpened`, then possibly `AutoLiquidityAdded`; a split update adds `FeeSplitChanged`
-last. Venue events from Cetus or Bluefin appear alongside. A partner payout emits
+`AutoLpPositionOpened`, then possibly `AutoLiquidityAdded`; a split update adds
+`delayed::DelayedApplied` (key `blast_fun_migrators::vault::FeeSplitKey`) last. Venue events
+from Cetus or Bluefin appear alongside. A partner payout emits
 `blast_partners::blast_partners::PartnerPaid` (per nonzero asset) before `ProtocolLpFeesClaimed`. A
 migrate transaction carries the launchpad's wrapped `blast_fun::events::MigrationAllocationPaid` (one
 per allocation recipient), `blast_fun::events::ProtocolFeesAccrued` (only when Blast's migration fee
@@ -1750,7 +1836,8 @@ residual_quote`. Then reduce:
   `recipient_meme[i]` and `recipient_quote[i]`.
 - `AutoLiquidityAdded`: auto-LP balances become `meme_pending`/`quote_pending`; principal rises by
   the added amounts. It can appear without `FeesCollected`, when only earlier leftovers were added.
-- `FeeSplitChanged`: adopt `new_fee_split`.
+- `delayed::DelayedApplied` with key `blast_fun_migrators::vault::FeeSplitKey` and the vault's ID as
+  `owner`: adopt its `value` as the split.
 - `CreatorFeesClaimed`, `ProtocolFeesClaimed`, `ProtocolLpFeesClaimed`: the matching balances become
   zero (each claim takes everything). `CreatorFeesClaimed` names no recipient; the coins go wherever
   the PTB sends them.
@@ -1774,24 +1861,25 @@ Blast admin abort with plain numeric codes from the named module.
 
 | Flow | Abort | Fix |
 | --- | --- | --- |
-| any | code 12 from Blast admin's `operational_version` module | Call the current package address with the current `PackageVersion` objects; pass the launchpad's too on `new`/`migrate`. |
+| any | code 9 from Blast admin's `operational_version` module | Call the current package address with the current `PackageVersion` objects; pass the launchpad's too on `new`/`migrate`. |
 | Cetus `migrate` | `EInvalidCoinOrder` (0, module `cetus`) | Swap `CoinA` and `CoinB`. |
 | Cetus routes | `EWrongCoinPair` (2, module `cetus`) | `CoinA`/`CoinB` must be exactly the launch's Meme and Quote. |
 | collect, settle, buyback | `EPositionPoolMismatch` (Cetus 1, Bluefin 0) | Pass the pool whose ID is the vault's `pool_id`. |
 | Bluefin `new` | `EInvalidTier` (1, module `bluefin`) | Tick spacing 1..=400, fee rate 1..=20,000. |
 | `migrate` | code 15 from the launchpad's `launch` module | The launch is not `MigrationReady` (not graduated, or already migrated). |
 | `migrate` | code 21 from the launchpad's `launch` module | Use the venue the launch started with. |
-| `migrate` | `EZeroLiquidity` (3, module `vault`) | The seed produced no liquidity; nothing to fix by retrying. |
+| `migrate` | `EZeroLiquidity` (2, module `vault`) | The seed produced no liquidity; nothing to fix by retrying. |
 | creator claim, split update | code 22 from the launchpad's `launch` module | Use the launch's live `CurveFeeCap`. |
-| creator claim | `ENoCreatorFees` (2, module `vault`) | Collect first, or wait for fees. |
-| split update | `EFeeSplitUnchanged` (1, module `vault`) | Propose a different split. |
+| creator claim | `ENoCreatorFees` (1, module `vault`) | Collect first, or wait for fees. |
+| split update, policy | code 20 (`EUnchanged`) from Blast admin's `delayed` module (`delayed_map` for a coin override, clear or coin notice; `delayed_action` for the upgrade notice) | Change the value or the notice; clear only a coin that has a pair. |
+| apply, cancel (split, policy, upgrades) | codes 17 (`ENotReady`), 18 (`ENoPending`), 22 (`EWrongChange`) from Blast admin: 17 from `delayed`, or from `delayed_map` for an early coin override or clear; 18 from the type's own module (`delayed`, `delayed_map` or `delayed_action`); 22 from `delayed_action` | Wait for `ready_at_ms`; check a proposal is pending; use the call matching the pending action or notice change. |
 | split construction | codes 6, 7, 8, 24 from the launchpad's `allocation` module; 0 from its `bps` module | Nonzero destination, sum exactly 10,000, at most 16 recipients, no duplicates, each BPS ≤ 10,000. |
-| partner payout | `EPartnerMismatch` (6, module `vault`) | Pass the `Partner` whose ID is the vault's `partner_id`; vaults without a partner have no payout. |
-| buyback | `EBuybackQuoteOutOfRange` (4), `EBuybackBelowMinimum` (5), module `vault` | Pass a `quote_in` between 1 and the vault's `burn_quote`; lower `min_meme_out` or retry at a better price. |
+| partner payout | `EPartnerMismatch` (5, module `vault`) | Pass the `Partner` whose ID is the vault's `partner_id`; vaults without a partner have no payout. |
+| buyback | `EBuybackQuoteOutOfRange` (3), `EBuybackBelowMinimum` (4), module `vault` | Pass a `quote_in` between 1 and the vault's `burn_quote`; lower `min_meme_out` or retry at a better price. |
 | residual claim | `ENothingClaimable` (0, module `vault`) | Nothing left to claim. |
 | publish round | `EWrongRound` (0), `EInvalidInterval` (1), `EInvalidCommitment` (2), `EInvalidLeafCount` (3), `EEmptyBudget` (4), `ETreasuryChanged` (9), `EInvalidClaimDeadline` (10), `EInsufficientBudget` (11) in `blast_holder_rewards` | Use `next_round`, a nonoverlapping interval, 32-byte digests, 1..=65,536 leaves, and a nonzero holder budget. Match the governed treasury, choose a future deadline, and fit holder Quote plus reserve within the rewards balance. |
 | reward claim | `EInvalidIndex` (5), `EAlreadyClaimed` (6), `EInvalidBeneficiary` (7), `EEmptyBudget` (4), `EInvalidProof` (8) in `blast_holder_rewards` | Pass the leaf exactly as committed with its full-depth proof; each leaf pays once. |
-| policy | `EProtocolDestinationUnchanged` (0), `EProtocolFeeSharesUnchanged` (1) in `lp_fee_policy` | Change the stored value. |
+| policy | `EInvalidProtocolDestination` (0) in `lp_fee_policy` | Pass a nonzero destination. |
 
 Venue-side aborts (Cetus or Bluefin refusing a tier, a pair, or a fee amount) carry the venue's own
 codes.
@@ -2224,8 +2312,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 39 | `EPauseUnchanged` | The requested pause change does not alter the active bits. |
 | 40 | `EPaused` | The operation is paused. |
 | 41 | `EWrongUpgradeAction` | The ready action does not match the requested upgrade digest or immutability. |
-| 42 | `ENoPendingAction` | No upgrade action is scheduled. |
-| 43 | `EInvalidDigest` | The package digest is not 32 bytes. |
+| 42 | `EInvalidDigest` | The package digest is not 32 bytes. |
 
 ### `blast_fun::allocation`
 
@@ -2526,22 +2613,9 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 #### Events
 
 ```move
-/// Blast's one-time fee share of the Meme supply and final Quote reserve of launches finalized
-/// from now on. Finalized launches keep the shares recorded in `LaunchCreated.allocation_plan`.
-public struct ProtocolAllocationSet has copy, drop {
-    meme_bps: u64,
-    quote_bps: u64,
-}
-
 public struct MemeDecimalsSet has copy, drop {
     decimals: u8,
     allowed: bool,
-}
-
-/// Trade fees future launches snapshot.
-public struct LaunchTradeFeesChanged has copy, drop {
-    quote_fee_bps: u64,
-    meme_fee_bps: u64,
 }
 
 /// A Quote type was admitted to (`allowed = true`) or removed from (`allowed = false`) future
@@ -2551,22 +2625,8 @@ public struct QuoteSet has copy, drop {
     allowed: bool,
 }
 
-public struct MigrationWitnessSet has copy, drop {
-    migration_witness: TypeName,
-    allowed: bool,
-}
-
-/// Blast's live share of every curve trade fee.
-public struct ProtocolFeeShareChanged(u64) has copy, drop;
-
 /// The account-claim signer's public key; empty when revoked.
 public struct CreatorClaimSignerSet(vector<u8>) has copy, drop;
-
-/// The address every later protocol fee claim pays Blast's share to.
-public struct TreasuryChanged(address) has copy, drop;
-
-/// The SUI, in MIST, every launch created afterward pays.
-public struct CreationFeeChanged(u64) has copy, drop;
 
 /// New launches may name the partner from now on, or its pending removal was cancelled.
 public struct PartnerAdded has copy, drop {
@@ -2585,37 +2645,9 @@ public struct CreatorCapsClaimed has copy, drop {
     blast_metadata_cap_id: ID,
 }
 
-/// Public notice of creator-authority replacement.
-public struct CurveFeeCapReassignmentScheduled has copy, drop {
-    launch_id: ID,
-    recipient: address,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Cancelled replacement, identified by its launch and recipient.
-public struct CurveFeeCapReassignmentCancelled has copy, drop {
-    launch_id: ID,
-    recipient: address,
-}
-
 public struct CurveFeeCapReassigned has copy, drop {
     launch_id: ID,
     curve_fee_cap_id: ID,
-    recipient: address,
-}
-
-/// Public notice of creator-authority replacement.
-public struct MetadataCapReassignmentScheduled has copy, drop {
-    launch_id: ID,
-    recipient: address,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Cancelled replacement, identified by its launch and recipient.
-public struct MetadataCapReassignmentCancelled has copy, drop {
-    launch_id: ID,
     recipient: address,
 }
 
@@ -2782,151 +2814,6 @@ public struct Unpaused has copy, drop {
     bits: u8,
     paused: u8,
 }
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct TreasuryScheduled has copy, drop {
-    treasury: address,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct TreasuryCancelled has copy, drop {
-    treasury: address,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct ProtocolFeeShareScheduled has copy, drop {
-    protocol_fee_share_bps: u64,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct ProtocolFeeShareCancelled has copy, drop {
-    protocol_fee_share_bps: u64,
-}
-
-/// The admitted type and Unix millisecond execution threshold.
-public struct MigrationWitnessScheduled has copy, drop {
-    witness: TypeName,
-    ready_at_ms: u64,
-    /// Applied admission notice when this deadline was scheduled.
-    delay_ms: u64,
-}
-
-/// An adapter admission removed from the pending set.
-public struct MigrationWitnessCancelled has copy, drop {
-    witness: TypeName,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct ProtocolAllocationScheduled has copy, drop {
-    meme_bps: u64,
-    quote_bps: u64,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct ProtocolAllocationCancelled has copy, drop {
-    meme_bps: u64,
-    quote_bps: u64,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct CreationFeeScheduled has copy, drop {
-    creation_fee: u64,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct CreationFeeCancelled has copy, drop {
-    creation_fee: u64,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct TradeFeesScheduled has copy, drop {
-    quote_fee_bps: u64,
-    meme_fee_bps: u64,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct TradeFeesCancelled has copy, drop {
-    quote_fee_bps: u64,
-    meme_fee_bps: u64,
-}
-
-/// A publicly announced upgrade action with its execution threshold.
-public struct UpgradeActionScheduled<T: copy + drop> has copy, drop {
-    action: T,
-    ready_at_ms: u64,
-    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
-    delay_ms: u64,
-}
-
-/// A cancelled upgrade action, which can no longer execute.
-public struct UpgradeActionCancelled<T: copy + drop> has copy, drop {
-    action: T,
-}
-
-/// Applied notice period for future upgrades and immutability.
-public struct UpgradeDelayChanged has copy, drop {
-    delay_ms: u64,
-}
-
-/// Proposed adapter-admission notice period.
-public struct MigrationDelayScheduled has copy, drop {
-    delay_ms: u64,
-    ready_at_ms: u64,
-}
-
-/// Applied adapter-admission notice period.
-public struct MigrationDelayChanged has copy, drop {
-    delay_ms: u64,
-}
-
-/// Cancelled admission-policy proposal.
-public struct MigrationDelayCancelled() has copy, drop;
-
-/// Proposed notice for one launch's curve-fee cap reassignment.
-public struct CurveFeeCapDelayScheduled has copy, drop {
-    launch_id: ID,
-    delay_ms: u64,
-    ready_at_ms: u64,
-}
-
-/// Applied curve-fee cap reassignment notice.
-public struct CurveFeeCapDelayChanged has copy, drop {
-    launch_id: ID,
-    delay_ms: u64,
-}
-
-/// Cancelled policy-only curve-fee cap proposal.
-public struct CurveFeeCapDelayCancelled has copy, drop {
-    launch_id: ID,
-}
-
-/// Proposed notice for one launch's metadata cap reassignment.
-public struct MetadataCapDelayScheduled has copy, drop {
-    launch_id: ID,
-    delay_ms: u64,
-    ready_at_ms: u64,
-}
-
-/// Applied metadata cap reassignment notice.
-public struct MetadataCapDelayChanged has copy, drop {
-    launch_id: ID,
-    delay_ms: u64,
-}
-
-/// Cancelled policy-only metadata cap proposal.
-public struct MetadataCapDelayCancelled has copy, drop {
-    launch_id: ID,
-}
 ```
 
 ### `blast_fun::fees`
@@ -3000,10 +2887,8 @@ public struct Launch<phantom Meme, phantom Quote> has key {
     allocated_meme: Balance<Meme>,
     fee_ledger: fees::FeeLedger<Meme, Quote>,
     metadata_cap: MetadataCap<Meme>,
-    curve_fee_cap_delay_ms: u64,
-    pending_curve_fee_cap_recipient: Option<blast_admin::delayed::Pending<Option<address>>>,
-    metadata_cap_delay_ms: u64,
-    pending_metadata_cap_recipient: Option<blast_admin::delayed::Pending<Option<address>>>,
+    curve_fee_cap_reassignment: blast_admin::delayed_action::DelayedAction<CurveFeeCapReassignment, address>,
+    metadata_cap_reassignment: blast_admin::delayed_action::DelayedAction<MetadataCapReassignment, address>,
     creator: Option<creator_authority::CreatorRecipient>,
     curve_fee_cap_id: Option<ID>,
     blast_metadata_cap_id: Option<ID>,
@@ -3011,6 +2896,12 @@ public struct Launch<phantom Meme, phantom Quote> has key {
     /// launch. It never changes.
     partner_id: Option<ID>,
 }
+
+/// Keys the curve-fee cap reassignment's delayed lifecycle; its action is the recipient.
+public struct CurveFeeCapReassignment() has copy, drop, store;
+
+/// Keys the metadata cap reassignment's delayed lifecycle; its action is the recipient.
+public struct MetadataCapReassignment() has copy, drop, store;
 
 /// Hot potato from `new` to `finalize`, collecting the creator's settings.
 public struct LaunchInitializer<phantom Meme, phantom Quote> {
@@ -3133,8 +3024,8 @@ public fun claim_creator_caps<Meme, Quote>(
     ctx: &mut TxContext,
 ): (creator_authority::CurveFeeCap<Meme>, creator_authority::BlastMetadataCap<Meme>)
 
-/// Changes only this launch's curve fee cap notice, waiting its current delay.
-/// Apply through `apply_curve_fee_cap_update`; a policy-only proposal transfers no cap.
+/// Changes only this launch's curve-fee cap notice, after its applied notice.
+/// Apply through `apply_curve_fee_cap_delay`; replaces any pending reassignment.
 public fun schedule_curve_fee_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
@@ -3143,9 +3034,8 @@ public fun schedule_curve_fee_cap_delay<Meme, Quote>(
     clock: &Clock,
 )
 
-/// Announces a replacement recipient without invalidating the current curve-fee cap.
-/// Unclaimed curve fees follow the fresh cap when applied.
-/// Preserves this operation's currently applied notice period.
+/// Announces a replacement recipient without invalidating the current curve-fee cap, after
+/// the applied notice. Unclaimed curve fees follow the fresh cap when applied.
 public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
@@ -3154,25 +3044,31 @@ public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     clock: &Clock,
 )
 
-/// Cancels the replacement without affecting either live creator cap.
+/// Cancels the pending reassignment or notice change without affecting either live creator cap.
 public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
 )
 
-/// Applies a ready curve-fee cap proposal. A delay-only proposal changes the notice;
-/// a reassignment issues a fresh cap to the recipient and retires the old authority.
-/// Anyone may apply after the scheduled deadline.
-public fun apply_curve_fee_cap_update<Meme, Quote>(
+/// Permissionlessly applies a ready curve-fee cap notice change.
+public fun apply_curve_fee_cap_delay<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Permissionlessly applies a ready reassignment: issues a fresh curve-fee cap to the
+/// recipient and retires the old authority.
+public fun apply_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
     clock: &Clock,
     ctx: &mut TxContext,
 )
 
-/// Changes only this launch's metadata cap notice, waiting its current delay.
-/// Apply through `apply_metadata_cap_update`; a policy-only proposal transfers no cap.
+/// Changes only this launch's metadata cap notice, after its applied notice.
+/// Apply through `apply_metadata_cap_delay`; replaces any pending reassignment.
 public fun schedule_metadata_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
@@ -3181,8 +3077,8 @@ public fun schedule_metadata_cap_delay<Meme, Quote>(
     clock: &Clock,
 )
 
-/// Announces a replacement recipient without invalidating the current metadata cap.
-/// Preserves this operation's currently applied notice period.
+/// Announces a replacement recipient without invalidating the current metadata cap, after
+/// the applied notice.
 public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
@@ -3191,17 +3087,23 @@ public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     clock: &Clock,
 )
 
-/// Cancels the replacement without affecting either live creator cap.
+/// Cancels the pending reassignment or notice change without affecting either live creator cap.
 public fun cancel_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::CancelAdmin>,
 )
 
-/// Applies a ready metadata cap proposal. A delay-only proposal changes the notice;
-/// a reassignment issues a fresh cap to the recipient and retires the old authority.
-/// Anyone may apply after the scheduled deadline.
-public fun apply_metadata_cap_update<Meme, Quote>(
+/// Permissionlessly applies a ready metadata cap notice change.
+public fun apply_metadata_cap_delay<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    package_version: &blast_fun::PackageVersion,
+    clock: &Clock,
+)
+
+/// Permissionlessly applies a ready reassignment: issues a fresh metadata cap to the
+/// recipient and retires the old authority.
+public fun apply_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
     clock: &Clock,
@@ -3355,15 +3257,24 @@ public struct LaunchConfig has key {
     id: UID,
     meme_decimals: VecSet<u8>,
     quotes: Table<TypeName, bool>,
-    trade_fees: blast_admin::delayed::Delayed<TradeFees>,
-    migration_witnesses: VecSet<TypeName>,
-    witness_delay_ms: u64,
-    pending_witness_delay: Option<blast_admin::delayed::Pending<bool>>,
-    pending_witnesses: VecMap<TypeName, blast_admin::delayed::Pending<bool>>,
-    protocol_allocation: blast_admin::delayed::Delayed<allocation::ProtocolAllocation>,
+    trade_fees: blast_admin::delayed::Delayed<TradeFeesKey, TradeFees>,
+    migration_witnesses: blast_admin::delayed_set::DelayedSet<MigrationWitnessKey, TypeName>,
+    protocol_allocation: blast_admin::delayed::Delayed<ProtocolAllocationKey, allocation::ProtocolAllocation>,
     /// In MIST.
-    creation_fee: blast_admin::delayed::Delayed<u64>,
+    creation_fee: blast_admin::delayed::Delayed<CreationFeeKey, u64>,
 }
+
+/// Keys the trade fees' delayed lifecycle.
+public struct TradeFeesKey() has copy, drop, store;
+
+/// Keys the migration-adapter admissions' delayed lifecycle.
+public struct MigrationWitnessKey() has copy, drop, store;
+
+/// Keys Blast's migration allocation's delayed lifecycle.
+public struct ProtocolAllocationKey() has copy, drop, store;
+
+/// Keys the creation fee's delayed lifecycle.
+public struct CreationFeeKey() has copy, drop, store;
 
 /// Dynamic-field key of a Blast partner new launches may name. Its value is the time the partner
 /// stops being accepted: `u64::MAX` until Blast removes it.
@@ -3486,12 +3397,11 @@ public fun remove_partner(
     clock: &Clock,
 )
 
-/// Admits or removes a migration adapter's witness type. An admitted adapter can start launches
-/// and receives their liquidity at migration; existing launches keep their witness.
+/// Admits a migration adapter's witness type after the applied admission notice. An admitted
+/// adapter can start launches and receives their liquidity at migration; existing launches keep
+/// their witness. Rescheduling a pending admission restarts its notice.
 ///
 /// Framework types are rejected because anyone can construct them.
-/// Admits an adapter only after the currently applied admission notice.
-/// Scheduling and applying an admission preserve the shared delay policy.
 public fun schedule_migration_witness<MigrationWitness: drop>(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
@@ -3499,7 +3409,7 @@ public fun schedule_migration_witness<MigrationWitness: drop>(
     clock: &Clock,
 )
 
-/// Permissionlessly applies the approved admission once ready, preserving the live notice.
+/// Permissionlessly applies the approved admission once ready.
 public fun apply_migration_witness<MigrationWitness: drop>(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
@@ -3520,7 +3430,7 @@ public fun remove_migration_witness<MigrationWitness: drop>(
     _: &blast_admin::blast_acl::AdminWitness<blast_fun_domain::AdapterAdmin>,
 )
 
-/// Proposes only the admission notice period. Existing admission deadlines remain fixed.
+/// Proposes only the admission notice. Pending admissions keep their deadlines.
 public fun schedule_migration_delay(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
@@ -3529,14 +3439,14 @@ public fun schedule_migration_delay(
     clock: &Clock,
 )
 
-/// Permissionlessly applies a ready admission-policy proposal.
+/// Permissionlessly applies a ready admission-notice proposal.
 public fun apply_migration_delay(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
     clock: &Clock,
 )
 
-/// Cancels only the admission-policy proposal.
+/// Cancels only the admission-notice proposal.
 public fun cancel_migration_delay(
     self: &mut LaunchConfig,
     package_version: &blast_fun::PackageVersion,
@@ -3594,19 +3504,20 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 #### Types
 
 ```move
-/// A proposed upgrade, irreversible immutability, or delay policy change.
+/// A proposed upgrade or irreversible immutability.
 public enum UpgradeAction has copy, drop, store {
     Upgrade(vector<u8>),
     MakeImmutable,
-    DelayOnly,
 }
+
+/// Keys the upgrade custody's delayed lifecycle.
+public struct UpgradeKey() has copy, drop, store;
 
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_fun::BLAST_FUN>,
-    delay_ms: u64,
-    pending: Option<blast_admin::delayed::Pending<UpgradeAction>>,
+    upgrade: blast_admin::delayed_action::DelayedAction<UpgradeKey, UpgradeAction>,
 }
 ```
 
@@ -3631,7 +3542,7 @@ public fun schedule_make_immutable(
     clock: &Clock,
 )
 
-/// Cancels any scheduled action, even after its execution threshold.
+/// Cancels any scheduled action or notice change, even after its execution threshold.
 public fun cancel_upgrade_action(
     self: &mut PackageAdmin,
     package_version: &blast_fun::PackageVersion,
@@ -3686,6 +3597,10 @@ public fun apply_upgrade_delay(
 )
 ```
 
+#### Constants
+
+- `INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: The notice every upgrade or immutability action waits from publication until changed.
+
 ### `blast_fun::runtime_config`
 
 Settings every curve trade, creator claim, and protocol fee claim reads live.
@@ -3700,9 +3615,15 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 public struct RuntimeConfig has key {
     id: UID,
     creator_claim_signer_public_key: vector<u8>,
-    protocol_fee_share_bps: blast_admin::delayed::Delayed<bps::Bps>,
-    treasury: blast_admin::delayed::Delayed<address>,
+    protocol_fee_share_bps: blast_admin::delayed::Delayed<ProtocolFeeShareKey, bps::Bps>,
+    treasury: blast_admin::delayed::Delayed<TreasuryKey, address>,
 }
+
+/// Keys the protocol fee share's delayed lifecycle.
+public struct ProtocolFeeShareKey() has copy, drop, store;
+
+/// Keys the treasury's delayed lifecycle.
+public struct TreasuryKey() has copy, drop, store;
 ```
 
 #### Functions
@@ -3781,84 +3702,13 @@ Events: payload structs are emitted directly, each under its own type.
 
 ### `blast_fun_migrators::blast_events`
 
-Typed replay facts for vault custody, the LP-fee policy and split, auto-LP, holder rewards, Cetus pool reservations, and residual claims.
+Typed replay facts for vault custody, LP-fee collection, auto-LP, holder rewards, Cetus pool reservations, and residual claims. Delayed settings, upgrade custody and the creator split record their lifecycle through `blast_admin::delayed` events.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/blast_events.move
 
 #### Events
 
 ```move
-/// Values removed from the pending schedule.
-public struct ProtocolDestinationCancelled has copy, drop {
-    destination: address,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct ProtocolDestinationScheduled has copy, drop {
-    destination: address,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Values removed from the pending schedule.
-public struct DefaultSharesCancelled has copy, drop {
-    meme_bps: u64,
-    quote_bps: u64,
-}
-
-/// Proposed values and Unix millisecond execution threshold.
-public struct DefaultSharesScheduled has copy, drop {
-    meme_bps: u64,
-    quote_bps: u64,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// The cancelled per-coin decision.
-public struct CoinSharesCancelled has copy, drop {
-    meme: TypeName,
-    meme_bps: Option<u64>,
-    quote_bps: Option<u64>,
-}
-
-/// None announces a return to the live defaults, not an immediate override deletion.
-public struct CoinSharesScheduled has copy, drop {
-    meme: TypeName,
-    meme_bps: Option<u64>,
-    quote_bps: Option<u64>,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// Cancelled digest; None denotes the cancelled immutability decision.
-public struct UpgradeActionCancelled has copy, drop {
-    digest: Option<vector<u8>>,
-}
-
-/// Announced digest and execution threshold; None denotes immutability.
-public struct UpgradeActionScheduled has copy, drop {
-    digest: Option<vector<u8>>,
-    ready_at_ms: u64,
-    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
-    delay_ms: u64,
-}
-
-/// Blast's default pair (no `meme`) or one coin's pair changed; absent old/new pairs represent a
-/// coin's own pair being created or removed.
-public struct LpFeePolicyChanged has copy, drop {
-    meme: Option<TypeName>,
-    old_meme_bps: Option<u64>,
-    old_quote_bps: Option<u64>,
-    new_meme_bps: Option<u64>,
-    new_quote_bps: Option<u64>,
-}
-
-/// The protocol share of every later collection pays a new address.
-public struct LpFeeDestinationChanged has copy, drop {
-    old_destination: address,
-    new_destination: address,
-}
-
 /// Records discovery and typed position custody for one completed vault: the position's
 /// `liquidity`, the handoff the venue returned as protocol residuals, and the creator's fee split
 /// it holds from migration.
@@ -3920,28 +3770,6 @@ public struct BuybackBurned has copy, drop {
 public struct AutoLpPositionOpened has copy, drop {
     vault_id: ID,
     position_id: ID,
-}
-
-/// A creator announced a split and the next notice, waiting the applied notice.
-public struct FeeSplitScheduled has copy, drop {
-    vault_id: ID,
-    proposed: blast_fun::allocation::FeeSplit,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-
-/// The live creator discarded the pending split without changing applied policy.
-public struct FeeSplitCancelled has copy, drop {
-    vault_id: ID,
-    proposed: blast_fun::allocation::FeeSplit,
-}
-
-/// A ready split and notice became active after settling the position's accrued fees.
-public struct FeeSplitChanged has copy, drop {
-    vault_id: ID,
-    old_fee_split: blast_fun::allocation::FeeSplit,
-    new_fee_split: blast_fun::allocation::FeeSplit,
-    delay_ms: u64,
 }
 
 /// The live curve-fee cap holder claimed the creator's accrued LP fees.
@@ -4029,17 +3857,6 @@ public struct CetusPoolReserved has copy, drop {
     quote: TypeName,
     pool_creation_cap_id: ID,
     tick_spacing: u32,
-}
-
-/// A policy-only proposal, replacing any pending upgrade action.
-public struct UpgradeDelayScheduled has copy, drop {
-    delay_ms: u64,
-    ready_at_ms: u64,
-}
-
-/// Applied notice period for future upgrade actions.
-public struct UpgradeDelayChanged has copy, drop {
-    delay_ms: u64,
 }
 ```
 
@@ -4438,14 +4255,23 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 
 ```move
 /// Shared singleton holding independent Meme/Quote Blast shares and the address every vault pays
-/// the protocol share to. Per-coin entries use original Meme type identity and require no
-/// iteration or cardinality cap.
+/// the protocol share to. Per-coin overrides use original Meme type identity, require no
+/// iteration or cardinality cap, and share one notice of their own.
 public struct LpFeePolicy has key {
     id: UID,
-    destination: blast_admin::delayed::Delayed<address>,
-    defaults: blast_admin::delayed::Delayed<SharePair>,
-    coins: Table<TypeName, blast_admin::delayed::Delayed<Option<SharePair>>>,
+    destination: blast_admin::delayed::Delayed<ProtocolDestinationKey, address>,
+    defaults: blast_admin::delayed::Delayed<DefaultSharesKey, SharePair>,
+    coins: blast_admin::delayed_map::DelayedMap<CoinSharesKey, TypeName, SharePair>,
 }
+
+/// Keys the protocol destination's delayed lifecycle.
+public struct ProtocolDestinationKey() has copy, drop, store;
+
+/// Keys the default shares' delayed lifecycle.
+public struct DefaultSharesKey() has copy, drop, store;
+
+/// Keys the per-coin share overrides' delayed lifecycle; each event names its coin.
+public struct CoinSharesKey() has copy, drop, store;
 
 /// Atomic pair of validated shares; a per-coin entry always replaces both assets together.
 public struct SharePair has copy, drop, store {
@@ -4508,7 +4334,7 @@ public fun cancel_default_shares(
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::CancelAdmin>,
 )
 
-/// Schedules both shares for this original Meme type after the administrative delay.
+/// Proposes both shares for this original Meme type, ready after the coin overrides' notice.
 /// Setting the current defaults is a real transition because later default changes skip the coin.
 public fun schedule_coin_shares<Meme>(
     self: &mut LpFeePolicy,
@@ -4516,16 +4342,15 @@ public fun schedule_coin_shares<Meme>(
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::FeeAdmin>,
     meme_bps: blast_fun::bps::Bps,
     quote_bps: blast_fun::bps::Bps,
-    delay_ms: u64,
     clock: &Clock,
 )
 
-/// Removing an override may increase fees through defaults, so it also requires notice.
+/// Proposes returning this coin to the defaults. Removing an override may increase fees
+/// through the defaults, so it also waits the coin overrides' notice.
 public fun schedule_clear_coin_shares<Meme>(
     self: &mut LpFeePolicy,
     migrators_version: &blast_fun_migrators::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::FeeAdmin>,
-    delay_ms: u64,
     clock: &Clock,
 )
 
@@ -4542,14 +4367,36 @@ public fun cancel_coin_shares<Meme>(
     migrators_version: &blast_fun_migrators::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::CancelAdmin>,
 )
+
+/// Proposes the notice every later coin override waits, after the applied one.
+public fun schedule_coin_shares_delay(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::FeeAdmin>,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Applies a ready coin-override notice; pending overrides keep their deadlines.
+public fun apply_coin_shares_delay(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    clock: &Clock,
+)
+
+/// Cancels a pending coin-override notice change.
+public fun cancel_coin_shares_delay(
+    self: &mut LpFeePolicy,
+    migrators_version: &blast_fun_migrators::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_fun::blast_fun_domain::CancelAdmin>,
+)
 ```
 
 #### Errors
 
 | Constant | Code | Message |
 | --- | --- | --- |
-| `EProtocolDestinationUnchanged` | 0 | Protocol destination must be a new nonzero address. |
-| `EProtocolFeeSharesUnchanged` | 1 | LP-fee share update must change the stored pair. |
+| `EInvalidProtocolDestination` | 0 | Protocol destination must be a nonzero address. |
 
 ### `blast_fun_migrators::package_admin`
 
@@ -4564,15 +4411,16 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 public enum UpgradeAction has copy, drop, store {
     Upgrade(vector<u8>),
     MakeImmutable,
-    DelayOnly,
 }
+
+/// Keys the upgrade custody's delayed lifecycle.
+public struct UpgradeKey() has copy, drop, store;
 
 /// Shared custody for this package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_fun_migrators::BLAST_FUN_MIGRATORS>,
-    delay_ms: u64,
-    pending: Option<blast_admin::delayed::Pending<UpgradeAction>>,
+    upgrade: blast_admin::delayed_action::DelayedAction<UpgradeKey, UpgradeAction>,
 }
 ```
 
@@ -4597,7 +4445,7 @@ public fun schedule_make_immutable(
     clock: &Clock,
 )
 
-/// Cancels any scheduled action, even after its execution threshold.
+/// Cancels any scheduled action or notice change, even after its execution threshold.
 public fun cancel_upgrade_action(
     self: &mut PackageAdmin,
     package_version: &blast_fun_migrators::PackageVersion,
@@ -4666,8 +4514,11 @@ public fun apply_upgrade_delay(
 | Constant | Code | Message |
 | --- | --- | --- |
 | `EWrongUpgradeAction` | 0 | The ready action must match the requested upgrade digest or immutability. |
-| `ENoPendingAction` | 1 | No upgrade action is scheduled. |
-| `EInvalidDigest` | 2 | A package digest must contain 32 bytes. |
+| `EInvalidDigest` | 1 | A package digest must contain 32 bytes. |
+
+#### Constants
+
+- `INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: The notice every upgrade or immutability action waits from publication until changed.
 
 ### `blast_fun_migrators::vault`
 
@@ -4684,6 +4535,9 @@ public struct PositionKey<phantom Venue>() has copy, drop, store;
 /// A sealed field name for the separate position auto-LP adds to on venues whose migration
 /// position cannot receive more liquidity (Cetus burns it).
 public struct AutoLpPositionKey<phantom Venue>() has copy, drop, store;
+
+/// Keys the creator fee split's delayed lifecycle.
+public struct FeeSplitKey() has copy, drop, store;
 
 /// Shared per-launch custody for one position, its protocol migration residuals, and the balances
 /// its LP fees are split into.
@@ -4706,7 +4560,7 @@ public struct LpVault<phantom Meme, phantom Quote> has key {
     protocol_quote_residual: Balance<Quote>,
     unpaid_protocol_meme: Balance<Meme>,
     unpaid_protocol_quote: Balance<Quote>,
-    fee_split: blast_admin::delayed::Delayed<blast_fun::allocation::FeeSplit>,
+    fee_split: blast_admin::delayed::Delayed<FeeSplitKey, blast_fun::allocation::FeeSplit>,
     creator_meme: Balance<Meme>,
     creator_quote: Balance<Quote>,
     auto_lp_meme: Balance<Meme>,
@@ -4778,12 +4632,11 @@ public fun claim_creator_fees<Meme, Quote>(
 | Constant | Code | Message |
 | --- | --- | --- |
 | `ENothingClaimable` | 0 | No protocol migration residuals are available to claim. |
-| `EFeeSplitUnchanged` | 1 | Fee split or its notice must differ from the applied values. |
-| `ENoCreatorFees` | 2 | No creator LP fees are available to claim. |
-| `EZeroLiquidity` | 3 | Migration position must hold liquidity. |
-| `EBuybackQuoteOutOfRange` | 4 | Buyback Quote must be positive and at most the burn Quote waiting to buy Meme back. |
-| `EBuybackBelowMinimum` | 5 | Buyback must return at least the minimum Meme. |
-| `EPartnerMismatch` | 6 | The partner is not the one the vault's launch named at creation. |
+| `ENoCreatorFees` | 1 | No creator LP fees are available to claim. |
+| `EZeroLiquidity` | 2 | Migration position must hold liquidity. |
+| `EBuybackQuoteOutOfRange` | 3 | Buyback Quote must be positive and at most the burn Quote waiting to buy Meme back. |
+| `EBuybackBelowMinimum` | 4 | Buyback must return at least the minimum Meme. |
+| `EPartnerMismatch` | 5 | The partner is not the one the vault's launch named at creation. |
 
 #### Constants
 
@@ -4945,22 +4798,22 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 4 | `EAdminRoleAlreadyGranted` |  |
 | 5 | `EAdminRoleNotGranted` |  |
 | 6 | `EInvalidSuperAdminRecipient` |  |
-| 7 | `ESuperAdminTransferUnchanged` |  |
-| 8 | `ENoPendingSuperAdminTransfer` |  |
-| 9 | `ENotPendingSuperAdminRecipient` |  |
-| 10 | `ESuperAdminTransferNotReady` |  |
-| 11 | `ESuperAdminCapStillActive` |  |
-| 12 | `EOperationalVersionMismatch` |  |
-| 13 | `EOperationalVersionOverflow` |  |
-| 14 | `EInvalidPackagePublisher` |  |
-| 15 | `EInvalidUpgradeCap` |  |
-| 16 | `EInvalidPackageDigest` |  |
-| 17 | `EUpgradeCapUnavailable` |  |
-| 18 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 19 | `EInvalidPackageMarker` |  |
-| 20 | `ENotReady` |  |
-| 21 | `ENoPending` |  |
-| 22 | `EInvalidDelay` |  |
+| 7 | `ENotPendingSuperAdminRecipient` |  |
+| 8 | `ESuperAdminCapStillActive` |  |
+| 9 | `EOperationalVersionMismatch` |  |
+| 10 | `EOperationalVersionOverflow` |  |
+| 11 | `EInvalidPackagePublisher` |  |
+| 12 | `EInvalidUpgradeCap` |  |
+| 13 | `EInvalidPackageDigest` |  |
+| 14 | `EUpgradeCapUnavailable` |  |
+| 15 | `EUpgradePolicyNotMoreRestrictive` |  |
+| 16 | `EInvalidPackageMarker` |  |
+| 17 | `ENotReady` |  |
+| 18 | `ENoPending` |  |
+| 19 | `EInvalidDelay` |  |
+| 20 | `EUnchanged` |  |
+| 21 | `EProposalPending` |  |
+| 22 | `EWrongChange` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -4976,8 +4829,8 @@ public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
     admins: Table<ID, VecSet<TypeName>>,
-    /// The nominated next super admin: none until the transfer delay passes.
-    pending_super_admin: blast_fun_timelock::Timelocked<Option<address>>,
+    /// The nominated next super admin, acceptable once the fixed transfer delay passes.
+    super_admin_transfer: delayed_action::DelayedAction<SuperAdminTransfer, address>,
 }
 
 /// Cold root authority for membership, roles, and delayed root replacement only.
@@ -4989,6 +4842,9 @@ public struct SuperAdminCap has key {
 public struct AdminCap has key, store {
     id: UID,
 }
+
+/// Keys the root transfer's delayed lifecycle events.
+public struct SuperAdminTransfer() has copy, drop, store;
 
 /// Transaction-local proof that a live `AdminCap` holding `Role` signed in.
 public struct AdminWitness<phantom Role>() has drop;
@@ -5018,7 +4874,7 @@ public fun revoke_role<Role>(self: &mut ACL, root: &SuperAdminCap, admin_cap_id:
 public fun destroy_admin_cap(self: &mut ACL, admin_cap: AdminCap)
 
 /// Nominates `recipient` as the next super admin; it may accept once the transfer delay
-/// passes. A new nomination replaces a pending one and restarts the delay.
+/// passes. A new nomination cancels a pending one and restarts the delay.
 public fun begin_super_admin_transfer(
     self: &mut ACL,
     root: &SuperAdminCap,
@@ -5078,16 +4934,6 @@ public struct AdminDestroyed has copy, drop {
     admin_cap_id: ID,
     roles: vector<TypeName>,
     was_active: bool,
-}
-
-public struct SuperAdminTransferStarted has copy, drop {
-    recipient: address,
-    execute_after_ms: u64,
-}
-
-public struct SuperAdminTransferCancelled has copy, drop {
-    recipient: address,
-    execute_after_ms: u64,
 }
 
 public struct SuperAdminTransferred has copy, drop {
@@ -5156,24 +5002,32 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Explicit changes that always wait their operation's currently applied notice period.
+Settings that change only after their applied notice, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. Readers need no Clock.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
 
 #### Types
 
 ```move
-/// Applied value and notice period, with at most one atomic replacement.
-/// Readers need no Clock. There is no immediate mutation or bypass operation.
-public struct Delayed<T: copy + drop + store> has store {
+/// An applied setting, its applied notice and at most one proposed replacement.
+public struct Delayed<K: copy + drop + store, T: copy + drop + store> has store {
+    owner: ID,
+    key: K,
     value: T,
     delay_ms: u64,
-    pending: Option<Pending<T>>,
+    pending: Option<Proposal<T>>,
 }
 
-/// Proposed value and next notice period, bound to a Unix millisecond threshold.
-public struct Pending<T: copy + drop + store> has copy, drop, store {
+/// A proposed value and the notice in force once it applies, ready from `ready_at_ms`.
+public struct Proposal<T: copy + drop + store> has copy, drop, store {
     value: T,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A notice period and the time it elapses: the notice an admission or entry change waits,
+/// or a proposed next notice. Either is ready from `ready_at_ms`.
+public struct Notice has copy, drop, store {
     delay_ms: u64,
     ready_at_ms: u64,
 }
@@ -5182,73 +5036,594 @@ public struct Pending<T: copy + drop + store> has copy, drop, store {
 #### Functions
 
 ```move
-/// Initializes a value and the notice period anchored at each future scheduling time.
-public fun new<T: copy + drop + store>(value: T, delay_ms: u64): Delayed<T>
+/// A setting in force at once; every later change waits the applied notice.
+public fun new<K: copy + drop + store, T: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    value: T,
+    delay_ms: u64,
+): Delayed<K, T>
 
-/// Returns the explicitly applied value.
-public fun value<T: copy + drop + store>(self: &Delayed<T>): T
+/// The applied value.
+public fun value<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): T
 
-/// Returns this operation's currently applied notice period in milliseconds.
-public fun delay_ms<T: copy + drop + store>(self: &Delayed<T>): u64
+/// The applied notice in milliseconds.
+public fun delay_ms<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): u64
 
-/// Returns the current proposal, if any.
-public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
+/// The proposed replacement, if any.
+public fun pending<K: copy + drop + store, T: copy + drop + store>(
+    self: &Delayed<K, T>,
+): Option<Proposal<T>>
 
-/// Replaces the proposal and restarts the full currently applied delay.
-/// `delay_ms` is the NEXT notice period, never the wait for this proposal.
-public fun schedule<T: copy + drop + store>(
-    self: &mut Delayed<T>,
+/// Proposes `value` and the next notice `delay_ms`, ready after the applied notice, and
+/// returns when. A replaced proposal is cancelled and the full applied notice restarts.
+/// Aborts when the proposal would change neither the value nor the notice.
+public fun schedule<K: copy + drop + store, T: copy + drop + store>(
+    self: &mut Delayed<K, T>,
     value: T,
     delay_ms: u64,
     clock: &Clock,
 ): u64
 
-/// Changes only the value, retaining the applied notice period.
-public fun schedule_value<T: copy + drop + store>(
-    self: &mut Delayed<T>,
+/// Proposes only a new value, keeping the applied notice.
+public fun schedule_value<K: copy + drop + store, T: copy + drop + store>(
+    self: &mut Delayed<K, T>,
     value: T,
     clock: &Clock,
 ): u64
 
-/// Changes only the notice period, retaining the applied value.
-/// A reduction, including to zero, still waits the old notice period.
-public fun schedule_delay<T: copy + drop + store>(
-    self: &mut Delayed<T>,
+/// Proposes only a new notice, keeping the applied value. A shorter notice, zero included,
+/// still waits the applied one.
+public fun schedule_delay<K: copy + drop + store, T: copy + drop + store>(
+    self: &mut Delayed<K, T>,
     delay_ms: u64,
     clock: &Clock,
 ): u64
 
-/// Checks that an application can proceed without consuming the stored proposal.
-/// Adapters use this before settling accrued economics under the currently applied value.
-public fun assert_ready<T: copy + drop + store>(self: &Delayed<T>, clock: &Clock)
+/// Checks that `apply` would succeed now, changing nothing. Owners call it before
+/// settling accrued economics under the applied value in the same transaction.
+public fun assert_ready<K: copy + drop + store, T: copy + drop + store>(
+    self: &Delayed<K, T>,
+    clock: &Clock,
+)
 
-/// Applies both proposed fields once, only after the stored deadline.
-public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
+/// Applies the ready proposal's value and notice together and returns the new value.
+public fun apply<K: copy + drop + store, T: copy + drop + store>(
+    self: &mut Delayed<K, T>,
+    clock: &Clock,
+): T
 
-/// Cancels even a ready proposal without changing the applied value or delay.
-public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
+/// Discards the proposal, even a ready one, leaving the applied value and notice.
+public fun cancel<K: copy + drop + store, T: copy + drop + store>(self: &mut Delayed<K, T>)
 
-/// Snapshots a standalone operation's applied delay and proposed next delay.
-/// Its owner must persist the returned next delay on successful application.
-public fun new_pending<T: copy + drop + store>(
+/// Deletes a setting with no proposal and records its end; cancel a proposal first.
+public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>)
+
+/// The proposed value, or the proposed change for an action slot.
+public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T
+
+/// The notice in force once the proposal applies.
+public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64
+
+/// The Unix millisecond time from which the proposal can apply.
+public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
+
+/// The notice waited, or the proposed next notice.
+public fun notice_delay_ms(self: &Notice): u64
+
+/// The Unix millisecond time from which the change can apply.
+public fun notice_ready_at_ms(self: &Notice): u64
+```
+
+#### Events
+
+```move
+/// A setting was created with its first applied value and notice.
+public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
     value: T,
-    current_delay_ms: u64,
+    delay_ms: u64,
+}
+
+/// A replacement value and next notice were proposed, ready from `ready_at_ms`.
+public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    value: T,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposal was discarded, by cancellation or by a replacing schedule.
+public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    value: T,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A ready proposal became the applied value and notice.
+public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    previous_value: T,
+    value: T,
+    delay_ms: u64,
+}
+
+/// A setting was deleted with nothing pending.
+public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+```
+
+### `blast_admin::delayed_action`
+
+One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied notice. The slot also governs its own notice. See `delayed` for the rules every delayed type shares.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_action.move
+
+#### Types
+
+```move
+/// An applied notice and at most one proposed one-shot action or notice change.
+public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+    pending: Option<delayed::Proposal<Change<A>>>,
+}
+
+/// What a proposal does once applied.
+public enum Change<A: copy + drop + store> has copy, drop, store {
+    /// Hands the owner its action; the notice stays as applied.
+    Action(A),
+    /// Changes only the notice, to the proposal's `delay_ms`.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An action slot with nothing proposed; every action waits the applied notice.
+public fun new<K: copy + drop + store, A: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+): DelayedAction<K, A>
+
+/// The applied notice in milliseconds.
+public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64
+
+/// The proposed action or notice change, if any.
+public fun pending<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<delayed::Proposal<Change<A>>>
+
+/// Proposes `action`, ready after the applied notice, and returns when. A replaced
+/// proposal is cancelled and the full applied notice restarts.
+public fun schedule<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    action: A,
+    clock: &Clock,
+): u64
+
+/// Proposes only a new notice, ready after the applied one, replacing any proposed action.
+public fun schedule_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
     delay_ms: u64,
     clock: &Clock,
-): Pending<T>
+): u64
 
-/// Returns a ready proposal's value and next delay. Rechecks representability at actual application.
-/// Future scheduling still checks its own timestamp addition as time advances.
-public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): (T, u64)
+/// Consumes the ready proposed action and returns it for the owner to perform.
+/// Aborts when the proposal is a notice change.
+public fun take_action<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    clock: &Clock,
+): A
 
-/// Returns the proposed value for cancellation and diagnostics.
-public fun pending_value<T: copy + drop + store>(self: &Pending<T>): T
+/// Applies the ready proposed notice. Aborts when the proposal is an action.
+public fun apply_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    clock: &Clock,
+)
 
-/// Returns the proposed next notice period.
-public fun pending_delay_ms<T: copy + drop + store>(self: &Pending<T>): u64
+/// Discards the proposal, even a ready one, leaving the applied notice.
+public fun cancel<K: copy + drop + store, A: copy + drop + store>(self: &mut DelayedAction<K, A>)
 
-/// Returns the Unix millisecond execution threshold.
-public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
+/// Deletes an action slot with no proposal and records its end; cancel a proposal first.
+public fun destroy<K: copy + drop + store, A: copy + drop + store>(self: DelayedAction<K, A>)
+
+/// The proposed action, or none for a notice change.
+public fun action<A: copy + drop + store>(self: &Change<A>): Option<A>
+```
+
+#### Events
+
+```move
+/// An action slot was created with its first applied notice.
+public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+}
+
+/// An action or notice change was proposed, ready from `ready_at_ms`; `delay_ms` is the
+/// notice in force once it applies.
+public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: Change<A>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposed action or notice change was discarded, by cancellation or replacement.
+public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: Change<A>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A ready action was handed to its owner, or a notice change applied.
+public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: Change<A>,
+    delay_ms: u64,
+}
+
+/// An action slot was deleted with nothing pending.
+public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+```
+
+### `blast_admin::delayed_map`
+
+Keyed values under one shared notice, such as per-coin overrides. Every entry change, setting or clearing, waits the notice applied when it was scheduled, and its deadline is fixed then; a later notice change never moves it. See `delayed` for the shared rules.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_map.move
+
+#### Types
+
+```move
+/// Applied values by entry, one applied notice, at most one pending change per entry, and at
+/// most one proposed notice. Values live in a Table, so reads cost one entry and the map
+/// grows without bound; pending changes are few and live inline.
+public struct DelayedMap<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    entries: Table<E, V>,
+    delay_ms: u64,
+    pending: VecMap<E, EntryProposal<V>>,
+    pending_delay: Option<delayed::Notice>,
+}
+
+/// A proposed entry value, or none to clear the entry, and the notice it waits.
+public struct EntryProposal<V: copy + drop + store> has copy, drop, store {
+    value: Option<V>,
+    notice: delayed::Notice,
+}
+
+/// What a map proposal does once applied.
+public enum MapChange<E: copy + drop + store, V: copy + drop + store> has copy, drop, store {
+    /// Sets the entry to `value`, or clears it when `value` is none.
+    Entry {
+        entry: E,
+        value: Option<V>,
+    },
+    /// Changes the notice for later entry changes.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An empty map; every entry change waits the applied notice.
+public fun new<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+    ctx: &mut TxContext,
+): DelayedMap<K, E, V>
+
+/// The applied value of `entry`, or none when it has none.
+public fun value<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): Option<V>
+
+/// The applied notice for entry changes, in milliseconds.
+public fun delay_ms<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): u64
+
+/// The pending change of `entry`, if any.
+public fun pending<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): Option<EntryProposal<V>>
+
+/// The proposed next notice, if any.
+public fun pending_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): Option<delayed::Notice>
+
+/// Proposes setting `entry` to `value` (none clears it) after the applied notice, and
+/// returns when. A replaced change is cancelled and the full notice restarts. Aborts when
+/// `value` is already the applied value.
+public fun schedule<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+    value: Option<V>,
+    clock: &Clock,
+): u64
+
+/// Applies `entry`'s ready change: sets its value or clears it.
+public fun apply<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+    clock: &Clock,
+)
+
+/// Discards `entry`'s pending change, even a ready one.
+public fun cancel<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+)
+
+/// Proposes only a new notice, ready after the applied one, and returns when. Pending
+/// entry changes keep their deadlines.
+public fun schedule_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Applies the ready proposed notice to later entry changes.
+public fun apply_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    clock: &Clock,
+)
+
+/// Discards the proposed notice, even a ready one.
+public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+)
+
+/// Deletes a map with no pending change and records its end, which also ends every
+/// remaining entry.
+public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: DelayedMap<K, E, V>,
+)
+
+/// The proposed value, or none when the change clears the entry.
+public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>): Option<V>
+
+/// The notice the change waits and when it becomes ready.
+public fun entry_proposal_notice<V: copy + drop + store>(self: &EntryProposal<V>): delayed::Notice
+```
+
+#### Events
+
+```move
+/// A map was created empty with its first applied notice.
+public struct MapCreated<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+}
+
+/// An entry change or notice change was proposed, ready from `ready_at_ms`. `delay_ms` is
+/// the notice an entry change waits, or the proposed next notice.
+public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposed change was discarded, by cancellation or replacement; its fields match its
+/// `MapScheduled`.
+public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// An entry was set or cleared, or a notice change applied; `delay_ms` matches its
+/// `MapScheduled`.
+public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+}
+
+/// A map was deleted with nothing pending; its remaining entries end with it.
+public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+```
+
+### `blast_admin::delayed_set`
+
+Allowlists whose members join only after the applied notice and leave at once. See `delayed` for the rules every delayed type shares.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_set.move
+
+#### Types
+
+```move
+/// Admitted members, one applied notice for new admissions, pending admissions with fixed
+/// deadlines, and at most one proposed notice. A notice change never moves a deadline.
+public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    members: VecSet<E>,
+    delay_ms: u64,
+    admissions: VecMap<E, delayed::Notice>,
+    pending_delay: Option<delayed::Notice>,
+}
+
+/// What a set proposal does once applied.
+public enum SetChange<E: copy + drop + store> has copy, drop, store {
+    /// Admits the member.
+    Admission(E),
+    /// Changes the notice for later admissions.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An empty set; every admission waits the applied notice.
+public fun new<K: copy + drop + store, E: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+): DelayedSet<K, E>
+
+/// Whether `member` has been admitted and not removed.
+public fun contains<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): bool
+
+/// The admitted members.
+public fun members<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): VecSet<E>
+
+/// The applied notice for new admissions, in milliseconds.
+public fun delay_ms<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): u64
+
+/// When `member`'s pending admission becomes ready, if one is pending.
+public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): Option<u64>
+
+/// The proposed next notice, if any.
+public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): Option<delayed::Notice>
+
+/// Proposes admitting `member` after the applied notice (never a proposed one) and returns
+/// when. Rescheduling a pending member cancels its admission and restarts the notice.
+/// Aborts when `member` is already admitted.
+public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+    clock: &Clock,
+): u64
+
+/// Admits `member` once its admission is ready.
+public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+    clock: &Clock,
+)
+
+/// Discards `member`'s pending admission, even a ready one.
+public fun cancel_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+)
+
+/// Removes `member` at once and discards its pending admission, leaving the notice.
+/// Aborts when `member` is neither admitted nor pending.
+public fun remove<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+)
+
+/// Proposes only a new notice, ready after the applied one, and returns when. Pending
+/// admissions keep their deadlines.
+public fun schedule_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Applies the ready proposed notice to later admissions.
+public fun apply_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    clock: &Clock,
+)
+
+/// Discards the proposed notice, even a ready one.
+public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(self: &mut DelayedSet<K, E>)
+
+/// Deletes a set with no pending admission or notice change and records its end, which
+/// also ends every remaining membership.
+public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: DelayedSet<K, E>)
+```
+
+#### Events
+
+```move
+/// A set was created empty with its first applied notice.
+public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+}
+
+/// An admission or notice change was proposed, ready from `ready_at_ms`. `delay_ms` is the
+/// notice an admission waits, or the proposed next notice.
+public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposed admission or notice change was discarded, by cancellation, replacement or
+/// removal; its fields match its `SetScheduled`.
+public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A member was admitted, or a notice change applied; `delay_ms` matches its `SetScheduled`.
+public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+}
+
+/// A member left the set at once.
+public struct MemberRemoved<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    member: E,
+}
+
+/// A set was deleted with nothing pending; its remaining members leave with it.
+public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
 ```
 
 ### `blast_admin::operational_version`

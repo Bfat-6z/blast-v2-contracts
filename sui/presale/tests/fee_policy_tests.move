@@ -44,13 +44,12 @@ fun the_admin_sets_maximum_and_zero_rates() {
      &mut sui::tx_context::dummy());
 
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
-    let (raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps) = last_event<
-        FeesChanged,
-    >().fees_changed_fields();
-    assert_eq!(
-        vector[raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps],
-        vector[9_999, 9_998, 10_000, 10_000],
-    );
+    let (owner, _, previous, applied, _) = last_event<
+        DelayedApplied<FeesKey, ProtocolFees>,
+    >().delayed_applied_fields();
+    assert_eq!(owner, object::id(&policy));
+    assert_eq!(previous, fee_policy::protocol_fees_for_testing(0, 0, 0, 0));
+    assert_eq!(applied, fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
 
     policy.set_fees_for_testing(
         &package_version,
@@ -83,7 +82,7 @@ fun the_token_share_must_leave_two_bps() {
 }
 
 #[test]
-#[expected_failure(abort_code = fee_policy::EFeesUnchanged, location = blast_presale::fee_policy)]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun a_fee_update_must_change_the_rates() {
     set_fees_for_testing(0, 0, 0, 0);
 }
@@ -111,7 +110,11 @@ fun the_admin_sets_the_destination() {
     policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, &mut sui::tx_context::dummy());
 
     assert_eq!(policy.destination(), TREASURY);
-    assert_eq!(last_event<DestinationChanged>().destination_changed_fields(), TREASURY);
+    let (owner, _, _, applied, _) = last_event<
+        DelayedApplied<DestinationKey, address>,
+    >().delayed_applied_fields();
+    assert_eq!(owner, object::id(&policy));
+    assert_eq!(applied, TREASURY);
 
     policy.destroy_for_testing();
 
@@ -128,12 +131,16 @@ fun the_destination_cannot_be_the_zero_address() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = fee_policy::EInvalidDestination,
-    location = blast_presale::fee_policy,
-)]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun a_destination_update_must_change_the_address() {
-    set_destination_for_testing(tx_context::dummy().sender());
+    let package_version = blast_presale::blast_presale_package::new_for_testing(
+        &mut tx_context::dummy(),
+    );
+    let mut policy = new_policy();
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, &mut sui::tx_context::dummy());
+
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, &mut sui::tx_context::dummy());
+    abort
 }
 
 #[test]
@@ -151,7 +158,11 @@ fun stale_version_cannot_redirect_fees() {
     policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, &mut sui::tx_context::dummy());
 
     assert_eq!(policy.destination(), TREASURY);
-    assert_eq!(last_event<DestinationChanged>().destination_changed_fields(), TREASURY);
+    let (owner, _, _, applied, _) = last_event<
+        DelayedApplied<DestinationKey, address>,
+    >().delayed_applied_fields();
+    assert_eq!(owner, object::id(&policy));
+    assert_eq!(applied, TREASURY);
 
     policy.destroy_for_testing();
 
@@ -180,13 +191,12 @@ fun stale_version_cannot_set_fees() {
      &mut sui::tx_context::dummy());
 
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
-    let (raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps) = last_event<
-        FeesChanged,
-    >().fees_changed_fields();
-    assert_eq!(
-        vector[raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps],
-        vector[9_999, 9_998, 10_000, 10_000],
-    );
+    let (owner, _, previous, applied, _) = last_event<
+        DelayedApplied<FeesKey, ProtocolFees>,
+    >().delayed_applied_fields();
+    assert_eq!(owner, object::id(&policy));
+    assert_eq!(previous, fee_policy::protocol_fees_for_testing(0, 0, 0, 0));
+    assert_eq!(applied, fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
 
     policy.set_fees_for_testing(
         &package_version,
@@ -267,12 +277,12 @@ fun last_event<Event: copy + drop>(): Event {
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminWitness};
+use blast_admin::{blast_acl::{Self, AdminWitness}, delayed::DelayedApplied};
 
 use blast_presale::{
     blast_presale_domain::{FeeAdmin, TreasuryAdmin},
     bps,
-    fee_policy::{Self, DestinationChanged, FeePolicy, FeesChanged}
+    fee_policy::{Self, DestinationKey, FeePolicy, FeesKey, ProtocolFees}
 };
 
 use std::unit_test::assert_eq;

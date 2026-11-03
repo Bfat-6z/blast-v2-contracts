@@ -167,29 +167,14 @@ blast_events:package:fun auto_liquidity_added( vault_id: ID, meme_amount: u64, q
 blast_events:package:fun auto_lp_position_opened(vault_id: ID, position_id: ID)
 blast_events:package:fun buyback_burned( vault_id: ID, quote_spent: u64, meme_burned: u64, quote_pending: u64, )
 blast_events:package:fun cetus_pool_reserved<Meme, Quote>(pool_creation_cap_id: ID, tick_spacing: u32)
-blast_events:package:fun coin_shares_cancelled( meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64> )
-blast_events:package:fun coin_shares_scheduled( meme: TypeName, meme_bps: Option<u64>, quote_bps: Option<u64>, ready_at_ms: u64, delay_ms: u64 )
 blast_events:package:fun creator_fees_claimed(vault_id: ID, meme_amount: u64, quote_amount: u64)
-blast_events:package:fun default_shares_cancelled(meme_bps: u64, quote_bps: u64)
-blast_events:package:fun default_shares_scheduled( meme_bps: u64, quote_bps: u64, ready_at_ms: u64, delay_ms: u64 )
-blast_events:package:fun fee_split_cancelled(vault_id: ID, proposed: FeeSplit)
-blast_events:package:fun fee_split_changed( vault_id: ID, old_fee_split: FeeSplit, new_fee_split: FeeSplit, delay_ms: u64, )
-blast_events:package:fun fee_split_scheduled( vault_id: ID, proposed: FeeSplit, ready_at_ms: u64, delay_ms: u64, )
 blast_events:package:fun fees_collected( vault_id: ID, gross_meme: u64, gross_quote: u64, protocol_destination: Option<address>, protocol_meme: u64, protocol_quote: u64, creator_meme: u64, creator_quote: u64, auto_lp_meme: u64, auto_lp_quote: u64, rewards_meme: u64, rewards_quote: u64, burn_meme: u64, burn_quote: u64, recipient_meme: vector<u64>, recipient_quote: vector<u64>, )
 blast_events:package:fun gas_reserve_settled( vault_id: ID, round_id: ID, number: u64, treasury: address, reimbursement_amount: u64, reserve_returned: u64, quote_unallocated: u64, )
-blast_events:package:fun lp_fee_destination_changed(old_destination: address, new_destination: address)
-blast_events:package:fun lp_fee_policy_changed( meme: Option<TypeName>, old_meme_bps: Option<u64>, old_quote_bps: Option<u64>, new_meme_bps: Option<u64>, new_quote_bps: Option<u64>, )
-blast_events:package:fun protocol_destination_cancelled(destination: address)
-blast_events:package:fun protocol_destination_scheduled( destination: address, ready_at_ms: u64, delay_ms: u64 )
 blast_events:package:fun protocol_fees_claimed<Meme, Quote>( vault_id: ID, claimant: address, meme_amount: u64, quote_amount: u64, )
 blast_events:package:fun protocol_lp_fees_claimed( vault_id: ID, protocol_destination: address, protocol_meme: u64, protocol_quote: u64, partner_meme: u64, partner_quote: u64, )
 blast_events:package:fun reward_paid( round_id: ID, index: u64, beneficiary: address, meme_amount: u64, quote_amount: u64, meme_remaining: u64, quote_remaining: u64, )
 blast_events:package:fun round_closed( vault_id: ID, round_id: ID, number: u64, meme_returned: u64, quote_returned: u64, gas_reserve_returned: u64, )
 blast_events:package:fun round_published( vault_id: ID, round_id: ID, number: u64, start_checkpoint: u64, end_checkpoint: u64, claim_deadline_at_ms: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, meme_unallocated: u64, quote_unallocated: u64, treasury: address, gas_reserve_amount: u64, )
-blast_events:package:fun upgrade_action_cancelled(digest: Option<vector<u8>>)
-blast_events:package:fun upgrade_action_scheduled( digest: Option<vector<u8>>, ready_at_ms: u64, delay_ms: u64 )
-blast_events:package:fun upgrade_delay_changed(delay_ms: u64)
-blast_events:package:fun upgrade_delay_scheduled(delay_ms: u64, ready_at_ms: u64)
 blast_events:package:fun vault_created<Meme, Quote, Venue>( vault_id: ID, pool_id: ID, position_id: ID, residual_meme: u64, residual_quote: u64, liquidity: u128, fee_split: FeeSplit, )
 blast_fun_migrators:package:fun advance(self: &mut PackageVersion)
 blast_fun_migrators:package:fun assert_current(self: &PackageVersion)
@@ -223,13 +208,16 @@ constants:package:fun sqrt_upper_bound_shift(): u8
 lp_fee_policy:package:fun protocol_destination(self: &LpFeePolicy): address
 lp_fee_policy:package:fun shares<Meme>(self: &LpFeePolicy): (Bps, Bps)
 lp_fee_policy:public:fun apply_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock )
+lp_fee_policy:public:fun apply_coin_shares_delay( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock )
 lp_fee_policy:public:fun apply_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
 lp_fee_policy:public:fun apply_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
 lp_fee_policy:public:fun cancel_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin> )
+lp_fee_policy:public:fun cancel_coin_shares_delay( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin> )
 lp_fee_policy:public:fun cancel_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
 lp_fee_policy:public:fun cancel_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
-lp_fee_policy:public:fun schedule_clear_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, delay_ms: u64, clock: &Clock )
-lp_fee_policy:public:fun schedule_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, delay_ms: u64, clock: &Clock )
+lp_fee_policy:public:fun schedule_clear_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, clock: &Clock )
+lp_fee_policy:public:fun schedule_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, clock: &Clock )
+lp_fee_policy:public:fun schedule_coin_shares_delay( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, delay_ms: u64, clock: &Clock )
 lp_fee_policy:public:fun schedule_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, delay_ms: u64, clock: &Clock, )
 lp_fee_policy:public:fun schedule_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<TreasuryAdmin>, destination: address, delay_ms: u64, clock: &Clock, )
 merkle:package:fun leaf( vault: ID, round: u64, index: u64, beneficiary: address, meme: u64, quote: u64, ): vector<u8>
@@ -435,16 +423,16 @@ fi
 # Every replay fact is one direct, strongly typed payload with exactly one emitter function.
 [[ "$(move_facts "$EVENTS_SOURCE" | awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' \
     | LC_ALL=C sort | tr '\n' ' ')" \
-    == 'AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CoinSharesCancelled CoinSharesScheduled CreatorFeesClaimed DefaultSharesCancelled DefaultSharesScheduled FeeSplitCancelled FeeSplitChanged FeeSplitScheduled FeesCollected GasReserveSettled LpFeeDestinationChanged LpFeePolicyChanged ProtocolDestinationCancelled ProtocolDestinationScheduled ProtocolFeesClaimed ProtocolLpFeesClaimed RewardPaid RoundClosed RoundPublished UpgradeActionCancelled UpgradeActionScheduled UpgradeDelayChanged UpgradeDelayScheduled VaultCreated ' ]] || \
+    == 'AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CreatorFeesClaimed FeesCollected GasReserveSettled ProtocolFeesClaimed ProtocolLpFeesClaimed RewardPaid RoundClosed RoundPublished VaultCreated ' ]] || \
     fail "blast_events.move must declare exactly the pinned event payloads"
 for payload in AutoLiquidityAdded AutoLpPositionOpened BuybackBurned CetusPoolReserved CreatorFeesClaimed \
-    FeeSplitCancelled FeeSplitChanged FeeSplitScheduled FeesCollected GasReserveSettled LpFeeDestinationChanged LpFeePolicyChanged ProtocolFeesClaimed \
-    ProtocolLpFeesClaimed RewardPaid RoundPublished RoundClosed VaultCreated; do
+    FeesCollected GasReserveSettled ProtocolFeesClaimed ProtocolLpFeesClaimed RewardPaid RoundPublished RoundClosed \
+    VaultCreated; do
     [[ "$(rg -c "sui::event::emit\(${payload} \{" "$EVENTS_SOURCE" || true)" -eq 1 ]] || \
         fail "${payload} must be emitted directly by exactly one helper"
 done
-[[ "$(rg -o 'sui::event::emit' "$EVENTS_SOURCE" | wc -l)" -eq 28 ]] || \
-    fail "blast_events.move must emit exactly the twenty-eight pinned payloads"
+[[ "$(rg -o 'sui::event::emit' "$EVENTS_SOURCE" | wc -l)" -eq 13 ]] || \
+    fail "blast_events.move must emit exactly the thirteen pinned payloads"
 if rg -q 'sui::event::emit' "$SOURCE_DIR" --glob '*.move' --glob '!blast_events.move'; then
     fail "state modules must emit only through typed events helpers"
 fi
@@ -458,19 +446,15 @@ if rg -q '\b(VenueTierUpdated|venue_tier_updated|RoutesChanged|routes_changed|Po
     "$SOURCE_DIR"; then
     fail "venue tiers and fee routes are launch settings and the Blast share is read live; no admin tier, route, or snapshot record may return"
 fi
-# Each replay fact has exactly one writer: the vault's split, buyback, auto-LP, split update,
-# custody, and claims (the partner claim included); the holder-reward publication and claim; and the policy's destination and
-# share setters.
+# Each replay fact has exactly one writer: the vault's split, buyback, auto-LP, custody, and
+# claims (the partner claim included); and the holder-reward publication and claim. Delayed
+# settings, the creator split, and upgrade custody record their lifecycle only through
+# `blast_admin`'s delayed-module events, so no package event may restate it.
 for emitter in \
-    'upgrade_delay_scheduled:package_admin:schedule_upgrade_delay' \
-    'upgrade_delay_changed:package_admin:apply_upgrade_delay' \
     'fees_collected:vault:split_fees' \
     'buyback_burned:vault:burn_buyback' \
     'auto_liquidity_added:vault:keep_auto_lp' \
     'auto_lp_position_opened:vault:attach_auto_lp_position' \
-    'fee_split_scheduled:vault:schedule_fee_split' \
-    'fee_split_cancelled:vault:cancel_fee_split' \
-    'fee_split_changed:vault:apply_fee_split' \
     'creator_fees_claimed:vault:claim_creator_fees' \
     'protocol_fees_claimed<Meme, Quote>:vault:claim_protocol_fees' \
     'protocol_lp_fees_claimed:vault:claim_protocol_lp_fees_with_partner' \
@@ -478,9 +462,7 @@ for emitter in \
     'round_published:blast_holder_rewards:publish_round' \
     'reward_paid:blast_holder_rewards:claim' \
     'gas_reserve_settled:blast_holder_rewards:settle_gas_reserve' \
-    'round_closed:blast_holder_rewards:close_round' \
-    'lp_fee_destination_changed:lp_fee_policy:apply_protocol_destination' \
-    'lp_fee_policy_changed:lp_fee_policy:apply_coin_shares apply_default_shares'; do
+    'round_closed:blast_holder_rewards:close_round'; do
     event="${emitter%%:*}"
     rest="${emitter#*:}"
     writers="$(for source in "$SOURCE_DIR"/*.move; do
@@ -502,7 +484,7 @@ done
 VAULT_FACTS="$(move_facts "$VAULT_SOURCE")"
 [[ "$VAULT_FACTS" != *MALFORMED* ]] || fail "the Move reader rejected vault.move"
 [[ "$(move_production_type LpVault <<<"$VAULT_FACTS")" \
-    == 'struct LpVault<phantom Meme, phantom Quote> has key { id: UID, pool_id: ID, partner_id: Option<ID>, protocol_meme_residual: Balance<Meme>, protocol_quote_residual: Balance<Quote>, unpaid_protocol_meme: Balance<Meme>, unpaid_protocol_quote: Balance<Quote>, fee_split: Delayed<FeeSplit>, creator_meme: Balance<Meme>, creator_quote: Balance<Quote>, auto_lp_meme: Balance<Meme>, auto_lp_quote: Balance<Quote>, rewards_meme: Balance<Meme>, rewards_quote: Balance<Quote>, burn_quote: Balance<Quote>, next_round: u64, last_checkpoint: Option<u64>, }' ]] || \
+    == 'struct LpVault<phantom Meme, phantom Quote> has key { id: UID, pool_id: ID, partner_id: Option<ID>, protocol_meme_residual: Balance<Meme>, protocol_quote_residual: Balance<Quote>, unpaid_protocol_meme: Balance<Meme>, unpaid_protocol_quote: Balance<Quote>, fee_split: Delayed<FeeSplitKey, FeeSplit>, creator_meme: Balance<Meme>, creator_quote: Balance<Quote>, auto_lp_meme: Balance<Meme>, auto_lp_quote: Balance<Quote>, rewards_meme: Balance<Meme>, rewards_quote: Balance<Quote>, burn_quote: Balance<Quote>, next_round: u64, last_checkpoint: Option<u64>, }' ]] || \
     fail "LpVault must hold only its position key space, the pool binding, the launch's partner, the protocol residuals, Blast's LP fees held for the partner, its fee split, the split balances, and the round cursor"
 vault_body() {
     awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name && $6 == 0 { print $10 }' <<<"$VAULT_FACTS" \
@@ -514,7 +496,7 @@ vault_body() {
 [[ "$(vault_body create)" \
     == 'transfer::share_object(new(launch,venue,pool_id,position,liquidity,protocol_meme_residual,protocol_quote_residual,ctx));' ]] \
     && [[ "$(vault_body new)" \
-    == 'assert!(liquidity>0,EZeroLiquidity);letposition_id=object::id(&position);letmutvault=LpVault{id:object::new(ctx),pool_id,partner_id:launch.partner_id(),protocol_meme_residual,protocol_quote_residual,unpaid_protocol_meme:balance::zero(),unpaid_protocol_quote:balance::zero(),fee_split:delayed::new(launch.lp_fee_split(),DEFAULT_FEE_SPLIT_DELAY_MS),creator_meme:balance::zero(),creator_quote:balance::zero(),auto_lp_meme:balance::zero(),auto_lp_quote:balance::zero(),rewards_meme:balance::zero(),rewards_quote:balance::zero(),burn_quote:balance::zero(),next_round:0,last_checkpoint:option::none(),};vault.id.add_dynamic_object_field(PositionKey<Venue>(),position);blast_events::vault_created<Meme,Quote,Venue>(vault.id.to_inner(),pool_id,position_id,vault.protocol_meme_residual.value(),vault.protocol_quote_residual.value(),liquidity,vault.fee_split.value());vault' ]] || \
+    == 'assert!(liquidity>0,EZeroLiquidity);letposition_id=object::id(&position);letid=object::new(ctx);letfee_split=delayed::new(FeeSplitKey(),&id,launch.lp_fee_split(),DEFAULT_FEE_SPLIT_DELAY_MS);letmutvault=LpVault{id,pool_id,partner_id:launch.partner_id(),protocol_meme_residual,protocol_quote_residual,unpaid_protocol_meme:balance::zero(),unpaid_protocol_quote:balance::zero(),fee_split,creator_meme:balance::zero(),creator_quote:balance::zero(),auto_lp_meme:balance::zero(),auto_lp_quote:balance::zero(),rewards_meme:balance::zero(),rewards_quote:balance::zero(),burn_quote:balance::zero(),next_round:0,last_checkpoint:option::none(),};vault.id.add_dynamic_object_field(PositionKey<Venue>(),position);blast_events::vault_created<Meme,Quote,Venue>(vault.id.to_inner(),pool_id,position_id,vault.protocol_meme_residual.value(),vault.protocol_quote_residual.value(),liquidity,vault.fee_split.value());vault' ]] || \
     fail "vault::create must share only what vault::new builds: the launch's partner and fee split, empty balances, no round, and the attached position"
 [[ "$(awk -F'\t' '$1 == "FN" && $3 == "public" && $6 == 0 { print $2 }' <<<"$VAULT_FACTS" \
     | LC_ALL=C sort | tr '\n' ' ')" \
@@ -581,18 +563,15 @@ in_order \
 [[ "$(vault_body take_auto_lp)" == '(self.auto_lp_meme.withdraw_all(),self.auto_lp_quote.withdraw_all())' ]] \
     && [[ "$(vault_body keep_auto_lp)" == 'self.auto_lp_meme.join(meme);self.auto_lp_quote.join(quote);if(added_meme==0&&added_quote==0)return;blast_events::auto_liquidity_added(self.id.to_inner(),added_meme,added_quote,self.auto_lp_meme.value(),self.auto_lp_quote.value());' ]] || \
     fail "auto-LP must take every waiting unit, keep whatever the venue did not take, and announce only a nonzero addition"
-# Creator schedules bind both the replacement and its next notice. Readiness is checked
+# Creator schedules bind both the replacement and its next notice through the vault's own keyed
+# `Delayed`, which rejects an unchanged proposal and records the lifecycle. Readiness is checked
 # without mutation before adapters collect every position fee under the old split.
-in_order \
-    'migrators_version.assert_current();' \
-    'launch.assert_curve_fee_cap(curve_fee_cap);' \
-    'assert!(proposed!=self.fee_split.value()||delay_ms!=self.fee_split.delay_ms(),EFeeSplitUnchanged);' \
-    'self.fee_split.schedule(proposed,delay_ms,clock)' \
-    'blast_events::fee_split_scheduled(' \
-    <<<"$(vault_body schedule_fee_split)" || fail "creator schedules must authenticate and retain old applied policy"
-[[ "$(vault_body cancel_fee_split)" == 'migrators_version.assert_current();launch.assert_curve_fee_cap(curve_fee_cap);letcancelled=self.fee_split.cancel();blast_events::fee_split_cancelled(self.id.to_inner(),cancelled);' ]] \
+[[ "$(move_production_type FeeSplitKey <<<"$VAULT_FACTS")" == 'struct FeeSplitKey() has copy, drop, store;' ]] \
+    && [[ "$(vault_body schedule_fee_split)" == 'migrators_version.assert_current();launch.assert_curve_fee_cap(curve_fee_cap);self.fee_split.schedule(proposed,delay_ms,clock);' ]] \
+    || fail "creator schedules must authenticate, then propose through the vault's keyed Delayed"
+[[ "$(vault_body cancel_fee_split)" == 'migrators_version.assert_current();launch.assert_curve_fee_cap(curve_fee_cap);self.fee_split.cancel();' ]] \
     && [[ "$(vault_body assert_fee_split_ready)" == 'self.fee_split.assert_ready(clock);' ]] \
-    && [[ "$(vault_body apply_fee_split)" == 'letold_fee_split=self.fee_split.value();letapplied=self.fee_split.apply(clock);blast_events::fee_split_changed(self.id.to_inner(),old_fee_split,applied,self.fee_split.delay_ms());' ]] || \
+    && [[ "$(vault_body apply_fee_split)" == 'self.fee_split.apply(clock);' ]] || \
     fail "creator cancellation and package-only application must preserve delayed policy semantics"
 in_order \
     'migrators_version.assert_current();' \
@@ -690,7 +669,7 @@ require_pattern "$VAULT_SOURCE" 'protocol_quote_residual\.withdraw_all' \
 # T-013: VaultCreated is a direct event emitted only after the pool binding and position custody
 # it records are written.
 [[ "$(vault_body new)" == 'assert!(liquidity>0,EZeroLiquidity);'* ]] \
-    && in_order 'assert!(liquidity>0,EZeroLiquidity);' 'LpVault{id:object::new(ctx),pool_id,' 'vault.id.add_dynamic_object_field(' 'blast_events::vault_created<' \
+    && in_order 'assert!(liquidity>0,EZeroLiquidity);' 'LpVault{id,pool_id,' 'vault.id.add_dynamic_object_field(' 'blast_events::vault_created<' \
         <<<"$(vault_body new)" || fail "VaultCreated must follow the liquidity check, the pool binding, and the position attachment"
 require_exact_count 'PackageVersion' 1 \
     "vault must take only the Migrators generation, never a Launchpad PackageVersion" \
@@ -700,14 +679,13 @@ require_pattern "$VAULT_SOURCE" 'blast_fun_migrators::PackageVersion as Migrator
 require_exact_count '&AdminWitness<' 2 \
     "vault Launchpad authority must be exactly the protocol residual claim and the buyback" \
     <(production_section "$VAULT_SOURCE")
-require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-6 for its residual, split, creator, liquidity, buyback, and partner checks" <<'EOF'
+require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-5 for its residual, creator, liquidity, buyback, and partner checks" <<'EOF'
 0 ENothingClaimable No protocol migration residuals are available to claim.
-1 EFeeSplitUnchanged Fee split or its notice must differ from the applied values.
-2 ENoCreatorFees No creator LP fees are available to claim.
-3 EZeroLiquidity Migration position must hold liquidity.
-4 EBuybackQuoteOutOfRange Buyback Quote must be positive and at most the burn Quote waiting to buy Meme back.
-5 EBuybackBelowMinimum Buyback must return at least the minimum Meme.
-6 EPartnerMismatch The partner is not the one the vault's launch named at creation.
+1 ENoCreatorFees No creator LP fees are available to claim.
+2 EZeroLiquidity Migration position must hold liquidity.
+3 EBuybackQuoteOutOfRange Buyback Quote must be positive and at most the burn Quote waiting to buy Meme back.
+4 EBuybackBelowMinimum Buyback must return at least the minimum Meme.
+5 EPartnerMismatch The partner is not the one the vault's launch named at creation.
 EOF
 
 # === Holder rewards ===
@@ -1160,6 +1138,58 @@ fi
         "$LP_FEE_POLICY_SOURCE" "$REWARDS_SOURCE" || \
     fail "the Cetus capability must be minted once from the initializer's lent treasury capability, and no other module borrows it"
 
+# === Delayed operations ===
+#
+# Every delayed operation stores one of `blast_admin`'s keyed delayed primitives, owned by the object
+# that holds it and keyed by a sealed type of its own module, so the primitive alone validates,
+# waits, and records the lifecycle. Per-coin overrides share one DelayedMap opened at the policy's
+# publication notice: every override, a clear included, waits that map's own notice, and each
+# lifecycle event names its coin as the entry. Upgrade custody stores one action slot whose actions
+# are only an exact digest or immutability, and authorizes only the action it asked for. The
+# retired raw proposal API may not return.
+LP_FEE_POLICY_FACTS="$(move_facts "$LP_FEE_POLICY_SOURCE")"
+PACKAGE_ADMIN_FACTS="$(move_facts "$SOURCE_DIR/package_admin.move")"
+[[ "$LP_FEE_POLICY_FACTS$PACKAGE_ADMIN_FACTS" != *MALFORMED* ]] || \
+    fail "the Move reader rejected lp_fee_policy.move or package_admin.move"
+policy_body() {
+    awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name && $6 == 0 { print $10 }' <<<"$LP_FEE_POLICY_FACTS" \
+        | tr -d '[:space:]' | sed 's/,)/)/g'
+}
+package_admin_body() {
+    awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name && $6 == 0 { print $10 }' <<<"$PACKAGE_ADMIN_FACTS" \
+        | tr -d '[:space:]' | sed 's/,)/)/g'
+}
+[[ "$(move_production_type LpFeePolicy <<<"$LP_FEE_POLICY_FACTS")" \
+    == 'struct LpFeePolicy has key { id: UID, destination: Delayed<ProtocolDestinationKey, address>, defaults: Delayed<DefaultSharesKey, SharePair>, coins: DelayedMap<CoinSharesKey, TypeName, SharePair>, }' ]] \
+    && [[ "$(move_production_type ProtocolDestinationKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct ProtocolDestinationKey() has copy, drop, store;' ]] \
+    && [[ "$(move_production_type DefaultSharesKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct DefaultSharesKey() has copy, drop, store;' ]] \
+    && [[ "$(move_production_type CoinSharesKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct CoinSharesKey() has copy, drop, store;' ]] || \
+    fail "LpFeePolicy must store its destination and defaults as keyed Delayed values and its per-coin overrides as one keyed DelayedMap"
+[[ "$(policy_body new)" == 'assert!(@blast_lp_fee_destination!=@0x0,EInvalidProtocolDestination);letid=object::new(ctx);LpFeePolicy{destination:delayed::new(ProtocolDestinationKey(),&id,destination,delay_ms),defaults:delayed::new(DefaultSharesKey(),&id,defaults,delay_ms),coins:delayed_map::new(CoinSharesKey(),&id,delay_ms,ctx),id,}' ]] \
+    && [[ "$(policy_body schedule_coin_shares)" == 'migrators_version.assert_current();letmeme=type_name::with_original_ids<Meme>();self.coins.schedule(meme,option::some(SharePair{meme_bps,quote_bps}),clock);' ]] \
+    && [[ "$(policy_body schedule_clear_coin_shares)" == 'migrators_version.assert_current();self.coins.schedule(type_name::with_original_ids<Meme>(),option::none(),clock);' ]] \
+    && [[ "$(policy_body schedule_coin_shares_delay)" == 'migrators_version.assert_current();self.coins.schedule_delay(delay_ms,clock);' ]] \
+    && [[ "$(policy_body schedule_protocol_destination)" == 'migrators_version.assert_current();assert!(destination!=@0x0,EInvalidProtocolDestination);self.destination.schedule(destination,delay_ms,clock);' ]] || \
+    fail "the policy must own its keyed values, open the coin overrides at its publication notice, propose every override and clear under their own notice, and validate the destination before proposing"
+require_errors "$LP_FEE_POLICY_SOURCE" "lp_fee_policy must use code 0 for its destination check" <<'EOF'
+0 EInvalidProtocolDestination Protocol destination must be a nonzero address.
+EOF
+[[ "$(move_production_type PackageAdmin <<<"$PACKAGE_ADMIN_FACTS")" \
+    == 'struct PackageAdmin has key { id: UID, custody: UpgradeCustody<BLAST_FUN_MIGRATORS>, upgrade: DelayedAction<UpgradeKey, UpgradeAction>, }' ]] \
+    && [[ "$(move_production_type UpgradeKey <<<"$PACKAGE_ADMIN_FACTS")" == 'struct UpgradeKey() has copy, drop, store;' ]] \
+    && [[ "$(move_production_type UpgradeAction <<<"$PACKAGE_ADMIN_FACTS")" == 'enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable, }' ]] || \
+    fail "PackageAdmin must store upgrade custody's notice and proposal as one keyed DelayedAction of digest or immutability"
+[[ "$(package_admin_body authorize_upgrade)" == 'package_version.assert_current();letcustodian_id=self.id.to_inner();letaction=self.upgrade.take_action(clock);assert!(action==UpgradeAction::Upgrade(digest),EWrongUpgradeAction);self.custody.authorize_upgrade(custodian_id,digest)' ]] \
+    && [[ "$(package_admin_body make_immutable)" == 'package_version.assert_current();letaction=self.upgrade.take_action(clock);assert!(action==UpgradeAction::MakeImmutable,EWrongUpgradeAction);self.custody.make_immutable(self.id.to_inner());' ]] \
+    && [[ "$(package_admin_body wrap)" == *'letupgrade=delayed_action::new(UpgradeKey(),&id,INITIAL_UPGRADE_DELAY_MS);transfer::share_object(PackageAdmin{id,custody,upgrade});'* ]] || \
+    fail "upgrade custody must start at its 48-hour notice and act only on the exact ready action it asked for"
+require_errors "$SOURCE_DIR/package_admin.move" "package_admin must use sequential codes 0-1 for its action and digest checks" <<'EOF'
+0 EWrongUpgradeAction The ready action must match the requested upgrade digest or immutability.
+1 EInvalidDigest A package digest must contain 32 bytes.
+EOF
+reject_pattern '\b(new_pending|take_ready|Pending)\b' \
+    'the retired raw delayed proposal API is forbidden; store a keyed Delayed, DelayedAction, DelayedSet, or DelayedMap'
+
 # === Package-wide custody rules ===
 
 # The one removal is Cetus's checked retype, pinned above, which removes only the value it added
@@ -1334,10 +1364,12 @@ blast_holder_rewards:settle_gas_reserve:RewardsAdmin
 bluefin:buyback_and_burn:BuybackAdmin
 cetus:buyback_and_burn:BuybackAdmin
 lp_fee_policy:cancel_coin_shares:CancelAdmin
+lp_fee_policy:cancel_coin_shares_delay:CancelAdmin
 lp_fee_policy:cancel_default_shares:CancelAdmin
 lp_fee_policy:cancel_protocol_destination:CancelAdmin
 lp_fee_policy:schedule_clear_coin_shares:FeeAdmin
 lp_fee_policy:schedule_coin_shares:FeeAdmin
+lp_fee_policy:schedule_coin_shares_delay:FeeAdmin
 lp_fee_policy:schedule_default_shares:FeeAdmin
 lp_fee_policy:schedule_protocol_destination:TreasuryAdmin
 package_admin:authorize_upgrade:UpgradeAdmin

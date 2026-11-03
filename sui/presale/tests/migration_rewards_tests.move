@@ -358,11 +358,14 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
         scenario.ctx()
     );
 
-    let (vault_id, lp_fee_meme_bps, lp_fee_quote_bps) = only_event<
-        ProtocolLpFeesChanged<MEME, QUOTE>,
-    >().protocol_lp_fees_changed_fields();
+    let (vault_id, _, _, rates, _) = only_event<
+        DelayedApplied<ProtocolLpFeesKey, ProtocolFees>,
+    >().delayed_applied_fields();
     assert_eq!(vault_id, object::id(&vault));
-    assert_eq!(vector[lp_fee_meme_bps, lp_fee_quote_bps], vector[0, 5_000]);
+    assert_eq!(
+        vector[rates.lp_fee_meme_bps().value(), rates.lp_fee_quote_bps().value()],
+        vector[0, 5_000],
+    );
 
     vault.credit_fees_for_testing(
         &policy,
@@ -395,10 +398,7 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = vault::EProtocolLpFeesUnchanged,
-    location = blast_presale::presale_vault,
-)]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun a_vault_lp_fee_update_must_change_the_rates() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
@@ -1087,7 +1087,7 @@ fun sender_total_meme(self: &Scenario): u64 {
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminWitness};
+use blast_admin::{blast_acl::{Self, AdminWitness}, delayed::DelayedApplied};
 
 use blast_partners::blast_partners::{Self as partners, Partner, PartnerPaid};
 
@@ -1099,7 +1099,7 @@ use blast_presale::{
     fee_policy::{Self, FeePolicy, ProtocolFees},
     holder_rewards::{Self as rewards, Round},
     merkle_tree,
-    presale_vault::{Self as vault, FeesCollected, Vault, ProtocolLpFeesChanged, ProtocolLpFeesPaid}
+    presale_vault::{Self as vault, FeesCollected, Vault, ProtocolLpFeesKey, ProtocolLpFeesPaid}
 };
 
 use std::unit_test::{assert_eq, destroy};

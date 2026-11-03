@@ -688,10 +688,11 @@ public fun share<SaleToken, Quote>(
 }
 
 /// Replaces this sale's snapshot of Blast's rates before its window starts, while nobody can have
-/// committed: in its creation transaction before `share`, or once shared until its start. A
-/// changed token rate reapportions Blast's tokens against the buyers' sale allocation and a
-/// changed raise rate its Quote against the LP's, each rounded down; an unchanged rate keeps its
-/// amount, and every recipient keeps its amount.
+/// committed: in its creation transaction before `share`, or once shared until its start. Once
+/// shared the sale is public, so each rate may only stay or fall; only the creation transaction
+/// may raise one, up to the applied fee policy. A changed token rate reapportions Blast's tokens
+/// against the buyers' sale allocation and a changed raise rate its Quote against the LP's, each
+/// rounded down; an unchanged rate keeps its amount, and every recipient keeps its amount.
 public fun set_protocol_fees<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &PackageVersion,
@@ -707,7 +708,17 @@ public fun set_protocol_fees<SaleToken, Quote>(
 
     match (self.lifecycle) {
         Lifecycle::Pending => (),
-        Lifecycle::Open => assert!(clock.timestamp_ms() < self.start_ms, EPresaleStarted),
+        Lifecycle::Open => {
+            assert!(clock.timestamp_ms() < self.start_ms, EPresaleStarted);
+            let current = self.protocol_fees;
+            assert!(
+                raise_bps.value() <= current.raise_bps().value()
+                && token_bps.value() <= current.token_bps().value()
+                && lp_fee_meme_bps.value() <= current.lp_fee_meme_bps().value()
+                && lp_fee_quote_bps.value() <= current.lp_fee_quote_bps().value(),
+                EProtocolFeesIncreased
+            );
+        },
         _ => abort EInvalidLifecycle,
     };
     let protocol_fees = fee_policy::protocol_fees(
@@ -2319,6 +2330,9 @@ const ESaleTokenNotUnregulated: vector<u8> = b"The sale currency must be confirm
 
 #[error(code = 36)]
 const EAboveFeePolicy: vector<u8> = b"A sale fee override cannot exceed the currently applied fee policy.";
+
+#[error(code = 37)]
+const EProtocolFeesIncreased: vector<u8> = b"A shared sale's fee override may only keep or lower each of its rates.";
 
 // === Imports ===
 
