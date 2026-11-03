@@ -390,7 +390,7 @@ public fun claim_creator_caps<Meme, Quote>(
 
     let (curve_fee_cap, blast_metadata_cap) = creator_authority::claim_creator_caps<Meme>(
         self.creator.extract(),
-        config.creator_claim_signer(),
+        &config.creator_claim_signers(),
         account_attestation,
         clock,
         ctx,

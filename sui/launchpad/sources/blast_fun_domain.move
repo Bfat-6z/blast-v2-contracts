@@ -32,7 +32,7 @@ public struct ListingAdmin()
 /// Admits or removes migration adapters.
 public struct AdapterAdmin()
 
-/// Replaces the key that signs account claims.
+/// Proposes and revokes the keys that may sign account claims.
 public struct ClaimSignerAdmin()
 
 /// Publishes holder-reward rounds.

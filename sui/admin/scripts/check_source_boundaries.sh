@@ -259,7 +259,7 @@ expect_delayed_surface delayed apply assert_ready cancel delay_ms destroy new no
 expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy new pending schedule \
   schedule_delay take_action
 expect_delayed_surface delayed_set admission_ready_at_ms apply_add apply_delay cancel_add cancel_delay \
-  contains delay_ms destroy members new pending_delay remove schedule_add schedule_delay
+  contains delay_ms destroy members new pending_count pending_delay remove schedule_add schedule_delay
 expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay delay_ms destroy \
   entry_proposal_notice entry_proposal_value new pending pending_delay schedule schedule_delay value
 

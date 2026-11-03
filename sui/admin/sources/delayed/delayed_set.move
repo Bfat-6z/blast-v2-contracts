@@ -74,6 +74,11 @@ public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>
     self.admissions.try_get(member).map!(|admission| admission.ready_at_ms())
 }
 
+/// How many admissions are pending.
+public fun pending_count<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): u64 {
+    self.admissions.length()
+}
+
 /// The proposed next notice, if any.
 public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,

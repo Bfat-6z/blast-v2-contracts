@@ -69,11 +69,11 @@ public fun destroy_metadata_cap<Meme>(self: BlastMetadataCap<Meme>) {
 
 /// Authenticates the sender as `recipient` and issues both creator caps.
 ///
-/// An account claim carries `attestation`, the BCS `(expiry_ms, signature)` the backend signed
-/// over `CreatorClaimMessage` with `signer_public_key`; an address claim carries none.
+/// An account claim carries `attestation`, the BCS `(expiry_ms, signature)` a backend key in
+/// `signer_public_keys` signed over `CreatorClaimMessage`; an address claim carries none.
 public(package) fun claim_creator_caps<Meme>(
     recipient: CreatorRecipient,
-    signer_public_key: &vector<u8>,
+    signer_public_keys: &vector<vector<u8>>,
     attestation: Option<vector<u8>>,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -95,12 +95,9 @@ public(package) fun claim_creator_caps<Meme>(
                 blast_fun::errors::invalid_creator_claim_attestation!(),
             );
             assert!(clock.timestamp_ms() <= expires_at_ms, blast_fun::errors::creator_claim_expired!());
+            let message = creator_claim_message_bytes<Meme>(account_commitment, claimant, expires_at_ms);
             assert!(
-                ed25519::ed25519_verify(
-                    &signature,
-                    signer_public_key,
-                    &creator_claim_message_bytes<Meme>(account_commitment, claimant, expires_at_ms),
-                ),
+                signer_public_keys.any!(|key| ed25519::ed25519_verify(&signature, key, &message)),
                 blast_fun::errors::invalid_creator_claim_signature!(),
             );
         },
