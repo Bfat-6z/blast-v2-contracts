@@ -5,7 +5,8 @@
   "chainId": "35834a8a",
   "recordedUtc": "2026-09-26T22:20:26.202Z",
   "repository": {
-    "url": "https://github.com/interest-protocol/blast-util-contracts",
+    "url": "https://github.com/interest-protocol/blast-v2-contracts",
+    "original_repository": "interest-protocol/blast-util-contracts",
     "commit": "96e9d251fff1838f70fcbf93ae52ad4cca2b73b1",
     "workingTreeClean": true
   },
