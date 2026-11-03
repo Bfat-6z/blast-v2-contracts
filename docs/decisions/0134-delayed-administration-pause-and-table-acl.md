@@ -258,10 +258,11 @@ Only the module that defines `K` can pack it, so only that module can create a
 value keyed by it. The primitive emits every lifecycle fact, generic in `K` and
 the value or action type: `DelayedCreated`, `DelayedScheduled`,
 `DelayedCancelled`, `DelayedApplied`, `ActionCreated`, `ActionScheduled`,
-`ActionCancelled`, `ActionApplied` and `MemberRemoved`. A replacement emits
-`Cancelled` for the displaced proposal before `Scheduled`, so every proposal ends
-in exactly one `Applied` or `Cancelled`. Destroying a value with a pending
-proposal aborts, so no proposal ends silently. Owners emit only their own side
+`ActionCancelled`, `ActionApplied`, `MemberRemoved`, `DelayedDestroyed` and
+`ActionDestroyed`. A replacement emits `Cancelled` for the displaced proposal
+before `Scheduled`, so every proposal ends in exactly one `Applied` or
+`Cancelled`. Destroying a value with a pending proposal aborts, and destruction
+emits its own event, so no proposal or membership ends silently. Owners emit only their own side
 effects. The primitive rejects proposals that change nothing.
 
 Upgrade custody, creator-cap reassignment and the ACL root transfer use
@@ -276,5 +277,7 @@ unchanged: configure with schedule-and-apply pairs, then raise each notice.
 Every delayed field gains `owner` and `key`; delayed, consumer and event layouts
 change, and the replay stream for delay lifecycle moves to `blast_admin::delayed`
 event types. SDK, indexer and admin console decoders must follow, with a fresh
-publication of the stack. Indexers must filter delayed events by `K`'s defining
-module, since any package can create values under its own keys.
+publication of the stack. Keys must be structs without public constructors; a
+primitive or publicly constructible key lets any package emit events under it.
+Indexers must filter delayed events by `K`'s defining module, since any package
+can create values under its own keys.

@@ -165,8 +165,14 @@ public fun cancel_super_admin_transfer(self: &mut ACL, root: &SuperAdminCap) {
 
 /// Accepts a ready root transfer as its nominated recipient and invalidates the old cap.
 public fun accept_super_admin_transfer(self: &mut ACL, clock: &Clock, ctx: &mut TxContext) {
-    let recipient = self.super_admin_transfer.take_action(clock);
-    assert!(recipient == ctx.sender(), blast_admin::errors::not_pending_super_admin_recipient!());
+    let recipient = ctx.sender();
+    let pending = self.super_admin_transfer.pending();
+    assert!(
+        pending.is_some() && pending.destroy_some().value().action() == option::some(recipient),
+        blast_admin::errors::not_pending_super_admin_recipient!(),
+    );
+
+    self.super_admin_transfer.take_action(clock);
 
     let previous_super_admin_cap_id = self.super_admin_cap_id;
     let new_root = SuperAdminCap { id: object::new(ctx) };

@@ -587,6 +587,141 @@ fun a_set_with_a_pending_admission_cannot_be_destroyed() {
     abort
 }
 
+#[test]
+fun destruction_records_the_end_of_each_value() {
+    let setting = new_setting(7, 0);
+    setting.destroy();
+    let (setting_owner, _) = collect<DelayedDestroyed<Fee, u64>>().delayed_destroyed_fields();
+    assert_eq!(setting_owner, owner());
+
+    let slot = new_slot(0);
+    slot.destroy();
+    let (slot_owner, _) = collect<ActionDestroyed<Upgrade, u64>>().action_destroyed_fields();
+    assert_eq!(slot_owner, owner());
+
+    let clock = clock_at(0);
+    let mut set = new_witness_set(0);
+    set.schedule_add(@0xA, &clock);
+    set.apply_add(@0xA, &clock);
+    set.destroy();
+    let (set_owner, _) = collect<ActionDestroyed<Witnesses, address>>().action_destroyed_fields();
+    assert_eq!(set_owner, owner());
+
+    clock.destroy_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed)]
+fun the_change_kind_is_checked_before_readiness() {
+    let clock = clock_at(0);
+    let mut slot = new_slot(10);
+    slot.schedule_delay(20, &clock);
+
+    slot.take_action(&clock);
+
+    abort
+}
+
+#[test]
+fun an_applied_notice_change_records_the_new_notice() {
+    let mut clock = clock_at(0);
+    let mut slot = new_slot(10);
+    slot.schedule_delay(20, &clock);
+    clock.set_for_testing(10);
+
+    slot.apply_delay(&clock);
+
+    let (_, _, change, delay_ms) = collect<ActionApplied<Upgrade, u64>>().action_applied_fields();
+    assert!(change.action().is_none());
+    assert_eq!(delay_ms, 20);
+    assert_eq!(slot.delay_ms(), 20);
+
+    slot.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun a_replaced_notice_change_is_cancelled_first() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(10);
+    set.schedule_delay(20, &clock);
+
+    set.schedule_delay(30, &clock);
+
+    let (_, _, change, delay_ms, _) = collect<ActionCancelled<Witnesses, address>>()
+        .action_cancelled_fields();
+    assert!(change.action().is_none());
+    assert_eq!(delay_ms, 20);
+    assert_eq!(set.pending_delay().destroy_some().delay_ms(), 30);
+
+    set.cancel_delay();
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun a_cancelled_admission_reports_the_notice_it_was_scheduled_with() {
+    let mut clock = clock_at(0);
+    let mut set = new_witness_set(10);
+    set.schedule_add(@0xA, &clock);
+    set.schedule_delay(500, &clock);
+    clock.set_for_testing(10);
+    set.apply_delay(&clock);
+
+    set.cancel_add(@0xA);
+
+    let (_, _, _, delay_ms, ready_at_ms) = collect<ActionCancelled<Witnesses, address>>()
+        .action_cancelled_fields();
+    assert_eq!(delay_ms, 10);
+    assert_eq!(ready_at_ms, 10);
+
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+fun cancelling_an_unscheduled_admission_rejects() {
+    let mut set = new_witness_set(10);
+
+    set.cancel_add(@0xA);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+fun cancelling_a_missing_notice_change_rejects() {
+    let mut set = new_witness_set(10);
+
+    set.cancel_delay();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
+fun a_set_with_a_pending_notice_change_cannot_be_destroyed() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(10);
+    set.schedule_delay(20, &clock);
+
+    set.destroy();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
+fun an_unchanged_proposal_rejects_before_overflow_checks() {
+    let clock = clock_at(1);
+    let mut setting = new_setting(7, std::u64::max_value!());
+
+    setting.schedule(7, std::u64::max_value!(), &clock);
+
+    abort
+}
+
 // === Test Helpers ===
 
 fun owner(): ID {
@@ -624,12 +759,14 @@ use blast_admin::{
         ActionApplied,
         ActionCancelled,
         ActionCreated,
+        ActionDestroyed,
         ActionScheduled,
         Delayed,
         DelayedAction,
         DelayedApplied,
         DelayedCancelled,
         DelayedCreated,
+        DelayedDestroyed,
         DelayedScheduled,
         DelayedSet,
         MemberRemoved,

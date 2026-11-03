@@ -34,7 +34,7 @@ fun the_transfer_delay_is_seven_days() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+#[expected_failure(abort_code = errors::ENotPendingSuperAdminRecipient, location = blast_admin::blast_acl)]
 fun a_cancelled_transfer_cannot_be_accepted_even_after_its_delay() {
     let mut fixture = start();
     fixture.begin_transfer(NEW_ROOT);
@@ -48,7 +48,7 @@ fun a_cancelled_transfer_cannot_be_accepted_even_after_its_delay() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
+#[expected_failure(abort_code = errors::ENotPendingSuperAdminRecipient, location = blast_admin::blast_acl)]
 fun a_replaced_recipient_cannot_accept_even_after_its_delay() {
     let mut fixture = start();
     fixture.begin_transfer(NEW_ROOT);
@@ -62,7 +62,7 @@ fun a_replaced_recipient_cannot_accept_even_after_its_delay() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+#[expected_failure(abort_code = errors::ENotPendingSuperAdminRecipient, location = blast_admin::blast_acl)]
 fun an_accepted_transfer_cannot_be_accepted_twice() {
     let mut fixture = start();
     fixture.begin_transfer(NEW_ROOT);
@@ -125,6 +125,18 @@ fun replacement_cancels_the_previous_recipient_and_restarts_the_delay() {
     let pending = fixture.acl.super_admin_transfer_for_testing().pending().destroy_some();
     assert_eq!(pending.value().action(), option::some(OTHER));
     assert_eq!(pending.ready_at_ms(), NOW_AT_MS + 10 + TRANSFER_DELAY_MS);
+
+    destroy(fixture);
+}
+
+#[test]
+fun the_transfer_slot_is_owned_by_the_acl_with_a_seven_day_notice() {
+    let fixture = start();
+
+    let created = events::collect_one<ActionCreated<SuperAdminTransfer, address>>(0);
+    let (owner, _, delay_ms) = created.action_created_fields();
+    assert_eq!(owner, object::id(&fixture.acl));
+    assert_eq!(delay_ms, TRANSFER_DELAY_MS);
 
     destroy(fixture);
 }
@@ -194,11 +206,10 @@ fun transfer_cannot_be_accepted_early() {
 
 #[test]
 #[expected_failure(abort_code = errors::ENotPendingSuperAdminRecipient, location = blast_admin::blast_acl)]
-fun transfer_rejects_the_wrong_sender_once_ready() {
+fun transfer_rejects_the_wrong_sender_before_time_check() {
     let mut fixture = start();
 
     fixture.begin_transfer(NEW_ROOT);
-    fixture.clock.set_for_testing(NOW_AT_MS + TRANSFER_DELAY_MS);
     fixture.scenario.next_tx(OTHER);
     fixture.accept_transfer();
 
@@ -261,7 +272,7 @@ fun cancel_transfer(self: &mut Fixture) {
 use blast_admin::{
     blast_acl::{Self, ACL, SuperAdminCap, SuperAdminTransfer},
     blast_admin_events as events,
-    delayed::{ActionCancelled, ActionScheduled},
+    delayed::{ActionCancelled, ActionCreated, ActionScheduled},
     errors,
 };
 

@@ -4,14 +4,15 @@
 /// Settings, one-shot actions and allowlists that change only after their applied notice.
 ///
 /// A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then
-/// apply; cancellable until applied. It is unrelated to the retired
-/// `blast_fun_timelock::Timelocked`, whose values switched by themselves at a deadline.
+/// apply; cancellable until applied. It is unrelated to the retired timelock package,
+/// whose values switched by themselves at a deadline.
 ///
 /// Every value carries an owner-defined key `K` and the ID of the object that stores it.
-/// Only the module that defines `K` can pack one, so only that module can create a value
-/// keyed by it. This module emits every lifecycle fact, generic in `K`: indexers filter by
-/// `K`'s defining module and partition instances by `owner`. Owners emit only their own
-/// side effects, such as a settlement or a committed upgrade.
+/// Owners use a struct without a public constructor as `K`, so only their module can pack
+/// it and create values keyed by it. A primitive or publicly constructible `K` lets any
+/// package emit events under it. This module emits every lifecycle fact, generic in `K`:
+/// indexers filter by `K`'s defining module and partition instances by `owner`. Owners
+/// emit only their own side effects, such as a settlement or a committed upgrade.
 ///
 /// Every change, a shorter notice included, waits the notice applied when it was scheduled.
 /// A notice can start at zero, so a schedule and its apply in one transaction then act as a
@@ -44,8 +45,8 @@ public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has sto
     key: K,
     members: VecSet<E>,
     delay_ms: u64,
-    admissions: VecMap<E, u64>,
-    pending_delay: Option<DelayChange>,
+    admissions: VecMap<E, Notice>,
+    pending_delay: Option<Notice>,
 }
 
 /// A proposed value and the notice in force once it applies, ready from `ready_at_ms`.
@@ -63,8 +64,9 @@ public enum Change<A: copy + drop + store> has copy, drop, store {
     Delay,
 }
 
-/// A `DelayedSet`'s proposed next notice, ready from `ready_at_ms`.
-public struct DelayChange has copy, drop, store {
+/// A `DelayedSet` deadline: for an admission, the notice it waits; for a notice change,
+/// the proposed next notice. Either is ready from `ready_at_ms`.
+public struct Notice has copy, drop, store {
     delay_ms: u64,
     ready_at_ms: u64,
 }
@@ -183,11 +185,13 @@ public fun cancel<K: copy + drop + store, T: copy + drop + store>(self: &mut Del
     self.cancel_replaced();
 }
 
-/// Deletes a setting with no proposal; cancel a proposal first so its end is recorded.
+/// Deletes a setting with no proposal and records its end; cancel a proposal first.
 public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>) {
     assert!(self.pending.is_none(), blast_admin::errors::proposal_pending!());
 
-    let Delayed { owner: _, key: _, value: _, delay_ms: _, pending: _ } = self;
+    let Delayed { owner, key, value: _, delay_ms: _, pending: _ } = self;
+
+    sui::event::emit(DelayedDestroyed<K, T> { owner, key });
 }
 
 // --- DelayedAction ---
@@ -244,12 +248,9 @@ public fun take_action<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
     clock: &Clock,
 ): A {
-    let proposal = self.take_ready_change(clock);
+    let change = self.take_ready_change(true, clock);
 
-    match (proposal.value) {
-        Change::Action(action) => action,
-        Change::Delay => abort blast_admin::errors::wrong_change!(),
-    }
+    change.action().destroy_some()
 }
 
 /// Applies the ready proposed notice. Aborts when the proposal is an action.
@@ -257,10 +258,7 @@ public fun apply_action_delay<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
     clock: &Clock,
 ) {
-    let proposal = self.take_ready_change(clock);
-    assert!(proposal.value == Change::Delay, blast_admin::errors::wrong_change!());
-
-    self.delay_ms = proposal.delay_ms;
+    self.take_ready_change(false, clock);
 }
 
 /// Discards the proposal, even a ready one, leaving the applied notice.
@@ -271,13 +269,15 @@ public fun cancel_action<K: copy + drop + store, A: copy + drop + store>(
     self.cancel_replaced_change();
 }
 
-/// Deletes an action slot with no proposal; cancel a proposal first so its end is recorded.
+/// Deletes an action slot with no proposal and records its end; cancel a proposal first.
 public fun destroy_action<K: copy + drop + store, A: copy + drop + store>(
     self: DelayedAction<K, A>,
 ) {
     assert!(self.pending.is_none(), blast_admin::errors::proposal_pending!());
 
-    let DelayedAction { owner: _, key: _, delay_ms: _, pending: _ } = self;
+    let DelayedAction { owner, key, delay_ms: _, pending: _ } = self;
+
+    sui::event::emit(ActionDestroyed<K, A> { owner, key });
 }
 
 // --- DelayedSet ---
@@ -327,13 +327,13 @@ public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>
     self: &DelayedSet<K, E>,
     member: &E,
 ): Option<u64> {
-    self.admissions.try_get(member)
+    self.admissions.try_get(member).map!(|admission| admission.ready_at_ms)
 }
 
 /// The proposed next notice, if any.
 public fun delayed_set_pending_delay<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
-): Option<DelayChange> {
+): Option<Notice> {
     self.pending_delay
 }
 
@@ -349,7 +349,7 @@ public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
     let ready_at_ms = ready_at_ms_after(self.delay_ms, 0, clock);
 
     self.cancel_admission_if_pending(member);
-    self.admissions.insert(member, ready_at_ms);
+    self.admissions.insert(member, Notice { delay_ms: self.delay_ms, ready_at_ms });
 
     sui::event::emit(ActionScheduled {
         owner: self.owner,
@@ -369,8 +369,8 @@ public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
     clock: &Clock,
 ) {
     assert!(self.admissions.contains(&member), blast_admin::errors::no_pending!());
-    let ready_at_ms = self.admissions[&member];
-    assert!(clock.timestamp_ms() >= ready_at_ms, blast_admin::errors::not_ready!());
+    let admission = self.admissions[&member];
+    assert!(clock.timestamp_ms() >= admission.ready_at_ms, blast_admin::errors::not_ready!());
 
     self.admissions.remove(&member);
     self.members.insert(member);
@@ -379,7 +379,7 @@ public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
         owner: self.owner,
         key: self.key,
         change: Change::Action(member),
-        delay_ms: self.delay_ms,
+        delay_ms: admission.delay_ms,
     });
 }
 
@@ -419,7 +419,7 @@ public fun schedule_delayed_set_delay<K: copy + drop + store, E: copy + drop + s
     let ready_at_ms = ready_at_ms_after(self.delay_ms, delay_ms, clock);
 
     self.cancel_delay_if_pending();
-    self.pending_delay.fill(DelayChange { delay_ms, ready_at_ms });
+    self.pending_delay.fill(Notice { delay_ms, ready_at_ms });
 
     sui::event::emit(ActionScheduled<K, E> {
         owner: self.owner,
@@ -438,7 +438,7 @@ public fun apply_delayed_set_delay<K: copy + drop + store, E: copy + drop + stor
     clock: &Clock,
 ) {
     assert!(self.pending_delay.is_some(), blast_admin::errors::no_pending!());
-    let DelayChange { delay_ms, ready_at_ms } = self.pending_delay.extract();
+    let Notice { delay_ms, ready_at_ms } = self.pending_delay.extract();
     assert_ready_at(ready_at_ms, delay_ms, clock);
 
     self.delay_ms = delay_ms;
@@ -459,22 +459,17 @@ public fun cancel_delayed_set_delay<K: copy + drop + store, E: copy + drop + sto
     self.cancel_delay_if_pending();
 }
 
-/// Deletes a set with no pending admission or notice change.
+/// Deletes a set with no pending admission or notice change and records its end, which
+/// also ends every remaining membership.
 public fun destroy_delayed_set<K: copy + drop + store, E: copy + drop + store>(self: DelayedSet<K, E>) {
     assert!(
         self.admissions.is_empty() && self.pending_delay.is_none(),
         blast_admin::errors::proposal_pending!(),
     );
 
-    let DelayedSet {
-        owner: _,
-        key: _,
-        members: _,
-        delay_ms: _,
-        admissions,
-        pending_delay: _,
-    } = self;
-    admissions.destroy_empty();
+    let DelayedSet { owner, key, members: _, delay_ms: _, admissions: _, pending_delay: _ } = self;
+
+    sui::event::emit(ActionDestroyed<K, E> { owner, key });
 }
 
 // --- Proposals ---
@@ -496,11 +491,11 @@ public fun change_action<A: copy + drop + store>(self: &Change<A>): Option<A> {
     }
 }
 
-/// The proposed next notice.
-public fun delay_change_delay_ms(self: &DelayChange): u64 { self.delay_ms }
+/// The notice an admission waits, or a proposed next notice.
+public fun notice_delay_ms(self: &Notice): u64 { self.delay_ms }
 
-/// The Unix millisecond time from which the notice change can apply.
-public fun delay_change_ready_at_ms(self: &DelayChange): u64 { self.ready_at_ms }
+/// The Unix millisecond time from which the admission or notice change can apply.
+public fun notice_ready_at_ms(self: &Notice): u64 { self.ready_at_ms }
 
 // === Private Functions ===
 
@@ -545,13 +540,19 @@ fun propose_change<K: copy + drop + store, A: copy + drop + store>(
     ready_at_ms
 }
 
+/// Consumes the ready proposal of the expected kind and commits its notice.
 fun take_ready_change<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
+    expects_action: bool,
     clock: &Clock,
-): Proposal<Change<A>> {
+): Change<A> {
     assert!(self.pending.is_some(), blast_admin::errors::no_pending!());
-    let proposal = self.pending.extract();
+    let proposal = *self.pending.borrow();
+    assert!(proposal.value.action().is_some() == expects_action, blast_admin::errors::wrong_change!());
     assert_ready_at(proposal.ready_at_ms, proposal.delay_ms, clock);
+
+    self.pending = option::none();
+    self.delay_ms = proposal.delay_ms;
 
     sui::event::emit(ActionApplied {
         owner: self.owner,
@@ -560,7 +561,7 @@ fun take_ready_change<K: copy + drop + store, A: copy + drop + store>(
         delay_ms: proposal.delay_ms,
     });
 
-    proposal
+    proposal.value
 }
 
 fun cancel_replaced_change<K: copy + drop + store, A: copy + drop + store>(
@@ -577,13 +578,13 @@ fun cancel_admission_if_pending<K: copy + drop + store, E: copy + drop + store>(
     member: E,
 ) {
     if (!self.admissions.contains(&member)) return;
-    let (_, ready_at_ms) = self.admissions.remove(&member);
+    let (_, Notice { delay_ms, ready_at_ms }) = self.admissions.remove(&member);
 
     sui::event::emit(ActionCancelled {
         owner: self.owner,
         key: self.key,
         change: Change::Action(member),
-        delay_ms: self.delay_ms,
+        delay_ms,
         ready_at_ms,
     });
 }
@@ -592,7 +593,7 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store>(
     self: &mut DelayedSet<K, E>,
 ) {
     if (self.pending_delay.is_none()) return;
-    let DelayChange { delay_ms, ready_at_ms } = self.pending_delay.extract();
+    let Notice { delay_ms, ready_at_ms } = self.pending_delay.extract();
 
     sui::event::emit(ActionCancelled<K, E> {
         owner: self.owner,
@@ -662,6 +663,20 @@ public fun action_applied_fields<K: copy + drop + store, A: copy + drop + store>
 }
 
 #[test_only]
+public fun delayed_destroyed_fields<K: copy + drop + store, T: copy + drop + store>(
+    self: &DelayedDestroyed<K, T>,
+): (ID, K) {
+    (self.owner, self.key)
+}
+
+#[test_only]
+public fun action_destroyed_fields<K: copy + drop + store, A: copy + drop + store>(
+    self: &ActionDestroyed<K, A>,
+): (ID, K) {
+    (self.owner, self.key)
+}
+
+#[test_only]
 public fun member_removed_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &MemberRemoved<K, E>,
 ): (ID, K, E) {
@@ -712,8 +727,8 @@ public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + sto
     delay_ms: u64,
 }
 
-/// An action, admission or notice change was proposed, ready from `ready_at_ms`;
-/// `delay_ms` is the notice in force once it applies.
+/// An action, admission or notice change was proposed, ready from `ready_at_ms`.
+/// `delay_ms` is the notice in force once it applies; for an admission, the notice it waits.
 public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -731,12 +746,26 @@ public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> ha
     ready_at_ms: u64,
 }
 
-/// A ready action was handed to its owner, a member was admitted, or a notice applied.
+/// A ready action was handed to its owner, a member was admitted, or a notice applied;
+/// `delay_ms` matches the proposal's `ActionScheduled`.
 public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
+}
+
+/// A `Delayed` setting was deleted with nothing pending.
+public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+
+/// A `DelayedAction` slot or `DelayedSet` was deleted with nothing pending; a set's
+/// remaining members leave with it.
+public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
 }
 
 /// A member left a `DelayedSet` at once.
@@ -765,7 +794,7 @@ public use fun destroy_delayed_set as DelayedSet.destroy;
 public use fun change_action as Change.action;
 public use fun proposal_value as Proposal.value;
 public use fun proposal_delay_ms as Proposal.delay_ms;
-public use fun delay_change_delay_ms as DelayChange.delay_ms;
-public use fun delay_change_ready_at_ms as DelayChange.ready_at_ms;
+public use fun notice_delay_ms as Notice.delay_ms;
+public use fun notice_ready_at_ms as Notice.ready_at_ms;
 
 use sui::{clock::Clock, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};

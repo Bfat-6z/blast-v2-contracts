@@ -242,9 +242,10 @@ Consumers store three types:
 | `delayed::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines, at most one proposed notice | migration-witness allowlists |
 
 Every value carries an `owner` (the ID of the object that stores it) and a `key`
-of type `K`. Only the module that defines `K` can create a value keyed by it, so
-only that module's transitions produce its events. Filter `delayed` events by
-`K`'s defining module and partition them by `owner`.
+of type `K`. Blast keys are structs without public constructors, so only their
+module can create a value keyed by them and produce its events. Any package can
+create values under its own keys, so filter `delayed` events by `K`'s defining
+module and partition them by `owner`.
 
 Rules shared by all three:
 
@@ -286,7 +287,8 @@ a ready member; `delayed::remove` removes a member and discards its pending
 admission at once. `delayed::contains` is the membership check.
 
 `delayed::destroy`, `delayed::destroy_action` and `delayed::destroy_delayed_set`
-abort with code 21 while anything is pending, so every proposal ends in an event.
+abort with code 21 while anything is pending, so every proposal ends in an event;
+they emit `delayed::DelayedDestroyed` or `delayed::ActionDestroyed`.
 
 The creator-claim backend signer is a plain value assigned and revoked immediately
 under ClaimSignerAdmin. ACL administrator and role grants remain immediate.
@@ -348,6 +350,7 @@ in the owner's key `K` and value type, and carry `owner` and `key`.
 | `delayed::ActionScheduled` / `delayed::ActionCancelled` | action, admission or notice proposals | `change`, notice in force once applied, `ready_at_ms` |
 | `delayed::ActionApplied` | `delayed::take_action`, `delayed::apply_add`, notice applies | `change` and the notice now applied |
 | `delayed::MemberRemoved` | `delayed::remove` | member removed at once |
+| `delayed::DelayedDestroyed` / `delayed::ActionDestroyed` | the destroy calls | the value, slot or set (with its members) ends |
 
 Replaying the ACL events in order reconstructs `ACL.admins` and every root
 transfer exactly. `ACL` creation emits only the root transfer's
@@ -369,7 +372,7 @@ Codes are plain `u64` values raised in the `blast_admin` module named.
 | 4 | `EAdminRoleAlreadyGranted` | `blast_acl` | the cap already holds the role |
 | 5 | `EAdminRoleNotGranted` | `blast_acl` | `sign_in` or `revoke_role` for a role the cap does not hold; grant it first or use the right role type |
 | 6 | `EInvalidSuperAdminRecipient` | `blast_acl` | nominee is `0x0` or the sender; or publish with `blast_acl_root` left at `0x0` |
-| 7 | `ENotPendingSuperAdminRecipient` | `blast_acl` | accept from an address that is not the ready nominee |
+| 7 | `ENotPendingSuperAdminRecipient` | `blast_acl` | accept from an address that is not the nominee, or with no nomination pending; checked before readiness |
 | 8 | `ESuperAdminCapStillActive` | `blast_acl` | destroying the active root |
 | 9 | `EOperationalVersionMismatch` | `operational_version` | the call reached outdated bytecode; call the latest package version (or the upgrade did not compile the next generation) |
 | 10 | `EOperationalVersionOverflow` | `operational_version` | generation at `u64` max |
@@ -380,11 +383,11 @@ Codes are plain `u64` values raised in the `blast_admin` module named.
 | 15 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
 | 16 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
 | 17 | `ENotReady` | `delayed` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
-| 18 | `ENoPending` | `delayed` | applying or cancelling when nothing is pending, including a cancelled or accepted root transfer |
+| 18 | `ENoPending` | `delayed` | applying or cancelling when nothing is pending |
 | 19 | `EInvalidDelay` | `delayed` | a deadline or the next notice would overflow a Unix millisecond timestamp; choose a representable notice |
 | 20 | `EUnchanged` | `delayed` | the proposal changes nothing, the member is already admitted, or `remove` names an unknown member |
 | 21 | `EProposalPending` | `delayed` | destroying a delayed value, action slot or set while a proposal is pending; cancel it first |
-| 22 | `EWrongChange` | `delayed` | `take_action` on a notice change, or a notice `apply_delay` on an action |
+| 22 | `EWrongChange` | `delayed` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
 
 The one an integrator most often meets is code 9 from `operational_version`: a
 PTB built against an old package ID after an upgrade.

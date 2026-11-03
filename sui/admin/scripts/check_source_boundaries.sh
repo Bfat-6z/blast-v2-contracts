@@ -203,7 +203,7 @@ grep -Fqx '    admins: Table<ID, VecSet<TypeName>>,' "$acl_file" \
   || fail "ACL must store each live admin and its roles in a Table."
 grep -Fqx '    super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,' "$acl_file" \
   || fail "A nominated super admin must wait out the fixed delay before it can accept."
-if grep -qE 'super_admin_transfer\.schedule_delay|schedule_action_delay' "$acl_file"; then
+if grep -qE '\.schedule_delay\(|\.apply_delay\(|schedule_action_delay|apply_action_delay' "$acl_file"; then
   fail "The root transfer delay is a fixed constant with no change path."
 fi
 [[ "$(grep -c '^fun init(ctx: &mut TxContext) {$' "$acl_file")" -eq 1 ]] \
@@ -240,9 +240,9 @@ actual_delayed_public="$({
 expected_delayed_public="$(printf '%s\n' \
   action_delay_ms action_pending admission_ready_at_ms apply apply_action_delay apply_add \
   apply_delayed_set_delay assert_ready cancel cancel_action cancel_add cancel_delayed_set_delay change_action \
-  contains delay_change_delay_ms delay_change_ready_at_ms delay_ms destroy destroy_action \
+  contains delay_ms destroy destroy_action \
   destroy_delayed_set new new_action new_set pending proposal_delay_ms proposal_value ready_at_ms remove \
-  schedule schedule_action schedule_action_delay schedule_add schedule_delay schedule_delayed_set_delay \
+  notice_delay_ms notice_ready_at_ms schedule schedule_action schedule_action_delay schedule_add schedule_delay schedule_delayed_set_delay \
   schedule_value delayed_set_delay_ms delayed_set_members delayed_set_pending_delay take_action value \
   | tr ' ' '\n' | sed '/^$/d' | sort)"
 [[ "$actual_delayed_public" == "$expected_delayed_public" ]] \
