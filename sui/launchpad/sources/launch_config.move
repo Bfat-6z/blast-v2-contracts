@@ -400,16 +400,15 @@ fun new(
     ctx: &mut TxContext,
 ): LaunchConfig {
     let id = object::new(ctx);
-    let owner = id.to_inner();
 
     LaunchConfig {
-        id,
         meme_decimals: vec_set::from_keys(vector[6, 9]),
         quotes: table::new(ctx),
-        trade_fees: delayed::new(TradeFeesKey(), owner, trade_fees, delay_ms),
-        migration_witnesses: delayed::new_set(MigrationWitnessKey(), owner, delay_ms),
-        protocol_allocation: delayed::new(ProtocolAllocationKey(), owner, protocol_allocation, delay_ms),
-        creation_fee: delayed::new(CreationFeeKey(), owner, 0, delay_ms),
+        trade_fees: delayed::new(TradeFeesKey(), &id, trade_fees, delay_ms),
+        migration_witnesses: delayed::new_set(MigrationWitnessKey(), &id, delay_ms),
+        protocol_allocation: delayed::new(ProtocolAllocationKey(), &id, protocol_allocation, delay_ms),
+        creation_fee: delayed::new(CreationFeeKey(), &id, 0, delay_ms),
+        id,
     }
 }
 

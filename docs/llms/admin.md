@@ -242,10 +242,11 @@ Consumers store three types:
 | `delayed::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines, at most one proposed notice | migration-witness allowlists |
 
 Every value carries an `owner` (the ID of the object that stores it) and a `key`
-of type `K`. Blast keys are structs without public constructors, so only their
-module can create a value keyed by them and produce its events. Any package can
-create values under its own keys, so filter `delayed` events by `K`'s defining
-module and partition them by `owner`.
+of type `K`. `delayed::new`, `delayed::new_action` and `delayed::new_set` take the
+owner object's `&UID`, which only the code creating or holding that object has, so
+no package can attribute a value or its events to another package's object. Blast
+keys are structs without public constructors, so only their module can produce
+events under them. Partition `delayed` events by `owner`, then by `K`.
 
 Rules shared by all three:
 

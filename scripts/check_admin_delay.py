@@ -227,12 +227,12 @@ for name in ('set_creator_claim_signer', 'revoke_creator_claim_signer'):
     assert signer[name][1].startswith('package_version.assert_current();')
     assert 'creator_claim_signer_public_key =' in signer[name][1]
 assert 'schedule_creator_claim_signer' not in signer
-require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'delayed::new( CoinSharesKey(meme), self.id.to_inner(), option::none(), self.defaults.delay_ms(), )')
+require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'delayed::new( CoinSharesKey(meme), &self.id, option::none(), self.defaults.delay_ms(), )')
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
     require(fs['schedule_upgrade_delay'][0], '&AdminWitness<UpgradeAdmin>', 'delay_ms: u64')
     require(fs['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
     require(fs['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
     assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]
-    require(fs['wrap'][1], 'delayed::new_action(UpgradeKey(), id.to_inner(), 0)')
+    require(fs['wrap'][1], 'delayed::new_action(UpgradeKey(), &id, 0)')
 print('Per-operation notices, no bypass, immediate signer, and publication custody: OK')

@@ -434,17 +434,15 @@ fun build<Meme, Quote>(
     ctx: &mut TxContext,
 ): Vault<Meme, Quote> {
     let id = object::new(ctx);
-    let owner = id.to_inner();
 
     Vault {
-        id,
         presale_id,
         presale_cap_id,
         pool_id,
-        fee_split: delayed::new(FeeSplitKey(), owner, fee_split, DEFAULT_FEE_SPLIT_DELAY_MS),
+        fee_split: delayed::new(FeeSplitKey(), &id, fee_split, DEFAULT_FEE_SPLIT_DELAY_MS),
         protocol_fees: delayed::new(
             ProtocolLpFeesKey(),
-            owner,
+            &id,
             protocol_fees,
             DEFAULT_PROTOCOL_LP_FEE_DELAY_MS,
         ),
@@ -457,6 +455,7 @@ fun build<Meme, Quote>(
         holder_rewards_quote: balance::zero(),
         next_round: 0,
         last_checkpoint: option::none(),
+        id,
     }
 }
 
@@ -562,17 +561,15 @@ public fun new_for_testing<Meme, Quote>(
     ctx: &mut TxContext,
 ): Vault<Meme, Quote> {
     let id = object::new(ctx);
-    let owner = id.to_inner();
 
     Vault {
-        id,
         presale_id,
         presale_cap_id,
         pool_id: object::id_from_address(@0x1),
-        fee_split: delayed::new(FeeSplitKey(), owner, fee_split, DEFAULT_FEE_SPLIT_DELAY_MS),
+        fee_split: delayed::new(FeeSplitKey(), &id, fee_split, DEFAULT_FEE_SPLIT_DELAY_MS),
         protocol_fees: delayed::new(
             ProtocolLpFeesKey(),
-            owner,
+            &id,
             protocol_fees,
             DEFAULT_PROTOCOL_LP_FEE_DELAY_MS,
         ),
@@ -585,6 +582,7 @@ public fun new_for_testing<Meme, Quote>(
         holder_rewards_quote: balance::zero(),
         next_round: 0,
         last_checkpoint: option::none(),
+        id,
     }
 }
 

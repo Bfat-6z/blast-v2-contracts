@@ -518,7 +518,7 @@ fun new<Meme, Quote, Venue, Position: key + store>(
     let id = object::new(ctx);
     let fee_split = delayed::new(
         FeeSplitKey(),
-        id.to_inner(),
+        &id,
         launch.lp_fee_split(),
         DEFAULT_FEE_SPLIT_DELAY_MS,
     );

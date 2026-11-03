@@ -191,12 +191,11 @@ fun new(
 ): FeePolicy {
     assert!(@blast_treasury != @0x0, EInvalidDestination);
     let id = object::new(ctx);
-    let owner = id.to_inner();
 
     FeePolicy {
+        destination: delayed::new(DestinationKey(), &id, destination, delay_ms),
+        fees: delayed::new(FeesKey(), &id, fees, delay_ms),
         id,
-        destination: delayed::new(DestinationKey(), owner, destination, delay_ms),
-        fees: delayed::new(FeesKey(), owner, fees, delay_ms),
     }
 }
 

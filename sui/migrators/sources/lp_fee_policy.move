@@ -144,7 +144,7 @@ public fun schedule_coin_shares<Meme>(
     if (!self.coins.contains(meme)) {
         let coin_shares = delayed::new(
             CoinSharesKey(meme),
-            self.id.to_inner(),
+            &self.id,
             option::none(),
             self.defaults.delay_ms(),
         );
@@ -216,13 +216,12 @@ fun new(
 ): LpFeePolicy {
     assert!(@blast_lp_fee_destination != @0x0, EInvalidProtocolDestination);
     let id = object::new(ctx);
-    let owner = id.to_inner();
 
     LpFeePolicy {
-        id,
-        destination: delayed::new(ProtocolDestinationKey(), owner, destination, delay_ms),
-        defaults: delayed::new(DefaultSharesKey(), owner, defaults, delay_ms),
+        destination: delayed::new(ProtocolDestinationKey(), &id, destination, delay_ms),
+        defaults: delayed::new(DefaultSharesKey(), &id, defaults, delay_ms),
         coins: table::new(ctx),
+        id,
     }
 }
 

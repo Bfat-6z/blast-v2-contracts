@@ -221,7 +221,7 @@ fun new(ctx: &mut TxContext): (SuperAdminCap, ACL) {
     let id = object::new(ctx);
     let super_admin_transfer = delayed::new_action(
         SuperAdminTransfer(),
-        id.to_inner(),
+        &id,
         SUPER_ADMIN_TRANSFER_DELAY_MS,
     );
     let acl = ACL {

@@ -76,7 +76,7 @@ public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxC
         upgrade_cap,
     );
 
-    let upgrade = delayed::new_action(UpgradeKey(), id.to_inner(), 0);
+    let upgrade = delayed::new_action(UpgradeKey(), &id, 0);
 
     transfer::share_object(PackageAdmin { id, custody, upgrade });
     generation.share_version(ctx);
@@ -213,7 +213,7 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    let upgrade = delayed::new_action(UpgradeKey(), id.to_inner(), 172_800_000);
+    let upgrade = delayed::new_action(UpgradeKey(), &id, 172_800_000);
 
     PackageAdmin { id, custody, upgrade }
 }

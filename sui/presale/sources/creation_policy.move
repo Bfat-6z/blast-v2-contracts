@@ -218,7 +218,7 @@ public(package) fun assert_partner(self: &CreationPolicy, partner_id: ID, now_at
 
 fun new(delay_ms: u64, ctx: &mut TxContext): CreationPolicy {
     let id = object::new(ctx);
-    let migration_witnesses = delayed::new_set(MigrationWitnessKey(), id.to_inner(), delay_ms);
+    let migration_witnesses = delayed::new_set(MigrationWitnessKey(), &id, delay_ms);
 
     CreationPolicy { id, allowed_quotes: vec_set::empty(), migration_witnesses }
 }

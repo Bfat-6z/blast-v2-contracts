@@ -8,10 +8,10 @@
 /// whose values switch by themselves at a deadline.
 ///
 /// Every value carries an owner-defined key `K` and the ID of the object that stores it.
+/// Constructors take that object's `&UID`, which only the code creating or holding the
+/// object has, so no package can attribute a value or its events to another's object.
 /// Owners use a struct without a public constructor as `K`, so only their module can pack
-/// it and create values keyed by it. A primitive or publicly constructible `K` lets any
-/// package emit events under it. This module emits every lifecycle fact, generic in `K`:
-/// indexers filter by `K`'s defining module and partition instances by `owner`. Owners
+/// it. This module emits every lifecycle fact, generic in `K` and carrying `owner`; owners
 /// emit only their own side effects, such as a settlement or a committed upgrade.
 ///
 /// Every change, a shorter notice included, waits the notice applied when it was scheduled.
@@ -78,10 +78,12 @@ public struct Notice has copy, drop, store {
 /// A setting in force at once; every later change waits the applied notice.
 public fun new<K: copy + drop + store, T: copy + drop + store>(
     key: K,
-    owner: ID,
+    owner: &UID,
     value: T,
     delay_ms: u64,
 ): Delayed<K, T> {
+    let owner = owner.to_inner();
+
     sui::event::emit(DelayedCreated { owner, key, value, delay_ms });
 
     Delayed { owner, key, value, delay_ms, pending: option::none() }
@@ -199,9 +201,11 @@ public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed
 /// An action slot with nothing proposed; every action waits the applied notice.
 public fun new_action<K: copy + drop + store, A: copy + drop + store>(
     key: K,
-    owner: ID,
+    owner: &UID,
     delay_ms: u64,
 ): DelayedAction<K, A> {
+    let owner = owner.to_inner();
+
     sui::event::emit(ActionCreated<K, A> { owner, key, delay_ms });
 
     DelayedAction { owner, key, delay_ms, pending: option::none() }
@@ -285,9 +289,11 @@ public fun destroy_action<K: copy + drop + store, A: copy + drop + store>(
 /// An empty set; every admission waits the applied notice.
 public fun new_set<K: copy + drop + store, E: copy + drop + store>(
     key: K,
-    owner: ID,
+    owner: &UID,
     delay_ms: u64,
 ): DelayedSet<K, E> {
+    let owner = owner.to_inner();
+
     sui::event::emit(ActionCreated<K, E> { owner, key, delay_ms });
 
     DelayedSet {

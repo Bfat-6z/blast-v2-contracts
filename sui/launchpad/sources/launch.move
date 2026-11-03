@@ -276,7 +276,16 @@ public fun finalize<Meme, Quote>(
     let creation_fee_amount = creation_fee.value();
     let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(currency, atomic_supply);
     let id = object::new(ctx);
-    let launch_id = id.to_inner();
+    let curve_fee_cap_reassignment = delayed::new_action(
+        CurveFeeCapReassignment(),
+        &id,
+        DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
+    );
+    let metadata_cap_reassignment = delayed::new_action(
+        MetadataCapReassignment(),
+        &id,
+        DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
+    );
 
     let launch = Launch {
         id,
@@ -304,16 +313,8 @@ public fun finalize<Meme, Quote>(
         fee_ledger: fees::new(creation_fee),
         metadata_cap,
         creator: option::some(creator),
-        curve_fee_cap_reassignment: delayed::new_action(
-            CurveFeeCapReassignment(),
-            launch_id,
-            DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
-        ),
-        metadata_cap_reassignment: delayed::new_action(
-            MetadataCapReassignment(),
-            launch_id,
-            DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
-        ),
+        curve_fee_cap_reassignment,
+        metadata_cap_reassignment,
         curve_fee_cap_id: option::none(),
         blast_metadata_cap_id: option::none(),
         partner_id,

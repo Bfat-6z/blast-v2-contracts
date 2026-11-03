@@ -244,7 +244,9 @@ only as a deadline holder.
 ### Decision
 
 `blast_admin::delayed` provides three types, each storing its `owner` object ID
-and an owner-defined key `K`:
+and an owner-defined key `K`. Constructors take the owner's `&UID` rather than an
+`ID`, so only code that creates or holds an object can attribute delayed values
+and events to it:
 
 - `Delayed<K, T>`: a setting with its notice and one proposal (unchanged rules).
 - `DelayedAction<K, A>`: a notice and one proposal that is either `Action(A)` or
@@ -284,7 +286,6 @@ functions still emit no events of their own.
 Every delayed field gains `owner` and `key`; delayed, consumer and event layouts
 change, and the replay stream for delay lifecycle moves to `blast_admin::delayed`
 event types. SDK, indexer and admin console decoders must follow, with a fresh
-publication of the stack. Keys must be structs without public constructors; a
-primitive or publicly constructible key lets any package emit events under it.
-Indexers must filter delayed events by `K`'s defining module, since any package
-can create values under its own keys.
+publication of the stack. Keys must be structs without public constructors, and
+owner objects must not expose their `&UID`; otherwise another package could emit
+events under that key or owner.

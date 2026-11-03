@@ -162,13 +162,12 @@ public(package) fun treasury(self: &RuntimeConfig): address {
 fun new(ctx: &mut TxContext): RuntimeConfig {
     assert!(@blast_treasury != @0x0, blast_fun::errors::invalid_destination!());
     let id = object::new(ctx);
-    let owner = id.to_inner();
 
     RuntimeConfig {
-        id,
         creator_claim_signer_public_key: vector[],
-        protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), owner, bps::new(5_000), 0),
-        treasury: delayed::new(TreasuryKey(), owner, @blast_treasury, 0),
+        protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), &id, bps::new(5_000), 0),
+        treasury: delayed::new(TreasuryKey(), &id, @blast_treasury, 0),
+        id,
     }
 }
 
@@ -232,13 +231,12 @@ public fun new_zero_fee_share_with_signer_for_testing(
     ctx: &mut TxContext,
 ): RuntimeConfig {
     let id = object::new(ctx);
-    let owner = id.to_inner();
 
     RuntimeConfig {
-        id,
         creator_claim_signer_public_key: signer_public_key,
-        protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), owner, bps::new(0), 172_800_000),
-        treasury: delayed::new(TreasuryKey(), owner, ctx.sender(), 172_800_000),
+        protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), &id, bps::new(0), 172_800_000),
+        treasury: delayed::new(TreasuryKey(), &id, ctx.sender(), 172_800_000),
+        id,
     }
 }
 

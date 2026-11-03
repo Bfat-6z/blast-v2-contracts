@@ -724,8 +724,16 @@ fun an_unchanged_proposal_rejects_before_overflow_checks() {
 
 // === Test Helpers ===
 
+/// A dummy context derives the same first object ID every time.
+fun owner_uid(): UID {
+    object::new(&mut tx_context::dummy())
+}
+
 fun owner(): ID {
-    object::id_from_address(@0x0B)
+    let uid = owner_uid();
+    let owner = uid.to_inner();
+    uid.delete();
+    owner
 }
 
 fun clock_at(timestamp_ms: u64): Clock {
@@ -735,15 +743,24 @@ fun clock_at(timestamp_ms: u64): Clock {
 }
 
 fun new_setting(value: u64, delay_ms: u64): Delayed<Fee, u64> {
-    delayed::new(Fee(), owner(), value, delay_ms)
+    let uid = owner_uid();
+    let setting = delayed::new(Fee(), &uid, value, delay_ms);
+    uid.delete();
+    setting
 }
 
 fun new_slot(delay_ms: u64): DelayedAction<Upgrade, u64> {
-    delayed::new_action(Upgrade(), owner(), delay_ms)
+    let uid = owner_uid();
+    let slot = delayed::new_action(Upgrade(), &uid, delay_ms);
+    uid.delete();
+    slot
 }
 
 fun new_witness_set(delay_ms: u64): DelayedSet<Witnesses, address> {
-    delayed::new_set(Witnesses(), owner(), delay_ms)
+    let uid = owner_uid();
+    let set = delayed::new_set(Witnesses(), &uid, delay_ms);
+    uid.delete();
+    set
 }
 
 fun collect<Event: copy + drop>(): Event {

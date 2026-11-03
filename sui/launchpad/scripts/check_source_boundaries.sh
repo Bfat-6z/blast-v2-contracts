@@ -433,7 +433,7 @@ package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # would end upgradeability silently.
 # Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
 if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); let upgrade = delayed::new_action(UpgradeKey(), id.to_inner(), 0); transfer::share_object(PackageAdmin { id, custody, upgrade }); generation.share_version(ctx);' ]] \
+    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); let upgrade = delayed::new_action(UpgradeKey(), &id, 0); transfer::share_object(PackageAdmin { id, custody, upgrade }); generation.share_version(ctx);' ]] \
   || [[ "$(move_production_type PackageAdmin <<<"$(move_facts sources/package_admin.move)")" \
     != 'struct PackageAdmin has key { id: UID, custody: UpgradeCustody<BLAST_FUN>, upgrade: DelayedAction<UpgradeKey, UpgradeAction>, }' ]] \
   || [[ "$(move_production_type UpgradeAction <<<"$(move_facts sources/package_admin.move)")" \
@@ -802,7 +802,7 @@ if [[ ! -f sources/launch_config.move ]] \
   || rg -Fq 'protocol_allocation: Option<' sources/launch_config.move \
   || ! rg -Fq 'meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999' <<<"$launch_config_source" \
   || ! rg -Fq 'self.protocol_allocation.schedule(value, delay_ms, clock);' <<<"$launch_config_source" \
-  || ! rg -Fq 'protocol_allocation: delayed::new(ProtocolAllocationKey(), owner, protocol_allocation, delay_ms)' <<<"$launch_config_source" \
+  || ! rg -Fq 'protocol_allocation: delayed::new(ProtocolAllocationKey(), &id, protocol_allocation, delay_ms)' <<<"$launch_config_source" \
   || ! rg -Fq 'allocation::protocol_allocation(bps::new(250), bps::new(150))' <<<"$(move_production_body init <<<"$launch_config_facts")" \
   || rg -n '\b(set_graduation_defaults|GraduationDefaultsChanged|protocol_(quote_migration|meme_graduation)_fee_bps|meme_liquidity_provision_bps|QuoteParameters|QuoteParametersChanged|min_graduation_target|max_graduation_target)\b' \
     sources/launch_config.move sources/lib/events.move \
@@ -1025,8 +1025,8 @@ if [[ ! -f sources/launch.move ]] \
     'Launch {' \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
-  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment: delayed::new_action( CurveFeeCapReassignment(), launch_id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ), metadata_cap_reassignment: delayed::new_action( MetadataCapReassignment(), launch_id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ), curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
-  || [[ "$launch_finalize_body" != *'let id = object::new(ctx); let launch_id = id.to_inner(); let launch = Launch { id,'* ]] \
+  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, metadata_cap_reassignment, curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
+  || [[ "$launch_finalize_body" != *'let id = object::new(ctx); let curve_fee_cap_reassignment = delayed::new_action( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed::new_action( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
   || [[ "$launch_finalize_body" != *'fee_ledger: fees::new(creation_fee),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \
