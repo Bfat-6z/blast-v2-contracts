@@ -181,9 +181,14 @@ blast_fun_migrators:package:fun assert_current(self: &PackageVersion)
 blast_fun_migrators:package:fun assert_next(self: &PackageVersion)
 blast_fun_migrators:package:fun destroy( self: Publication ): (Publisher, OperationalVersion<BLAST_FUN_MIGRATORS>)
 blast_fun_migrators:package:fun share_version( generation: OperationalVersion<BLAST_FUN_MIGRATORS>, ctx: &mut TxContext )
+blast_holder_rewards:public:fun apply_round_delay<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, clock: &Clock, )
+blast_holder_rewards:public:fun cancel_round<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
+blast_holder_rewards:public:fun cancel_round_delay<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
 blast_holder_rewards:public:fun claim<Meme, Quote>( self: &mut Round<Meme, Quote>, migrators_version: &MigratorsVersion, index: u64, beneficiary: address, meme_amount: u64, quote_amount: u64, proof: vector<vector<u8>>, clock: &Clock, ctx: &mut TxContext, )
 blast_holder_rewards:public:fun close_round<Meme, Quote>( self: Round<Meme, Quote>, migrators_version: &MigratorsVersion, vault: &mut LpVault<Meme, Quote>, clock: &Clock, )
-blast_holder_rewards:public:fun publish_round<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<RewardsAdmin>, lp_fee_policy: &LpFeePolicy, expected_treasury: address, number: u64, start_checkpoint: u64, end_checkpoint: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, gas_reserve_amount: u64, claim_deadline_at_ms: u64, clock: &Clock, ctx: &mut TxContext, )
+blast_holder_rewards:public:fun publish_round<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, lp_fee_policy: &LpFeePolicy, clock: &Clock, ctx: &mut TxContext, )
+blast_holder_rewards:public:fun schedule_round<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<RewardsAdmin>, number: u64, start_checkpoint: u64, end_checkpoint: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, gas_reserve_amount: u64, claim_window_duration_ms: u64, expected_treasury: address, clock: &Clock, )
+blast_holder_rewards:public:fun schedule_round_delay<Meme, Quote>( vault: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<RewardsAdmin>, delay_ms: u64, clock: &Clock, )
 blast_holder_rewards:public:fun settle_gas_reserve<Meme, Quote>( self: &mut Round<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<RewardsAdmin>, vault: &mut LpVault<Meme, Quote>, reimbursement_amount: u64, ctx: &mut TxContext, )
 bluefin:public:fun buyback_and_burn<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
 bluefin:public:fun collect_fees<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, policy: &LpFeePolicy, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
@@ -234,25 +239,43 @@ package_admin:public:fun schedule_upgrade( self: &mut PackageAdmin, package_vers
 package_admin:public:fun schedule_upgrade_delay( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, delay_ms: u64, clock: &Clock )
 package_admin:public:fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
 vault:package:fun apply_fee_split<Meme, Quote>( self: &mut LpVault<Meme, Quote>, clock: &Clock, )
+vault:package:fun apply_round_publication_delay<Meme, Quote>( self: &mut LpVault<Meme, Quote>, clock: &Clock, )
 vault:package:fun assert_fee_split_ready<Meme, Quote>( self: &LpVault<Meme, Quote>, clock: &Clock, )
 vault:package:fun attach_auto_lp_position<Meme, Quote, Venue, Position: key + store>( self: &mut LpVault<Meme, Quote>, _venue: &Venue, position: Position, )
 vault:package:fun auto_lp_position< Meme, Quote, Venue, Position: key + store, >( self: &LpVault<Meme, Quote>, _venue: &Venue, ): &Position
 vault:package:fun auto_lp_position_mut< Meme, Quote, Venue, Position: key + store, >( self: &mut LpVault<Meme, Quote>, _venue: &Venue, ): &mut Position
 vault:package:fun burn_buyback<Meme, Quote>( self: &mut LpVault<Meme, Quote>, currency: &mut Currency<Meme>, meme: Balance<Meme>, unspent_quote: Balance<Quote>, quote_in: u64, min_meme_out: u64, ctx: &mut TxContext, )
+vault:package:fun cancel_round_publication<Meme, Quote>(self: &mut LpVault<Meme, Quote>)
+vault:package:fun cancel_round_publication_delay<Meme, Quote>(self: &mut LpVault<Meme, Quote>)
+vault:package:fun claim_window_duration_ms(self: &RoundTerms): u64
 vault:package:fun create<Meme, Quote, Venue, Position: key + store>( launch: &Launch<Meme, Quote>, venue: &Venue, pool_id: ID, position: Position, liquidity: u128, protocol_meme_residual: Balance<Meme>, protocol_quote_residual: Balance<Quote>, ctx: &mut TxContext, )
+vault:package:fun end_checkpoint(self: &RoundTerms): u64
+vault:package:fun expected_treasury(self: &RoundTerms): address
 vault:package:fun fund_round<Meme, Quote>( self: &mut LpVault<Meme, Quote>, end_checkpoint: u64, meme_amount: u64, quote_amount: u64, ): (Balance<Meme>, Balance<Quote>)
+vault:package:fun gas_reserve_amount(self: &RoundTerms): u64
 vault:package:fun has_auto_lp_position<Meme, Quote, Venue>( self: &LpVault<Meme, Quote>, _venue: &Venue, ): bool
 vault:package:fun keep_auto_lp<Meme, Quote>( self: &mut LpVault<Meme, Quote>, added_meme: u64, added_quote: u64, meme: Balance<Meme>, quote: Balance<Quote>, )
 vault:package:fun last_checkpoint<Meme, Quote>(self: &LpVault<Meme, Quote>): Option<u64>
+vault:package:fun leaf_count(self: &RoundTerms): u64
+vault:package:fun manifest_digest(self: &RoundTerms): vector<u8>
+vault:package:fun meme_amount(self: &RoundTerms): u64
+vault:package:fun new_round_terms( number: u64, start_checkpoint: u64, end_checkpoint: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, gas_reserve_amount: u64, claim_window_duration_ms: u64, expected_treasury: address, ): RoundTerms
 vault:package:fun next_round<Meme, Quote>(self: &LpVault<Meme, Quote>): u64
+vault:package:fun number(self: &RoundTerms): u64
 vault:package:fun pay<T>( balance: &mut Balance<T>, amount: u64, destination: address, ctx: &mut TxContext, )
 vault:package:fun pool_id<Meme, Quote>(self: &LpVault<Meme, Quote>): ID
 vault:package:fun position_mut< Meme, Quote, Venue, Position: key + store, >( self: &mut LpVault<Meme, Quote>, _venue: &Venue, ): &mut Position
+vault:package:fun quote_amount(self: &RoundTerms): u64
 vault:package:fun restore_rewards<Meme, Quote>( self: &mut LpVault<Meme, Quote>, meme: Balance<Meme>, quote: Balance<Quote>, )
 vault:package:fun rewards_balances<Meme, Quote>(self: &LpVault<Meme, Quote>): (u64, u64)
+vault:package:fun root(self: &RoundTerms): vector<u8>
+vault:package:fun schedule_round_publication<Meme, Quote>( self: &mut LpVault<Meme, Quote>, terms: RoundTerms, clock: &Clock, )
+vault:package:fun schedule_round_publication_delay<Meme, Quote>( self: &mut LpVault<Meme, Quote>, delay_ms: u64, clock: &Clock, )
 vault:package:fun split_fees<Meme, Quote>( self: &mut LpVault<Meme, Quote>, policy: &LpFeePolicy, currency: &mut Currency<Meme>, mut meme: Balance<Meme>, mut quote: Balance<Quote>, ctx: &mut TxContext, )
+vault:package:fun start_checkpoint(self: &RoundTerms): u64
 vault:package:fun take_auto_lp<Meme, Quote>( self: &mut LpVault<Meme, Quote>, ): (Balance<Meme>, Balance<Quote>)
 vault:package:fun take_buyback_quote<Meme, Quote>( self: &mut LpVault<Meme, Quote>, _: &AdminWitness<BuybackAdmin>, quote_in: u64, ): Balance<Quote>
+vault:package:fun take_round_publication<Meme, Quote>( self: &mut LpVault<Meme, Quote>, clock: &Clock, ): RoundTerms
 vault:public:fun cancel_fee_split<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, launch: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, )
 vault:public:fun claim_creator_fees<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, launch: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, ctx: &mut TxContext, ): (Coin<Meme>, Coin<Quote>)
 vault:public:fun claim_protocol_fees<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<TreasuryAdmin>, ctx: &mut TxContext, ): (Coin<Meme>, Coin<Quote>)
@@ -484,19 +507,19 @@ done
 VAULT_FACTS="$(move_facts "$VAULT_SOURCE")"
 [[ "$VAULT_FACTS" != *MALFORMED* ]] || fail "the Move reader rejected vault.move"
 [[ "$(move_production_type LpVault <<<"$VAULT_FACTS")" \
-    == 'struct LpVault<phantom Meme, phantom Quote> has key { id: UID, pool_id: ID, partner_id: Option<ID>, protocol_meme_residual: Balance<Meme>, protocol_quote_residual: Balance<Quote>, unpaid_protocol_meme: Balance<Meme>, unpaid_protocol_quote: Balance<Quote>, fee_split: Delayed<FeeSplitKey, FeeSplit>, creator_meme: Balance<Meme>, creator_quote: Balance<Quote>, auto_lp_meme: Balance<Meme>, auto_lp_quote: Balance<Quote>, rewards_meme: Balance<Meme>, rewards_quote: Balance<Quote>, burn_quote: Balance<Quote>, next_round: u64, last_checkpoint: Option<u64>, }' ]] || \
-    fail "LpVault must hold only its position key space, the pool binding, the launch's partner, the protocol residuals, Blast's LP fees held for the partner, its fee split, the split balances, and the round cursor"
+    == 'struct LpVault<phantom Meme, phantom Quote> has key { id: UID, pool_id: ID, partner_id: Option<ID>, protocol_meme_residual: Balance<Meme>, protocol_quote_residual: Balance<Quote>, unpaid_protocol_meme: Balance<Meme>, unpaid_protocol_quote: Balance<Quote>, fee_split: Delayed<FeeSplitKey, FeeSplit>, creator_meme: Balance<Meme>, creator_quote: Balance<Quote>, auto_lp_meme: Balance<Meme>, auto_lp_quote: Balance<Quote>, rewards_meme: Balance<Meme>, rewards_quote: Balance<Quote>, burn_quote: Balance<Quote>, next_round: u64, last_checkpoint: Option<u64>, round_publication: DelayedAction<RoundPublicationKey, RoundTerms>, }' ]] || \
+    fail "LpVault must hold only its position key space, the pool binding, the launch's partner, the protocol residuals, Blast's LP fees held for the partner, its fee split, the split balances, the round cursor, and the delayed round publication"
 vault_body() {
     awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name && $6 == 0 { print $10 }' <<<"$VAULT_FACTS" \
         | tr -d '[:space:]' | sed 's/,)/)/g'
 }
 # The vault is born shared with its real pool binding and its position already attached: `create`
-# only shares what `new` builds, and `new` copies the launch's fee split with empty balances and
-# no round.
+# only shares what `new` builds, and `new` copies the launch's fee split with empty balances, no
+# round, and a round-publication slot keyed to it at the default notice.
 [[ "$(vault_body create)" \
     == 'transfer::share_object(new(launch,venue,pool_id,position,liquidity,protocol_meme_residual,protocol_quote_residual,ctx));' ]] \
     && [[ "$(vault_body new)" \
-    == 'assert!(liquidity>0,EZeroLiquidity);letposition_id=object::id(&position);letid=object::new(ctx);letfee_split=delayed::new(FeeSplitKey(),&id,launch.lp_fee_split(),DEFAULT_FEE_SPLIT_DELAY_MS);letmutvault=LpVault{id,pool_id,partner_id:launch.partner_id(),protocol_meme_residual,protocol_quote_residual,unpaid_protocol_meme:balance::zero(),unpaid_protocol_quote:balance::zero(),fee_split,creator_meme:balance::zero(),creator_quote:balance::zero(),auto_lp_meme:balance::zero(),auto_lp_quote:balance::zero(),rewards_meme:balance::zero(),rewards_quote:balance::zero(),burn_quote:balance::zero(),next_round:0,last_checkpoint:option::none(),};vault.id.add_dynamic_object_field(PositionKey<Venue>(),position);blast_events::vault_created<Meme,Quote,Venue>(vault.id.to_inner(),pool_id,position_id,vault.protocol_meme_residual.value(),vault.protocol_quote_residual.value(),liquidity,vault.fee_split.value());vault' ]] || \
+    == 'assert!(liquidity>0,EZeroLiquidity);letposition_id=object::id(&position);letid=object::new(ctx);letround_publication=delayed_action::new(RoundPublicationKey(),&id,DEFAULT_ROUND_NOTICE_MS);letfee_split=delayed::new(FeeSplitKey(),&id,launch.lp_fee_split(),DEFAULT_FEE_SPLIT_DELAY_MS);letmutvault=LpVault{id,pool_id,partner_id:launch.partner_id(),protocol_meme_residual,protocol_quote_residual,unpaid_protocol_meme:balance::zero(),unpaid_protocol_quote:balance::zero(),fee_split,creator_meme:balance::zero(),creator_quote:balance::zero(),auto_lp_meme:balance::zero(),auto_lp_quote:balance::zero(),rewards_meme:balance::zero(),rewards_quote:balance::zero(),burn_quote:balance::zero(),next_round:0,last_checkpoint:option::none(),round_publication,};vault.id.add_dynamic_object_field(PositionKey<Venue>(),position);blast_events::vault_created<Meme,Quote,Venue>(vault.id.to_inner(),pool_id,position_id,vault.protocol_meme_residual.value(),vault.protocol_quote_residual.value(),liquidity,vault.fee_split.value());vault' ]] || \
     fail "vault::create must share only what vault::new builds: the launch's partner and fee split, empty balances, no round, and the attached position"
 [[ "$(awk -F'\t' '$1 == "FN" && $3 == "public" && $6 == 0 { print $2 }' <<<"$VAULT_FACTS" \
     | LC_ALL=C sort | tr '\n' ' ')" \
@@ -679,20 +702,28 @@ require_pattern "$VAULT_SOURCE" 'blast_fun_migrators::PackageVersion as Migrator
 require_exact_count '&AdminWitness<' 2 \
     "vault Launchpad authority must be exactly the protocol residual claim and the buyback" \
     <(production_section "$VAULT_SOURCE")
-require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-5 for its residual, creator, liquidity, buyback, and partner checks" <<'EOF'
+require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-13 for its residual, creator, liquidity, buyback, partner, round-terms, and round-slot checks" <<'EOF'
 0 ENothingClaimable No protocol migration residuals are available to claim.
 1 ENoCreatorFees No creator LP fees are available to claim.
 2 EZeroLiquidity Migration position must hold liquidity.
 3 EBuybackQuoteOutOfRange Buyback Quote must be positive and at most the burn Quote waiting to buy Meme back.
 4 EBuybackBelowMinimum Buyback must return at least the minimum Meme.
 5 EPartnerMismatch The partner is not the one the vault's launch named at creation.
+6 EInvalidCommitment Root and manifest digest must each contain exactly 32 bytes.
+7 EInvalidLeafCount Round must contain between 1 and 65,536 leaves.
+8 EEmptyBudget At least one reward amount must be nonzero.
+9 EEmptyInterval Checkpoint interval must be nonempty.
+10 EBudgetOverflow Holder Quote and gas reserve must sum within u64.
+11 EZeroTreasury Expected treasury must not be the zero address.
+12 EZeroClaimWindow Claim window must be positive.
+13 EWrongRoundProposal The pending round publication is the other kind: a round, or a notice change.
 EOF
 
 # === Holder rewards ===
 #
-# A Blast administrator publishes a round that reserves its budget from one vault's rewards
-# balance; afterwards anyone may relay a Merkle proof, and each leaf pays its committed
-# beneficiary once from the round's own funds.
+# A Blast administrator schedules a round on one vault's delayed slot; once its notice elapses,
+# anyone publishes it, reserving its budget from the vault's rewards balance. Afterwards anyone may
+# relay a Merkle proof, and each leaf pays its committed beneficiary once from the round's own funds.
 REWARDS_FACTS="$(move_facts "$REWARDS_SOURCE")"
 [[ "$REWARDS_FACTS" != *MALFORMED* ]] || fail "the Move reader rejected blast_holder_rewards.move"
 [[ "$(move_production_type Round <<<"$REWARDS_FACTS")" \
@@ -703,27 +734,53 @@ rewards_body() {
     awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name && $6 == 0 { print $10 }' <<<"$REWARDS_FACTS" \
         | tr -d '[:space:]' | sed 's/,)/)/g'
 }
+# Round terms pass their static checks when built, and only the vault module builds them. A Blast
+# administrator schedules them on the vault's delayed slot after the vault checks that can change
+# (the next number, a later interval, and the budget with its gas reserve); anyone publishes once
+# the applied notice has elapsed, after the treasury and those vault checks hold again. Claims stay
+# open for the scheduled window from publication.
+[[ "$(move_production_type RoundTerms <<<"$VAULT_FACTS")" \
+    == 'struct RoundTerms has copy, drop, store { number: u64, start_checkpoint: u64, end_checkpoint: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, gas_reserve_amount: u64, claim_window_duration_ms: u64, expected_treasury: address, }' ]] \
+    && [[ "$(move_production_type RoundPublicationKey <<<"$VAULT_FACTS")" == 'struct RoundPublicationKey() has copy, drop, store;' ]] \
+    && rg -q '^const DEFAULT_ROUND_NOTICE_MS: u64 = 0;$' "$VAULT_SOURCE" \
+    && [[ "$(vault_body new_round_terms)" == 'assert!(root.length()==constants::digest_length!()&&manifest_digest.length()==constants::digest_length!(),EInvalidCommitment);assert!(leaf_count>0&&leaf_count<=constants::max_reward_leaves!(),EInvalidLeafCount);assert!(meme_amount>0||quote_amount>0,EEmptyBudget);assert!(start_checkpoint<end_checkpoint,EEmptyInterval);assert!(quote_amount.checked_add(gas_reserve_amount).is_some(),EBudgetOverflow);assert!(expected_treasury!=@0x0,EZeroTreasury);assert!(claim_window_duration_ms>0,EZeroClaimWindow);RoundTerms{number,start_checkpoint,end_checkpoint,root,manifest_digest,leaf_count,meme_amount,quote_amount,gas_reserve_amount,claim_window_duration_ms,expected_treasury,}' ]] \
+    && [[ "$(vault_body schedule_round_publication)" == 'self.round_publication.schedule(terms,clock);' ]] \
+    && [[ "$(vault_body take_round_publication)" == 'self.round_publication.take_action(clock)' ]] \
+    && [[ "$(vault_body cancel_round_publication)" == 'assert!(self.round_publication.pending().is_none_or!(|proposal|{proposal.proposal_value().action().is_some()}),EWrongRoundProposal);self.round_publication.cancel();' ]] \
+    && [[ "$(vault_body cancel_round_publication_delay)" == 'assert!(self.round_publication.pending().is_none_or!(|proposal|{proposal.proposal_value().action().is_none()}),EWrongRoundProposal);self.round_publication.cancel();' ]] \
+    && [[ "$(vault_body schedule_round_publication_delay)" == 'self.round_publication.schedule_delay(delay_ms,clock);' ]] \
+    && [[ "$(vault_body apply_round_publication_delay)" == 'self.round_publication.apply_delay(clock);' ]] || \
+    fail "round terms must pass every static check when built, and the vault's round slot may only schedule, take, cancel each kind, and change its notice"
+[[ "$(for source in "$SOURCE_DIR"/*.move; do
+        move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
+            '$1 == "FN" && $6 == 0 && index($10, "round_publication") > 0 && $3 != "package" { print module ":" $2 }'
+    done | LC_ALL=C sort | tr '\n' ' ')" == 'blast_holder_rewards:apply_round_delay blast_holder_rewards:cancel_round blast_holder_rewards:cancel_round_delay blast_holder_rewards:publish_round blast_holder_rewards:schedule_round blast_holder_rewards:schedule_round_delay vault:new ' ]] || \
+    fail "only the vault constructor and the six round flows may reach the round-publication slot"
+[[ "$(rewards_body schedule_round)" == 'migrators_version.assert_current();letterms=vault::new_round_terms(number,start_checkpoint,end_checkpoint,root,manifest_digest,leaf_count,meme_amount,quote_amount,gas_reserve_amount,claim_window_duration_ms,expected_treasury);assert_fundable(vault,&terms);vault.schedule_round_publication(terms,clock);' ]] \
+    && [[ "$(rewards_body assert_fundable)" == 'assert!(terms.number()==vault.next_round(),EWrongRound);assert!(vault.last_checkpoint().is_none_or!(|prior_end|*prior_end<=terms.start_checkpoint()),EOverlappingInterval);let(available_meme,available_quote)=vault.rewards_balances();assert!(terms.meme_amount()<=available_meme&&terms.quote_amount()<=available_quote&&terms.gas_reserve_amount()<=available_quote-terms.quote_amount(),EInsufficientBudget);' ]] \
+    && [[ "$(rewards_body cancel_round)" == 'migrators_version.assert_current();vault.cancel_round_publication();' ]] \
+    && [[ "$(rewards_body schedule_round_delay)" == 'migrators_version.assert_current();vault.schedule_round_publication_delay(delay_ms,clock);' ]] \
+    && [[ "$(rewards_body apply_round_delay)" == 'migrators_version.assert_current();vault.apply_round_publication_delay(clock);' ]] \
+    && [[ "$(rewards_body cancel_round_delay)" == 'migrators_version.assert_current();vault.cancel_round_publication_delay();' ]] || \
+    fail "round scheduling must check the generation, build checked terms, and check them against the vault before scheduling; cancellation and notice changes only reach the slot"
 in_order \
     'migrators_version.assert_current();' \
+    'letterms=vault.take_round_publication(clock);' \
     'lettreasury=lp_fee_policy.protocol_destination();' \
-    'assert!(treasury==expected_treasury,ETreasuryChanged);' \
-    'assert!(number==vault.next_round(),EWrongRound);' \
-    'assert!(start_checkpoint<end_checkpoint&&vault.last_checkpoint().is_none_or!(|prior_end|*prior_end<=start_checkpoint),EInvalidInterval);' \
-    'assert!(root.length()==constants::digest_length!()&&manifest_digest.length()==constants::digest_length!(),EInvalidCommitment);' \
-    'assert!(leaf_count>0&&leaf_count<=constants::max_reward_leaves!(),EInvalidLeafCount);' \
-    'assert!(meme_amount>0||quote_amount>0,EEmptyBudget);' \
-    'assert!(claim_deadline_at_ms>clock.timestamp_ms(),EInvalidClaimDeadline);' \
-    'assert!(meme_amount<=available_meme&&quote_amount<=available_quote&&gas_reserve_amount<=available_quote-quote_amount,EInsufficientBudget);' \
-    'let(meme,mutquote)=vault.fund_round(end_checkpoint,meme_amount,quote_amount+gas_reserve_amount);' \
+    'assert!(treasury==terms.expected_treasury(),ETreasuryChanged);' \
+    'assert_fundable(vault,&terms);' \
+    'letclaim_deadline_at_ms=clock.timestamp_ms().checked_add(terms.claim_window_duration_ms()).destroy_or!(abortEClaimDeadlineOverflow);' \
+    'let(meme,mutquote)=vault.fund_round(terms.end_checkpoint(),terms.meme_amount(),terms.quote_amount()+gas_reserve_amount);' \
     'letgas_reserve=if(gas_reserve_amount>0)option::some(quote.split(gas_reserve_amount))elseoption::none();' \
-    'claimed:unclaimed(leaf_count),' \
+    'number:terms.number(),claim_deadline_at_ms,root:terms.root(),' \
+    'claimed:unclaimed(terms.leaf_count()),' \
     'transfer::share_object(round);' \
     'blast_events::round_published(' \
     <<<"$(rewards_body publish_round)" \
     && [[ "$(rewards_body publish_round)" == 'migrators_version.assert_current();'* ]] \
     && [[ "$(rewards_body unclaimed)" == 'vector::tabulate!(leaf_count.div_ceil(256),|_|0u256)' ]] \
     && [[ "$(constant_body max_reward_leaves)" == '65_536' && "$(constant_body digest_length)" == '32' ]] || \
-    fail "publication must check the generation first, then bind the treasury, validate the round, interval, commitment, leaf count, deadline and combined budget before funding isolated balances and share the round with every claim bit clear"
+    fail "publication must check the generation first, take the ready round, re-check the treasury and the vault, open claims for the window from now, then fund isolated balances and share the round with every claim bit clear"
 in_order \
     'migrators_version.assert_current();' \
     'assert!(clock.timestamp_ms()<self.claim_deadline_at_ms,EClaimsClosed);' \
@@ -731,7 +788,7 @@ in_order \
     'let(word,bit)=claim_bit(index);' \
     'assert!(self.claimed[word]&bit==0,EAlreadyClaimed);' \
     'assert!(beneficiary!=@0x0,EInvalidBeneficiary);' \
-    'assert!(meme_amount>0||quote_amount>0,EEmptyBudget);' \
+    'assert!(meme_amount>0||quote_amount>0,EEmptyClaim);' \
     'letleaf_digest=merkle::leaf(self.vault,self.number,index,beneficiary,meme_amount,quote_amount);' \
     'assert!(merkle::verify(self.root,leaf_digest,index,self.leaf_count,&proof),EInvalidProof);' \
     '*&mutself.claimed[word]=self.claimed[word]|bit;' \
@@ -752,27 +809,25 @@ in_order \
     <<<"$REWARDS_FACTS")" == $'claim\nsettle_gas_reserve' ]] \
     && ! rg -q 'transfer::public_transfer' "$REWARDS_SOURCE" || \
     fail "round payments must be proven claims or capped reimbursement to the committed treasury"
-require_exact_count '&AdminWitness<' 2 \
-    "holder-reward authority must be exactly publication and gas settlement" \
+require_exact_count '&AdminWitness<' 5 \
+    "holder-reward authority must be exactly round and notice scheduling, their cancellation, and gas settlement" \
     <(production_section "$REWARDS_SOURCE")
-require_errors "$REWARDS_SOURCE" "holder rewards must use sequential codes 0-16 for their round and claim checks" <<'EOF'
+require_errors "$REWARDS_SOURCE" "holder rewards must use sequential codes 0-14 for their round and claim checks" <<'EOF'
 0 EWrongRound Round number must match the vault's next round.
-1 EInvalidInterval Checkpoint interval must be nonempty and not overlap the previous round.
-2 EInvalidCommitment Root and manifest digest must each contain exactly 32 bytes.
-3 EInvalidLeafCount Round must contain between 1 and 65,536 leaves.
-4 EEmptyBudget At least one reward amount must be nonzero.
-5 EInvalidIndex Claim index must be less than the committed leaf count.
-6 EAlreadyClaimed This allocation has already been paid.
-7 EInvalidBeneficiary Beneficiary must not be the zero address.
-8 EInvalidProof Proof must match the committed recipient, amounts and domain.
-9 ETreasuryChanged Expected treasury must match the governed protocol destination.
-10 EInvalidClaimDeadline Claim deadline must be in the future.
-11 EInsufficientBudget Holder funding and gas reserve must fit the vault's available balances.
-12 EClaimsClosed The claim deadline has been reached.
-13 EWrongVault Round must be settled or closed against its funding vault.
-14 EReserveSettled Gas reimbursement is disabled or already settled.
-15 EOverReserve Reimbursement must not exceed the bound gas reserve.
-16 EClaimsStillOpen Round can close only at or after its claim deadline.
+1 EOverlappingInterval Checkpoint interval must not overlap the previous round.
+2 EEmptyClaim At least one claimed amount must be nonzero.
+3 EInvalidIndex Claim index must be less than the committed leaf count.
+4 EAlreadyClaimed This allocation has already been paid.
+5 EInvalidBeneficiary Beneficiary must not be the zero address.
+6 EInvalidProof Proof must match the committed recipient, amounts and domain.
+7 ETreasuryChanged Expected treasury must match the governed protocol destination.
+8 EClaimDeadlineOverflow The claim window must end within u64 milliseconds.
+9 EInsufficientBudget Holder funding and gas reserve must fit the vault's available balances.
+10 EClaimsClosed The claim deadline has been reached.
+11 EWrongVault Round must be settled or closed against its funding vault.
+12 EReserveSettled Gas reimbursement is disabled or already settled.
+13 EOverReserve Reimbursement must not exceed the bound gas reserve.
+14 EClaimsStillOpen Round can close only at or after its claim deadline.
 EOF
 in_order \
     'migrators_version.assert_current();' \
@@ -1359,7 +1414,10 @@ admin_roles="$(for source in "$SOURCE_DIR"/*.move; do
 done | LC_ALL=C sort)"
 require_text "$admin_roles" \
     "every administrator action must take exactly its pinned role witness" <<'ROLES'
-blast_holder_rewards:publish_round:RewardsAdmin
+blast_holder_rewards:cancel_round:CancelAdmin
+blast_holder_rewards:cancel_round_delay:CancelAdmin
+blast_holder_rewards:schedule_round:RewardsAdmin
+blast_holder_rewards:schedule_round_delay:RewardsAdmin
 blast_holder_rewards:settle_gas_reserve:RewardsAdmin
 bluefin:buyback_and_burn:BuybackAdmin
 cetus:buyback_and_burn:BuybackAdmin

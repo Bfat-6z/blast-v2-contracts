@@ -29,8 +29,8 @@ use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
-    CompiledPackage, Delayed, DelayedApplied, Expected, Harness, Outcome, UnlinkedPackage, build, build_timelock,
-    build_unlinked, build_vesting, call,
+    CompiledPackage, Delayed, DelayedAction, DelayedApplied, Expected, Harness, Outcome, RoundTerms, UnlinkedPackage,
+    build, build_timelock, build_unlinked, build_vesting, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusCollectFee, CetusOpenPosition,
@@ -1974,6 +1974,7 @@ struct VaultState {
     holder_rewards_quote: u64,
     next_round: u64,
     _last_checkpoint: Option<u64>,
+    _round_publication: DelayedAction<RoundTerms>,
 }
 
 #[derive(Deserialize)]

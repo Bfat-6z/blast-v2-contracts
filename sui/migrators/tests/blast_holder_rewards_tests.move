@@ -186,7 +186,7 @@ fun a_skipped_round_number_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_holder_rewards::EInvalidInterval,
+    abort_code = blast_holder_rewards::EOverlappingInterval,
     location = blast_fun_migrators::blast_holder_rewards,
 )]
 fun overlapping_intervals_are_rejected() {
@@ -211,10 +211,7 @@ fun low_volume_checkpoint_gaps_are_accepted() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_holder_rewards::EInvalidInterval,
-    location = blast_fun_migrators::blast_holder_rewards,
-)]
+#[expected_failure(abort_code = vault::EEmptyInterval, location = blast_fun_migrators::vault)]
 fun an_empty_interval_is_rejected() {
     let mut f = start();
 
@@ -226,8 +223,8 @@ fun an_empty_interval_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_holder_rewards::EInvalidCommitment,
-    location = blast_fun_migrators::blast_holder_rewards,
+    abort_code = vault::EInvalidCommitment,
+    location = blast_fun_migrators::vault,
 )]
 fun a_malformed_root_is_rejected() {
     let mut f = start();
@@ -240,8 +237,8 @@ fun a_malformed_root_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_holder_rewards::EInvalidCommitment,
-    location = blast_fun_migrators::blast_holder_rewards,
+    abort_code = vault::EInvalidCommitment,
+    location = blast_fun_migrators::vault,
 )]
 fun a_malformed_manifest_digest_is_rejected() {
     let mut f = start();
@@ -254,8 +251,8 @@ fun a_malformed_manifest_digest_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_holder_rewards::EInvalidLeafCount,
-    location = blast_fun_migrators::blast_holder_rewards,
+    abort_code = vault::EInvalidLeafCount,
+    location = blast_fun_migrators::vault,
 )]
 fun an_empty_leaf_set_is_rejected() {
     let mut f = start();
@@ -268,8 +265,8 @@ fun an_empty_leaf_set_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_holder_rewards::EInvalidLeafCount,
-    location = blast_fun_migrators::blast_holder_rewards,
+    abort_code = vault::EInvalidLeafCount,
+    location = blast_fun_migrators::vault,
 )]
 fun the_first_leaf_count_over_capacity_is_rejected() {
     let mut f = start();
@@ -281,10 +278,7 @@ fun the_first_leaf_count_over_capacity_is_rejected() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_holder_rewards::EEmptyBudget,
-    location = blast_fun_migrators::blast_holder_rewards,
-)]
+#[expected_failure(abort_code = vault::EEmptyBudget, location = blast_fun_migrators::vault)]
 fun an_empty_budget_is_rejected() {
     let mut f = start();
 
@@ -329,7 +323,7 @@ fun reserved_funds_cannot_back_a_second_round() {
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
     location = blast_admin::operational_version,
 )]
-fun a_stale_generation_rejects_publication_before_every_round_check() {
+fun a_stale_generation_rejects_scheduling_before_every_round_check() {
     let mut f = start();
     f.migrators_version.set_for_testing(2);
 
@@ -539,7 +533,7 @@ fun a_zero_beneficiary_is_rejected_before_proof_work() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_holder_rewards::EEmptyBudget,
+    abort_code = blast_holder_rewards::EEmptyClaim,
     location = blast_fun_migrators::blast_holder_rewards,
 )]
 fun an_empty_claim_cannot_consume_a_bitmap_bit() {
@@ -588,7 +582,7 @@ fun the_maximal_combined_quote_budget_is_supported_without_overflow() {
     let maximum = 18_446_744_073_709_551_615;
     f.vault.restore_rewards(balance::zero(), balance::create_for_testing(maximum - FUNDED_QUOTE));
     let root = f.leaf(0, 0, ALICE, 10, 20);
-    f.publish_reserved(0, 0, 10, root, digest(), 1, 10, 20, maximum - 20, DEADLINE_AT_MS, PUBLISHER);
+    f.publish_reserved(0, 0, 10, root, digest(), 1, 10, 20, maximum - 20, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     let id = published_round_id();
     assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, 0);
     f.settle(id, maximum - 20);
@@ -740,10 +734,18 @@ fun claims_stop_after_the_deadline() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_holder_rewards::EInvalidClaimDeadline, location = blast_fun_migrators::blast_holder_rewards)]
-fun publication_requires_a_future_claim_deadline() {
+#[expected_failure(abort_code = vault::EZeroClaimWindow, location = blast_fun_migrators::vault)]
+fun scheduling_requires_a_positive_claim_window() {
     let mut f = start();
     f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, 0, PUBLISHER);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EZeroTreasury, location = blast_fun_migrators::vault)]
+fun scheduling_requires_a_nonzero_expected_treasury() {
+    let mut f = start();
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, @0x0);
     f.end();
 }
 
@@ -751,15 +753,15 @@ fun publication_requires_a_future_claim_deadline() {
 #[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
 fun combined_holder_and_gas_budget_cannot_exceed_vault_quote() {
     let mut f = start();
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, FUNDED_QUOTE - 19, DEADLINE_AT_MS, PUBLISHER);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, FUNDED_QUOTE - 19, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     f.end();
 }
 
 #[test]
-#[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
-fun maximal_gas_budget_is_rejected_without_arithmetic_overflow() {
+#[expected_failure(abort_code = vault::EBudgetOverflow, location = blast_fun_migrators::vault)]
+fun a_holder_quote_and_gas_reserve_beyond_u64_are_rejected() {
     let mut f = start();
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 1, 18_446_744_073_709_551_615, DEADLINE_AT_MS, PUBLISHER);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 1, 18_446_744_073_709_551_615, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     f.end();
 }
 
@@ -768,16 +770,20 @@ fun maximal_gas_budget_is_rejected_without_arithmetic_overflow() {
 fun changed_treasury_rejects_publication_with_gas() {
     let mut f = start();
     f.change_treasury(BOB);
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, DEADLINE_AT_MS, PUBLISHER);
+    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     f.end();
 }
 
 #[test]
 #[expected_failure(abort_code = blast_holder_rewards::ETreasuryChanged, location = blast_fun_migrators::blast_holder_rewards)]
-fun changed_treasury_rejects_publication_without_gas_before_bad_budget() {
+fun a_treasury_change_after_scheduling_rejects_publication_before_the_budget() {
     let mut f = start();
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
     f.change_treasury(BOB);
-    f.publish_reserved(0, 0, 10, digest(), digest(), 1, 10, FUNDED_QUOTE + 1, 0, DEADLINE_AT_MS, PUBLISHER);
+    f.drain_rewards(0, FUNDED_QUOTE);
+
+    f.publish_scheduled();
+
     f.end();
 }
 
@@ -816,6 +822,388 @@ fun stale_generation_rejects_close_before_deadline_checks() {
     let id = f.reserve_round(30);
     f.migrators_version.set_for_testing(2);
     f.close(id, 0);
+    f.end();
+}
+
+// Delayed publication
+
+#[test]
+fun a_round_schedules_and_publishes_in_one_transaction_at_the_zero_notice() {
+    let mut f = start();
+    let root = f.leaf(0, 0, ALICE, 10, 20);
+    assert_eq!(f.vault.round_publication_for_testing().delay_ms(), 0);
+
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, root, digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    let scheduled = event::events_by_type<ActionScheduled<RoundPublicationKey, RoundTerms>>();
+    assert_eq!(scheduled.length(), 1);
+    let (owner, _, change, delay_ms, ready_at_ms) = scheduled[0].action_scheduled_fields();
+    assert_eq!(owner, object::id(&f.vault));
+    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, root, 1, 10, 20, 30)));
+    assert_eq!(delay_ms, 0);
+    assert_eq!(ready_at_ms, 0);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME, FUNDED_QUOTE);
+    assert_eq!(f.vault.next_round(), 0);
+
+    f.publish_scheduled();
+
+    assert_eq!(event::events_by_type<ActionApplied<RoundPublicationKey, RoundTerms>>().length(), 1);
+    assert_eq!(event::events_by_type<blast_events::RoundPublished>().length(), 1);
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 10, FUNDED_QUOTE - 50);
+    assert!(f.vault.round_publication_for_testing().pending().is_none());
+    f.end();
+}
+
+#[test]
+fun anyone_publishes_a_ready_round_in_a_later_transaction() {
+    let mut f = start();
+    let root = f.leaf(0, 0, ALICE, 10, 20);
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, root, digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.scenario.next_tx(BOT);
+    f.publish_scheduled();
+    let round_id = published_round_id();
+
+    f.claim(round_id, 0, ALICE, 10, 20, vector[]);
+    f.assert_received(ALICE, 10, 20);
+    f.end();
+}
+
+#[test]
+fun a_late_publication_still_opens_the_full_claim_window() {
+    let mut f = start();
+    let root = f.leaf(0, 0, ALICE, 10, 20);
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, root, digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.scenario.next_tx(BOT);
+    f.clock.set_for_testing(LATE_AT_MS);
+    f.publish_scheduled();
+    let round_id = published_round_id();
+    let published = event::events_by_type<blast_events::RoundPublished>();
+    assert_eq!(
+        bcs::to_bytes(&published[0]),
+        bcs::to_bytes(
+            &ExpectedRoundPublished {
+                vault_id: object::id(&f.vault),
+                round_id,
+                number: 0,
+                start_checkpoint: 0,
+                end_checkpoint: 10,
+                claim_deadline_at_ms: LATE_AT_MS + CLAIM_WINDOW_DURATION_MS,
+                root,
+                manifest_digest: digest(),
+                leaf_count: 1,
+                meme_amount: 10,
+                quote_amount: 20,
+                meme_unallocated: FUNDED_MEME - 10,
+                quote_unallocated: FUNDED_QUOTE - 20,
+                treasury: PUBLISHER,
+                gas_reserve_amount: 0,
+            },
+        ),
+    );
+
+    f.clock.set_for_testing(LATE_AT_MS + CLAIM_WINDOW_DURATION_MS - 1);
+    f.claim(round_id, 0, ALICE, 10, 20, vector[]);
+    f.assert_received(ALICE, 10, 20);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EClaimDeadlineOverflow, location = blast_fun_migrators::blast_holder_rewards)]
+fun a_claim_window_ending_beyond_u64_rejects_publication() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, 18_446_744_073_709_551_615, PUBLISHER);
+    f.clock.set_for_testing(1);
+
+    f.publish_scheduled();
+
+    f.end();
+}
+
+#[test]
+fun a_raised_notice_makes_publication_wait_until_ready() {
+    let mut f = start();
+    f.raise_notice(NOTICE_MS);
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.clock.set_for_testing(NOTICE_MS);
+    f.publish_scheduled();
+
+    assert_eq!(f.vault.next_round(), 1);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun a_raised_notice_rejects_publication_one_millisecond_early() {
+    let mut f = start();
+    f.raise_notice(NOTICE_MS);
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.clock.set_for_testing(NOTICE_MS - 1);
+    f.publish_scheduled();
+
+    f.end();
+}
+
+#[test]
+fun a_cancelled_round_reserves_nothing_and_leaves_the_cursor() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.cancel_round();
+
+    let cancelled = event::events_by_type<ActionCancelled<RoundPublicationKey, RoundTerms>>();
+    assert_eq!(cancelled.length(), 1);
+    let (_, _, change, _, _) = cancelled[0].action_cancelled_fields();
+    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, digest(), 1, 10, 20, 30)));
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME, FUNDED_QUOTE);
+    assert_eq!(f.vault.next_round(), 0);
+    assert_eq!(f.vault.last_checkpoint(), option::none());
+    assert!(f.vault.round_publication_for_testing().pending().is_none());
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
+fun a_cancelled_round_cannot_be_published() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.cancel_round();
+
+    f.publish_scheduled();
+
+    f.end();
+}
+
+#[test]
+fun rescheduling_replaces_the_pending_round_and_announces_its_cancellation() {
+    let mut f = start();
+    let replacement = f.leaf(0, 0, ALICE, 7, 9);
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.schedule_reserved(0, 0, 10, replacement, digest(), 1, 7, 9, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    let cancelled = event::events_by_type<ActionCancelled<RoundPublicationKey, RoundTerms>>();
+    assert_eq!(cancelled.length(), 1);
+    let (_, _, change, _, _) = cancelled[0].action_cancelled_fields();
+    assert_eq!(change.action(), option::some(f.terms(0, 0, 10, digest(), 1, 10, 20, 30)));
+    f.publish_scheduled();
+    let round_id = published_round_id();
+    assert_balances!(|| f.vault.rewards_balances(), FUNDED_MEME - 7, FUNDED_QUOTE - 9);
+    f.claim(round_id, 0, ALICE, 7, 9, vector[]);
+    f.assert_received(ALICE, 7, 9);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_holder_rewards::EInsufficientBudget, location = blast_fun_migrators::blast_holder_rewards)]
+fun publication_rechecks_the_budget_the_schedule_checked() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 30, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+    f.drain_rewards(0, FUNDED_QUOTE - 49);
+
+    f.publish_scheduled();
+
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_fun_migrators::vault)]
+fun scheduling_checks_the_terms_before_the_vault() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+
+    f.schedule_reserved(9, 0, 10, vector[], digest(), 1, FUNDED_MEME + 1, 0, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.end();
+}
+
+#[test]
+fun a_shorter_notice_waits_the_applied_one() {
+    let mut f = start();
+    f.raise_notice(NOTICE_MS);
+    f.scenario.next_tx(ADMIN);
+    f.schedule_notice(0);
+
+    f.clock.set_for_testing(NOTICE_MS);
+    f.apply_notice();
+
+    assert_eq!(f.vault.round_publication_for_testing().delay_ms(), 0);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun a_shorter_notice_cannot_apply_before_the_applied_one_elapses() {
+    let mut f = start();
+    f.raise_notice(NOTICE_MS);
+    f.scenario.next_tx(ADMIN);
+    f.schedule_notice(0);
+
+    f.clock.set_for_testing(NOTICE_MS - 1);
+    f.apply_notice();
+
+    f.end();
+}
+
+#[test]
+fun a_cancelled_notice_change_keeps_the_applied_notice() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+    f.schedule_notice(NOTICE_MS);
+
+    f.cancel_notice();
+
+    assert_eq!(f.vault.round_publication_for_testing().delay_ms(), 0);
+    assert!(f.vault.round_publication_for_testing().pending().is_none());
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EWrongRoundProposal, location = blast_fun_migrators::vault)]
+fun a_round_cancellation_cannot_discard_a_notice_change() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+    f.schedule_notice(NOTICE_MS);
+
+    f.cancel_round();
+
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EWrongRoundProposal, location = blast_fun_migrators::vault)]
+fun a_notice_cancellation_cannot_discard_a_scheduled_round() {
+    let mut f = start();
+    f.scenario.next_tx(ADMIN);
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.cancel_notice();
+
+    f.end();
+}
+
+#[test]
+fun signed_in_roles_schedule_cancel_and_change_the_notice() {
+    let mut f = start();
+    let (root, mut acl) = blast_acl::new_for_testing(f.scenario.ctx());
+    acl.grant_admin(&root, ADMIN, f.scenario.ctx());
+    acl.grant_admin(&root, BOB, f.scenario.ctx());
+    f.scenario.next_tx(ADMIN);
+    let rewards_cap = f.scenario.take_from_sender<AdminCap>();
+    f.scenario.next_tx(BOB);
+    let cancel_cap = f.scenario.take_from_sender<AdminCap>();
+    acl.grant_role<RewardsAdmin>(&root, object::id(&rewards_cap));
+    acl.grant_role<CancelAdmin>(&root, object::id(&cancel_cap));
+
+    f.schedule_as(&acl.sign_in<RewardsAdmin>(&rewards_cap));
+    f.cancel_round_as(&acl.sign_in<CancelAdmin>(&cancel_cap));
+    f.schedule_notice_as(&acl.sign_in<RewardsAdmin>(&rewards_cap), NOTICE_MS);
+    f.cancel_notice_as(&acl.sign_in<CancelAdmin>(&cancel_cap));
+
+    assert!(f.vault.round_publication_for_testing().pending().is_none());
+    destroy(rewards_cap);
+    destroy(cancel_cap);
+    destroy(root);
+    destroy(acl);
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EAdminRoleNotGranted, location = blast_admin::blast_acl)]
+fun a_cancel_admin_cannot_sign_in_to_schedule_a_round() {
+    let mut f = start();
+    let (root, mut acl) = blast_acl::new_for_testing(f.scenario.ctx());
+    acl.grant_admin(&root, BOB, f.scenario.ctx());
+    f.scenario.next_tx(BOB);
+    let cancel_cap = f.scenario.take_from_sender<AdminCap>();
+    acl.grant_role<CancelAdmin>(&root, object::id(&cancel_cap));
+
+    f.schedule_as(&acl.sign_in<RewardsAdmin>(&cancel_cap));
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EAdminRoleNotGranted, location = blast_admin::blast_acl)]
+fun a_rewards_admin_cannot_sign_in_to_cancel_a_round() {
+    let mut f = start();
+    let (root, mut acl) = blast_acl::new_for_testing(f.scenario.ctx());
+    acl.grant_admin(&root, ADMIN, f.scenario.ctx());
+    f.scenario.next_tx(ADMIN);
+    let rewards_cap = f.scenario.take_from_sender<AdminCap>();
+    acl.grant_role<RewardsAdmin>(&root, object::id(&rewards_cap));
+    f.schedule_reserved(0, 0, 10, digest(), digest(), 1, 10, 20, 0, CLAIM_WINDOW_DURATION_MS, PUBLISHER);
+
+    f.cancel_round_as(&acl.sign_in<CancelAdmin>(&rewards_cap));
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_publication_before_taking_the_round() {
+    let mut f = start();
+    f.migrators_version.set_for_testing(2);
+
+    f.publish_scheduled();
+
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_round_cancellation_first() {
+    let mut f = start();
+    f.migrators_version.set_for_testing(2);
+
+    f.cancel_round();
+
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_notice_scheduling_first() {
+    let mut f = start();
+    f.migrators_version.set_for_testing(2);
+
+    f.schedule_notice(0);
+
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_notice_application_first() {
+    let mut f = start();
+    f.migrators_version.set_for_testing(2);
+
+    f.apply_notice();
+
+    f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_notice_cancellation_first() {
+    let mut f = start();
+    f.migrators_version.set_for_testing(2);
+
+    f.cancel_notice();
+
     f.end();
 }
 
@@ -917,10 +1305,11 @@ fun publish(
 ) {
     let treasury = self.policy.protocol_destination();
     self.publish_reserved(number, start_checkpoint, end_checkpoint, root, manifest_digest, leaf_count,
-        meme_amount, quote_amount, 0, DEADLINE_AT_MS, treasury);
+        meme_amount, quote_amount, 0, CLAIM_WINDOW_DURATION_MS, treasury);
 }
 
-/// Publishes with explicit reserve, deadline and signed treasury commitment.
+/// Schedules with explicit reserve, claim window and treasury commitment, then publishes at once
+/// under the zero notice.
 fun publish_reserved(
     self: &mut RewardsFixture,
     number: u64,
@@ -932,14 +1321,10 @@ fun publish_reserved(
     meme_amount: u64,
     quote_amount: u64,
     gas_reserve_amount: u64,
-    claim_deadline_at_ms: u64,
+    claim_window_duration_ms: u64,
     expected_treasury: address,
 ) {
-    self.vault.publish_round(
-        &self.migrators_version,
-        &blast_acl::witness_for_testing<RewardsAdmin>(),
-        &self.policy,
-        expected_treasury,
+    self.schedule_reserved(
         number,
         start_checkpoint,
         end_checkpoint,
@@ -949,10 +1334,145 @@ fun publish_reserved(
         meme_amount,
         quote_amount,
         gas_reserve_amount,
-        claim_deadline_at_ms,
-        &self.clock,
-        self.scenario.ctx(),
+        claim_window_duration_ms,
+        expected_treasury,
     );
+    self.publish_scheduled();
+}
+
+/// Schedules a round as the rewards admin in the current transaction.
+fun schedule_reserved(
+    self: &mut RewardsFixture,
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    root: vector<u8>,
+    manifest_digest: vector<u8>,
+    leaf_count: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+    gas_reserve_amount: u64,
+    claim_window_duration_ms: u64,
+    expected_treasury: address,
+) {
+    self.vault.schedule_round(
+        &self.migrators_version,
+        &blast_acl::witness_for_testing<RewardsAdmin>(),
+        number,
+        start_checkpoint,
+        end_checkpoint,
+        root,
+        manifest_digest,
+        leaf_count,
+        meme_amount,
+        quote_amount,
+        gas_reserve_amount,
+        claim_window_duration_ms,
+        expected_treasury,
+        &self.clock,
+    );
+}
+
+/// Publishes the scheduled round permissionlessly in the current transaction.
+fun publish_scheduled(self: &mut RewardsFixture) {
+    self.vault.publish_round(&self.migrators_version, &self.policy, &self.clock, self.scenario.ctx());
+}
+
+/// Schedules the default one-leaf round under `admin`.
+fun schedule_as(self: &mut RewardsFixture, admin: &AdminWitness<RewardsAdmin>) {
+    self.vault.schedule_round(
+        &self.migrators_version,
+        admin,
+        0,
+        0,
+        10,
+        digest(),
+        digest(),
+        1,
+        10,
+        20,
+        0,
+        CLAIM_WINDOW_DURATION_MS,
+        PUBLISHER,
+        &self.clock,
+    );
+}
+
+/// Cancels the scheduled round as the cancel admin.
+fun cancel_round(self: &mut RewardsFixture) {
+    self.cancel_round_as(&blast_acl::witness_for_testing<CancelAdmin>());
+}
+
+/// Cancels the scheduled round under `admin`.
+fun cancel_round_as(self: &mut RewardsFixture, admin: &AdminWitness<CancelAdmin>) {
+    self.vault.cancel_round(&self.migrators_version, admin);
+}
+
+/// Schedules a new round notice as the rewards admin.
+fun schedule_notice(self: &mut RewardsFixture, delay_ms: u64) {
+    self.schedule_notice_as(&blast_acl::witness_for_testing<RewardsAdmin>(), delay_ms);
+}
+
+/// Schedules a new round notice under `admin`.
+fun schedule_notice_as(self: &mut RewardsFixture, admin: &AdminWitness<RewardsAdmin>, delay_ms: u64) {
+    self.vault.schedule_round_delay(&self.migrators_version, admin, delay_ms, &self.clock);
+}
+
+/// Applies the ready round-notice change.
+fun apply_notice(self: &mut RewardsFixture) {
+    self.vault.apply_round_delay(&self.migrators_version, &self.clock);
+}
+
+/// Cancels the pending round-notice change as the cancel admin.
+fun cancel_notice(self: &mut RewardsFixture) {
+    self.cancel_notice_as(&blast_acl::witness_for_testing<CancelAdmin>());
+}
+
+/// Cancels the pending round-notice change under `admin`.
+fun cancel_notice_as(self: &mut RewardsFixture, admin: &AdminWitness<CancelAdmin>) {
+    self.vault.cancel_round_delay(&self.migrators_version, admin);
+}
+
+/// Raises the round notice from zero, which applies in the same transaction.
+fun raise_notice(self: &mut RewardsFixture, delay_ms: u64) {
+    self.scenario.next_tx(ADMIN);
+    self.schedule_notice(delay_ms);
+    self.apply_notice();
+    assert_eq!(self.vault.round_publication_for_testing().delay_ms(), delay_ms);
+}
+
+/// Burns unreserved rewards so the budget shrinks between scheduling and publication.
+fun drain_rewards(self: &mut RewardsFixture, meme_amount: u64, quote_amount: u64) {
+    let (meme, quote) = self.vault.withdraw_rewards_for_testing(meme_amount, quote_amount);
+    destroy(meme);
+    destroy(quote);
+}
+
+/// The terms the fixture's helpers schedule with the default manifest, window and treasury.
+fun terms(
+    _self: &RewardsFixture,
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    root: vector<u8>,
+    leaf_count: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+    gas_reserve_amount: u64,
+): RoundTerms {
+    vault::new_round_terms(
+        number,
+        start_checkpoint,
+        end_checkpoint,
+        root,
+        digest(),
+        leaf_count,
+        meme_amount,
+        quote_amount,
+        gas_reserve_amount,
+        CLAIM_WINDOW_DURATION_MS,
+        PUBLISHER,
+    )
 }
 
 /// Publishes round `number` over checkpoints [10 * number, 10 * (number + 1)) with a single leaf
@@ -970,7 +1490,7 @@ fun reserve_round(self: &mut RewardsFixture, gas: u64): ID {
     let root = self.leaf(0, 0, ALICE, 10, 20);
     self.scenario.next_tx(ADMIN);
     let treasury = self.policy.protocol_destination();
-    self.publish_reserved(0, 0, 10, root, digest(), 1, 10, 20, gas, DEADLINE_AT_MS, treasury);
+    self.publish_reserved(0, 0, 10, root, digest(), 1, 10, 20, gas, CLAIM_WINDOW_DURATION_MS, treasury);
     let id = published_round_id();
     let events = event::events_by_type<blast_events::RoundPublished>();
     assert_eq!(bcs::to_bytes(&events[0]), bcs::to_bytes(&ExpectedRoundPublished {
@@ -1161,17 +1681,30 @@ const POOL: address = @0x9001;
 /// Rewards the fixture vault holds before any round.
 const FUNDED_MEME: u64 = 1_000;
 
+/// The claim window every helper schedules.
+const CLAIM_WINDOW_DURATION_MS: u64 = 1_000;
+
+/// The claim deadline of a round published at time zero with the default window.
 const DEADLINE_AT_MS: u64 = 1_000;
+
+/// A raised round notice.
+const NOTICE_MS: u64 = 5_000;
+
+/// A publication time well after scheduling.
+const LATE_AT_MS: u64 = 50_000;
 
 const FUNDED_QUOTE: u64 = 2_000;
 
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_admin::{
+    blast_acl::{Self, AdminCap, AdminWitness},
+    delayed_action::{ActionApplied, ActionCancelled, ActionScheduled},
+};
 
 use blast_fun::{
     allocation,
-    blast_fun_domain::RewardsAdmin,
+    blast_fun_domain::{CancelAdmin, RewardsAdmin},
     bps,
     launch_config,
     blast_fun::{Self as package_version},
@@ -1184,14 +1717,19 @@ use blast_fun_migrators::{
     lp_fee_policy::{Self, LpFeePolicy},
     merkle,
     blast_fun_migrators::{Self as migrators_version, PackageVersion as MigratorsVersion},
-    vault::{Self, LpVault},
+    vault::{Self, LpVault, RoundPublicationKey, RoundTerms},
 };
 
 use std::unit_test::{assert_eq, destroy};
 
 use sui::{balance, bcs, clock::{Self, Clock}, coin::Coin, event, test_scenario::{Self, Scenario}, test_utils};
 
+use fun blast_holder_rewards::apply_round_delay as LpVault.apply_round_delay;
+use fun blast_holder_rewards::cancel_round as LpVault.cancel_round;
+use fun blast_holder_rewards::cancel_round_delay as LpVault.cancel_round_delay;
 use fun blast_holder_rewards::publish_round as LpVault.publish_round;
+use fun blast_holder_rewards::schedule_round as LpVault.schedule_round;
+use fun blast_holder_rewards::schedule_round_delay as LpVault.schedule_round_delay;
 
 use fun launch_fixture::admit as blast_fun::launch_config::LaunchConfig.admit;
 

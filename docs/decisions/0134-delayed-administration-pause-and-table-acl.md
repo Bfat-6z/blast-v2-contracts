@@ -5,6 +5,7 @@
 - Amended: 2026-11-02 — operation-owned notices, delayed creator splits, and bonding reward custody
 - Amended: 2026-11-03 — keyed delayed primitives in four modules that own their lifecycle events, a
   `DelayedMap` for per-coin LP overrides; root transfer on `delayed_action`
+- Amended: 2026-11-03 — holder-reward rounds publish from a delayed action slot on each vault
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
   [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
   [0007](0007-acl-pause-and-versioning.md) (pause),
@@ -131,8 +132,9 @@ reimbursement. A zero reserve disables reimbursement; settlement is capped at th
 reserved amount and immediately returns the unused reserve to the funding vault.
 Holder proofs cannot spend the reserve, and bonding holder Meme remains payable to holders.
 
-A round commits a future claim deadline. Bonding claims require a time strictly before
-that deadline. From the deadline onward, anyone may consume the round and return
+A round commits a future claim deadline (amended 2026-11-03: the round's terms commit a claim
+window, and publication sets the deadline to its own time plus that window). Bonding claims
+require a time strictly before that deadline. From the deadline onward, anyone may consume the round and return
 unclaimed holder assets and an unsettled reserve to its original vault. This recovery
 needs no administrator, so role revocation cannot strand custody. Reimbursement may
 still settle after the deadline while the round exists; settlement and closure serialize
@@ -183,8 +185,9 @@ selected bits immediately; pauses do not expire. Launchpad creation, trading (bo
 and sells, including opening-round admission/settlement), and migration have independent
 bits. Presale creation, commitments and migration have independent bits. Claims, refunds,
 presale settlement/cancellation and opening-round delivery remain reachable while paused.
-Cancellation remains immediate. Quote/decimals listings, authority revocation, buybacks
-that burn Meme and holder-reward round publication remain outside delayed policy.
+Cancellation remains immediate. Quote/decimals listings, authority revocation, and buybacks
+that burn Meme remain outside delayed policy. Holder-reward round publication was also outside
+it until the second 2026-11-03 amendment moved it behind each vault's round notice.
 
 ### Replay
 
@@ -309,3 +312,57 @@ change, and the replay stream for delay lifecycle moves to the event types of
 publication of the stack. Keys must be structs without public constructors, and
 owner objects must not expose their `&UID`; otherwise another package could emit
 events under that key or owner.
+
+## Amendment 2026-11-03: delayed holder-reward round publication
+
+### Context
+
+RewardsAdmin published a holder-reward round in one call that reserved its budget from
+the vault at once. A compromised RewardsAdmin could therefore assign every unreserved
+holder-reward balance in a vault to itself with no window in which CancelAdmin or anyone
+watching could react.
+
+### Decision
+
+Round publication on both the migrators `LpVault` and the presale `Vault` uses the
+`DelayedAction` slot pattern of creator-cap reassignment. Each vault stores
+`round_publication: DelayedAction<RoundPublicationKey, RoundTerms>`, created in every
+vault constructor right after its UID with `DEFAULT_ROUND_NOTICE_MS`. The vault module
+owns `RoundTerms` (number, checkpoint interval, root, manifest digest, leaf count, holder
+Meme and Quote, gas reserve, claim window and expected treasury) and checks its static
+invariants when building it. It exposes package functions to schedule, take, cancel and
+change the notice, never the slot itself.
+
+- `schedule_round` (RewardsAdmin) checks the version, builds the terms, checks them
+  against the vault to fail fast (next number, interval after the last checkpoint, budget
+  with the gas reserve), and schedules them. Scheduling reserves nothing; rescheduling
+  replaces the pending round and restarts the notice.
+- `publish_round` is permissionless and takes no caller terms. It takes the ready round,
+  re-checks the governed treasury, number, interval and budget, then funds, shares and
+  announces the round exactly as before.
+- `cancel_round` and `cancel_round_delay` (CancelAdmin) each discard only their own kind of
+  proposal. `schedule_round_delay` (RewardsAdmin) and `apply_round_delay` (anyone) change
+  the notice, which waits the applied one like every other delayed notice.
+- The claim window is a duration. Publication computes the absolute deadline with a
+  checked add, so a late publication still gives holders the full window, and
+  `RoundPublished` keeps its absolute deadline field.
+- The lifecycle is recorded only by `delayed_action`'s events keyed by
+  `RoundPublicationKey`; `ActionScheduled` carries the full terms. There is no domain
+  round-scheduled event. Claims, gas settlement and closure are unchanged.
+
+The notice starts at 0 for now, so a round can be scheduled and published in one
+transaction, as before.
+
+### Consequences
+
+Until RewardsAdmin raises a vault's round notice, a compromised RewardsAdmin remains
+unmitigated: it can schedule and publish a self-serving round in one transaction. Raising
+the notice is per vault and is itself delayed by the applied notice, so it must happen
+before the protection is needed. At most one round per vault can wait at a time.
+
+Because only publication reserves funds and the slot holds one proposal, the vault's
+round cursor and rewards balances cannot fall between scheduling and publication; the
+publication re-checks are defence in depth plus the treasury binding. Vault layouts,
+`publish_round`'s signature and both packages' error codes change, so SDK builders,
+indexers (which must follow `delayed_action` events keyed by `RoundPublicationKey` to
+show scheduled rounds) and the fresh publication follow together.

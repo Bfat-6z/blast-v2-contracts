@@ -10,6 +10,10 @@ module blast_fun_migrators::vault;
 /// Initial notice before a creator split or its next notice period may change.
 const DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
+/// Initial notice before a scheduled holder-reward round may publish, or its next notice
+/// period may change. Zero lets a round schedule and publish in one transaction.
+const DEFAULT_ROUND_NOTICE_MS: u64 = 0;
+
 // === Public Types ===
 
 /// A sealed field name that binds one venue position type to one vault.
@@ -21,6 +25,27 @@ public struct AutoLpPositionKey<phantom Venue>() has copy, drop, store;
 
 /// Keys the creator fee split's delayed lifecycle.
 public struct FeeSplitKey() has copy, drop, store;
+
+/// Keys the holder-reward round publication's delayed lifecycle; its action is the round's terms.
+public struct RoundPublicationKey() has copy, drop, store;
+
+/// The committed terms of one holder-reward round, checked when built: two 32-byte commitments,
+/// 1 to 65,536 leaves, a nonempty checkpoint interval and budget, a holder Quote and gas reserve
+/// that sum within u64, a nonzero expected treasury, and a positive claim window. The claim
+/// window is a duration; publication starts it.
+public struct RoundTerms has copy, drop, store {
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    root: vector<u8>,
+    manifest_digest: vector<u8>,
+    leaf_count: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+    gas_reserve_amount: u64,
+    claim_window_duration_ms: u64,
+    expected_treasury: address,
+}
 
 /// Shared per-launch custody for one position, its protocol migration residuals, and the balances
 /// its LP fees are split into.
@@ -34,6 +59,9 @@ public struct FeeSplitKey() has copy, drop, store;
 /// the current one are settled, so each fee follows the split it accrued under. When the launch
 /// named a partner, Blast's live share waits here instead, until
 /// `claim_protocol_lp_fees_with_partner` pays the partner its cut and Blast the rest.
+///
+/// A holder-reward round waits in `round_publication` for its applied notice before anyone may
+/// publish it; at most one round is scheduled at a time.
 public struct LpVault<phantom Meme, phantom Quote> has key {
     id: UID,
     pool_id: ID,
@@ -53,6 +81,7 @@ public struct LpVault<phantom Meme, phantom Quote> has key {
     burn_quote: Balance<Quote>,
     next_round: u64,
     last_checkpoint: Option<u64>,
+    round_publication: DelayedAction<RoundPublicationKey, RoundTerms>,
 }
 
 // === Public Functions ===
@@ -440,6 +469,162 @@ public(package) fun restore_rewards<Meme, Quote>(
     self.rewards_quote.join(quote);
 }
 
+/// Builds a round's terms after their static checks; `blast_holder_rewards` checks them against
+/// the vault when scheduling and again when publishing.
+public(package) fun new_round_terms(
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    root: vector<u8>,
+    manifest_digest: vector<u8>,
+    leaf_count: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+    gas_reserve_amount: u64,
+    claim_window_duration_ms: u64,
+    expected_treasury: address,
+): RoundTerms {
+    assert!(
+        root.length() == constants::digest_length!()
+            && manifest_digest.length() == constants::digest_length!(),
+        EInvalidCommitment,
+    );
+    assert!(leaf_count > 0 && leaf_count <= constants::max_reward_leaves!(), EInvalidLeafCount);
+    assert!(meme_amount > 0 || quote_amount > 0, EEmptyBudget);
+    assert!(start_checkpoint < end_checkpoint, EEmptyInterval);
+    assert!(quote_amount.checked_add(gas_reserve_amount).is_some(), EBudgetOverflow);
+    assert!(expected_treasury != @0x0, EZeroTreasury);
+    assert!(claim_window_duration_ms > 0, EZeroClaimWindow);
+
+    RoundTerms {
+        number,
+        start_checkpoint,
+        end_checkpoint,
+        root,
+        manifest_digest,
+        leaf_count,
+        meme_amount,
+        quote_amount,
+        gas_reserve_amount,
+        claim_window_duration_ms,
+        expected_treasury,
+    }
+}
+
+/// Schedules `terms` for publication after the applied round notice, cancelling any scheduled
+/// round or notice change.
+public(package) fun schedule_round_publication<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    terms: RoundTerms,
+    clock: &Clock,
+) {
+    self.round_publication.schedule(terms, clock);
+}
+
+/// Consumes the scheduled round once its notice has elapsed and returns its terms to publish.
+public(package) fun take_round_publication<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    clock: &Clock,
+): RoundTerms {
+    self.round_publication.take_action(clock)
+}
+
+/// Discards the scheduled round, even a ready one; aborts when a notice change is pending.
+public(package) fun cancel_round_publication<Meme, Quote>(self: &mut LpVault<Meme, Quote>) {
+    assert!(
+        self.round_publication.pending().is_none_or!(|proposal| {
+            proposal.proposal_value().action().is_some()
+        }),
+        EWrongRoundProposal,
+    );
+
+    self.round_publication.cancel();
+}
+
+/// Schedules a new round notice after the applied one, cancelling any scheduled round.
+public(package) fun schedule_round_publication_delay<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    delay_ms: u64,
+    clock: &Clock,
+) {
+    self.round_publication.schedule_delay(delay_ms, clock);
+}
+
+/// Applies the ready round-notice change.
+public(package) fun apply_round_publication_delay<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    clock: &Clock,
+) {
+    self.round_publication.apply_delay(clock);
+}
+
+/// Discards the pending round-notice change, even a ready one; aborts when a round is scheduled.
+public(package) fun cancel_round_publication_delay<Meme, Quote>(self: &mut LpVault<Meme, Quote>) {
+    assert!(
+        self.round_publication.pending().is_none_or!(|proposal| {
+            proposal.proposal_value().action().is_none()
+        }),
+        EWrongRoundProposal,
+    );
+
+    self.round_publication.cancel();
+}
+
+/// The round's number, which must equal the vault's next round.
+public(package) fun number(self: &RoundTerms): u64 {
+    self.number
+}
+
+/// The first checkpoint of the round's holding interval.
+public(package) fun start_checkpoint(self: &RoundTerms): u64 {
+    self.start_checkpoint
+}
+
+/// The checkpoint that ends the round's holding interval.
+public(package) fun end_checkpoint(self: &RoundTerms): u64 {
+    self.end_checkpoint
+}
+
+/// The 32-byte Merkle root of the round's allocation.
+public(package) fun root(self: &RoundTerms): vector<u8> {
+    self.root
+}
+
+/// The 32-byte digest of the round's off-chain manifest.
+public(package) fun manifest_digest(self: &RoundTerms): vector<u8> {
+    self.manifest_digest
+}
+
+/// The number of leaves the root commits.
+public(package) fun leaf_count(self: &RoundTerms): u64 {
+    self.leaf_count
+}
+
+/// The Meme the round reserves for holders.
+public(package) fun meme_amount(self: &RoundTerms): u64 {
+    self.meme_amount
+}
+
+/// The Quote the round reserves for holders.
+public(package) fun quote_amount(self: &RoundTerms): u64 {
+    self.quote_amount
+}
+
+/// The Quote the round reserves for gas reimbursement; zero disables it.
+public(package) fun gas_reserve_amount(self: &RoundTerms): u64 {
+    self.gas_reserve_amount
+}
+
+/// How long claims stay open after publication.
+public(package) fun claim_window_duration_ms(self: &RoundTerms): u64 {
+    self.claim_window_duration_ms
+}
+
+/// The protocol destination the round's gas reimbursement must still pay at publication.
+public(package) fun expected_treasury(self: &RoundTerms): address {
+    self.expected_treasury
+}
+
 /// Returns the venue pool the attached position belongs to.
 public(package) fun pool_id<Meme, Quote>(self: &LpVault<Meme, Quote>): ID {
     self.pool_id
@@ -516,6 +701,7 @@ fun new<Meme, Quote, Venue, Position: key + store>(
 
     let position_id = object::id(&position);
     let id = object::new(ctx);
+    let round_publication = delayed_action::new(RoundPublicationKey(), &id, DEFAULT_ROUND_NOTICE_MS);
     let fee_split = delayed::new(
         FeeSplitKey(),
         &id,
@@ -540,6 +726,7 @@ fun new<Meme, Quote, Venue, Position: key + store>(
         burn_quote: balance::zero(),
         next_round: 0,
         last_checkpoint: option::none(),
+        round_publication,
     };
     vault.id.add_dynamic_object_field(PositionKey<Venue>(), position);
 
@@ -632,6 +819,25 @@ public fun fee_split_policy_for_testing<Meme, Quote>(
 }
 
 #[test_only]
+/// Returns the round-publication slot: its applied notice and any scheduled round or notice.
+public fun round_publication_for_testing<Meme, Quote>(
+    self: &LpVault<Meme, Quote>,
+): &DelayedAction<RoundPublicationKey, RoundTerms> {
+    &self.round_publication
+}
+
+#[test_only]
+/// Takes unreserved holder-reward funds without advancing the round cursor, so a test can shrink
+/// the budget between scheduling and publication; no production path does.
+public fun withdraw_rewards_for_testing<Meme, Quote>(
+    self: &mut LpVault<Meme, Quote>,
+    meme_amount: u64,
+    quote_amount: u64,
+): (Balance<Meme>, Balance<Quote>) {
+    (self.rewards_meme.split(meme_amount), self.rewards_quote.split(quote_amount))
+}
+
+#[test_only]
 /// Returns the creator's unclaimed Meme and Quote LP fees.
 public fun creator_balances_for_testing<Meme, Quote>(self: &LpVault<Meme, Quote>): (u64, u64) {
     (self.creator_meme.value(), self.creator_quote.value())
@@ -684,9 +890,39 @@ const EBuybackBelowMinimum: vector<u8> = b"Buyback must return at least the mini
 #[error(code = 5)]
 const EPartnerMismatch: vector<u8> = b"The partner is not the one the vault's launch named at creation.";
 
+#[error(code = 6)]
+const EInvalidCommitment: vector<u8> =
+    b"Root and manifest digest must each contain exactly 32 bytes.";
+
+#[error(code = 7)]
+const EInvalidLeafCount: vector<u8> = b"Round must contain between 1 and 65,536 leaves.";
+
+#[error(code = 8)]
+const EEmptyBudget: vector<u8> = b"At least one reward amount must be nonzero.";
+
+#[error(code = 9)]
+const EEmptyInterval: vector<u8> = b"Checkpoint interval must be nonempty.";
+
+#[error(code = 10)]
+const EBudgetOverflow: vector<u8> = b"Holder Quote and gas reserve must sum within u64.";
+
+#[error(code = 11)]
+const EZeroTreasury: vector<u8> = b"Expected treasury must not be the zero address.";
+
+#[error(code = 12)]
+const EZeroClaimWindow: vector<u8> = b"Claim window must be positive.";
+
+#[error(code = 13)]
+const EWrongRoundProposal: vector<u8> =
+    b"The pending round publication is the other kind: a round, or a notice change.";
+
 // === Imports ===
 
-use blast_admin::{blast_acl::AdminWitness, delayed::{Self, Delayed, Proposal}};
+use blast_admin::{
+    blast_acl::AdminWitness,
+    delayed::{Self, Delayed, Proposal},
+    delayed_action::{Self, DelayedAction},
+};
 
 use blast_fun::{
     allocation::FeeSplit,
@@ -697,6 +933,7 @@ use blast_fun::{
 
 use blast_fun_migrators::{
     blast_events,
+    constants,
     lp_fee_policy::LpFeePolicy,
     blast_fun_migrators::PackageVersion as MigratorsVersion,
 };

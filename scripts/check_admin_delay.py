@@ -181,7 +181,7 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
         assert 'Bootstrap' not in production, path
         assert 'set_now' not in production, path
         if path.stem not in (marker, 'package_admin'):
-            assert 'Publication' not in production, path
+            assert not re.search(r'\bPublication\b', production), path
         for name, (signature, body) in functions(package, str(path.relative_to(ROOT / 'sui' / package / 'sources').with_suffix(''))).items():
             if not re.search(r'\.schedule(_add|_value)?\(', body):
                 continue
@@ -194,6 +194,7 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
                 and name in ('schedule_curve_fee_cap_reassignment', 'schedule_metadata_cap_reassignment')
                 or package == 'migrators' and path.stem == 'lp_fee_policy'
                 and name in ('schedule_coin_shares', 'schedule_clear_coin_shares')
+                or path.stem in ('vault', 'presale_vault') and name == 'schedule_round_publication'
             )
             if action_only:
                 assert 'delay_ms: u64' not in signature, (path, name)
@@ -248,6 +249,63 @@ for package, module, version, authority in (
 aftermath = functions('presale', 'aftermath')['apply_fee_split'][1]
 assert aftermath.startswith('package_version.assert_current();')
 assert aftermath.index('vault.has_position(&Venue())') < aftermath.index('vault.assert_fee_split_ready(clock)') < aftermath.index('vault.apply_fee_split(clock)')
+
+# Holder-reward rounds publish only from each vault's delayed action slot: RewardsAdmin schedules
+# checked terms and the notice, CancelAdmin cancels either kind, and anyone publishes a ready round
+# or applies a ready notice. The vault never lends the slot, and publication re-checks the terms.
+for package, module, rewards, version, treasury in (
+    ('migrators', 'vault', 'blast_holder_rewards', 'migrators_version', 'lp_fee_policy.protocol_destination()'),
+    ('presale', 'presale_vault', 'holder_rewards', 'package_version', 'fee_policy.destination()'),
+):
+    source = module_path(package, module).read_text()
+    require(source, 'round_publication: DelayedAction<RoundPublicationKey, RoundTerms>,',
+            'public struct RoundPublicationKey() has copy, drop, store;', 'DEFAULT_ROUND_NOTICE_MS: u64 = 0;')
+    slot = functions(package, module)
+    require(slot['schedule_round_publication'][1], 'self.round_publication.schedule(terms, clock)')
+    require(slot['take_round_publication'][1], 'self.round_publication.take_action(clock)')
+    require(slot['schedule_round_publication_delay'][1], 'self.round_publication.schedule_delay(delay_ms, clock)')
+    require(slot['apply_round_publication_delay'][1], 'self.round_publication.apply_delay(clock)')
+    for name, kind in (('cancel_round_publication', 'is_some'), ('cancel_round_publication_delay', 'is_none')):
+        body = slot[name][1]
+        require(body, f'proposal.proposal_value().action().{kind}()', 'EWrongRoundProposal', 'self.round_publication.cancel()')
+        assert body.index('EWrongRoundProposal') < body.index('self.round_publication.cancel()'), (package, name)
+    require(slot['new_round_terms'][1], 'EInvalidCommitment', 'EInvalidLeafCount', 'EEmptyBudget',
+            'start_checkpoint < end_checkpoint', 'quote_amount.checked_add(gas_reserve_amount).is_some()',
+            'expected_treasury != @0x0', 'claim_window_duration_ms > 0')
+    visibility = {row[1]: row[2] for row in facts(package, module) if row[0] == 'FN' and row[5] == '0'}
+    for name in ('new_round_terms', 'schedule_round_publication', 'take_round_publication', 'cancel_round_publication',
+                 'schedule_round_publication_delay', 'apply_round_publication_delay', 'cancel_round_publication_delay'):
+        assert visibility[name] == 'package', (package, name)
+    for name, (signature, body) in slot.items():
+        assert 'DelayedAction' not in signature and '&mut self.round_publication' not in body, (package, name)
+    flows = functions(package, rewards)
+    roles = {'schedule_round': 'RewardsAdmin', 'schedule_round_delay': 'RewardsAdmin',
+             'cancel_round': 'CancelAdmin', 'cancel_round_delay': 'CancelAdmin'}
+    for name in ('schedule_round', 'publish_round', 'cancel_round', 'schedule_round_delay', 'apply_round_delay', 'cancel_round_delay'):
+        signature, body = flows[name]
+        assert body.startswith(f'{version}.assert_current();'), (package, name)
+        if name in roles:
+            require(signature, f'&AdminWitness<{roles[name]}>')
+        else:
+            assert 'AdminWitness' not in signature, (package, name)
+    signature, body = flows['schedule_round']
+    require(signature, 'claim_window_duration_ms: u64', 'expected_treasury: address', 'clock: &Clock')
+    assert 'delay_ms: u64,' not in signature.replace('claim_window_duration_ms: u64,', ''), package
+    steps = [f'{module}::new_round_terms(', 'assert_fundable(vault, &terms);', 'vault.schedule_round_publication(terms, clock);']
+    require(body, *steps)
+    assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps), package
+    signature, body = flows['publish_round']
+    assert not re.search(r'\b(u64|address|vector<u8>)\b', signature), (package, signature)
+    steps = ['vault.take_round_publication(clock);', treasury, '== terms.expected_treasury(), ETreasuryChanged);',
+             'assert_fundable(vault, &terms);', '.checked_add(terms.claim_window_duration_ms())', 'vault.fund_round(']
+    require(body, *steps)
+    assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps), package
+    require(flows['cancel_round'][1], 'vault.cancel_round_publication()')
+    require(flows['schedule_round_delay'][1], 'vault.schedule_round_publication_delay(delay_ms, clock)')
+    require(flows['apply_round_delay'][1], 'vault.apply_round_publication_delay(clock)')
+    require(flows['cancel_round_delay'][1], 'vault.cancel_round_publication_delay()')
+    fundable = functions(package, rewards)
+    assert not any('fund_round(' in body for name, (_, body) in fundable.items() if name != 'publish_round'), package
 
 signer = functions('launchpad', 'runtime_config')
 for name in ('set_creator_claim_signer', 'revoke_creator_claim_signer'):

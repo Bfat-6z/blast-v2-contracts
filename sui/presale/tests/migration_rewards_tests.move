@@ -12,6 +12,9 @@ const FEE_RECIPIENT: address = @0xFEE;
 const PARTNER_RECIPIENT: address = @0xB1A57;
 const PARTNER_CUT_BPS: u64 = 4_000;
 const TREASURY: address = @0x7EA5;
+/// The claim window every helper schedules.
+const CLAIM_WINDOW_DURATION_MS: u64 = 1_000;
+/// The claim deadline of a round published at time zero.
 const CLAIM_DEADLINE_AT_MS: u64 = 1_000;
 
 // === Test-Only Types ===
@@ -428,11 +431,9 @@ fun the_admin_publishes_holder_rounds_from_the_holder_share() {
     let clock = clock::create_for_testing(scenario.ctx());
 
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
-    vault.publish_round(
+    vault.schedule_round(
         &package_version,
         &rewards_admin(),
-        &policy,
-        policy.destination(),
         0,
         0,
         10,
@@ -442,10 +443,11 @@ fun the_admin_publishes_holder_rounds_from_the_holder_share() {
         40,
         5,
         0,
-        CLAIM_DEADLINE_AT_MS,
+        CLAIM_WINDOW_DURATION_MS,
+        policy.destination(),
         &clock,
-        scenario.ctx(),
     );
+    vault.publish_round(&package_version, &policy, &clock, scenario.ctx());
     policy.destroy_for_testing();
 
     let (vault_meme, vault_quote) = vault.holder_rewards_balances();
@@ -659,7 +661,7 @@ fun a_round_must_use_the_vaults_next_number() {
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::EInvalidInterval,
+    abort_code = rewards::EOverlappingInterval,
     location = blast_presale::holder_rewards,
 )]
 /// A new daily interval may skip checkpoints but cannot overlap a funded round.
@@ -757,23 +759,16 @@ fun a_round_cannot_close_into_another_vault() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = rewards::EInvalidClaimDeadline,
-    location = blast_presale::holder_rewards,
-)]
-fun a_round_needs_a_future_claim_deadline() {
+#[expected_failure(abort_code = vault::EZeroClaimWindow, location = blast_presale::presale_vault)]
+fun a_round_needs_a_positive_claim_window() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut vault = scenario.funded_holder_vault();
-    let mut clock = clock::create_for_testing(scenario.ctx());
-    clock.set_for_testing(CLAIM_DEADLINE_AT_MS);
+    let clock = clock::create_for_testing(scenario.ctx());
 
-    let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
-    vault.publish_round(
+    vault.schedule_round(
         &package_version,
         &rewards_admin(),
-        &policy,
-        policy.destination(),
         0,
         0,
         10,
@@ -783,12 +778,10 @@ fun a_round_needs_a_future_claim_deadline() {
         1,
         0,
         0,
-        CLAIM_DEADLINE_AT_MS,
+        0,
+        CREATOR,
         &clock,
-        scenario.ctx(),
     );
-    policy.destroy_for_testing();
-    std::unit_test::destroy(package_version);
     abort
 }
 
@@ -994,11 +987,9 @@ fun publish_test_round(
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let clock = clock::create_for_testing(scenario.ctx());
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
-    self.publish_round(
+    self.schedule_round(
         &package_version,
         &rewards_admin(),
-        &policy,
-        policy.destination(),
         number,
         start_checkpoint,
         end_checkpoint,
@@ -1008,10 +999,11 @@ fun publish_test_round(
         1,
         0,
         0,
-        CLAIM_DEADLINE_AT_MS,
+        CLAIM_WINDOW_DURATION_MS,
+        policy.destination(),
         &clock,
-        scenario.ctx(),
     );
+    self.publish_round(&package_version, &policy, &clock, scenario.ctx());
     policy.destroy_for_testing();
     clock.destroy_for_testing();
 
@@ -1128,3 +1120,5 @@ use fun sender_total_meme as Scenario.sender_total_meme;
 use fun funded_holder_vault as Scenario.funded_holder_vault;
 
 use fun rewards::publish_round as Vault.publish_round;
+
+use fun rewards::schedule_round as Vault.schedule_round;

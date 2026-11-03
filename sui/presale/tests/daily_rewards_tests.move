@@ -46,10 +46,7 @@ fun skipped_days_allow_a_new_daily_interval_with_an_independent_claim_window() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = rewards::EInvalidInterval,
-    location = blast_presale::holder_rewards,
-)]
+#[expected_failure(abort_code = vault::EEmptyInterval, location = blast_presale::presale_vault)]
 fun a_daily_interval_cannot_be_empty() {
     let mut fixture = start_daily_rewards();
     fixture.publish(0, 10, 10);
@@ -57,10 +54,7 @@ fun a_daily_interval_cannot_be_empty() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = rewards::EInvalidInterval,
-    location = blast_presale::holder_rewards,
-)]
+#[expected_failure(abort_code = vault::EEmptyInterval, location = blast_presale::presale_vault)]
 fun a_daily_interval_cannot_be_reversed() {
     let mut fixture = start_daily_rewards();
     fixture.publish(0, 11, 10);
@@ -113,11 +107,9 @@ fun publish(self: &mut DailyRewardsFixture, number: u64, start: u64, end: u64) {
         .ctx());
     let root = rewards::leaf_for_testing(object::id(&self.vault), number, 0, HOLDER, 0, 10);
     let policy = fee_policy::new_zero_fees_for_testing(self.scenario.ctx());
-    self.vault.publish_round(
+    self.vault.schedule_round(
         &package_version,
         &blast_acl::witness_for_testing<RewardsAdmin>(),
-        &policy,
-        policy.destination(),
         number,
         start,
         end,
@@ -127,10 +119,11 @@ fun publish(self: &mut DailyRewardsFixture, number: u64, start: u64, end: u64) {
         0,
         10,
         0,
-        self.clock.timestamp_ms() + CLAIM_WINDOW_DURATION_MS,
+        CLAIM_WINDOW_DURATION_MS,
+        policy.destination(),
         &self.clock,
-        self.scenario.ctx(),
     );
+    self.vault.publish_round(&package_version, &policy, &self.clock, self.scenario.ctx());
     policy.destroy_for_testing();
 
     std::unit_test::destroy(package_version);
@@ -199,3 +192,5 @@ use fun daily_rewards_next_tx as DailyRewardsFixture.next_tx;
 use fun daily_rewards_ctx as DailyRewardsFixture.ctx;
 
 use fun rewards::publish_round as Vault.publish_round;
+
+use fun rewards::schedule_round as Vault.schedule_round;

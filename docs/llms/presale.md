@@ -101,14 +101,16 @@ reference. Each admin call names exactly one role in its signature:
 | `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
 | `blast_presale_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
 | `blast_presale_domain::AdapterAdmin` | `creation_policy::schedule_migration_witness` |
-| `blast_presale_domain::RewardsAdmin` | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` |
+| `blast_presale_domain::RewardsAdmin` | `holder_rewards::schedule_round`, `holder_rewards::schedule_round_delay`, `holder_rewards::settle_gas_reserve` |
 | `blast_presale_domain::UpgradeAdmin` | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` |
 
 A role from another package, such as `blast_fun_domain::FeeAdmin`, is a different type and
 cannot reach these calls. PauseAdmin may freeze creation, commitments or migration. No admin may cancel a sale, move commitments, change windows, recipients, or the fee split. Its
 power over a live sale is limited to: its Blast rates before the window starts, its vault's Blast
 LP-fee rates (anything from 0 to 10,000 BPS), the fee destination, and how the vault's
-holder-reward share is distributed.
+holder-reward share is distributed. A holder-reward round waits its vault's round notice after
+`RewardsAdmin` schedules it; the notice starts at zero, so until `RewardsAdmin` raises it a round
+can be scheduled and published in one transaction and a compromised `RewardsAdmin` is not delayed.
 
 ### Lifecycle
 
@@ -619,22 +621,51 @@ who receives holder assets and whether each round reimburses gas. A single
 `holder_rewards::Round` holds its holder balances separately from its optional
 Quote gas reserve.
 
-1. `holder_rewards::publish_round`: *Blast admin* (`RewardsAdmin`). It takes the
-   mutable shared vault, shared governed `FeePolicy`, expected treasury address,
-   interval and commitments,
-   exact holder Meme/Quote amounts, an explicit gas reserve amount, future
-   deadline and Clock. The number is the vault's next round (starting at zero).
-   The checkpoint interval is nonempty and starts at or after the previous
-   round ended; skipped periods need no funded round or number. Root and
-   manifest digest are 32 bytes, with 1..=65,536 leaves and a positive holder
-   budget. Before funding, the expected treasury must equal the governed
-   destination; `holder_rewards::ETreasuryChanged` rejects a policy change after
-   planning or signing. Holder funding plus reserve must fit available balances.
-   It snapshots the checked treasury and emits `holder_rewards::RoundPublished`. Zero reserve
-   disables reimbursement for this round and requires no settlement. A positive
-   reserve creates separate pending custody. Blast may cover gas and allocate
-   the entire holder Quote budget to holder leaves.
-2. `holder_rewards::claim`: *anyone* may relay. It takes the mutable shared
+1. `holder_rewards::schedule_round`: *Blast admin* (`RewardsAdmin`). It takes the
+   mutable shared vault, the round number, checkpoint interval, root and
+   manifest digest, leaf count, exact holder Meme/Quote amounts, an explicit gas
+   reserve amount, the claim window in milliseconds, the expected treasury
+   address and Clock. The terms' own checks run first: root and manifest digest
+   are 32 bytes, with 1..=65,536 leaves, a positive holder budget, a nonempty
+   checkpoint interval, a holder Quote plus reserve that fits in a `u64`, a
+   nonzero expected treasury and a positive claim window. Then, to fail fast,
+   the number must be the vault's next round (starting at zero), the interval
+   must start at or after the previous round ended (skipped periods need no
+   funded round or number), and holder funding plus reserve must fit the
+   available holder-reward balances. The round waits in the vault's
+   `round_publication` slot until the applied round notice elapses; nothing is
+   reserved yet. Scheduling again replaces it (or a pending notice change) and
+   restarts the notice. It emits `delayed_action::ActionScheduled` with key
+   `presale_vault::RoundPublicationKey` and `change = Action(RoundTerms)`, so
+   the terms are public while the round waits.
+2. `holder_rewards::publish_round`: *anyone*, once the scheduled round is
+   ready. It takes the mutable shared vault, shared governed `FeePolicy` and
+   Clock, and nothing else. It consumes the scheduled round, then re-checks that
+   the expected treasury still equals the governed destination
+   (`holder_rewards::ETreasuryChanged` rejects a policy change after scheduling)
+   and that the number, interval and budget still fit the vault. The claim
+   deadline is the publication time plus the claim window
+   (`holder_rewards::EClaimDeadlineOverflow` if it exceeds `u64`), so a late
+   publication still gets the full window. It snapshots the checked treasury
+   and emits `delayed_action::ActionApplied`, then `holder_rewards::RoundPublished`
+   with the absolute deadline. Zero reserve disables reimbursement for this
+   round and requires no settlement. A positive reserve creates separate
+   pending custody. Blast may cover gas and allocate the entire holder Quote
+   budget to holder leaves. With the round notice at zero, one PTB can call
+   `holder_rewards::schedule_round` and then `holder_rewards::publish_round`.
+3. `holder_rewards::cancel_round`: *Blast admin* (`CancelAdmin`). It discards
+   the scheduled round, even a ready one, and emits
+   `delayed_action::ActionCancelled` with its terms. Nothing was reserved, so no
+   balance moves. `presale_vault::EWrongRoundProposal` rejects it while a notice
+   change is pending instead.
+4. Round notice: `holder_rewards::schedule_round_delay` (*Blast admin*,
+   `RewardsAdmin`) proposes a new notice, ready after the applied one and
+   replacing any scheduled round; `holder_rewards::apply_round_delay` (*anyone*)
+   applies it once ready; `holder_rewards::cancel_round_delay` (*Blast admin*,
+   `CancelAdmin`) discards it (`presale_vault::EWrongRoundProposal` while a
+   round is scheduled instead). A shorter notice, zero included, still waits the
+   applied one. Every vault starts with a zero notice.
+5. `holder_rewards::claim`: *anyone* may relay. It takes the mutable shared
    round and beneficiary/amount proof and pays that beneficiary only, once
    per index. It emits `holder_rewards::RewardClaimed` and leaves gas custody
    untouched. Leaf:
@@ -649,14 +680,14 @@ Quote gas reserve.
 
    The proof follows the allowlist rules above (same node hash, positional
    order, exact depth). Claims have no deadline check: they last until close.
-3. `holder_rewards::settle_gas_reserve`: *Blast admin* (`RewardsAdmin`). It takes
+6. `holder_rewards::settle_gas_reserve`: *Blast admin* (`RewardsAdmin`). It takes
    the mutable shared round and its mutable shared vault and an amount from
    zero through an enabled reserve. It pays the publication-time treasury,
    returns all unused Quote to the vault and consumes settlement once.
    `holder_rewards::GasReserveSettled` records payment, return and remaining
    vault Quote. Disabled reimbursement and repeated settlement abort. The
    contract bounds custody; verified off-chain effects determine actual cost.
-4. `holder_rewards::close_round`: *anyone*, once `now >= claim_deadline_ms`.
+7. `holder_rewards::close_round`: *anyone*, once `now >= claim_deadline_ms`.
    It consumes the shared round and returns unclaimed holder assets and any
    unsettled reserve to the correct mutable vault. It emits
    `holder_rewards::RoundClosed` and deletes the round. Missing settlement
@@ -678,7 +709,7 @@ Integrators cannot call these; they explain state changes. Each takes the
 | `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `delayed_set::SetApplied<creation_policy::MigrationWitnessKey, TypeName>`; `remove_migration_witness` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted witness) and cancels pending admission. |
 | `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `creation_policy::PartnerAdded`. |
 | `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `creation_policy::PartnerRemoved`. |
-| `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` | See above. |
+| `holder_rewards::schedule_round`, `holder_rewards::schedule_round_delay`, `holder_rewards::cancel_round`, `holder_rewards::cancel_round_delay`, `holder_rewards::settle_gas_reserve` | See above. |
 | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic operational-version cutover. |
 
 `blast_presale::package_admin::wrap` consumes the publication Publication and never-upgraded matching cap once. Each upgrade increments both compiled generation constants and commits/advances in one PTB; old bytecode then rejects the advanced version. Existing dependency-only deployments require a fresh publication to adopt this design.
@@ -712,8 +743,9 @@ ID of the object that stores the field) and `key`. A value schedule emits
 emits `delayed::DelayedCancelled`, and an application emits `delayed::DelayedApplied` with the
 previous and new value and the applied notice. Creating a setting emits
 `delayed::DelayedCreated` (so creating a vault emits it for the vault's two fields), the upgrade
-slot `delayed_action::ActionCreated`, and the admission set `delayed_set::SetCreated`. Upgrade
-actions and their notice changes emit `delayed_action::ActionScheduled`,
+slot and each vault's round-publication slot `delayed_action::ActionCreated`, and the admission set
+`delayed_set::SetCreated`. Upgrade actions, scheduled holder-reward rounds, and their notice
+changes emit `delayed_action::ActionScheduled`,
 `delayed_action::ActionCancelled` and `delayed_action::ActionApplied`, whose `change` is
 `Action(...)` or `Delay` (a notice change). Adapter admissions and their notice changes emit
 `delayed_set::SetScheduled`, `delayed_set::SetCancelled` and `delayed_set::SetApplied`, whose
@@ -727,6 +759,7 @@ records an immediate adapter removal.
 | Blast's payee | `FeePolicy.destination` | `fee_policy::DestinationKey` | `address` |
 | A vault's Blast LP-fee rates | `Vault.protocol_fees` | `presale_vault::ProtocolLpFeesKey` | `fee_policy::ProtocolFees` |
 | A vault's creator split | `Vault.fee_split` | `presale_vault::FeeSplitKey` | `blast_presale::blast_presale::FeeSplit` |
+| A vault's next holder-reward round and the round notice | `Vault.round_publication` | `presale_vault::RoundPublicationKey` | `presale_vault::RoundTerms` |
 | Upgrades and immutability | `PackageAdmin.upgrade` | `blast_presale::package_admin::UpgradeKey` | `blast_presale::package_admin::UpgradeAction` |
 | Adapter admissions | `CreationPolicy.migration_witnesses` | `creation_policy::MigrationWitnessKey` | `TypeName` |
 
@@ -929,8 +962,9 @@ All times are Unix milliseconds from `Clock`.
 - Vesting starts at migration for recipients and at each claim for participants.
 - `blast_presale::blast_presale::set_partner` needs `now < accepted_until_ms` for that partner.
 - Hard cap: commitments are held to the raise from `now >= hard cap start`.
-- Holder rounds: the deadline must be in the future at publish; claims work until close; close
-  needs `now >= claim_deadline_ms`.
+- Holder rounds: a scheduled round publishes once `now >= ready_at_ms`, the vault's applied round
+  notice (zero at creation) after scheduling; publication sets `claim_deadline_ms` to now plus the
+  scheduled claim window; claims work until close; close needs `now >= claim_deadline_ms`.
 
 ### Reading state
 
@@ -991,7 +1025,12 @@ positional struct wrapping one u64.
   `protocol_fees.value.lp_fee_quote_bps` for the applied LP rates), `partner_id`,
   `unpaid_protocol_meme`, `unpaid_protocol_quote`,
   `migration_meme_residual`, `migration_quote_residual`, `holder_rewards_meme`,
-  `holder_rewards_quote` (unallocated holder share), `next_round`, `last_checkpoint`. The position
+  `holder_rewards_quote` (unallocated holder share), `next_round`, `last_checkpoint`,
+  `round_publication` (a `DelayedAction<RoundPublicationKey, RoundTerms>`: the applied round notice
+  `delay_ms` and an optional `pending` scheduled round, whose `Action(terms)` holds `number`,
+  `start_checkpoint`, `end_checkpoint`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`,
+  `quote_amount`, `gas_reserve_amount`, `claim_window_duration_ms` and `expected_treasury`, with
+  its `ready_at_ms`, or a notice change). The position
   is a dynamic object field keyed by `presale_vault::PositionKey`; on Aftermath it is the DAO-fee
   pool's owner cap, and the vault's pending DAO fees are the coins owned by the vault's address.
 - `Round`: `vault_id`, `number`, `claim_deadline_ms`, `root`, `leaf_count`, `meme`, `quote`,
@@ -1024,6 +1063,7 @@ directly (no envelope).
 | Vault partner pay | `presale_vault::ProtocolLpFeesPaid` | Partner and Blast amounts per asset. |
 | Vault without a presale | `presale_vault::VaultCreated` | Zero `presale_id` and residuals; pool, position, liquidity, fee split, and Blast's rates. |
 | Residuals | `presale_vault::MigrationResidualsClaimed` | Amounts claimed. |
+| Round scheduling | `delayed_action::ActionScheduled`, `delayed_action::ActionCancelled`, `delayed_action::ActionApplied` keyed by `presale_vault::RoundPublicationKey` | The scheduled terms or notice change; no balance moves until `holder_rewards::RoundPublished`. |
 | Rounds | `holder_rewards::RoundPublished`, `holder_rewards::RewardClaimed`, `holder_rewards::GasReserveSettled`, `holder_rewards::RoundClosed` | Holder funding separate from optional gas reserve, snapshotted treasury, exact reimbursement and returns; zero reserve disables reimbursement. |
 | Vesting | `VestingCreated`, `VestingClaimed` (from `blast_fun_vesting`) | Schedule terms and releases. |
 
@@ -1088,18 +1128,24 @@ it. Common ones by flow (module `blast_presale` unless named):
   then `EPresaleStarted`, `EProtocolFeesIncreased` (a shared sale's override raises a rate),
   `EAboveFeePolicy`, `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EInvalidDestination`,
   `creation_policy::EAllowanceUnchanged`, `creation_policy::EInvalidMigrationWitness`, and the
-  `holder_rewards` publish checks (`EWrongRound`, `EInvalidInterval`, `EInvalidCommitment`,
-  `EInvalidLeafCount`, `EEmptyBudget`, `EInvalidClaimDeadline`).
+  the round-terms checks in `presale_vault` (`EInvalidCommitment`, `EInvalidLeafCount`,
+  `EEmptyBudget`, `EEmptyInterval`, `EBudgetOverflow`, `EZeroTreasury`, `EZeroClaimWindow`), the
+  `holder_rewards` schedule and publish checks (`EWrongRound`, `EOverlappingInterval`,
+  `EInsufficientBudget`, and at publication `ETreasuryChanged` and `EClaimDeadlineOverflow`), and
+  `presale_vault::EWrongRoundProposal` for a cancel of the other kind of round proposal.
 - Delayed administration (fee split, LP-fee rates, policy fees and payee, adapter admission,
   upgrades): Blast admin's delayed modules abort with plain codes. 17 `ENotReady`: applied
   before `ready_at_ms` (from `delayed_set` for an early admission, otherwise from `delayed`).
   18 `ENoPending`: applied or cancelled with nothing pending (from the type's own module:
-  `delayed` for a setting, `delayed_action` for an upgrade, `delayed_set` for an admission). 19
+  `delayed` for a setting, `delayed_action` for an upgrade or a holder-reward round, `delayed_set`
+  for an admission). 19
   `EInvalidDelay`: a deadline or notice would overflow (from `delayed`). 20 `EUnchanged`: the
   proposal changes nothing, the witness is already admitted, or the removed witness is unknown
   (from the type's own module). 22 `EWrongChange` (from `delayed_action`):
   `authorize_upgrade` or `make_immutable` while a notice change is pending, or
-  `apply_upgrade_delay` while an action is pending.
+  `apply_upgrade_delay` while an action is pending; likewise `holder_rewards::publish_round` while
+  a round-notice change is pending, or `holder_rewards::apply_round_delay` while a round is
+  scheduled.
 
 ### Pitfalls
 

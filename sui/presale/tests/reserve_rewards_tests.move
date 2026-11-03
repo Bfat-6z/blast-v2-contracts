@@ -9,7 +9,14 @@ module blast_presale::reserve_rewards_tests;
 const OWNER: address = @0xA;
 const HOLDER: address = @0xB;
 const TREASURY: address = @0xC;
+/// The claim window every helper schedules.
+const CLAIM_WINDOW_DURATION_MS: u64 = 604_800_000;
+/// The claim deadline of a round published at the fixture's start time of 1 ms.
 const DEADLINE_AT_MS: u64 = 604_800_001;
+/// A raised round notice.
+const NOTICE_MS: u64 = 5_000;
+/// A publication time well after scheduling.
+const LATE_AT_MS: u64 = 50_000;
 
 // === Test-Only Types ===
 
@@ -84,6 +91,7 @@ fun a_changed_treasury_is_rejected_before_an_overcommitted_budget() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(fixture
         .scenario
         .ctx());
+    fixture.schedule_budget_to(970, 30, TREASURY);
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
@@ -93,8 +101,9 @@ fun a_changed_treasury_is_rejected_before_an_overcommitted_budget() {
                 @0xD,
                 f.scenario.ctx()
             );
+        f.drain_holder_rewards(1_000);
+        f.publish_scheduled();
     });
-    fixture.publish(31);
     std::unit_test::destroy(package_version);
     abort
 }
@@ -355,7 +364,7 @@ fun reserve_holder_payment_cannot_be_redirected() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidCommitment, location = blast_presale::holder_rewards)]
+#[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_presale::presale_vault)]
 fun round_rejects_a_short_merkle_root() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(vector[0u8], hash::blake2b256(&b"manifest"), 1, 1);
@@ -363,7 +372,7 @@ fun round_rejects_a_short_merkle_root() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidCommitment, location = blast_presale::holder_rewards)]
+#[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_presale::presale_vault)]
 fun round_rejects_a_short_manifest_digest() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(hash::blake2b256(&b"root"), vector[0u8], 1, 1);
@@ -371,7 +380,7 @@ fun round_rejects_a_short_manifest_digest() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidLeafCount, location = blast_presale::holder_rewards)]
+#[expected_failure(abort_code = vault::EInvalidLeafCount, location = blast_presale::presale_vault)]
 fun round_rejects_zero_leaves() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 0, 1);
@@ -379,7 +388,7 @@ fun round_rejects_zero_leaves() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidLeafCount, location = blast_presale::holder_rewards)]
+#[expected_failure(abort_code = vault::EInvalidLeafCount, location = blast_presale::presale_vault)]
 fun round_rejects_the_first_leaf_above_capacity() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 65_537, 1);
@@ -387,7 +396,7 @@ fun round_rejects_the_first_leaf_above_capacity() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EEmptyBudget, location = blast_presale::holder_rewards)]
+#[expected_failure(abort_code = vault::EEmptyBudget, location = blast_presale::presale_vault)]
 fun round_rejects_an_empty_asset_budget() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 1, 0);
@@ -442,6 +451,404 @@ fun claim_rejects_a_zero_beneficiary_before_the_merkle_proof() {
         rewards::claim(&mut round, &version, 0, @0x0, 0, 970, vector[], f.ctx!());
         abort
     });
+    abort
+}
+
+// Delayed publication
+
+#[test]
+fun a_round_schedules_and_publishes_in_one_transaction_at_the_zero_notice() {
+    let mut fixture = start_reserve_rewards();
+    assert_eq!(fixture.vault.round_publication_for_testing().delay_ms(), 0);
+    fixture.next_tx!(OWNER, |f| {
+        f.schedule_budget_to(970, 30, TREASURY);
+        let scheduled = only_event<ActionScheduled<RoundPublicationKey, RoundTerms>>();
+        let (owner, _, change, delay_ms, ready_at_ms) = scheduled.action_scheduled_fields();
+        assert_eq!(owner, object::id(&f.vault));
+        assert_eq!(change.action(), option::some(f.terms(970, 30)));
+        assert_eq!(delay_ms, 0);
+        assert_eq!(ready_at_ms, 1);
+        assert_eq!(f.vault_balances(), vector[0, 1_000]);
+        assert_eq!(f.vault.next_round(), 0);
+
+        f.publish_scheduled();
+
+        only_event<ActionApplied<RoundPublicationKey, RoundTerms>>();
+        only_event<RoundPublished<MEME, QUOTE>>();
+        assert_eq!(f.vault_balances(), vector[0, 0]);
+        assert!(f.vault.round_publication_for_testing().pending().is_none());
+    });
+    fixture.end();
+}
+
+#[test]
+fun anyone_publishes_a_ready_round_in_a_later_transaction() {
+    let mut fixture = start_reserve_rewards();
+    fixture.next_tx!(OWNER, |f| f.schedule_budget_to(970, 0, TREASURY));
+    fixture.next_tx!(HOLDER, |f| f.publish_scheduled());
+    fixture.next_tx!(HOLDER, |f| f.claim());
+    fixture.next_tx!(HOLDER, |f| f.assert_payment(970));
+    fixture.end();
+}
+
+#[test]
+fun a_late_publication_still_opens_the_full_claim_window() {
+    let mut fixture = start_reserve_rewards();
+    fixture.next_tx!(OWNER, |f| f.schedule_budget_to(970, 0, TREASURY));
+    fixture.next_tx!(HOLDER, |f| {
+        f.clock.set_for_testing(LATE_AT_MS);
+        f.publish_scheduled();
+        f.assert_published(970, 0, TREASURY, LATE_AT_MS + CLAIM_WINDOW_DURATION_MS);
+    });
+    fixture.next_tx!(HOLDER, |f| {
+        f.clock.set_for_testing(LATE_AT_MS + CLAIM_WINDOW_DURATION_MS - 1);
+        f.claim();
+    });
+    fixture.next_tx!(HOLDER, |f| f.assert_payment(970));
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EClaimDeadlineOverflow, location = blast_presale::holder_rewards)]
+fun a_claim_window_ending_beyond_u64_rejects_publication() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, 970, 0, std::u64::max_value!());
+    fixture.publish_scheduled();
+    abort
+}
+
+#[test]
+fun a_raised_notice_makes_publication_wait_until_ready() {
+    let mut fixture = start_reserve_rewards();
+    fixture.raise_notice(NOTICE_MS);
+    fixture.schedule_budget_to(970, 0, TREASURY);
+
+    fixture.clock.set_for_testing(1 + NOTICE_MS);
+    fixture.publish_scheduled();
+
+    assert_eq!(fixture.vault.next_round(), 1);
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun a_raised_notice_rejects_publication_one_millisecond_early() {
+    let mut fixture = start_reserve_rewards();
+    fixture.raise_notice(NOTICE_MS);
+    fixture.schedule_budget_to(970, 0, TREASURY);
+
+    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.publish_scheduled();
+
+    abort
+}
+
+#[test]
+fun a_cancelled_round_reserves_nothing_and_leaves_the_cursor() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_budget_to(970, 30, TREASURY);
+
+    fixture.cancel_round();
+
+    let cancelled = only_event<ActionCancelled<RoundPublicationKey, RoundTerms>>();
+    let (_, _, change, _, _) = cancelled.action_cancelled_fields();
+    assert_eq!(change.action(), option::some(fixture.terms(970, 30)));
+    assert_eq!(fixture.vault_balances(), vector[0, 1_000]);
+    assert_eq!(fixture.vault.next_round(), 0);
+    assert_eq!(fixture.vault.last_checkpoint(), option::none());
+    assert!(fixture.vault.round_publication_for_testing().pending().is_none());
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
+fun a_cancelled_round_cannot_be_published() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_budget_to(970, 0, TREASURY);
+    fixture.cancel_round();
+
+    fixture.publish_scheduled();
+
+    abort
+}
+
+#[test]
+fun rescheduling_replaces_the_pending_round_and_announces_its_cancellation() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_budget_to(500, 30, TREASURY);
+
+    fixture.schedule_budget_to(970, 0, TREASURY);
+
+    let cancelled = only_event<ActionCancelled<RoundPublicationKey, RoundTerms>>();
+    let (_, _, change, _, _) = cancelled.action_cancelled_fields();
+    let replaced = vault::new_round_terms(
+        0,
+        0,
+        10,
+        rewards::leaf_for_testing(object::id(&fixture.vault), 0, 0, HOLDER, 0, 500),
+        hash::blake2b256(&b"manifest"),
+        1,
+        0,
+        500,
+        30,
+        CLAIM_WINDOW_DURATION_MS,
+        TREASURY,
+    );
+    assert_eq!(change.action(), option::some(replaced));
+    fixture.publish_scheduled();
+    assert_eq!(fixture.vault_balances(), vector[0, 30]);
+    fixture.next_tx!(HOLDER, |f| f.claim());
+    fixture.next_tx!(HOLDER, |f| f.assert_payment(970));
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EInsufficientBudget, location = blast_presale::holder_rewards)]
+fun publication_rechecks_the_budget_the_schedule_checked() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_budget_to(970, 30, TREASURY);
+    fixture.drain_holder_rewards(1);
+
+    fixture.publish_scheduled();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_presale::presale_vault)]
+fun scheduling_checks_the_terms_before_the_vault() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_round_with(9, 0, 10, vector[], 1, 2_000, 0, CLAIM_WINDOW_DURATION_MS);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EBudgetOverflow, location = blast_presale::presale_vault)]
+fun a_holder_quote_and_gas_reserve_beyond_u64_are_rejected() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, 1, std::u64::max_value!(), CLAIM_WINDOW_DURATION_MS);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EZeroClaimWindow, location = blast_presale::presale_vault)]
+fun scheduling_requires_a_positive_claim_window() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, 970, 0, 0);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EZeroTreasury, location = blast_presale::presale_vault)]
+fun scheduling_requires_a_nonzero_expected_treasury() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_budget_to(970, 0, @0x0);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EWrongRound, location = blast_presale::holder_rewards)]
+fun scheduling_rejects_a_number_other_than_the_next_round() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_round_with(1, 0, 10, hash::blake2b256(&b"root"), 1, 970, 0, CLAIM_WINDOW_DURATION_MS);
+    abort
+}
+
+#[test]
+fun a_shorter_notice_waits_the_applied_one() {
+    let mut fixture = start_reserve_rewards();
+    fixture.raise_notice(NOTICE_MS);
+    fixture.schedule_notice(0);
+
+    fixture.clock.set_for_testing(1 + NOTICE_MS);
+    fixture.apply_notice();
+
+    assert_eq!(fixture.vault.round_publication_for_testing().delay_ms(), 0);
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun a_shorter_notice_cannot_apply_before_the_applied_one_elapses() {
+    let mut fixture = start_reserve_rewards();
+    fixture.raise_notice(NOTICE_MS);
+    fixture.schedule_notice(0);
+
+    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.apply_notice();
+
+    abort
+}
+
+#[test]
+fun a_cancelled_notice_change_keeps_the_applied_notice() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_notice(NOTICE_MS);
+
+    fixture.cancel_notice();
+
+    assert_eq!(fixture.vault.round_publication_for_testing().delay_ms(), 0);
+    assert!(fixture.vault.round_publication_for_testing().pending().is_none());
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EWrongRoundProposal, location = blast_presale::presale_vault)]
+fun a_round_cancellation_cannot_discard_a_notice_change() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_notice(NOTICE_MS);
+
+    fixture.cancel_round();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EWrongRoundProposal, location = blast_presale::presale_vault)]
+fun a_notice_cancellation_cannot_discard_a_scheduled_round() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_budget_to(970, 0, TREASURY);
+
+    fixture.cancel_notice();
+
+    abort
+}
+
+#[test]
+fun signed_in_roles_schedule_cancel_and_change_the_notice() {
+    let mut fixture = start_reserve_rewards();
+    let version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    let (root, mut acl) = blast_acl::new_for_testing(fixture.ctx!());
+    acl.grant_admin(&root, OWNER, fixture.ctx!());
+    acl.grant_admin(&root, HOLDER, fixture.ctx!());
+    fixture.scenario.next_tx(OWNER);
+    let rewards_cap = fixture.scenario.take_from_sender<AdminCap>();
+    fixture.scenario.next_tx(HOLDER);
+    let cancel_cap = fixture.scenario.take_from_sender<AdminCap>();
+    acl.grant_role<RewardsAdmin>(&root, object::id(&rewards_cap));
+    acl.grant_role<CancelAdmin>(&root, object::id(&cancel_cap));
+
+    fixture.schedule_as(&version, &acl.sign_in<RewardsAdmin>(&rewards_cap));
+    fixture.vault.cancel_round(&version, &acl.sign_in<CancelAdmin>(&cancel_cap));
+    fixture.schedule_notice_as(&version, &acl.sign_in<RewardsAdmin>(&rewards_cap), NOTICE_MS);
+    fixture.vault.cancel_round_delay(&version, &acl.sign_in<CancelAdmin>(&cancel_cap));
+
+    assert!(fixture.vault.round_publication_for_testing().pending().is_none());
+    std::unit_test::destroy(rewards_cap);
+    std::unit_test::destroy(cancel_cap);
+    std::unit_test::destroy(root);
+    std::unit_test::destroy(acl);
+    std::unit_test::destroy(version);
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EAdminRoleNotGranted, location = blast_admin::blast_acl)]
+fun a_cancel_admin_cannot_sign_in_to_schedule_a_round() {
+    let mut fixture = start_reserve_rewards();
+    let version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    let (root, mut acl) = blast_acl::new_for_testing(fixture.ctx!());
+    acl.grant_admin(&root, HOLDER, fixture.ctx!());
+    fixture.scenario.next_tx(HOLDER);
+    let cancel_cap = fixture.scenario.take_from_sender<AdminCap>();
+    acl.grant_role<CancelAdmin>(&root, object::id(&cancel_cap));
+
+    fixture.schedule_as(&version, &acl.sign_in<RewardsAdmin>(&cancel_cap));
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EAdminRoleNotGranted, location = blast_admin::blast_acl)]
+fun a_rewards_admin_cannot_sign_in_to_cancel_a_round() {
+    let mut fixture = start_reserve_rewards();
+    let version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    let (root, mut acl) = blast_acl::new_for_testing(fixture.ctx!());
+    acl.grant_admin(&root, OWNER, fixture.ctx!());
+    fixture.scenario.next_tx(OWNER);
+    let rewards_cap = fixture.scenario.take_from_sender<AdminCap>();
+    acl.grant_role<RewardsAdmin>(&root, object::id(&rewards_cap));
+    fixture.schedule_budget_to(970, 0, TREASURY);
+
+    fixture.vault.cancel_round(&version, &acl.sign_in<CancelAdmin>(&rewards_cap));
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_scheduling_before_every_round_check() {
+    let mut fixture = start_reserve_rewards();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.set_for_testing(2);
+
+    let clock = clock::create_for_testing(fixture.ctx!());
+    fixture.vault.schedule_round(
+        &version,
+        &blast_acl::witness_for_testing<RewardsAdmin>(),
+        7, 10, 10, vector[], vector[], 0, 0, 0, 0, 0, @0x0, &clock,
+    );
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_publication_before_taking_the_round() {
+    let mut fixture = start_reserve_rewards();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.set_for_testing(2);
+
+    fixture.publish_with(&version);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_round_cancellation_first() {
+    let mut fixture = start_reserve_rewards();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.set_for_testing(2);
+
+    fixture.vault.cancel_round(&version, &blast_acl::witness_for_testing<CancelAdmin>());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_notice_scheduling_first() {
+    let mut fixture = start_reserve_rewards();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.set_for_testing(2);
+
+    fixture.schedule_notice_as(&version, &blast_acl::witness_for_testing<RewardsAdmin>(), 0);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_notice_application_first() {
+    let mut fixture = start_reserve_rewards();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.set_for_testing(2);
+
+    fixture.apply_notice_with(&version);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun a_stale_generation_rejects_notice_cancellation_first() {
+    let mut fixture = start_reserve_rewards();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    version.set_for_testing(2);
+
+    fixture.vault.cancel_round_delay(&version, &blast_acl::witness_for_testing<CancelAdmin>());
+
     abort
 }
 
@@ -505,11 +912,9 @@ fun publish_commitment(
     let version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
     self
         .vault
-        .publish_round(
+        .schedule_round(
             &version,
             &blast_acl::witness_for_testing<RewardsAdmin>(),
-            &self.policy,
-            TREASURY,
             0,
             0,
             10,
@@ -519,9 +924,9 @@ fun publish_commitment(
             0,
             amount,
             0,
-            DEADLINE_AT_MS,
+            CLAIM_WINDOW_DURATION_MS,
+            TREASURY,
             &self.clock,
-            self.scenario.ctx(),
         );
     std::unit_test::destroy(version);
 }
@@ -540,33 +945,23 @@ fun publish_budget_to(
     reserve: u64,
     expected_treasury: address,
 ) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
-        .scenario
-        .ctx());
+    self.schedule_budget_to(holder_quote, reserve, expected_treasury);
+    self.publish_scheduled();
+    self.assert_published(holder_quote, reserve, expected_treasury, DEADLINE_AT_MS);
+}
+
+/// Checks the one `RoundPublished` of this transaction, for round 0 paying the holder.
+fun assert_published(
+    self: &ReserveFixture,
+    holder_quote: u64,
+    reserve: u64,
+    treasury: address,
+    deadline_at_ms: u64,
+) {
     let root = rewards::leaf_for_testing(object::id(&self.vault), 0, 0, HOLDER, 0, holder_quote);
-    self.vault.publish_round(
-        &package_version,
-        &blast_acl::witness_for_testing<RewardsAdmin>(),
-        &self.policy,
-        expected_treasury,
-        0,
-        0,
-        10,
-        root,
-        hash::blake2b256(&b"manifest"),
-        1,
-        0,
-        holder_quote,
-        reserve,
-        DEADLINE_AT_MS,
-        &self.clock,
-        self.scenario.ctx(),
-    );
     let payload = only_event<RoundPublished<MEME, QUOTE>>();
     let round_id = payload.reserve_published_id();
     let (meme_unallocated, quote_unallocated) = self.vault.holder_rewards_balances();
-    let deadline_at_ms = DEADLINE_AT_MS;
-    let treasury = expected_treasury;
     let mut expected = vector[];
     expected.append(bcs::to_bytes(&(object::id(&self.vault))));
     expected.append(bcs::to_bytes(&(round_id)));
@@ -584,8 +979,176 @@ fun publish_budget_to(
     expected.append(bcs::to_bytes(&(treasury)));
     expected.append(bcs::to_bytes(&(reserve)));
     assert_eq!(payload.reserve_published_bytes(), expected);
+}
 
+/// Schedules round 0 over checkpoints [0, 10) with one leaf paying the holder `holder_quote`.
+fun schedule_budget_to(
+    self: &mut ReserveFixture,
+    holder_quote: u64,
+    reserve: u64,
+    expected_treasury: address,
+) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
+    let root = rewards::leaf_for_testing(object::id(&self.vault), 0, 0, HOLDER, 0, holder_quote);
+    self.vault.schedule_round(
+        &package_version,
+        &blast_acl::witness_for_testing<RewardsAdmin>(),
+        0,
+        0,
+        10,
+        root,
+        hash::blake2b256(&b"manifest"),
+        1,
+        0,
+        holder_quote,
+        reserve,
+        CLAIM_WINDOW_DURATION_MS,
+        expected_treasury,
+        &self.clock,
+    );
     std::unit_test::destroy(package_version);
+}
+
+/// Schedules explicit terms with the default manifest and treasury.
+fun schedule_round_with(
+    self: &mut ReserveFixture,
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    root: vector<u8>,
+    leaf_count: u64,
+    quote_amount: u64,
+    gas_reserve_amount: u64,
+    claim_window_duration_ms: u64,
+) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
+    self.vault.schedule_round(
+        &package_version,
+        &blast_acl::witness_for_testing<RewardsAdmin>(),
+        number,
+        start_checkpoint,
+        end_checkpoint,
+        root,
+        hash::blake2b256(&b"manifest"),
+        leaf_count,
+        0,
+        quote_amount,
+        gas_reserve_amount,
+        claim_window_duration_ms,
+        TREASURY,
+        &self.clock,
+    );
+    std::unit_test::destroy(package_version);
+}
+
+/// Publishes the scheduled round permissionlessly in the current transaction.
+fun publish_scheduled(self: &mut ReserveFixture) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
+    self.publish_with(&package_version);
+    std::unit_test::destroy(package_version);
+}
+
+/// Publishes the scheduled round under `package_version`.
+fun publish_with(self: &mut ReserveFixture, package_version: &PackageVersion) {
+    self.vault.publish_round(package_version, &self.policy, &self.clock, self.scenario.ctx());
+}
+
+/// Schedules the default one-leaf round under `admin`.
+fun schedule_as(
+    self: &mut ReserveFixture,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<RewardsAdmin>,
+) {
+    self.vault.schedule_round(
+        package_version,
+        admin,
+        0,
+        0,
+        10,
+        hash::blake2b256(&b"root"),
+        hash::blake2b256(&b"manifest"),
+        1,
+        0,
+        970,
+        0,
+        CLAIM_WINDOW_DURATION_MS,
+        TREASURY,
+        &self.clock,
+    );
+}
+
+/// Schedules a new round notice under `admin`.
+fun schedule_notice_as(
+    self: &mut ReserveFixture,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<RewardsAdmin>,
+    delay_ms: u64,
+) {
+    self.vault.schedule_round_delay(package_version, admin, delay_ms, &self.clock);
+}
+
+/// Applies the ready round-notice change under `package_version`.
+fun apply_notice_with(self: &mut ReserveFixture, package_version: &PackageVersion) {
+    self.vault.apply_round_delay(package_version, &self.clock);
+}
+
+/// Cancels the scheduled round as the cancel admin.
+fun cancel_round(self: &mut ReserveFixture) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
+    self.vault.cancel_round(&package_version, &blast_acl::witness_for_testing<CancelAdmin>());
+    std::unit_test::destroy(package_version);
+}
+
+/// Schedules a new round notice as the rewards admin.
+fun schedule_notice(self: &mut ReserveFixture, delay_ms: u64) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
+    self.schedule_notice_as(&package_version, &blast_acl::witness_for_testing<RewardsAdmin>(), delay_ms);
+    std::unit_test::destroy(package_version);
+}
+
+/// Applies the ready round-notice change.
+fun apply_notice(self: &mut ReserveFixture) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
+    self.apply_notice_with(&package_version);
+    std::unit_test::destroy(package_version);
+}
+
+/// Cancels the pending round-notice change as the cancel admin.
+fun cancel_notice(self: &mut ReserveFixture) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
+    self.vault.cancel_round_delay(&package_version, &blast_acl::witness_for_testing<CancelAdmin>());
+    std::unit_test::destroy(package_version);
+}
+
+/// Raises the round notice from zero, which applies in the same transaction.
+fun raise_notice(self: &mut ReserveFixture, delay_ms: u64) {
+    self.schedule_notice(delay_ms);
+    self.apply_notice();
+    assert_eq!(self.vault.round_publication_for_testing().delay_ms(), delay_ms);
+}
+
+/// Burns unreserved holder Quote so the budget shrinks between scheduling and publication.
+fun drain_holder_rewards(self: &mut ReserveFixture, quote_amount: u64) {
+    let (meme, quote) = self.vault.withdraw_holder_rewards_for_testing(0, quote_amount);
+    meme.destroy_zero();
+    quote.destroy_for_testing();
+}
+
+/// The terms `schedule_budget_to` schedules for the fixture's treasury.
+fun terms(self: &ReserveFixture, holder_quote: u64, reserve: u64): RoundTerms {
+    vault::new_round_terms(
+        0,
+        0,
+        10,
+        rewards::leaf_for_testing(object::id(&self.vault), 0, 0, HOLDER, 0, holder_quote),
+        hash::blake2b256(&b"manifest"),
+        1,
+        0,
+        holder_quote,
+        reserve,
+        CLAIM_WINDOW_DURATION_MS,
+        TREASURY,
+    )
 }
 
 fun take_round(self: &ReserveFixture): Round<MEME, QUOTE> {
@@ -745,11 +1308,15 @@ fun only_event<Event: copy + drop>(): Event {
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminCap};
+use blast_admin::{
+    blast_acl::{Self, AdminCap, AdminWitness},
+    delayed_action::{ActionApplied, ActionCancelled, ActionScheduled}
+};
 
 use blast_presale::{
     blast_presale as presale,
-    blast_presale_domain::{RewardsAdmin, TreasuryAdmin},
+    blast_presale_domain::{CancelAdmin, RewardsAdmin, TreasuryAdmin},
+    blast_presale_package::PackageVersion,
     bps,
     fee_policy::{Self, FeePolicy},
     holder_rewards::{
@@ -760,7 +1327,7 @@ use blast_presale::{
         GasReserveSettled,
         RoundClosed,
     },
-    presale_vault::{Self as vault, Vault, HolderMemePaid}
+    presale_vault::{Self as vault, Vault, HolderMemePaid, RoundPublicationKey, RoundTerms}
 };
 
 use std::{bcs, unit_test::assert_eq};
@@ -771,4 +1338,14 @@ use fun reserve_next_tx as ReserveFixture.next_tx;
 
 use fun reserve_ctx as ReserveFixture.ctx;
 
+use fun rewards::apply_round_delay as Vault.apply_round_delay;
+
+use fun rewards::cancel_round as Vault.cancel_round;
+
+use fun rewards::cancel_round_delay as Vault.cancel_round_delay;
+
 use fun rewards::publish_round as Vault.publish_round;
+
+use fun rewards::schedule_round as Vault.schedule_round;
+
+use fun rewards::schedule_round_delay as Vault.schedule_round_delay;

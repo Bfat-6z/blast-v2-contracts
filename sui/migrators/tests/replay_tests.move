@@ -667,7 +667,8 @@ fun claim_creator_fees(self: &mut ReplayFixture) {
     });
 }
 
-/// Publishes the next round with one leaf paying Alice half of each rewards balance.
+/// Schedules and publishes the next round, under the zero notice, with one leaf paying Alice half
+/// of each rewards balance and claims open for 1,000,000 ms.
 fun publish_round(self: &mut ReplayFixture) {
     self.next_tx!(ADMIN, |f| {
         let admin = blast_acl::witness_for_testing<RewardsAdmin>();
@@ -675,14 +676,11 @@ fun publish_round(self: &mut ReplayFixture) {
         let mut vault = f.take_vault();
         let (meme, quote) = vault.rewards_balances();
         let number = vault.next_round();
-        let claim_deadline_at_ms = f.clock.timestamp_ms() + 1_000_000;
         let root = merkle::leaf(object::id(&vault), number, 0, ALICE, meme / 2, quote / 2);
 
-        vault.publish_round(
+        vault.schedule_round(
             &f.migrators_version,
             &admin,
-            &policy,
-            policy.protocol_destination(),
             number,
             100 + number * 200,
             200 + number * 200,
@@ -692,10 +690,11 @@ fun publish_round(self: &mut ReplayFixture) {
             meme / 2,
             quote / 2,
             quote / 4,
-            claim_deadline_at_ms,
+            1_000_000,
+            policy.protocol_destination(),
             &f.clock,
-            f.ctx!(),
         );
+        vault.publish_round(&f.migrators_version, &policy, &f.clock, f.ctx!());
 
         test_scenario::return_shared(vault);
         test_scenario::return_shared(policy);
@@ -983,8 +982,9 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
     });
 
     // This reducer tracks applied economics. Launch-config proposals and their application,
-    // intake admissions, policy proposals, the launch's cap-reassignment slots, and the creator
-    // capability claim do not change its state; nothing else may appear.
+    // intake admissions, policy proposals, the launch's cap-reassignment slots, the vault's round
+    // publication slot (its `RoundPublished` carries the funded round), and the creator capability
+    // claim do not change its state; nothing else may appear.
     let unreduced =
         direct<SetScheduled<MigrationWitnessKey, TypeName>>().length()
         + direct<SetApplied<MigrationWitnessKey, TypeName>>().length()
@@ -996,6 +996,9 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         + direct<DelayedScheduled<ProtocolDestinationKey, address>>().length()
         + direct<ActionCreated<CurveFeeCapReassignment, address>>().length()
         + direct<ActionCreated<MetadataCapReassignment, address>>().length()
+        + direct<ActionCreated<RoundPublicationKey, RoundTerms>>().length()
+        + direct<ActionScheduled<RoundPublicationKey, RoundTerms>>().length()
+        + direct<ActionApplied<RoundPublicationKey, RoundTerms>>().length()
         + wrapped<events::QuoteSet>().length()
         + wrapped<events::CreatorCapsClaimed>().length();
     assert_eq!(event::num_events() as u64, reduced + unreduced);
@@ -2143,7 +2146,7 @@ const MAP_DELAY_TAG: u32 = 1;
 use blast_admin::{
     blast_acl,
     delayed::{DelayedApplied, DelayedCancelled, DelayedCreated, DelayedScheduled},
-    delayed_action::ActionCreated,
+    delayed_action::{ActionApplied, ActionCreated, ActionScheduled},
     delayed_map::{MapApplied, MapScheduled},
     delayed_set::{SetApplied, SetScheduled},
 };
@@ -2182,7 +2185,7 @@ use blast_fun_migrators::{
     },
     merkle,
     blast_fun_migrators::{Self as migrators_version, PackageVersion as MigratorsVersion},
-    vault::{Self, FeeSplitKey, LpVault},
+    vault::{Self, FeeSplitKey, LpVault, RoundPublicationKey, RoundTerms},
 };
 
 use std::{ascii::String, type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
@@ -2235,3 +2238,4 @@ use fun route_entry as Route.route_entry;
 use fun split_entry as FeeSplit.split_entry;
 
 use fun blast_holder_rewards::publish_round as LpVault.publish_round;
+use fun blast_holder_rewards::schedule_round as LpVault.schedule_round;
