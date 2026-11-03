@@ -28,10 +28,13 @@ first-party code.
 ## Consequences
 
 `blast-v2-contracts` becomes the maintenance location. After this change is
-merged and dependent repository references are updated, replace the old
-repository's README with a pointer here and archive it. Retain the old
-repository for existing pinned URLs and historical links; deleting it would
-break those consumers. Existing release records keep their original provenance.
+merged and dependent repository references are updated, delete the old GitHub
+repository as requested by the owner. Verify the imported history on destination
+main and preserve a local recovery bundle before deletion. External consumers
+must change the repository URL to `blast-v2-contracts`; old repository URLs
+will stop resolving. Keep published-source commit IDs and update documentation
+links to those same commits here. Existing release records retain their original
+repository field as historical provenance.
 
 Published utility source is exempt from greenfield API and error-renumbering
 rules. Future work must preserve its immutable ABI and abort identities.

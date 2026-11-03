@@ -36,7 +36,8 @@ blast_fun_timelock = { git = "https://github.com/interest-protocol/blast-v2-cont
 Build for mainnet so Sui resolves `Published.toml` to the existing immutable
 packages. Existing consumers pinned to utility commit
 `63b6cf86c0e1a74f699610fe182b1de8d8789a14` can change just the repository URL:
-that commit is preserved in this repository's imported history.
+that commit is preserved in this repository's imported history. Update the URL
+before the old repository is removed; its URLs will no longer resolve.
 
 ## Published-source verification
 
