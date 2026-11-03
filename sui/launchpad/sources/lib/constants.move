@@ -69,6 +69,11 @@ macro public(package) fun meme_total_supply_whole_tokens(): u64 {
     1_000_000_000
 }
 
+/// Most account-claim signer keys live or pending at once: two live during a rotation, two staged.
+macro public(package) fun max_claim_signers(): u64 {
+    4
+}
+
 /// Canonical Ed25519 public-key length.
 macro public(package) fun ed25519_public_key_length(): u64 {
     32

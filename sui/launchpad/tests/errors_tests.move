@@ -70,6 +70,7 @@ fun creator_authority_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::invalid_creator_claim_signature!(), 31);
     assert_eq!(blast_fun::errors::quote_not_allowed!(), 32);
     assert_eq!(blast_fun::errors::invalid_virtual_quote!(), 33);
+    assert_eq!(blast_fun::errors::too_many_claim_signers!(), 43);
 }
 
 #[test]

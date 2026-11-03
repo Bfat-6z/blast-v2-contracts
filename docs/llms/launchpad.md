@@ -27,7 +27,7 @@ collection, auto-LP, buyback, and holder rewards are in the migrators guide.
 | --- | --- | --- | --- |
 | `blast_fun::blast_fun::PackageVersion` | `blast_fun::package_admin::wrap` | the active generation and Create/Trading/Migrate pause flags | upgrade, pause and unpause admins |
 | `launch_config::LaunchConfig` | package publish | policy that new launches snapshot: admitted Meme decimals, admitted Quote types, trade fees, admitted adapters, Blast's migration allocation, the creation fee, accepted partners | Blast admins |
-| `runtime_config::RuntimeConfig` | package publish | settings read live: the account-claim signer key, Blast's share of every trade fee, the treasury address | Blast admins |
+| `runtime_config::RuntimeConfig` | package publish | settings read live: the account-claim signer keys, Blast's share of every trade fee, the treasury address | Blast admins |
 | `launch::Launch<Meme, Quote>` | `launch::finalize`, shared by `launch::share` | one launch: lifecycle, curve reserves, settings, fee ledger, opening-round pot, migration allocations | trades, claims, migration |
 | `blast_fun::package_admin::PackageAdmin` | `blast_fun::package_admin::wrap` | the package's `Publisher` and `UpgradeCap` | upgrade admin only |
 | `Currency<Meme>` | `0x2::coin_registry::finalize_registration` | the coin's name, symbol, decimals, description, icon URL, and supply state (Sui Coin Registry) | the launch, through its internal `MetadataCap<Meme>` |
@@ -109,7 +109,7 @@ role authorizes only the functions that name it. The roles are types in `blast_f
 | `blast_fun_domain::FeeAdmin` | `launch_config::schedule_trade_fees`, `launch_config::schedule_creation_fee`, `launch_config::add_partner`, `launch_config::remove_partner`, `runtime_config::schedule_protocol_fee_share` |
 | `blast_fun_domain::ListingAdmin` | `launch_config::set_meme_decimals_allowed`, `launch_config::set_quote_allowed` |
 | `blast_fun_domain::AdapterAdmin` | `launch_config::schedule_migration_witness`, `launch_config::remove_migration_witness` |
-| `blast_fun_domain::ClaimSignerAdmin` | `runtime_config::set_creator_claim_signer`, `runtime_config::revoke_creator_claim_signer` |
+| `blast_fun_domain::ClaimSignerAdmin` | `runtime_config::schedule_creator_claim_signer`, `runtime_config::revoke_creator_claim_signer`, `runtime_config::schedule_creator_claim_signer_delay` |
 | `blast_fun_domain::BuybackAdmin`, `blast_fun_domain::RewardsAdmin` | migrators only (buyback, holder-reward rounds) |
 
 Integrators cannot call these. What each setter changes is under "Admin operations".
@@ -146,9 +146,9 @@ expiry, or refund path.
 2. Call `blast_fun::package_admin::wrap` with Publication by value and the matching
    never-upgraded UpgradeCap. It consumes Publication permanently, seals native
    custody and shares PackageVersion. Publication-owned policy operations start with zero notice. All operations start paused (combined mask = 7).
-3. Grant the required roles on the real Blast ACL. Configure destinations, fees
-   and reviewed adapter admission through the ordinary schedule/apply operations
-   with Clock. At zero delay these can run in one PTB. Quote admission uses its
+3. Grant the required roles on the real Blast ACL. Configure destinations, fees,
+   reviewed adapter admission and the account-claim signer keys through the ordinary
+   schedule/apply operations with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
    role to schedule and apply its intended value and next notice. Upgrade custody
@@ -321,7 +321,8 @@ Emits `blast_fun::events::CreatorCapsClaimed`.
 - Account recipient: pass `Some(attestation)`, obtained from the Blast backend for the sending
   wallet. The attestation is the BCS encoding of `(expiry_ms: u64, signature: vector<u8>)`, 73 bytes
   for a 64-byte signature, with nothing after it. The call checks `Clock` time `<= expiry_ms` and
-  verifies the Ed25519 signature with `RuntimeConfig.creator_claim_signer_public_key` over the raw
+  verifies the Ed25519 signature against every admitted key in `RuntimeConfig.creator_claim_signers`
+  (any one may have signed; with none admitted, every account claim fails) over the raw
   BCS bytes of `creator_authority::CreatorClaimMessage`, whose fields in order are `meme`,
   `account_commitment`, `claimant`, and `expiry_ms`. Here `meme` is the Meme `TypeName` with
   original package IDs (64 hex characters, no `0x`, then `::module::NAME`) and `claimant` is the
@@ -384,8 +385,8 @@ in place. The opening-round balances awaiting delivery are untouched.
 
 Each setter takes the object it changes, `PackageVersion`, and the role's `AdminWitness`, and
 emits an event. Delayed schedules abort with code 20 from the Blast admin delayed module of
-their type (`delayed` for a setting, `delayed_set` for an adapter admission) when nothing would
-change; "Delayed administration" lists their events. The allow/remove toggles for
+their type (`delayed` for a setting, `delayed_set` for an adapter or signer admission) when
+nothing would change; "Delayed administration" lists their events. The allow/remove toggles for
 Quotes and decimals instead abort inside the Sui collection (`sui::dynamic_field` or
 `sui::vec_set`) when the entry already has the requested state.
 
@@ -414,8 +415,17 @@ Quotes and decimals instead abort inside the Sui collection (`sui::dynamic_field
 - `runtime_config::schedule_treasury` (TreasuryAdmin), with a non-zero address: every later Blast fee
   claim on every launch pays it. Application emits
   `delayed::DelayedApplied<runtime_config::TreasuryKey, address>`.
-- `runtime_config::set_creator_claim_signer` (ClaimSignerAdmin), with a 32-byte Ed25519 public key,
-  with immediate revocation handled by the separate revoke operation. Application emits `blast_fun::events::CreatorClaimSignerSet`.
+- `runtime_config::schedule_creator_claim_signer` (ClaimSignerAdmin), with a 32-byte Ed25519 public
+  key and `Clock`: proposes admitting a key that may sign account claims, ready after the applied
+  signer notice. Live and pending keys together are capped at four; scheduling a fifth aborts with
+  43 `blast_fun::errors::ETooManyClaimSigners`, while rescheduling a pending key replaces its
+  admission and restarts its notice. `runtime_config::apply_creator_claim_signer` (anyone, after the
+  notice) admits it; `runtime_config::cancel_creator_claim_signer` (CancelAdmin) discards it, even
+  when ready. Scheduling an admitted key aborts with code 20 from `delayed_set`.
+- `runtime_config::revoke_creator_claim_signer` (ClaimSignerAdmin), with the key: removes a live key,
+  or discards a pending one, in the same transaction. Attestations that key signed stop verifying,
+  including ones signed before the revocation. A key that is neither admitted nor pending aborts
+  with code 20 from `delayed_set`.
 - `launch::apply_curve_fee_cap_reassignment` and `launch::apply_metadata_cap_reassignment` (anyone
   after the delay) apply a pending reassignment; `launch::apply_curve_fee_cap_delay` and
   `launch::apply_metadata_cap_delay` apply a pending notice change and keep the live cap.
@@ -450,7 +460,8 @@ cap-reassignment notice, `delayed_set` for the admission notice).
 Read the live notice before relying on a cancellation window.
 
 Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, a
-`delayed_action::DelayedAction` slot, or the `delayed_set::DelayedSet` of adapters. The module
+`delayed_action::DelayedAction` slot, or the `delayed_set::DelayedSet` of adapters or of
+account-claim signer keys. The module
 of each type emits every schedule, cancel and apply event; the launchpad emits none of its own,
 and these events are not wrapped in `blast_fun::blast_events::Event`. They are generic in the
 operation's key and value type and carry `owner` (the ID of the object that stores the field)
@@ -458,14 +469,15 @@ and `key`. A value schedule emits `delayed::DelayedScheduled` (after `delayed::D
 for a replaced proposal), a cancel emits `delayed::DelayedCancelled`, and an application emits
 `delayed::DelayedApplied` with the previous and new value and the applied notice. Creating a
 setting emits `delayed::DelayedCreated`, an action slot `delayed_action::ActionCreated` (so
-`launch::finalize` emits it for both cap-reassignment slots), and the admission set
+`launch::finalize` emits it for both cap-reassignment slots), and each admission set
 `delayed_set::SetCreated`. Upgrade actions, cap reassignments and their notice changes emit
 `delayed_action::ActionScheduled`, `delayed_action::ActionCancelled` and
 `delayed_action::ActionApplied`, whose `change` is `Action(...)` or `Delay` (a notice change).
-Adapter admissions and their notice changes emit `delayed_set::SetScheduled`,
+Adapter and signer admissions and their notice changes emit `delayed_set::SetScheduled`,
 `delayed_set::SetCancelled` and `delayed_set::SetApplied`, whose `change` is `Admission(...)` or
 `Delay`. Their `delay_ms` is the proposed next notice for a notice change and the applied notice
-for an action or admission. `delayed_set::MemberRemoved` records an immediate adapter removal.
+for an action or admission. `delayed_set::MemberRemoved` records an immediate adapter removal or
+signer revocation; revoking a pending key emits only `delayed_set::SetCancelled`.
 
 | Operation | Object and field | Key | Value or action type |
 | --- | --- | --- | --- |
@@ -473,6 +485,7 @@ for an action or admission. `delayed_set::MemberRemoved` records an immediate ad
 | Migration allocation | `LaunchConfig.protocol_allocation` | `launch_config::ProtocolAllocationKey` | `allocation::ProtocolAllocation` |
 | Creation fee | `LaunchConfig.creation_fee` | `launch_config::CreationFeeKey` | `u64` |
 | Adapter admissions | `LaunchConfig.migration_witnesses` | `launch_config::MigrationWitnessKey` | `TypeName` |
+| Account-claim signer keys | `RuntimeConfig.creator_claim_signers` | `runtime_config::ClaimSignerKey` | `vector<u8>` (a 32-byte Ed25519 public key) |
 | Blast's trade-fee share | `RuntimeConfig.protocol_fee_share_bps` | `runtime_config::ProtocolFeeShareKey` | `blast_fun::bps::Bps` |
 | Blast's treasury | `RuntimeConfig.treasury` | `runtime_config::TreasuryKey` | `address` |
 | Upgrades and immutability | `PackageAdmin.upgrade` | `blast_fun::package_admin::UpgradeKey` | `blast_fun::package_admin::UpgradeAction` |
@@ -509,8 +522,16 @@ change cannot overwrite that policy. Existing admission deadlines remain fixed; 
 or cancel all zero-notice admissions before completing setup. Immediate adapter removal
 cancels that type's pending admission and preserves the applied notice.
 
-Creator-claim signer assignment and revocation are immediate under ClaimSignerAdmin,
-using a plain key value. Creator-cap reassignment is a separate delayed operation:
+Account-claim signer keys form one set with its own applied notice, starting at zero at
+publication so setup can admit the first key at once before raising it. Admitting a key waits
+that notice, because every admitted key signs claims with full authority: a compromised
+ClaimSignerAdmin cannot add a key that signs without warning. Revocation is immediate, and claims
+verify against any admitted key, so a rotation admits the new key before revoking the old one
+without downtime. ClaimSignerAdmin proposes a signer notice with
+`runtime_config::schedule_creator_claim_signer_delay`; anyone applies it with
+`runtime_config::apply_creator_claim_signer_delay` once the applied notice has passed, and
+CancelAdmin discards it with `runtime_config::cancel_creator_claim_signer_delay`. Pending
+admissions keep their deadlines. Creator-cap reassignment is a separate delayed operation:
 each new launch starts both cap notices at 48 hours. The cap delay-only scheduling
 helpers propose no recipient; the matching delay application applies the notice
 without issuing, retiring or transferring a cap. Subsequent reassignments use that
@@ -545,8 +566,8 @@ Both caps record their lifecycle with the `delayed_action` events, keyed by
 `launch::CurveFeeCapReassignment` or `launch::MetadataCapReassignment` with the launch ID as
 `owner`. Applying a reassignment emits `delayed_action::ActionApplied` before
 `blast_fun::events::CurveFeeCapReassigned` or `blast_fun::events::MetadataCapReassigned`.
-ClaimSignerAdmin may immediately revoke the signer with
-`runtime_config::revoke_creator_claim_signer`; assignment and revocation take effect immediately.
+ClaimSignerAdmin may immediately revoke a live or pending signer key with
+`runtime_config::revoke_creator_claim_signer`; only admission waits its notice.
 AdapterAdmin may immediately remove an adapter with `launch_config::remove_migration_witness`.
 Genesis treasury is configured before publication, never defaulted to the publisher.
 
@@ -685,7 +706,7 @@ All times are `Clock` milliseconds.
   `accepted_until_ms = now + 7 days`, and `add_partner` restores `u64::MAX`.
 - Trades, claims, deliveries, and migration have no deadline. Settings snapshot at `new` and
   `finalize`; config changes made later never reach existing launches, except
-  `protocol_fee_share_bps`, `treasury`, and the claim signer, which are read live.
+  `protocol_fee_share_bps`, `treasury`, and the claim signer keys, which are read live.
 
 ### Reading state
 
@@ -743,8 +764,9 @@ a proposed next notice. Applying an admission never writes its delay back to the
 admission becomes active only when applied into `members`. Accepted
 partners are dynamic fields `launch_config::PartnerKey(ID)` holding `accepted_until_ms`.
 
-`RuntimeConfig` stores the plain `creator_claim_signer_public_key` as its active signer.
-Its delayed fields are `protocol_fee_share_bps`, whose applied value is a `Bps`, and
+`RuntimeConfig.creator_claim_signers` is a `DelayedSet<ClaimSignerKey, vector<u8>>`: `members`
+holds the admitted keys, `delay_ms` the signer notice, and `admissions` each pending key's
+`delay_ms` and `ready_at_ms`. Its other delayed fields are `protocol_fee_share_bps`, whose applied value is a `Bps`, and
 `treasury`, whose applied value is the current payee. A launch's `curve_fee_cap_reassignment`
 and `metadata_cap_reassignment` are `DelayedAction`s holding each cap's applied notice
 (`delay_ms`) and any `pending` reassignment or notice change. A `Bps` is a positional struct wrapping one u64. Preview a trade exactly
@@ -761,7 +783,6 @@ the transaction sender; take it from the transaction.
 | Event | Emitted by | Key fields and what to derive |
 | --- | --- | --- |
 | `blast_fun::events::Paused`, `blast_fun::events::Unpaused` | pause admin or unpause admin | requested `bits`, resulting `paused` mask |
-| `blast_fun::events::CreatorClaimSignerSet` | immediate signer assignment or revocation | applied `signer_public_key`; empty means revoked |
 | `blast_fun::events::LaunchTicketCreated` | coin publish | `ticket_id`, `meme` type, `decimals`, `metadata_cap_id`, `creator`, `burnable`, `sell_burn_bps` |
 | `blast_fun::events::LaunchCreated` | `launch::finalize` | `launch_id`, `ticket_id` (join to the ticket for the Meme type), `quote` type, `migration_witness`, pool tier, `lp_fee_split`, `virtual_quote`, `graduation_target`, both fee rates, the full `allocation_plan` with Blast's shares, `opening_round_ms`, `creation_fee`, `partner_id` |
 | `blast_fun::events::LaunchShared` | `launch::share` | `public_start_ms`; round end is this plus `opening_round_ms` |
@@ -780,8 +801,7 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::Migrated` | migration | `meme`, `quote` handed to the pool, `disposed_meme`, `total_supply_after` |
 
 Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSet`,
-`blast_fun::events::PartnerAdded`, `blast_fun::events::PartnerRemoved`,
-`blast_fun::events::CreatorClaimSignerSet`. Outside the envelope: every delayed schedule,
+`blast_fun::events::PartnerAdded`, `blast_fun::events::PartnerRemoved`. Outside the envelope: every delayed schedule,
 cancel and apply event from the Blast admin delayed modules (see "Delayed administration"), the Cetus adapter's
 `blast_fun_migrators::blast_events::CetusPoolReserved` at creation, and
 `blast_partners::blast_partners::PartnerPaid` for each partner payout.
@@ -796,8 +816,9 @@ that detected it.
 | any | 9 in `blast_admin::operational_version` | call the launchpad's current package ID |
 | pause, unpause | 38 `blast_fun::errors::EInvalidPauseBits`, 39 `blast_fun::errors::EPauseUnchanged` (`blast_fun`) | select nonzero supported bits that change the active mask |
 | create, buy, sell, voluntary migration | 40 `blast_fun::errors::EPaused` (`blast_fun`) | wait for an `UnpauseAdmin` to clear the operation's bit |
+| claim signer scheduling | 43 `blast_fun::errors::ETooManyClaimSigners` (`runtime_config`) | revoke or cancel a key first; at most four live and pending keys |
 | package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; use a 32-byte digest |
-| delayed administration (fees, allocation, treasury, adapters, upgrades, cap reassignment) | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin (plain codes): 18 and 20 from the type's own module (`delayed`, `delayed_action` or `delayed_set`), 22 from `delayed_action`, 17 from `delayed_set` for an early admission and otherwise, like 19, from `delayed` | wait for `ready_at_ms`; schedule before applying or cancelling; choose a representable notice; change the value or notice; apply with the call matching the pending action or notice change |
+| delayed administration (fees, allocation, treasury, adapters, claim signers, upgrades, cap reassignment) | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin (plain codes): 18 and 20 from the type's own module (`delayed`, `delayed_action` or `delayed_set`), 22 from `delayed_action`, 17 from `delayed_set` for an early admission and otherwise, like 19, from `delayed` | wait for `ready_at_ms`; schedule before applying or cancelling; choose a representable notice; change the value or notice; apply with the call matching the pending action or notice change |
 | publish | 9 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 25 `blast_fun::errors::EInvalidCreatorRecipient`, 26 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | start | 11 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 32 `blast_fun::errors::EQuoteNotAllowed`, 3 `blast_fun::errors::EMigrationWitnessNotAllowed`, 2 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, adapter, and decimals |

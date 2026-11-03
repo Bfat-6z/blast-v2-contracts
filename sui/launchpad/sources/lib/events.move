@@ -18,9 +18,6 @@ public struct QuoteSet has copy, drop {
     allowed: bool,
 }
 
-/// The account-claim signer's public key; empty when revoked.
-public struct CreatorClaimSignerSet(vector<u8>) has copy, drop;
-
 /// New launches may name the partner from now on, or its pending removal was cancelled.
 public struct PartnerAdded has copy, drop {
     partner_id: ID,
@@ -224,10 +221,6 @@ public(package) fun meme_decimals_set(decimals: u8, allowed: bool) {
 
 public(package) fun quote_set<Quote>(allowed: bool) {
     emit(QuoteSet { quote: type_name::with_original_ids<Quote>(), allowed });
-}
-
-public(package) fun creator_claim_signer_set(signer_public_key: vector<u8>) {
-    emit(CreatorClaimSignerSet(signer_public_key));
 }
 
 public(package) fun partner_added(partner_id: ID) {
