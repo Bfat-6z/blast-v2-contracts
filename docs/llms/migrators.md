@@ -326,8 +326,8 @@ Auto-LP per venue:
 
 When the launch named a partner, collections hold Blast's share in the vault instead of paying it.
 Anyone may pay it out with `blast_fun_migrators::vault::claim_protocol_lp_fees_with_partner`
-(`<Meme, Quote>`), passing the `LpVault` (mutable), migrators `PackageVersion`, `LpFeePolicy`, the
-vault's `blast_partners::blast_partners::Partner`, and `Clock`. It aborts with `EPartnerMismatch`
+(`<Meme, Quote>`), passing the `LpVault` (mutable), migrators `PackageVersion`, `LpFeePolicy`,
+and the vault's `blast_partners::blast_partners::Partner`; no `Clock`. It aborts with `EPartnerMismatch`
 unless the partner is the one the vault inherited (so it also aborts on a vault without a partner).
 If nothing is held it returns without moving anything or emitting an event. Otherwise it takes
 everything held, pays the partner its cut of each asset through
@@ -703,8 +703,8 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
   stop at that deadline. Anyone may close at that deadline to restore unclaimed assets and
   unsettled gas custody. Checkpoint intervals must be nonempty and nonoverlapping; gaps are allowed.
 - `migrate`, `collect_fees`, `settle_and_apply_fee_split`, and `buyback_and_burn` take `Clock`
-  (`0x6`) for the venue's own use (`new` takes none); the partner payout takes it for the partner's
-  timelocked share.
+  (`0x6`) for the venue's own use (`new` takes none); the partner payout takes none and pays the
+  partner's applied share.
 
 ### Reading state
 

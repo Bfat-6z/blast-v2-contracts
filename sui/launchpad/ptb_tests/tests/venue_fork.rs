@@ -34,7 +34,7 @@ use anyhow::{Context, Result, bail, ensure};
 use blake2::{Blake2b, Digest, digest::consts::U32};
 use blast_launchpad_ptb_tests::{
     ActionScheduled, Change, CompiledPackage, Delayed, DelayedAction, DelayedApplied, Expected, Harness,
-    Outcome, RoundTerms, UnlinkedPackage, build, build_timelock, build_unlinked, call,
+    Outcome, RoundTerms, UnlinkedPackage, build, build_unlinked, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusAddLiquidity, CetusCollectFee,
@@ -42,7 +42,7 @@ use blast_launchpad_ptb_tests::{
         RegisterPermissionPair, USDC, UserFeeCollected, apportion, cetus_name, expected_sqrt_price, id,
         insert_snapshot, meme_is_cetus_a, sui, tag, venue_dependencies, venue_events,
     },
-    sui_dir, timelock_dir,
+    sui_dir,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sui_types::{
@@ -271,7 +271,7 @@ fn migrators() -> &'static UnlinkedPackage {
         let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("venue_fork");
         build_unlinked(
             &sui_dir().join("migrators"),
-            &["blast_fun_timelock", "blast_admin", "blast_partners", "blast_fun"],
+            &["blast_admin", "blast_partners", "blast_fun"],
             &work,
         )
             .expect("build the migrators")
@@ -363,14 +363,12 @@ impl World {
         let mut h = Harness::new()?;
         let (checkpoint, venue) = insert_snapshot(&mut h)?;
 
-        let timelock_dir = timelock_dir()?;
         let admin_dir = sui_dir.join("admin");
         let launchpad_dir = sui_dir.join("launchpad");
-        let (timelock, _) = h.publish(build_timelock(&work)?)?;
         let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
         let partners_dir = sui_dir.join("partners");
-        let (partners, _) = h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
-        let core = [(timelock_dir.as_path(), timelock), (admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
+        let (partners, _) = h.publish(build(&partners_dir, &[(&admin_dir, admin)], &work)?)?;
+        let core = [(admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
         let (blast, published) = h.publish(build(&launchpad_dir, &core, &work)?)?;
         let one = |h: &Harness, outcome: &Outcome, module: &str, name: &str| {
             let ids = outcome.created(h, module, name);
@@ -383,10 +381,10 @@ impl World {
         let runtime = one(&h, &published, "runtime_config", "RuntimeConfig");
 
         let mut dependencies =
-            vec![ObjectID::from_single_byte(1), ObjectID::from_single_byte(2), timelock, admin, partners, blast];
+            vec![ObjectID::from_single_byte(1), ObjectID::from_single_byte(2), admin, partners, blast];
         dependencies.extend(venue_dependencies(&h)?);
         let linked = migrators().link(
-            &[("blast_fun_timelock", timelock), ("blast_admin", admin), ("blast_partners", partners), ("blast_fun", blast)],
+            &[("blast_admin", admin), ("blast_partners", partners), ("blast_fun", blast)],
             dependencies,
         )?;
         let (migrators, migrators_publication) = h.publish(linked)?;
@@ -423,7 +421,7 @@ impl World {
         h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
         let project = build(
             &blast_launchpad_ptb_tests::crate_dir().join("fixture/project"),
-            &[core[0], core[1], core[2], (launchpad_dir.as_path(), blast)],
+            &[core[0], core[1], (launchpad_dir.as_path(), blast)],
             &work,
         )?;
 

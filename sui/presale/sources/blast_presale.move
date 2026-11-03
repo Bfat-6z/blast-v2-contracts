@@ -991,14 +991,13 @@ public fun migrate<SaleToken, Quote, MigrationWitness: drop>(
 
 /// Pays a migrated sale's Blast partner its cut of Blast's raise fee, rounded down so Blast keeps
 /// the remainder, and pays Blast the rest of it and its token fee at the `FeePolicy`'s current
-/// destination. The cut is the partner's `blast_partners` rate in force now. Anyone may call it
+/// destination. The cut is the partner's `blast_partners` applied rate. Anyone may call it
 /// once after migration: both recipients are fixed.
 public fun pay_protocol_fees_with_partner<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &PackageVersion,
     fee_policy: &FeePolicy,
     partner: &Partner,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
@@ -1007,7 +1006,7 @@ public fun pay_protocol_fees_with_partner<SaleToken, Quote>(
     assert!(self.unpaid_protocol_quote.is_some(), ENoPartnerPayout);
 
     let mut protocol_quote = self.unpaid_protocol_quote.extract();
-    let partner_quote = partner.pay(&mut protocol_quote, clock, ctx);
+    let partner_quote = partner.pay(&mut protocol_quote, ctx);
 
     self.pay_protocol_fees(protocol_quote, partner_quote, fee_policy.destination(), ctx);
 }

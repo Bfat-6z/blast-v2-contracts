@@ -901,17 +901,14 @@ fun pay_held_lp_fees(
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
     policy.set_destination_for_testing(&package_version, &treasury_admin(), destination, scenario.ctx());
-    let clock = clock::create_for_testing(scenario.ctx());
 
     self.pay_protocol_lp_fees_with_partner(
         &package_version,
         &policy,
         partner,
-        &clock,
         scenario.ctx(),
     );
 
-    clock.destroy_for_testing();
     policy.destroy_for_testing();
 
     std::unit_test::destroy(package_version);

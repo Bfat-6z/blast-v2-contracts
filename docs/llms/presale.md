@@ -431,7 +431,7 @@ Who may call: *anyone*, while `Funded`, until someone cancels. Usually one keepe
    (`sale`), `FeePolicy`, `VenueConfig` (read), Cetus `GlobalConfig` (`cetus_config`, read),
    Cetus `Pools` (mutable), and the Cetus LP-burn `BurnManager` (mutable).
 3. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(presale, fee_policy,
-   partner, clock)`.
+   partner)`.
 
 Migration calls `blast_presale::blast_presale::migrate`, which pays Blast (or holds its fees on a partnered
 sale), pays or vests each raise recipient, pays or vests each token recipient, and returns the
@@ -526,7 +526,7 @@ with the venue's `collect_fees`, and holder-reward rounds work as for any vault.
 #### Paying a partnered sale's Blast fees
 
 Who may call: *anyone*, once, after migration. `blast_presale::blast_presale::pay_protocol_fees_with_partner(presale,
-fee_policy, partner, clock)` takes the Blast raise fee the migration held, pays the partner its
+fee_policy, partner)` takes the Blast raise fee the migration held, pays the partner its
 cut through `blast_partners::blast_partners::pay`, then pays Blast the rest of the raise fee and its whole token
 fee at the `FeePolicy`'s current destination. Emits `blast_partners::blast_partners::PartnerPaid` (when the cut is
 positive) and `blast_presale::blast_presale::ProtocolFeesPaid`. The partner is paid as an owned coin at its
@@ -601,7 +601,7 @@ records payment and the remaining unallocated Meme. A collection of zero is vali
 adapter collects venue incentive rewards.
 
 On a partnered vault, follow with `presale_vault::pay_protocol_lp_fees_with_partner(vault,
-fee_policy, partner, clock)`: *anyone*; it pays the partner its cut of each held asset and Blast
+fee_policy, partner)`: *anyone*; it pays the partner its cut of each held asset and Blast
 the rest, emitting `presale_vault::ProtocolLpFeesPaid` and `blast_partners::blast_partners::PartnerPaid`. Holding
 nothing is valid and emits nothing, so it can follow every collection.
 
@@ -891,8 +891,8 @@ poolable price.
 A sale may name one `blast_partners::blast_partners::Partner`, named on the initializer and fixed
 at `finalize`. The partner earns a cut of Blast's raise fee and of Blast's LP fees, never of Blast's
 token fee. The cut is
-`floor(fee × share_bps / 10,000)` using the partner's share in force when paid (at most 8,000
-BPS; Blast's changes to it take effect 7 days after being scheduled). Blast keeps the rest. On a
+`floor(fee × share_bps / 10,000)` using the partner's share applied when paid (at most 8,000
+BPS; a change Blast proposes can be applied by anyone 7 days later). Blast keeps the rest. On a
 partnered sale, migration holds Blast's raise fee and tokens in the sale, and each collection
 holds Blast's LP fees in the vault, until the two pay calls run.
 

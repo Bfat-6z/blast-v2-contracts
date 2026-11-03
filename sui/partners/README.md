@@ -7,13 +7,13 @@ share of the fee Blast charges on a trade by calling `pay`, which emits
 `PartnerPaid`; the product records the trade in its own event.
 
 The initial share and managing cap apply immediately at registration. Later
-changes Blast makes to a partner (its share and which cap manages it) take
-effect seven days after scheduling, through `blast_fun_timelock` from
-[the local timelock package](../timelock/README.md).
-Both packages are immutable, so nobody can shorten that delay: the timelock is
-published at `0x1749b76a3ae065dedfe847578b07826fa83d1e18ff485d9e4f9647f3698e104d`, and this package is published with
-`scripts/publish_immutable.sh`. The cap holder's recipient changes apply
-at once.
+changes Blast makes to a partner (its share and which cap manages it) are
+proposals held in `blast_admin::delayed` values with a fixed seven-day notice;
+anyone may apply one once ready, and Blast's partner administrator may cancel it.
+The module never changes the notice, and the package is published immutable with
+`scripts/publish_immutable.sh`, so nobody can shorten it. Payments read the
+applied share and need no Clock. The cap holder's recipient changes apply at
+once.
 
 Read [ADR 0095](../../docs/decisions/0095-partner-codes.md) and the
 [guide](../../docs/partner-codes.md) before changing this package.

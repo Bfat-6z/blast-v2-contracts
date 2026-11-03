@@ -52,17 +52,11 @@ use_environment = "mainnet"
 manifest_digest = "1D81A242A868996BDA2D034470EFF798AACC5958CF9958C94BAAACC9C2C92DC8"
 deps = { blast_admin = "blast_admin", std = "MoveStdlib", sui = "Sui" }
 
-[pinned.mainnet.blast_fun_timelock]
-source = { local = "../../timelock" }
-use_environment = "mainnet"
-manifest_digest = "E41BBD67BE8940D26C79D78B028477EF5B33BA217A1282C78ACB344CF8A5ECF6"
-deps = { std = "MoveStdlib", sui = "Sui" }
-
 [pinned.mainnet.blast_partners]
 source = { local = "../../partners" }
 use_environment = "mainnet"
-manifest_digest = "E504FEA4AFDDCEE08FFE58C0873A6C60994787ADAAE5DAA71F110E2368012D75"
-deps = { blast_admin = "blast_admin", blast_fun_timelock = "blast_fun_timelock", std = "MoveStdlib", sui = "Sui" }
+manifest_digest = "2EE0BE6CC23D1718E36913BC8AFF07AB623F8E972B9E6253C5BE9AFEE9962448"
+deps = { blast_admin = "blast_admin", std = "MoveStdlib", sui = "Sui" }
 
 [pinned.mainnet.ifixed]
 source = { local = "interfaces/aftermath/ifixed/ifixed" }

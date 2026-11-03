@@ -30,7 +30,7 @@ use std::{collections::BTreeSet, time::Duration};
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
     ActionApplied, ActionScheduled, Change, CompiledPackage, Expected, Harness, Outcome, RuntimeConfigContents, SetApplied,
-    SetChange, SetScheduled, build, build_timelock, call, sui_dir, timelock_dir,
+    SetChange, SetScheduled, build, call, sui_dir,
 };
 use move_binary_format::{CompiledModule, file_format::SignatureToken};
 use serde::{Deserialize, Serialize};
@@ -1108,14 +1108,12 @@ fn world(work: &str) -> Result<World> {
     let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(work);
     let mut h = Harness::new()?;
 
-    let timelock_dir = timelock_dir()?;
     let admin_dir = sui_dir.join("admin");
     let launchpad_dir = sui_dir.join("launchpad");
-    let (timelock, _) = h.publish(build_timelock(&work)?)?;
     let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
     let partners_dir = sui_dir.join("partners");
-    let (partners, _) = h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
-    let core = [(timelock_dir.as_path(), timelock), (admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
+    let (partners, _) = h.publish(build(&partners_dir, &[(&admin_dir, admin)], &work)?)?;
+    let core = [(admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
     let core_code = build(&launchpad_dir, &core, &work)?;
     let (blast, published) = h.publish(core_code.clone())?;
     let one = |outcome: &Outcome, module: &str, name: &str| {
@@ -1127,7 +1125,7 @@ fn world(work: &str) -> Result<World> {
     let root = one(&admin_published, "blast_acl", "SuperAdminCap");
     let config = one(&published, "launch_config", "LaunchConfig");
     let runtime = one(&published, "runtime_config", "RuntimeConfig");
-    let linked = [core[0], core[1], core[2], (launchpad_dir.as_path(), blast)];
+    let linked = [core[0], core[1], (launchpad_dir.as_path(), blast)];
     let adapter_code = build(&fixture.join("adapter"), &linked, &work)?;
     let (adapter, _) = h.publish(adapter_code.clone())?;
     let (version, custody) = h.wrap_launchpad(blast, &published, admin, &admin_published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;

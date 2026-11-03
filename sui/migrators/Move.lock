@@ -112,14 +112,8 @@ use_environment = "mainnet"
 manifest_digest = "E55C97F82BC0F60DACFCDF5AC2F0CCAFEFAA23A5179F8C914CB0C1D1EBECCCDB"
 deps = { BluefinSpot = "BluefinSpot", CetusClmm = "CetusClmm", CetusLpBurn = "CetusLpBurn", IntegerLibrary = "IntegerLibrary", IntegerMate = "IntegerMate_1", Sui = "Sui_2", blast_admin = "blast_admin", blast_fun = "blast_fun" }
 
-[pinned.mainnet.blast_fun_timelock]
-source = { local = "../timelock" }
-use_environment = "mainnet"
-manifest_digest = "E41BBD67BE8940D26C79D78B028477EF5B33BA217A1282C78ACB344CF8A5ECF6"
-deps = { std = "MoveStdlib_2", sui = "Sui_2" }
-
 [pinned.mainnet.blast_partners]
 source = { local = "../partners" }
 use_environment = "mainnet"
-manifest_digest = "E504FEA4AFDDCEE08FFE58C0873A6C60994787ADAAE5DAA71F110E2368012D75"
-deps = { blast_admin = "blast_admin", blast_fun_timelock = "blast_fun_timelock", std = "MoveStdlib_2", sui = "Sui_2" }
+manifest_digest = "2EE0BE6CC23D1718E36913BC8AFF07AB623F8E972B9E6253C5BE9AFEE9962448"
+deps = { blast_admin = "blast_admin", std = "MoveStdlib_2", sui = "Sui_2" }

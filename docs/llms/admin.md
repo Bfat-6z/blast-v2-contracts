@@ -234,8 +234,8 @@ and have no custody at all.
 
 The delayed modules are a timelock in the Compound/OpenZeppelin sense: schedule,
 wait the applied notice, then apply; cancellable until applied. They are unrelated
-to the blast_fun_timelock package, whose values switch by themselves (partners
-still uses it). Each module owns one type; consumers store four:
+to the blast_fun_timelock package, whose values switch by themselves; no Blast
+package depends on it. Each module owns one type; consumers store four:
 
 | Type | Holds | Used for |
 | --- | --- | --- |

@@ -519,7 +519,7 @@ const LOCK_NODES = {
     // it pins the same framework revision and adds no venue dependency.
     blast_admin: {
         source: { local: '../admin' },
-        deps: { Sui: 'Sui_2', blast_fun_timelock: 'blast_fun_timelock' },
+        deps: { Sui: 'Sui_2' },
     },
     blast_fun: {
         source: { local: '../launchpad' },
@@ -530,16 +530,10 @@ const LOCK_NODES = {
             sui: 'Sui_2',
         },
     },
-    // The ACL's timelocked root transfer (ADR 0097) and launchpad partners (ADR 0098).
-    blast_fun_timelock: {
-        source: { local: '../timelock' },
-        deps: { std: 'MoveStdlib_2', sui: 'Sui_2' },
-    },
     blast_partners: {
         source: { local: '../partners' },
         deps: {
             blast_admin: 'blast_admin',
-            blast_fun_timelock: 'blast_fun_timelock',
             std: 'MoveStdlib_2',
             sui: 'Sui_2',
         },

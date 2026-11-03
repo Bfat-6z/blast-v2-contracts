@@ -183,7 +183,6 @@ public fun pay_protocol_lp_fees_with_partner<Meme, Quote>(
     package_version: &PackageVersion,
     fee_policy: &FeePolicy,
     partner: &Partner,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
@@ -194,8 +193,8 @@ public fun pay_protocol_lp_fees_with_partner<Meme, Quote>(
     let protocol_destination = fee_policy.destination();
     let mut protocol_meme = self.unpaid_protocol_meme.withdraw_all();
     let mut protocol_quote = self.unpaid_protocol_quote.withdraw_all();
-    let partner_meme = partner.pay(&mut protocol_meme, clock, ctx);
-    let partner_quote = partner.pay(&mut protocol_quote, clock, ctx);
+    let partner_meme = partner.pay(&mut protocol_meme, ctx);
+    let partner_quote = partner.pay(&mut protocol_quote, ctx);
     let paid_meme = protocol_meme.value();
     let paid_quote = protocol_quote.value();
 

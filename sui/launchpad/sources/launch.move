@@ -839,7 +839,6 @@ public fun claim_protocol_fees_with_partner<Meme, Quote>(
     package_version: &PackageVersion,
     runtime_config: &RuntimeConfig,
     partner: &Partner,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
@@ -848,9 +847,9 @@ public fun claim_protocol_fees_with_partner<Meme, Quote>(
 
     let blast_treasury = runtime_config.treasury();
     let (mut meme_fees, mut quote_fees, mut sui_fees) = self.fee_ledger.claim_protocol_fees();
-    let partner_meme = partner.pay(&mut meme_fees, clock, ctx);
-    let partner_quote = partner.pay(&mut quote_fees, clock, ctx);
-    let partner_sui = partner.pay(&mut sui_fees, clock, ctx);
+    let partner_meme = partner.pay(&mut meme_fees, ctx);
+    let partner_quote = partner.pay(&mut quote_fees, ctx);
+    let partner_sui = partner.pay(&mut sui_fees, ctx);
     let (treasury_meme, treasury_quote, treasury_sui) = (
         meme_fees.value(),
         quote_fees.value(),

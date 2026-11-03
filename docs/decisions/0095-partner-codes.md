@@ -13,6 +13,11 @@
   creation, which earns its share of Blast's raise share once the sale migrates
 - Amended by: [0107](0107-partner-cut-of-lp-fees.md): a launch's or a sale's partner also
   earns its cut of Blast's LP fees on the vault it migrates into
+- Amended 2026-11-03 (with [0134](0134-delayed-administration-pause-and-table-acl.md)): share
+  and cap changes move from the util `Timelocked` to keyed `blast_admin::delayed::Delayed`
+  values with a fixed seven-day notice, explicit permissionless application and PartnerAdmin
+  cancellation; payouts read the applied share without a Clock; `blast_partners` no longer
+  depends on the timelock
 
 ## Sources
 
@@ -70,18 +75,25 @@ issues answers that.
 
 ## Decision
 
-**The timelock.** `blast_fun_timelock` lives in the public util contracts
-(`util@63b6cf8:sui/timelock/sources/blast_fun_timelock.move`), MIT licensed and
-published immutable on mainnet at `0x1749b76a3ae065dedfe847578b07826fa83d1e18ff485d9e4f9647f3698e104d`. `Timelocked<T>` is a value whose
-every change takes effect exactly its delay after it is scheduled; the delay is
-fixed when the value is created (any positive number of milliseconds). A new schedule replaces a pending one and
-restarts the delay, so scheduling the value in force cancels. Reads are lazy: the
-value in force comes from the Clock the caller already has, so nothing writes on
-a trade and no keeper applies anything. The module that stores a `Timelocked`
-decides who may schedule it.
+**Delayed terms (amended 2026-11-03).** A partner's share and managing cap are
+`blast_admin::delayed::Delayed<ShareKey, u64>` and `Delayed<CapKey, ID>` values,
+created with the partner's UID, so every lifecycle event the primitive emits is
+keyed and owned by that partner. Both start applied at registration with the
+fixed `PARTNER_CHANGE_DELAY_MS` (seven days) notice. PartnerAdmin proposes a value
+with `schedule_value`; a different proposal replaces a pending one and restarts the
+full notice, and proposing the applied or the pending value aborts. Anyone may
+apply a ready proposal, so a partner can apply a raise itself; PartnerAdmin may
+cancel a proposal even after readiness. The module never calls the primitive's
+notice-changing functions, and a boundary gate rejects them, so the notice stays
+seven days. Payments and recipient checks read applied values without a Clock.
+This replaces the util `blast_fun_timelock`, whose lazily switching values made a
+change take effect without a transaction; the primitive makes every change an
+explicit, replayable transaction and aligns partners with ADR 0134. The timelock
+stays in the repository as a published immutable package that no Blast package
+depends on.
 
 **The partner package.** `blast_partners` is a leaf package that depends only on
-`blast_admin` and the timelock. Boosts and the launchpad are independently
+`blast_admin`. Boosts and the launchpad are independently
 deployed peers, and the Boosts core is immutable, so no existing package can hold
 a type both read. It is published and made immutable in one transaction
 (`sui/partners/scripts/publish_immutable.sh`): the delay is only as credible as
@@ -93,31 +105,35 @@ delay, and the root can revoke the role at once, so splitting them per action
 ([0094](0094-one-role-per-administrator-action.md)) would protect nothing more.
 
 **Partners and caps.** A `Partner` is one deal: a shared object with a
-`recipient`, a `share_bps` of Blast's fee (at most 8,000, timelocked) and the ID
-of the cap that manages it (timelocked). A `PartnerCap` is a company's authority
+`recipient`, a `share_bps` of Blast's fee (at most 8,000, delayed) and the ID
+of the cap that manages it (delayed). A `PartnerCap` is a company's authority
 over the recipients of every partner bound to it; one cap can manage any number
 of partners, each with its own share and recipient. `new_cap` mints a cap that
 controls nothing until Blast registers a partner under it, so anyone may mint one.
 
 - `register(cap_id, recipient, share)` shares a partner managed by that cap,
   with its share in force at once.
-- `schedule_share` sets the share seven days ahead.
-- `schedule_cap` moves the partner to another cap seven days ahead, to replace a
-  lost or stolen cap. Until then the current cap keeps working.
+- `schedule_share` proposes a share; anyone calls `apply_share` after seven days.
+- `schedule_cap` proposes another cap, to replace a lost or stolen cap; anyone
+  calls `apply_cap` after seven days. Until then the current cap keeps working.
+- `cancel_share` and `cancel_cap` (PartnerAdmin) discard a proposal, even a
+  ready one.
 - `set_recipient`, called with the partner's live cap, changes the recipient at
   once.
 - `destroy_cap` destroys a cap, live or not.
 
-**Payment.** `pay(partner, fee, clock, ctx)` takes a product's own fee on one trade,
+**Payment.** `pay(partner, fee, ctx)` takes a product's own fee on one trade,
 sends the partner `floor(fee × share / 10_000)` as a `Coin<T>` with
 `transfer::public_transfer`, leaves the rest in `fee`, and returns the amount.
 Each positive payment creates one owned coin at the partner's recipient address;
 zero payments create no coin, keeping payouts visible to tools that scan owned coins.
 The transaction context is used to create the coin. Every positive payment emits
 `PartnerPaid<T> { partner_id, amount }`; a zero share sends and emits nothing. Anyone calling `pay` pays the partner from their own balance, so
-the event always records money the partner really received. `PartnerUpdated`
-carries a partner's complete terms, both timelocked values included, after
-registration and after every change.
+the event always records money the partner really received. `PartnerUpdated
+{ partner_id, recipient }` is emitted at registration and on every recipient
+change; the share and cap lifecycle is `blast_admin::delayed`'s `DelayedCreated`,
+`DelayedScheduled`, `DelayedCancelled` and `DelayedApplied`, keyed by `ShareKey`
+or `CapKey` with the partner as `owner`.
 
 The deployed partner package is immutable. This payout change requires a fresh
 partner publication and relinking its consumer packages; the existing mainnet
@@ -183,8 +199,9 @@ separate.
 the cap lets the partner move custody without Blast, and the timelocked cap ID
 lets Blast replace a lost one.
 
-**The timelock inside the partner package.** It is a general primitive with no
-Blast authority in it; as its own immutable MIT package any team can reuse it.
+**Keeping the util timelock (superseded 2026-11-03).** Its lazy reads needed no
+apply transaction, but a change took effect with no event at that moment, and the
+partner package diverged from every other delayed Blast setting.
 
 **The partner type inside the Boosts adapter or core.** The launchpad could not
 use it without depending on a peer product, and the core is immutable.
@@ -197,11 +214,12 @@ checked by `pay` needs no list, but gives products no control of their own, writ
 product type names into an immutable package, and is set by the same partner
 administrator. A per-vault list has the wrong grain: deals are per product.
 
-**A pending value with an apply step or a keeper, a cancel function, accrual with
-claims, binding codes to a gas sponsor.** Each adds state or a call without a
-property the lazy read, a reschedule, the push payment or a public code does not
-already give; binding would also shut out wallet partners, the largest builders
-on Hyperliquid.
+**Accrual with claims, binding codes to a gas sponsor.** Each adds state or a call
+without a property the push payment or a public code does not already give;
+binding would also shut out wallet partners, the largest builders on Hyperliquid.
+An apply step and a cancel function, rejected originally, are accepted by the
+2026-11-03 amendment: permissionless application needs no keeper, since the
+partner itself can apply a raise.
 
 ## Consequences
 
@@ -241,18 +259,20 @@ on Hyperliquid.
   immutable like the share and cap delays: the adapter is upgradeable.
 - Removed partners stay as inert dynamic fields under `Protocol`; only the risk
   administrator adds them, and nothing iterates them.
-- `blast_partners` pins the timelock to the util-contracts commit that records
-  its mainnet publication (`util@63b6cf8`), so mainnet builds link to the
-  immutable package through its `Published.toml`.
+- `blast_partners` depends only on immutable `blast_admin`; its own module fixes the
+  notice. Payout APIs across products take no Clock for the partner share.
+- A ready proposal does not change payouts until someone applies it, so a cut
+  Blast proposes keeps paying the old share until applied; anyone can apply it.
 
 ## Verification
 
-- Timelock tests (util contracts): the delay boundaries, reschedule, cancel,
-  schedules after a switch, the shortest delay, the refused one, and 100%
-  coverage.
+- `blast_admin::delayed` tests: notice boundaries, replacement, cancellation,
+  application and overflow.
 - Partner tests: every guard with exact aborts and guard precedence; the delay
-  pinned at seven days; a registered share and cap in force at once; a scheduled share and a moved cap at
-  their boundaries; one cap managing
+  pinned at seven days; a registered share and cap in force at once with their
+  `DelayedCreated` events; a proposed share and a moved cap at their boundaries and
+  only after explicit, permissionless application; cancellation after readiness;
+  a replacement restarting the notice; the recipient changing at once; one cap managing
   two partners with different shares; a cap anyone mints controls nothing; a
   partner whose cap is destroyed still paid and moved to a new cap; `pay`
   against a rounded-down reference sweep, at the largest fee, and its
@@ -264,12 +284,13 @@ on Hyperliquid.
   events.
 - Adapter tests: a partner is paid only out of the admin fee its operation
   retained, derived from the admin cash before it, leaving earlier admin cash,
-  the reserve and the supply alone; the 80% maximum leaves Blast a fifth; a share
-  switching one millisecond after the operation pays nothing but is still
-  attributed, and one switching at it pays in full; `PartnerFeePaid` and
+  the reserve and the supply alone; the 80% maximum leaves Blast a fifth; a ready
+  but unapplied share pays nothing but is still attributed, and an applied one
+  pays in full; `PartnerFeePaid` and
   `PartnerPaid` agree; the event reducer replays `PartnerFeePaid` after `Minted`
   and `Redeemed` and matches the vault's admin cash.
-- Gates: the util coverage script, `sui/partners/scripts/verify.sh`, the adapter's
+- Gates: `scripts/check_admin_delay.py` (fixed notice, no notice-changing call,
+  Clock-free payment), `sui/partners/scripts/verify.sh`, the adapter's
   `verify.sh local` and boundary gate, the composition tests, the style check.
 - Still to run before release: a live rehearsal of a partnered mint and redeem
   that verifies the recipient's transferred coins,

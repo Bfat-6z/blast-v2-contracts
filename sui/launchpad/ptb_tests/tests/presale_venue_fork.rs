@@ -30,7 +30,7 @@ use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock, time::Duration};
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
     CompiledPackage, Delayed, DelayedAction, DelayedApplied, Expected, Harness, Outcome, RoundTerms, UnlinkedPackage,
-    build, build_timelock, build_unlinked, build_vesting, call,
+    build, build_unlinked, build_vesting, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusCollectFee, CetusOpenPosition,
@@ -38,7 +38,7 @@ use blast_launchpad_ptb_tests::{
         UserFeeCollected, apportion, cetus_name, expected_sqrt_price, id, insert_snapshot, meme_is_cetus_a, sui, tag,
         venue_dependencies, venue_events,
     },
-    sui_dir, timelock_dir,
+    sui_dir,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use sui_types::{
@@ -513,7 +513,7 @@ fn presale() -> &'static UnlinkedPackage {
         let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("presale_venue_fork");
         build_unlinked(
             &sui_dir().join("presale"),
-            &["blast_fun_timelock", "blast_admin", "blast_partners", "blast_fun_vesting"],
+            &["blast_admin", "blast_partners", "blast_fun_vesting"],
             &work,
         )
         .expect("build the presale")
@@ -576,18 +576,14 @@ impl World {
         let mut h = Harness::new()?;
         let (checkpoint, venue) = insert_snapshot(&mut h)?;
 
-        let timelock_dir = timelock_dir()?;
         let admin_dir = sui_dir().join("admin");
         let partners_dir = sui_dir().join("partners");
-        let (timelock, _) = h.publish(build_timelock(&work)?)?;
         let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
-        let (partners, _) =
-            h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
+        let (partners, _) = h.publish(build(&partners_dir, &[(&admin_dir, admin)], &work)?)?;
         let (vesting, _) = h.publish(build_vesting(&work)?)?;
         let mut dependencies = vec![
             ObjectID::from_single_byte(1),
             ObjectID::from_single_byte(2),
-            timelock,
             admin,
             partners,
             vesting,
@@ -595,7 +591,6 @@ impl World {
         dependencies.extend(venue_dependencies(&h)?);
         let linked = presale().link(
             &[
-                ("blast_fun_timelock", timelock),
                 ("blast_admin", admin),
                 ("blast_partners", partners),
                 ("blast_fun_vesting", vesting),
