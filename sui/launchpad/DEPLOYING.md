@@ -110,8 +110,8 @@ Require all of the following and retain the readbacks:
   current operational generation, initially `1`, and pause mask `7` (Create,
   Trading and Migrate). An aborted wrap leaves the
   Publication and cap unchanged and creates neither shared output.
-- Publication-owned policies and upgrade custody have zero applied notice and
-  no pending proposals. This setup state is not the approved release policy.
+- Publication-owned policies start at zero notice. Upgrade custody starts at
+  48 hours. Verify that neither has a pending proposal.
 
 Write a normalized record under `deployments/sui/mainnet/` following
 [`deployments/README.md`](../../deployments/README.md). Include original and
@@ -131,15 +131,15 @@ live ACL for ordinary policy operations with the current PackageVersion. Configu
 treasury, protocol fee share, trade/creation fees, allocation and claim signer;
 admit each approved Quote and reviewed adapter. Protected policies use ordinary
 schedule/apply calls with Clock. At zero notice both calls can share a PTB;
-claim-signer and Quote-listing changes are immediate. Build validated Bps inputs
-in the PTB. Zero fees and an empty signer are legal but require explicit approval.
+Quote-listing changes are immediate. Configure the claim-signer admission notice
+separately from the other policies. Build validated Bps inputs in the PTB. Zero fees and an empty signer are legal but require explicit approval.
 Read back the chosen values, routes and applied-value events.
 
 Before release, apply or cancel every outstanding zero-notice proposal, including
 each independent adapter admission. Configure and read back each operation's
-intended notice (172,800,000 ms = 48 hours for this rollout), including the
-explicit upgrade-delay policy. Raising a notice never rewrites an earlier
-proposal's deadline or proposed next notice. Record all applied notices and
+intended notice (172,800,000 ms = 48 hours for this rollout). Verify the
+initial 48-hour upgrade notice separately. Raising a notice never rewrites
+an earlier proposal's deadline or proposed next notice. Record all applied notices and
 pending-proposal state. Initial setup may span transactions while fully paused.
 
 Complete the remaining release requirements, including approved destinations,

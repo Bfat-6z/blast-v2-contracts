@@ -1,0 +1,45 @@
+name: Contracts PTB
+
+on:
+  push:
+    branches: [main]
+    paths: ['sui/**', '.github/workflows/contracts-ptb.yml']
+  pull_request:
+    paths: ['sui/**', '.github/workflows/contracts-ptb.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  ptb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: sui/launchpad/ptb_tests
+    env:
+      SUI_RELEASE: mainnet-v1.77.2
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      RAYON_NUM_THREADS: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev protobuf-compiler
+      - name: Install pinned Sui CLI
+        run: |
+          curl -fsSL -o sui.tgz \
+            "https://github.com/MystenLabs/sui/releases/download/${SUI_RELEASE}/sui-${SUI_RELEASE}-ubuntu-x86_64.tgz"
+          mkdir -p "$RUNNER_TEMP/sui-bin"
+          tar -xzf sui.tgz -C "$RUNNER_TEMP/sui-bin" ./sui
+          echo "$RUNNER_TEMP/sui-bin" >> "$GITHUB_PATH"
+      - name: Select pinned Rust
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sui/launchpad/ptb_tests
+      - name: Run all PTB suites
+        run: cargo test --locked --tests -- --test-threads=1

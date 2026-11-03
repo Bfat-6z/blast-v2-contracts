@@ -23,7 +23,8 @@ own. It does own an independent operational generation and its own sealed
 
 Publication transfers an owned Publication holding the Publisher and initial
 generation. `package_admin::wrap` consumes it with the matching fresh UpgradeCap
-and shares the version while publication-owned operations have zero notice.
+and shares the version. Publication-owned fee policies start at zero notice.
+Upgrade custody starts at 48 hours.
 Configure the initial LP-fee destination and default shares through ordinary ACL schedule/apply calls
 with Clock. Settle all setup proposals, enable each operation’s intended
 self-timelocked notice, and verify it before releasing launchpad migration. Later policy changes use

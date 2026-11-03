@@ -38,7 +38,7 @@ use blast_launchpad_ptb_tests::{
     CompiledPackage, Delayed, DelayedAction, DelayedApplied, Expected, Harness, Outcome, RoundTerms, UnlinkedPackage,
     build, build_unlinked, build_vesting, call,
     fork::{
-        BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
+        AFTERMATH_DAO_FEE, BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusCollectFee, CetusOpenPosition,
         CetusPoolState, CreatePool, LiquidityProvided, MAX_TICK, MintPoolCreationCap, RegisterPermissionPair, USDC,
         UserFeeCollected, apportion, cetus_name, expected_sqrt_price, id, insert_snapshot, meme_is_cetus_a, sui, tag,
@@ -394,6 +394,26 @@ fn run_aftermath(meme_first: bool) -> Result<()> {
     ), "the injected split failed after migration");
     ensure!(world.sale_state(&sale)? == before);
     ensure!(world.h.object(reservation).is_shared());
+
+    // Keep the real registry, reservation and package. Only change the DAO-fee version field
+    // so Aftermath itself rejects the migration after the AMM pool creation call.
+    let version_id = world.venue("aftermath_dao_fee_version");
+    let version = world.h.object(version_id);
+    let (stored_id, current): (ObjectID, u64) = bcs::from_bytes(&world.h.contents(version_id))?;
+    ensure!(stored_id == version_id && current == 1, "pinned Aftermath Version layout");
+    let mut unsupported = version.clone();
+    unsupported.data.try_as_move_mut().context("Aftermath Version")?
+        .set_contents_unsafe(bcs::to_bytes(&(version_id, current + 1))?);
+    world.h.insert(unsupported);
+    let expected = Expected::Abort { package: id(AFTERMATH_DAO_FEE), module: "version", code: 0 };
+    let failed = world.h.assert_rolled_back(migration.clone(), expected, &watched, &owners)?;
+    ensure!(matches!(
+        failed.effects.status(),
+        ExecutionStatus::Failure(failure) if failure.command == Some(0)
+    ), "Aftermath rejected the migration command");
+    ensure!(world.sale_state(&sale)? == before);
+    ensure!(world.h.object(reservation).is_shared());
+    world.h.insert(version);
 
     let migrated = world.h.execute(migration)?;
     migrated.assert_success();
