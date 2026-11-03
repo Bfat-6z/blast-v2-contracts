@@ -1411,7 +1411,7 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 Settings that change only after their applied notice, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. Readers need no Clock.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed.move
 
 #### Types
 
@@ -1571,7 +1571,7 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
 
 One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied notice. The slot also governs its own notice. See `delayed` for the rules every delayed type shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_action.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_action.move
 
 #### Types
 
@@ -1697,7 +1697,7 @@ public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + s
 
 Keyed values under one shared notice, such as per-coin overrides. Every entry change, setting or clearing, waits the notice applied when it was scheduled, and its deadline is fixed then; a later notice change never moves it. See `delayed` for the shared rules.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_map.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_map.move
 
 #### Types
 
@@ -1870,7 +1870,7 @@ public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 Allowlists whose members join only after the applied notice and leave at once. See `delayed` for the rules every delayed type shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_set.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_set.move
 
 #### Types
 

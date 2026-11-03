@@ -8,8 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 READER = ROOT / 'sui/launchpad/scripts/move_facts.awk'
 
 
+def module_path(package, module):
+    """The one source file declaring `module`, at any depth under the package's sources."""
+    paths = list((ROOT / 'sui' / package / 'sources').rglob(f'{module}.move'))
+    assert len(paths) == 1, (package, module, paths)
+    return paths[0]
+
+
 def facts(package, module):
-    path = ROOT / 'sui' / package / 'sources' / f'{module}.move'
+    path = module_path(package, module)
     rows = subprocess.check_output(['awk', '-f', str(READER), str(path)], text=True).splitlines()
     assert not any(row.startswith('MALFORMED') for row in rows), path
     return [row.split('\t') for row in rows]

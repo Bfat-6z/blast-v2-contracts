@@ -123,10 +123,21 @@ for environment, address in entries:
 PY
 fi
 
+# The delayed family lives under sources/delayed/; every other module sits directly in sources/.
+module_file() {
+  case "$1" in
+    delayed|delayed_action|delayed_set|delayed_map) printf '%s\n' "$package_dir/sources/delayed/$1.move" ;;
+    *) printf '%s\n' "$package_dir/sources/$1.move" ;;
+  esac
+}
+
 for module in blast_acl delayed delayed_action delayed_set delayed_map operational_version upgrade_custody errors blast_admin_events; do
-  [[ -f "$package_dir/sources/$module.move" ]] \
+  [[ -f "$(module_file "$module")" ]] \
     || fail "Missing required blast_admin module: $module.move"
 done
+if find "$package_dir/sources" -name '*.move' | grep -vE "^$package_dir/sources/([a-z_]+|delayed/delayed(_action|_set|_map)?)\.move$"; then
+  fail "blast_admin sources must sit directly in sources/, or in sources/delayed/ for the delayed family."
+fi
 
 [[ -f "$publication_script" ]] \
   || fail "blast_admin must include its immutable publication builder."
@@ -163,7 +174,7 @@ if grep -rniE '\b(fee|pause|migration|creator|pool|venue)\b' "$package_dir/sourc
   fail "Consumer product policy must not enter blast_admin production source."
 fi
 if grep -rn 'sui::event::emit' "$package_dir/sources" \
-  | grep -vE "$package_dir/sources/(blast_admin_events|delayed|delayed_action|delayed_set|delayed_map)\.move"; then
+  | grep -vE "$package_dir/sources/(blast_admin_events|delayed/delayed(_action|_set|_map)?)\.move"; then
   fail "Only blast_admin_events.move and the delayed modules may emit shared administration events."
 fi
 if grep -rnE 'public(\(package\))?[[:space:]]+(entry[[:space:]]+)?fun[[:space:]]+[^ (]*(release|borrow|take|extract|transfer)[^ (]*' \
@@ -230,7 +241,7 @@ expected_acl_public="$(printf '%s\n' \
   || fail "The production ACL surface changed without boundary review."
 
 for delayed_module in delayed delayed_action delayed_set delayed_map; do
-  if production_lines "$package_dir/sources/$delayed_module.move" \
+  if production_lines "$(module_file "$delayed_module")" \
     | grep -Eq 'fun[[:space:]]+(set|force|replace|bypass)[a-z_]*[[:space:]]*[<(]'; then
     fail "Delayed values must expose no immediate setter or bypass ($delayed_module)."
   fi
@@ -238,7 +249,7 @@ done
 expect_delayed_surface() {
   local module="$1"; shift
   local actual expected
-  actual="$(externally_callable_function_names "$package_dir/sources/$module.move" | sort)"
+  actual="$(externally_callable_function_names "$(module_file "$module")" | sort)"
   expected="$(printf '%s\n' "$@" | sort)"
   [[ "$actual" == "$expected" ]] || fail "The production $module surface changed without boundary review."
 }
