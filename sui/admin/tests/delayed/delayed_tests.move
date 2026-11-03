@@ -147,6 +147,21 @@ fun cancellation_after_readiness_preserves_the_applied_value_and_notice() {
 }
 
 #[test]
+#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+fun a_cancelled_proposal_cannot_be_cancelled_again() {
+    let clock = clock_at(0);
+    let mut setting = new_setting(3, NOTICE_MS);
+    setting.schedule_value(5, &clock);
+    setting.cancel();
+    assert!(setting.pending().is_none());
+
+    setting.cancel();
+
+    setting.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
 fun readiness_validation_is_repeatable_and_changes_nothing() {
     let mut clock = clock_at(0);
     let mut setting = new_setting(7, 10);

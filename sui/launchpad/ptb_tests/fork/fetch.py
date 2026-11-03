@@ -8,10 +8,11 @@ Reads, never writes, the official Sui mainnet GraphQL endpoint and records at ON
   linkage tables and type origins (the
   VM resolves a type through the package that defined it, whose own linkage must resolve too);
 - the shared objects the venue code reads (Cetus `GlobalConfig` and `Pools`, LP Burn's
-  `BurnManager`, Bluefin's `GlobalConfig`, and mainnet's shared `Currency<SUI>`); and
+  `BurnManager`, Bluefin's `GlobalConfig`, Aftermath's registry, DAO fee version and swap fee objects,
+  and mainnet's shared `Currency<SUI>`); and
 - the dynamic fields that code reads under them, each located by its derived field ID: the Cetus
   pool list's tail node, the permission-pair manager and deny list with the SUI and USDC entries,
-  and Bluefin's pool-creation fee table and SUI fee balance. A field that does not exist at the
+  Bluefin's pool-creation fee table and SUI fee balance, and Aftermath's versioned registry state and SUI entries. A field that does not exist at the
   checkpoint is recorded as absent, so a later appearance is a visible diff.
 
 Each object is stored as its full on-chain `Object` BCS, the file the simulator inserts verbatim
@@ -75,6 +76,12 @@ CETUS_GLOBAL_CONFIG = "0xdaa46292632c3c4d8f31f23ea0f9b36a28ff3677e9684980e443840
 CETUS_POOLS = "0xf699e7f2276f5c9a75944b37a0c5b5d9ddfd2471bf6242483b03ab2887d198d0"
 CETUS_BURN_MANAGER = "0x1d94aa32518d0cb00f9de6ed60d450c9a2090761f326752ffad06b2e9404f845"
 BLUEFIN_GLOBAL_CONFIG = "0x03db251ba509a8d5d8777b6338836082335d93eecbdd09a11e190a1cff51c352"
+AFTERMATH_POOL_REGISTRY = "0xfcc774493db2c45c79f688f88d28023a3e7d98e4ee9f48bbf5c7990f651577ae"
+AFTERMATH_DAO_FEE_VERSION = "0xb4bfb0f917f12ad2a772bea9b4f22431f6f5f9653162c3ae6fae5b99b21392b7"
+AFTERMATH_PROTOCOL_FEE_VAULT = "0xf194d9b1bcad972e45a7dd67dd49b3ee1e3357a00a50850c52cd51bb450e13b4"
+AFTERMATH_TREASURY = "0x28e499dff5e864a2eafe476269a4f5035f1c16f338da7be18b103499abf271ce"
+AFTERMATH_INSURANCE_FUND = "0xf0c40d67b078000e18032334c3325c47b9ec9f3d9ae4128be820d54663d14e3b"
+AFTERMATH_REFERRAL_VAULT = "0x35d35b0e5b177593d8c3a801462485572fc30861e6ce96a55af6dc4730709278"
 SUI_CURRENCY = "0xf256d3fb6a50eaa748d94335b34f2982fbc3b63ceec78cafaa29ebc9ebaf2bbc"
 
 # Type names as `type_name::with_defining_ids` renders them: no `0x`, 64 hex digits.
@@ -166,9 +173,11 @@ def struct_tag(address, module, name, params=()):
 
 
 STRING = struct_tag("0x1", "string", "String")
+ASCII_STRING = struct_tag("0x1", "ascii", "String")
 TYPE_NAME = struct_tag("0x1", "type_name", "TypeName")
 ID = struct_tag("0x2", "object", "ID")
 DOF_STRING = struct_tag("0x2", "dynamic_object_field", "Wrapper", [STRING])
+DOF_U64 = struct_tag("0x2", "dynamic_object_field", "Wrapper", [bytes([2])])
 
 
 def field_id(parent, key_type, key_bcs):
@@ -280,9 +289,35 @@ def fetch(checkpoint):
     snapshot.field("bluefin_pool_creation_fee_balance_sui", BLUEFIN_GLOBAL_CONFIG, STRING,
                    bcs_string(SUI_TYPE), "::balance::Balance<", required=False)
 
+    fetch_aftermath(snapshot)
     snapshot.object("sui_currency", SUI_CURRENCY, "::coin_registry::Currency<")
 
     return snapshot
+
+
+def fetch_aftermath(snapshot):
+    aftermath_registry = snapshot.object("aftermath_pool_registry", AFTERMATH_POOL_REGISTRY,
+                                         "::pool_registry::PoolRegistry")
+    registry_version = int(aftermath_registry["protocol_version"]).to_bytes(8, "little")
+    state_field = snapshot.field("aftermath_pool_registry_state_field", AFTERMATH_POOL_REGISTRY,
+                                 DOF_U64, registry_version, "::dynamic_object_field::Wrapper<u64>")
+    state = snapshot.object("aftermath_pool_registry_state", state_field["value"],
+                            "::pool_registry::PoolRegistryStateV1")
+    snapshot.object("aftermath_dao_fee_version", AFTERMATH_DAO_FEE_VERSION,
+                    "::version::Version")
+    snapshot.field("aftermath_registry_coin_sui", state["coins"]["id"], ASCII_STRING,
+                   bcs_string(SUI_TYPE), "bool>")
+    snapshot.object("aftermath_protocol_fee_vault", AFTERMATH_PROTOCOL_FEE_VAULT,
+                    "::vault::ProtocolFeeVault")
+    snapshot.object("aftermath_referral_vault", AFTERMATH_REFERRAL_VAULT,
+                    "::referral_vault::ReferralVault")
+    for name, address, type_name in [
+        ("aftermath_treasury", AFTERMATH_TREASURY, "::treasury::Treasury"),
+        ("aftermath_insurance_fund", AFTERMATH_INSURANCE_FUND, "::insurance_fund::InsuranceFund"),
+    ]:
+        funds = snapshot.object(name, address, type_name)["funds"]
+        snapshot.field(f"{name}_sui", funds["id"], TYPE_NAME, bcs_string(SUI_TYPE),
+                       "::balance::Balance<")
 
 
 def write(snapshot, timestamp):

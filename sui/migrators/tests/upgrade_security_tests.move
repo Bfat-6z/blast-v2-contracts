@@ -34,6 +34,17 @@ public struct Fixture {
 // === Tests ===
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
+fun an_upgrade_action_cannot_be_cancelled_twice() {
+    let mut fixture = start();
+    schedule(&mut fixture, false);
+    cancel(&mut fixture);
+
+    cancel(&mut fixture);
+
+    destroy(fixture);
+}
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun upgrade_missing() { exercise(false, Case::Missing); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]

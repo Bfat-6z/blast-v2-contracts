@@ -2700,6 +2700,68 @@ fun metadata_update_rejects_the_current_value() {
     fixture.end();
 }
 
+#[test, expected_failure(abort_code = blast_fun::errors::EUnchanged, location = blast_fun::launch)]
+fun metadata_update_rejects_the_current_description() {
+    let mut fixture = start();
+
+    fixture.next_tx!(CREATOR, |f| {
+        let launch = f.new_default_launch(CREATOR);
+        f.share_launch(launch);
+    });
+
+    fixture.next_tx!(CREATOR, |f| {
+        let mut launch = f.take_launch();
+        let mut currency = f.take_currency();
+        let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
+
+        let current = currency.description();
+        launch.set_description(
+            &f.package_version,
+            &metadata_cap,
+            &mut currency,
+            current,
+        );
+
+        destroy(curve_fee_cap);
+        destroy(metadata_cap);
+        destroy(currency);
+        launch.put_back();
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EUnchanged, location = blast_fun::launch)]
+fun metadata_update_rejects_the_current_icon_url() {
+    let mut fixture = start();
+
+    fixture.next_tx!(CREATOR, |f| {
+        let launch = f.new_default_launch(CREATOR);
+        f.share_launch(launch);
+    });
+
+    fixture.next_tx!(CREATOR, |f| {
+        let mut launch = f.take_launch();
+        let mut currency = f.take_currency();
+        let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
+
+        let current = currency.icon_url();
+        launch.set_icon_url(
+            &f.package_version,
+            &metadata_cap,
+            &mut currency,
+            current,
+        );
+
+        destroy(curve_fee_cap);
+        destroy(metadata_cap);
+        destroy(currency);
+        launch.put_back();
+    });
+
+    fixture.end();
+}
+
 #[test, expected_failure(abort_code = blast_fun::errors::ECreatorCapNotLive, location = blast_fun::launch)]
 fun retired_metadata_cap_is_rejected_before_unchanged_metadata() {
     let mut fixture = start();

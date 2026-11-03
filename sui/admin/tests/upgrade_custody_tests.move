@@ -300,6 +300,19 @@ fun policy_restriction_rejects_an_equal_policy() {
 
 #[test]
 #[expected_failure(abort_code = errors::EUpgradePolicyNotMoreRestrictive, location = blast_admin::upgrade_custody)]
+fun dependency_only_restriction_rejects_an_equal_policy() {
+    let mut ctx = tx_context::dummy();
+    let mut custody = canonical_custody(&mut ctx);
+    custody.restrict_to_dependency_only(CUSTODIAN_ID.to_id());
+
+    custody.restrict_to_dependency_only(CUSTODIAN_ID.to_id());
+
+    destroy(ctx);
+    destroy(custody);
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EUpgradePolicyNotMoreRestrictive, location = blast_admin::upgrade_custody)]
 fun policy_restriction_rejects_a_looser_policy() {
     let mut ctx = tx_context::dummy();
     let mut custody = canonical_custody(&mut ctx);
@@ -372,6 +385,19 @@ fun policy_restriction_is_rejected_after_immutability() {
     custody.make_immutable(CUSTODIAN_ID.to_id());
 
     custody.restrict_to_additive(CUSTODIAN_ID.to_id());
+
+    destroy(ctx);
+    destroy(custody);
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EUpgradeCapUnavailable, location = blast_admin::upgrade_custody)]
+fun dependency_only_restriction_is_rejected_after_immutability() {
+    let mut ctx = tx_context::dummy();
+    let mut custody = canonical_custody(&mut ctx);
+    custody.make_immutable(CUSTODIAN_ID.to_id());
+
+    custody.restrict_to_dependency_only(CUSTODIAN_ID.to_id());
 
     destroy(ctx);
     destroy(custody);

@@ -199,11 +199,29 @@ fun the_version_container_rejects_generation_overflow() {
     destroy(ctx);
 }
 
-// The complete native authorize/commit/advance matrix belongs to
-// `blast_admin::upgrade_custody_tests`, which owns a package marker at a nonzero
-// address. Under this package's test compilation `blast_fun` is `0x0`, and the
-// framework refuses to authorize an upgrade for the zero package id, so these
-// focused tests prove Launchpad's wiring, provenance, and guard order instead.
+#[test]
+fun committing_the_canonical_receipt_advances_the_operational_generation() {
+    let mut fixture = start();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        let witness = upgrade_admin();
+        let ticket = f.package_admin.authorize_upgrade_for_testing(
+            &f.package_version,
+            &witness,
+            package_digest(),
+            f.ctx!(),
+        );
+
+        let receipt = ticket.test_upgrade();
+        f.package_admin.commit_upgrade_and_advance(&mut f.package_version, &witness, receipt);
+
+        assert_eq!(f.package_admin.version_for_testing(), 2);
+        assert_eq!(f.package_version.version_for_testing(), 2);
+        assert!(f.package_admin.has_upgrade_cap_for_testing());
+    });
+
+    fixture.end();
+}
 
 #[test]
 #[expected_failure(
@@ -478,9 +496,7 @@ fun package_digest(): vector<u8> {
     x"11223344556677889900aabbccddeeffffeeddccbbaa00998877665544332211"
 }
 
-/// A native receipt for another package. The test build compiles `blast_fun` at `0x0`, which
-/// `sui::package::authorize_upgrade` rejects, so no receipt can match the custodied cap here;
-/// the finalizer's own guards run before the framework compares caps.
+/// Creates a native receipt belonging to a different upgrade capability.
 fun foreign_receipt(self: &mut UpgradeFixture): (UpgradeReceipt, UpgradeCap) {
     let mut cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), self.ctx!());
     let receipt = cap.authorize_upgrade(package::compatible_policy(), package_digest()).test_upgrade();

@@ -3,7 +3,7 @@
 
 #[test_only]
 /// Exercises the production admission guard with framework-created Currency objects.
-/// No test recreates the parser or manufactures a Currency byte layout.
+/// A malformed byte fixture separately tests the supply guard that constructors cannot reach.
 module blast_presale::currency_admission_tests;
 
 // === Test-Only Types ===
@@ -526,6 +526,16 @@ fun ordinary_legacy_unknown_currency_is_rejected_even_with_registered_treasury()
     destroy(metadata);
     destroy(currency);
     destroy(registry);
+}
+
+#[test]
+#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+fun serialized_currency_without_supply_is_rejected() {
+    let mut bytes = std::bcs::to_bytes(&@0x0); // UID
+    bytes.append(vector[9, 0, 0, 0, 0]); // Decimals and four empty metadata strings
+    bytes.append(vector[0, 1]); // No supply, unregulated
+
+    presale::assert_unregulated_currency_bytes_for_testing(bytes);
 }
 
 // === Test Helpers ===

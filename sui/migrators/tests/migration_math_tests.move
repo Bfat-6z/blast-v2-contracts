@@ -9,6 +9,18 @@ module blast_fun_migrators::migration_math_tests;
 // === Tests ===
 
 #[test]
+fun seed_keeps_the_preferred_side_when_both_balances_cover_the_venue_quote() {
+    assert!(migration_math::seed_fixed_side(true, 10, 20, 10, 20));
+    assert!(!migration_math::seed_fixed_side(false, 10, 20, 10, 19));
+}
+
+#[test]
+fun seed_flips_the_preferred_side_on_one_atom_of_rounding_overdraw() {
+    assert!(migration_math::seed_fixed_side(false, 10, 20, 11, 20));
+    assert!(!migration_math::seed_fixed_side(true, 10, 20, 10, 21));
+}
+
+#[test]
 fun one_to_one_atomic_price_is_one_in_q64_64_for_both_orders() {
     let one_x64 = 18_446_744_073_709_551_616u128;
 

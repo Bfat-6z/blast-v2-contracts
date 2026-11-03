@@ -1145,10 +1145,16 @@ dependencies = [
  "blake2",
  "move-binary-format",
  "move-core-types",
+ "move-coverage",
+ "move-trace-format",
+ "prometheus",
  "rand 0.8.5",
  "serde",
  "serde_json",
  "simulacrum",
+ "sui-config",
+ "sui-execution",
+ "sui-transaction-checks",
  "sui-types",
 ]
 

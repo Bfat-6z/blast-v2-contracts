@@ -140,6 +140,28 @@ fun a_cap_from_another_package_cannot_seal_the_package_custody() {
 }
 
 #[test]
+fun committing_the_canonical_receipt_advances_the_operational_generation() {
+    let mut fixture = start();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        let witness = upgrade_admin();
+        let ticket = f.package_admin.authorize_upgrade_for_testing(
+            &f.package_version,
+            &witness,
+            DIGEST,
+            f.scenario.ctx(),
+        );
+
+        let receipt = ticket.test_upgrade();
+        f.package_admin.commit_upgrade_and_advance(&mut f.package_version, &witness, receipt);
+
+        assert_eq!(f.package_version.version_for_testing(), 2);
+    });
+
+    fixture.end();
+}
+
+#[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
     location = blast_admin::operational_version,
@@ -185,8 +207,7 @@ fun upgrade_admin(): AdminWitness<UpgradeAdmin> {
     blast_acl::witness_for_testing()
 }
 
-/// A native receipt for another package: the unit-test build places this package at `0x0`, which
-/// the framework cannot authorize, so no receipt can match the custodied cap here.
+/// Creates a native receipt belonging to a different upgrade capability.
 fun foreign_receipt(self: &mut AdminFixtureState): UpgradeReceipt {
     let mut cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), self.scenario.ctx());
     let receipt = cap.authorize_upgrade(package::compatible_policy(), DIGEST).test_upgrade();

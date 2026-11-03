@@ -70,6 +70,36 @@ Native PTB fixture output stays under the test crate's ignored `target/ptb-fixtu
 directory, so checkouts can share Cargo's compiler cache without overwriting each
 other's simulator artifacts.
 
+## Fork instruction coverage
+
+Run these two commands sequentially under the workspace memory guard, using a
+new trace directory for each run. The fork coverage wrapper uses Python 3.11+
+and `patch`.
+
+```bash
+export BLAST_FORK_COVERAGE_DIR="$(mktemp -d)"
+(
+  cd sui/launchpad/ptb_tests
+  python3 fork/coverage_cargo.py test --locked --features fork-coverage --test venue_fork --test presale_venue_fork -- --test-threads=1
+)
+bash scripts/test_admin_delay.sh --coverage presale migrators
+```
+
+The feature records instruction offsets and published package bytecode from the
+pinned mainnet fork after checking that traced execution agrees with the normal
+simulator effects. The wrapper merges the observed offsets into each package's
+Sui CLI coverage map before printing the summary. It only transfers offsets
+from functions with matching normalized bytecode, accounting for relocated
+package addresses. Venue instructions remain in the fork trace directory
+because the root-package CLI report only includes first-party modules.
+The coverage command applies a test-only patch to the pinned Move VM tracer
+in an isolated Cargo manifest. The tracer snapshots all call arguments before
+registering their locations in the new frame, so it can trace Aftermath swaps
+that pass multiple references to the same pool. Standalone swaps, migration,
+and fee collection use the same traced execution path.
+Run the Move unit coverage command after the fork so the coverage map and
+test-mode bytecode are built together.
+
 ## Protocol vectors
 
 The chain-neutral vectors under [`vectors/`](vectors/) are the numerical
