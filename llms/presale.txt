@@ -4719,6 +4719,11 @@ public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>
     member: &E,
 ): Option<u64>
 
+/// How many admissions are pending.
+public fun pending_count<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): u64
+
 /// The proposed next notice, if any.
 public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,

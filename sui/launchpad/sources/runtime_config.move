@@ -292,7 +292,8 @@ public fun new_zero_fee_share_for_testing(ctx: &mut TxContext): RuntimeConfig {
 }
 
 #[test_only]
-/// Explicit zero-share fixture with a configured account-claim signer.
+/// Explicit zero-share fixture admitting `signer_public_key`, or no signer when it is empty,
+/// with the signer notice raised to two days.
 public fun new_zero_fee_share_with_signer_for_testing(
     signer_public_key: vector<u8>,
     ctx: &mut TxContext,
@@ -300,8 +301,10 @@ public fun new_zero_fee_share_with_signer_for_testing(
     let id = object::new(ctx);
     let clock = sui::clock::create_for_testing(ctx);
     let mut creator_claim_signers = delayed_set::new(ClaimSignerKey(), &id, 0);
-    creator_claim_signers.schedule_add(signer_public_key, &clock);
-    creator_claim_signers.apply_add(signer_public_key, &clock);
+    if (!signer_public_key.is_empty()) {
+        creator_claim_signers.schedule_add(signer_public_key, &clock);
+        creator_claim_signers.apply_add(signer_public_key, &clock);
+    };
     creator_claim_signers.schedule_delay(172_800_000, &clock);
     creator_claim_signers.apply_delay(&clock);
     clock.destroy_for_testing();

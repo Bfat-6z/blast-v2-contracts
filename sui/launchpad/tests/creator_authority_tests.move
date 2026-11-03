@@ -16,13 +16,16 @@ const NOW_AT_MS: u64 = 1_000_000;
 
 const EXPIRES_AT_MS: u64 = 2_000_000;
 
+/// The fixture's signer notice.
+const NOTICE_MS: u64 = 172_800_000;
+
 // === Test-Only Types ===
 
 public struct TEST_MEME() has drop;
 
 public struct OTHER_MEME() has drop;
 
-/// A runtime configuration whose signer is live and a clock at `NOW_AT_MS`.
+/// A runtime configuration whose first signer is live and a clock at `NOW_AT_MS`.
 public struct ClaimFixture {
     scenario: Scenario,
     package_version: PackageVersion,
@@ -75,7 +78,7 @@ fun account_claim_with_the_backend_signature_issues_both_caps() {
 
         let (curve_fee_cap, metadata_cap) = creator_authority::claim_creator_caps<TEST_MEME>(
             account_recipient(),
-            f.config.creator_claim_signer(),
+            &f.config.creator_claim_signers(),
             option::some(attestation()),
             &f.clock,
             f.ctx!(),
@@ -195,19 +198,21 @@ fun account_claim_rejects_a_signature_for_another_account() {
     fixture.end();
 }
 
-// --- Signer rotation ---
+// --- Signer set ---
 
-#[test, expected_failure(abort_code = blast_fun::errors::EInvalidCreatorClaimSignature, location = blast_fun::creator_authority)]
-fun account_claim_rejects_an_attestation_from_a_rotated_signer() {
+#[test]
+/// Any admitted key verifies: the second key's attestation claims while the first stays live.
+fun account_claim_signed_by_the_second_admitted_key_issues_both_caps() {
     let mut fixture = start();
 
     fixture.next_tx!(ADMIN, |f| {
-        f.set_creator_claim_signer_for_testing(
-            x"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-        );
+        f.admit_creator_claim_signer(second_signer_public_key());
     });
 
     fixture.next_tx!(CREATOR, |f| {
+        assert_eq!(f.config.creator_claim_signers(), vector[signer_public_key(), second_signer_public_key()]);
+
+        f.claim<TEST_MEME>(account_recipient(), option::some(second_attestation()));
         f.claim<TEST_MEME>(account_recipient(), option::some(attestation()));
     });
 
@@ -215,15 +220,77 @@ fun account_claim_rejects_an_attestation_from_a_rotated_signer() {
 }
 
 #[test, expected_failure(abort_code = blast_fun::errors::EInvalidCreatorClaimSignature, location = blast_fun::creator_authority)]
-/// An empty signer key revokes account claims: even a correctly signed attestation fails.
-fun account_claim_rejects_every_attestation_once_the_signer_is_revoked() {
+/// A pending key signs nothing until its notice has passed and it is applied.
+fun account_claim_rejects_an_attestation_from_a_pending_key() {
     let mut fixture = start();
 
     fixture.next_tx!(ADMIN, |f| {
-        f.set_creator_claim_signer_for_testing(vector[]);
+        let admin_witness = blast_acl::witness_for_testing<ClaimSignerAdmin>();
+        f.config.schedule_creator_claim_signer(
+            &f.package_version,
+            &admin_witness,
+            second_signer_public_key(),
+            &f.clock,
+        );
     });
 
     fixture.next_tx!(CREATOR, |f| {
+        f.claim<TEST_MEME>(account_recipient(), option::some(second_attestation()));
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EInvalidCreatorClaimSignature, location = blast_fun::creator_authority)]
+/// An attestation the first key signed before its revocation stops verifying, even while the
+/// rotated-in key keeps the set non-empty.
+fun account_claim_rejects_an_attestation_signed_before_its_key_was_revoked() {
+    let mut fixture = start();
+    let attestation = attestation();
+
+    fixture.next_tx!(ADMIN, |f| {
+        f.admit_creator_claim_signer(second_signer_public_key());
+        f.revoke_creator_claim_signer(signer_public_key());
+    });
+
+    fixture.next_tx!(CREATOR, |f| {
+        assert_eq!(f.config.creator_claim_signers(), vector[second_signer_public_key()]);
+
+        f.claim<TEST_MEME>(account_recipient(), option::some(attestation));
+    });
+
+    fixture.end();
+}
+
+#[test]
+/// Rotation needs no downtime: after the first key is revoked, the second still signs.
+fun account_claim_after_rotation_verifies_with_the_remaining_key() {
+    let mut fixture = start();
+
+    fixture.next_tx!(ADMIN, |f| {
+        f.admit_creator_claim_signer(second_signer_public_key());
+        f.revoke_creator_claim_signer(signer_public_key());
+    });
+
+    fixture.next_tx!(CREATOR, |f| {
+        f.claim<TEST_MEME>(account_recipient(), option::some(second_attestation()));
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EInvalidCreatorClaimSignature, location = blast_fun::creator_authority)]
+/// With no admitted key, even a correctly signed attestation fails.
+fun account_claim_rejects_every_attestation_when_the_signer_set_is_empty() {
+    let mut fixture = start();
+
+    fixture.next_tx!(ADMIN, |f| {
+        f.revoke_creator_claim_signer(signer_public_key());
+    });
+
+    fixture.next_tx!(CREATOR, |f| {
+        assert!(f.config.creator_claim_signers().is_empty());
+
         f.claim<TEST_MEME>(account_recipient(), option::some(attestation()));
     });
 
@@ -231,12 +298,12 @@ fun account_claim_rejects_every_attestation_once_the_signer_is_revoked() {
 }
 
 #[test]
-fun restoring_the_signer_reenables_account_claims() {
+fun readmitting_a_revoked_key_reenables_its_attestations() {
     let mut fixture = start();
 
     fixture.next_tx!(ADMIN, |f| {
-        f.set_creator_claim_signer_for_testing(vector[]);
-        f.set_creator_claim_signer_for_testing(signer_public_key());
+        f.revoke_creator_claim_signer(signer_public_key());
+        f.admit_creator_claim_signer(signer_public_key());
     });
 
     fixture.next_tx!(CREATOR, |f| {
@@ -275,7 +342,7 @@ fun start(): ClaimFixture {
     ClaimFixture { scenario, package_version, config, clock }
 }
 
-/// Claims as the current sender with the live signer key and discards both caps.
+/// Claims as the current sender against the admitted signer keys and discards both caps.
 fun claim_claim<Meme>(
     self: &mut ClaimFixture,
     recipient: CreatorRecipient,
@@ -283,7 +350,7 @@ fun claim_claim<Meme>(
 ) {
     let (curve_fee_cap, metadata_cap) = creator_authority::claim_creator_caps<Meme>(
         recipient,
-        self.config.creator_claim_signer(),
+        &self.config.creator_claim_signers(),
         attestation,
         &self.clock,
         self.scenario.ctx(),
@@ -293,11 +360,22 @@ fun claim_claim<Meme>(
     metadata_cap.destroy_metadata_cap();
 }
 
-fun claim_set_creator_claim_signer(self: &mut ClaimFixture, signer_public_key: vector<u8>) {
+/// Schedules `signer_public_key` and admits it once a synthetic clock has waited the notice,
+/// leaving the fixture clock at `NOW_AT_MS` so attestations stay unexpired.
+fun claim_admit_creator_claim_signer(self: &mut ClaimFixture, signer_public_key: vector<u8>) {
+    let admin_witness = blast_acl::witness_for_testing<ClaimSignerAdmin>();
+    let mut admin_clock = clock::create_for_testing(self.scenario.ctx());
+
+    self.config.schedule_creator_claim_signer(&self.package_version, &admin_witness, signer_public_key, &admin_clock);
+    admin_clock.set_for_testing(NOTICE_MS);
+    self.config.apply_creator_claim_signer(&self.package_version, signer_public_key, &admin_clock);
+    destroy(admin_clock);
+}
+
+fun claim_revoke_creator_claim_signer(self: &mut ClaimFixture, signer_public_key: vector<u8>) {
     let admin_witness = blast_acl::witness_for_testing<ClaimSignerAdmin>();
 
-    if (signer_public_key.is_empty()) self.config.revoke_creator_claim_signer(&self.package_version, &admin_witness)
-    else self.config.set_creator_claim_signer(&self.package_version, &admin_witness, signer_public_key);
+    self.config.revoke_creator_claim_signer(&self.package_version, &admin_witness, signer_public_key);
 }
 
 fun claim_end(self: ClaimFixture) {
@@ -327,6 +405,21 @@ fun signature(): vector<u8> {
     x"ff0ced0a7390306e2da4210845558a93f6594f4c30836e2499ad400e38a9fbadc4591d9188fa6aaaac9ff3575a7c212f62fc451d1266ea744b847b4c7afc6a04"
 }
 
+/// The same claim signed by the second signer key.
+fun second_attestation(): vector<u8> {
+    creator_authority::new_creator_claim_attestation_for_testing(EXPIRES_AT_MS, second_signature())
+}
+
+// Public test fixture: Ed25519 seed [8; 32], signing the same BCS message. Never used outside
+// tests.
+fun second_signer_public_key(): vector<u8> {
+    x"1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
+}
+
+fun second_signature(): vector<u8> {
+    x"220a5b969395bb435fb32259c4b93c83b510f30a88632c409fbce844a8dc528bd6a6d911c6b43d977c2f1b4426ff2395683a262f20c998339acd3dcb2bc50002"
+}
+
 // === Imports ===
 
 use blast_admin::blast_acl;
@@ -342,6 +435,8 @@ use std::unit_test::{assert_eq, destroy};
 
 use sui::{clock::{Self, Clock}, test_scenario::{Self, Scenario}};
 
+use fun claim_admit_creator_claim_signer as ClaimFixture.admit_creator_claim_signer;
+
 use fun claim_claim as ClaimFixture.claim;
 
 use fun claim_ctx as ClaimFixture.ctx;
@@ -350,4 +445,4 @@ use fun claim_end as ClaimFixture.end;
 
 use fun claim_next_tx as ClaimFixture.next_tx;
 
-use fun claim_set_creator_claim_signer as ClaimFixture.set_creator_claim_signer_for_testing;
+use fun claim_revoke_creator_claim_signer as ClaimFixture.revoke_creator_claim_signer;
