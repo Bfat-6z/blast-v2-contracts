@@ -121,8 +121,9 @@ immediate; root rotation and later partner changes retain seven-day delays.
 
 At `f661a03`: **1,433 Move tests + 10 changed native venue cases passed**.
 Measured 100% instruction coverage covers pause functions, new vault policy
-methods and the bonding reward lifecycle—not every package. Earlier pause matrices
-passed; two unchanged large matrices were not rerun in the final check.
+methods and the bonding reward lifecycle—not every package. On 3 Nov, both
+native presale pause matrices passed again at `54c9d8c`, including 8,192
+mask/generation combinations and role, revocation, event and rollback checks.
 
 **Proposed targets, subject to team approval and named owners:**
 
