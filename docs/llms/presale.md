@@ -123,7 +123,7 @@ Pending --share--> Open --settle (total >= raise)--> Funded --migrate--> Migrate
 | State | Exists | Allows |
 | --- | --- | --- |
 | `Pending` | Only inside the creation PTB, between `finalize` and `share` | `blast_presale::blast_presale::set_protocol_fees` (admin, when the creation PTB also signs in as `FeeAdmin`), `blast_presale::blast_presale::share` |
-| `Open` | From `share` until `settle` | Before `start_ms`: `blast_presale::blast_presale::set_protocol_fees` (admin). From `start_ms` until `end_ms`: commits. From `end_ms`, or earlier once the raise is full under a hard cap that closes the sale when filled: `blast_presale::blast_presale::settle` |
+| `Open` | From `share` until `settle` | Before `start_ms`: `blast_presale::blast_presale::set_protocol_fees` (admin), which may only keep or lower each rate. From `start_ms` until `end_ms`: commits. From `end_ms`, or earlier once the raise is full under a hard cap that closes the sale when filled: `blast_presale::blast_presale::settle` |
 | `Funded` | After a settle that met the raise | Migration at any time; `blast_presale::blast_presale::cancel_unlaunched` from the LP deadline |
 | `Migrated` | After migration | `blast_presale::blast_presale::claim` (tokens + overflow refund), `blast_presale::blast_presale::pay_protocol_fees_with_partner` once on a partnered sale |
 | `Cancelled` | After an underfunded settle or `cancel_unlaunched` | `blast_presale::blast_presale::claim` (full refund), `blast_presale::blast_presale::destroy_cap` |
@@ -672,7 +672,7 @@ Integrators cannot call these; they explain state changes. Each takes the
 | --- | --- |
 | `fee_policy::schedule_fees` | Rates new sales snapshot. Raise rate < 10,000 BPS; token rate <= 9,998. Application emits `delayed::DelayedApplied<fee_policy::FeesKey, fee_policy::ProtocolFees>`. |
 | `fee_policy::schedule_destination` | Redirects every later Blast payout, existing sales included; rejects `0x0`. Application emits `delayed::DelayedApplied<fee_policy::DestinationKey, address>`. |
-| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), or while `Open` and before `start_ms`. Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
+| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`EProtocolFeesIncreased` otherwise). Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
 | `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Application emits `delayed::DelayedApplied<presale_vault::ProtocolLpFeesKey, fee_policy::ProtocolFees>`. |
 | `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `creation_policy::QuoteSet`. |
 | `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `delayed::ActionApplied<creation_policy::MigrationWitnessKey, TypeName>`; `remove_migration_witness` removes immediately (emitting `delayed::MemberRemoved` for an admitted witness) and cancels pending admission. |
@@ -772,6 +772,8 @@ Presale creation/sharing, all three commitment paths and migration check their r
 `blast_presale::blast_presale::set_protocol_fees` remains immediate before the
 sale starts, but now takes the live `FeePolicy`; every rate must be at or below
 its applied rates. Scheduled increases cannot authorize larger sale overrides.
+Once a sale is shared it is public, so an override there may only keep or lower
+each of its four rates; only the creation PTB may raise one.
 AdapterAdmin may immediately remove an adapter with `creation_policy::remove_migration_witness`.
 Genesis treasury is configured before publication, never defaulted to the publisher.
 
@@ -837,7 +839,8 @@ charged at creation, on commitment, on refund, or when a sale does not migrate.
   can change them later.
 - Every payout goes to `FeePolicy.destination` as it is when paid.
 
-Per-sale changes before the start (`blast_presale::blast_presale::set_protocol_fees`): a changed raise rate
+Per-sale changes before the start (`blast_presale::blast_presale::set_protocol_fees`): a rate may rise
+only in the creation PTB; on a shared sale each rate may only stay or fall. A changed raise rate
 becomes `floor(R × raise_bps / 10,000)` and takes from or gives to the LP's Quote; a changed token
 rate becomes `floor(supply × token_bps / 10,000)` and takes from or gives to the buyers'
 allocation `A`. A rate equal to the sale's current one keeps its current amount (the creation
@@ -911,7 +914,8 @@ All times are Unix milliseconds from `Clock`.
   after the end: `EPresaleEnded`.
 - Caps lift at `now >= uncapped start`.
 - `blast_presale::blast_presale::set_protocol_fees`: in the creation PTB before `share`, or after it while
-  `now < start_ms`. A sale shared with a start in the past can be repriced only in its creation PTB.
+  `now < start_ms`, when it may only lower rates. A sale shared with a start in the past can be
+  repriced only in its creation PTB. After the start, `EPresaleStarted` precedes the rate checks.
 - `blast_presale::blast_presale::settle`: from `now >= end_ms`, at any later time, or earlier once the sale can close
   early.
 - Migration: any time while `Funded`, including after the LP deadline, until someone cancels.
@@ -1076,8 +1080,8 @@ it. Common ones by flow (module `blast_presale` unless named):
   `holder_rewards::EClaimsStillOpen`. An overcommitted root aborts in the framework's balance
   split when the round runs out.
 - Admin-only: `blast_acl::sign_in` aborts for a revoked `AdminCap` or one without the role;
-  then `EPresaleStarted`,
-  `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EInvalidDestination`,
+  then `EPresaleStarted`, `EProtocolFeesIncreased` (a shared sale's override raises a rate),
+  `EAboveFeePolicy`, `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EInvalidDestination`,
   `creation_policy::EAllowanceUnchanged`, `creation_policy::EInvalidMigrationWitness`, and the
   `holder_rewards` publish checks (`EWrongRound`, `EInvalidInterval`, `EInvalidCommitment`,
   `EInvalidLeafCount`, `EEmptyBudget`, `EInvalidClaimDeadline`).
@@ -1183,7 +1187,8 @@ Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale:
    can never migrate and refunds after its LP deadline. It aborts with
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongMigrator` when the initializer was started by another
    migrator (it reads `blast_presale::blast_presale::migration_witness`).
-6. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, which needs
+6. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, the only
+   point where they may rise (up to the applied policy), which needs
    Blast's presale `FeeAdmin` signed in within the same transaction; then
    `blast_presale::blast_presale::share(presale, commitment_starts_at_ms, clock)`.
 

@@ -474,41 +474,44 @@ fun pause_keeps_settlement_and_refunds_open() {
 
 #[test]
 #[expected_failure(abort_code = presale::EAboveFeePolicy, location = blast_presale::blast_presale)]
+/// The applied policy caps a sale's rates even in its creation transaction, where they may rise: a
+/// scheduled policy increase lifts that ceiling only once it applies.
 fun a_pending_policy_increase_does_not_raise_the_sales_immediate_fee_ceiling() {
-    let mut fixture = schedule_with_protocol_fees(
-        vector[],
-        PROTOCOL_RAISE_BPS,
-        PROTOCOL_TOKEN_BPS,
-        FEE_PAYING_RECIPIENT_B_BPS
+    let mut ctx = tx_context::dummy();
+    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let clock = clock::create_for_testing(&mut ctx);
+    let (treasury_cap, mut currency) = new_currency(&mut ctx);
+    let mut fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let (mut sale, _cap) = new_presale<QUOTE>(
+        treasury_cap,
+        &mut currency,
+        valid_sale_terms(),
+        &creation_policy,
+        &fee_policy,
+        &mut ctx,
     );
-    let version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
-    let notice_clock = sui::clock::create_for_testing(fixture.scenario.ctx());
-    fixture
-        .fee_policy
-        .schedule_fees(
-            &version,
-            &fee_admin(),
-            bps::new(1_000),
-            bps::new(PROTOCOL_TOKEN_BPS),
-            bps::new(0),
-            bps::new(0),
-            172_800_000,
-            &notice_clock
-        );
-    fixture.next_tx!(ADMIN, |f| {
-        let mut sale = f.take_presale();
-        sale.set_protocol_fees(
-            &version,
-            &fee_admin(),
-            &f.fee_policy,
-            bps::new(1_000),
-            bps::new(PROTOCOL_TOKEN_BPS),
-            bps::new(0),
-            bps::new(0),
-            &f.clock
-        );
-        f.return_presale(sale);
-    });
+    fee_policy.schedule_fees(
+        &package_version,
+        &fee_admin(),
+        bps::new(1_000),
+        bps::new(0),
+        bps::new(0),
+        bps::new(0),
+        172_800_000,
+        &clock,
+    );
+
+    sale.set_protocol_fees(
+        &package_version,
+        &fee_admin(),
+        &fee_policy,
+        bps::new(1_000),
+        bps::new(0),
+        bps::new(0),
+        bps::new(0),
+        &clock,
+    );
     abort
 }
 
@@ -1905,15 +1908,16 @@ fun a_start_whose_windows_end_past_u64_milliseconds_is_rejected() {
 }
 
 #[test]
-/// Before the window starts, the AdminCap can replace one sale's rates. Blast's token share moves
-/// to or from the buyers' sale allocation and its raise share to or from the LP's Quote, each
-/// rounded down; the recipients keep their amounts, and migration and claims use the new terms.
+/// Before the window starts, the FeeAdmin can lower a shared sale's rates. Blast's token share it
+/// gives up joins the buyers' sale allocation and its raise share the LP's Quote, each rounded
+/// down; the recipients keep their amounts, and migration and claims use the new terms.
 fun the_admin_can_replace_a_sales_rates_before_it_starts() {
-    let mut fixture = schedule_with_protocol_fees(
+    let mut fixture = schedule_with_creation_rates(
         vector[presale::recipient_share(RAISE_RECIPIENT, bps::new(2_000))],
         PROTOCOL_RAISE_BPS,
         PROTOCOL_TOKEN_BPS,
         FEE_PAYING_RECIPIENT_B_BPS,
+        vector[2_000, PROTOCOL_TOKEN_BPS, 200, 300],
     );
 
     fixture.set_protocol_fees(vector[1_000, 250, 100, 200]);
@@ -1950,17 +1954,16 @@ fun the_admin_can_replace_a_sales_rates_before_it_starts() {
 }
 
 #[test]
-/// Raising Blast's rates before the start takes its extra tokens from the sale allocation and its
-/// extra Quote from the LP.
-fun a_rate_increase_before_the_start_takes_from_the_sale_allocation_and_the_lp() {
-    let mut fixture = schedule_with_protocol_fees(
+/// Raising Blast's rates in the creation transaction takes its extra tokens from the sale
+/// allocation and its extra Quote from the LP.
+fun a_rate_increase_at_creation_takes_from_the_sale_allocation_and_the_lp() {
+    let mut fixture = schedule_with_creation_rates(
         vector[],
         PROTOCOL_RAISE_BPS,
         PROTOCOL_TOKEN_BPS,
         FEE_PAYING_RECIPIENT_B_BPS,
+        vector[1_000, 1_000, 0, 0],
     );
-
-    fixture.set_protocol_fees(vector[1_000, 1_000, 0, 0]);
 
     // 20,001 * 1,000 / 10,000 = 2,000.1 tokens: Blast's extra 1,000 leave the sale allocation.
     assert_eq!(
@@ -1989,12 +1992,114 @@ fun a_rate_increase_before_the_start_takes_from_the_sale_allocation_and_the_lp()
 }
 
 #[test]
+/// Lowering every rate of a shared sale before its start hands the tokens Blast gives up back to
+/// the sale allocation and the Quote it gives up back to the LP, each new amount rounded down.
+fun lowering_every_rate_before_the_start_returns_blasts_share_to_the_buyers_and_the_lp() {
+    let mut fixture = schedule_with_creation_rates(
+        vector[],
+        PROTOCOL_RAISE_BPS,
+        PROTOCOL_TOKEN_BPS,
+        FEE_PAYING_RECIPIENT_B_BPS,
+        vector[1_000, 1_000, 100, 200],
+    );
+
+    fixture.set_protocol_fees(vector[500, 333, 50, 150]);
+
+    // 1,000 * 500 / 10,000 = 50 Quote and 20,001 * 333 / 10,000 = 666.03 tokens, rounded down:
+    // of Blast's 2,000 creation tokens, 1,334 return to the sale allocation of 9,001.
+    let (_, rates, protocol_quote, protocol_tokens, token_allocation) = only_event<
+        ProtocolFeesChanged<BLAST_PRESALE_TESTS, QUOTE>,
+    >().protocol_fees_changed_fields();
+    assert_eq!(rates, vector[500, 333, 50, 150]);
+    assert_eq!(vector[protocol_quote, protocol_tokens, token_allocation], vector[50, 666, 10_335]);
+    assert_eq!(fixture.protocol_rates(), vector[500, 333, 50, 150]);
+    assert_eq!(
+        fixture.custody(),
+        vector[
+            0,
+            0,
+            0,
+            10_335,
+            LIQUIDITY_TOKENS,
+            RECIPIENT_A_TOKENS + FEE_PAYING_RECIPIENT_B_TOKENS,
+            666,
+        ],
+    );
+
+    fixture.set_time(COMMITMENT_STARTS_AT_MS);
+    fixture.commit_open(ALICE, RAISE_TARGET);
+    fixture.set_time(COMMITMENT_ENDS_AT_MS);
+    fixture.settle(KEEPER);
+
+    assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 950]);
+    fixture.take_payout(TREASURY, 666, 50);
+    assert_eq!(fixture.claim(KEEPER, ALICE), vector[RAISE_TARGET, 10_335, 0, 0]);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EProtocolFeesIncreased,
+    location = blast_presale::blast_presale,
+)]
+fun a_shared_sales_raise_rate_cannot_rise() {
+    raise_a_shared_sales_rates(vector[1_001, 0, 0, 0]);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EProtocolFeesIncreased,
+    location = blast_presale::blast_presale,
+)]
+fun a_shared_sales_token_rate_cannot_rise() {
+    raise_a_shared_sales_rates(vector[0, 1_001, 0, 0]);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EProtocolFeesIncreased,
+    location = blast_presale::blast_presale,
+)]
+fun a_shared_sales_lp_fee_meme_rate_cannot_rise() {
+    raise_a_shared_sales_rates(vector[0, 0, 101, 0]);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EProtocolFeesIncreased,
+    location = blast_presale::blast_presale,
+)]
+fun a_shared_sales_lp_fee_quote_rate_cannot_rise() {
+    raise_a_shared_sales_rates(vector[0, 0, 0, 201]);
+}
+
+#[test]
 #[expected_failure(abort_code = presale::EPresaleStarted, location = blast_presale::blast_presale)]
+/// Once the window starts, no rate may change, not even downwards.
 fun a_sales_rates_cannot_change_once_its_window_starts() {
+    let mut fixture = schedule_with_protocol_fees(
+        vector[],
+        PROTOCOL_RAISE_BPS,
+        PROTOCOL_TOKEN_BPS,
+        FEE_PAYING_RECIPIENT_B_BPS,
+    );
+    fixture.set_time(COMMITMENT_STARTS_AT_MS);
+
+    fixture.set_protocol_fees(vector[0, 0, 0, 0]);
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = presale::EPresaleStarted, location = blast_presale::blast_presale)]
+/// A started sale reports its start before its rates are compared, so an increase is rejected as
+/// late, not as an increase.
+fun a_rate_increase_after_the_start_reports_the_started_sale() {
     let mut fixture = schedule_with_protocol_fees(vector[], 0, 0, RECIPIENT_B_BPS);
     fixture.set_time(COMMITMENT_STARTS_AT_MS);
 
-    fixture.set_protocol_fees(vector[1_000, 0, 0, 0]);
+    fixture.set_protocol_fees(vector[1_000, 1_000, 100, 200]);
 
     fixture.end();
 }
@@ -2095,6 +2200,8 @@ fun a_funded_sales_rates_cannot_change() {
     abort_code = presale::EProtocolFeesUnchanged,
     location = blast_presale::blast_presale,
 )]
+/// An override that keeps every rate of a shared sale passes the no-increase guard and is then
+/// rejected as unchanged.
 fun a_sale_fee_update_must_change_its_rates() {
     let mut fixture = schedule_with_protocol_fees(
         vector[],
@@ -2109,14 +2216,26 @@ fun a_sale_fee_update_must_change_its_rates() {
 }
 
 #[test]
+#[expected_failure(
+    abort_code = presale::EProtocolFeesUnchanged,
+    location = blast_presale::blast_presale,
+)]
+/// In the creation transaction, too, an override must change a rate.
+fun a_creation_fee_update_must_change_its_rates() {
+    schedule_with_creation_rates(
+        vector[],
+        PROTOCOL_RAISE_BPS,
+        PROTOCOL_TOKEN_BPS,
+        FEE_PAYING_RECIPIENT_B_BPS,
+        vector[PROTOCOL_RAISE_BPS, PROTOCOL_TOKEN_BPS, 0, 0],
+    ).end();
+}
+
+#[test]
 #[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
 /// A sale's rates keep the policy's bounds: Blast's raise share stays below 10,000 BPS.
 fun a_sale_fee_update_keeps_the_policy_bounds() {
-    let mut fixture = schedule_with_protocol_fees(vector[], 0, 0, RECIPIENT_B_BPS);
-
-    fixture.set_protocol_fees(vector[10_000, 0, 0, 0]);
-
-    fixture.end();
+    schedule_with_creation_rates(vector[], 0, 0, RECIPIENT_B_BPS, vector[10_000, 0, 0, 0]).end();
 }
 
 #[test]
@@ -2126,16 +2245,13 @@ fun a_sale_fee_update_keeps_the_policy_bounds() {
 )]
 /// Blast's new raise share must still leave the LP Quote after the raise recipients'.
 fun a_raise_share_that_leaves_the_lp_nothing_is_rejected() {
-    let mut fixture = schedule_with_protocol_fees(
+    schedule_with_creation_rates(
         vector[presale::recipient_share(RAISE_RECIPIENT, bps::new(2_000))],
         0,
         0,
         RECIPIENT_B_BPS,
-    );
-
-    fixture.set_protocol_fees(vector[8_000, 0, 0, 0]);
-
-    fixture.end();
+        vector[8_000, 0, 0, 0],
+    ).end();
 }
 
 #[test]
@@ -2146,16 +2262,13 @@ fun a_raise_share_that_leaves_the_lp_nothing_is_rejected() {
 /// Blast's new token share must leave buyers a token: 20,001 * 5,501 / 10,000 rounds down to
 /// 11,002, more than the 10,001 sale tokens and Blast's 1,000 together.
 fun a_token_share_that_leaves_buyers_nothing_is_rejected() {
-    let mut fixture = schedule_with_protocol_fees(
+    schedule_with_creation_rates(
         vector[],
         0,
         PROTOCOL_TOKEN_BPS,
         FEE_PAYING_RECIPIENT_B_BPS,
-    );
-
-    fixture.set_protocol_fees(vector[0, 5_501, 0, 0]);
-
-    fixture.end();
+        vector[0, 5_501, 0, 0],
+    ).end();
 }
 
 #[test]
@@ -2832,12 +2945,12 @@ fun a_zero_raise_rate_partnered_sale_pays_blast_its_tokens() {
 }
 
 #[test]
-/// A rate the AdminCap sets before the start is the one a partnered migration holds: the partner
-/// is paid its cut of Blast's new raise fee.
+/// A rate the FeeAdmin lowers before the start is the one a partnered migration holds: the
+/// partner is paid its cut of Blast's new raise fee.
 fun a_partnered_sale_holds_the_rates_set_before_its_start() {
     let mut ctx = tx_context::dummy();
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
-    let mut fixture = partner.share_partnered_sale(SCHEDULED_AT_MS, PROTOCOL_RAISE_BPS);
+    let mut fixture = partner.share_partnered_sale(SCHEDULED_AT_MS, 2_000);
     fixture.set_protocol_fees(vector[1_000, 250, 0, 0]);
     fixture.fund_partnered_sale();
 
@@ -2862,24 +2975,33 @@ fun a_partnered_sale_holds_the_rates_set_before_its_start() {
 /// A rate update that leaves Blast's raise and token rates as they are keeps the amounts creation
 /// apportioned for them, even where creation's largest remainder gave Blast the extra unit.
 fun an_lp_rate_change_keeps_blasts_raise_and_token_amounts() {
-    let mut fixture = schedule_with_protocol_fees(
+    // The creation transaction raises one LP rate, which the shared sale then lowers.
+    let mut fixture = schedule_with_creation_rates(
         vector[],
         335,
         PROTOCOL_TOKEN_BPS,
         FEE_PAYING_RECIPIENT_B_BPS,
+        vector[335, PROTOCOL_TOKEN_BPS, 100, 0],
     );
     // 1,000 * [335, 9,665] / 10,000 = [33.5, 966.5]: the tie gives Blast, the earlier rate, 34.
     let (_, created_quote, created_tokens) = only_event<
         PresaleCreated<BLAST_PRESALE_TESTS, QUOTE>,
     >().created_protocol_fields();
     assert_eq!(vector[created_quote, created_tokens], vector[34, PROTOCOL_TOKENS]);
+    let (_, _, creation_quote, creation_tokens, creation_allocation) = only_event<
+        ProtocolFeesChanged<BLAST_PRESALE_TESTS, QUOTE>,
+    >().protocol_fees_changed_fields();
+    assert_eq!(
+        vector[creation_quote, creation_tokens, creation_allocation],
+        vector[34, PROTOCOL_TOKENS, TOKEN_ALLOCATION],
+    );
 
-    fixture.set_protocol_fees(vector[335, PROTOCOL_TOKEN_BPS, 100, 0]);
+    fixture.set_protocol_fees(vector[335, PROTOCOL_TOKEN_BPS, 50, 0]);
 
     let (_, rates, protocol_quote, protocol_tokens, token_allocation) = only_event<
         ProtocolFeesChanged<BLAST_PRESALE_TESTS, QUOTE>,
     >().protocol_fees_changed_fields();
-    assert_eq!(rates, vector[335, PROTOCOL_TOKEN_BPS, 100, 0]);
+    assert_eq!(rates, vector[335, PROTOCOL_TOKEN_BPS, 50, 0]);
     assert_eq!(
         vector[protocol_quote, protocol_tokens, token_allocation],
         vector[34, PROTOCOL_TOKENS, TOKEN_ALLOCATION],
@@ -3199,6 +3321,7 @@ fun start_sale(eligibility: EligibilityPolicy): Fixture {
         RECIPIENT_B_BPS,
         option::none(),
         option::none(),
+        option::none(),
     )
 }
 
@@ -3216,6 +3339,7 @@ fun start_burnable_sale(eligibility: EligibilityPolicy): Fixture {
         RECIPIENT_B_BPS,
         option::none(),
         option::none(),
+        option::none(),
     )
 }
 
@@ -3231,6 +3355,7 @@ fun start_with_uncapped_phase(eligibility: EligibilityPolicy, phase: UncappedPha
         0,
         0,
         RECIPIENT_B_BPS,
+        option::none(),
         option::none(),
         option::none(),
     )
@@ -3255,6 +3380,7 @@ fun start_with_hard_cap(
         RECIPIENT_B_BPS,
         option::none(),
         option::none(),
+        option::none(),
     )
 }
 
@@ -3270,6 +3396,7 @@ fun start_with_raise_allocations(raise_allocations: vector<RecipientShare>): Fix
         0,
         0,
         RECIPIENT_B_BPS,
+        option::none(),
         option::none(),
         option::none(),
     )
@@ -3290,6 +3417,7 @@ fun start_with_team_vesting(raise_allocations: vector<RecipientShare>): Fixture 
         RECIPIENT_B_BPS,
         option::some(team_vesting_terms()),
         option::none(),
+        option::none(),
     )
 }
 
@@ -3308,6 +3436,7 @@ fun start_with_participant_vesting(eligibility: EligibilityPolicy): Fixture {
         RECIPIENT_B_BPS,
         option::none(),
         option::some(team_vesting_terms()),
+        option::none(),
     )
 }
 
@@ -3330,6 +3459,7 @@ fun start_with_protocol_fees(
         protocol_raise_bps,
         protocol_token_bps,
         recipient_b_bps,
+        option::none(),
         option::none(),
         option::none(),
     )
@@ -3355,6 +3485,33 @@ fun schedule_with_protocol_fees(
         recipient_b_bps,
         option::none(),
         option::none(),
+        option::none(),
+    )
+}
+
+/// Creates the same sale as `schedule_with_protocol_fees`, but has the FeeAdmin replace its
+/// `[raise, token, LP-fee meme, LP-fee quote]` BPS rates with `creation_rates` in its creation
+/// transaction, before `share`, where a rate may still rise.
+fun schedule_with_creation_rates(
+    raise_allocations: vector<RecipientShare>,
+    protocol_raise_bps: u64,
+    protocol_token_bps: u64,
+    recipient_b_bps: u64,
+    creation_rates: vector<u64>,
+): Fixture {
+    start_configured(
+        SCHEDULED_AT_MS,
+        raise_allocations,
+        presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2),
+        option::none(),
+        option::none(),
+        false,
+        protocol_raise_bps,
+        protocol_token_bps,
+        recipient_b_bps,
+        option::none(),
+        option::none(),
+        option::some(creation_rates),
     )
 }
 
@@ -3405,7 +3562,8 @@ fun start_funded_sale(): Fixture {
 
 /// Creates a `RAISE_TARGET` sale at `created_at_ms` and shares it to open at `COMMITMENT_STARTS_AT_MS`, asserting
 /// its creation and opening events, and hands the creator its cap. Recipient A's tokens vest
-/// under `recipient_a_vesting` and every participant's under `participant_vesting`.
+/// under `recipient_a_vesting` and every participant's under `participant_vesting`; the FeeAdmin
+/// replaces the sale's rates with `creation_rates`, if any, before `share`.
 fun start_configured(
     created_at_ms: u64,
     raise_allocations: vector<RecipientShare>,
@@ -3418,13 +3576,14 @@ fun start_configured(
     recipient_b_bps: u64,
     recipient_a_vesting: Option<VestingTerms>,
     participant_vesting: Option<VestingTerms>,
+    creation_rates: Option<vector<u64>>,
 ): Fixture {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let result = {
         let mut clock = clock::create_for_testing(scenario.ctx());
         clock.set_for_testing(created_at_ms);
-        let fee_policy = treasury_fee_policy(
+        let mut fee_policy = treasury_fee_policy(
             protocol_raise_bps,
             protocol_token_bps,
             scenario.ctx(),
@@ -3450,7 +3609,7 @@ fun start_configured(
 
         let (treasury_cap, mut currency) = new_currency(scenario.ctx());
         let treasury_cap_id = object::id(&treasury_cap);
-        let (presale, cap) = new_presale<QUOTE>(
+        let (mut presale, cap) = new_presale<QUOTE>(
             treasury_cap,
             &mut currency,
             terms,
@@ -3478,6 +3637,9 @@ fun start_configured(
         assert_eq!(currency.total_supply().destroy_some(), TOKEN_SUPPLY);
         destroy(currency);
 
+        creation_rates.do!(|rates| {
+            presale.override_protocol_fees(&mut fee_policy, rates, &clock, scenario.ctx())
+        });
         presale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock);
         assert_opened_event(
             presale_id,
@@ -4304,36 +4466,69 @@ fun commit_uncapped(self: &mut Fixture, sender: address, amount: u64): vector<u6
     result
 }
 
-/// Has the AdminCap replace the sale's `[raise, token, LP-fee meme, LP-fee quote]` BPS rates.
+/// Creates a sale charging `[1,000, 1,000, 100, 200]` BPS, shares it, and has the FeeAdmin try
+/// `rates` on it before its start, where any one rate above its current one aborts however far the
+/// others fall.
+fun raise_a_shared_sales_rates(rates: vector<u64>) {
+    let mut fixture = schedule_with_creation_rates(
+        vector[],
+        PROTOCOL_RAISE_BPS,
+        PROTOCOL_TOKEN_BPS,
+        FEE_PAYING_RECIPIENT_B_BPS,
+        vector[1_000, 1_000, 100, 200],
+    );
+
+    fixture.set_protocol_fees(rates);
+
+    fixture.end();
+}
+
+/// Has the FeeAdmin replace the shared sale's `[raise, token, LP-fee meme, LP-fee quote]` BPS
+/// rates.
 fun set_protocol_fees(self: &mut Fixture, rates: vector<u64>) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
-        .scenario
-        .ctx());
-    self
-        .fee_policy
-        .set_fees_for_testing(
+    self.next_tx!(ADMIN, |fixture| {
+        let mut sale = fixture.take_presale();
+        sale.override_protocol_fees(
+            &mut fixture.fee_policy,
+            rates,
+            &fixture.clock,
+            fixture.scenario.ctx(),
+        );
+        fixture.return_presale(sale);
+    });
+}
+
+/// Lifts `fee_policy`'s ceiling to the highest rates it accepts, unless an earlier override
+/// already did, so only the sale's own guards can reject `rates`, then has the FeeAdmin replace
+/// `sale`'s `[raise, token, LP-fee meme, LP-fee quote]` BPS rates with them.
+fun override_protocol_fees(
+    sale: &mut Presale<BLAST_PRESALE_TESTS, QUOTE>,
+    fee_policy: &mut FeePolicy,
+    rates: vector<u64>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    if (fee_policy.fees() != fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000))
+        fee_policy.set_fees_for_testing(
             &package_version,
             &fee_admin(),
             bps::new(9_999),
             bps::new(9_998),
             bps::new(10_000),
             bps::new(10_000),
-            self.scenario.ctx()
+            ctx,
         );
-    self.next_tx!(ADMIN, |fixture| {
-        let mut sale = fixture.take_presale();
-        sale.set_protocol_fees(
-            &package_version,
-            &fee_admin(),
-            &fixture.fee_policy,
-            bps::new(rates[0]),
-            bps::new(rates[1]),
-            bps::new(rates[2]),
-            bps::new(rates[3]),
-            &fixture.clock,
-        );
-        fixture.return_presale(sale);
-    });
+    sale.set_protocol_fees(
+        &package_version,
+        &fee_admin(),
+        fee_policy,
+        bps::new(rates[0]),
+        bps::new(rates[1]),
+        bps::new(rates[2]),
+        bps::new(rates[3]),
+        clock,
+    );
 
     std::unit_test::destroy(package_version);
 }
@@ -4712,6 +4907,8 @@ use sui::{
 };
 
 use fun accepting_partner as Partner.accepting_partner;
+
+use fun override_protocol_fees as Presale.override_protocol_fees;
 
 use fun share_partnered_sale as Partner.share_partnered_sale;
 
