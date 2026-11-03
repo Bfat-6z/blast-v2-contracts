@@ -217,7 +217,7 @@ fun transfer_rejects_the_wrong_sender_before_time_check() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed_action)]
 fun cancellation_requires_a_pending_transfer() {
     let mut fixture = start();
 
@@ -272,7 +272,7 @@ fun cancel_transfer(self: &mut Fixture) {
 use blast_admin::{
     blast_acl::{Self, ACL, SuperAdminCap, SuperAdminTransfer},
     blast_admin_events as events,
-    delayed::{ActionCancelled, ActionCreated, ActionScheduled},
+    delayed_action::{ActionCancelled, ActionCreated, ActionScheduled},
     errors,
 };
 

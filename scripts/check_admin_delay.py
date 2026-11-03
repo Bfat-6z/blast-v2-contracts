@@ -25,7 +25,9 @@ def require(text, *parts):
         assert part in text, f'missing {part}'
 
 
-def governed(package, module, fields, version='package_version'):
+def governed(package, module, fields, version='package_version', shared_notice=()):
+    """Fields in `shared_notice` wait a notice shared with other entries, so their schedules
+    take no delay of their own; the shared notice is governed as `<field>_delay`."""
     fs = functions(package, module)
     for field, role in fields.items():
         for phase in ('schedule', 'apply', 'cancel'):
@@ -35,11 +37,16 @@ def governed(package, module, fields, version='package_version'):
             if phase == 'apply':
                 assert 'AdminWitness' not in signature, (module, name)
                 require(signature, 'clock: &Clock')
-                require(body, '.apply(clock)')
+                assert re.search(r'\.apply\([^;]*clock\);', body), (module, name)
             else:
                 require(signature, f'&AdminWitness<{role if phase == "schedule" else "CancelAdmin"}>')
-                if phase == 'schedule': require(signature, 'delay_ms: u64', 'clock: &Clock')
-                require(body, '.schedule(' if phase == 'schedule' else '.cancel()')
+                if phase == 'schedule':
+                    require(signature, 'clock: &Clock')
+                    if field in shared_notice:
+                        assert 'delay_ms: u64' not in signature, (module, name)
+                    else:
+                        require(signature, 'delay_ms: u64')
+                require(body, '.schedule(' if phase == 'schedule' else '.cancel(')
         assert f'set_{field}' not in fs, (module, field)
 
 
@@ -47,7 +54,15 @@ governed('launchpad', 'runtime_config', {'treasury': 'TreasuryAdmin', 'protocol_
 governed('launchpad', 'launch_config', {'creation_fee': 'FeeAdmin', 'trade_fees': 'FeeAdmin', 'protocol_allocation': 'TreasuryAdmin'})
 governed('presale', 'fee_policy', {'destination': 'TreasuryAdmin', 'fees': 'FeeAdmin'})
 governed('presale', 'presale_vault', {'protocol_lp_fees': 'FeeAdmin'})
-governed('migrators', 'lp_fee_policy', {'protocol_destination': 'TreasuryAdmin', 'default_shares': 'FeeAdmin', 'coin_shares': 'FeeAdmin'}, 'migrators_version')
+governed('migrators', 'lp_fee_policy', {'protocol_destination': 'TreasuryAdmin', 'default_shares': 'FeeAdmin', 'coin_shares': 'FeeAdmin'}, 'migrators_version', shared_notice=('coin_shares',))
+coin_notice = functions('migrators', 'lp_fee_policy')
+require(coin_notice['schedule_coin_shares_delay'][0], '&AdminWitness<FeeAdmin>', 'delay_ms: u64', 'clock: &Clock')
+require(coin_notice['schedule_coin_shares_delay'][1], 'self.coins.schedule_delay(delay_ms, clock)')
+require(coin_notice['apply_coin_shares_delay'][1], 'self.coins.apply_delay(clock)')
+assert 'AdminWitness' not in coin_notice['apply_coin_shares_delay'][0]
+require(coin_notice['cancel_coin_shares_delay'][0], '&AdminWitness<CancelAdmin>')
+require(coin_notice['schedule_clear_coin_shares'][1], 'self.coins.schedule(type_name::with_original_ids<Meme>(), option::none(), clock)')
+require((ROOT / 'sui/migrators/sources/lp_fee_policy.move').read_text(), 'coins: DelayedMap<CoinSharesKey, TypeName, SharePair>,')
 
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
@@ -163,12 +178,15 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
         for name, (signature, body) in functions(package, str(path.relative_to(ROOT / 'sui' / package / 'sources').with_suffix(''))).items():
             if not re.search(r'\.schedule(_add|_value)?\(', body):
                 continue
+                continue
             require(signature, 'clock: &Clock')
             action_only = (
                 path.stem == 'package_admin' and name in ('schedule_upgrade', 'schedule_make_immutable')
                 or path.stem in ('launch_config', 'creation_policy') and name == 'schedule_migration_witness'
                 or package == 'launchpad' and path.stem == 'launch'
                 and name in ('schedule_curve_fee_cap_reassignment', 'schedule_metadata_cap_reassignment')
+                or package == 'migrators' and path.stem == 'lp_fee_policy'
+                and name in ('schedule_coin_shares', 'schedule_clear_coin_shares')
             )
             if action_only:
                 assert 'delay_ms: u64' not in signature, (path, name)
@@ -183,7 +201,10 @@ assert 'new_pending' not in primitive and 'take_ready' not in primitive
 require(primitive['ready_at_ms_after'][1], 'clock.timestamp_ms().checked_add(applied_delay_ms)', '.destroy_or!(abort blast_admin::errors::invalid_delay!())', 'ready_at_ms.checked_add(next_delay_ms).is_some()')
 require(primitive['assert_ready_at'][1], 'clock.timestamp_ms() >= ready_at_ms', 'clock.timestamp_ms().checked_add(next_delay_ms).is_some()')
 require(primitive['schedule'][1], 'ready_at_ms_after(self.delay_ms, delay_ms, clock)')
-require(primitive['schedule_add'][1], 'ready_at_ms_after(self.delay_ms, 0, clock)')
+require(functions('admin', 'delayed_set')['schedule_add'][1], 'delayed::ready_at_ms_after(self.delay_ms, 0, clock)')
+require(functions('admin', 'delayed_map')['schedule'][1], 'delayed::ready_at_ms_after(self.delay_ms, 0, clock)')
+for module in ('delayed_action', 'delayed_set', 'delayed_map'):
+    assert not any(name.startswith(('set_', 'force', 'bypass')) for name in functions('admin', module)), module
 require(primitive['apply'][1], 'self.assert_ready(clock)', 'self.value = value;', 'self.delay_ms = delay_ms;')
 for name in ('schedule_value', 'schedule_delay'):
     require(primitive[name][1], 'self.schedule(value, delay_ms, clock)')
@@ -227,12 +248,12 @@ for name in ('set_creator_claim_signer', 'revoke_creator_claim_signer'):
     assert signer[name][1].startswith('package_version.assert_current();')
     assert 'creator_claim_signer_public_key =' in signer[name][1]
 assert 'schedule_creator_claim_signer' not in signer
-require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'delayed::new( CoinSharesKey(meme), &self.id, option::none(), self.defaults.delay_ms(), )')
+require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'self.coins.schedule(meme, option::some(SharePair { meme_bps, quote_bps }), clock)')
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
     require(fs['schedule_upgrade_delay'][0], '&AdminWitness<UpgradeAdmin>', 'delay_ms: u64')
     require(fs['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
     require(fs['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
     assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]
-    require(fs['wrap'][1], 'delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS)')
+    require(fs['wrap'][1], 'delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS)')
 print('Per-operation notices, no bypass, immediate signer, and publication custody: OK')

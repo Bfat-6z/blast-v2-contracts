@@ -123,7 +123,7 @@ for environment, address in entries:
 PY
 fi
 
-for module in blast_acl delayed operational_version upgrade_custody errors blast_admin_events; do
+for module in blast_acl delayed delayed_action delayed_set delayed_map operational_version upgrade_custody errors blast_admin_events; do
   [[ -f "$package_dir/sources/$module.move" ]] \
     || fail "Missing required blast_admin module: $module.move"
 done
@@ -163,9 +163,8 @@ if grep -rniE '\b(fee|pause|migration|creator|pool|venue)\b' "$package_dir/sourc
   fail "Consumer product policy must not enter blast_admin production source."
 fi
 if grep -rn 'sui::event::emit' "$package_dir/sources" \
-  | grep -v "$package_dir/sources/blast_admin_events.move" \
-  | grep -v "$package_dir/sources/delayed.move"; then
-  fail "Only blast_admin_events.move and delayed.move may emit shared administration events."
+  | grep -vE "$package_dir/sources/(blast_admin_events|delayed|delayed_action|delayed_set|delayed_map)\.move"; then
+  fail "Only blast_admin_events.move and the delayed modules may emit shared administration events."
 fi
 if grep -rnE 'public(\(package\))?[[:space:]]+(entry[[:space:]]+)?fun[[:space:]]+[^ (]*(release|borrow|take|extract|transfer)[^ (]*' \
   "$package_dir/sources/upgrade_custody.move"; then
@@ -230,23 +229,28 @@ expected_acl_public="$(printf '%s\n' \
 [[ "$actual_acl_public" == "$expected_acl_public" ]] \
   || fail "The production ACL surface changed without boundary review."
 
-delayed_file="$package_dir/sources/delayed.move"
-if production_lines "$delayed_file" | grep -Eq 'fun[[:space:]]+(set|force|replace|bypass)[a-z_]*[[:space:]]*[<(]'; then
-  fail "Delayed values must expose no immediate setter or bypass."
-fi
-actual_delayed_public="$({
-  externally_callable_function_names "$delayed_file"
-} | sort)"
-expected_delayed_public="$(printf '%s\n' \
-  action_delay_ms action_pending admission_ready_at_ms apply apply_action_delay apply_add \
-  apply_delayed_set_delay assert_ready cancel cancel_action cancel_add cancel_delayed_set_delay change_action \
-  contains delay_ms destroy destroy_action \
-  destroy_delayed_set new new_action new_set pending proposal_delay_ms proposal_value ready_at_ms remove \
-  notice_delay_ms notice_ready_at_ms schedule schedule_action schedule_action_delay schedule_add schedule_delay schedule_delayed_set_delay \
-  schedule_value delayed_set_delay_ms delayed_set_members delayed_set_pending_delay take_action value \
-  | tr ' ' '\n' | sed '/^$/d' | sort)"
-[[ "$actual_delayed_public" == "$expected_delayed_public" ]] \
-  || fail "The production delayed surface changed without boundary review."
+for delayed_module in delayed delayed_action delayed_set delayed_map; do
+  if production_lines "$package_dir/sources/$delayed_module.move" \
+    | grep -Eq 'fun[[:space:]]+(set|force|replace|bypass)[a-z_]*[[:space:]]*[<(]'; then
+    fail "Delayed values must expose no immediate setter or bypass ($delayed_module)."
+  fi
+done
+expect_delayed_surface() {
+  local module="$1"; shift
+  local actual expected
+  actual="$(externally_callable_function_names "$package_dir/sources/$module.move" | sort)"
+  expected="$(printf '%s\n' "$@" | sort)"
+  [[ "$actual" == "$expected" ]] || fail "The production $module surface changed without boundary review."
+}
+expect_delayed_surface delayed apply assert_ready cancel delay_ms destroy new notice_delay_ms \
+  notice_ready_at_ms pending proposal_delay_ms proposal_value ready_at_ms schedule schedule_delay \
+  schedule_value value
+expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy new pending schedule \
+  schedule_delay take_action
+expect_delayed_surface delayed_set admission_ready_at_ms apply_add apply_delay cancel_add cancel_delay \
+  contains delay_ms destroy members new pending_delay remove schedule_add schedule_delay
+expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay delay_ms destroy \
+  entry_proposal_notice entry_proposal_value new pending pending_delay schedule schedule_delay value
 
 version_file="$package_dir/sources/operational_version.move"
 if production_lines "$version_file" | grep -Eq 'fun[[:space:]]+(activate|set_generation|set_version)'; then

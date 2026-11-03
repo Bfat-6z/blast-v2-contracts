@@ -81,7 +81,7 @@ public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxC
         upgrade_cap,
     );
 
-    let upgrade = delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
+    let upgrade = delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
 
     transfer::share_object(PackageAdmin { id, custody, upgrade });
     generation.share_version(ctx);
@@ -218,7 +218,7 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    let upgrade = delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
+    let upgrade = delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
 
     PackageAdmin { id, custody, upgrade }
 }
@@ -270,7 +270,7 @@ const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
 
 use blast_admin::{
     blast_acl::AdminWitness,
-    delayed::{Self, DelayedAction},
+    delayed_action::{Self, DelayedAction},
     operational_version::OperationalVersion,
     upgrade_custody::{Self, UpgradeCustody}
 };

@@ -276,12 +276,12 @@ public fun finalize<Meme, Quote>(
     let creation_fee_amount = creation_fee.value();
     let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(currency, atomic_supply);
     let id = object::new(ctx);
-    let curve_fee_cap_reassignment = delayed::new_action(
+    let curve_fee_cap_reassignment = delayed_action::new(
         CurveFeeCapReassignment(),
         &id,
         DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
     );
-    let metadata_cap_reassignment = delayed::new_action(
+    let metadata_cap_reassignment = delayed_action::new(
         MetadataCapReassignment(),
         &id,
         DEFAULT_CAP_REASSIGNMENT_DELAY_MS,
@@ -1253,7 +1253,7 @@ public fun migration_witness_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>
 // === Imports ===
 
 use blast_admin::{
-    delayed::{Self, DelayedAction},
+    delayed_action::{Self, DelayedAction},
     blast_acl::AdminWitness,
 };
 

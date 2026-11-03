@@ -78,7 +78,7 @@ public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxC
     let (publisher, generation) = publication.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN_MIGRATORS>(id.to_inner(), publisher, upgrade_cap);
-    let upgrade = delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
+    let upgrade = delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
 
     transfer::share_object(PackageAdmin { id, custody, upgrade });
     generation.share_version(ctx);
@@ -217,7 +217,7 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    let upgrade = delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
+    let upgrade = delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS);
 
     PackageAdmin { id, custody, upgrade }
 }
@@ -240,7 +240,7 @@ use blast_fun_migrators::blast_fun_migrators::{BLAST_FUN_MIGRATORS, Publication,
 
 use blast_admin::{
     blast_acl::AdminWitness,
-    delayed::{Self, DelayedAction},
+    delayed_action::{Self, DelayedAction},
     operational_version::OperationalVersion,
     upgrade_custody::{Self, UpgradeCustody},
 };

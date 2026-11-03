@@ -405,7 +405,7 @@ fun new(
         meme_decimals: vec_set::from_keys(vector[6, 9]),
         quotes: table::new(ctx),
         trade_fees: delayed::new(TradeFeesKey(), &id, trade_fees, delay_ms),
-        migration_witnesses: delayed::new_set(MigrationWitnessKey(), &id, delay_ms),
+        migration_witnesses: delayed_set::new(MigrationWitnessKey(), &id, delay_ms),
         protocol_allocation: delayed::new(ProtocolAllocationKey(), &id, protocol_allocation, delay_ms),
         creation_fee: delayed::new(CreationFeeKey(), &id, 0, delay_ms),
         id,
@@ -558,7 +558,8 @@ public fun allowed_migration_witness_count_for_testing(self: &LaunchConfig): u64
 use sui::{clock::Clock, dynamic_field, table::{Self, Table}, vec_set::{Self, VecSet}};
 
 use blast_admin::{
-    delayed::{Self, Delayed, DelayedSet},
+    delayed::{Self, Delayed},
+    delayed_set::{Self, DelayedSet},
     blast_acl::AdminWitness,
 };
 

@@ -218,7 +218,7 @@ public(package) fun assert_partner(self: &CreationPolicy, partner_id: ID, now_at
 
 fun new(delay_ms: u64, ctx: &mut TxContext): CreationPolicy {
     let id = object::new(ctx);
-    let migration_witnesses = delayed::new_set(MigrationWitnessKey(), &id, delay_ms);
+    let migration_witnesses = delayed_set::new(MigrationWitnessKey(), &id, delay_ms);
 
     CreationPolicy { id, allowed_quotes: vec_set::empty(), migration_witnesses }
 }
@@ -348,7 +348,7 @@ const EPartnerNotAccepted: vector<u8> = b"New presales may not name this partner
 use sui::{clock::Clock, dynamic_field, event, vec_set::{Self, VecSet}};
 
 use blast_admin::{
-    delayed::{Self, DelayedSet},
+    delayed_set::{Self, DelayedSet},
     blast_acl::AdminWitness,
 };
 

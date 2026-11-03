@@ -12,13 +12,7 @@ const NOTICE_MS: u64 = 172_800_000;
 
 public struct Fee() has copy, drop, store;
 
-public struct Upgrade() has copy, drop, store;
-
-public struct Witnesses() has copy, drop, store;
-
 // === Tests ===
-
-// --- Delayed ---
 
 #[test]
 fun creation_records_owner_key_value_and_notice() {
@@ -289,428 +283,6 @@ fun applying_late_rejects_a_now_unrepresentable_notice() {
     abort
 }
 
-// --- DelayedAction ---
-
-#[test]
-fun an_action_waits_the_applied_notice_and_is_handed_back_once() {
-    let mut clock = clock_at(5);
-    let mut slot = new_slot(NOTICE_MS);
-    let (_, _, created_delay_ms) = collect<ActionCreated<Upgrade, u64>>().action_created_fields();
-    assert_eq!(created_delay_ms, NOTICE_MS);
-
-    assert_eq!(slot.schedule(42, &clock), 5 + NOTICE_MS);
-    let scheduled = collect<ActionScheduled<Upgrade, u64>>();
-    let (owner, _, change, delay_ms, ready_at_ms) = scheduled.action_scheduled_fields();
-    assert_eq!(owner, owner());
-    assert_eq!(change.action(), option::some(42));
-    assert_eq!(delay_ms, NOTICE_MS);
-    assert_eq!(ready_at_ms, 5 + NOTICE_MS);
-
-    clock.set_for_testing(5 + NOTICE_MS);
-    assert_eq!(slot.take_action(&clock), 42);
-    let (_, _, applied_change, _) = collect<ActionApplied<Upgrade, u64>>().action_applied_fields();
-    assert_eq!(applied_change.action(), option::some(42));
-    assert_eq!(slot.delay_ms(), NOTICE_MS);
-    assert!(slot.pending().is_none());
-
-    slot.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun a_notice_change_waits_the_applied_notice_and_replaces_a_pending_action() {
-    let mut clock = clock_at(0);
-    let mut slot = new_slot(100);
-    slot.schedule(42, &clock);
-    clock.set_for_testing(10);
-
-    assert_eq!(slot.schedule_delay(0, &clock), 110);
-
-    let cancelled = collect<ActionCancelled<Upgrade, u64>>();
-    let (_, _, cancelled_change, _, _) = cancelled.action_cancelled_fields();
-    assert_eq!(cancelled_change.action(), option::some(42));
-    let pending = slot.pending().destroy_some();
-    assert!(pending.value().action().is_none());
-    assert_eq!(pending.delay_ms(), 0);
-
-    clock.set_for_testing(110);
-    slot.apply_delay(&clock);
-    assert_eq!(slot.delay_ms(), 0);
-    assert_eq!(slot.schedule(7, &clock), 110);
-    assert_eq!(slot.take_action(&clock), 7);
-
-    slot.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed)]
-fun a_notice_change_cannot_be_taken_as_an_action() {
-    let clock = clock_at(0);
-    let mut slot = new_slot(0);
-    slot.schedule_delay(10, &clock);
-
-    slot.take_action(&clock);
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed)]
-fun an_action_cannot_be_applied_as_a_notice_change() {
-    let clock = clock_at(0);
-    let mut slot = new_slot(0);
-    slot.schedule(1, &clock);
-
-    slot.apply_delay(&clock);
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
-fun proposing_the_applied_notice_rejects() {
-    let clock = clock_at(0);
-    let mut slot = new_slot(10);
-
-    slot.schedule_delay(10, &clock);
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
-fun an_action_cannot_be_taken_early() {
-    let mut clock = clock_at(0);
-    let mut slot = new_slot(10);
-    slot.schedule(1, &clock);
-
-    clock.set_for_testing(9);
-    slot.take_action(&clock);
-
-    abort
-}
-
-#[test]
-fun a_ready_action_can_still_be_cancelled() {
-    let mut clock = clock_at(0);
-    let mut slot = new_slot(10);
-    slot.schedule(1, &clock);
-    clock.set_for_testing(10);
-
-    slot.cancel();
-
-    assert!(slot.pending().is_none());
-    assert_eq!(slot.delay_ms(), 10);
-
-    slot.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
-fun a_slot_with_a_proposal_cannot_be_destroyed() {
-    let clock = clock_at(0);
-    let mut slot = new_slot(10);
-    slot.schedule(1, &clock);
-
-    slot.destroy();
-
-    abort
-}
-
-// --- DelayedSet ---
-
-#[test]
-fun an_admission_waits_the_applied_notice_and_removal_is_immediate() {
-    let mut clock = clock_at(0);
-    let mut set = new_witness_set(NOTICE_MS);
-
-    assert_eq!(set.schedule_add(@0xA, &clock), NOTICE_MS);
-    assert!(!set.contains(&@0xA));
-    assert_eq!(set.admission_ready_at_ms(&@0xA), option::some(NOTICE_MS));
-
-    clock.set_for_testing(NOTICE_MS);
-    set.apply_add(@0xA, &clock);
-    assert!(set.contains(&@0xA));
-    assert!(set.admission_ready_at_ms(&@0xA).is_none());
-    let applied = collect<ActionApplied<Witnesses, address>>();
-    let (_, _, applied_change, _) = applied.action_applied_fields();
-    assert_eq!(applied_change.action(), option::some(@0xA));
-
-    set.remove(@0xA);
-    assert!(!set.contains(&@0xA));
-    let (owner, _, member) = collect<MemberRemoved<Witnesses, address>>().member_removed_fields();
-    assert_eq!(owner, owner());
-    assert_eq!(member, @0xA);
-    assert_eq!(set.delay_ms(), NOTICE_MS);
-
-    set.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun zero_notice_admissions_apply_in_one_transaction_before_the_notice_is_raised() {
-    let clock = clock_at(3);
-    let mut set = new_witness_set(0);
-
-    set.schedule_add(@0xA, &clock);
-    set.apply_add(@0xA, &clock);
-    set.schedule_add(@0xB, &clock);
-    set.apply_add(@0xB, &clock);
-    set.schedule_delay(NOTICE_MS, &clock);
-    set.apply_delay(&clock);
-
-    assert!(set.contains(&@0xA) && set.contains(&@0xB));
-    assert_eq!(set.members().length(), 2);
-    assert_eq!(set.delay_ms(), NOTICE_MS);
-    assert_eq!(set.schedule_add(@0xC, &clock), 3 + NOTICE_MS);
-
-    set.cancel_add(@0xC);
-    set.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun admissions_keep_their_deadlines_across_notice_changes() {
-    let mut clock = clock_at(0);
-    let mut set = new_witness_set(100);
-    set.schedule_add(@0xA, &clock);
-
-    assert_eq!(set.schedule_delay(1_000, &clock), 100);
-    assert_eq!(set.schedule_add(@0xB, &clock), 100);
-    clock.set_for_testing(100);
-    set.apply_delay(&clock);
-    assert_eq!(set.pending_delay().is_none(), true);
-
-    assert_eq!(set.admission_ready_at_ms(&@0xA), option::some(100));
-    set.apply_add(@0xA, &clock);
-    set.apply_add(@0xB, &clock);
-    assert_eq!(set.schedule_add(@0xC, &clock), 1_100);
-
-    set.cancel_add(@0xC);
-    set.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun removal_discards_a_pending_admission_without_changing_the_notice() {
-    let clock = clock_at(0);
-    let mut set = new_witness_set(100);
-    set.schedule_add(@0xA, &clock);
-
-    set.remove(@0xA);
-
-    let cancelled = collect<ActionCancelled<Witnesses, address>>();
-    let (_, _, cancelled_change, _, _) = cancelled.action_cancelled_fields();
-    assert_eq!(cancelled_change.action(), option::some(@0xA));
-    assert!(set.admission_ready_at_ms(&@0xA).is_none());
-    assert_eq!(set.delay_ms(), 100);
-
-    set.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun rescheduling_a_pending_member_restarts_its_notice() {
-    let mut clock = clock_at(0);
-    let mut set = new_witness_set(100);
-    set.schedule_add(@0xA, &clock);
-    clock.set_for_testing(40);
-
-    assert_eq!(set.schedule_add(@0xA, &clock), 140);
-    let (_, _, _, _, cancelled_ready_at_ms) = collect<ActionCancelled<Witnesses, address>>()
-        .action_cancelled_fields();
-    assert_eq!(cancelled_ready_at_ms, 100);
-
-    set.cancel_add(@0xA);
-    set.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
-fun an_admitted_member_cannot_be_scheduled_again() {
-    let clock = clock_at(0);
-    let mut set = new_witness_set(0);
-    set.schedule_add(@0xA, &clock);
-    set.apply_add(@0xA, &clock);
-
-    set.schedule_add(@0xA, &clock);
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
-fun removing_an_unknown_member_rejects() {
-    let mut set = new_witness_set(0);
-
-    set.remove(@0xA);
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
-fun an_admission_cannot_apply_early() {
-    let mut clock = clock_at(0);
-    let mut set = new_witness_set(10);
-    set.schedule_add(@0xA, &clock);
-
-    clock.set_for_testing(9);
-    set.apply_add(@0xA, &clock);
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
-fun applying_an_unscheduled_admission_rejects() {
-    let clock = clock_at(0);
-    let mut set = new_witness_set(10);
-
-    set.apply_add(@0xA, &clock);
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
-fun a_set_with_a_pending_admission_cannot_be_destroyed() {
-    let clock = clock_at(0);
-    let mut set = new_witness_set(10);
-    set.schedule_add(@0xA, &clock);
-
-    set.destroy();
-
-    abort
-}
-
-#[test]
-fun destruction_records_the_end_of_each_value() {
-    let setting = new_setting(7, 0);
-    setting.destroy();
-    let (setting_owner, _) = collect<DelayedDestroyed<Fee, u64>>().delayed_destroyed_fields();
-    assert_eq!(setting_owner, owner());
-
-    let slot = new_slot(0);
-    slot.destroy();
-    let (slot_owner, _) = collect<ActionDestroyed<Upgrade, u64>>().action_destroyed_fields();
-    assert_eq!(slot_owner, owner());
-
-    let clock = clock_at(0);
-    let mut set = new_witness_set(0);
-    set.schedule_add(@0xA, &clock);
-    set.apply_add(@0xA, &clock);
-    set.destroy();
-    let (set_owner, _) = collect<ActionDestroyed<Witnesses, address>>().action_destroyed_fields();
-    assert_eq!(set_owner, owner());
-
-    clock.destroy_for_testing();
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed)]
-fun the_change_kind_is_checked_before_readiness() {
-    let clock = clock_at(0);
-    let mut slot = new_slot(10);
-    slot.schedule_delay(20, &clock);
-
-    slot.take_action(&clock);
-
-    abort
-}
-
-#[test]
-fun an_applied_notice_change_records_the_new_notice() {
-    let mut clock = clock_at(0);
-    let mut slot = new_slot(10);
-    slot.schedule_delay(20, &clock);
-    clock.set_for_testing(10);
-
-    slot.apply_delay(&clock);
-
-    let (_, _, change, delay_ms) = collect<ActionApplied<Upgrade, u64>>().action_applied_fields();
-    assert!(change.action().is_none());
-    assert_eq!(delay_ms, 20);
-    assert_eq!(slot.delay_ms(), 20);
-
-    slot.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun a_replaced_notice_change_is_cancelled_first() {
-    let clock = clock_at(0);
-    let mut set = new_witness_set(10);
-    set.schedule_delay(20, &clock);
-
-    set.schedule_delay(30, &clock);
-
-    let (_, _, change, delay_ms, _) = collect<ActionCancelled<Witnesses, address>>()
-        .action_cancelled_fields();
-    assert!(change.action().is_none());
-    assert_eq!(delay_ms, 20);
-    assert_eq!(set.pending_delay().destroy_some().delay_ms(), 30);
-
-    set.cancel_delay();
-    set.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun a_cancelled_admission_reports_the_notice_it_was_scheduled_with() {
-    let mut clock = clock_at(0);
-    let mut set = new_witness_set(10);
-    set.schedule_add(@0xA, &clock);
-    set.schedule_delay(500, &clock);
-    clock.set_for_testing(10);
-    set.apply_delay(&clock);
-
-    set.cancel_add(@0xA);
-
-    let (_, _, _, delay_ms, ready_at_ms) = collect<ActionCancelled<Witnesses, address>>()
-        .action_cancelled_fields();
-    assert_eq!(delay_ms, 10);
-    assert_eq!(ready_at_ms, 10);
-
-    set.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
-fun cancelling_an_unscheduled_admission_rejects() {
-    let mut set = new_witness_set(10);
-
-    set.cancel_add(@0xA);
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
-fun cancelling_a_missing_notice_change_rejects() {
-    let mut set = new_witness_set(10);
-
-    set.cancel_delay();
-
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
-fun a_set_with_a_pending_notice_change_cannot_be_destroyed() {
-    let clock = clock_at(0);
-    let mut set = new_witness_set(10);
-    set.schedule_delay(20, &clock);
-
-    set.destroy();
-
-    abort
-}
-
 #[test]
 #[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
 fun an_unchanged_proposal_rejects_before_overflow_checks() {
@@ -720,6 +292,16 @@ fun an_unchanged_proposal_rejects_before_overflow_checks() {
     setting.schedule(7, std::u64::max_value!(), &clock);
 
     abort
+}
+
+#[test]
+fun destruction_records_the_end_of_the_setting() {
+    let setting = new_setting(7, 0);
+
+    setting.destroy();
+
+    let (setting_owner, _) = collect<DelayedDestroyed<Fee, u64>>().delayed_destroyed_fields();
+    assert_eq!(setting_owner, owner());
 }
 
 // === Test Helpers ===
@@ -749,20 +331,6 @@ fun new_setting(value: u64, delay_ms: u64): Delayed<Fee, u64> {
     setting
 }
 
-fun new_slot(delay_ms: u64): DelayedAction<Upgrade, u64> {
-    let uid = owner_uid();
-    let slot = delayed::new_action(Upgrade(), &uid, delay_ms);
-    uid.delete();
-    slot
-}
-
-fun new_witness_set(delay_ms: u64): DelayedSet<Witnesses, address> {
-    let uid = owner_uid();
-    let set = delayed::new_set(Witnesses(), &uid, delay_ms);
-    uid.delete();
-    set
-}
-
 fun collect<Event: copy + drop>(): Event {
     let mut events = sui::event::events_by_type<Event>();
     events.pop_back()
@@ -773,20 +341,12 @@ fun collect<Event: copy + drop>(): Event {
 use blast_admin::{
     delayed::{
         Self,
-        ActionApplied,
-        ActionCancelled,
-        ActionCreated,
-        ActionDestroyed,
-        ActionScheduled,
         Delayed,
-        DelayedAction,
         DelayedApplied,
         DelayedCancelled,
         DelayedCreated,
         DelayedDestroyed,
         DelayedScheduled,
-        DelayedSet,
-        MemberRemoved,
     },
     errors,
 };

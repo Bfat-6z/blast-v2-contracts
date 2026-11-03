@@ -219,7 +219,7 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role> {
 fun new(ctx: &mut TxContext): (SuperAdminCap, ACL) {
     let root = SuperAdminCap { id: object::new(ctx) };
     let id = object::new(ctx);
-    let super_admin_transfer = delayed::new_action(
+    let super_admin_transfer = delayed_action::new(
         SuperAdminTransfer(),
         &id,
         SUPER_ADMIN_TRANSFER_DELAY_MS,
@@ -303,7 +303,7 @@ public fun super_admin_transfer_for_testing(self: &ACL): &DelayedAction<SuperAdm
 
 use blast_admin::blast_admin_events;
 
-use blast_admin::delayed::{Self, DelayedAction};
+use blast_admin::delayed_action::{Self, DelayedAction};
 
 use std::type_name::{Self, TypeName};
 
