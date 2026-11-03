@@ -20,10 +20,10 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
-| `blast_presale` | Presale | live; source has changed since | `0xb0279fbe54bfd1d920e985a4dba0916b2b73a5218514edeecb7b9dd30cf2863b` | `0xb0279fbe54bfd1d920e985a4dba0916b2b73a5218514edeecb7b9dd30cf2863b` |
+| `blast_presale` | Presale | not yet published | — | — |
 | `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | live; source has changed since | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` |
-| `blast_partners` | Partner codes | live; source has changed since | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
-| `blast_admin` | Administration | live; source has changed since | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
+| `blast_partners` | Partner codes | not yet published | — | — |
+| `blast_admin` | Administration | not yet published | — | — |
 
 ## Calling Blast contracts
 
@@ -40,7 +40,7 @@ product guide below assumes it.
 | Partner codes | earn a share of Blast's fee on the flow an app brings | `blast_partners` |
 | Boosts | hold a leveraged long or short coin backed by Aftermath perpetuals | `blast_boosts_core`, `blast_boosts_products`, `blast_boosts_aftermath` |
 | blastSUI | stake SUI with one validator through funSUI and blastSUI | `blast_sui` |
-| Administration | Blast's operators manage roles, fees, and upgrades | `blast_admin` (the presale has its own admin caps) |
+| Administration | Blast's operators manage roles, fees, and upgrades | `blast_admin` |
 
 Each package and what it depends on:
 
@@ -48,7 +48,7 @@ Each package and what it depends on:
 blast_fun_migrators          -> blast_fun, blast_admin, Cetus, Bluefin
 blast_fun                    -> blast_partners, blast_admin
 blast_partners               -> blast_admin, blast_fun_timelock
-blast_presale                -> blast_partners, blast_fun_vesting, Cetus, Bluefin
+blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
 blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
@@ -57,10 +57,9 @@ blast_admin                  -> blast_fun_timelock
 ```
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
-composes with it inside one PTB. The presale is a separate product: it shares
-no state or code with the launchpad or the migrators, keeps its own admin caps
-instead of `blast_admin`, and holds migrated liquidity in its own
-`presale_vault::Vault`. Answer presale questions from the presale guide alone.
+composes with it inside one PTB. Presale uses typed roles from the shared
+`blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
+Use the presale guide for presale calls.
 
 `blast_fun_timelock` and `blast_fun_vesting` live in this repository at
 `sui/timelock` and `sui/vesting`; both are immutable on mainnet. The standalone
@@ -125,13 +124,13 @@ names.
 
 ### Versions and upgrades
 
-Each package has one upgrade posture:
+Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
 | Immutable | `blast_admin`, `blast_partners`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
-| Dependency-only | `blast_presale` | Presale logic is sealed; Blast can only relink newer Cetus, Bluefin, and Aftermath versions, and every generation runs identical code with no version gate. Call the latest package ID, because a venue rejects calls linked to a version it retired. |
-| Version-gated | `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
+| Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events
@@ -173,7 +172,7 @@ run) before signing it.
 
 ## Presale
 
-> **Deployment status:** `blast_presale` and `blast_aftermath_dao_presale` are live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
+> **Deployment status:** `blast_presale` is not yet published on mainnet; its interface may change before publication. `blast_aftermath_dao_presale` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
 
 ### What it is
 
@@ -273,10 +272,10 @@ reference. Each admin call names exactly one role in its signature:
 | `blast_presale_domain::UnpauseAdmin` | `blast_presale_package::unpause` |
 | `blast_presale_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_presale_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `presale_vault::schedule_protocol_lp_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
-| `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
+| `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination`, `holder_rewards::publish_round` |
 | `blast_presale_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
 | `blast_presale_domain::AdapterAdmin` | `creation_policy::schedule_migration_witness` |
-| `blast_presale_domain::RewardsAdmin` | `holder_rewards::publish_round` |
+| `blast_presale_domain::RewardsAdmin` | `holder_rewards::settle_gas_reserve` |
 | `blast_presale_domain::UpgradeAdmin` | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` |
 
 A role from another package, such as `blast_fun_domain::FeeAdmin`, is a different type and
@@ -794,7 +793,9 @@ who receives holder assets and whether each round reimburses gas. A single
 `holder_rewards::Round` holds its holder balances separately from its optional
 Quote gas reserve.
 
-1. `holder_rewards::publish_round`: *Blast admin* (`RewardsAdmin`). It takes the
+1. `holder_rewards::publish_round`: *Blast treasury admin* (`TreasuryAdmin`). The
+   treasury multisig reviews the root, manifest digest and amounts before signing.
+   Grant the automated worker only `RewardsAdmin` for settlement. Publication takes the
    mutable shared vault, shared governed `FeePolicy`, expected treasury address,
    interval and commitments,
    exact holder Meme/Quote amounts, an explicit gas reserve amount, future
@@ -1409,7 +1410,7 @@ Upgrades can only relink dependencies, so this cannot change.
 
 ## Partner codes
 
-> **Deployment status:** `blast_partners` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
+> **Deployment status:** `blast_partners` is not yet published on mainnet; its interface may change before publication.
 
 ### What it is
 
@@ -1710,7 +1711,7 @@ where you like); Blast takes no cut of it.
 
 ## API reference: `blast_presale` (Presale)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -2569,7 +2570,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 /// Governs administrative delay and compatible upgrades with atomic version cutover.
 public struct UpgradeAdmin {}
 
-/// Sets the address every protocol fee is paid to.
+/// Governs the protocol fee destination and publishes holder-reward rounds.
 public struct TreasuryAdmin {}
 
 /// Sets Blast's rates for new sales, one sale before its start, and one migrated sale's vault, and
@@ -2582,7 +2583,7 @@ public struct ListingAdmin {}
 /// Admits or removes the migrators that may create sales and vaults.
 public struct AdapterAdmin {}
 
-/// Publishes holder-reward rounds and settles capped gas reserves.
+/// Settles capped gas reserves in published holder-reward rounds.
 public struct RewardsAdmin {}
 
 /// May set emergency pause bits, never clear them.
@@ -3236,7 +3237,7 @@ public struct DestinationChanged has copy, drop {
 
 ### `blast_presale::holder_rewards`
 
-Merkle rounds Blast's rewards administrator funds from a migrated presale vault's holder-reward fee share.
+Merkle rounds Blast's treasury administrator funds from a migrated presale vault's holder-reward fee share.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/holder_rewards.move
 
@@ -3270,7 +3271,7 @@ public struct Round<phantom Meme, phantom Quote> has key {
 public fun publish_round<Meme, Quote>(
     vault: &mut presale_vault::Vault<Meme, Quote>,
     package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::RewardsAdmin>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::TreasuryAdmin>,
     fee_policy: &fee_policy::FeePolicy,
     expected_treasury: address,
     number: u64,
@@ -3944,7 +3945,7 @@ public struct Migrated<phantom Lp, phantom SaleToken, phantom Quote> has copy, d
 
 ## API reference: `blast_partners` (Partner codes)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -4068,7 +4069,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 ## API reference: `blast_admin` (Administration)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 
