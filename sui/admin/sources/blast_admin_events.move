@@ -32,16 +32,6 @@ public struct AdminDestroyed has copy, drop {
     was_active: bool,
 }
 
-public struct SuperAdminTransferStarted has copy, drop {
-    recipient: address,
-    execute_after_ms: u64,
-}
-
-public struct SuperAdminTransferCancelled has copy, drop {
-    recipient: address,
-    execute_after_ms: u64,
-}
-
 public struct SuperAdminTransferred has copy, drop {
     previous_super_admin_cap_id: ID,
     new_super_admin_cap_id: ID,
@@ -125,14 +115,6 @@ public(package) fun admin_role_revoked(admin_cap_id: ID, role: TypeName) {
 
 public(package) fun admin_destroyed(admin_cap_id: ID, roles: vector<TypeName>, was_active: bool) {
     sui::event::emit(AdminDestroyed { admin_cap_id, roles, was_active });
-}
-
-public(package) fun super_admin_transfer_started(recipient: address, execute_after_ms: u64) {
-    sui::event::emit(SuperAdminTransferStarted { recipient, execute_after_ms });
-}
-
-public(package) fun super_admin_transfer_cancelled(recipient: address, execute_after_ms: u64) {
-    sui::event::emit(SuperAdminTransferCancelled { recipient, execute_after_ms });
 }
 
 public(package) fun super_admin_transferred(
@@ -285,18 +267,6 @@ public fun admin_role_revoked_fields(self: &AdminRoleRevoked): (ID, TypeName) {
 #[test_only]
 public fun admin_destroyed_fields(self: &AdminDestroyed): (ID, vector<TypeName>, bool) {
     (self.admin_cap_id, self.roles, self.was_active)
-}
-
-#[test_only]
-public fun super_admin_transfer_started_fields(self: &SuperAdminTransferStarted): (address, u64) {
-    (self.recipient, self.execute_after_ms)
-}
-
-#[test_only]
-public fun super_admin_transfer_cancelled_fields(
-    self: &SuperAdminTransferCancelled,
-): (address, u64) {
-    (self.recipient, self.execute_after_ms)
 }
 
 #[test_only]

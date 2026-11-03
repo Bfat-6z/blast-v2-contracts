@@ -65,11 +65,8 @@ dependency_names="$(awk '
     print line
   }
 ' "$package_dir/Move.toml")"
-[[ "$dependency_names" == "$(printf '%s\n' Sui blast_fun_timelock)" ]] \
-  || fail "blast_admin may depend only on the pinned Sui framework and Blast timelock."
-expected_timelock_dependency='blast_fun_timelock = { git = "https://github.com/interest-protocol/blast-util-contracts.git", subdir = "sui/timelock", rev = "63b6cf86c0e1a74f699610fe182b1de8d8789a14" }'
-grep -Fqx "$expected_timelock_dependency" "$package_dir/Move.toml" \
-  || fail "blast_admin must pin the published immutable Blast timelock revision."
+[[ "$dependency_names" == "Sui" ]] \
+  || fail "blast_admin may depend only on the pinned Sui framework."
 if grep -qE '^\[dev-dependencies(\]|[.])' "$package_dir/Move.toml"; then
   fail "blast_admin may not add dev-only dependencies."
 fi
@@ -126,7 +123,7 @@ for environment, address in entries:
 PY
 fi
 
-for module in blast_acl operational_version upgrade_custody errors blast_admin_events; do
+for module in blast_acl delayed operational_version upgrade_custody errors blast_admin_events; do
   [[ -f "$package_dir/sources/$module.move" ]] \
     || fail "Missing required blast_admin module: $module.move"
 done
@@ -166,8 +163,9 @@ if grep -rniE '\b(fee|pause|migration|creator|pool|venue)\b' "$package_dir/sourc
   fail "Consumer product policy must not enter blast_admin production source."
 fi
 if grep -rn 'sui::event::emit' "$package_dir/sources" \
-  | grep -v "$package_dir/sources/blast_admin_events.move"; then
-  fail "Only blast_admin_events.move may emit shared administration events."
+  | grep -v "$package_dir/sources/blast_admin_events.move" \
+  | grep -v "$package_dir/sources/delayed.move"; then
+  fail "Only blast_admin_events.move and delayed.move may emit shared administration events."
 fi
 if grep -rnE 'public(\(package\))?[[:space:]]+(entry[[:space:]]+)?fun[[:space:]]+[^ (]*(release|borrow|take|extract|transfer)[^ (]*' \
   "$package_dir/sources/upgrade_custody.move"; then
@@ -203,8 +201,11 @@ grep -Fqx 'public struct AdminWitness<phantom Role>() has drop;' "$acl_file" \
   || fail "AdminWitness must be a drop-only, role-typed proof."
 grep -Fqx '    admins: Table<ID, VecSet<TypeName>>,' "$acl_file" \
   || fail "ACL must store each live admin and its roles in a Table."
-grep -Fqx '    pending_super_admin: Timelocked<Option<address>>,' "$acl_file" \
-  || fail "A nominated super admin must wait out the timelock before it can accept."
+grep -Fqx '    super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,' "$acl_file" \
+  || fail "A nominated super admin must wait out the fixed delay before it can accept."
+if grep -qE 'super_admin_transfer\.schedule_delay|schedule_action_delay' "$acl_file"; then
+  fail "The root transfer delay is a fixed constant with no change path."
+fi
 [[ "$(grep -c '^fun init(ctx: &mut TxContext) {$' "$acl_file")" -eq 1 ]] \
   || fail "The singleton must be created only by package initialization."
 if grep -qE 'types::is_one_time_witness|fun new<' "$acl_file"; then
@@ -228,6 +229,24 @@ expected_acl_public="$(printf '%s\n' \
   | sort)"
 [[ "$actual_acl_public" == "$expected_acl_public" ]] \
   || fail "The production ACL surface changed without boundary review."
+
+delayed_file="$package_dir/sources/delayed.move"
+if production_lines "$delayed_file" | grep -Eq 'fun[[:space:]]+(set|force|replace|bypass)[a-z_]*[[:space:]]*[<(]'; then
+  fail "Delayed values must expose no immediate setter or bypass."
+fi
+actual_delayed_public="$({
+  externally_callable_function_names "$delayed_file"
+} | sort)"
+expected_delayed_public="$(printf '%s\n' \
+  action_delay_ms action_pending admission_ready_at_ms apply apply_action_delay apply_add \
+  apply_delayed_set_delay assert_ready cancel cancel_action cancel_add cancel_delayed_set_delay change_action \
+  contains delay_change_delay_ms delay_change_ready_at_ms delay_ms destroy destroy_action \
+  destroy_delayed_set new new_action new_set pending proposal_delay_ms proposal_value ready_at_ms remove \
+  schedule schedule_action schedule_action_delay schedule_add schedule_delay schedule_delayed_set_delay \
+  schedule_value delayed_set_delay_ms delayed_set_members delayed_set_pending_delay take_action value \
+  | tr ' ' '\n' | sed '/^$/d' | sort)"
+[[ "$actual_delayed_public" == "$expected_delayed_public" ]] \
+  || fail "The production delayed surface changed without boundary review."
 
 version_file="$package_dir/sources/operational_version.move"
 if production_lines "$version_file" | grep -Eq 'fun[[:space:]]+(activate|set_generation|set_version)'; then

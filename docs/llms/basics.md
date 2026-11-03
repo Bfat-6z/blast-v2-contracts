@@ -26,7 +26,7 @@ blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
 blast_sui                    -> blast_admin, Sui system
-blast_admin                  -> blast_fun_timelock
+blast_admin                  -> Sui framework only
 ```
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
@@ -35,9 +35,9 @@ no state or code with the launchpad or the migrators, keeps its own admin caps
 instead of `blast_admin`, and holds migrated liquidity in its own
 `presale_vault::Vault`. Answer presale questions from the presale guide alone.
 
-`blast_fun_timelock` and `blast_fun_vesting` come from Blast's public utility
-repository (`interest-protocol/blast-util-contracts`); both are immutable on
-mainnet.
+`blast_fun_timelock` (used only by `blast_partners`) and `blast_fun_vesting`
+come from Blast's public utility repository
+(`interest-protocol/blast-util-contracts`); both are immutable on mainnet.
 
 ### Time values
 

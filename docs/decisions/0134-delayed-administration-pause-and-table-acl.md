@@ -3,6 +3,7 @@
 - Status: accepted
 - Date: 2026-10-31
 - Amended: 2026-11-02 — operation-owned notices, delayed creator splits, and bonding reward custody
+- Amended: 2026-11-03 — keyed delayed primitives that own lifecycle events; root transfer on `delayed`
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
   [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
   [0007](0007-acl-pause-and-versioning.md) (pause),
@@ -10,7 +11,8 @@
   [0034](0034-remove-premature-governance-cutover.md) (upgrades),
   [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage),
   [0114](0114-launchpad-custody-before-activation.md) and
-  [0117](0117-presale-versioning-and-activation.md) (one-time bootstrap and paused release)
+  [0117](0117-presale-versioning-and-activation.md) (one-time bootstrap and paused release),
+  [0097](0097-one-singleton-acl-with-typed-roles.md) (timelocked root transfer)
 - Supersedes: the 2026-10-28 canonical stack, which holds no user assets
 
 ## Context
@@ -225,3 +227,54 @@ Native PTBs cover application followed by a failing schedule/application, provin
 of values, notices, proposals and events. Existing pause, custody, claims and ACL tests
 remain required. Source boundary gates reject bypass APIs and missing owner persistence;
 integrator guides and generated references must match source.
+
+## Amendment 2026-11-03: keyed primitives that own their events
+
+### Context
+
+Owners re-implemented the delayed state machine around a bare `Pending` record,
+encoded notice-only proposals with placeholder values (`DelayOnly`, `false`,
+`option::none()`), passed the same notice twice, persisted the next notice by hand
+under source-gate protection, and each emitted its own scheduled, cancelled and
+changed events. The ACL root transfer used the separate immutable
+`blast_fun_timelock` package, whose values switch by themselves at a deadline,
+only as a deadline holder.
+
+### Decision
+
+`blast_admin::delayed` provides three types, each storing its `owner` object ID
+and an owner-defined key `K`:
+
+- `Delayed<K, T>`: a setting with its notice and one proposal (unchanged rules).
+- `DelayedAction<K, A>`: a notice and one proposal that is either `Action(A)` or
+  a notice change. `take_action` hands a ready action to the owner;
+  `apply_delay` applies a ready notice change; each rejects the other kind. The
+  primitive persists notice changes itself.
+- `DelayedSet<K, E>`: an allowlist whose admissions each snapshot a deadline from
+  the applied notice; a notice change never moves accepted deadlines; removal is
+  immediate.
+
+Only the module that defines `K` can pack it, so only that module can create a
+value keyed by it. The primitive emits every lifecycle fact, generic in `K` and
+the value or action type: `DelayedCreated`, `DelayedScheduled`,
+`DelayedCancelled`, `DelayedApplied`, `ActionCreated`, `ActionScheduled`,
+`ActionCancelled`, `ActionApplied` and `MemberRemoved`. A replacement emits
+`Cancelled` for the displaced proposal before `Scheduled`, so every proposal ends
+in exactly one `Applied` or `Cancelled`. Destroying a value with a pending
+proposal aborts, so no proposal ends silently. Owners emit only their own side
+effects. The primitive rejects proposals that change nothing.
+
+Upgrade custody, creator-cap reassignment and the ACL root transfer use
+`DelayedAction`; migration-witness admission uses `DelayedSet`; settings use
+`Delayed`. The raw `Pending` API is removed. The root transfer is a
+`DelayedAction` with a fixed seven-day notice and no notice-change path, and
+`blast_admin` no longer depends on `blast_fun_timelock`. Zero-notice bootstrap is
+unchanged: configure with schedule-and-apply pairs, then raise each notice.
+
+### Consequences
+
+Every delayed field gains `owner` and `key`; delayed, consumer and event layouts
+change, and the replay stream for delay lifecycle moves to `blast_admin::delayed`
+event types. SDK, indexer and admin console decoders must follow, with a fresh
+publication of the stack. Indexers must filter delayed events by `K`'s defining
+module, since any package can create values under its own keys.

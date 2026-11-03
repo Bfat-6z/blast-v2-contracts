@@ -4,243 +4,639 @@
 #[test_only]
 module blast_admin::delayed_tests;
 
+// === Constants ===
+
+const NOTICE_MS: u64 = 172_800_000;
+
+// === Test-Only Types ===
+
+public struct Fee() has copy, drop, store;
+
+public struct Upgrade() has copy, drop, store;
+
+public struct Witnesses() has copy, drop, store;
+
 // === Tests ===
 
+// --- Delayed ---
+
 #[test]
-fun readiness_validation_is_repeatable_and_does_not_mutate_pending_or_applied_policy() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(7u64, 10);
-    setting.schedule(9, 25, &clock);
-    clock.set_for_testing(10);
-    setting.assert_ready(&clock);
-    setting.assert_ready(&clock);
-    assert_eq!(setting.value(), 7);
-    assert_eq!(setting.delay_ms(), 10);
-    assert_eq!(setting.pending().destroy_some().value(), 9);
-    assert_eq!(setting.apply(&clock), 9);
-    setting.destroy_for_testing();
+fun creation_records_owner_key_value_and_notice() {
+    let setting = new_setting(7, NOTICE_MS);
+
+    let created = collect<DelayedCreated<Fee, u64>>();
+    let (owner, key, value, delay_ms) = created.delayed_created_fields();
+    assert_eq!(owner, owner());
+    assert_eq!(key, Fee());
+    assert_eq!(value, 7);
+    assert_eq!(delay_ms, NOTICE_MS);
+
+    setting.destroy();
+}
+
+#[test]
+fun zero_notice_schedules_and_applies_in_one_transaction() {
+    let clock = clock_at(10);
+    let mut setting = new_setting(7, 0);
+
+    assert_eq!(setting.schedule_value(8, &clock), 10);
+    assert_eq!(setting.apply(&clock), 8);
+    assert_eq!(setting.schedule_delay(NOTICE_MS, &clock), 10);
+    setting.apply(&clock);
+
+    assert_eq!(setting.value(), 8);
+    assert_eq!(setting.delay_ms(), NOTICE_MS);
+    assert_eq!(setting.schedule_value(9, &clock), 10 + NOTICE_MS);
+
+    setting.cancel();
+    setting.destroy();
     clock.destroy_for_testing();
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
-fun readiness_without_pending_rejects() {
-    let clock = clock::create_for_testing(&mut tx_context::dummy());
-    let setting = delayed::new(7u64, 10);
-    setting.assert_ready(&clock);
-    abort
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun readiness_checks_the_stored_deadline() {
-    let clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(7u64, 10);
-    setting.schedule(9, 0, &clock);
-    setting.assert_ready(&clock);
-    abort
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun readiness_rechecks_representability_at_application_time() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(7u64, 10);
-    setting.schedule(9, std::u64::max_value!() - 10, &clock);
-    clock.set_for_testing(11);
-    setting.assert_ready(&clock);
-    abort
 }
 
 #[test]
 fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    clock.set_for_testing(10);
-    let mut setting = delayed::new(7u64, 172_800_000);
-    assert_eq!(setting.schedule(9, 172_800_000, &clock), 172_800_010);
+    let mut clock = clock_at(10);
+    let mut setting = new_setting(7, NOTICE_MS);
+
+    assert_eq!(setting.schedule_value(9, &clock), NOTICE_MS + 10);
+    clock.set_for_testing(NOTICE_MS + 10);
     assert_eq!(setting.value(), 7);
     assert_eq!(setting.pending().destroy_some().value(), 9);
-    clock.set_for_testing(172_800_010);
-    assert_eq!(setting.value(), 7);
+
     assert_eq!(setting.apply(&clock), 9);
-    assert!(!setting.pending().is_some());
-    setting.destroy_for_testing();
+    let applied = collect<DelayedApplied<Fee, u64>>();
+    let (owner, key, previous_value, value, delay_ms) = applied.delayed_applied_fields();
+    assert_eq!(owner, owner());
+    assert_eq!(key, Fee());
+    assert_eq!(previous_value, 7);
+    assert_eq!(value, 9);
+    assert_eq!(delay_ms, NOTICE_MS);
+    assert!(setting.pending().is_none());
+
+    setting.destroy();
     clock.destroy_for_testing();
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun one_millisecond_before_ready_is_rejected() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(0u64, 172_800_000);
-    setting.schedule(1, 172_800_000, &clock);
-    clock.set_for_testing(172_799_999);
-    setting.apply(&clock);
-    abort
-}
+fun value_and_notice_apply_together_and_a_shorter_notice_waits_the_applied_one() {
+    let mut clock = clock_at(10);
+    let mut setting = new_setting(1, 100);
 
-#[test]
-#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun replacing_a_ready_proposal_restarts_the_entire_delay() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(0u64, 172_800_000);
-    setting.schedule(1, 172_800_000, &clock);
-    clock.set_for_testing(172_800_000);
-    setting.schedule(2, 172_800_000, &clock);
-    setting.apply(&clock);
-    abort
-}
+    assert_eq!(setting.schedule(2, 25, &clock), 110);
+    let scheduled = collect<DelayedScheduled<Fee, u64>>();
+    let (_, _, value, delay_ms, ready_at_ms) = scheduled.delayed_scheduled_fields();
+    assert_eq!(value, 2);
+    assert_eq!(delay_ms, 25);
+    assert_eq!(ready_at_ms, 110);
+    assert_eq!(setting.delay_ms(), 100);
 
-#[test]
-fun cancellation_after_readiness_preserves_the_applied_value() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(3u64, 172_800_000);
-    setting.schedule(5, 172_800_000, &clock);
-    clock.set_for_testing(172_800_001);
-    assert_eq!(setting.cancel(), 5);
-    assert_eq!(setting.value(), 3);
-    assert!(!setting.pending().is_some());
-    setting.destroy_for_testing();
+    clock.set_for_testing(110);
+    setting.apply(&clock);
+    assert_eq!(setting.delay_ms(), 25);
+    assert_eq!(setting.schedule_value(3, &clock), 135);
+
+    setting.cancel();
+    setting.destroy();
     clock.destroy_for_testing();
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
-fun an_applied_proposal_cannot_be_replayed() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(0u64, 172_800_000);
-    setting.schedule(1, 172_800_000, &clock);
-    clock.set_for_testing(172_800_000);
-    setting.apply(&clock);
-    setting.apply(&clock);
-    abort
-}
+#[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
+fun reducing_the_notice_to_zero_still_waits_the_applied_notice() {
+    let mut clock = clock_at(0);
+    let mut setting = new_setting(7, 100);
+    setting.schedule_delay(0, &clock);
 
-#[test]
-#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun reducing_the_delay_to_zero_still_waits_the_old_notice() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut policy = delayed::new(7u64, 100);
-    policy.schedule_delay(0, &clock);
     clock.set_for_testing(99);
-    policy.apply(&clock);
+    setting.apply(&clock);
+
+    abort
+}
+
+#[test]
+fun replacement_cancels_the_previous_proposal_and_restarts_the_notice() {
+    let mut clock = clock_at(0);
+    let mut setting = new_setting(0, NOTICE_MS);
+    setting.schedule_value(1, &clock);
+    clock.set_for_testing(NOTICE_MS);
+
+    assert_eq!(setting.schedule_value(2, &clock), 2 * NOTICE_MS);
+
+    let cancelled = collect<DelayedCancelled<Fee, u64>>();
+    let (_, _, value, _, ready_at_ms) = cancelled.delayed_cancelled_fields();
+    assert_eq!(value, 1);
+    assert_eq!(ready_at_ms, NOTICE_MS);
+    assert_eq!(setting.pending().destroy_some().value(), 2);
+
+    setting.cancel();
+    setting.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun cancellation_after_readiness_preserves_the_applied_value_and_notice() {
+    let mut clock = clock_at(0);
+    let mut setting = new_setting(3, NOTICE_MS);
+    setting.schedule(5, 1, &clock);
+    clock.set_for_testing(NOTICE_MS + 1);
+
+    setting.cancel();
+
+    let (_, _, cancelled_value, _, _) = collect<DelayedCancelled<Fee, u64>>().delayed_cancelled_fields();
+    assert_eq!(cancelled_value, 5);
+    assert_eq!(setting.value(), 3);
+    assert_eq!(setting.delay_ms(), NOTICE_MS);
+    assert!(setting.pending().is_none());
+
+    setting.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun readiness_validation_is_repeatable_and_changes_nothing() {
+    let mut clock = clock_at(0);
+    let mut setting = new_setting(7, 10);
+    setting.schedule(9, 25, &clock);
+    clock.set_for_testing(10);
+
+    setting.assert_ready(&clock);
+    setting.assert_ready(&clock);
+
+    assert_eq!(setting.value(), 7);
+    assert_eq!(setting.delay_ms(), 10);
+    assert_eq!(setting.apply(&clock), 9);
+
+    setting.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
+fun scheduling_the_applied_value_and_notice_rejects() {
+    let clock = clock_at(0);
+    let mut setting = new_setting(7, 10);
+
+    setting.schedule(7, 10, &clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+fun readiness_without_a_proposal_rejects() {
+    let clock = clock_at(0);
+    let setting = new_setting(7, 10);
+
+    setting.assert_ready(&clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+fun an_applied_proposal_cannot_be_replayed() {
+    let mut clock = clock_at(0);
+    let mut setting = new_setting(0, NOTICE_MS);
+    setting.schedule_value(1, &clock);
+    clock.set_for_testing(NOTICE_MS);
+    setting.apply(&clock);
+
+    setting.apply(&clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+fun cancellation_without_a_proposal_rejects() {
+    let mut setting = new_setting(0, NOTICE_MS);
+
+    setting.cancel();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
+fun one_millisecond_before_ready_rejects() {
+    let mut clock = clock_at(0);
+    let mut setting = new_setting(0, NOTICE_MS);
+    setting.schedule_value(1, &clock);
+
+    clock.set_for_testing(NOTICE_MS - 1);
+    setting.apply(&clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
+fun a_setting_with_a_proposal_cannot_be_destroyed() {
+    let clock = clock_at(0);
+    let mut setting = new_setting(0, NOTICE_MS);
+    setting.schedule_value(1, &clock);
+
+    setting.destroy();
+
     abort
 }
 
 #[test]
 fun the_largest_representable_deadline_is_valid() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    clock.set_for_testing(10);
-    let mut setting = delayed::new(7u64, std::u64::max_value!() - 10);
+    let mut clock = clock_at(10);
+    let mut setting = new_setting(7, std::u64::max_value!() - 10);
+
     assert_eq!(setting.schedule(2, 0, &clock), std::u64::max_value!());
     clock.set_for_testing(std::u64::max_value!());
     assert_eq!(setting.apply(&clock), 2);
-    setting.destroy_for_testing();
+
+    setting.destroy();
     clock.destroy_for_testing();
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
 fun scheduling_rejects_an_overflowing_deadline() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    clock.set_for_testing(1);
-    delayed::new_pending(1u64, std::u64::max_value!(), 0, &clock);
-    abort
-}
+    let clock = clock_at(1);
+    let mut setting = new_setting(7, std::u64::max_value!());
 
-#[test]
-#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun a_proposed_delay_must_fit_at_its_earliest_application() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    clock.set_for_testing(1);
-    let mut policy = delayed::new(7u64, 1);
-    policy.schedule_delay(std::u64::max_value!() - 1, &clock);
-    abort
-}
-
-#[test]
-#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun applying_a_delay_too_late_rejects_a_now_unrepresentable_notice() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    clock.set_for_testing(1);
-    let mut policy = delayed::new(7u64, 1);
-    policy.schedule_delay(std::u64::max_value!() - 2, &clock);
-    clock.set_for_testing(3);
-    policy.apply(&clock);
-    abort
-}
-
-
-#[test]
-fun value_and_notice_apply_atomically_and_shortening_does_not_change_this_deadline() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    clock.set_for_testing(10);
-    let mut setting = delayed::new(1u64, 100);
-    assert_eq!(setting.schedule(2, 25, &clock), 110);
-    let pending = setting.pending().destroy_some();
-    assert_eq!(pending.value(), 2);
-    assert_eq!(pending.delay_ms(), 25);
-    assert_eq!(setting.value(), 1);
-    assert_eq!(setting.delay_ms(), 100);
-    clock.set_for_testing(110);
-    assert_eq!(setting.apply(&clock), 2);
-    assert_eq!(setting.delay_ms(), 25);
-    assert_eq!(setting.schedule_value(3, &clock), 135);
-    clock.set_for_testing(135);
-    setting.apply(&clock);
-    assert_eq!(setting.delay_ms(), 25);
-    setting.destroy_for_testing();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun delay_only_replaces_pending_value_with_applied_value_and_cancel_preserves_both() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(7u64, 100);
-    setting.schedule(9, 200, &clock);
-    clock.set_for_testing(50);
-    assert_eq!(setting.schedule_delay(25, &clock), 150);
-    assert_eq!(setting.pending().destroy_some().value(), 7);
-    clock.set_for_testing(150);
-    setting.cancel();
-    assert_eq!(setting.value(), 7);
-    assert_eq!(setting.delay_ms(), 100);
-    setting.schedule_delay(25, &clock);
-    clock.set_for_testing(250);
-    assert_eq!(setting.apply(&clock), 7);
-    assert_eq!(setting.delay_ms(), 25);
-    setting.destroy_for_testing();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun zero_notice_bootstrap_can_enable_delay_but_disabling_it_waits_current_notice() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(7u64, 0);
-    assert_eq!(setting.schedule(8, 100, &clock), 0);
-    setting.apply(&clock);
-    assert_eq!(setting.schedule(9, 0, &clock), 100);
-    assert_eq!(setting.value(), 8);
-    assert_eq!(setting.delay_ms(), 100);
-    clock.set_for_testing(100);
-    setting.apply(&clock);
-    assert_eq!(setting.delay_ms(), 0);
-    assert_eq!(setting.schedule_value(10, &clock), 100);
-    setting.apply(&clock);
-    setting.destroy_for_testing();
-    clock.destroy_for_testing();
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun future_scheduling_still_checks_overflow_after_a_valid_application() {
-    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
-    let mut setting = delayed::new(7u64, 0);
-    setting.schedule_delay(100, &clock);
-    setting.apply(&clock);
-    clock.set_for_testing(std::u64::max_value!() - 99);
     setting.schedule_value(8, &clock);
+
     abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun a_proposed_notice_must_fit_at_its_earliest_application() {
+    let clock = clock_at(1);
+    let mut setting = new_setting(7, 1);
+
+    setting.schedule_delay(std::u64::max_value!() - 1, &clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun applying_late_rejects_a_now_unrepresentable_notice() {
+    let mut clock = clock_at(1);
+    let mut setting = new_setting(7, 1);
+    setting.schedule_delay(std::u64::max_value!() - 2, &clock);
+
+    clock.set_for_testing(3);
+    setting.apply(&clock);
+
+    abort
+}
+
+// --- DelayedAction ---
+
+#[test]
+fun an_action_waits_the_applied_notice_and_is_handed_back_once() {
+    let mut clock = clock_at(5);
+    let mut slot = new_slot(NOTICE_MS);
+    let (_, _, created_delay_ms) = collect<ActionCreated<Upgrade, u64>>().action_created_fields();
+    assert_eq!(created_delay_ms, NOTICE_MS);
+
+    assert_eq!(slot.schedule(42, &clock), 5 + NOTICE_MS);
+    let scheduled = collect<ActionScheduled<Upgrade, u64>>();
+    let (owner, _, change, delay_ms, ready_at_ms) = scheduled.action_scheduled_fields();
+    assert_eq!(owner, owner());
+    assert_eq!(change.action(), option::some(42));
+    assert_eq!(delay_ms, NOTICE_MS);
+    assert_eq!(ready_at_ms, 5 + NOTICE_MS);
+
+    clock.set_for_testing(5 + NOTICE_MS);
+    assert_eq!(slot.take_action(&clock), 42);
+    let (_, _, applied_change, _) = collect<ActionApplied<Upgrade, u64>>().action_applied_fields();
+    assert_eq!(applied_change.action(), option::some(42));
+    assert_eq!(slot.delay_ms(), NOTICE_MS);
+    assert!(slot.pending().is_none());
+
+    slot.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun a_notice_change_waits_the_applied_notice_and_replaces_a_pending_action() {
+    let mut clock = clock_at(0);
+    let mut slot = new_slot(100);
+    slot.schedule(42, &clock);
+    clock.set_for_testing(10);
+
+    assert_eq!(slot.schedule_delay(0, &clock), 110);
+
+    let cancelled = collect<ActionCancelled<Upgrade, u64>>();
+    let (_, _, cancelled_change, _, _) = cancelled.action_cancelled_fields();
+    assert_eq!(cancelled_change.action(), option::some(42));
+    let pending = slot.pending().destroy_some();
+    assert!(pending.value().action().is_none());
+    assert_eq!(pending.delay_ms(), 0);
+
+    clock.set_for_testing(110);
+    slot.apply_delay(&clock);
+    assert_eq!(slot.delay_ms(), 0);
+    assert_eq!(slot.schedule(7, &clock), 110);
+    assert_eq!(slot.take_action(&clock), 7);
+
+    slot.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed)]
+fun a_notice_change_cannot_be_taken_as_an_action() {
+    let clock = clock_at(0);
+    let mut slot = new_slot(0);
+    slot.schedule_delay(10, &clock);
+
+    slot.take_action(&clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed)]
+fun an_action_cannot_be_applied_as_a_notice_change() {
+    let clock = clock_at(0);
+    let mut slot = new_slot(0);
+    slot.schedule(1, &clock);
+
+    slot.apply_delay(&clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
+fun proposing_the_applied_notice_rejects() {
+    let clock = clock_at(0);
+    let mut slot = new_slot(10);
+
+    slot.schedule_delay(10, &clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
+fun an_action_cannot_be_taken_early() {
+    let mut clock = clock_at(0);
+    let mut slot = new_slot(10);
+    slot.schedule(1, &clock);
+
+    clock.set_for_testing(9);
+    slot.take_action(&clock);
+
+    abort
+}
+
+#[test]
+fun a_ready_action_can_still_be_cancelled() {
+    let mut clock = clock_at(0);
+    let mut slot = new_slot(10);
+    slot.schedule(1, &clock);
+    clock.set_for_testing(10);
+
+    slot.cancel();
+
+    assert!(slot.pending().is_none());
+    assert_eq!(slot.delay_ms(), 10);
+
+    slot.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
+fun a_slot_with_a_proposal_cannot_be_destroyed() {
+    let clock = clock_at(0);
+    let mut slot = new_slot(10);
+    slot.schedule(1, &clock);
+
+    slot.destroy();
+
+    abort
+}
+
+// --- DelayedSet ---
+
+#[test]
+fun an_admission_waits_the_applied_notice_and_removal_is_immediate() {
+    let mut clock = clock_at(0);
+    let mut set = new_witness_set(NOTICE_MS);
+
+    assert_eq!(set.schedule_add(@0xA, &clock), NOTICE_MS);
+    assert!(!set.contains(&@0xA));
+    assert_eq!(set.admission_ready_at_ms(&@0xA), option::some(NOTICE_MS));
+
+    clock.set_for_testing(NOTICE_MS);
+    set.apply_add(@0xA, &clock);
+    assert!(set.contains(&@0xA));
+    assert!(set.admission_ready_at_ms(&@0xA).is_none());
+    let applied = collect<ActionApplied<Witnesses, address>>();
+    let (_, _, applied_change, _) = applied.action_applied_fields();
+    assert_eq!(applied_change.action(), option::some(@0xA));
+
+    set.remove(@0xA);
+    assert!(!set.contains(&@0xA));
+    let (owner, _, member) = collect<MemberRemoved<Witnesses, address>>().member_removed_fields();
+    assert_eq!(owner, owner());
+    assert_eq!(member, @0xA);
+    assert_eq!(set.delay_ms(), NOTICE_MS);
+
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun zero_notice_admissions_apply_in_one_transaction_before_the_notice_is_raised() {
+    let clock = clock_at(3);
+    let mut set = new_witness_set(0);
+
+    set.schedule_add(@0xA, &clock);
+    set.apply_add(@0xA, &clock);
+    set.schedule_add(@0xB, &clock);
+    set.apply_add(@0xB, &clock);
+    set.schedule_delay(NOTICE_MS, &clock);
+    set.apply_delay(&clock);
+
+    assert!(set.contains(&@0xA) && set.contains(&@0xB));
+    assert_eq!(set.members().length(), 2);
+    assert_eq!(set.delay_ms(), NOTICE_MS);
+    assert_eq!(set.schedule_add(@0xC, &clock), 3 + NOTICE_MS);
+
+    set.cancel_add(@0xC);
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun admissions_keep_their_deadlines_across_notice_changes() {
+    let mut clock = clock_at(0);
+    let mut set = new_witness_set(100);
+    set.schedule_add(@0xA, &clock);
+
+    assert_eq!(set.schedule_delay(1_000, &clock), 100);
+    assert_eq!(set.schedule_add(@0xB, &clock), 100);
+    clock.set_for_testing(100);
+    set.apply_delay(&clock);
+    assert_eq!(set.pending_delay().is_none(), true);
+
+    assert_eq!(set.admission_ready_at_ms(&@0xA), option::some(100));
+    set.apply_add(@0xA, &clock);
+    set.apply_add(@0xB, &clock);
+    assert_eq!(set.schedule_add(@0xC, &clock), 1_100);
+
+    set.cancel_add(@0xC);
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun removal_discards_a_pending_admission_without_changing_the_notice() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(100);
+    set.schedule_add(@0xA, &clock);
+
+    set.remove(@0xA);
+
+    let cancelled = collect<ActionCancelled<Witnesses, address>>();
+    let (_, _, cancelled_change, _, _) = cancelled.action_cancelled_fields();
+    assert_eq!(cancelled_change.action(), option::some(@0xA));
+    assert!(set.admission_ready_at_ms(&@0xA).is_none());
+    assert_eq!(set.delay_ms(), 100);
+
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun rescheduling_a_pending_member_restarts_its_notice() {
+    let mut clock = clock_at(0);
+    let mut set = new_witness_set(100);
+    set.schedule_add(@0xA, &clock);
+    clock.set_for_testing(40);
+
+    assert_eq!(set.schedule_add(@0xA, &clock), 140);
+    let (_, _, _, _, cancelled_ready_at_ms) = collect<ActionCancelled<Witnesses, address>>()
+        .action_cancelled_fields();
+    assert_eq!(cancelled_ready_at_ms, 100);
+
+    set.cancel_add(@0xA);
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
+fun an_admitted_member_cannot_be_scheduled_again() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(0);
+    set.schedule_add(@0xA, &clock);
+    set.apply_add(@0xA, &clock);
+
+    set.schedule_add(@0xA, &clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
+fun removing_an_unknown_member_rejects() {
+    let mut set = new_witness_set(0);
+
+    set.remove(@0xA);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
+fun an_admission_cannot_apply_early() {
+    let mut clock = clock_at(0);
+    let mut set = new_witness_set(10);
+    set.schedule_add(@0xA, &clock);
+
+    clock.set_for_testing(9);
+    set.apply_add(@0xA, &clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
+fun applying_an_unscheduled_admission_rejects() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(10);
+
+    set.apply_add(@0xA, &clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
+fun a_set_with_a_pending_admission_cannot_be_destroyed() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(10);
+    set.schedule_add(@0xA, &clock);
+
+    set.destroy();
+
+    abort
+}
+
+// === Test Helpers ===
+
+fun owner(): ID {
+    object::id_from_address(@0x0B)
+}
+
+fun clock_at(timestamp_ms: u64): Clock {
+    let mut clock = clock::create_for_testing(&mut tx_context::dummy());
+    clock.set_for_testing(timestamp_ms);
+    clock
+}
+
+fun new_setting(value: u64, delay_ms: u64): Delayed<Fee, u64> {
+    delayed::new(Fee(), owner(), value, delay_ms)
+}
+
+fun new_slot(delay_ms: u64): DelayedAction<Upgrade, u64> {
+    delayed::new_action(Upgrade(), owner(), delay_ms)
+}
+
+fun new_witness_set(delay_ms: u64): DelayedSet<Witnesses, address> {
+    delayed::new_set(Witnesses(), owner(), delay_ms)
+}
+
+fun collect<Event: copy + drop>(): Event {
+    let mut events = sui::event::events_by_type<Event>();
+    events.pop_back()
 }
 
 // === Imports ===
 
-use blast_admin::delayed;
+use blast_admin::{
+    delayed::{
+        Self,
+        ActionApplied,
+        ActionCancelled,
+        ActionCreated,
+        ActionScheduled,
+        Delayed,
+        DelayedAction,
+        DelayedApplied,
+        DelayedCancelled,
+        DelayedCreated,
+        DelayedScheduled,
+        DelayedSet,
+        MemberRemoved,
+    },
+    errors,
+};
+
 use std::unit_test::assert_eq;
-use sui::clock;
+
+use sui::clock::{Self, Clock};

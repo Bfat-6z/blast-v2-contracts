@@ -344,6 +344,10 @@ policy. A proposal binds its value, next notice and a deadline derived from the 
 applied notice. Application commits both fields; cancellation preserves both applied
 fields. Delay-only changes follow the same timelock, with no immediate setter or
 bypass. Upgrade custody persists its own notice independently of other policy.
+`blast_admin::delayed` stores settings as `Delayed`, one-shot actions as
+`DelayedAction` and adapter allowlists as `DelayedSet`, each keyed by an
+owner-defined type and owner object ID; it emits every lifecycle event, so owners
+emit only their own side effects.
 Settle or cancel all setup proposals, configure and verify every operation's intended
 notice, then unpause. New creator-cap and presale-vault operations begin at 48 hours;
 per-coin LP policy inherits the applied defaults notice. Pausing, cancellation and

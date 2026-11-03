@@ -25,8 +25,8 @@ public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
     admins: Table<ID, VecSet<TypeName>>,
-    /// The nominated next super admin: none until the transfer delay passes.
-    pending_super_admin: Timelocked<Option<address>>,
+    /// The nominated next super admin, acceptable once the fixed transfer delay passes.
+    super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,
 }
 
 /// Cold root authority for membership, roles, and delayed root replacement only.
@@ -38,6 +38,9 @@ public struct SuperAdminCap has key {
 public struct AdminCap has key, store {
     id: UID,
 }
+
+/// Keys the root transfer's delayed lifecycle events.
+public struct SuperAdminTransfer() has copy, drop, store;
 
 /// Transaction-local proof that a live `AdminCap` holding `Role` signed in.
 public struct AdminWitness<phantom Role>() has drop;
@@ -136,7 +139,7 @@ public fun destroy_admin_cap(self: &mut ACL, admin_cap: AdminCap) {
 }
 
 /// Nominates `recipient` as the next super admin; it may accept once the transfer delay
-/// passes. A new nomination replaces a pending one and restarts the delay.
+/// passes. A new nomination cancels a pending one and restarts the delay.
 public fun begin_super_admin_transfer(
     self: &mut ACL,
     root: &SuperAdminCap,
@@ -149,66 +152,33 @@ public fun begin_super_admin_transfer(
         recipient != @0x0 && recipient != ctx.sender(),
         blast_admin::errors::invalid_super_admin_recipient!(),
     );
-    let previous = self.pending_super_admin;
-    assert!(
-        previous.scheduled() != option::some(recipient),
-        blast_admin::errors::super_admin_transfer_unchanged!(),
-    );
 
-    let mut pending = no_pending_super_admin();
-    pending.schedule(option::some(recipient), clock);
-    self.pending_super_admin = pending;
-
-    if (previous.scheduled().is_some()) {
-        blast_admin_events::super_admin_transfer_cancelled(
-            previous.scheduled().destroy_some(),
-            previous.scheduled_at_ms(),
-        );
-    };
-    blast_admin_events::super_admin_transfer_started(recipient, pending.scheduled_at_ms());
+    self.super_admin_transfer.schedule(recipient, clock);
 }
 
 /// Cancels the pending root transfer at once, even after its delay has passed.
 public fun cancel_super_admin_transfer(self: &mut ACL, root: &SuperAdminCap) {
     self.assert_super_admin(root);
-    let previous = self.pending_super_admin;
-    assert!(
-        previous.scheduled().is_some(),
-        blast_admin::errors::no_pending_super_admin_transfer!(),
-    );
 
-    self.pending_super_admin = no_pending_super_admin();
-
-    blast_admin_events::super_admin_transfer_cancelled(
-        previous.scheduled().destroy_some(),
-        previous.scheduled_at_ms(),
-    );
+    self.super_admin_transfer.cancel();
 }
 
 /// Accepts a ready root transfer as its nominated recipient and invalidates the old cap.
 public fun accept_super_admin_transfer(self: &mut ACL, clock: &Clock, ctx: &mut TxContext) {
-    let recipient = option::some(ctx.sender());
-    assert!(
-        self.pending_super_admin.scheduled() == recipient,
-        blast_admin::errors::not_pending_super_admin_recipient!(),
-    );
-    assert!(
-        self.pending_super_admin.value(clock) == recipient,
-        blast_admin::errors::super_admin_transfer_not_ready!(),
-    );
+    let recipient = self.super_admin_transfer.take_action(clock);
+    assert!(recipient == ctx.sender(), blast_admin::errors::not_pending_super_admin_recipient!());
 
     let previous_super_admin_cap_id = self.super_admin_cap_id;
     let new_root = SuperAdminCap { id: object::new(ctx) };
     let new_super_admin_cap_id = new_root.id.to_inner();
 
     self.super_admin_cap_id = new_super_admin_cap_id;
-    self.pending_super_admin = no_pending_super_admin();
-    transfer::transfer(new_root, ctx.sender());
+    transfer::transfer(new_root, recipient);
 
     blast_admin_events::super_admin_transferred(
         previous_super_admin_cap_id,
         new_super_admin_cap_id,
-        ctx.sender(),
+        recipient,
     );
 }
 
@@ -242,20 +212,20 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role> {
 
 fun new(ctx: &mut TxContext): (SuperAdminCap, ACL) {
     let root = SuperAdminCap { id: object::new(ctx) };
+    let id = object::new(ctx);
+    let super_admin_transfer = delayed::new_action(
+        SuperAdminTransfer(),
+        id.to_inner(),
+        SUPER_ADMIN_TRANSFER_DELAY_MS,
+    );
     let acl = ACL {
-        id: object::new(ctx),
+        id,
         super_admin_cap_id: root.id.to_inner(),
         admins: table::new(ctx),
-        pending_super_admin: no_pending_super_admin(),
+        super_admin_transfer,
     };
 
     (root, acl)
-}
-
-/// No nomination, in force at once: begin, cancel and accept each start from it, so a
-/// replaced or cancelled nominee can never accept.
-fun no_pending_super_admin(): Timelocked<Option<address>> {
-    blast_fun_timelock::new(option::none(), SUPER_ADMIN_TRANSFER_DELAY_MS)
 }
 
 fun assert_super_admin(self: &ACL, root: &SuperAdminCap) {
@@ -319,25 +289,15 @@ public fun admin_roles_for_testing(self: &ACL, admin_cap_id: ID): vector<TypeNam
 }
 
 #[test_only]
-public fun has_pending_transfer_for_testing(self: &ACL): bool {
-    self.pending_super_admin.scheduled().is_some()
-}
-
-#[test_only]
-public fun pending_recipient_for_testing(self: &ACL): address {
-    self.pending_super_admin.scheduled().destroy_some()
-}
-
-#[test_only]
-public fun pending_execute_after_ms_for_testing(self: &ACL): u64 {
-    self.pending_super_admin.scheduled_at_ms()
+public fun super_admin_transfer_for_testing(self: &ACL): &DelayedAction<SuperAdminTransfer, address> {
+    &self.super_admin_transfer
 }
 
 // === Imports ===
 
 use blast_admin::blast_admin_events;
 
-use blast_fun_timelock::blast_fun_timelock::{Self, Timelocked};
+use blast_admin::delayed::{Self, DelayedAction};
 
 use std::type_name::{Self, TypeName};
 
