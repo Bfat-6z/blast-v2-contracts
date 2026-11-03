@@ -36,8 +36,7 @@ blast_fun_timelock = { git = "https://github.com/interest-protocol/blast-v2-cont
 Build for mainnet so Sui resolves `Published.toml` to the existing immutable
 packages. Existing consumers pinned to utility commit
 `63b6cf86c0e1a74f699610fe182b1de8d8789a14` can change just the repository URL:
-that commit is preserved in this repository's imported history. Update the URL
-before the old repository is removed; its URLs will no longer resolve.
+that commit is preserved in this repository's imported history. The old repository has been removed; its URLs no longer resolve.
 
 ## Published-source verification
 
@@ -47,7 +46,22 @@ The original commits are retained: use `e1a7c62` for OTC and vesting, and
 `96e9d25` for timelock. Create a separate checkout at the relevant commit and
 run `sui client verify-source sui/otc`, `sui client verify-source sui/vesting`,
 or `sui client verify-source sui/timelock` there with Sui CLI `1.77.2`.
-Historical records keep their original repository URL as provenance.
+Historical records use the current repository URL for retrieval and retain the
+original repository name in `original_repository`. Commit IDs, source hashes,
+publication identities and working-tree qualifications are unchanged. The original
+September 26 timelock publication commit is also retained under the archival tag
+[`archive/utility-timelock-2026-09-26`](https://github.com/interest-protocol/blast-v2-contracts/tree/archive/utility-timelock-2026-09-26).
+
+For an older checkout that still pins the removed Git remote, change its dependency
+URL to this repository while retaining the exact revision. To preserve a shared
+checkout's files, Git can redirect that exact old repository prefix instead:
+
+```sh
+git config --global --add url.https://github.com/interest-protocol/blast-v2-contracts.insteadOf https://github.com/interest-protocol/blast-util-contracts
+```
+
+This is a local compatibility setting for retained branches; new manifests must
+use the consolidated repository or same-repository local paths.
 
 ## Development and licensing
 
