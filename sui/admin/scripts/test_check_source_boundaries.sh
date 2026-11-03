@@ -168,13 +168,18 @@ awk '{ print } /^\[dependencies\]$/ { print "blast_fun_timelock = { local = \"..
 mv "$case_dir/Move.toml.next" "$case_dir/Move.toml"
 expect_rejected "$case_dir"
 
+case_dir="$(new_case stray_source_folder)"
+mkdir -p "$case_dir/sources/extra"
+cp "$case_dir/sources/errors.move" "$case_dir/sources/extra/errors_copy.move"
+expect_rejected "$case_dir"
+
 case_dir="$(new_case map_immediate_setter)"
-printf '\npublic fun force_value(self: &mut u64) { *self = 0; }\n' >> "$case_dir/sources/delayed_map.move"
+printf '\npublic fun force_value(self: &mut u64) { *self = 0; }\n' >> "$case_dir/sources/delayed/delayed_map.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case delayed_immediate_setter)"
 printf '\npublic fun set_value<K: copy + drop + store, T: copy + drop + store>(self: &mut Delayed<K, T>, value: T) { self.value = value; }\n' \
-  >> "$case_dir/sources/delayed.move"
+  >> "$case_dir/sources/delayed/delayed.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case domain_typed_acl)"
