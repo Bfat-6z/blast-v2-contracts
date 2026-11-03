@@ -2775,20 +2775,24 @@ fun a_partnered_sale_pays_its_partner_a_cut_of_blasts_raise_fee_only() {
 }
 
 #[test]
-/// The partner is paid the cut in force when `pay_protocol_fees_with_partner` runs, not the one at
+/// The partner is paid the cut applied when `pay_protocol_fees_with_partner` runs, not the one at
 /// creation.
-fun the_partner_is_paid_its_cut_in_force_at_payment() {
+fun the_partner_is_paid_its_cut_applied_at_payment() {
     let mut ctx = tx_context::dummy();
-    let partner = partners::new_scheduled_for_testing(
+    let mut clock = clock::create_for_testing(&mut ctx);
+    let mut partner = partners::new_scheduled_for_testing(
         PARTNER_RECIPIENT,
         PARTNER_CUT_BPS,
         8_000,
-        LIQUIDITY_DEADLINE_AT_MS,
+        &clock,
         &mut ctx,
     );
     let mut fixture = partner.start_partnered_sale();
     fixture.migrate();
     fixture.set_time(LIQUIDITY_DEADLINE_AT_MS);
+    clock.set_for_testing(partners::delay_ms());
+    partner.apply_share(&clock);
+    clock.destroy_for_testing();
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
 
@@ -4626,7 +4630,6 @@ fun pay_protocol_fees_with_partner(self: &mut Fixture, sender: address, partner:
             &package_version,
             &fixture.fee_policy,
             partner,
-            &fixture.clock,
             fixture.ctx!(),
         );
         fixture.return_presale(sale);

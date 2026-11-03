@@ -179,9 +179,7 @@ const LOCK_SOURCES = {
     blast_admin: DIRECT_DEPENDENCIES.blast_admin,
     blast_boosts_aftermath: { root: true },
     blast_boosts_core: DIRECT_DEPENDENCIES.blast_boosts_core,
-    // The immutable shared partner-code package is the same kind of inward-only
-    // edge. Their immutable timelock lives in this repository (ADRs 0095 and 0097).
-    blast_fun_timelock: { local: '../../timelock' },
+    // The immutable shared partner-code package is the same kind of inward-only edge.
     blast_partners: DIRECT_DEPENDENCIES.blast_partners,
     ifixed: DIRECT_DEPENDENCIES.ifixed,
     oracle_aggregator: DIRECT_DEPENDENCIES.oracle_aggregator,
@@ -196,11 +194,10 @@ const LOCK_DEPS = {
     MoveStdlib: {},
     Sui: { MoveStdlib: 'MoveStdlib' },
     authority_cap: { std: 'MoveStdlib', sui: 'Sui' },
-    blast_admin: { Sui: 'Sui', blast_fun_timelock: 'blast_fun_timelock' },
+    blast_admin: { Sui: 'Sui' },
     blast_boosts_aftermath: { authority_cap: 'authority_cap', blast_admin: 'blast_admin', blast_boosts_core: 'blast_boosts_core', blast_partners: 'blast_partners', ifixed: 'ifixed', oracle_aggregator: 'oracle_aggregator', perpetuals: 'perpetuals', position: 'position', std: 'MoveStdlib', sui: 'Sui' },
     blast_boosts_core: { blast_admin: 'blast_admin', std: 'MoveStdlib', sui: 'Sui' },
-    blast_fun_timelock: { std: 'MoveStdlib', sui: 'Sui' },
-    blast_partners: { blast_admin: 'blast_admin', blast_fun_timelock: 'blast_fun_timelock', std: 'MoveStdlib', sui: 'Sui' },
+    blast_partners: { blast_admin: 'blast_admin', std: 'MoveStdlib', sui: 'Sui' },
     ifixed: { std: 'MoveStdlib', sui: 'Sui' },
     oracle_aggregator: { authority_cap: 'authority_cap', std: 'MoveStdlib', sui: 'Sui', vendor: 'vendor' },
     perpetuals: { authority_cap: 'authority_cap', control_flow: 'AftermathControlFlow', ifixed: 'ifixed', oracle_aggregator: 'oracle_aggregator', ordered_map: 'AftermathOrderedMap', position: 'position', std: 'MoveStdlib', sui: 'Sui', vendor: 'vendor' },

@@ -75,9 +75,9 @@ on Boosts and 8% on another product.
 
 | Term | Set by | When it takes effect |
 | --- | --- | --- |
-| Share of Blast's fee, 0% to 80%, per deal | Blast | at registration; each later change seven days after Blast sets it |
+| Share of Blast's fee, 0% to 80%, per deal | Blast | at registration; each later change once applied, at least seven days after Blast proposes it |
 | Recipient address, per deal | you, with your cap | immediately |
-| Which cap manages a deal | Blast | seven days after Blast moves it |
+| Which cap manages a deal | Blast | once applied, at least seven days after Blast proposes it |
 | Which products accept a deal | Blast, per product | added at once; removed seven days after Blast removes it |
 
 - You can mint your own cap with `new_cap` (for example straight into your
@@ -87,13 +87,13 @@ on Boosts and 8% on another product.
   at once. Whoever holds the cap controls where every deal under it pays, so keep
   it somewhere safe.
 - Blast cannot change your share or your cap without seven days' notice, which
-  anyone can read on chain. The delay comes from `blast_fun_timelock`, an
-  immutable package nobody can change.
+  anyone can read on chain. After the notice anyone, you included, applies the
+  change; Blast may cancel it instead. The notice is fixed in immutable code.
 - A deal pays only on the products that accept it: Boosts accepts a deal once
   Blast adds it there. If Blast removes it, it stays accepted, and paid, for
   seven more days.
 - If you lose your cap, mint a new one and ask Blast to move your deals to it;
-  each move goes live seven days later, and until then the old cap still works.
+  each move can be applied seven days later, and until then the old cap still works.
 - Every payment emits `PartnerPaid` with your partner ID and the amount you
   received, and the product records the trade in its own event (for Boosts,
   `PartnerFeePaid`), so you can reconcile your income from events alone.
@@ -107,26 +107,28 @@ on Boosts and 8% on another product.
   share. For a new company, mint a cap with `new_cap` and send it to them, or
   use a cap they minted. `register` accepts any ID, so first check on chain that
   the ID is a `PartnerCap` the company holds: a wrong ID leaves the deal without
-  a working cap until `schedule_cap` fixes it seven days later.
+  a working cap until a `schedule_cap` proposal is applied seven days later.
 - **Accepting a deal on Boosts.** After registering it, the Boosts risk
   administrator calls `operations::add_partner` with the `Partner`; it applies
   at once. Accept each deal only on the product it was priced for.
 - **Ending a deal on Boosts.** `operations::remove_partner` takes effect seven
   days later, after which trades naming it abort. Adding it again meanwhile
   cancels the removal. To keep attributing the flow but pay nothing, schedule
-  its share to zero instead.
-- **Changing a tier.** `schedule_share` sets the new share seven days ahead.
-  Scheduling again replaces a pending change and restarts the seven days;
-  scheduling the share already in force cancels a pending change. Tiers are
+  and apply a zero share instead.
+- **Changing a tier.** `schedule_share` proposes the new share; anyone calls
+  `apply_share` once seven days have passed. A different proposal replaces a
+  pending one and restarts the seven days; `cancel_share` discards one, even
+  after it is ready. Tiers are
   reviewed off chain from the Blast fee kept on each partner's flow, which wash
   volume and free-riding lower rather than raise.
-- **Switching a deal off everywhere.** Schedule its share to zero. Apps that
+- **Switching a deal off everywhere.** Schedule and apply a zero share. Apps that
   still name it keep working and pay the normal fee to Blast.
-- **Replacing a lost or stolen cap.** `schedule_cap` moves a deal to a new cap in
-  seven days, one call per deal. A thief holding the old cap can redirect payouts
-  until then, so tell integrators to stop naming those deals meanwhile.
-- **At launch,** publish `blast_partners` immutable (the timelock it builds on
-  is already published immutable) and commit its `Published.toml`, so the
+- **Replacing a lost or stolen cap.** `schedule_cap` proposes a new cap, one call
+  per deal, and `apply_cap` moves the deal once seven days have passed. A thief
+  holding the old cap can redirect payouts until then, so tell integrators to stop
+  naming those deals meanwhile.
+- **At launch,** publish `blast_partners` immutable (`blast_admin`, its only
+  Blast dependency, is published immutable first) and commit its `Published.toml`, so the
   adapter's mainnet build links to it. Then publish the Boosts adapter fresh,
   grant `PartnerAdmin` on the Blast ACL, and add each Boosts deal. Also set each
   vault's admin share: while it is zero, as it is at activation, Blast earns

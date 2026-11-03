@@ -23,7 +23,7 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use base64::Engine;
 use blast_launchpad_ptb_tests::{
-    CompiledPackage, Expected, Harness, Outcome, build, build_timelock, call, sui_dir, timelock_dir,
+    CompiledPackage, Expected, Harness, Outcome, build, call, sui_dir,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -197,14 +197,12 @@ impl World {
         let fixture = blast_launchpad_ptb_tests::crate_dir().join("fixture");
         let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(label);
         let mut h = Harness::new()?;
-        let timelock_dir = timelock_dir()?;
         let admin_dir = sui_dir.join("admin");
         let launchpad_dir = sui_dir.join("launchpad");
-        let (timelock, _) = h.publish(build_timelock(&work)?)?;
         let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
         let partners_dir = sui_dir.join("partners");
-        let (partners, _) = h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
-        let core = [(timelock_dir.as_path(), timelock), (admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
+        let (partners, _) = h.publish(build(&partners_dir, &[(&admin_dir, admin)], &work)?)?;
+        let core = [(admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
         let (blast, published) = h.publish(build(&launchpad_dir, &core, &work)?)?;
         let one = |outcome: &Outcome, module: &str, name: &str| {
             let ids = outcome.created(&h, module, name);
@@ -215,7 +213,7 @@ impl World {
         let root = one(&admin_published, "blast_acl", "SuperAdminCap");
         let config = one(&published, "launch_config", "LaunchConfig");
         let runtime = one(&published, "runtime_config", "RuntimeConfig");
-        let linked = [core[0], core[1], core[2], (launchpad_dir.as_path(), blast)];
+        let linked = [core[0], core[1], (launchpad_dir.as_path(), blast)];
         let (adapter, _) = h.publish(build(&fixture.join("adapter"), &linked, &work)?)?;
         let (version, _) = h.wrap_launchpad(blast, &published, admin, &admin_published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
         h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;

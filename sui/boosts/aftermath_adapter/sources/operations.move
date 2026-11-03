@@ -397,7 +397,7 @@ public fun mint_with_partner<Product, Collateral>(
         clock,
         ctx,
     );
-    vault.pay_partner(partner, admin_cash_before, clock, ctx);
+    vault.pay_partner(partner, admin_cash_before, ctx);
 
     (shares, clearing_house)
 }
@@ -436,7 +436,7 @@ public fun redeem_with_partner<Product, Collateral>(
         clock,
         ctx,
     );
-    vault.pay_partner(partner, admin_cash_before, clock, ctx);
+    vault.pay_partner(partner, admin_cash_before, ctx);
 
     (cash, clearing_house)
 }
@@ -1281,13 +1281,12 @@ fun pay_partner<Product, Collateral>(
     vault: &mut Vault<Product, Collateral>,
     partner: &Partner,
     admin_cash_before: u64,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     let admin_fee = vault.admin_cash_balance<_, Collateral>() - admin_cash_before;
 
     let mut fee = vault.take_admin_cash(admin_fee);
-    let partner_fee = partner.pay(&mut fee, clock, ctx);
+    let partner_fee = partner.pay(&mut fee, ctx);
     vault.retain_admin_cash(fee);
 
     events::partner_fee_paid<Product>(vault.id(), object::id(partner), admin_fee, partner_fee);
@@ -1853,10 +1852,9 @@ public fun pay_partner_for_testing<Product, Collateral>(
     vault: &mut Vault<Product, Collateral>,
     partner: &Partner,
     admin_cash_before: u64,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    vault.pay_partner(partner, admin_cash_before, clock, ctx);
+    vault.pay_partner(partner, admin_cash_before, ctx);
 }
 
 #[test_only]

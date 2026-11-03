@@ -362,9 +362,14 @@ before execution and after fills. Donations become allocated position cash.
 Initial-margin settings must satisfy the live venue floor and core's conditional
 conservative cushion; later recovery is never gated by that issuance budget.
 
+Partner share and cap terms are keyed `blast_admin::delayed` values with a fixed
+seven-day notice. PartnerAdmin schedules or cancels; anyone applies a ready
+proposal. Payments and recipient checks read applied values, so product payout
+calls take no Clock for the partner. See ADR 0095.
+
 ## Utility source ownership
 
-OTC, vesting, and timelock remain independently published immutable packages,
+OTC and vesting remain independently published immutable packages,
 maintained in this repository with their SDK and release records. Internal
 consumers use local package dependencies. Repository consolidation changes no
 on-chain ownership or ABI; [ADR 0135](decisions/0135-utility-contracts-consolidation.md)

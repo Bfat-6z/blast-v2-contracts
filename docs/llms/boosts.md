@@ -881,7 +881,7 @@ does not. Admin cash never enters the holder pool.
 - Partner removal: accepted while `now_ms < accepted_until_ms`, where
   `accepted_until_ms = removal time + 7 days`
   (`blast_partners::blast_partners::delay_ms`).
-  Partner share changes follow `blast_partners` timelocks.
+  Partner share changes wait `blast_partners`' fixed seven-day notice and an explicit apply.
 - Admin settings have no cooldown. Shutdown has no timer: unwind and finalize
   run whenever the venue allows.
 

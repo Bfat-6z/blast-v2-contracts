@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
-    DelayedScheduled, Expected, Harness, Outcome, build, build_timelock, call, sui_dir, timelock_dir,
+    Delayed, DelayedApplied, DelayedScheduled, Expected, Harness, Outcome, Proposal, build, call, sui_dir,
 };
 use sui_types::{
     base_types::{ObjectID, SuiAddress},
@@ -16,19 +16,13 @@ use sui_types::{
 fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let work = blast_launchpad_ptb_tests::test_work_dir().join("launchpad_bootstrap");
     let sui = sui_dir();
-    let timelock_dir = timelock_dir()?;
     let admin_dir = sui.join("admin");
     let partners_dir = sui.join("partners");
     let mut h = Harness::new()?;
-    let (timelock, _) = h.publish(build_timelock(&work)?)?;
     let (admin, admin_publication) = h.publish(build(&admin_dir, &[], &work)?)?;
-    let (partners, _) = h.publish(build(&partners_dir, &[(&timelock_dir, timelock), (&admin_dir, admin)], &work)?)?;
+    let (partners, _) = h.publish(build(&partners_dir, &[(&admin_dir, admin)], &work)?)?;
     assert_initial_partner_payment(&mut h, admin, &admin_publication, partners)?;
-    let code = build(
-        &sui.join("launchpad"),
-        &[(&timelock_dir, timelock), (&admin_dir, admin), (&partners_dir, partners)],
-        &work,
-    )?;
+    let code = build(&sui.join("launchpad"), &[(&admin_dir, admin), (&partners_dir, partners)], &work)?;
     let (blast, publication) = h.publish(code.clone())?;
     assert!(publication.created(&h, "blast_fun", "PackageVersion").is_empty());
     assert!(publication.created(&h, "package_admin", "PackageAdmin").is_empty());
@@ -186,7 +180,7 @@ fn assert_initial_partner_payment(
     let mut b = ProgrammableTransactionBuilder::new();
     let acl_arg = b.obj(h.shared(acl, false))?;
     let admin_arg = b.obj(h.owned(admin_cap))?;
-    let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, admin_arg]);
+    let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role.clone()], vec![acl_arg, admin_arg]);
     let cap = call(&mut b, partners, "blast_partners", "new_cap", vec![], vec![]);
     let cap_type = parse_sui_type_tag(&format!("{partners}::blast_partners::PartnerCap"))?;
     let cap_id = call(&mut b, framework, "object", "id", vec![cap_type], vec![cap]);
@@ -197,19 +191,34 @@ fn assert_initial_partner_payment(
     let registered = h.execute(b.finish())?;
     registered.assert_success();
     let partner = registered.created(h, "blast_partners", "Partner")[0];
+    let partner_cap = registered.created(h, "blast_partners", "PartnerCap")[0];
+
+    // The Partner carries both terms as keyed `Delayed` values owned by the partner, applied at
+    // once with the fixed notice; `PartnerUpdated` carries only the recipient.
+    type Partner = (ObjectID, SuiAddress, Delayed<u64>, Delayed<ObjectID>);
+    type Created<T> = (ObjectID, bool, T, u64);
+    const NOTICE: u64 = 604_800_000;
+    let state: Partner = bcs::from_bytes(&h.contents(partner))?;
+    assert_eq!((state.0, state.1), (partner, recipient));
+    assert_eq!(state.2, Delayed { owner: partner, key: false, value: 8_000, delay_ms: NOTICE, pending: None });
+    assert_eq!(state.3, Delayed { owner: partner, key: false, value: partner_cap, delay_ms: NOTICE, pending: None });
     let updates: Vec<_> = registered.events.iter().filter(|event| event.type_.name.as_str() == "PartnerUpdated").collect();
     assert_eq!(updates.len(), 1);
-    assert_eq!(updates[0].contents, h.contents(partner));
+    assert_eq!(bcs::from_bytes::<(ObjectID, SuiAddress)>(&updates[0].contents)?, (partner, recipient));
+    let share_created: Vec<Created<u64>> = registered.delayed("DelayedCreated", "blast_partners", "ShareKey")?;
+    let cap_created: Vec<Created<ObjectID>> = registered.delayed("DelayedCreated", "blast_partners", "CapKey")?;
+    assert_eq!(share_created, vec![(partner, false, 8_000, NOTICE)]);
+    assert_eq!(cap_created, vec![(partner, false, partner_cap, NOTICE)]);
 
+    // Payment reads the applied share and takes no Clock.
     let mut b = ProgrammableTransactionBuilder::new();
     let partner_arg = b.obj(h.shared(partner, false))?;
-    let clock_arg = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     let amount = b.pure(1_000u64)?;
     let Argument::Result(split) = b.command(Command::SplitCoins(Argument::GasCoin, vec![amount])) else {
         unreachable!("SplitCoins is a command result");
     };
     let balance = call(&mut b, framework, "coin", "into_balance", vec![sui.clone()], vec![Argument::NestedResult(split, 0)]);
-    call(&mut b, partners, "blast_partners", "pay", vec![sui.clone()], vec![partner_arg, balance, clock_arg]);
+    call(&mut b, partners, "blast_partners", "pay", vec![sui.clone()], vec![partner_arg, balance]);
     let remainder = call(&mut b, framework, "coin", "from_balance", vec![sui.clone()], vec![balance]);
     b.transfer_arg(h.sender, remainder);
     let paid = h.execute(b.finish())?;
@@ -220,5 +229,70 @@ fn assert_initial_partner_payment(
     assert_eq!(payments.len(), 1);
     assert_eq!(bcs::from_bytes::<(ObjectID, u64)>(&payments[0].contents)?, (partner, 800));
     assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
+
+    // A real ACL witness proposes; anyone applies after the notice. An abort later in the same PTB
+    // rolls back the apply and its event.
+    let sign_in = |h: &Harness, b: &mut ProgrammableTransactionBuilder| -> Result<Argument> {
+        let acl_arg = b.obj(h.shared(acl, false))?;
+        let cap_arg = b.obj(h.owned(admin_cap))?;
+        Ok(call(b, admin, "blast_acl", "sign_in", vec![role.clone()], vec![acl_arg, cap_arg]))
+    };
+    let mut b = ProgrammableTransactionBuilder::new();
+    let witness = sign_in(h, &mut b)?;
+    let partner_arg = b.obj(h.shared(partner, true))?;
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let share = b.pure(5_000u64)?;
+    call(&mut b, partners, "blast_partners", "schedule_share", vec![], vec![partner_arg, witness, share, clock]);
+    let scheduled_outcome = h.execute(b.finish())?;
+    scheduled_outcome.assert_success();
+    let scheduled: Vec<DelayedScheduled<u64>> = scheduled_outcome.delayed("DelayedScheduled", "blast_partners", "ShareKey")?;
+    assert_eq!(scheduled.len(), 1);
+    assert_eq!((scheduled[0].owner, scheduled[0].value, scheduled[0].delay_ms), (partner, 5_000, NOTICE));
+    let ready_at_ms = scheduled[0].ready_at_ms;
+    assert!(scheduled_outcome.events.iter().all(|event| event.type_.name.as_str() != "PartnerUpdated"));
+    h.sim.advance_clock(std::time::Duration::from_millis(NOTICE - 1));
+    let apply = |h: &Harness| -> Result<_> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let partner_arg = b.obj(h.shared(partner, true))?;
+        let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, partners, "blast_partners", "apply_share", vec![], vec![partner_arg, clock]);
+        Ok(b.finish())
+    };
+    h.assert_rolled_back(apply(h)?, Expected::Abort { package: admin, module: "delayed", code: 17 }, &[partner], &[h.sender])?;
+    h.sim.advance_clock(std::time::Duration::from_millis(1));
+    let pending = Some(Proposal { value: 5_000, delay_ms: NOTICE, ready_at_ms });
+    assert_eq!(bcs::from_bytes::<Partner>(&h.contents(partner))?.2.pending, pending);
+    let mut b = ProgrammableTransactionBuilder::new();
+    let partner_arg = b.obj(h.shared(partner, true))?;
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, partners, "blast_partners", "apply_share", vec![], vec![partner_arg, clock]);
+    call(&mut b, partners, "blast_partners", "apply_share", vec![], vec![partner_arg, clock]);
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 18 }, &[partner], &[h.sender])?;
+    let ready: Partner = bcs::from_bytes(&h.contents(partner))?;
+    assert_eq!((ready.2.value, ready.2.pending), (8_000, pending));
+
+    // Revoking the role blocks cancellation but never the permissionless application.
+    let mut b = ProgrammableTransactionBuilder::new();
+    let acl_arg = b.obj(h.shared(acl, true))?;
+    let root_arg = b.obj(h.owned(root))?;
+    let cap_id = b.pure(admin_cap)?;
+    call(&mut b, admin, "blast_acl", "revoke_role", vec![role.clone()], vec![acl_arg, root_arg, cap_id]);
+    h.impersonate_cap_owner(root, b.finish())?.assert_success();
+    let mut b = ProgrammableTransactionBuilder::new();
+    let witness = sign_in(h, &mut b)?;
+    let partner_arg = b.obj(h.shared(partner, true))?;
+    call(&mut b, partners, "blast_partners", "cancel_share", vec![], vec![partner_arg, witness]);
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "blast_acl", code: 5 }, &[partner, acl, admin_cap], &[h.sender])?;
+    let applied = h.execute(apply(h)?)?;
+    applied.assert_success();
+    let state: Partner = bcs::from_bytes(&h.contents(partner))?;
+    assert_eq!(state.2, Delayed { owner: partner, key: false, value: 5_000, delay_ms: NOTICE, pending: None });
+    let applied_events: Vec<DelayedApplied<u64>> = applied.delayed("DelayedApplied", "blast_partners", "ShareKey")?;
+    assert_eq!(
+        applied_events,
+        vec![DelayedApplied { owner: partner, key: false, previous_value: 8_000, value: 5_000, delay_ms: NOTICE }],
+    );
+    assert!(applied.events.iter().all(|event| event.type_.name.as_str() != "PartnerUpdated"));
+
     Ok(())
 }

@@ -348,3 +348,36 @@ for package in ('launchpad', 'presale', 'migrators'):
     assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]
     require(fs['wrap'][1], 'delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS)')
 print('Per-operation notices, no bypass, delayed signer admission, and publication custody: OK')
+
+# Partner share and cap wait one fixed seven-day notice: PartnerAdmin proposes or cancels, anyone
+# applies, payments read the applied share with no Clock, and nothing can change the notice.
+partners_source = module_path('partners', 'blast_partners').read_text()
+partners_production = partners_source.split('// === Test-Only Functions ===')[0]
+require(partners_source, 'share_bps: Delayed<ShareKey, u64>,', 'cap_id: Delayed<CapKey, ID>,',
+        'public struct ShareKey() has copy, drop, store;', 'public struct CapKey() has copy, drop, store;',
+        'const PARTNER_CHANGE_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000;')
+for forbidden in (r'\bschedule_delay\b', r'\.schedule\(', r'\bdelayed::schedule\b', r'\bapply_delay\b',
+                  r'\bcancel_delay\b', r'\bTimelocked\b', r'\bblast_fun_timelock\b'):
+    assert not re.search(forbidden, partners_production), ('blast_partners', forbidden)
+assert 'timelock' not in (ROOT / 'sui/partners/Move.toml').read_text()
+partner_fs = functions('partners', 'blast_partners')
+require(partner_fs['new'][1], 'delayed::new(ShareKey(), &id, share_bps, PARTNER_CHANGE_DELAY_MS)',
+        'delayed::new(CapKey(), &id, cap_id, PARTNER_CHANGE_DELAY_MS)')
+for field, store in (('share', 'share_bps'), ('cap', 'cap_id')):
+    signature, body = partner_fs[f'schedule_{field}']
+    require(signature, '_: &AdminWitness<PartnerAdmin>', 'clock: &Clock')
+    assert 'delay_ms' not in signature, field
+    require(body, f'self.{store}.schedule_value(')
+    signature, body = partner_fs[f'apply_{field}']
+    assert 'AdminWitness' not in signature, field
+    require(signature, 'clock: &Clock')
+    require(body, f'self.{store}.apply(clock)')
+    signature, body = partner_fs[f'cancel_{field}']
+    require(signature, '_: &AdminWitness<PartnerAdmin>')
+    require(body, f'self.{store}.cancel()')
+for name in ('pay', 'set_recipient', 'register'):
+    assert 'Clock' not in partner_fs[name][0], name
+require(partner_fs['pay'][1], 'self.share_bps.value()')
+require(partner_fs['set_recipient'][1], 'self.cap_id.value()')
+assert not any(name.startswith('set_') and name != 'set_recipient' for name in partner_fs)
+print('Partner fixed notice, permissionless application, and Clock-free payment: OK')

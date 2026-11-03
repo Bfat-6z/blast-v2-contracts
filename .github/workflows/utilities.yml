@@ -3,9 +3,9 @@ name: Immutable utilities
 on:
   push:
     branches: [main]
-    paths: ['sui/otc/**', 'sui/vesting/**', 'sui/timelock/**', 'sdk/**', '.github/workflows/utilities.yml']
+    paths: ['sui/otc/**', 'sui/vesting/**', 'sdk/**', '.github/workflows/utilities.yml']
   pull_request:
-    paths: ['sui/otc/**', 'sui/vesting/**', 'sui/timelock/**', 'sdk/**', '.github/workflows/utilities.yml']
+    paths: ['sui/otc/**', 'sui/vesting/**', 'sdk/**', '.github/workflows/utilities.yml']
 
 jobs:
   verify:
@@ -31,7 +31,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Test immutable packages
         run: |
-          for package in otc vesting timelock; do
+          for package in otc vesting; do
             sui move test --path "sui/$package" --threads 1
           done
       - name: Check utility SDK

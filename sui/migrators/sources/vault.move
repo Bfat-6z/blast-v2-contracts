@@ -142,8 +142,8 @@ public fun claim_protocol_fees<Meme, Quote>(
     (meme, quote)
 }
 
-/// Pays the Blast LP fees this vault holds for its launch's partner: the partner its cut of each
-/// asset in force now, rounded down, then the `LpFeePolicy`'s current protocol destination the
+/// Pays the Blast LP fees this vault holds for its launch's partner: the partner its applied cut
+/// of each asset, rounded down, then the `LpFeePolicy`'s current protocol destination the
 /// rest. Anyone may claim, since both payees are fixed. Holding nothing is valid, moves nothing,
 /// and emits nothing, so a claim can follow any collection.
 public fun claim_protocol_lp_fees_with_partner<Meme, Quote>(
@@ -151,7 +151,6 @@ public fun claim_protocol_lp_fees_with_partner<Meme, Quote>(
     migrators_version: &MigratorsVersion,
     policy: &LpFeePolicy,
     partner: &Partner,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     migrators_version.assert_current();
@@ -161,8 +160,8 @@ public fun claim_protocol_lp_fees_with_partner<Meme, Quote>(
     let protocol_destination = policy.protocol_destination();
     let mut protocol_meme = self.unpaid_protocol_meme.withdraw_all();
     let mut protocol_quote = self.unpaid_protocol_quote.withdraw_all();
-    let partner_meme = partner.pay(&mut protocol_meme, clock, ctx);
-    let partner_quote = partner.pay(&mut protocol_quote, clock, ctx);
+    let partner_meme = partner.pay(&mut protocol_meme, ctx);
+    let partner_quote = partner.pay(&mut protocol_quote, ctx);
     let paid_meme = protocol_meme.value();
     let paid_quote = protocol_quote.value();
 

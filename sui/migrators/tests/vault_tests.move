@@ -863,7 +863,6 @@ fun a_vault_claims_only_for_the_partner_its_launch_named() {
         &f.migrators_version,
         &f.policy,
         &other,
-        &f.clock,
         f.scenario.ctx(),
     );
 
@@ -1463,7 +1462,6 @@ fun claim_lp_fees_with_partner(self: &mut VaultFixture, vault: &mut LpVault<VAUL
         &self.migrators_version,
         &self.policy,
         &self.partner,
-        &self.clock,
         self.scenario.ctx(),
     );
 }

@@ -997,22 +997,12 @@ pub fn sui_dir() -> PathBuf {
     crate_dir().join("../..").canonicalize().expect("sui directory")
 }
 
-/// The local immutable timelock package linked by `blast_partners`.
-pub fn timelock_dir() -> Result<PathBuf> {
-    Ok(sui_dir().join("timelock").canonicalize()?)
-}
-
 /// The local immutable vesting package linked by `blast_presale`.
 pub fn vesting_dir() -> Result<PathBuf> {
     Ok(sui_dir().join("vesting").canonicalize()?)
 }
 
-/// Compiles the timelock from a copy in `work`, so building never writes into the source package.
-pub fn build_timelock(work: &Path) -> Result<CompiledPackage> {
-    build_copy(&timelock_dir()?, "blast_fun_timelock", work)
-}
-
-/// Compiles the vesting package from a copy in `work`, unpublished, as the timelock is.
+/// Compiles the vesting package from a copy in `work`, so building never writes into the source package.
 pub fn build_vesting(work: &Path) -> Result<CompiledPackage> {
     build_copy(&vesting_dir()?, "blast_fun_vesting", work)
 }

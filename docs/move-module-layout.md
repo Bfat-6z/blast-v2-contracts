@@ -1,6 +1,6 @@
 # Immutable utility module layout
 
-The preserved modules under `sui/otc`, `sui/vesting`, and `sui/timelock` orders its sections top to bottom as follows, and skips any section it
+The preserved modules under `sui/otc` and `sui/vesting` order its sections top to bottom as follows, and skips any section it
 does not need:
 
 1. `// === Constants ===`

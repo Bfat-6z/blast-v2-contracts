@@ -279,7 +279,7 @@ vault:package:fun take_round_publication<Meme, Quote>( self: &mut LpVault<Meme, 
 vault:public:fun cancel_fee_split<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, launch: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, )
 vault:public:fun claim_creator_fees<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, launch: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, ctx: &mut TxContext, ): (Coin<Meme>, Coin<Quote>)
 vault:public:fun claim_protocol_fees<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, _: &AdminWitness<TreasuryAdmin>, ctx: &mut TxContext, ): (Coin<Meme>, Coin<Quote>)
-vault:public:fun claim_protocol_lp_fees_with_partner<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, policy: &LpFeePolicy, partner: &Partner, clock: &Clock, ctx: &mut TxContext, )
+vault:public:fun claim_protocol_lp_fees_with_partner<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, policy: &LpFeePolicy, partner: &Partner, ctx: &mut TxContext, )
 vault:public:fun schedule_fee_split<Meme, Quote>( self: &mut LpVault<Meme, Quote>, migrators_version: &MigratorsVersion, launch: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, proposed: FeeSplit, delay_ms: u64, clock: &Clock, )
 venue_config:package:fun add_object<Key: copy + drop + store, Object: key + store>( self: &mut VenueConfig, key: Key, object: Object, )
 venue_config:package:fun object<Key: copy + drop + store, Object: key + store>( self: &VenueConfig, key: Key, ): &Object
@@ -561,7 +561,7 @@ in_order \
         'if(self.unpaid_protocol_meme.value()==0&&self.unpaid_protocol_quote.value()==0)return;' \
         'letprotocol_destination=policy.protocol_destination();' \
         'letmutprotocol_meme=self.unpaid_protocol_meme.withdraw_all();letmutprotocol_quote=self.unpaid_protocol_quote.withdraw_all();' \
-        'letpartner_meme=partner.pay(&mutprotocol_meme,clock,ctx);letpartner_quote=partner.pay(&mutprotocol_quote,clock,ctx);' \
+        'letpartner_meme=partner.pay(&mutprotocol_meme,ctx);letpartner_quote=partner.pay(&mutprotocol_quote,ctx);' \
         'protocol_meme.pay_all(protocol_destination,ctx);protocol_quote.pay_all(protocol_destination,ctx);' \
         'blast_events::protocol_lp_fees_claimed(self.id.to_inner(),protocol_destination,paid_meme,paid_quote,partner_meme,partner_quote);' \
         <<<"$(vault_body claim_protocol_lp_fees_with_partner)" \

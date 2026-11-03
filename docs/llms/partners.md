@@ -9,39 +9,43 @@ presales. A partner is one deal: a shared `Partner` object with a share of
 Blast's fee (0% to 80%) and a recipient address. A company holds one
 `PartnerCap` that controls the recipient of every deal registered under it.
 Users never pay for a partner: a partner is only ever paid out of Blast's own
-fee. Initial shares apply immediately. Later changes Blast makes to a partner's
-share or managing cap wait seven days. The package is published immutable, so no
-one can shorten that delay.
+fee. Initial shares apply immediately. A later share or managing cap Blast
+proposes applies only when someone applies it, at least seven days after the
+proposal. The module never changes that notice and the package is published
+immutable, so no one can shorten it.
 
 ### Objects and authority
 
 | Object | Kind | Held by | Authorizes |
 | --- | --- | --- | --- |
 | `blast_partners::blast_partners::Partner` | shared (`key` only, never transferable) | nobody; created by `blast_partners::blast_partners::register` | read by products on every trade; mutated only by the calls below |
-| `blast_partners::blast_partners::PartnerCap` | owned (`key, store`; transferable, wrappable) | the partner company | `blast_partners::blast_partners::set_recipient` on every `Partner` whose cap in force is this cap's ID |
-| `blast_partners::blast_partners::PartnerAdmin` | role type in Blast's ACL | a Blast `AdminCap` granted this role | `blast_partners::blast_partners::register`, `blast_partners::blast_partners::schedule_share`, `blast_partners::blast_partners::schedule_cap` |
+| `blast_partners::blast_partners::PartnerCap` | owned (`key, store`; transferable, wrappable) | the partner company | `blast_partners::blast_partners::set_recipient` on every `Partner` whose applied cap is this cap's ID |
+| `blast_partners::blast_partners::PartnerAdmin` | role type in Blast's ACL | a Blast `AdminCap` granted this role | `blast_partners::blast_partners::register`, `blast_partners::blast_partners::schedule_share`, `blast_partners::blast_partners::schedule_cap`, `blast_partners::blast_partners::cancel_share`, `blast_partners::blast_partners::cancel_cap` |
 
 `Partner` fields:
 
 - `recipient: address`: where payments go. Set by the live cap's holder, applies
   at once.
 - `share_bps`: the share of Blast's fee, in basis points (BPS, out of 10,000),
-  at most 8,000. A timelocked value.
+  at most 8,000. A `delayed::Delayed<ShareKey, u64>` value.
 - `cap_id`: the ID of the one `PartnerCap` that may set `recipient`. A
-  timelocked value.
+  `delayed::Delayed<CapKey, ID>` value.
 
-A timelocked value is a `Timelocked<T>` struct from Blast's immutable timelock
-package with four fields: `before`, `after`, `at_ms`, `delay_ms`. The value in
-force at time `t` (milliseconds) is `after` when `t >= at_ms`, otherwise
-`before`. `delay_ms` is fixed at creation; for partners it is 604,800,000 ms
-(seven days). Scheduling a value `v` at time `now` sets `before` to the value in
-force at `now`, `after` to `v`, and `at_ms` to `now + delay_ms`. A change is
-pending exactly when `at_ms > now` and `after` differs from the value in force.
+A `delayed::Delayed<K, T>` comes from Blast's shared administration package
+`blast_admin` and has five fields in BCS order: `owner` (the `Partner`'s ID),
+`key` (`blast_partners::blast_partners::ShareKey` or
+`blast_partners::blast_partners::CapKey`, each a one-byte unit struct), `value`
+(the applied value), `delay_ms` (the notice), and `pending: Option<Proposal<T>>`.
+A `delayed::Proposal<T>` holds `value`, `delay_ms` and `ready_at_ms`. The applied
+value is always `value`; a proposal changes nothing until it is applied, even after
+`ready_at_ms`. Both notices are 604,800,000 ms (seven days) and stay fixed:
+`blast_partners` exposes no call that changes them.
 
 Who may call: *anyone* may call `new_cap`, `destroy_cap` (on a cap they hold),
-`pay`, and `delay_ms`; the *cap holder* (the `PartnerCap` in force) may call
-`set_recipient`; a *Blast admin* with the `PartnerAdmin` role (through
-`blast_acl::sign_in`) may call `register`, `schedule_share`, and `schedule_cap`.
+`pay`, `apply_share`, `apply_cap`, and `delay_ms`; the *cap holder* (the applied
+`PartnerCap`) may call `set_recipient`; a *Blast admin* with the `PartnerAdmin`
+role (through `blast_acl::sign_in`) may call `register`, `schedule_share`,
+`schedule_cap`, `cancel_share`, and `cancel_cap`.
 Each product keeps its own list of the partners it accepts, managed by that
 product's admin.
 
@@ -49,26 +53,32 @@ product's admin.
 
 **Cap.** `blast_partners::blast_partners::new_cap` mints an inert cap: it
 controls nothing until Blast registers a partner under its ID. It is *live* for
-a partner while it is that partner's cap in force. After
-`blast_partners::blast_partners::schedule_cap` names a different cap and seven
-days pass, the old cap stops working for that partner.
+a partner while it is that partner's applied cap. After
+`blast_partners::blast_partners::schedule_cap` proposes a different cap and seven
+days pass, anyone may call `blast_partners::blast_partners::apply_cap`; only then
+does the old cap stop working for that partner.
 `blast_partners::blast_partners::destroy_cap` deletes a cap, live or not;
 destroying a live cap leaves its partners with no working cap until a cap Blast
-schedules with `blast_partners::schedule_cap` takes effect, seven days later.
+proposes with `blast_partners::blast_partners::schedule_cap` is applied, at
+least seven days later.
 
 **Partner.** `blast_partners::blast_partners::register` creates and shares the
 partner with the agreed share and managing cap in force immediately. Registration
 needs no `Clock`; there is no initial waiting period. From then on:
 
-1. Blast schedules a new share or cap; the old value stays in force for seven
-   days.
-2. Scheduling again before then replaces the pending change and restarts the
-   seven days.
-3. Scheduling the value currently in force cancels a pending change.
-4. At `at_ms` the new value is in force; nothing needs to be called.
+1. Blast proposes a new share or cap; the applied value stays in force.
+2. A different proposal replaces the pending one and restarts the full seven
+   days, even when the old proposal was already ready. Proposing the applied
+   value, or the value already pending, aborts.
+3. Blast may discard a proposal with `blast_partners::blast_partners::cancel_share`
+   or `blast_partners::blast_partners::cancel_cap`, even after it is ready.
+4. From `ready_at_ms`, anyone may call `blast_partners::blast_partners::apply_share`
+   or `blast_partners::blast_partners::apply_cap`, the partner included. Nothing
+   changes merely because time passes.
 
-There is no delete: a partner exists forever. To switch it off, Blast schedules
-its share to zero; products that name it keep working and simply pay it nothing.
+There is no delete: a partner exists forever. To switch it off, Blast proposes
+and then applies a zero share; products that name it keep working and simply pay
+it nothing.
 
 **Product acceptance.** Each product accepts a partner in its own shared config,
 as a dynamic field keyed by `PartnerKey(partner_id)` whose `u64` value is the
@@ -99,17 +109,18 @@ accepted for seven more days. A partner is accepted while the field exists and
    reference to that `AdminWitness<PartnerAdmin>`, your cap ID, the recipient,
    and the share. The new `Partner` is shared; its ID is in the `PartnerUpdated`
    event and the transaction's created objects. Its initial share is active immediately.
+   Registration also emits `delayed::DelayedCreated` for the share and for the cap.
 4. Blast's admin for each product adds the partner to that product's list.
 
 `blast_partners::blast_partners::register` accepts any ID as the cap. Confirm on
-chain that the `Partner`'s `cap_id` equals your cap's ID; a wrong ID can only be
-fixed by `blast_partners::blast_partners::schedule_cap`, seven days later.
+chain that the `Partner`'s applied `cap_id.value` equals your cap's ID; a wrong
+ID can only be fixed by proposing a new cap and applying it seven days later.
 
 #### Change where a partner pays you (cap holder)
 
 1. Call `blast_partners::blast_partners::set_recipient` with the shared
-   `Partner` (mutable), your owned `PartnerCap` (by reference), the new address,
-   and `Clock` at `0x6`.
+   `Partner` (mutable), your owned `PartnerCap` (by reference), and the new
+   address. It takes no `Clock`.
 2. It applies at once and emits `PartnerUpdated`. One call per partner.
 
 #### Change a share or replace a lost cap (Blast admin)
@@ -118,15 +129,22 @@ fixed by `blast_partners::blast_partners::schedule_cap`, seven days later.
 2. `blast_partners::blast_partners::schedule_share` (new share) or
    `blast_partners::blast_partners::schedule_cap` (new cap ID), with the shared
    `Partner`, the witness, the value, and `Clock`.
-3. Each emits `PartnerUpdated` with the complete timelocked terms. The change
-   takes effect seven days later. Until a cap change takes effect, the old cap
-   keeps working, including for a thief holding it.
+3. Each emits `delayed::DelayedScheduled` (after `delayed::DelayedCancelled`
+   when it replaces a pending proposal) with `ready_at_ms`, seven days later.
+4. From `ready_at_ms`, *anyone* calls `blast_partners::blast_partners::apply_share`
+   or `blast_partners::blast_partners::apply_cap` with the shared `Partner`
+   (mutable) and `Clock` at `0x6`; each emits `delayed::DelayedApplied`. Until a
+   cap change is applied, the old cap keeps working, including for a thief
+   holding it.
+5. Instead, Blast may sign in and call `blast_partners::blast_partners::cancel_share`
+   or `blast_partners::blast_partners::cancel_cap` (no `Clock`), even after
+   readiness; each emits `delayed::DelayedCancelled`.
 
 #### Pay a partner (products, or anyone)
 
 `blast_partners::blast_partners::pay<T>` takes the shared `Partner` by immutable
-reference, a `&mut Balance<T>` holding Blast's fee on a trade, `Clock`, and the
-transaction context. It splits off `floor(fee * share_in_force / 10,000)`, sends it to the partner's
+reference, a `&mut Balance<T>` holding Blast's fee on a trade, and the
+transaction context; it takes no `Clock`. It splits off `floor(fee * applied_share / 10,000)`, sends it to the partner's
 `recipient`, emits `PartnerPaid<T>`, and returns the amount. The rest stays in
 the caller's balance. With a zero share (or a fee too small to round above zero)
 it sends nothing, emits nothing, and returns 0. Each positive payment creates
@@ -153,7 +171,7 @@ Rules common to every product:
   launch, sale, or vault named, and aborts otherwise.
 - A launch that names a partner cannot use `launch::claim_protocol_fees`; it
   must use `launch::claim_protocol_fees_with_partner`.
-- Held fees are divided at the share **in force when they are paid**, not when
+- Held fees are divided at the share **applied when they are paid**, not when
   they accrued.
 - The `Partner` is read by immutable reference, so naming a busy partner adds no
   contention of its own.
@@ -161,7 +179,7 @@ Rules common to every product:
 ### Economics
 
 - Partner amount per payment: `floor(fee * share_bps / 10,000)` in atomic units
-  of `T`, where `share_bps` is the share in force at the payment's `Clock`.
+  of `T`, where `share_bps` is the applied share when the payment executes.
   Blast keeps the remainder, including every rounding dust.
 - `share_bps` is between 0 and 8,000 (80%). Blast always keeps at least 20% of
   its fee.
@@ -178,8 +196,9 @@ Rules common to every product:
 - Delay: `blast_partners::blast_partners::delay_ms()` returns 604,800,000 (seven
   days). It is a compile-time constant of an immutable package.
 - The initial share and managing cap apply at registration, without a Clock.
-- A scheduled share or cap is in force from the first transaction whose `Clock`
-  reads `at_ms` or later.
+- A proposed share or cap can be applied by the first transaction whose `Clock`
+  reads `ready_at_ms` or later; it takes effect only when `apply_share` or
+  `apply_cap` succeeds. A replacement restarts the full seven days.
 - A recipient change applies in the same transaction.
 - A product removal keeps the partner accepted until `now + delay_ms()`; a trade
   or creation at or after that time aborts.
@@ -187,15 +206,15 @@ Rules common to every product:
 ### Reading state
 
 `blast_partners` has no getters for a partner's fields; read the shared
-`Partner` object's content over RPC (`recipient`, `share_bps`, `cap_id`) and
-apply the timelock rule above, or replay `PartnerUpdated`. The only on-chain
-read is `blast_partners::blast_partners::delay_ms`.
+`Partner` object's content over RPC (`recipient`, `share_bps`, `cap_id`), or
+replay the events below. The only on-chain read is
+`blast_partners::blast_partners::delay_ms`.
 
-- Share in force now: `share_bps.after` if `now >= share_bps.at_ms`, else
-  `share_bps.before`.
-- Pending share change: `share_bps.at_ms > now` and `share_bps.after` differs
-  from the share in force.
-- Which cap controls the recipient: the same rule on `cap_id`.
+- Applied share: `share_bps.value`.
+- Pending share: `share_bps.pending`, with its `value` and `ready_at_ms`;
+  readiness does not clear it.
+- Which cap controls the recipient: `cap_id.value`; its proposal is
+  `cap_id.pending`.
 - Whether a product accepts a partner: read the product config's dynamic field
   `PartnerKey(partner_id)`; accepted while it exists and `now < value`.
 - Which partner a launch, sale, or vault names: its `partner_id: Option<ID>`
@@ -203,16 +222,21 @@ read is `blast_partners::blast_partners::delay_ms`.
 
 ### Events
 
-Both events are emitted directly (no envelope).
+Every event is emitted directly (no envelope).
 
 - `blast_partners::blast_partners::PartnerUpdated`: emitted by
-  `blast_partners::blast_partners::register`,
-  `blast_partners::blast_partners::schedule_share`,
-  `blast_partners::blast_partners::schedule_cap`, and
+  `blast_partners::blast_partners::register` and
   `blast_partners::blast_partners::set_recipient`. Fields: `partner_id`,
-  `recipient`, `share_bps` and `cap_id` (complete timelocked values). Each event
-  is the full current state, so the latest one per `partner_id` reconstructs the
-  partner.
+  `recipient`. The latest one per `partner_id` gives the recipient.
+- Share and cap lifecycle events come from `blast_admin`'s `delayed` module,
+  generic in the key (`ShareKey` for the share, `CapKey` for the cap) and the
+  value type (`u64` or `ID`), with `owner` set to the `Partner`'s ID:
+  `delayed::DelayedCreated` (registration: initial value and notice),
+  `delayed::DelayedScheduled` (proposal: value, notice, `ready_at_ms`),
+  `delayed::DelayedCancelled` (a cancel, or a proposal a new one replaced) and
+  `delayed::DelayedApplied` (previous and new value, notice). Replaying them per
+  `owner` and key reconstructs the applied and pending terms; `blast_partners`
+  emits no event of its own for them.
 - `blast_partners::blast_partners::PartnerPaid<T>`: emitted by
   `blast_partners::blast_partners::pay` when it sends a positive amount. Fields:
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
@@ -232,10 +256,15 @@ Both events are emitted directly (no envelope).
 | --- | --- | --- | --- |
 | 0 | `EInvalidRecipient` | `register`, `set_recipient` | use a non-zero recipient |
 | 1 | `EShareAboveMax` | `register`, `schedule_share` | share at most 8,000 BPS |
-| 2 | `EUnchanged` | `schedule_share`, `schedule_cap` (value equals the latest scheduled value), `set_recipient` (same recipient) | pass a different value; to restart a pending change with the same value, first schedule the value in force |
-| 3 | `ENotLiveCap` | `set_recipient` | use the cap in force for this partner at the current `Clock` |
+| 2 | `EUnchanged` | `schedule_share`, `schedule_cap` (value equals the pending proposal), `set_recipient` (same recipient) | pass a different value; to restart a pending proposal with the same value, cancel it first |
+| 3 | `ENotLiveCap` | `set_recipient` | use the partner's applied cap; a ready but unapplied cap is refused until `apply_cap` |
 
-All four are raised in module `blast_partners`. A product call that names a
+These four are raised in module `blast_partners`. The share and cap calls also
+abort in module `blast_admin::delayed` with `blast_admin`'s error codes:
+`ENotReady` (17, `apply_share` or `apply_cap` before `ready_at_ms`),
+`ENoPending` (18, apply or cancel with nothing proposed), `EInvalidDelay` (19, a
+`ready_at_ms` that would overflow) and `EUnchanged` (20, proposing the applied
+value). A product call that names a
 partner it does not accept, or passes the wrong `Partner` to a claim, aborts in
 that product's module with that product's own error.
 
@@ -252,10 +281,13 @@ that product's module with that product's own error.
 - On the launchpad and presales the partner is fixed at creation. Forgetting
   `launch::set_partner` or `blast_presale::blast_presale::set_partner` cannot be
   fixed later.
-- Held fees are divided at the share in force at payment time. A scheduled cut
+- Held fees are divided at the share applied at payment time. An applied cut
   to zero also cuts fees accrued earlier but paid later.
+- A ready proposal is not in force. Payments keep the old share and the old cap
+  keeps working until someone calls `apply_share` or `apply_cap`; a partner
+  waiting on a raise can apply it itself.
 - Whoever holds the cap controls the recipient of every deal under it. A stolen
-  cap can redirect payments until a `schedule_cap` replacement takes effect.
+  cap can redirect payments until a `schedule_cap` replacement is applied.
 
 ### Q&A
 
@@ -271,16 +303,17 @@ claim or payment call; you may call it yourself.
 launch Meme, Quote, and SUI; presale Quote; LP fees in both pool assets.
 
 **Can Blast change my share without notice?** No. Every share or cap change
-waits seven days, visible on chain the moment it is scheduled, and the delay is
-fixed in immutable code.
+waits seven days, visible on chain the moment it is proposed, and only then can
+anyone apply it. The notice is fixed in immutable code.
 
 **Can I change my recipient myself?** Yes, with your `PartnerCap` through
 `blast_partners::blast_partners::set_recipient`; it applies at once.
 
 **I lost my cap. What now?** Mint a new cap with
 `blast_partners::blast_partners::new_cap` and ask Blast to call
-`blast_partners::blast_partners::schedule_cap` for each of your partners. The
-new cap works seven days later; until then the old cap still works.
+`blast_partners::blast_partners::schedule_cap` for each of your partners. After
+seven days anyone, you included, calls `blast_partners::blast_partners::apply_cap`;
+until then the old cap still works.
 
 **Can one company have several deals?** Yes. Each deal is its own `Partner` with
 its own share and recipient; one `PartnerCap` can manage all of them.

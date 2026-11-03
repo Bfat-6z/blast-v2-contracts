@@ -184,7 +184,7 @@ In the template the coin type is `<new package>::meme::MEME`. Blast's own launch
 the module and witness after the symbol, so take a coin's exact type from its publish effects or
 from `blast_fun::events::LaunchTicketCreated` rather than assuming `meme::MEME`. Patch the dependency address to the launchpad's original
 package ID and publish with every transitive dependency: `0x1`, `0x2`, and the current package IDs
-of the launchpad, `blast_admin`, `blast_partners`, and `blast_fun_timelock` (Sui rejects a publish
+of the launchpad, `blast_admin`, and `blast_partners` (Sui rejects a publish
 whose dependency list misses one of the launchpad's own dependencies). Handle the `UpgradeCap` that the Publish command
 returns (transfer it or make the package immutable); it grants no authority over the coin.
 
@@ -353,8 +353,8 @@ allocation) wait in the launch's fee ledger until anyone pays them out:
 - Launch without a partner: `launch::claim_protocol_fees` with the launch, `PackageVersion`, and
   `RuntimeConfig`. Sends every Blast balance (Meme, Quote, SUI) to `RuntimeConfig.treasury`.
 - Launch with a partner: `launch::claim_protocol_fees_with_partner` with the launch,
-  `PackageVersion`, `RuntimeConfig`, the launch's `Partner` (shared), and `Clock`. Each balance
-  first pays the partner its share through `blast_partners::blast_partners::pay`, then the rest goes
+  `PackageVersion`, `RuntimeConfig`, and the launch's `Partner` (shared); no `Clock`. Each balance
+  first pays the partner its applied share through `blast_partners::blast_partners::pay`, then the rest goes
   to the treasury.
 
 Both emit `blast_fun::events::ProtocolFeesClaimed`. Calling the wrong one aborts with
@@ -661,7 +661,7 @@ ledger's `protocol_sui` balance. It is Blast's and is claimed with the other Bla
 
 A partner named at creation is the launch's partner for good (`partner_id`), and its LP vault
 inherits it after migration. When Blast's fees are claimed, each balance (Meme, Quote, SUI) pays the
-partner `floor(balance * share_bps / 10,000)`, with `share_bps` the partner's share in force at the
+partner `floor(balance * share_bps / 10,000)`, with `share_bps` the partner's applied share at the
 claim (set by Blast, at most 8,000); Blast's treasury gets the rest. The partner's cut covers trade
 fees, the creation fee, and the one-time migration allocation.
 

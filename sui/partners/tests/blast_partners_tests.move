@@ -61,25 +61,30 @@ fun newly_registered_partner_receives_revenue_without_advancing_the_clock() {
 }
 
 #[test]
-/// Both initial terms are live, with no pending replacement in the registration event.
+/// Registration records the recipient, and both initial terms are applied at once with
+/// the fixed notice and nothing pending; each delayed event is owned by the partner.
 fun registration_share_and_cap_are_live_immediately() {
     let mut fixture = start();
 
     let cap = fixture.register(RECIPIENT, 2_500);
-    let (id, recipient, share, live_cap) = fixture.last_update().partner_updated_fields();
+    let updates = event::events_by_type<PartnerUpdated>();
+    assert_eq!(updates.length(), 1);
+    let (id, recipient) = updates[0].partner_updated_fields();
     assert_eq!(recipient, RECIPIENT);
-    assert_eq!(vector[share.value(&fixture.clock), share.scheduled()], vector[2_500, 2_500]);
-    assert_eq!(vector[share.scheduled_at_ms(), share.delay_ms()], vector[0, delay()]);
-    assert_eq!(
-        vector[live_cap.value(&fixture.clock), live_cap.scheduled()],
-        vector[object::id(&cap), object::id(&cap)]
-    );
-    assert_eq!(vector[live_cap.scheduled_at_ms(), live_cap.delay_ms()], vector[0, delay()]);
+    let shares = event::events_by_type<DelayedCreated<ShareKey, u64>>();
+    let caps = event::events_by_type<DelayedCreated<CapKey, ID>>();
+    assert_eq!(vector[shares.length(), caps.length()], vector[1, 1]);
+    let (share_owner, _, share, share_delay_ms) = shares[0].delayed_created_fields();
+    let (cap_owner, _, live_cap, cap_delay_ms) = caps[0].delayed_created_fields();
+    assert_eq!(vector[share_owner, cap_owner], vector[id, id]);
+    assert_eq!(share, 2_500);
+    assert_eq!(live_cap, object::id(&cap));
+    assert_eq!(vector[share_delay_ms, cap_delay_ms], vector[delay(), delay()]);
 
     fixture.next_tx!(ADMIN, |fixture| {
         let partner = fixture.take_partner();
         assert_eq!(object::id(&partner), id);
-        let (_, share, live_cap) = partner.terms_for_testing(&fixture.clock);
+        let (_, share, live_cap) = partner.terms_for_testing();
         assert_eq!(share, 2_500);
         assert_eq!(live_cap, object::id(&cap));
         fixture.return_partner(partner);
@@ -95,10 +100,10 @@ fun registration_accepts_a_zero_share_and_the_maximum_share() {
 
     let zero = fixture.register(RECIPIENT, 0);
     let top = fixture.register(RECIPIENT, MAX_SHARE_BPS);
-    let updates = event::events_by_type<PartnerUpdated>();
-    let (_, _, zero_share, _) = updates[0].partner_updated_fields();
-    let (_, _, top_share, _) = updates[1].partner_updated_fields();
-    assert_eq!(vector[zero_share.value(&fixture.clock), top_share.value(&fixture.clock)], vector[0, MAX_SHARE_BPS]);
+    let shares = event::events_by_type<DelayedCreated<ShareKey, u64>>();
+    let (_, _, zero_share, _) = shares[0].delayed_created_fields();
+    let (_, _, top_share, _) = shares[1].delayed_created_fields();
+    assert_eq!(vector[zero_share, top_share], vector[0, MAX_SHARE_BPS]);
 
     zero.destroy_cap();
     top.destroy_cap();
@@ -138,8 +143,9 @@ fun a_zero_recipient_precedes_a_share_above_the_maximum() {
 // --- Share ---
 
 #[test]
-/// A cut waits the full delay; until then the partner keeps earning its share.
-fun a_scheduled_share_takes_effect_exactly_after_the_delay() {
+/// A cut waits the full notice and then an explicit apply; until then the partner keeps
+/// earning its share. Proposal and application emit only the delayed events.
+fun a_scheduled_share_waits_for_explicit_application_after_the_notice() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
     fixture.set_time(PARTNER_CREATED_AT_MS + delay());
@@ -148,13 +154,21 @@ fun a_scheduled_share_takes_effect_exactly_after_the_delay() {
         let mut partner = fixture.take_partner();
         let scheduled_at = fixture.now();
         fixture.schedule_share(&mut partner, 1_000);
-        let (_, _, share, _) = fixture.last_update().partner_updated_fields();
-        assert_eq!(vector[share.value(&fixture.clock), share.scheduled()], vector[2_500, 1_000]);
-        assert_eq!(share.scheduled_at_ms(), scheduled_at + delay());
+        let (owner, _, proposed, proposed_delay_ms, ready_at_ms) = last_share_scheduled().delayed_scheduled_fields();
+        assert_eq!(owner, object::id(&partner));
+        assert_eq!(vector[proposed, proposed_delay_ms, ready_at_ms], vector[1_000, delay(), scheduled_at + delay()]);
         fixture.set_time(scheduled_at + delay() - 1);
         assert_eq!(fixture.share_in_force(&partner), 2_500);
         fixture.set_time(scheduled_at + delay());
+        assert_eq!(fixture.share_in_force(&partner), 2_500);
+        partner.apply_share(&fixture.clock);
         assert_eq!(fixture.share_in_force(&partner), 1_000);
+        let applied = event::events_by_type<DelayedApplied<ShareKey, u64>>();
+        assert_eq!(applied.length(), 1);
+        let (owner, _, previous, value, applied_delay_ms) = applied[0].delayed_applied_fields();
+        assert_eq!(owner, object::id(&partner));
+        assert_eq!(vector[previous, value, applied_delay_ms], vector[2_500, 1_000, delay()]);
+        assert_eq!(event::events_by_type<PartnerUpdated>().length(), 0);
         fixture.return_partner(partner);
     });
 
@@ -163,9 +177,9 @@ fun a_scheduled_share_takes_effect_exactly_after_the_delay() {
 }
 
 #[test]
-/// Rescheduling keeps the share in force and restarts the clock; nothing Blast
-/// schedules takes effect sooner than the delay after it was last scheduled.
-fun a_new_schedule_replaces_a_pending_one_and_restarts_the_delay() {
+/// A replacement keeps the share in force, cancels the pending proposal and restarts the
+/// full notice; nothing Blast proposes applies sooner than the notice after its last proposal.
+fun a_new_schedule_replaces_a_pending_one_and_restarts_the_notice() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
     fixture.set_time(PARTNER_CREATED_AT_MS + delay());
@@ -176,9 +190,16 @@ fun a_new_schedule_replaces_a_pending_one_and_restarts_the_delay() {
         fixture.advance(delay() - 1);
         let rescheduled_at = fixture.now();
         fixture.schedule_share(&mut partner, 5_000);
+        let cancelled = event::events_by_type<DelayedCancelled<ShareKey, u64>>();
+        assert_eq!(cancelled.length(), 1);
+        let (_, _, discarded, _, _) = cancelled[0].delayed_cancelled_fields();
+        assert_eq!(discarded, 0);
+        let (_, _, _, _, ready_at_ms) = last_share_scheduled().delayed_scheduled_fields();
+        assert_eq!(ready_at_ms, rescheduled_at + delay());
         fixture.set_time(rescheduled_at + delay() - 1);
         assert_eq!(fixture.share_in_force(&partner), 2_500);
         fixture.set_time(rescheduled_at + delay());
+        partner.apply_share(&fixture.clock);
         assert_eq!(fixture.share_in_force(&partner), 5_000);
         fixture.return_partner(partner);
     });
@@ -188,7 +209,27 @@ fun a_new_schedule_replaces_a_pending_one_and_restarts_the_delay() {
 }
 
 #[test]
-fun scheduling_the_share_in_force_cancels_a_pending_cut() {
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+/// The superseded proposal's ready time does not carry over to its replacement.
+fun a_replacement_cannot_apply_at_the_superseded_ready_time() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 0);
+        fixture.advance(1);
+        fixture.schedule_share(&mut partner, 5_000);
+        fixture.advance(delay() - 1);
+        partner.apply_share(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+fun cancelling_a_pending_cut_preserves_the_applied_share() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
     fixture.set_time(PARTNER_CREATED_AT_MS + delay());
@@ -196,7 +237,12 @@ fun scheduling_the_share_in_force_cancels_a_pending_cut() {
     fixture.next_tx!(ADMIN, |fixture| {
         let mut partner = fixture.take_partner();
         fixture.schedule_share(&mut partner, 0);
-        fixture.schedule_share(&mut partner, 2_500);
+        partner.cancel_share(&partner_admin());
+        let cancelled = event::events_by_type<DelayedCancelled<ShareKey, u64>>();
+        assert_eq!(cancelled.length(), 1);
+        let (owner, _, discarded, _, _) = cancelled[0].delayed_cancelled_fields();
+        assert_eq!(owner, object::id(&partner));
+        assert_eq!(discarded, 0);
         fixture.advance(10 * delay());
         assert_eq!(fixture.share_in_force(&partner), 2_500);
         fixture.return_partner(partner);
@@ -207,8 +253,59 @@ fun scheduling_the_share_in_force_cancels_a_pending_cut() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EUnchanged, location = blast_partners::blast_partners)]
-fun scheduling_the_pending_share_again_is_refused() {
+/// Cancellation works after readiness, and a later proposal waits the full fixed notice again.
+fun ready_share_cancellation_and_a_later_proposal_keep_the_full_notice() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.advance(2 * delay());
+        partner.cancel_share(&partner_admin());
+        assert_eq!(fixture.share_in_force(&partner), 2_500);
+        fixture.schedule_share(&mut partner, 3_000);
+        let (_, _, _, proposed_delay_ms, ready_at_ms) = last_share_scheduled().delayed_scheduled_fields();
+        assert_eq!(vector[proposed_delay_ms, ready_at_ms], vector[delay(), fixture.now() + delay()]);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+/// The partner itself, holding no role, applies a ready raise; the notice stays fixed.
+fun anyone_applies_a_ready_share_and_the_notice_stays_fixed() {
+    let mut fixture = start();
+    let cap = fixture.register(RECIPIENT, 2_500);
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 5_000);
+        fixture.return_partner(partner);
+    });
+    fixture.advance(delay());
+    fixture.next_tx!(PARTNER, |fixture| {
+        let mut partner = fixture.take_partner();
+        partner.apply_share(&fixture.clock);
+        assert_eq!(fixture.share_in_force(&partner), 5_000);
+        fixture.return_partner(partner);
+    });
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 6_000);
+        let (_, _, _, proposed_delay_ms, ready_at_ms) = last_share_scheduled().delayed_scheduled_fields();
+        assert_eq!(vector[proposed_delay_ms, ready_at_ms], vector[delay(), fixture.now() + delay()]);
+        fixture.return_partner(partner);
+    });
+
+    cap.destroy_cap();
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
+fun scheduling_the_applied_share_is_refused() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
 
@@ -219,6 +316,22 @@ fun scheduling_the_pending_share_again_is_refused() {
     });
 
     cap.destroy_cap();
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = partners::EUnchanged, location = blast_partners::blast_partners)]
+fun repeating_the_pending_share_is_refused() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.return_partner(partner);
+    });
+
     fixture.end();
 }
 
@@ -238,11 +351,110 @@ fun a_scheduled_share_one_above_the_maximum_is_refused() {
     fixture.end();
 }
 
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun share_application_refuses_before_the_notice() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.advance(delay() - 1);
+        partner.apply_share(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun share_application_refuses_without_a_proposal() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        partner.apply_share(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun share_application_refuses_twice() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.advance(delay());
+        partner.apply_share(&fixture.clock);
+        partner.apply_share(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun share_application_refuses_after_cancellation() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        partner.cancel_share(&partner_admin());
+        fixture.advance(delay());
+        partner.apply_share(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun share_cancellation_refuses_without_a_proposal() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        partner.cancel_share(&partner_admin());
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
+fun scheduling_rejects_an_unrepresentable_ready_time() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+    fixture.set_time(std::u64::max_value!() - delay() + 1);
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
 // --- Cap ---
 
 #[test]
-/// The old cap keeps working until the switch and not after; the new one the reverse.
-fun a_reissued_cap_goes_live_exactly_after_the_delay() {
+/// The old cap keeps working until the move is applied and not after; the new one the reverse.
+fun a_reissued_cap_goes_live_only_when_applied_after_the_notice() {
     let mut fixture = start();
     let old_cap = fixture.register(RECIPIENT, 2_500);
 
@@ -250,17 +462,25 @@ fun a_reissued_cap_goes_live_exactly_after_the_delay() {
         let mut partner = fixture.take_partner();
         let reissued_at = fixture.now();
         let new_cap = fixture.reissue_cap(&mut partner);
-        let (_, _, _, live_cap) = fixture.last_update().partner_updated_fields();
-        assert_eq!(
-            vector[live_cap.value(&fixture.clock), live_cap.scheduled()],
-            vector[object::id(&old_cap), object::id(&new_cap)]
-        );
-        assert_eq!(live_cap.scheduled_at_ms(), reissued_at + delay());
+        let scheduled = event::events_by_type<DelayedScheduled<CapKey, ID>>();
+        assert_eq!(scheduled.length(), 1);
+        let (owner, _, proposed, proposed_delay_ms, ready_at_ms) = scheduled[0].delayed_scheduled_fields();
+        assert_eq!(owner, object::id(&partner));
+        assert_eq!(proposed, object::id(&new_cap));
+        assert_eq!(vector[proposed_delay_ms, ready_at_ms], vector[delay(), reissued_at + delay()]);
         fixture.set_time(reissued_at + delay() - 1);
         fixture.set_recipient(&mut partner, &old_cap, NEW_RECIPIENT);
         fixture.set_time(reissued_at + delay());
+        let (_, _, still_live) = partner.terms_for_testing();
+        assert_eq!(still_live, object::id(&old_cap));
+        partner.apply_cap(&fixture.clock);
+        let applied = event::events_by_type<DelayedApplied<CapKey, ID>>();
+        assert_eq!(applied.length(), 1);
+        let (_, _, previous, value, applied_delay_ms) = applied[0].delayed_applied_fields();
+        assert_eq!(vector[previous, value], vector[object::id(&old_cap), object::id(&new_cap)]);
+        assert_eq!(applied_delay_ms, delay());
         fixture.set_recipient(&mut partner, &new_cap, RECIPIENT);
-        let (recipient, _, live_cap) = partner.terms_for_testing(&fixture.clock);
+        let (recipient, _, live_cap) = partner.terms_for_testing();
         assert_eq!(recipient, RECIPIENT);
         assert_eq!(live_cap, object::id(&new_cap));
         new_cap.destroy_cap();
@@ -273,7 +493,7 @@ fun a_reissued_cap_goes_live_exactly_after_the_delay() {
 
 #[test]
 #[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
-fun the_replaced_cap_is_refused_once_the_reissue_takes_effect() {
+fun the_replaced_cap_is_refused_once_the_reissue_is_applied() {
     let mut fixture = start();
     let old_cap = fixture.register(RECIPIENT, 2_500);
 
@@ -281,6 +501,7 @@ fun the_replaced_cap_is_refused_once_the_reissue_takes_effect() {
         let mut partner = fixture.take_partner();
         let new_cap = fixture.reissue_cap(&mut partner);
         fixture.advance(delay());
+        partner.apply_cap(&fixture.clock);
         fixture.set_recipient(&mut partner, &old_cap, NEW_RECIPIENT);
         new_cap.destroy_cap();
         fixture.return_partner(partner);
@@ -292,7 +513,7 @@ fun the_replaced_cap_is_refused_once_the_reissue_takes_effect() {
 
 #[test]
 #[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
-fun a_reissued_cap_is_refused_before_the_delay() {
+fun a_reissued_cap_is_refused_before_the_notice() {
     let mut fixture = start();
     let old_cap = fixture.register(RECIPIENT, 2_500);
 
@@ -311,6 +532,24 @@ fun a_reissued_cap_is_refused_before_the_delay() {
 
 #[test]
 #[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
+fun a_ready_cap_cannot_set_the_recipient_before_application() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        let new_cap = fixture.reissue_cap(&mut partner);
+        fixture.advance(2 * delay());
+        fixture.set_recipient(&mut partner, &new_cap, NEW_RECIPIENT);
+        new_cap.destroy_cap();
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
 /// A newer reissue supersedes a pending one, whose cap never goes live.
 fun a_superseded_reissue_never_goes_live() {
     let mut fixture = start();
@@ -321,6 +560,7 @@ fun a_superseded_reissue_never_goes_live() {
         let superseded = fixture.reissue_cap(&mut partner);
         let latest = fixture.reissue_cap(&mut partner);
         fixture.advance(10 * delay());
+        partner.apply_cap(&fixture.clock);
         fixture.set_recipient(&mut partner, &superseded, NEW_RECIPIENT);
         superseded.destroy_cap();
         latest.destroy_cap();
@@ -332,8 +572,8 @@ fun a_superseded_reissue_never_goes_live() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EUnchanged, location = blast_partners::blast_partners)]
-fun scheduling_the_pending_cap_again_is_refused() {
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
+fun scheduling_the_applied_cap_is_refused() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
 
@@ -348,17 +588,37 @@ fun scheduling_the_pending_cap_again_is_refused() {
 }
 
 #[test]
-/// Scheduling the cap in force cancels a pending move: the original cap stays live and the new one never does.
-fun scheduling_the_live_cap_cancels_a_pending_move() {
+#[expected_failure(abort_code = partners::EUnchanged, location = blast_partners::blast_partners)]
+fun repeating_the_pending_cap_is_refused() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+/// Cancellation preserves the original cap, including after readiness.
+fun cancelling_a_ready_move_preserves_the_live_cap() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
 
     fixture.next_tx!(ADMIN, |fixture| {
         let mut partner = fixture.take_partner();
         let moved_to = fixture.reissue_cap(&mut partner);
-        fixture.schedule_cap(&mut partner, object::id(&cap));
         fixture.advance(10 * delay());
-        let (_, _, live_cap) = partner.terms_for_testing(&fixture.clock);
+        partner.cancel_cap(&partner_admin());
+        let cancelled = event::events_by_type<DelayedCancelled<CapKey, ID>>();
+        assert_eq!(cancelled.length(), 1);
+        let (_, _, discarded, _, _) = cancelled[0].delayed_cancelled_fields();
+        assert_eq!(discarded, object::id(&moved_to));
+        let (_, _, live_cap) = partner.terms_for_testing();
         assert_eq!(live_cap, object::id(&cap));
         fixture.set_recipient(&mut partner, &cap, NEW_RECIPIENT);
         moved_to.destroy_cap();
@@ -370,15 +630,125 @@ fun scheduling_the_live_cap_cancels_a_pending_move() {
 }
 
 #[test]
+/// Share and cap proposals are independent: applying one leaves the other pending.
+fun share_and_cap_proposals_apply_independently() {
+    let mut fixture = start();
+    let old_cap = fixture.register(RECIPIENT, 2_500);
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        let new_cap = fixture.reissue_cap(&mut partner);
+        fixture.advance(delay());
+        partner.apply_share(&fixture.clock);
+        let (_, share, live_cap) = partner.terms_for_testing();
+        assert_eq!(share, 1_000);
+        assert_eq!(live_cap, object::id(&old_cap));
+        partner.apply_cap(&fixture.clock);
+        let (_, share, live_cap) = partner.terms_for_testing();
+        assert_eq!(share, 1_000);
+        assert_eq!(live_cap, object::id(&new_cap));
+        new_cap.destroy_cap();
+        fixture.return_partner(partner);
+    });
+
+    old_cap.destroy_cap();
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun cap_application_refuses_before_the_notice() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        fixture.advance(delay() - 1);
+        partner.apply_cap(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun cap_application_refuses_without_a_proposal() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        partner.apply_cap(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun cap_application_refuses_twice() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        fixture.advance(delay());
+        partner.apply_cap(&fixture.clock);
+        partner.apply_cap(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun cap_application_refuses_after_cancellation() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        partner.cancel_cap(&partner_admin());
+        fixture.advance(delay());
+        partner.apply_cap(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun cap_cancellation_refuses_without_a_proposal() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        partner.cancel_cap(&partner_admin());
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
 /// A partner without a live cap, destroyed or never minted, strands nothing: it
 /// is still paid at its recipient, and Blast moves it to a new cap, which goes
-/// live after the delay.
+/// live once applied after the notice.
 fun a_partner_without_a_live_cap_is_moved_to_a_new_one() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
-    let (destroyed_id, _, _, _) = fixture.last_update().partner_updated_fields();
+    let (destroyed_id, _) = fixture.last_update().partner_updated_fields();
     fixture.register_under_id(@0xCAFE.to_id(), RECIPIENT, 2_500);
-    let (never_minted_id, _, _, _) = fixture.last_update().partner_updated_fields();
+    let (never_minted_id, _) = fixture.last_update().partner_updated_fields();
 
     fixture.next_tx!(ADMIN, |fixture| {
         let mut destroyed = fixture.take_partner_by_id(destroyed_id);
@@ -389,10 +759,12 @@ fun a_partner_without_a_live_cap_is_moved_to_a_new_one() {
         fixture.schedule_cap(&mut destroyed, object::id(&new_cap));
         fixture.schedule_cap(&mut never_minted, object::id(&new_cap));
         fixture.advance(delay());
+        destroyed.apply_cap(&fixture.clock);
+        never_minted.apply_cap(&fixture.clock);
         fixture.set_recipient(&mut destroyed, &new_cap, NEW_RECIPIENT);
         fixture.set_recipient(&mut never_minted, &new_cap, NEW_RECIPIENT);
-        let (destroyed_recipient, _, destroyed_cap) = destroyed.terms_for_testing(&fixture.clock);
-        let (never_minted_recipient, _, never_minted_cap) = never_minted.terms_for_testing(&fixture.clock);
+        let (destroyed_recipient, _, destroyed_cap) = destroyed.terms_for_testing();
+        let (never_minted_recipient, _, never_minted_cap) = never_minted.terms_for_testing();
         assert_eq!(vector[destroyed_recipient, never_minted_recipient], vector[NEW_RECIPIENT, NEW_RECIPIENT]);
         assert_eq!(vector[destroyed_cap, never_minted_cap], vector[object::id(&new_cap), object::id(&new_cap)]);
         fee.destroy_for_testing();
@@ -412,19 +784,24 @@ fun a_partner_without_a_live_cap_is_moved_to_a_new_one() {
 fun one_cap_manages_every_partner_of_a_company() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 5_000);
-    let (boosts_id, _, _, _) = fixture.last_update().partner_updated_fields();
+    let (boosts_id, _) = fixture.last_update().partner_updated_fields();
     fixture.register_under(&cap, RECIPIENT, 800);
-    let (other_id, _, other_share, other_cap) = fixture.last_update().partner_updated_fields();
-    assert_eq!(other_share.scheduled(), 800);
-    assert_eq!(other_cap.value(&fixture.clock), object::id(&cap));
+    let (other_id, _) = fixture.last_update().partner_updated_fields();
+    let shares = event::events_by_type<DelayedCreated<ShareKey, u64>>();
+    let caps = event::events_by_type<DelayedCreated<CapKey, ID>>();
+    let (share_owner, _, other_share, _) = shares[1].delayed_created_fields();
+    let (cap_owner, _, other_cap, _) = caps[1].delayed_created_fields();
+    assert_eq!(vector[share_owner, cap_owner], vector[other_id, other_id]);
+    assert_eq!(other_share, 800);
+    assert_eq!(other_cap, object::id(&cap));
 
     fixture.next_tx!(PARTNER, |fixture| {
         let mut boosts = fixture.take_partner_by_id(boosts_id);
         let mut other = fixture.take_partner_by_id(other_id);
         fixture.set_recipient(&mut boosts, &cap, NEW_RECIPIENT);
         fixture.set_recipient(&mut other, &cap, NEW_RECIPIENT);
-        let (boosts_recipient, boosts_share, _) = boosts.terms_for_testing(&fixture.clock);
-        let (other_recipient, other_share, _) = other.terms_for_testing(&fixture.clock);
+        let (boosts_recipient, boosts_share, _) = boosts.terms_for_testing();
+        let (other_recipient, other_share, _) = other.terms_for_testing();
         assert_eq!(vector[boosts_recipient, other_recipient], vector[NEW_RECIPIENT, NEW_RECIPIENT]);
         assert_eq!(vector[boosts_share, other_share], vector[5_000, 800]);
         fixture.return_partner(boosts);
@@ -444,7 +821,7 @@ fun a_cap_minted_by_anyone_controls_nothing_until_a_partner_is_registered_under_
     fixture.next_tx!(PARTNER, |fixture| {
         let own_cap = partners::new_cap(fixture.ctx!());
         let partner = fixture.take_partner();
-        let (_, _, live_cap) = partner.terms_for_testing(&fixture.clock);
+        let (_, _, live_cap) = partner.terms_for_testing();
         assert!(live_cap != object::id(&own_cap));
         fixture.return_partner(partner);
         own_cap.destroy_cap();
@@ -457,16 +834,23 @@ fun a_cap_minted_by_anyone_controls_nothing_until_a_partner_is_registered_under_
 // --- Recipient ---
 
 #[test]
+/// The recipient changes in the same transaction, with no Clock, even while a cap move is pending.
 fun the_live_cap_sets_the_recipient_at_once() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
 
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        fixture.return_partner(partner);
+    });
     fixture.next_tx!(PARTNER, |fixture| {
         let mut partner = fixture.take_partner();
         fixture.set_recipient(&mut partner, &cap, NEW_RECIPIENT);
-        let (_, recipient, _, _) = fixture.last_update().partner_updated_fields();
+        let (partner_id, recipient) = fixture.last_update().partner_updated_fields();
+        assert_eq!(partner_id, object::id(&partner));
         assert_eq!(recipient, NEW_RECIPIENT);
-        let (recipient, _, _) = partner.terms_for_testing(&fixture.clock);
+        let (recipient, _, _) = partner.terms_for_testing();
         assert_eq!(recipient, NEW_RECIPIENT);
         fixture.return_partner(partner);
     });
@@ -480,7 +864,7 @@ fun the_live_cap_sets_the_recipient_at_once() {
 fun another_partners_cap_precedes_an_invalid_recipient() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
-    let (partner_id, _, _, _) = fixture.last_update().partner_updated_fields();
+    let (partner_id, _) = fixture.last_update().partner_updated_fields();
     let other_cap = fixture.register(RECIPIENT, 2_500);
 
     fixture.next_tx!(PARTNER, |fixture| {
@@ -557,8 +941,8 @@ fun payment_transfers_one_coin_to_the_recipient_and_skips_dust() {
 }
 
 #[test]
-/// The initial share applies at registration; replacements wait the full delay.
-fun a_partner_is_paid_its_share_from_registration_and_a_new_one_only_once_in_force() {
+/// The initial share applies at registration; a replacement pays only once applied, even when ready.
+fun a_partner_is_paid_its_share_from_registration_and_a_new_one_only_once_applied() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 5_000);
 
@@ -570,8 +954,10 @@ fun a_partner_is_paid_its_share_from_registration_and_a_new_one_only_once_in_for
         fixture.advance(delay() - 1);
         assert_eq!(fixture.pay_fee(&partner, &mut fee), 250);
         fixture.advance(1);
-        assert_eq!(fixture.pay_fee(&partner, &mut fee), 200);
-        assert_eq!(fee.value(), 50);
+        assert_eq!(fixture.pay_fee(&partner, &mut fee), 125);
+        partner.apply_share(&fixture.clock);
+        assert_eq!(fixture.pay_fee(&partner, &mut fee), 100);
+        assert_eq!(fee.value(), 25);
         fee.destroy_for_testing();
         fixture.return_partner(partner);
     });
@@ -586,7 +972,6 @@ fun a_partner_is_paid_its_share_from_registration_and_a_new_one_only_once_in_for
 /// payment emits an event, so the sweep stays under the per-transaction event limit.)
 fun payment_matches_the_rounded_down_reference() {
     let mut ctx = tx_context::dummy();
-    let clock = clock::create_for_testing(&mut ctx);
     let shares = vector[0, 1, 3_333, 5_000, MAX_SHARE_BPS - 1, MAX_SHARE_BPS];
 
     shares.do_ref!(|share_bps| {
@@ -594,32 +979,29 @@ fun payment_matches_the_rounded_down_reference() {
         201u64.do!(|amount| {
             let mut fee = balance::create_for_testing<SUI>(amount);
             let expected = ((amount as u128) * (*share_bps as u128) / (BASIS_POINTS as u128)) as u64;
-            assert_eq!(partner.pay(&mut fee, &clock, &mut ctx), expected);
+            assert_eq!(partner.pay(&mut fee, &mut ctx), expected);
             assert_eq!(fee.value(), amount - expected);
             fee.destroy_for_testing();
         });
         destroy(partner);
     });
 
-    clock.destroy_for_testing();
     destroy(ctx);
 }
 
 #[test]
 fun payment_of_the_largest_fee_at_the_maximum_share_does_not_overflow() {
     let mut ctx = tx_context::dummy();
-    let clock = clock::create_for_testing(&mut ctx);
     let partner = partners::new_for_testing(RECIPIENT, MAX_SHARE_BPS, &mut ctx);
     let max = std::u64::max_value!();
     let mut fee = balance::create_for_testing<SUI>(max);
 
-    let paid = partner.pay(&mut fee, &clock, &mut ctx);
+    let paid = partner.pay(&mut fee, &mut ctx);
 
     assert_eq!(paid, ((max as u128) * (MAX_SHARE_BPS as u128) / (BASIS_POINTS as u128)) as u64);
     assert_eq!(fee.value(), max - paid);
     fee.destroy_for_testing();
     destroy(partner);
-    clock.destroy_for_testing();
     destroy(ctx);
 }
 
@@ -627,13 +1009,12 @@ fun payment_of_the_largest_fee_at_the_maximum_share_does_not_overflow() {
 /// Every payment emits what the partner received; a payment of nothing emits nothing.
 fun every_payment_emits_what_the_partner_received() {
     let mut ctx = tx_context::dummy();
-    let clock = clock::create_for_testing(&mut ctx);
     let partner = partners::new_for_testing(RECIPIENT, 5_000, &mut ctx);
     let mut fee = balance::create_for_testing<SUI>(1_001);
 
-    assert_eq!(partner.pay(&mut fee, &clock, &mut ctx), 500);
+    assert_eq!(partner.pay(&mut fee, &mut ctx), 500);
     let mut dust = balance::create_for_testing<SUI>(1);
-    assert_eq!(partner.pay(&mut dust, &clock, &mut ctx), 0);
+    assert_eq!(partner.pay(&mut dust, &mut ctx), 0);
 
     let payments = event::events_by_type<PartnerPaid<SUI>>();
     assert_eq!(payments.length(), 1);
@@ -643,7 +1024,6 @@ fun every_payment_emits_what_the_partner_received() {
     fee.destroy_for_testing();
     dust.destroy_for_testing();
     destroy(partner);
-    clock.destroy_for_testing();
     destroy(ctx);
 }
 
@@ -651,14 +1031,13 @@ fun every_payment_emits_what_the_partner_received() {
 /// Each deal under one cap is paid and reported on its own, at its own share.
 fun each_deal_is_paid_and_reported_at_its_own_share() {
     let mut ctx = tx_context::dummy();
-    let clock = clock::create_for_testing(&mut ctx);
     let boosts = partners::new_for_testing(RECIPIENT, 5_000, &mut ctx);
     let other = partners::new_for_testing(RECIPIENT, 800, &mut ctx);
     let mut boosts_fee = balance::create_for_testing<SUI>(1_000);
     let mut other_fee = balance::create_for_testing<SUI>(1_000);
 
-    assert_eq!(boosts.pay(&mut boosts_fee, &clock, &mut ctx), 500);
-    assert_eq!(other.pay(&mut other_fee, &clock, &mut ctx), 80);
+    assert_eq!(boosts.pay(&mut boosts_fee, &mut ctx), 500);
+    assert_eq!(other.pay(&mut other_fee, &mut ctx), 80);
 
     let payments = event::events_by_type<PartnerPaid<SUI>>();
     let (first_id, first_amount) = payments[0].partner_paid_fields();
@@ -669,7 +1048,6 @@ fun each_deal_is_paid_and_reported_at_its_own_share() {
     other_fee.destroy_for_testing();
     destroy(boosts);
     destroy(other);
-    clock.destroy_for_testing();
     destroy(ctx);
 }
 
@@ -702,7 +1080,7 @@ macro fun ctx($self: &mut Fixture): &mut TxContext {
 }
 
 fun pay_fee(self: &mut Fixture, partner: &Partner, fee: &mut balance::Balance<SUI>): u64 {
-    partner.pay(fee, &self.clock, self.scenario.ctx())
+    partner.pay(fee, self.scenario.ctx())
 }
 
 fun take_payment(self: &Fixture): sui::coin::Coin<SUI> {
@@ -763,18 +1141,23 @@ fun schedule_cap(self: &Fixture, partner: &mut Partner, cap_id: ID) {
     partner.schedule_cap(&witness, cap_id, &self.clock);
 }
 
-fun set_recipient(self: &Fixture, partner: &mut Partner, cap: &PartnerCap, recipient: address) {
-    partner.set_recipient(cap, recipient, &self.clock);
+fun set_recipient(_self: &Fixture, partner: &mut Partner, cap: &PartnerCap, recipient: address) {
+    partner.set_recipient(cap, recipient);
 }
 
-fun share_in_force(self: &Fixture, partner: &Partner): u64 {
-    let (_, share, _) = partner.terms_for_testing(&self.clock);
+fun share_in_force(_self: &Fixture, partner: &Partner): u64 {
+    let (_, share, _) = partner.terms_for_testing();
     share
 }
 
 fun last_update(_self: &Fixture): PartnerUpdated {
     let updates = event::events_by_type<PartnerUpdated>();
     updates[updates.length() - 1]
+}
+
+fun last_share_scheduled(): DelayedScheduled<ShareKey, u64> {
+    let scheduled = event::events_by_type<DelayedScheduled<ShareKey, u64>>();
+    scheduled[scheduled.length() - 1]
 }
 
 fun take_partner(self: &Fixture): Partner {
@@ -796,9 +1179,21 @@ fun partner_admin(): AdminWitness<PartnerAdmin> {
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminWitness};
+use blast_admin::{
+    blast_acl::{Self, AdminWitness},
+    delayed::{DelayedApplied, DelayedCancelled, DelayedCreated, DelayedScheduled}
+};
 
-use blast_partners::blast_partners::{Self as partners, Partner, PartnerAdmin, PartnerCap, PartnerPaid, PartnerUpdated};
+use blast_partners::blast_partners::{
+    Self as partners,
+    CapKey,
+    Partner,
+    PartnerAdmin,
+    PartnerCap,
+    PartnerPaid,
+    PartnerUpdated,
+    ShareKey
+};
 
 use std::unit_test::{assert_eq, destroy};
 

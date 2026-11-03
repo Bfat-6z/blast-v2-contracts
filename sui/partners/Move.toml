@@ -6,7 +6,6 @@ authors = ["Jose Cerqueira (jose@interestprotocol.com)"]
 
 [dependencies]
 blast_admin = { local = "../admin" }
-blast_fun_timelock = { local = "../timelock" }
 
 [addresses]
 blast_partners = "0x0"

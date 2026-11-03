@@ -3275,7 +3275,6 @@ fun claim_protocol_fees_with_partner_pays_the_partner_its_share() {
             &f.package_version,
             &f.runtime_config,
             &partner,
-            &f.clock,
             f.ctx!(),
         );
 
@@ -3364,7 +3363,6 @@ fun claim_protocol_fees_with_partner_includes_migration_fees() {
             &f.package_version,
             &f.runtime_config,
             &partner,
-            &f.clock,
             f.ctx!(),
         );
 
@@ -3425,7 +3423,6 @@ fun claim_protocol_fees_with_a_zero_share_partner_pays_nothing() {
             &f.package_version,
             &f.runtime_config,
             &partner,
-            &f.clock,
             f.ctx!(),
         );
 
@@ -3493,7 +3490,6 @@ fun claim_protocol_fees_with_partner_checks_the_version_before_the_partner() {
             &f.package_version,
             &f.runtime_config,
             &other,
-            &f.clock,
             f.ctx!(),
         );
 
@@ -3520,7 +3516,6 @@ fun claim_protocol_fees_with_partner_checks_the_partner_before_the_fees() {
             &f.package_version,
             &f.runtime_config,
             &other,
-            &f.clock,
             f.ctx!(),
         );
 
@@ -3567,7 +3562,6 @@ fun claim_protocol_fees_with_partner_rejects_another_partner() {
             &f.package_version,
             &f.runtime_config,
             &other,
-            &f.clock,
             f.ctx!(),
         );
 
@@ -3592,7 +3586,6 @@ fun claim_protocol_fees_with_partner_rejects_a_launch_without_one() {
             &f.package_version,
             &f.runtime_config,
             &partner,
-            &f.clock,
             f.ctx!(),
         );
 

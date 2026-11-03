@@ -171,9 +171,12 @@ immediately. Administrator registration, role assignment and AdminCap transfer r
 immediate. The exception does not extend to creator-cap reassignment, fees, treasury or code.
 
 ACL administrators move from an inline map to Table storage; the total administrator cap
-is removed, while the per-administrator role bound remains. Root rotation and later partner
-changes retain their independent seven-day timelocks. Initial partner registration applies
-the agreed share immediately.
+is removed, while the per-administrator role bound remains. Root rotation retains its
+independent seven-day timelock. (Amended 2026-11-03.) Later partner share and cap changes use
+keyed `Delayed` values with a fixed seven-day notice that `blast_partners` never changes:
+PartnerAdmin schedules and cancels, even after readiness, and anyone applies; payouts read the
+applied share without a Clock (ADR 0095). Initial partner registration applies the agreed
+share immediately.
 
 ### Publication and release
 

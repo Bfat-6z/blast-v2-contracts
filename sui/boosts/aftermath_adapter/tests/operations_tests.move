@@ -2027,12 +2027,11 @@ fun a_partner_is_paid_only_out_of_the_admin_fee_its_operation_retained() {
     let mut fixture = start();
     let mut vault = issue_and_activate(&mut fixture, initial_checkpoint());
     let partner = partners::new_for_testing(PARTNER_PAYOUT, 5_000, fixture.ctx!());
-    let clock = fixture.reference_clock();
     vault.retain_admin_cash(sui::balance::create_for_testing<Collateral>(100));
     vault.retain_admin_cash(sui::balance::create_for_testing<Collateral>(30));
     let (reserve, supply) = (vault.state().maintenance_reserve(), vault.total_share_supply());
 
-    vault.pay_partner_for_testing(&partner, 100, &clock, fixture.ctx!());
+    vault.pay_partner_for_testing(&partner, 100, fixture.ctx!());
 
     assert_eq!(vault.admin_cash_balance<_, Collateral>(), 115);
     assert_eq!(vector[vault.state().maintenance_reserve(), vault.total_share_supply()], vector[reserve, supply]);
@@ -2047,7 +2046,6 @@ fun a_partner_is_paid_only_out_of_the_admin_fee_its_operation_retained() {
     assert_eq!(paid_partner, object::id(&partner));
     assert_eq!(amount, 15);
     destroy(partner);
-    clock.destroy_for_testing();
     destroy(vault);
     fixture.end();
 }
@@ -2059,10 +2057,9 @@ fun a_zero_admin_fee_pays_nothing_but_is_still_attributed() {
     let mut fixture = start();
     let mut vault = issue_and_activate(&mut fixture, initial_checkpoint());
     let partner = partners::new_for_testing(PARTNER_PAYOUT, 5_000, fixture.ctx!());
-    let clock = fixture.reference_clock();
     vault.retain_admin_cash(sui::balance::create_for_testing<Collateral>(40));
 
-    vault.pay_partner_for_testing(&partner, 40, &clock, fixture.ctx!());
+    vault.pay_partner_for_testing(&partner, 40, fixture.ctx!());
 
     let (_, partner_id, admin_fee, partner_fee) =
         events::collect_one<events::PartnerFeePaid<Product>>(0).partner_fee_paid_fields();
@@ -2071,7 +2068,6 @@ fun a_zero_admin_fee_pays_nothing_but_is_still_attributed() {
     assert_eq!(vault.admin_cash_balance<_, Collateral>(), 40);
     assert_eq!(sui::event::events_by_type<PartnerPaid<Collateral>>().length(), 0);
     destroy(partner);
-    clock.destroy_for_testing();
     destroy(vault);
     fixture.end();
 }
@@ -2082,42 +2078,43 @@ fun the_maximum_partner_share_leaves_blast_a_fifth_of_the_admin_fee() {
     let mut fixture = start();
     let mut vault = issue_and_activate(&mut fixture, initial_checkpoint());
     let partner = partners::new_for_testing(PARTNER_PAYOUT, 8_000, fixture.ctx!());
-    let clock = fixture.reference_clock();
     vault.retain_admin_cash(sui::balance::create_for_testing<Collateral>(30));
 
-    vault.pay_partner_for_testing(&partner, 0, &clock, fixture.ctx!());
+    vault.pay_partner_for_testing(&partner, 0, fixture.ctx!());
 
     let (_, _, _, partner_fee) = events::collect_one<events::PartnerFeePaid<Product>>(0).partner_fee_paid_fields();
     assert_eq!(vector[partner_fee, vault.admin_cash_balance<_, Collateral>()], vector[24, 6]);
     destroy(partner);
-    clock.destroy_for_testing();
     destroy(vault);
     fixture.end();
 }
 
 #[test]
-/// The share is read at the operation's own Clock: a share that switches one
-/// millisecond later pays nothing but the operation is still attributed to the
-/// partner; one that switches at the operation's time pays in full.
-fun a_partner_share_takes_effect_exactly_at_the_operations_clock() {
+/// A payment reads the applied share and no Clock: a proposal whose notice has
+/// elapsed pays nothing until it is applied, while the operation is still
+/// attributed to the partner; once applied it pays in full.
+fun a_partner_share_takes_effect_only_once_applied() {
     let mut fixture = start();
     let mut vault = issue_and_activate(&mut fixture, initial_checkpoint());
-    let pending = partners::new_scheduled_for_testing(PARTNER_PAYOUT, 0, 5_000, REFERENCE_AT_MS + 1, fixture.ctx!());
-    let switched = partners::new_scheduled_for_testing(PARTNER_PAYOUT, 0, 5_000, REFERENCE_AT_MS, fixture.ctx!());
-    let clock = fixture.reference_clock();
+    let mut clock = fixture.reference_clock();
+    let ready = partners::new_scheduled_for_testing(PARTNER_PAYOUT, 0, 5_000, &clock, fixture.ctx!());
+    let mut applied = partners::new_scheduled_for_testing(PARTNER_PAYOUT, 0, 5_000, &clock, fixture.ctx!());
+    clock.set_for_testing(REFERENCE_AT_MS + partners::delay_ms());
+    applied.apply_share(&clock);
     vault.retain_admin_cash(sui::balance::create_for_testing<Collateral>(60));
 
-    vault.pay_partner_for_testing(&pending, 30, &clock, fixture.ctx!());
-    vault.pay_partner_for_testing(&switched, 30, &clock, fixture.ctx!());
+    vault.pay_partner_for_testing(&ready, 30, fixture.ctx!());
+    vault.pay_partner_for_testing(&applied, 30, fixture.ctx!());
 
     let fees = events::collect<events::PartnerFeePaid<Product>>();
-    let (_, _, _, pending_fee) = fees[0].partner_fee_paid_fields();
-    let (_, _, _, switched_fee) = fees[1].partner_fee_paid_fields();
-    assert_eq!(vector[pending_fee, switched_fee], vector[0, 15]);
+    let (_, ready_partner, _, ready_fee) = fees[0].partner_fee_paid_fields();
+    let (_, applied_partner, _, applied_fee) = fees[1].partner_fee_paid_fields();
+    assert_eq!(vector[ready_partner, applied_partner], vector[object::id(&ready), object::id(&applied)]);
+    assert_eq!(vector[ready_fee, applied_fee], vector[0, 15]);
     assert_eq!(vault.admin_cash_balance<_, Collateral>(), 45);
     assert_eq!(sui::event::events_by_type<PartnerPaid<Collateral>>().length(), 1);
-    destroy(pending);
-    destroy(switched);
+    destroy(ready);
+    destroy(applied);
     clock.destroy_for_testing();
     destroy(vault);
     fixture.end();
@@ -6417,7 +6414,7 @@ fun replay_active_economics<Tag>(fixture: &mut Fixture, vault: &mut Vault<Tag, C
     );
     replay.replay_mint(events::collect_one<events::Minted<Tag>>(0));
     replay.assert_replay(vault);
-    vault.pay_partner_for_testing(&partner, admin_cash_before, &clock, fixture.ctx!());
+    vault.pay_partner_for_testing(&partner, admin_cash_before, fixture.ctx!());
     replay.replay_partner_fee_paid(events::collect<events::PartnerFeePaid<Tag>>()[0]);
     replay.assert_replay(vault);
 
@@ -6453,7 +6450,7 @@ fun replay_active_economics<Tag>(fixture: &mut Fixture, vault: &mut Vault<Tag, C
     );
     replay.replay_redemption(events::collect_one<events::Redeemed<Tag>>(0));
     replay.assert_replay(vault);
-    vault.pay_partner_for_testing(&partner, admin_cash_before, &clock, fixture.ctx!());
+    vault.pay_partner_for_testing(&partner, admin_cash_before, fixture.ctx!());
     replay.replay_partner_fee_paid(events::collect<events::PartnerFeePaid<Tag>>()[1]);
     replay.assert_replay(vault);
     sui::transfer::public_transfer(cash, ADMIN);

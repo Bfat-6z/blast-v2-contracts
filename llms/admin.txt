@@ -44,7 +44,7 @@ Each package and what it depends on:
 ```text
 blast_fun_migrators          -> blast_fun, blast_admin, Cetus, Bluefin
 blast_fun                    -> blast_partners, blast_admin
-blast_partners               -> blast_admin, blast_fun_timelock
+blast_partners               -> blast_admin
 blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
 blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
@@ -58,9 +58,8 @@ composes with it inside one PTB. Presale uses typed roles from the shared
 `blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
 Use the presale guide for presale calls.
 
-`blast_fun_timelock` (used only by `blast_partners`) and `blast_fun_vesting` live
-in this repository at `sui/timelock` and `sui/vesting`; both are immutable on
-mainnet. The standalone
+`blast_fun_vesting` (used by `blast_presale`) lives in this repository at
+`sui/vesting` and is immutable on mainnet. The standalone
 OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values
@@ -406,8 +405,8 @@ and have no custody at all.
 
 The delayed modules are a timelock in the Compound/OpenZeppelin sense: schedule,
 wait the applied notice, then apply; cancellable until applied. They are unrelated
-to the blast_fun_timelock package, whose values switch by themselves (partners
-still uses it). Each module owns one type; consumers store four:
+to the retired blast_fun_timelock package, whose values switch by themselves; no Blast
+package depends on it. Each module owns one type; consumers store four:
 
 | Type | Holds | Used for |
 | --- | --- | --- |

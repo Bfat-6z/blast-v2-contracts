@@ -36,7 +36,7 @@ jobs:
           MOVE_PACKAGE: ${{ matrix.package }}
         run: bash scripts/test_admin_delay.sh "$MOVE_PACKAGE"
       - name: Check administration boundaries
-        if: contains(fromJSON('["admin", "launchpad", "presale", "migrators"]'), matrix.package)
+        if: contains(fromJSON('["admin", "partners", "launchpad", "presale", "migrators"]'), matrix.package)
         env:
           MOVE_PACKAGE: ${{ matrix.package }}
         run: bash scripts/test_admin_delay.sh --boundaries-only "$MOVE_PACKAGE"
