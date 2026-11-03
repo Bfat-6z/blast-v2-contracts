@@ -429,4 +429,4 @@ generic positional Blake2b-256 module verifies eligibility and rewards. The
 | Ref | Source |
 | --- | --- |
 | S1 | [Sui framework at `06734f6ff0af45d8632a14a4dc4b100197f6b1a2`](https://github.com/MystenLabs/sui/tree/06734f6ff0af45d8632a14a4dc4b100197f6b1a2/crates/sui-framework/packages/sui-framework) |
-| S2 | [`blast_fun_vesting` at util-contracts `63b6cf86c0e1a74f699610fe182b1de8d8789a14`](https://github.com/interest-protocol/blast-util-contracts/tree/63b6cf86c0e1a74f699610fe182b1de8d8789a14/sui/vesting), published immutable on mainnet at `0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c` |
+| S2 | [`blast_fun_vesting` at util-contracts `63b6cf86c0e1a74f699610fe182b1de8d8789a14`](https://github.com/interest-protocol/blast-v2-contracts/tree/63b6cf86c0e1a74f699610fe182b1de8d8789a14/sui/vesting), published immutable on mainnet at `0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c` |

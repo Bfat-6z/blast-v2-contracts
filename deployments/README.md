@@ -88,3 +88,10 @@ check; verify intended release, dependencies and exits before burning the cap.
 It checks a version match only and does not prove that no upgrade is pending or
 that the latest installed code is correct. No later repair is possible once the
 cap is destroyed.
+
+## Imported utility records
+
+The September 2026 OTC, vesting, and timelock records retain their original
+repository URLs and commit IDs as historical provenance. Their full Git history
+is imported here; see [utility verification](../docs/utilities.md). Consolidation
+does not publish, upgrade, or replace an on-chain package.

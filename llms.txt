@@ -32,6 +32,8 @@ Rules that hold on every branch:
 - [Domain language](CONTEXT.md): launcher, creator recipient, Blast account, and claimant.
 - Stating a guarantee or trust assumption to a user: take the custody, upgrade, and authority wording from the package README and [architecture](docs/architecture.md#upgrade-posture). Describe migrators-held LP as held by an upgradeable package with no withdrawal path, never as permanently locked ([release verification](docs/testing.md)).
 
+- [Utility contracts and SDK](docs/utilities.md): immutable OTC, vesting, and timelock packages, their mainnet provenance, and the utility TypeScript SDK.
+
 ## Packages
 
 Each line gives the directory, the on-chain package name, its boundary, and where to read next.
@@ -54,7 +56,6 @@ Outside the product surface: `scratch-sui/` (parked native DEX), every `interfac
 
 ## External dependencies
 
-- [blast-util-contracts](https://github.com/interest-protocol/blast-util-contracts): public, immutable `blast_fun_timelock` (the fixed seven-day delay behind admin and partner changes) and `blast_fun_vesting` (presale vesting schedules), pinned by commit in each `Move.toml`.
 - [Blast SDK](https://github.com/interest-protocol/blast-v2-sdk): mirrors this repository's ABIs; after an ABI change here, its fixtures need regenerating.
 
 ## Optional

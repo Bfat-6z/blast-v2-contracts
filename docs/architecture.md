@@ -361,3 +361,11 @@ owns policy admission. Only increasing plans require opening margin, both
 before execution and after fills. Donations become allocated position cash.
 Initial-margin settings must satisfy the live venue floor and core's conditional
 conservative cushion; later recovery is never gated by that issuance budget.
+
+## Utility source ownership
+
+OTC, vesting, and timelock remain independently published immutable packages,
+maintained in this repository with their SDK and release records. Internal
+consumers use local package dependencies. Repository consolidation changes no
+on-chain ownership or ABI; [ADR 0135](decisions/0135-utility-contracts-consolidation.md)
+records the history and license boundary.

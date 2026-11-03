@@ -14,6 +14,12 @@ SECTIONS = [
 TRAILING = ["Constants", "Package Constants", "Errors"]
 # A module may instead end with its events, constants and errors, just before Imports.
 TAIL_SECTIONS = [name for name in SECTIONS if name not in TRAILING + ["Imports"]] + ["Events"] + TRAILING + ["Imports"]
+# Published utilities retain their pre-consolidation section order: moving lines
+# changes their source-position abort identities. All other checks still apply.
+UTILITY_SECTIONS = [
+    "Constants", "Public Types", "Public Functions", "Private Functions",
+    "Test-Only Functions", "Events", "Errors", "Imports",
+]
 ERROR_NAME = r"E[A-Z](?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]*"
 
 
@@ -144,7 +150,11 @@ def check(path):
     )
     # A module with an Events section keeps every struct it emits there.
     events = set(re.findall(r"event::emit\(\s*(\w+)", mask(source))) if "Events" in names else set()
-    if not (in_order(SECTIONS) or in_order(TAIL_SECTIONS)):
+    utility_layout = any(
+        path.resolve().is_relative_to(ROOT / "sui" / package)
+        for package in ("otc", "vesting", "timelock")
+    ) and in_order(UTILITY_SECTIONS)
+    if not (in_order(SECTIONS) or in_order(TAIL_SECTIONS) or utility_layout):
         raise ValueError("sections must occur once, in the order in AGENTS.md")
     previous_kind = None
     closed_constant_sections = set()

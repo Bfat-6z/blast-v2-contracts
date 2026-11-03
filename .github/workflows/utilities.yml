@@ -1,0 +1,45 @@
+name: Immutable utilities
+
+on:
+  push:
+    branches: [main]
+    paths: ['sui/otc/**', 'sui/vesting/**', 'sui/timelock/**', 'sdk/**', '.github/workflows/utilities.yml']
+  pull_request:
+    paths: ['sui/otc/**', 'sui/vesting/**', 'sui/timelock/**', 'sdk/**', '.github/workflows/utilities.yml']
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUI_RELEASE: mainnet-v1.77.2
+      CARGO_BUILD_JOBS: 1
+      RAYON_NUM_THREADS: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: sdk/package-lock.json
+      - name: Install pinned Sui CLI
+        run: |
+          curl -fsSL -o sui.tgz \
+            "https://github.com/MystenLabs/sui/releases/download/${SUI_RELEASE}/sui-${SUI_RELEASE}-ubuntu-x86_64.tgz"
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf sui.tgz -C "$HOME/.local/bin" ./sui
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Test immutable packages
+        run: |
+          for package in otc vesting timelock; do
+            sui move test --path "sui/$package" --threads 1
+          done
+      - name: Check utility SDK
+        working-directory: sdk
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check:abi
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          node --test --test-concurrency=1 test/*.test.ts

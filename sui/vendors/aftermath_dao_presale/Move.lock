@@ -203,13 +203,13 @@ manifest_digest = "B9F2C2ED0FEFF5F6EF86284967762B570C01FC9B641B18F64A0663CD534F5
 deps = { AftermathAmm = "AftermathAmm", AftermathDaoFeePools = "AftermathDaoFeePools", IntegerLibrary = "IntegerLibrary", IntegerMate = "IntegerMate", Sui = "Sui", blast_presale = "blast_presale" }
 
 [pinned.mainnet.blast_fun_timelock]
-source = { git = "https://github.com/interest-protocol/blast-util-contracts.git", subdir = "sui/timelock", rev = "63b6cf86c0e1a74f699610fe182b1de8d8789a14" }
+source = { local = "../../timelock" }
 use_environment = "mainnet"
 manifest_digest = "E41BBD67BE8940D26C79D78B028477EF5B33BA217A1282C78ACB344CF8A5ECF6"
 deps = { std = "MoveStdlib", sui = "Sui" }
 
 [pinned.mainnet.blast_fun_vesting]
-source = { git = "https://github.com/interest-protocol/blast-util-contracts.git", subdir = "sui/vesting", rev = "63b6cf86c0e1a74f699610fe182b1de8d8789a14" }
+source = { local = "../../vesting" }
 use_environment = "mainnet"
 manifest_digest = "E41BBD67BE8940D26C79D78B028477EF5B33BA217A1282C78ACB344CF8A5ECF6"
 deps = { std = "MoveStdlib", sui = "Sui" }
@@ -217,11 +217,11 @@ deps = { std = "MoveStdlib", sui = "Sui" }
 [pinned.mainnet.blast_partners]
 source = { local = "../../partners" }
 use_environment = "mainnet"
-manifest_digest = "D5CCB833332CD32F07926CDFF448E853BA674CB7110877E91BA125049FDB2026"
+manifest_digest = "E504FEA4AFDDCEE08FFE58C0873A6C60994787ADAAE5DAA71F110E2368012D75"
 deps = { blast_admin = "blast_admin", blast_fun_timelock = "blast_fun_timelock", std = "MoveStdlib", sui = "Sui" }
 
 [pinned.mainnet.blast_presale]
 source = { local = "../../presale" }
 use_environment = "mainnet"
-manifest_digest = "4D740C0D673E0F68B5504EE723086471CC968E1446AE5C162A3A4B3A7451A06B"
+manifest_digest = "92E414DA3C000892F1BFF641A1C575855EF5E561023DCC3396902950E1F6949D"
 deps = { AftermathAmm = "AftermathAmm_1", AftermathDaoFeePools = "AftermathDaoFeePools_1", BluefinSpot = "BluefinSpot", CetusClmm = "CetusClmm", CetusLpBurn = "CetusLpBurn", IntegerLibrary = "IntegerLibrary", IntegerMate = "IntegerMate", Sui = "Sui", blast_admin = "blast_admin", blast_fun_vesting = "blast_fun_vesting", blast_partners = "blast_partners" }

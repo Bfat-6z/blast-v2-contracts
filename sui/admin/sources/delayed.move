@@ -4,8 +4,8 @@
 /// Settings, one-shot actions and allowlists that change only after their applied notice.
 ///
 /// A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then
-/// apply; cancellable until applied. It is unrelated to the retired timelock package,
-/// whose values switched by themselves at a deadline.
+/// apply; cancellable until applied. It is unrelated to the immutable timelock package,
+/// whose values switch by themselves at a deadline.
 ///
 /// Every value carries an owner-defined key `K` and the ID of the object that stores it.
 /// Owners use a struct without a public constructor as `K`, so only their module can pack

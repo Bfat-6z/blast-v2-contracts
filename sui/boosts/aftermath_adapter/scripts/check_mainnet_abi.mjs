@@ -14,8 +14,6 @@ const AFTERMATH_GIT = 'https://github.com/AftermathFinance/move-interfaces.git';
 const AFTERMATH_REV = 'f62e74aa862ef65b8950a70d83aac8cb71c19837';
 const SUI_GIT = 'https://github.com/MystenLabs/sui.git';
 const SUI_REV = '06734f6ff0af45d8632a14a4dc4b100197f6b1a2';
-const UTIL_GIT = 'https://github.com/interest-protocol/blast-util-contracts.git';
-const TIMELOCK_REV = '63b6cf86c0e1a74f699610fe182b1de8d8789a14';
 const STD_ADDRESS = `0x${'0'.repeat(63)}1`;
 const SUI_ADDRESS = `0x${'0'.repeat(63)}2`;
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -182,9 +180,8 @@ const LOCK_SOURCES = {
     blast_boosts_aftermath: { root: true },
     blast_boosts_core: DIRECT_DEPENDENCIES.blast_boosts_core,
     // The immutable shared partner-code package is the same kind of inward-only
-    // edge. The timelock it and the ACL's transfer delay store comes from the public
-    // util packages (ADRs 0095 and 0097).
-    blast_fun_timelock: { git: UTIL_GIT, subdir: 'sui/timelock', rev: TIMELOCK_REV },
+    // edge. Their immutable timelock lives in this repository (ADRs 0095 and 0097).
+    blast_fun_timelock: { local: '../../timelock' },
     blast_partners: DIRECT_DEPENDENCIES.blast_partners,
     ifixed: DIRECT_DEPENDENCIES.ifixed,
     oracle_aggregator: DIRECT_DEPENDENCIES.oracle_aggregator,

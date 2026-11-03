@@ -1,0 +1,8 @@
+[package]
+name = "blast_fun_timelock"
+edition = "2024"
+license = "MIT"
+authors = ["Jose Cerqueira (jose@interestprotocol.com)"]
+
+[addresses]
+blast_fun_timelock = "0x0"

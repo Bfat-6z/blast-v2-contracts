@@ -232,7 +232,7 @@ and have no custody at all.
 
 Module `delayed` is a timelock in the Compound/OpenZeppelin sense: schedule, wait
 the applied notice, then apply; cancellable until applied. It is unrelated to the
-retired blast_fun_timelock package, whose values switched by themselves.
+blast_fun_timelock package, whose values switch by themselves (partners still uses it).
 Consumers store three types:
 
 | Type | Holds | Used for |

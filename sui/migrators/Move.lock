@@ -113,7 +113,7 @@ manifest_digest = "E55C97F82BC0F60DACFCDF5AC2F0CCAFEFAA23A5179F8C914CB0C1D1EBECC
 deps = { BluefinSpot = "BluefinSpot", CetusClmm = "CetusClmm", CetusLpBurn = "CetusLpBurn", IntegerLibrary = "IntegerLibrary", IntegerMate = "IntegerMate_1", Sui = "Sui_2", blast_admin = "blast_admin", blast_fun = "blast_fun" }
 
 [pinned.mainnet.blast_fun_timelock]
-source = { git = "https://github.com/interest-protocol/blast-util-contracts.git", subdir = "sui/timelock", rev = "63b6cf86c0e1a74f699610fe182b1de8d8789a14" }
+source = { local = "../timelock" }
 use_environment = "mainnet"
 manifest_digest = "E41BBD67BE8940D26C79D78B028477EF5B33BA217A1282C78ACB344CF8A5ECF6"
 deps = { std = "MoveStdlib_2", sui = "Sui_2" }
@@ -121,5 +121,5 @@ deps = { std = "MoveStdlib_2", sui = "Sui_2" }
 [pinned.mainnet.blast_partners]
 source = { local = "../partners" }
 use_environment = "mainnet"
-manifest_digest = "D5CCB833332CD32F07926CDFF448E853BA674CB7110877E91BA125049FDB2026"
+manifest_digest = "E504FEA4AFDDCEE08FFE58C0873A6C60994787ADAAE5DAA71F110E2368012D75"
 deps = { blast_admin = "blast_admin", blast_fun_timelock = "blast_fun_timelock", std = "MoveStdlib_2", sui = "Sui_2" }

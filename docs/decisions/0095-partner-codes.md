@@ -19,7 +19,7 @@
 | Ref | Full commit | Repository |
 | --- | --- | --- |
 | `sui@06734f6` | `06734f6ff0af45d8632a14a4dc4b100197f6b1a2` | MystenLabs/sui (the pinned framework) |
-| `util@63b6cf8` | `63b6cf86c0e1a74f699610fe182b1de8d8789a14` | interest-protocol/blast-util-contracts |
+| `util@63b6cf8` | `63b6cf86c0e1a74f699610fe182b1de8d8789a14` | [preserved utility source](https://github.com/interest-protocol/blast-v2-contracts/tree/63b6cf86c0e1a74f699610fe182b1de8d8789a14) |
 | `deepbook@a60c1ee` | `a60c1eeeec65a61ebc8c76e58492f5dee0674840` | MystenLabs/deepbookv3 |
 | `dhedge@f09febf` | `f09febf528895fdd5b69f68b0dd3a9bb7d9ecc0c` | dhedge/V2-Public |
 | `dydx@127ef76` | `127ef76506ccca909d937920980c1ae2d9b736a5` | dydxprotocol/v4-chain |
