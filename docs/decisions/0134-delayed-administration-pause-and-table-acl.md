@@ -12,7 +12,8 @@
   [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage),
   [0114](0114-launchpad-custody-before-activation.md) and
   [0117](0117-presale-versioning-and-activation.md) (one-time bootstrap and paused release),
-  [0097](0097-one-singleton-acl-with-typed-roles.md) (timelocked root transfer)
+  [0097](0097-one-singleton-acl-with-typed-roles.md) (timelocked root transfer),
+  [0058](0058-eventless-package-initialization.md) (eventless initialization)
 - Supersedes: the 2026-10-28 canonical stack, which holds no user assets
 
 ## Context
@@ -273,6 +274,12 @@ Upgrade custody, creator-cap reassignment and the ACL root transfer use
 unchanged: configure with schedule-and-apply pairs, then raise each notice.
 
 ### Consequences
+
+Package initialization is no longer eventless: every delayed value created in
+`init` emits `DelayedCreated` or `ActionCreated`. This is deliberate. Each
+operation's stream then starts with its own initial value and notice, so replay
+no longer reads initial notices from published bytecode. Consumer `init`
+functions still emit no events of their own.
 
 Every delayed field gains `owner` and `key`; delayed, consumer and event layouts
 change, and the replay stream for delay lifecycle moves to `blast_admin::delayed`
