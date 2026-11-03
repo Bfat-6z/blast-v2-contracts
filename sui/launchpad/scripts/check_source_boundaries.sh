@@ -433,7 +433,7 @@ package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # would end upgradeability silently.
 # Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
 if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); let upgrade = delayed::new_action(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS); transfer::share_object(PackageAdmin { id, custody, upgrade }); generation.share_version(ctx);' ]] \
+    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); let upgrade = delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS); transfer::share_object(PackageAdmin { id, custody, upgrade }); generation.share_version(ctx);' ]] \
   || [[ "$(move_production_type PackageAdmin <<<"$(move_facts sources/package_admin.move)")" \
     != 'struct PackageAdmin has key { id: UID, custody: UpgradeCustody<BLAST_FUN>, upgrade: DelayedAction<UpgradeKey, UpgradeAction>, }' ]] \
   || [[ "$(move_production_type UpgradeAction <<<"$(move_facts sources/package_admin.move)")" \
@@ -1026,7 +1026,7 @@ if [[ ! -f sources/launch.move ]] \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
   || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, metadata_cap_reassignment, curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
-  || [[ "$launch_finalize_body" != *'let id = object::new(ctx); let curve_fee_cap_reassignment = delayed::new_action( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed::new_action( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
+  || [[ "$launch_finalize_body" != *'let id = object::new(ctx); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
   || [[ "$launch_finalize_body" != *'fee_ledger: fees::new(creation_fee),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \

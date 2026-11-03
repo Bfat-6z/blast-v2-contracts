@@ -161,7 +161,7 @@ fun upgrade_policy_only_reduction_cannot_be_applied_early() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
 fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -194,7 +194,7 @@ fun old_admissions_preserve_a_new_policy_in_either_application_order() {
         f.config.apply_migration_delay(&f.version, &f.clock);
         assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
 
-        assert_eq!(delay_changes_applied<MigrationWitnessKey, TypeName>(), 2);
+        assert_eq!(migration_delay_changes(), 2);
     });
     fixture.end();
 }
@@ -220,12 +220,12 @@ fun multiple_admissions_cannot_restore_a_superseded_notice() {
         f.clock.set_for_testing(125);
         f.config.apply_migration_witness<LaterAdapter>(&f.version, &f.clock);
         assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
-        assert_eq!(delay_changes_applied<MigrationWitnessKey, TypeName>(), 2);
+        assert_eq!(migration_delay_changes(), 2);
     });
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
 fun applying_an_old_admission_cannot_shorten_a_new_admissions_wait() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -256,7 +256,7 @@ fun cancelling_policy_does_not_cancel_admission_or_change_its_notice() {
         f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
 
         assert_eq!(f.config.migration_delay_ms_for_testing(), 100);
-        assert_eq!(delay_changes_applied<MigrationWitnessKey, TypeName>(), 1);
+        assert_eq!(migration_delay_changes(), 1);
     });
     fixture.end();
 }
@@ -277,7 +277,7 @@ fun an_upgrade_action_replaces_a_delay_proposal_without_changing_policy() {
 
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
         assert!(f.admin.has_upgrade_cap_for_testing());
-        assert_eq!(delay_changes_applied<UpgradeKey, UpgradeAction>(), 1);
+        assert_eq!(upgrade_delay_changes(), 1);
     });
     fixture.end();
 }
@@ -295,7 +295,7 @@ fun immutability_keeps_the_applied_notice_without_applying_a_replaced_policy() {
         f.admin.make_immutable(&f.version, &witness, &f.clock);
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
         assert!(!f.admin.has_upgrade_cap_for_testing());
-        assert_eq!(delay_changes_applied<UpgradeKey, UpgradeAction>(), 1);
+        assert_eq!(upgrade_delay_changes(), 1);
     });
     fixture.end();
 }
@@ -375,18 +375,25 @@ fun configure_destination(self: &mut AdminDelayFixture) {
     assert_eq!(self.runtime.destination(), @0xB0B);
 }
 
-/// How many notice changes, rather than actions or admissions, the primitive applied for `K`.
-fun delay_changes_applied<K: copy + drop + store, A: copy + drop + store>(): u64 {
-    let applied = sui::event::events_by_type<ActionApplied<K, A>>();
-    applied.count!(|event| {
-        let (_, _, change, _) = event.action_applied_fields();
+/// Counts applied admission-notice changes, ignoring applied admissions.
+fun migration_delay_changes(): u64 {
+    sui::event::events_by_type<SetApplied<MigrationWitnessKey, TypeName>>().count!(|applied| {
+        let (_, _, change, _) = applied.set_applied_fields();
+        change.member_for_testing().is_none()
+    })
+}
+
+/// Counts applied upgrade-notice changes, ignoring consumed upgrade actions.
+fun upgrade_delay_changes(): u64 {
+    sui::event::events_by_type<ActionApplied<UpgradeKey, UpgradeAction>>().count!(|applied| {
+        let (_, _, change, _) = applied.action_applied_fields();
         change.action().is_none()
     })
 }
 
 // === Imports ===
 
-use blast_admin::{blast_acl, delayed::{ActionApplied, ActionScheduled}};
+use blast_admin::{blast_acl, delayed_action::{ActionApplied, ActionScheduled}, delayed_set::SetApplied};
 use blast_presale::{
     blast_presale_package as marker,
     bps,

@@ -5,7 +5,7 @@
 - Amended in place: 2026-10-02 (admin package review) — Publisher read access,
   UID-bound generation advance, and the publication-record gate
 - Amended by: [0134](0134-delayed-administration-pause-and-table-acl.md) (2026-11-03) —
-  the root transfer is a `delayed::DelayedAction` with the same fixed seven days;
+  the root transfer is a `delayed_action::DelayedAction` with the same fixed seven days;
   `blast_admin` no longer depends on `blast_fun_timelock`
 - Supersedes: [0094](0094-one-role-per-administrator-action.md)'s role bits,
   checks, and gate map; keeps its role grouping

@@ -63,10 +63,10 @@ fun the_admin_allows_a_quote_and_a_migrator() {
     assert_eq!(quote, type_name<QUOTE>());
     assert_eq!(allowed, true);
     let (owner, _, admission, _) = last_event<
-        ActionApplied<MigrationWitnessKey, TypeName>,
-    >().action_applied_fields();
+        SetApplied<MigrationWitnessKey, TypeName>,
+    >().set_applied_fields();
     assert_eq!(owner, object::id(&policy));
-    assert_eq!(admission.action(), option::some(type_name<MIGRATOR>()));
+    assert_eq!(admission.member_for_testing(), option::some(type_name<MIGRATOR>()));
 
     policy.destroy_for_testing();
 
@@ -190,7 +190,7 @@ fun an_unlisted_quote_cannot_be_disallowed() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EUnchanged,
-    location = blast_admin::delayed,
+    location = blast_admin::delayed_set,
 )]
 fun an_allowed_migrator_cannot_be_allowed_again() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
@@ -211,7 +211,7 @@ fun an_allowed_migrator_cannot_be_allowed_again() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EUnchanged,
-    location = blast_admin::delayed,
+    location = blast_admin::delayed_set,
 )]
 fun an_unlisted_migrator_cannot_be_disallowed() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
@@ -341,7 +341,7 @@ fun a_sui_framework_type_cannot_be_allowed_as_a_migrator() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EUnchanged,
-    location = blast_admin::delayed,
+    location = blast_admin::delayed_set,
 )]
 /// Disallowing never needs the struct check: a primitive can never have been allowed.
 fun disallowing_a_primitive_is_an_unchanged_allowance() {
@@ -538,10 +538,10 @@ fun stale_version_cannot_allow_quotes() {
     assert_eq!(quote, type_name<QUOTE>());
     assert_eq!(allowed, true);
     let (owner, _, admission, _) = last_event<
-        ActionApplied<MigrationWitnessKey, TypeName>,
-    >().action_applied_fields();
+        SetApplied<MigrationWitnessKey, TypeName>,
+    >().set_applied_fields();
     assert_eq!(owner, object::id(&policy));
-    assert_eq!(admission.action(), option::some(type_name<MIGRATOR>()));
+    assert_eq!(admission.member_for_testing(), option::some(type_name<MIGRATOR>()));
 
     policy.destroy_for_testing();
 
@@ -645,7 +645,7 @@ fun last_event<Event: copy + drop>(): Event {
 
 // === Imports ===
 
-use blast_admin::{blast_acl::{Self, AdminWitness}, delayed::{ActionApplied, MemberRemoved}};
+use blast_admin::{blast_acl::{Self, AdminWitness}, delayed_set::{MemberRemoved, SetApplied}};
 
 use blast_partners::blast_partners::{Self as partners, Partner};
 

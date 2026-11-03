@@ -350,9 +350,9 @@ public fun init_zero_fees_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-/// Returns the number of stored per-coin pairs for type-key and cleanup tests.
-public fun coin_count_for_testing(self: &LpFeePolicy): u64 {
-    self.coins.length()
+/// Returns the per-coin overrides, their pending changes and their notice.
+public fun coin_shares_for_testing(self: &LpFeePolicy): &DelayedMap<CoinSharesKey, TypeName, SharePair> {
+    &self.coins
 }
 
 #[test_only]

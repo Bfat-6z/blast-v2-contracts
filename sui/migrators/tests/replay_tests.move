@@ -57,7 +57,7 @@ public struct Replay has drop {
     default_shares: Shares,
     default_shares_delay_ms: u64,
     coin_shares: vector<CoinShares>,
-    coin_entries: vector<String>,
+    coin_shares_delay_ms: u64,
     protocol_destination: address,
     protocol_allocation: Shares,
     ticket_id: ID,
@@ -875,15 +875,11 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         replay.protocol_allocation_applied(bytes);
         reduced = reduced + 1;
     });
-    direct<DelayedCreated<CoinSharesKey, Option<SharePair>>>().do!(|bytes| {
-        replay.coin_shares_created(bytes);
-        reduced = reduced + 1;
-    });
     direct<DelayedApplied<DefaultSharesKey, SharePair>>().do!(|bytes| {
         replay.default_shares_applied(bytes);
         reduced = reduced + 1;
     });
-    direct<DelayedApplied<CoinSharesKey, Option<SharePair>>>().do!(|bytes| {
+    direct<MapApplied<CoinSharesKey, TypeName, SharePair>>().do!(|bytes| {
         replay.coin_shares_applied(bytes);
         reduced = reduced + 1;
     });
@@ -990,13 +986,13 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
     // intake admissions, policy proposals, the launch's cap-reassignment slots, and the creator
     // capability claim do not change its state; nothing else may appear.
     let unreduced =
-        direct<ActionScheduled<MigrationWitnessKey, TypeName>>().length()
-        + direct<ActionApplied<MigrationWitnessKey, TypeName>>().length()
+        direct<SetScheduled<MigrationWitnessKey, TypeName>>().length()
+        + direct<SetApplied<MigrationWitnessKey, TypeName>>().length()
         + direct<DelayedScheduled<TradeFeesKey, TradeFees>>().length()
         + direct<DelayedApplied<TradeFeesKey, TradeFees>>().length()
         + direct<DelayedScheduled<ProtocolAllocationKey, ProtocolAllocation>>().length()
         + direct<DelayedScheduled<DefaultSharesKey, SharePair>>().length()
-        + direct<DelayedScheduled<CoinSharesKey, Option<SharePair>>>().length()
+        + direct<MapScheduled<CoinSharesKey, TypeName, SharePair>>().length()
         + direct<DelayedScheduled<ProtocolDestinationKey, address>>().length()
         + direct<ActionCreated<CurveFeeCapReassignment, address>>().length()
         + direct<ActionCreated<MetadataCapReassignment, address>>().length()
@@ -1024,7 +1020,7 @@ fun new_replay(publisher: address): Replay {
         default_shares: Shares { meme_bps: 0, quote_bps: 0 },
         default_shares_delay_ms: 0,
         coin_shares: vector[],
-        coin_entries: vector[],
+        coin_shares_delay_ms: 0,
         protocol_destination: publisher,
         protocol_allocation: Shares { meme_bps: 0, quote_bps: 0 },
         ticket_id: absent(),
@@ -1102,19 +1098,6 @@ fun protocol_allocation_applied(self: &mut Replay, bytes: vector<u8>) {
     r.assert_consumed();
 }
 
-/// A coin's first pair creates its entry with no override under the applied default notice.
-fun coin_shares_created(self: &mut Replay, bytes: vector<u8>) {
-    let mut r = bcs::new(bytes);
-    self.bind_policy(r.peel_id());
-    let meme = r.peel_type_name();
-    assert!(r.peel_option!(|r| r.peel_share_pair()).is_none());
-    assert_eq!(r.peel_u64(), self.default_shares_delay_ms);
-    r.assert_consumed();
-
-    assert!(!self.coin_entries.contains(&meme));
-    self.coin_entries.push_back(meme);
-}
-
 fun default_shares_applied(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
     self.bind_policy(r.peel_id());
@@ -1125,19 +1108,27 @@ fun default_shares_applied(self: &mut Replay, bytes: vector<u8>) {
     r.assert_consumed();
 }
 
-/// A coin's own pair was set, changed, or cleared back to the live defaults.
+/// A coin's own pair was set, changed, or cleared back to the live defaults, each after the
+/// coin overrides' notice; or that notice itself changed.
 fun coin_shares_applied(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
     self.bind_policy(r.peel_id());
-    let meme = r.peel_type_name();
-    let old_pair = r.peel_option!(|r| r.peel_share_pair());
-    let new_pair = r.peel_option!(|r| r.peel_share_pair());
-    r.peel_u64();
-    r.assert_consumed();
+    r.peel_unit_key();
+    let change_tag = r.peel_enum_tag();
+    if (change_tag == MAP_ENTRY_TAG) {
+        let meme = r.peel_type_name();
+        let new_pair = r.peel_option!(|r| r.peel_share_pair());
+        assert_eq!(r.peel_u64(), self.coin_shares_delay_ms);
+        r.assert_consumed();
 
-    assert_eq!(old_pair, self.own_shares(meme));
-    self.coin_shares = self.coin_shares.filter!(|entry| entry.meme != meme);
-    new_pair.do!(|shares| self.coin_shares.push_back(CoinShares { meme, shares }));
+        assert!(new_pair != self.own_shares(meme));
+        self.coin_shares = self.coin_shares.filter!(|entry| entry.meme != meme);
+        new_pair.do!(|shares| self.coin_shares.push_back(CoinShares { meme, shares }));
+    } else {
+        assert_eq!(change_tag, MAP_DELAY_TAG);
+        self.coin_shares_delay_ms = r.peel_u64();
+        r.assert_consumed();
+    };
 }
 
 fun protocol_destination_applied(self: &mut Replay, bytes: vector<u8>) {
@@ -1898,7 +1889,14 @@ fun assert_policy(self: &Replay, policy: &LpFeePolicy) {
     assert_eq!(default_quote_bps.value(), self.default_shares.quote_bps);
     assert_eq!(policy.protocol_destination(), self.protocol_destination);
 
-    assert_eq!(policy.coin_count_for_testing(), self.coin_entries.length());
+    let coins = policy.coin_shares_for_testing();
+    assert_eq!(coins.delay_ms(), self.coin_shares_delay_ms);
+    vector[type_name::with_original_ids<REPLAY_TESTS>(), type_name::with_original_ids<OtherMeme>()].do!(
+        |meme| {
+            let stored = bcs::to_bytes(&coins.value(&meme));
+            assert_eq!(stored, bcs::to_bytes(&self.own_shares(meme.into_string())));
+        },
+    );
     let (live_meme_bps, live_quote_bps) = policy.shares<REPLAY_TESTS>();
     let own = self.own_shares(type_name::with_original_ids<REPLAY_TESTS>().into_string());
     let live = own.destroy_or!(self.default_shares);
@@ -2134,19 +2132,20 @@ const UNCREATED: u8 = 255;
 /// `creator_authority::CreatorRecipient::Address` tag.
 const CREATOR_ADDRESS_TAG: u32 = 0;
 
+/// `delayed_map::MapChange::Entry` tag.
+const MAP_ENTRY_TAG: u32 = 0;
+
+/// `delayed_map::MapChange::Delay` tag.
+const MAP_DELAY_TAG: u32 = 1;
+
 // === Imports ===
 
 use blast_admin::{
     blast_acl,
-    delayed::{
-        ActionApplied,
-        ActionCreated,
-        ActionScheduled,
-        DelayedApplied,
-        DelayedCancelled,
-        DelayedCreated,
-        DelayedScheduled,
-    },
+    delayed::{DelayedApplied, DelayedCancelled, DelayedCreated, DelayedScheduled},
+    delayed_action::ActionCreated,
+    delayed_map::{MapApplied, MapScheduled},
+    delayed_set::{SetApplied, SetScheduled},
 };
 
 use blast_fun::{

@@ -704,13 +704,13 @@ fun admin_allows_migration_witness_and_the_primitive_records_its_original_type_n
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.allow_test_migration_witness();
 
-        let admissions = event::events_by_type<ActionApplied<MigrationWitnessKey, TypeName>>();
+        let admissions = event::events_by_type<SetApplied<MigrationWitnessKey, TypeName>>();
         assert_eq!(admissions.length(), 1);
-        let (owner, _, change, _) = admissions[0].action_applied_fields();
+        let (owner, _, change, _) = admissions[0].set_applied_fields();
 
         assert_eq!(f.config.allowed_migration_witness_count_for_testing(), 1);
         assert_eq!(owner, object::id(&f.config));
-        assert_eq!(change.action(), option::some(test_witness()));
+        assert_eq!(change.member_for_testing(), option::some(test_witness()));
     });
 
     fixture.end();
@@ -748,7 +748,7 @@ fun disallowing_migration_witness_does_not_change_an_existing_launch_snapshot() 
 #[
     expected_failure(
         abort_code = blast_admin::errors::EUnchanged,
-        location = blast_admin::delayed,
+        location = blast_admin::delayed_set,
     ),
 ]
 fun disallowing_migration_witness_rejects_unlisted_type() {
@@ -773,7 +773,7 @@ fun disallowing_migration_witness_rejects_unlisted_type() {
 #[
     expected_failure(
         abort_code = blast_admin::errors::EUnchanged,
-        location = blast_admin::delayed,
+        location = blast_admin::delayed_set,
     ),
 ]
 fun allowing_migration_witness_rejects_duplicate_type() {
@@ -887,7 +887,7 @@ fun allowing_migration_witness_rejects_a_sui_framework_type() {
 #[
     expected_failure(
         abort_code = blast_admin::errors::EUnchanged,
-        location = blast_admin::delayed,
+        location = blast_admin::delayed_set,
     ),
 ]
 fun disallowing_a_framework_type_reports_it_as_unlisted() {
@@ -1308,7 +1308,8 @@ fun config_end(self: ConfigFixture) {
 
 use blast_admin::{
     blast_acl::{Self, AdminWitness},
-    delayed::{ActionApplied, DelayedApplied, MemberRemoved},
+    delayed::DelayedApplied,
+    delayed_set::{MemberRemoved, SetApplied},
 };
 
 use blast_fun::{

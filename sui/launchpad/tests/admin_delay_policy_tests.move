@@ -161,7 +161,7 @@ fun upgrade_policy_only_reduction_cannot_be_applied_early() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
 fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -225,7 +225,7 @@ fun multiple_admissions_cannot_restore_a_superseded_notice() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
 fun applying_an_old_admission_cannot_shorten_a_new_admissions_wait() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -374,9 +374,9 @@ fun configure_destination(self: &mut AdminDelayFixture) {
 
 /// Counts applied admission-notice changes, ignoring applied admissions.
 fun migration_delay_changes(): u64 {
-    sui::event::events_by_type<ActionApplied<MigrationWitnessKey, TypeName>>().count!(|applied| {
-        let (_, _, change, _) = applied.action_applied_fields();
-        change.action().is_none()
+    sui::event::events_by_type<SetApplied<MigrationWitnessKey, TypeName>>().count!(|applied| {
+        let (_, _, change, _) = applied.set_applied_fields();
+        change.member_for_testing().is_none()
     })
 }
 
@@ -390,7 +390,7 @@ fun upgrade_delay_changes(): u64 {
 
 // === Imports ===
 
-use blast_admin::{blast_acl, delayed::{ActionApplied, ActionScheduled}};
+use blast_admin::{blast_acl, delayed_action::{ActionApplied, ActionScheduled}, delayed_set::SetApplied};
 use blast_fun::{
     blast_fun as marker,
     blast_fun_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin},

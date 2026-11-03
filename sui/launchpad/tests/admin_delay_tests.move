@@ -183,15 +183,15 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     );
     let witness = std::type_name::with_original_ids<AdapterWitness>();
     let (scheduled_owner, _, change, _, ready_at_ms) = single<
-        ActionScheduled<MigrationWitnessKey, TypeName>
-    >().action_scheduled_fields();
+        SetScheduled<MigrationWitnessKey, TypeName>
+    >().set_scheduled_fields();
     assert_eq!(scheduled_owner, owner);
-    assert_eq!(change.action(), option::some(witness));
+    assert_eq!(change.member_for_testing(), option::some(witness));
     assert_eq!(ready_at_ms, 172_800_123);
     config.cancel_migration_witness<AdapterWitness>(&version, &cancel);
-    let (_, _, change, _, _) = single<ActionCancelled<MigrationWitnessKey, TypeName>>()
-        .action_cancelled_fields();
-    assert_eq!(change.action(), option::some(witness));
+    let (_, _, change, _, _) = single<SetCancelled<MigrationWitnessKey, TypeName>>()
+        .set_cancelled_fields();
+    assert_eq!(change.member_for_testing(), option::some(witness));
 
     destroy(config);
     destroy(version);
@@ -277,7 +277,7 @@ fun upgrade_delay_schedule_and_cancellation_preserve_the_notice_change() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun cancellation_without_a_scheduled_upgrade_reports_the_primitive_error() {
     let mut ctx = tx_context::dummy();
     let version = marker::new_for_testing(&mut ctx);
@@ -304,7 +304,9 @@ fun u64_fields(values: vector<u64>): vector<u8> {
 
 use blast_admin::{
     blast_acl,
-    delayed::{ActionCancelled, ActionScheduled, DelayedCancelled, DelayedScheduled},
+    delayed::{DelayedCancelled, DelayedScheduled},
+    delayed_action::{ActionCancelled, ActionScheduled},
+    delayed_set::{SetCancelled, SetScheduled},
 };
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},

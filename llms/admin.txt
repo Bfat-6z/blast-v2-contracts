@@ -202,8 +202,8 @@ migrators (`blast_fun_migrators`), Blast SUI (`blast_sui`), Boosts
 
 `ACL` fields: `super_admin_cap_id` (the one root cap that works), `admins` (a
 map from `AdminCap` ID to a set of role type names), and `super_admin_transfer`
-(a `delayed::DelayedAction<blast_acl::SuperAdminTransfer, address>` with a fixed
-seven-day notice; see "Delayed values, actions and sets").
+(a `delayed_action::DelayedAction<blast_acl::SuperAdminTransfer, address>` with a
+fixed seven-day notice; see "Delayed values, actions, sets and maps").
 
 Root powers are narrow: membership, roles, and its own delayed transfer. Root
 cannot sign in to any role and cannot call any consumer function. Every
@@ -282,12 +282,13 @@ what each transaction leaves on chain.
 #### Transfer root (root, then nominee)
 
 1. Root calls `blast_acl::begin_super_admin_transfer` with the recipient and
-   `Clock` at `0x6`. Emits `delayed::ActionScheduled<blast_acl::SuperAdminTransfer, address>`
-   with the nominee and `ready_at_ms` (and `delayed::ActionCancelled` first for a
-   replaced nominee).
+   `Clock` at `0x6`. Emits `delayed_action::ActionScheduled<blast_acl::SuperAdminTransfer, address>`
+   with the nominee and `ready_at_ms` (and `delayed_action::ActionCancelled` first
+   for a replaced nominee).
 2. At or after `ready_at_ms`, the nominee's address calls
    `blast_acl::accept_super_admin_transfer` with the `ACL` and `Clock`. Emits
-   `delayed::ActionApplied` and `SuperAdminTransferred` with the old and new cap IDs.
+   `delayed_action::ActionApplied` and `SuperAdminTransferred` with the old and new
+   cap IDs.
 3. The old holder may call `blast_acl::destroy_retired_super_admin_cap`. Emits
    `SuperAdminCapDestroyed`.
 
@@ -375,8 +376,9 @@ gates authorization behind its upgrade role. Boosts receipt commit instead carri
 the native authorized receipt. Wrap in launchpad, presale and migrators consumes their
 unique Publication and matching fresh UpgradeCap. Publication carries
 provenance only and is permanently consumed at wrap. Ordinary ACL operations
-configure policies using each publication-owned operation's initial zero notice. Each operation
-stores its own notice in a `delayed` value; see "Delayed values, actions and sets".
+configure policies using each publication-owned policy operation's initial zero notice; upgrade
+custody starts at 48 hours. Each operation
+stores its own notice in a delayed value; see "Delayed values, actions, sets and maps".
 
 Blast SUI's `new` and `share`
 use its own Publisher and UpgradeCap directly:
@@ -401,44 +403,49 @@ The packages
 `blast_admin`, `blast_partners`, and `blast_boosts_core` are published immutable
 and have no custody at all.
 
-### Delayed values, actions and sets
+### Delayed values, actions, sets and maps
 
-Module `delayed` is a timelock in the Compound/OpenZeppelin sense: schedule, wait
-the applied notice, then apply; cancellable until applied. It is unrelated to the
-blast_fun_timelock package, whose values switch by themselves (partners still uses it).
-Consumers store three types:
+The delayed modules are a timelock in the Compound/OpenZeppelin sense: schedule,
+wait the applied notice, then apply; cancellable until applied. They are unrelated
+to the blast_fun_timelock package, whose values switch by themselves (partners
+still uses it). Each module owns one type; consumers store four:
 
 | Type | Holds | Used for |
 | --- | --- | --- |
 | `delayed::Delayed<K, T>` | an applied `value`, its applied `delay_ms`, at most one `delayed::Proposal<T>` | fees, shares, treasuries, destinations, fee splits |
-| `delayed::DelayedAction<K, A>` | an applied `delay_ms`, at most one `delayed::Proposal<delayed::Change<A>>` | one-shot actions: upgrades, immutability, creator-cap reassignment, the root transfer |
-| `delayed::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines, at most one proposed notice | migration-witness allowlists |
+| `delayed_action::DelayedAction<K, A>` | an applied `delay_ms`, at most one `delayed::Proposal<delayed_action::Change<A>>` | one-shot actions: upgrades, immutability, creator-cap reassignment, the root transfer |
+| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines, at most one proposed notice | migration-witness allowlists |
+| `delayed_map::DelayedMap<K, E, V>` | applied values by entry `E` in a `Table`, one applied `delay_ms`, at most one pending change per entry with a fixed deadline, at most one proposed notice | per-coin LP-share overrides |
 
 Every value carries an `owner` (the ID of the object that stores it) and a `key`
-of type `K`. `delayed::new`, `delayed::new_action` and `delayed::new_set` take the
-owner object's `&UID`, which only the code creating or holding that object has, so
-no package can attribute a value or its events to another package's object. Blast
-keys are structs without public constructors, so only their module can produce
-events under them. Partition `delayed` events by `owner`, then by `K`.
+of type `K`. `delayed::new`, `delayed_action::new`, `delayed_set::new` and
+`delayed_map::new` take the owner object's `&UID`, which only the code creating
+or holding that object has, so no package can attribute a value or its events to
+another package's object. Blast keys are structs without public constructors, so
+only their module can produce events under them. Partition delayed events by
+`owner`, then by `K`.
 
-Rules shared by all three:
+Rules shared by all four:
 
 - **Old notice governs.** Every proposal is ready at its scheduling time plus the
   notice applied then. A shorter notice, zero included, waits the applied one.
   `delayed::Proposal` exposes the proposed `value`, the `delay_ms` in force once it
-  applies, and `ready_at_ms`.
+  applies, and `ready_at_ms`; `delayed::Notice` exposes a notice's `delay_ms` and
+  `ready_at_ms`.
 - **Explicit application.** Nothing changes until `delayed::apply`,
-  `delayed::take_action`, `delayed::apply_add`, or a notice `apply_delay`
-  consumes a ready proposal. Readiness alone changes no value. Reads need no Clock.
-- **Cancellation until applied.** `delayed::cancel`, `delayed::cancel_action`,
-  `delayed::cancel_add` and the notice cancels work even after readiness.
-  Scheduling over a pending proposal cancels it and restarts the full applied notice.
+  `delayed_action::take_action`, `delayed_set::apply_add`, `delayed_map::apply`,
+  or a notice `apply_delay` consumes a ready proposal. Readiness alone changes no
+  value. Reads need no Clock.
+- **Cancellation until applied.** `delayed::cancel`, `delayed_action::cancel`,
+  `delayed_set::cancel_add`, `delayed_map::cancel` and the notice cancels work
+  even after readiness. Scheduling over a pending proposal cancels it and restarts
+  the full applied notice.
 - **Zero-notice bootstrap.** A notice can start at zero, so a schedule and its
   apply in one PTB act as a setter. Raising a notice from zero applies at once.
   There is no other mutation path.
 - **No-op rejection.** A `Delayed` proposal that changes neither value nor notice,
-  a notice proposal equal to the applied notice, and admitting a current member
-  abort with code 20.
+  a notice proposal equal to the applied notice, admitting a current member, and
+  a map change to the entry's applied value abort with code 20.
 - **Overflow.** Scheduling and application abort with code 19 when a deadline or
   the next notice would not fit in a `u64` millisecond timestamp.
 
@@ -447,22 +454,31 @@ Rules shared by all three:
 value. `delayed::assert_ready` checks readiness without changing anything, so an
 owner can settle accrued economics under the applied value before `delayed::apply`.
 
-`DelayedAction`: `delayed::schedule_action` (receiver alias `schedule`) proposes
-an action under the applied notice; `delayed::schedule_action_delay` (alias
-`schedule_delay`) proposes only a notice change. `delayed::take_action` returns a
-ready action to its owner and aborts with code 22 when the proposal is a notice
-change; `delayed::apply_action_delay` (alias `apply_delay`) does the reverse.
-`delayed::Change` is `Action(A)` or `Delay`; `delayed::change_action` (alias
-`action`) returns the action or none.
+`DelayedAction`: `delayed_action::schedule` proposes an action under the applied
+notice; `delayed_action::schedule_delay` proposes only a notice change.
+`delayed_action::take_action` returns a ready action to its owner and aborts with
+code 22 when the proposal is a notice change; `delayed_action::apply_delay` does
+the reverse. `delayed_action::Change` is `Action(A)` or `Delay`;
+`delayed_action::action` returns the action or none.
 
-`DelayedSet`: `delayed::schedule_add` snapshots a member's deadline from the
-applied notice; a later notice change never moves it. `delayed::apply_add` admits
-a ready member; `delayed::remove` removes a member and discards its pending
-admission at once. `delayed::contains` is the membership check.
+`DelayedSet`: `delayed_set::schedule_add` snapshots a member's deadline from the
+applied notice; a later notice change never moves it. `delayed_set::apply_add`
+admits a ready member; `delayed_set::remove` removes a member and discards its
+pending admission at once. `delayed_set::contains` is the membership check.
+`delayed_set::SetChange` is `Admission(E)` or `Delay`.
 
-`delayed::destroy`, `delayed::destroy_action` and `delayed::destroy_delayed_set`
-abort with code 21 while anything is pending, so every proposal ends in an event;
-they emit `delayed::DelayedDestroyed` or `delayed::ActionDestroyed`.
+`DelayedMap`: `delayed_map::schedule` proposes setting an entry to a value, or
+clearing it with none, and snapshots its deadline from the applied notice; a later
+notice change never moves it. Clearing is a delayed change like any other.
+`delayed_map::apply` sets or clears a ready entry; `delayed_map::value` reads an
+entry's applied value and `delayed_map::pending` its pending
+`delayed_map::EntryProposal` (the proposed value and its `delayed::Notice`).
+`delayed_map::MapChange` is `Entry { entry, value }` or `Delay`.
+
+The destroy calls (`delayed::destroy`, `delayed_action::destroy`,
+`delayed_set::destroy`, `delayed_map::destroy`) abort with code 21 while anything
+is pending, so every proposal ends in an event; each emits its module's
+`Destroyed` event.
 
 The creator-claim backend signer is a plain value assigned and revoked immediately
 under ClaimSignerAdmin. ACL administrator and role grants remain immediate.
@@ -500,8 +516,10 @@ content over RPC, or replay events.
 
 All `blast_admin` events are emitted directly (no envelope). ACL, version and
 custody events come from module `blast_admin_events` and carry no ACL ID because
-there is one ACL. Delayed lifecycle events come from module `delayed`, are generic
-in the owner's key `K` and value type, and carry `owner` and `key`.
+there is one ACL. Delayed lifecycle events come from the module that owns the
+type (`delayed`, `delayed_action`, `delayed_set` or `delayed_map`), are generic in
+the owner's key `K` and the value, action, member or entry types, and carry `owner`
+and `key`. Each map event's `change` names its entry.
 
 | Event | Emitted by | Use |
 | --- | --- | --- |
@@ -520,22 +538,33 @@ in the owner's key `K` and value type, and carry `owner` and `key`.
 | `delayed::DelayedCreated` | `delayed::new` | initial value and notice |
 | `delayed::DelayedScheduled` / `delayed::DelayedCancelled` | schedule, replace, cancel | proposed value, next notice, `ready_at_ms` |
 | `delayed::DelayedApplied` | `delayed::apply` | previous and new value, applied notice |
-| `delayed::ActionCreated` | `delayed::new_action`, `delayed::new_set` | initial notice |
-| `delayed::ActionScheduled` / `delayed::ActionCancelled` | action, admission or notice proposals | `change`, notice in force once applied, `ready_at_ms` |
-| `delayed::ActionApplied` | `delayed::take_action`, `delayed::apply_add`, notice applies | `change` and the notice now applied |
-| `delayed::MemberRemoved` | `delayed::remove` | member removed at once |
-| `delayed::DelayedDestroyed` / `delayed::ActionDestroyed` | the destroy calls | the value, slot or set (with its members) ends |
+| `delayed::DelayedDestroyed` | `delayed::destroy` | the setting ends |
+| `delayed_action::ActionCreated` | `delayed_action::new` | initial notice |
+| `delayed_action::ActionScheduled` / `delayed_action::ActionCancelled` | action or notice proposals | `change`, notice in force once applied, `ready_at_ms` |
+| `delayed_action::ActionApplied` | `delayed_action::take_action`, `delayed_action::apply_delay` | `change` and the notice now applied |
+| `delayed_action::ActionDestroyed` | `delayed_action::destroy` | the action slot ends |
+| `delayed_set::SetCreated` | `delayed_set::new` | initial notice |
+| `delayed_set::SetScheduled` / `delayed_set::SetCancelled` | admission or notice proposals; a removal cancels a pending admission | `change`, the notice an admission waits or the proposed notice, `ready_at_ms` |
+| `delayed_set::SetApplied` | `delayed_set::apply_add`, `delayed_set::apply_delay` | `change` and the notice it waited or now applied |
+| `delayed_set::MemberRemoved` | `delayed_set::remove` | member removed at once |
+| `delayed_set::SetDestroyed` | `delayed_set::destroy` | the set and its members end |
+| `delayed_map::MapCreated` | `delayed_map::new` | initial notice |
+| `delayed_map::MapScheduled` / `delayed_map::MapCancelled` | entry or notice proposals | `change` (entry and value, none to clear), the notice an entry change waits or the proposed notice, `ready_at_ms` |
+| `delayed_map::MapApplied` | `delayed_map::apply`, `delayed_map::apply_delay` | `change` and the notice it waited or now applied |
+| `delayed_map::MapDestroyed` | `delayed_map::destroy` | the map and its entries end |
 
 Replaying the ACL events in order reconstructs `ACL.admins` and every root
 transfer exactly. `ACL` creation emits only the root transfer's
-`delayed::ActionCreated`, so the first root cap's ID comes from the publish
+`delayed_action::ActionCreated`, so the first root cap's ID comes from the publish
 transaction's created objects (or the first `SuperAdminTransferred`, as
 `previous_super_admin_cap_id`). A proposal ends in exactly one `Applied` or
 `Cancelled` event.
 
 ### Aborts
 
-Codes are plain `u64` values raised in the `blast_admin` module named.
+Codes are plain `u64` values raised in the `blast_admin` module named. An error a
+delayed type raises in its own call is located in that type's module; readiness
+and overflow checked through the shared deadline rules are located in `delayed`.
 
 | Code | Name | Module | Cause and fix |
 | --- | --- | --- | --- |
@@ -556,12 +585,12 @@ Codes are plain `u64` values raised in the `blast_admin` module named.
 | 14 | `EUpgradeCapUnavailable` | `upgrade_custody` | the package was made immutable |
 | 15 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
 | 16 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
-| 17 | `ENotReady` | `delayed` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
-| 18 | `ENoPending` | `delayed` | applying or cancelling when nothing is pending |
+| 17 | `ENotReady` | `delayed`; `delayed_set` for `delayed_set::apply_add`, `delayed_map` for `delayed_map::apply` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
+| 18 | `ENoPending` | the type's module | applying or cancelling when nothing is pending |
 | 19 | `EInvalidDelay` | `delayed` | a deadline or the next notice would overflow a Unix millisecond timestamp; choose a representable notice |
-| 20 | `EUnchanged` | `delayed` | the proposal changes nothing, the member is already admitted, or `remove` names an unknown member |
-| 21 | `EProposalPending` | `delayed` | destroying a delayed value, action slot or set while a proposal is pending; cancel it first |
-| 22 | `EWrongChange` | `delayed` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
+| 20 | `EUnchanged` | the type's module | the proposal changes nothing, the member is already admitted, `remove` names an unknown member, or a map change repeats the entry's applied value (clearing an absent entry included) |
+| 21 | `EProposalPending` | the type's module | destroying a delayed value, action slot, set or map while a proposal is pending; cancel it first |
+| 22 | `EWrongChange` | `delayed_action` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
 
 The one an integrator most often meets is code 9 from `operational_version`: a
 PTB built against an old package ID after an upgrade.
@@ -593,7 +622,7 @@ key of `admins` is a live `AdminCap` ID and each value lists its roles. Replay
 `blast_admin_events` for the full history.
 
 **How much notice is there before root changes hands?** Seven days, fixed. The
-nomination emits `delayed::ActionScheduled` and is visible in
+nomination emits `delayed_action::ActionScheduled` and is visible in
 `super_admin_transfer`, and root can cancel it at any time before acceptance.
 
 **Can a role from one package authorize actions in another?** No. A consumer
@@ -670,7 +699,7 @@ public struct ACL has key {
     super_admin_cap_id: ID,
     admins: Table<ID, VecSet<TypeName>>,
     /// The nominated next super admin, acceptable once the fixed transfer delay passes.
-    super_admin_transfer: delayed::DelayedAction<SuperAdminTransfer, address>,
+    super_admin_transfer: delayed_action::DelayedAction<SuperAdminTransfer, address>,
 }
 
 /// Cold root authority for membership, roles, and delayed root replacement only.
@@ -842,7 +871,7 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Settings, one-shot actions and allowlists that change only after their applied notice.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. It is unrelated to the immutable timelock package, whose values switch by themselves at a deadline.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. This module emits every lifecycle fact, generic in `K` and carrying `owner`; owners emit only their own side effects, such as a settlement or a committed upgrade.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. Readers need no Clock.
+Settings that change only after their applied notice, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. Readers need no Clock.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
 
@@ -858,25 +887,6 @@ public struct Delayed<K: copy + drop + store, T: copy + drop + store> has store 
     pending: Option<Proposal<T>>,
 }
 
-/// An applied notice and at most one proposed one-shot action or notice change.
-public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has store {
-    owner: ID,
-    key: K,
-    delay_ms: u64,
-    pending: Option<Proposal<Change<A>>>,
-}
-
-/// Members that join only after the applied notice and leave at once. Each admission's
-/// deadline is fixed when it is scheduled; a later notice change never moves it.
-public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has store {
-    owner: ID,
-    key: K,
-    members: VecSet<E>,
-    delay_ms: u64,
-    admissions: VecMap<E, Notice>,
-    pending_delay: Option<Notice>,
-}
-
 /// A proposed value and the notice in force once it applies, ready from `ready_at_ms`.
 public struct Proposal<T: copy + drop + store> has copy, drop, store {
     value: T,
@@ -884,16 +894,8 @@ public struct Proposal<T: copy + drop + store> has copy, drop, store {
     ready_at_ms: u64,
 }
 
-/// What a `DelayedAction` proposal does once applied.
-public enum Change<A: copy + drop + store> has copy, drop, store {
-    /// Hands the owner its action; the notice stays as applied.
-    Action(A),
-    /// Changes only the notice, to the proposal's `delay_ms`.
-    Delay,
-}
-
-/// A `DelayedSet` deadline: for an admission, the notice it waits; for a notice change,
-/// the proposed next notice. Either is ready from `ready_at_ms`.
+/// A notice period and the time it elapses: the notice an admission or entry change waits,
+/// or a proposed next notice. Either is ready from `ready_at_ms`.
 public struct Notice has copy, drop, store {
     delay_ms: u64,
     ready_at_ms: u64,
@@ -966,147 +968,6 @@ public fun cancel<K: copy + drop + store, T: copy + drop + store>(self: &mut Del
 /// Deletes a setting with no proposal and records its end; cancel a proposal first.
 public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>)
 
-/// An action slot with nothing proposed; every action waits the applied notice.
-public fun new_action<K: copy + drop + store, A: copy + drop + store>(
-    key: K,
-    owner: &UID,
-    delay_ms: u64,
-): DelayedAction<K, A>
-
-/// The applied notice in milliseconds.
-public fun action_delay_ms<K: copy + drop + store, A: copy + drop + store>(
-    self: &DelayedAction<K, A>,
-): u64
-
-/// The proposed action or notice change, if any.
-public fun action_pending<K: copy + drop + store, A: copy + drop + store>(
-    self: &DelayedAction<K, A>,
-): Option<Proposal<Change<A>>>
-
-/// Proposes `action`, ready after the applied notice, and returns when. A replaced
-/// proposal is cancelled and the full applied notice restarts.
-public fun schedule_action<K: copy + drop + store, A: copy + drop + store>(
-    self: &mut DelayedAction<K, A>,
-    action: A,
-    clock: &Clock,
-): u64
-
-/// Proposes only a new notice, ready after the applied one, replacing any proposed action.
-public fun schedule_action_delay<K: copy + drop + store, A: copy + drop + store>(
-    self: &mut DelayedAction<K, A>,
-    delay_ms: u64,
-    clock: &Clock,
-): u64
-
-/// Consumes the ready proposed action and returns it for the owner to perform.
-/// Aborts when the proposal is a notice change.
-public fun take_action<K: copy + drop + store, A: copy + drop + store>(
-    self: &mut DelayedAction<K, A>,
-    clock: &Clock,
-): A
-
-/// Applies the ready proposed notice. Aborts when the proposal is an action.
-public fun apply_action_delay<K: copy + drop + store, A: copy + drop + store>(
-    self: &mut DelayedAction<K, A>,
-    clock: &Clock,
-)
-
-/// Discards the proposal, even a ready one, leaving the applied notice.
-public fun cancel_action<K: copy + drop + store, A: copy + drop + store>(
-    self: &mut DelayedAction<K, A>,
-)
-
-/// Deletes an action slot with no proposal and records its end; cancel a proposal first.
-public fun destroy_action<K: copy + drop + store, A: copy + drop + store>(self: DelayedAction<K, A>)
-
-/// An empty set; every admission waits the applied notice.
-public fun new_set<K: copy + drop + store, E: copy + drop + store>(
-    key: K,
-    owner: &UID,
-    delay_ms: u64,
-): DelayedSet<K, E>
-
-/// Whether `member` has been admitted and not removed.
-public fun contains<K: copy + drop + store, E: copy + drop + store>(
-    self: &DelayedSet<K, E>,
-    member: &E,
-): bool
-
-/// The admitted members.
-public fun delayed_set_members<K: copy + drop + store, E: copy + drop + store>(
-    self: &DelayedSet<K, E>,
-): VecSet<E>
-
-/// The applied notice for new admissions, in milliseconds.
-public fun delayed_set_delay_ms<K: copy + drop + store, E: copy + drop + store>(
-    self: &DelayedSet<K, E>,
-): u64
-
-/// When `member`'s pending admission becomes ready, if one is pending.
-public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>(
-    self: &DelayedSet<K, E>,
-    member: &E,
-): Option<u64>
-
-/// The proposed next notice, if any.
-public fun delayed_set_pending_delay<K: copy + drop + store, E: copy + drop + store>(
-    self: &DelayedSet<K, E>,
-): Option<Notice>
-
-/// Proposes admitting `member` after the applied notice (never a proposed one) and returns
-/// when. Rescheduling a pending member cancels its admission and restarts the notice.
-/// Aborts when `member` is already admitted.
-public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
-    self: &mut DelayedSet<K, E>,
-    member: E,
-    clock: &Clock,
-): u64
-
-/// Admits `member` once its admission is ready.
-public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
-    self: &mut DelayedSet<K, E>,
-    member: E,
-    clock: &Clock,
-)
-
-/// Discards `member`'s pending admission, even a ready one.
-public fun cancel_add<K: copy + drop + store, E: copy + drop + store>(
-    self: &mut DelayedSet<K, E>,
-    member: E,
-)
-
-/// Removes `member` at once and discards its pending admission, leaving the notice.
-/// Aborts when `member` is neither admitted nor pending.
-public fun remove<K: copy + drop + store, E: copy + drop + store>(
-    self: &mut DelayedSet<K, E>,
-    member: E,
-)
-
-/// Proposes only a new notice, ready after the applied one, and returns when. Pending
-/// admissions keep their deadlines.
-public fun schedule_delayed_set_delay<K: copy + drop + store, E: copy + drop + store>(
-    self: &mut DelayedSet<K, E>,
-    delay_ms: u64,
-    clock: &Clock,
-): u64
-
-/// Applies the ready proposed notice to later admissions.
-public fun apply_delayed_set_delay<K: copy + drop + store, E: copy + drop + store>(
-    self: &mut DelayedSet<K, E>,
-    clock: &Clock,
-)
-
-/// Discards the proposed notice, even a ready one.
-public fun cancel_delayed_set_delay<K: copy + drop + store, E: copy + drop + store>(
-    self: &mut DelayedSet<K, E>,
-)
-
-/// Deletes a set with no pending admission or notice change and records its end, which
-/// also ends every remaining membership.
-public fun destroy_delayed_set<K: copy + drop + store, E: copy + drop + store>(
-    self: DelayedSet<K, E>,
-)
-
 /// The proposed value, or the proposed change for an action slot.
 public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T
 
@@ -1116,20 +977,17 @@ public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64
 /// The Unix millisecond time from which the proposal can apply.
 public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
 
-/// The proposed action, or none for a notice change.
-public fun change_action<A: copy + drop + store>(self: &Change<A>): Option<A>
-
-/// The notice an admission waits, or a proposed next notice.
+/// The notice waited, or the proposed next notice.
 public fun notice_delay_ms(self: &Notice): u64
 
-/// The Unix millisecond time from which the admission or notice change can apply.
+/// The Unix millisecond time from which the change can apply.
 public fun notice_ready_at_ms(self: &Notice): u64
 ```
 
 #### Events
 
 ```move
-/// A `Delayed` setting was created with its first applied value and notice.
+/// A setting was created with its first applied value and notice.
 public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -1164,15 +1022,107 @@ public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has
     delay_ms: u64,
 }
 
-/// A `DelayedAction` slot or `DelayedSet` was created with its first applied notice.
+/// A setting was deleted with nothing pending.
+public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+```
+
+### `blast_admin::delayed_action`
+
+One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied notice. The slot also governs its own notice. See `delayed` for the rules every delayed type shares.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_action.move
+
+#### Types
+
+```move
+/// An applied notice and at most one proposed one-shot action or notice change.
+public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+    pending: Option<delayed::Proposal<Change<A>>>,
+}
+
+/// What a proposal does once applied.
+public enum Change<A: copy + drop + store> has copy, drop, store {
+    /// Hands the owner its action; the notice stays as applied.
+    Action(A),
+    /// Changes only the notice, to the proposal's `delay_ms`.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An action slot with nothing proposed; every action waits the applied notice.
+public fun new<K: copy + drop + store, A: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+): DelayedAction<K, A>
+
+/// The applied notice in milliseconds.
+public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64
+
+/// The proposed action or notice change, if any.
+public fun pending<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<delayed::Proposal<Change<A>>>
+
+/// Proposes `action`, ready after the applied notice, and returns when. A replaced
+/// proposal is cancelled and the full applied notice restarts.
+public fun schedule<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    action: A,
+    clock: &Clock,
+): u64
+
+/// Proposes only a new notice, ready after the applied one, replacing any proposed action.
+public fun schedule_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Consumes the ready proposed action and returns it for the owner to perform.
+/// Aborts when the proposal is a notice change.
+public fun take_action<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    clock: &Clock,
+): A
+
+/// Applies the ready proposed notice. Aborts when the proposal is an action.
+public fun apply_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &mut DelayedAction<K, A>,
+    clock: &Clock,
+)
+
+/// Discards the proposal, even a ready one, leaving the applied notice.
+public fun cancel<K: copy + drop + store, A: copy + drop + store>(self: &mut DelayedAction<K, A>)
+
+/// Deletes an action slot with no proposal and records its end; cancel a proposal first.
+public fun destroy<K: copy + drop + store, A: copy + drop + store>(self: DelayedAction<K, A>)
+
+/// The proposed action, or none for a notice change.
+public fun action<A: copy + drop + store>(self: &Change<A>): Option<A>
+```
+
+#### Events
+
+```move
+/// An action slot was created with its first applied notice.
 public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
     delay_ms: u64,
 }
 
-/// An action, admission or notice change was proposed, ready from `ready_at_ms`.
-/// `delay_ms` is the notice in force once it applies; for an admission, the notice it waits.
+/// An action or notice change was proposed, ready from `ready_at_ms`; `delay_ms` is the
+/// notice in force once it applies.
 public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -1181,7 +1131,7 @@ public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> ha
     ready_at_ms: u64,
 }
 
-/// A proposed action, admission or notice change was discarded.
+/// A proposed action or notice change was discarded, by cancellation or replacement.
 public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -1190,8 +1140,7 @@ public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> ha
     ready_at_ms: u64,
 }
 
-/// A ready action was handed to its owner, a member was admitted, or a notice applied;
-/// `delay_ms` matches the proposal's `ActionScheduled`.
+/// A ready action was handed to its owner, or a notice change applied.
 public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -1199,24 +1148,350 @@ public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has 
     delay_ms: u64,
 }
 
-/// A `Delayed` setting was deleted with nothing pending.
-public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
-    owner: ID,
-    key: K,
-}
-
-/// A `DelayedAction` slot or `DelayedSet` was deleted with nothing pending; a set's
-/// remaining members leave with it.
+/// An action slot was deleted with nothing pending.
 public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
 }
+```
 
-/// A member left a `DelayedSet` at once.
+### `blast_admin::delayed_map`
+
+Keyed values under one shared notice, such as per-coin overrides. Every entry change, setting or clearing, waits the notice applied when it was scheduled, and its deadline is fixed then; a later notice change never moves it. See `delayed` for the shared rules.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_map.move
+
+#### Types
+
+```move
+/// Applied values by entry, one applied notice, at most one pending change per entry, and at
+/// most one proposed notice. Values live in a Table, so reads cost one entry and the map
+/// grows without bound; pending changes are few and live inline.
+public struct DelayedMap<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    entries: Table<E, V>,
+    delay_ms: u64,
+    pending: VecMap<E, EntryProposal<V>>,
+    pending_delay: Option<delayed::Notice>,
+}
+
+/// A proposed entry value, or none to clear the entry, and the notice it waits.
+public struct EntryProposal<V: copy + drop + store> has copy, drop, store {
+    value: Option<V>,
+    notice: delayed::Notice,
+}
+
+/// What a map proposal does once applied.
+public enum MapChange<E: copy + drop + store, V: copy + drop + store> has copy, drop, store {
+    /// Sets the entry to `value`, or clears it when `value` is none.
+    Entry {
+        entry: E,
+        value: Option<V>,
+    },
+    /// Changes the notice for later entry changes.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An empty map; every entry change waits the applied notice.
+public fun new<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+    ctx: &mut TxContext,
+): DelayedMap<K, E, V>
+
+/// The applied value of `entry`, or none when it has none.
+public fun value<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): Option<V>
+
+/// The applied notice for entry changes, in milliseconds.
+public fun delay_ms<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): u64
+
+/// The pending change of `entry`, if any.
+public fun pending<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): Option<EntryProposal<V>>
+
+/// The proposed next notice, if any.
+public fun pending_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): Option<delayed::Notice>
+
+/// Proposes setting `entry` to `value` (none clears it) after the applied notice, and
+/// returns when. A replaced change is cancelled and the full notice restarts. Aborts when
+/// `value` is already the applied value.
+public fun schedule<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+    value: Option<V>,
+    clock: &Clock,
+): u64
+
+/// Applies `entry`'s ready change: sets its value or clears it.
+public fun apply<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+    clock: &Clock,
+)
+
+/// Discards `entry`'s pending change, even a ready one.
+public fun cancel<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    entry: E,
+)
+
+/// Proposes only a new notice, ready after the applied one, and returns when. Pending
+/// entry changes keep their deadlines.
+public fun schedule_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Applies the ready proposed notice to later entry changes.
+public fun apply_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+    clock: &Clock,
+)
+
+/// Discards the proposed notice, even a ready one.
+public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &mut DelayedMap<K, E, V>,
+)
+
+/// Deletes a map with no pending change and records its end, which also ends every
+/// remaining entry.
+public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: DelayedMap<K, E, V>,
+)
+
+/// The proposed value, or none when the change clears the entry.
+public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>): Option<V>
+
+/// The notice the change waits and when it becomes ready.
+public fun entry_proposal_notice<V: copy + drop + store>(self: &EntryProposal<V>): delayed::Notice
+```
+
+#### Events
+
+```move
+/// A map was created empty with its first applied notice.
+public struct MapCreated<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+}
+
+/// An entry change or notice change was proposed, ready from `ready_at_ms`. `delay_ms` is
+/// the notice an entry change waits, or the proposed next notice.
+public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposed change was discarded, by cancellation or replacement; its fields match its
+/// `MapScheduled`.
+public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// An entry was set or cleared, or a notice change applied; `delay_ms` matches its
+/// `MapScheduled`.
+public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: MapChange<E, V>,
+    delay_ms: u64,
+}
+
+/// A map was deleted with nothing pending; its remaining entries end with it.
+public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+}
+```
+
+### `blast_admin::delayed_set`
+
+Allowlists whose members join only after the applied notice and leave at once. See `delayed` for the rules every delayed type shares.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed_set.move
+
+#### Types
+
+```move
+/// Admitted members, one applied notice for new admissions, pending admissions with fixed
+/// deadlines, and at most one proposed notice. A notice change never moves a deadline.
+public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has store {
+    owner: ID,
+    key: K,
+    members: VecSet<E>,
+    delay_ms: u64,
+    admissions: VecMap<E, delayed::Notice>,
+    pending_delay: Option<delayed::Notice>,
+}
+
+/// What a set proposal does once applied.
+public enum SetChange<E: copy + drop + store> has copy, drop, store {
+    /// Admits the member.
+    Admission(E),
+    /// Changes the notice for later admissions.
+    Delay,
+}
+```
+
+#### Functions
+
+```move
+/// An empty set; every admission waits the applied notice.
+public fun new<K: copy + drop + store, E: copy + drop + store>(
+    key: K,
+    owner: &UID,
+    delay_ms: u64,
+): DelayedSet<K, E>
+
+/// Whether `member` has been admitted and not removed.
+public fun contains<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): bool
+
+/// The admitted members.
+public fun members<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): VecSet<E>
+
+/// The applied notice for new admissions, in milliseconds.
+public fun delay_ms<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): u64
+
+/// When `member`'s pending admission becomes ready, if one is pending.
+public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): Option<u64>
+
+/// The proposed next notice, if any.
+public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): Option<delayed::Notice>
+
+/// Proposes admitting `member` after the applied notice (never a proposed one) and returns
+/// when. Rescheduling a pending member cancels its admission and restarts the notice.
+/// Aborts when `member` is already admitted.
+public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+    clock: &Clock,
+): u64
+
+/// Admits `member` once its admission is ready.
+public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+    clock: &Clock,
+)
+
+/// Discards `member`'s pending admission, even a ready one.
+public fun cancel_add<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+)
+
+/// Removes `member` at once and discards its pending admission, leaving the notice.
+/// Aborts when `member` is neither admitted nor pending.
+public fun remove<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    member: E,
+)
+
+/// Proposes only a new notice, ready after the applied one, and returns when. Pending
+/// admissions keep their deadlines.
+public fun schedule_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Applies the ready proposed notice to later admissions.
+public fun apply_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+    clock: &Clock,
+)
+
+/// Discards the proposed notice, even a ready one.
+public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(self: &mut DelayedSet<K, E>)
+
+/// Deletes a set with no pending admission or notice change and records its end, which
+/// also ends every remaining membership.
+public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: DelayedSet<K, E>)
+```
+
+#### Events
+
+```move
+/// A set was created empty with its first applied notice.
+public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    delay_ms: u64,
+}
+
+/// An admission or notice change was proposed, ready from `ready_at_ms`. `delay_ms` is the
+/// notice an admission waits, or the proposed next notice.
+public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A proposed admission or notice change was discarded, by cancellation, replacement or
+/// removal; its fields match its `SetScheduled`.
+public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A member was admitted, or a notice change applied; `delay_ms` matches its `SetScheduled`.
+public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
+    change: SetChange<E>,
+    delay_ms: u64,
+}
+
+/// A member left the set at once.
 public struct MemberRemoved<K: copy + drop + store, E: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
     member: E,
+}
+
+/// A set was deleted with nothing pending; its remaining members leave with it.
+public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
 }
 ```
 

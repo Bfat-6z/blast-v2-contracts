@@ -29,8 +29,8 @@ migrators (`blast_fun_migrators`), Blast SUI (`blast_sui`), Boosts
 
 `ACL` fields: `super_admin_cap_id` (the one root cap that works), `admins` (a
 map from `AdminCap` ID to a set of role type names), and `super_admin_transfer`
-(a `delayed::DelayedAction<blast_acl::SuperAdminTransfer, address>` with a fixed
-seven-day notice; see "Delayed values, actions and sets").
+(a `delayed_action::DelayedAction<blast_acl::SuperAdminTransfer, address>` with a
+fixed seven-day notice; see "Delayed values, actions, sets and maps").
 
 Root powers are narrow: membership, roles, and its own delayed transfer. Root
 cannot sign in to any role and cannot call any consumer function. Every
@@ -109,12 +109,13 @@ what each transaction leaves on chain.
 #### Transfer root (root, then nominee)
 
 1. Root calls `blast_acl::begin_super_admin_transfer` with the recipient and
-   `Clock` at `0x6`. Emits `delayed::ActionScheduled<blast_acl::SuperAdminTransfer, address>`
-   with the nominee and `ready_at_ms` (and `delayed::ActionCancelled` first for a
-   replaced nominee).
+   `Clock` at `0x6`. Emits `delayed_action::ActionScheduled<blast_acl::SuperAdminTransfer, address>`
+   with the nominee and `ready_at_ms` (and `delayed_action::ActionCancelled` first
+   for a replaced nominee).
 2. At or after `ready_at_ms`, the nominee's address calls
    `blast_acl::accept_super_admin_transfer` with the `ACL` and `Clock`. Emits
-   `delayed::ActionApplied` and `SuperAdminTransferred` with the old and new cap IDs.
+   `delayed_action::ActionApplied` and `SuperAdminTransferred` with the old and new
+   cap IDs.
 3. The old holder may call `blast_acl::destroy_retired_super_admin_cap`. Emits
    `SuperAdminCapDestroyed`.
 
@@ -204,7 +205,7 @@ unique Publication and matching fresh UpgradeCap. Publication carries
 provenance only and is permanently consumed at wrap. Ordinary ACL operations
 configure policies using each publication-owned policy operation's initial zero notice; upgrade
 custody starts at 48 hours. Each operation
-stores its own notice in a `delayed` value; see "Delayed values, actions and sets".
+stores its own notice in a delayed value; see "Delayed values, actions, sets and maps".
 
 Blast SUI's `new` and `share`
 use its own Publisher and UpgradeCap directly:
@@ -229,44 +230,49 @@ The packages
 `blast_admin`, `blast_partners`, and `blast_boosts_core` are published immutable
 and have no custody at all.
 
-### Delayed values, actions and sets
+### Delayed values, actions, sets and maps
 
-Module `delayed` is a timelock in the Compound/OpenZeppelin sense: schedule, wait
-the applied notice, then apply; cancellable until applied. It is unrelated to the
-blast_fun_timelock package, whose values switch by themselves (partners still uses it).
-Consumers store three types:
+The delayed modules are a timelock in the Compound/OpenZeppelin sense: schedule,
+wait the applied notice, then apply; cancellable until applied. They are unrelated
+to the blast_fun_timelock package, whose values switch by themselves (partners
+still uses it). Each module owns one type; consumers store four:
 
 | Type | Holds | Used for |
 | --- | --- | --- |
 | `delayed::Delayed<K, T>` | an applied `value`, its applied `delay_ms`, at most one `delayed::Proposal<T>` | fees, shares, treasuries, destinations, fee splits |
-| `delayed::DelayedAction<K, A>` | an applied `delay_ms`, at most one `delayed::Proposal<delayed::Change<A>>` | one-shot actions: upgrades, immutability, creator-cap reassignment, the root transfer |
-| `delayed::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines, at most one proposed notice | migration-witness allowlists |
+| `delayed_action::DelayedAction<K, A>` | an applied `delay_ms`, at most one `delayed::Proposal<delayed_action::Change<A>>` | one-shot actions: upgrades, immutability, creator-cap reassignment, the root transfer |
+| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines, at most one proposed notice | migration-witness allowlists |
+| `delayed_map::DelayedMap<K, E, V>` | applied values by entry `E` in a `Table`, one applied `delay_ms`, at most one pending change per entry with a fixed deadline, at most one proposed notice | per-coin LP-share overrides |
 
 Every value carries an `owner` (the ID of the object that stores it) and a `key`
-of type `K`. `delayed::new`, `delayed::new_action` and `delayed::new_set` take the
-owner object's `&UID`, which only the code creating or holding that object has, so
-no package can attribute a value or its events to another package's object. Blast
-keys are structs without public constructors, so only their module can produce
-events under them. Partition `delayed` events by `owner`, then by `K`.
+of type `K`. `delayed::new`, `delayed_action::new`, `delayed_set::new` and
+`delayed_map::new` take the owner object's `&UID`, which only the code creating
+or holding that object has, so no package can attribute a value or its events to
+another package's object. Blast keys are structs without public constructors, so
+only their module can produce events under them. Partition delayed events by
+`owner`, then by `K`.
 
-Rules shared by all three:
+Rules shared by all four:
 
 - **Old notice governs.** Every proposal is ready at its scheduling time plus the
   notice applied then. A shorter notice, zero included, waits the applied one.
   `delayed::Proposal` exposes the proposed `value`, the `delay_ms` in force once it
-  applies, and `ready_at_ms`.
+  applies, and `ready_at_ms`; `delayed::Notice` exposes a notice's `delay_ms` and
+  `ready_at_ms`.
 - **Explicit application.** Nothing changes until `delayed::apply`,
-  `delayed::take_action`, `delayed::apply_add`, or a notice `apply_delay`
-  consumes a ready proposal. Readiness alone changes no value. Reads need no Clock.
-- **Cancellation until applied.** `delayed::cancel`, `delayed::cancel_action`,
-  `delayed::cancel_add` and the notice cancels work even after readiness.
-  Scheduling over a pending proposal cancels it and restarts the full applied notice.
+  `delayed_action::take_action`, `delayed_set::apply_add`, `delayed_map::apply`,
+  or a notice `apply_delay` consumes a ready proposal. Readiness alone changes no
+  value. Reads need no Clock.
+- **Cancellation until applied.** `delayed::cancel`, `delayed_action::cancel`,
+  `delayed_set::cancel_add`, `delayed_map::cancel` and the notice cancels work
+  even after readiness. Scheduling over a pending proposal cancels it and restarts
+  the full applied notice.
 - **Zero-notice bootstrap.** A notice can start at zero, so a schedule and its
   apply in one PTB act as a setter. Raising a notice from zero applies at once.
   There is no other mutation path.
 - **No-op rejection.** A `Delayed` proposal that changes neither value nor notice,
-  a notice proposal equal to the applied notice, and admitting a current member
-  abort with code 20.
+  a notice proposal equal to the applied notice, admitting a current member, and
+  a map change to the entry's applied value abort with code 20.
 - **Overflow.** Scheduling and application abort with code 19 when a deadline or
   the next notice would not fit in a `u64` millisecond timestamp.
 
@@ -275,22 +281,31 @@ Rules shared by all three:
 value. `delayed::assert_ready` checks readiness without changing anything, so an
 owner can settle accrued economics under the applied value before `delayed::apply`.
 
-`DelayedAction`: `delayed::schedule_action` (receiver alias `schedule`) proposes
-an action under the applied notice; `delayed::schedule_action_delay` (alias
-`schedule_delay`) proposes only a notice change. `delayed::take_action` returns a
-ready action to its owner and aborts with code 22 when the proposal is a notice
-change; `delayed::apply_action_delay` (alias `apply_delay`) does the reverse.
-`delayed::Change` is `Action(A)` or `Delay`; `delayed::change_action` (alias
-`action`) returns the action or none.
+`DelayedAction`: `delayed_action::schedule` proposes an action under the applied
+notice; `delayed_action::schedule_delay` proposes only a notice change.
+`delayed_action::take_action` returns a ready action to its owner and aborts with
+code 22 when the proposal is a notice change; `delayed_action::apply_delay` does
+the reverse. `delayed_action::Change` is `Action(A)` or `Delay`;
+`delayed_action::action` returns the action or none.
 
-`DelayedSet`: `delayed::schedule_add` snapshots a member's deadline from the
-applied notice; a later notice change never moves it. `delayed::apply_add` admits
-a ready member; `delayed::remove` removes a member and discards its pending
-admission at once. `delayed::contains` is the membership check.
+`DelayedSet`: `delayed_set::schedule_add` snapshots a member's deadline from the
+applied notice; a later notice change never moves it. `delayed_set::apply_add`
+admits a ready member; `delayed_set::remove` removes a member and discards its
+pending admission at once. `delayed_set::contains` is the membership check.
+`delayed_set::SetChange` is `Admission(E)` or `Delay`.
 
-`delayed::destroy`, `delayed::destroy_action` and `delayed::destroy_delayed_set`
-abort with code 21 while anything is pending, so every proposal ends in an event;
-they emit `delayed::DelayedDestroyed` or `delayed::ActionDestroyed`.
+`DelayedMap`: `delayed_map::schedule` proposes setting an entry to a value, or
+clearing it with none, and snapshots its deadline from the applied notice; a later
+notice change never moves it. Clearing is a delayed change like any other.
+`delayed_map::apply` sets or clears a ready entry; `delayed_map::value` reads an
+entry's applied value and `delayed_map::pending` its pending
+`delayed_map::EntryProposal` (the proposed value and its `delayed::Notice`).
+`delayed_map::MapChange` is `Entry { entry, value }` or `Delay`.
+
+The destroy calls (`delayed::destroy`, `delayed_action::destroy`,
+`delayed_set::destroy`, `delayed_map::destroy`) abort with code 21 while anything
+is pending, so every proposal ends in an event; each emits its module's
+`Destroyed` event.
 
 The creator-claim backend signer is a plain value assigned and revoked immediately
 under ClaimSignerAdmin. ACL administrator and role grants remain immediate.
@@ -328,8 +343,10 @@ content over RPC, or replay events.
 
 All `blast_admin` events are emitted directly (no envelope). ACL, version and
 custody events come from module `blast_admin_events` and carry no ACL ID because
-there is one ACL. Delayed lifecycle events come from module `delayed`, are generic
-in the owner's key `K` and value type, and carry `owner` and `key`.
+there is one ACL. Delayed lifecycle events come from the module that owns the
+type (`delayed`, `delayed_action`, `delayed_set` or `delayed_map`), are generic in
+the owner's key `K` and the value, action, member or entry types, and carry `owner`
+and `key`. Each map event's `change` names its entry.
 
 | Event | Emitted by | Use |
 | --- | --- | --- |
@@ -348,22 +365,33 @@ in the owner's key `K` and value type, and carry `owner` and `key`.
 | `delayed::DelayedCreated` | `delayed::new` | initial value and notice |
 | `delayed::DelayedScheduled` / `delayed::DelayedCancelled` | schedule, replace, cancel | proposed value, next notice, `ready_at_ms` |
 | `delayed::DelayedApplied` | `delayed::apply` | previous and new value, applied notice |
-| `delayed::ActionCreated` | `delayed::new_action`, `delayed::new_set` | initial notice |
-| `delayed::ActionScheduled` / `delayed::ActionCancelled` | action, admission or notice proposals | `change`, notice in force once applied, `ready_at_ms` |
-| `delayed::ActionApplied` | `delayed::take_action`, `delayed::apply_add`, notice applies | `change` and the notice now applied |
-| `delayed::MemberRemoved` | `delayed::remove` | member removed at once |
-| `delayed::DelayedDestroyed` / `delayed::ActionDestroyed` | the destroy calls | the value, slot or set (with its members) ends |
+| `delayed::DelayedDestroyed` | `delayed::destroy` | the setting ends |
+| `delayed_action::ActionCreated` | `delayed_action::new` | initial notice |
+| `delayed_action::ActionScheduled` / `delayed_action::ActionCancelled` | action or notice proposals | `change`, notice in force once applied, `ready_at_ms` |
+| `delayed_action::ActionApplied` | `delayed_action::take_action`, `delayed_action::apply_delay` | `change` and the notice now applied |
+| `delayed_action::ActionDestroyed` | `delayed_action::destroy` | the action slot ends |
+| `delayed_set::SetCreated` | `delayed_set::new` | initial notice |
+| `delayed_set::SetScheduled` / `delayed_set::SetCancelled` | admission or notice proposals; a removal cancels a pending admission | `change`, the notice an admission waits or the proposed notice, `ready_at_ms` |
+| `delayed_set::SetApplied` | `delayed_set::apply_add`, `delayed_set::apply_delay` | `change` and the notice it waited or now applied |
+| `delayed_set::MemberRemoved` | `delayed_set::remove` | member removed at once |
+| `delayed_set::SetDestroyed` | `delayed_set::destroy` | the set and its members end |
+| `delayed_map::MapCreated` | `delayed_map::new` | initial notice |
+| `delayed_map::MapScheduled` / `delayed_map::MapCancelled` | entry or notice proposals | `change` (entry and value, none to clear), the notice an entry change waits or the proposed notice, `ready_at_ms` |
+| `delayed_map::MapApplied` | `delayed_map::apply`, `delayed_map::apply_delay` | `change` and the notice it waited or now applied |
+| `delayed_map::MapDestroyed` | `delayed_map::destroy` | the map and its entries end |
 
 Replaying the ACL events in order reconstructs `ACL.admins` and every root
 transfer exactly. `ACL` creation emits only the root transfer's
-`delayed::ActionCreated`, so the first root cap's ID comes from the publish
+`delayed_action::ActionCreated`, so the first root cap's ID comes from the publish
 transaction's created objects (or the first `SuperAdminTransferred`, as
 `previous_super_admin_cap_id`). A proposal ends in exactly one `Applied` or
 `Cancelled` event.
 
 ### Aborts
 
-Codes are plain `u64` values raised in the `blast_admin` module named.
+Codes are plain `u64` values raised in the `blast_admin` module named. An error a
+delayed type raises in its own call is located in that type's module; readiness
+and overflow checked through the shared deadline rules are located in `delayed`.
 
 | Code | Name | Module | Cause and fix |
 | --- | --- | --- | --- |
@@ -384,12 +412,12 @@ Codes are plain `u64` values raised in the `blast_admin` module named.
 | 14 | `EUpgradeCapUnavailable` | `upgrade_custody` | the package was made immutable |
 | 15 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
 | 16 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
-| 17 | `ENotReady` | `delayed` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
-| 18 | `ENoPending` | `delayed` | applying or cancelling when nothing is pending |
+| 17 | `ENotReady` | `delayed`; `delayed_set` for `delayed_set::apply_add`, `delayed_map` for `delayed_map::apply` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
+| 18 | `ENoPending` | the type's module | applying or cancelling when nothing is pending |
 | 19 | `EInvalidDelay` | `delayed` | a deadline or the next notice would overflow a Unix millisecond timestamp; choose a representable notice |
-| 20 | `EUnchanged` | `delayed` | the proposal changes nothing, the member is already admitted, or `remove` names an unknown member |
-| 21 | `EProposalPending` | `delayed` | destroying a delayed value, action slot or set while a proposal is pending; cancel it first |
-| 22 | `EWrongChange` | `delayed` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
+| 20 | `EUnchanged` | the type's module | the proposal changes nothing, the member is already admitted, `remove` names an unknown member, or a map change repeats the entry's applied value (clearing an absent entry included) |
+| 21 | `EProposalPending` | the type's module | destroying a delayed value, action slot, set or map while a proposal is pending; cancel it first |
+| 22 | `EWrongChange` | `delayed_action` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
 
 The one an integrator most often meets is code 9 from `operational_version`: a
 PTB built against an old package ID after an upgrade.
@@ -421,7 +449,7 @@ key of `admins` is a live `AdminCap` ID and each value lists its roles. Replay
 `blast_admin_events` for the full history.
 
 **How much notice is there before root changes hands?** Seven days, fixed. The
-nomination emits `delayed::ActionScheduled` and is visible in
+nomination emits `delayed_action::ActionScheduled` and is visible in
 `super_admin_transfer`, and root can cancel it at any time before acceptance.
 
 **Can a role from one package authorize actions in another?** No. A consumer

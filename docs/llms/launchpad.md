@@ -383,8 +383,9 @@ in place. The opening-round balances awaiting delivery are untouched.
 #### Admin operations (Blast admin)
 
 Each setter takes the object it changes, `PackageVersion`, and the role's `AdminWitness`, and
-emits an event. Delayed schedules abort with code 20 from Blast admin's `delayed` module when
-nothing would change; "Delayed administration" lists their events. The allow/remove toggles for
+emits an event. Delayed schedules abort with code 20 from the Blast admin delayed module of
+their type (`delayed` for a setting, `delayed_set` for an adapter admission) when nothing would
+change; "Delayed administration" lists their events. The allow/remove toggles for
 Quotes and decimals instead abort inside the Sui collection (`sui::dynamic_field` or
 `sui::vec_set`) when the entry already has the requested state.
 
@@ -392,7 +393,7 @@ Quotes and decimals instead abort inside the Sui collection (`sui::dynamic_field
   a Quote for new launches; existing launches keep trading. Emits `blast_fun::events::QuoteSet`.
 - `launch_config::set_meme_decimals_allowed` (ListingAdmin), with `decimals: u8` and `allowed`.
   Emits `blast_fun::events::MemeDecimalsSet`.
-- `launch_config::schedule_migration_witness<Witness>` (AdapterAdmin), with `Clock`: schedules admission; rejects types defined at `0x1` or `0x2`. `apply_migration_witness` admits it after the snapshotted deadline. `remove_migration_witness` removes it immediately and cancels pending admission. Scheduling an admitted adapter, or removing one that is neither admitted nor pending, aborts with code 20 from `delayed`. Existing launches keep their adapter.
+- `launch_config::schedule_migration_witness<Witness>` (AdapterAdmin), with `Clock`: schedules admission; rejects types defined at `0x1` or `0x2`. `apply_migration_witness` admits it after the snapshotted deadline. `remove_migration_witness` removes it immediately and cancels pending admission. Scheduling an admitted adapter, or removing one that is neither admitted nor pending, aborts with code 20 from `delayed_set`. Existing launches keep their adapter.
 - `launch_config::schedule_trade_fees` (FeeAdmin), with Quote and Meme fee `Bps`, each at most 1,000;
   only launches started afterward use them. Application emits
   `delayed::DelayedApplied<launch_config::TradeFeesKey, launch_config::TradeFees>`.
@@ -444,23 +445,27 @@ Ordinary value applications need no role; code authorization and immutability ex
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
 later schedules check their own timestamp addition too. A value proposal that changes neither
 value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 20
-(`EUnchanged`) from Blast admin's `delayed` module.
+(`EUnchanged`) from Blast admin's `delayed` module (`delayed_action` for an upgrade or
+cap-reassignment notice, `delayed_set` for the admission notice).
 Read the live notice before relying on a cancellation window.
 
-Each delayed field is a `blast_admin::delayed` value, and that module emits every
-schedule, cancel and apply event; the launchpad emits none of its own, and these events are
-not wrapped in `blast_fun::blast_events::Event`. They are generic in the operation's key and
-value type and carry `owner` (the ID of the object that stores the field) and `key`. A value
-schedule emits `delayed::DelayedScheduled` (after `delayed::DelayedCancelled` for a replaced
-proposal), a cancel emits `delayed::DelayedCancelled`, and an application emits
+Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, a
+`delayed_action::DelayedAction` slot, or the `delayed_set::DelayedSet` of adapters. The module
+of each type emits every schedule, cancel and apply event; the launchpad emits none of its own,
+and these events are not wrapped in `blast_fun::blast_events::Event`. They are generic in the
+operation's key and value type and carry `owner` (the ID of the object that stores the field)
+and `key`. A value schedule emits `delayed::DelayedScheduled` (after `delayed::DelayedCancelled`
+for a replaced proposal), a cancel emits `delayed::DelayedCancelled`, and an application emits
 `delayed::DelayedApplied` with the previous and new value and the applied notice. Creating a
-field emits `delayed::DelayedCreated` (`delayed::ActionCreated` for an action slot or the
-admission set), so `launch::finalize` also emits it for both cap-reassignment slots. Upgrade
-actions, cap reassignments, adapter admissions and their notice changes emit
-`delayed::ActionScheduled`, `delayed::ActionCancelled` and `delayed::ActionApplied`, whose
-`change` is `Action(...)` or `Delay` (a notice change). Their `delay_ms` is the proposed next
-notice for a notice change and the applied notice for an action or admission.
-`delayed::MemberRemoved` records an immediate adapter removal.
+setting emits `delayed::DelayedCreated`, an action slot `delayed_action::ActionCreated` (so
+`launch::finalize` emits it for both cap-reassignment slots), and the admission set
+`delayed_set::SetCreated`. Upgrade actions, cap reassignments and their notice changes emit
+`delayed_action::ActionScheduled`, `delayed_action::ActionCancelled` and
+`delayed_action::ActionApplied`, whose `change` is `Action(...)` or `Delay` (a notice change).
+Adapter admissions and their notice changes emit `delayed_set::SetScheduled`,
+`delayed_set::SetCancelled` and `delayed_set::SetApplied`, whose `change` is `Admission(...)` or
+`Delay`. Their `delay_ms` is the proposed next notice for a notice change and the applied notice
+for an action or admission. `delayed_set::MemberRemoved` records an immediate adapter removal.
 
 | Operation | Object and field | Key | Value or action type |
 | --- | --- | --- | --- |
@@ -494,7 +499,7 @@ proposals before release. Raising a notice never changes previously scheduled de
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
 Adapter admissions share one applied notice across witness types, held in the
-`delayed::DelayedSet` `LaunchConfig.migration_witnesses`; a fresh type cannot reopen setup.
+`delayed_set::DelayedSet` `LaunchConfig.migration_witnesses`; a fresh type cannot reopen setup.
 `launch_config::schedule_migration_witness` accepts only the witness type in addition to its state, authority and Clock inputs. It snapshots
 the applied notice and deadline; application only admits that witness and preserves the
 live notice. `launch_config::schedule_migration_delay` proposes a new notice under
@@ -533,12 +538,12 @@ kind of schedule replaces its previous proposal. After the delay anyone executes
 reassignment with `launch::apply_curve_fee_cap_reassignment` or
 `launch::apply_metadata_cap_reassignment`, and a notice change with
 `launch::apply_curve_fee_cap_delay` or `launch::apply_metadata_cap_delay`; calling the
-other kind's apply aborts with code 22 from `delayed`.
+other kind's apply aborts with code 22 from `delayed_action`.
 Delay-only execution keeps the current cap's authority; reassignment retires it.
 CancelAdmin can cancel either proposal.
-Both caps record their lifecycle with the `delayed` action events, keyed by
+Both caps record their lifecycle with the `delayed_action` events, keyed by
 `launch::CurveFeeCapReassignment` or `launch::MetadataCapReassignment` with the launch ID as
-`owner`. Applying a reassignment emits `delayed::ActionApplied` before
+`owner`. Applying a reassignment emits `delayed_action::ActionApplied` before
 `blast_fun::events::CurveFeeCapReassigned` or `blast_fun::events::MetadataCapReassigned`.
 ClaimSignerAdmin may immediately revoke the signer with
 `runtime_config::revoke_creator_claim_signer`; assignment and revocation take effect immediately.
@@ -777,7 +782,7 @@ the transaction sender; take it from the transaction.
 Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSet`,
 `blast_fun::events::PartnerAdded`, `blast_fun::events::PartnerRemoved`,
 `blast_fun::events::CreatorClaimSignerSet`. Outside the envelope: every delayed schedule,
-cancel and apply event from `blast_admin::delayed` (see "Delayed administration"), the Cetus adapter's
+cancel and apply event from the Blast admin delayed modules (see "Delayed administration"), the Cetus adapter's
 `blast_fun_migrators::blast_events::CetusPoolReserved` at creation, and
 `blast_partners::blast_partners::PartnerPaid` for each partner payout.
 
@@ -792,7 +797,7 @@ that detected it.
 | pause, unpause | 38 `blast_fun::errors::EInvalidPauseBits`, 39 `blast_fun::errors::EPauseUnchanged` (`blast_fun`) | select nonzero supported bits that change the active mask |
 | create, buy, sell, voluntary migration | 40 `blast_fun::errors::EPaused` (`blast_fun`) | wait for an `UnpauseAdmin` to clear the operation's bit |
 | package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; use a 32-byte digest |
-| delayed administration (fees, allocation, treasury, adapters, upgrades, cap reassignment) | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin's `delayed` module (plain codes) | wait for `ready_at_ms`; schedule before applying or cancelling; choose a representable notice; change the value or notice; apply with the call matching the pending action or notice change |
+| delayed administration (fees, allocation, treasury, adapters, upgrades, cap reassignment) | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin (plain codes): 18 and 20 from the type's own module (`delayed`, `delayed_action` or `delayed_set`), 22 from `delayed_action`, 17 from `delayed_set` for an early admission and otherwise, like 19, from `delayed` | wait for `ready_at_ms`; schedule before applying or cancelling; choose a representable notice; change the value or notice; apply with the call matching the pending action or notice change |
 | publish | 9 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 25 `blast_fun::errors::EInvalidCreatorRecipient`, 26 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | start | 11 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 32 `blast_fun::errors::EQuoteNotAllowed`, 3 `blast_fun::errors::EMigrationWitnessNotAllowed`, 2 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, adapter, and decimals |

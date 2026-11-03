@@ -29,8 +29,8 @@ use std::{collections::BTreeSet, path::Path, time::Duration};
 
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
-    ActionApplied, ActionScheduled, Change, CompiledPackage, Delayed, Expected, Harness, Outcome, build,
-    build_timelock, call, sui_dir, timelock_dir,
+    ActionApplied, ActionScheduled, Change, CompiledPackage, Delayed, Expected, Harness, Outcome, SetApplied,
+    SetChange, SetScheduled, build, build_timelock, call, sui_dir, timelock_dir,
 };
 use move_binary_format::{CompiledModule, file_format::SignatureToken};
 use serde::{Deserialize, Serialize};
@@ -210,26 +210,29 @@ fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()
         let apply = apply.finish();
         let watched = [w.config, w.version, w.acl, w.admin_cap];
         w.h.sim.advance_clock(Duration::from_millis(old_delay - 1));
+        // The first early step aborts: a notice change through the shared readiness check, an
+        // admission in the set itself.
+        let early_module = if policy_first { "delayed" } else { "delayed_set" };
         w.h.assert_rolled_back(apply.clone(),
-            Expected::Abort { package: w.admin, module: "delayed", code: 17 },
+            Expected::Abort { package: w.admin, module: early_module, code: 17 },
             &watched, &[w.h.sender])?;
         w.h.sim.advance_clock(Duration::from_millis(1));
         let applied = w.h.execute(apply)?;
         applied.assert_success();
         // The primitive records the notice change and each admission, in application order.
         assert!(applied.wrapped_payloads(w.blast).is_empty());
-        let changes: Vec<ActionApplied<String>> =
-            applied.delayed("ActionApplied", "launch_config", "MigrationWitnessKey")?;
+        let changes: Vec<SetApplied<String>> =
+            applied.delayed("SetApplied", "launch_config", "MigrationWitnessKey")?;
         let admitted: Vec<_> = adapters.iter().rev()
-            .map(|adapter| Change::Action(adapter.to_canonical_string(false))).collect();
+            .map(|adapter| SetChange::Admission(adapter.to_canonical_string(false))).collect();
         let expected: Vec<_> = if policy_first {
-            std::iter::once(Change::Delay).chain(admitted).collect()
+            std::iter::once(SetChange::Delay).chain(admitted).collect()
         } else {
-            admitted.into_iter().chain(std::iter::once(Change::Delay)).collect()
+            admitted.into_iter().chain(std::iter::once(SetChange::Delay)).collect()
         };
         assert_eq!(changes.iter().map(|applied| applied.change.clone()).collect::<Vec<_>>(), expected);
         assert!(changes.iter().all(|applied| applied.owner == w.config));
-        assert_eq!(changes.iter().find(|applied| applied.change == Change::Delay).map(|applied| applied.delay_ms),
+        assert_eq!(changes.iter().find(|applied| applied.change == SetChange::Delay).map(|applied| applied.delay_ms),
             Some(next_delay));
 
         // A fresh admission uses the new policy, even after applying older admissions.
@@ -245,10 +248,10 @@ fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()
             vec![later.clone()], vec![config, version, admin, clock]);
         let scheduled = w.h.execute(b.finish())?;
         scheduled.assert_success();
-        let admissions: Vec<ActionScheduled<String>> =
-            scheduled.delayed("ActionScheduled", "launch_config", "MigrationWitnessKey")?;
+        let admissions: Vec<SetScheduled<String>> =
+            scheduled.delayed("SetScheduled", "launch_config", "MigrationWitnessKey")?;
         assert_eq!(admissions.len(), 1);
-        assert_eq!(admissions[0].change, Change::Action(later.to_canonical_string(false)));
+        assert_eq!(admissions[0].change, SetChange::Admission(later.to_canonical_string(false)));
         assert_eq!((admissions[0].ready_at_ms, admissions[0].delay_ms), (now + next_delay, next_delay));
 
         let mut b = ProgrammableTransactionBuilder::new();
@@ -260,7 +263,7 @@ fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()
         let apply = b.finish();
         w.h.sim.advance_clock(Duration::from_millis(next_delay - 1));
         w.h.assert_rolled_back(apply.clone(),
-            Expected::Abort { package: w.admin, module: "delayed", code: 17 },
+            Expected::Abort { package: w.admin, module: "delayed_set", code: 17 },
             &watched, &[w.h.sender])?;
         w.h.sim.advance_clock(Duration::from_millis(1));
         w.h.execute(apply)?.assert_success();
@@ -582,7 +585,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     enum UpgradeAction { Upgrade(Vec<u8>), #[allow(dead_code)] MakeImmutable }
     let admin = w.admin;
     let upgrade_event = |name: &str| parse_sui_type_tag(&format!(
-        "{admin}::delayed::{name}<{original}::package_admin::UpgradeKey, {original}::package_admin::UpgradeAction>",
+        "{admin}::delayed_action::{name}<{original}::package_admin::UpgradeKey, {original}::package_admin::UpgradeAction>",
     ));
     let proposal = ActionScheduled {
         owner: custody,

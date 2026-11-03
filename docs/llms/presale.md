@@ -675,7 +675,7 @@ Integrators cannot call these; they explain state changes. Each takes the
 | `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`EProtocolFeesIncreased` otherwise). Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
 | `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Application emits `delayed::DelayedApplied<presale_vault::ProtocolLpFeesKey, fee_policy::ProtocolFees>`. |
 | `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `creation_policy::QuoteSet`. |
-| `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `delayed::ActionApplied<creation_policy::MigrationWitnessKey, TypeName>`; `remove_migration_witness` removes immediately (emitting `delayed::MemberRemoved` for an admitted witness) and cancels pending admission. |
+| `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `delayed_set::SetApplied<creation_policy::MigrationWitnessKey, TypeName>`; `remove_migration_witness` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted witness) and cancels pending admission. |
 | `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `creation_policy::PartnerAdded`. |
 | `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `creation_policy::PartnerRemoved`. |
 | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` | See above. |
@@ -699,22 +699,27 @@ Ordinary value applications need no role; code authorization and immutability ex
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
 later schedules check their own timestamp addition too. A value proposal that changes neither
 value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 20
-(`EUnchanged`) from Blast admin's `delayed` module.
+(`EUnchanged`) from Blast admin's `delayed` module (`delayed_action` for the upgrade notice,
+`delayed_set` for the admission notice).
 Read the live notice before relying on a cancellation window.
 
-Each delayed field is a `blast_admin::delayed` value, and that module emits every
-schedule, cancel and apply event; the presale package emits none of its own. The events
-are generic in the operation's key and value type and carry `owner` (the ID of the object
-that stores the field) and `key`. A value schedule emits `delayed::DelayedScheduled`
-(after `delayed::DelayedCancelled` for a replaced proposal), a cancel emits
-`delayed::DelayedCancelled`, and an application emits `delayed::DelayedApplied` with the
-previous and new value and the applied notice. Creating a field emits
-`delayed::DelayedCreated` (`delayed::ActionCreated` for the upgrade slot and the admission
-set), so creating a vault also emits it for the vault's two fields. Upgrade actions, adapter
-admissions and their notice changes emit `delayed::ActionScheduled`, `delayed::ActionCancelled` and
-`delayed::ActionApplied`, whose `change` is `Action(...)` or `Delay` (a notice change).
-Their `delay_ms` is the proposed next notice for a notice change and the applied notice
-for an action or admission. `delayed::MemberRemoved` records an immediate adapter removal.
+Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, the
+`delayed_action::DelayedAction` upgrade slot, or the `delayed_set::DelayedSet` of adapters. The
+module of each type emits every schedule, cancel and apply event; the presale package emits none
+of its own. The events are generic in the operation's key and value type and carry `owner` (the
+ID of the object that stores the field) and `key`. A value schedule emits
+`delayed::DelayedScheduled` (after `delayed::DelayedCancelled` for a replaced proposal), a cancel
+emits `delayed::DelayedCancelled`, and an application emits `delayed::DelayedApplied` with the
+previous and new value and the applied notice. Creating a setting emits
+`delayed::DelayedCreated` (so creating a vault emits it for the vault's two fields), the upgrade
+slot `delayed_action::ActionCreated`, and the admission set `delayed_set::SetCreated`. Upgrade
+actions and their notice changes emit `delayed_action::ActionScheduled`,
+`delayed_action::ActionCancelled` and `delayed_action::ActionApplied`, whose `change` is
+`Action(...)` or `Delay` (a notice change). Adapter admissions and their notice changes emit
+`delayed_set::SetScheduled`, `delayed_set::SetCancelled` and `delayed_set::SetApplied`, whose
+`change` is `Admission(...)` or `Delay`. Their `delay_ms` is the proposed next notice for a
+notice change and the applied notice for an action or admission. `delayed_set::MemberRemoved`
+records an immediate adapter removal.
 
 | Operation | Object and field | Key | Value or action type |
 | --- | --- | --- | --- |
@@ -745,7 +750,7 @@ proposals before release. Raising a notice never changes previously scheduled de
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
 Adapter admissions share one applied notice across witness types, held in the
-`delayed::DelayedSet` `CreationPolicy.migration_witnesses`; a fresh type cannot reopen setup.
+`delayed_set::DelayedSet` `CreationPolicy.migration_witnesses`; a fresh type cannot reopen setup.
 `creation_policy::schedule_migration_witness` accepts only the witness type in addition to its state, authority and Clock inputs. It snapshots
 the applied notice and deadline; application only admits that witness and preserves the
 live notice. `creation_policy::schedule_migration_delay` proposes a new notice under
@@ -755,7 +760,7 @@ change cannot overwrite that policy. Existing admission deadlines remain fixed; 
 or cancel all zero-notice admissions before completing setup. Immediate adapter removal
 cancels that type's pending admission and preserves the applied notice. Scheduling an
 admitted witness, or removing one that is neither admitted nor pending, aborts with code 20
-from `delayed`.
+from `delayed_set`.
 
 New vaults start their own LP-fee notice at 48 hours; creating a fresh vault never
 reopens zero-notice setup. Vault fee changes can propose a different next notice,
@@ -964,7 +969,7 @@ Common answers:
 
 Other objects:
 
-Delayed policy fields are `blast_admin::delayed` values. A `Delayed<K, T>` contains `owner` (the ID of
+Delayed policy fields are Blast admin `delayed::Delayed` values. A `Delayed<K, T>` contains `owner` (the ID of
 the object that stores it), `key`, the applied `value`, applied `delay_ms`, and an optional `pending`
 proposal with the proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
 pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
@@ -1086,10 +1091,13 @@ it. Common ones by flow (module `blast_presale` unless named):
   `holder_rewards` publish checks (`EWrongRound`, `EInvalidInterval`, `EInvalidCommitment`,
   `EInvalidLeafCount`, `EEmptyBudget`, `EInvalidClaimDeadline`).
 - Delayed administration (fee split, LP-fee rates, policy fees and payee, adapter admission,
-  upgrades): Blast admin's `delayed` module aborts with plain codes. 17 `ENotReady`: applied
-  before `ready_at_ms`. 18 `ENoPending`: applied or cancelled with nothing pending. 19
-  `EInvalidDelay`: a deadline or notice would overflow. 20 `EUnchanged`: the proposal changes
-  nothing, the witness is already admitted, or the removed witness is unknown. 22 `EWrongChange`:
+  upgrades): Blast admin's delayed modules abort with plain codes. 17 `ENotReady`: applied
+  before `ready_at_ms` (from `delayed_set` for an early admission, otherwise from `delayed`).
+  18 `ENoPending`: applied or cancelled with nothing pending (from the type's own module:
+  `delayed` for a setting, `delayed_action` for an upgrade, `delayed_set` for an admission). 19
+  `EInvalidDelay`: a deadline or notice would overflow (from `delayed`). 20 `EUnchanged`: the
+  proposal changes nothing, the witness is already admitted, or the removed witness is unknown
+  (from the type's own module). 22 `EWrongChange` (from `delayed_action`):
   `authorize_upgrade` or `make_immutable` while a notice change is pending, or
   `apply_upgrade_delay` while an action is pending.
 

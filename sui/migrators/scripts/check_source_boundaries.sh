@@ -208,13 +208,16 @@ constants:package:fun sqrt_upper_bound_shift(): u8
 lp_fee_policy:package:fun protocol_destination(self: &LpFeePolicy): address
 lp_fee_policy:package:fun shares<Meme>(self: &LpFeePolicy): (Bps, Bps)
 lp_fee_policy:public:fun apply_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock )
+lp_fee_policy:public:fun apply_coin_shares_delay( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock )
 lp_fee_policy:public:fun apply_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
 lp_fee_policy:public:fun apply_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, clock: &Clock, )
 lp_fee_policy:public:fun cancel_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin> )
+lp_fee_policy:public:fun cancel_coin_shares_delay( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin> )
 lp_fee_policy:public:fun cancel_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
 lp_fee_policy:public:fun cancel_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<CancelAdmin>, )
-lp_fee_policy:public:fun schedule_clear_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, delay_ms: u64, clock: &Clock )
-lp_fee_policy:public:fun schedule_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, delay_ms: u64, clock: &Clock )
+lp_fee_policy:public:fun schedule_clear_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, clock: &Clock )
+lp_fee_policy:public:fun schedule_coin_shares<Meme>( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, clock: &Clock )
+lp_fee_policy:public:fun schedule_coin_shares_delay( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, delay_ms: u64, clock: &Clock )
 lp_fee_policy:public:fun schedule_default_shares( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<FeeAdmin>, meme_bps: Bps, quote_bps: Bps, delay_ms: u64, clock: &Clock, )
 lp_fee_policy:public:fun schedule_protocol_destination( self: &mut LpFeePolicy, migrators_version: &MigratorsVersion, _: &AdminWitness<TreasuryAdmin>, destination: address, delay_ms: u64, clock: &Clock, )
 merkle:package:fun leaf( vault: ID, round: u64, index: u64, beneficiary: address, meme: u64, quote: u64, ): vector<u8>
@@ -446,7 +449,7 @@ fi
 # Each replay fact has exactly one writer: the vault's split, buyback, auto-LP, custody, and
 # claims (the partner claim included); and the holder-reward publication and claim. Delayed
 # settings, the creator split, and upgrade custody record their lifecycle only through
-# `blast_admin::delayed` events, so no package event may restate it.
+# `blast_admin`'s delayed-module events, so no package event may restate it.
 for emitter in \
     'fees_collected:vault:split_fees' \
     'buyback_burned:vault:burn_buyback' \
@@ -1137,12 +1140,13 @@ fi
 
 # === Delayed operations ===
 #
-# Every delayed operation stores `blast_admin::delayed`'s keyed primitive, owned by the object that
-# holds it and keyed by a sealed type of its own module, so the primitive alone validates, waits,
-# and records the lifecycle. Each per-coin override's key carries its coin; a coin's first entry
-# opens with no override under the applied default notice. Upgrade custody stores one action slot
-# whose actions are only an exact digest or immutability, and authorizes only the action it asked
-# for. The retired raw proposal API may not return.
+# Every delayed operation stores one of `blast_admin`'s keyed delayed primitives, owned by the object
+# that holds it and keyed by a sealed type of its own module, so the primitive alone validates,
+# waits, and records the lifecycle. Per-coin overrides share one DelayedMap opened at the policy's
+# publication notice: every override, a clear included, waits that map's own notice, and each
+# lifecycle event names its coin as the entry. Upgrade custody stores one action slot whose actions
+# are only an exact digest or immutability, and authorizes only the action it asked for. The
+# retired raw proposal API may not return.
 LP_FEE_POLICY_FACTS="$(move_facts "$LP_FEE_POLICY_SOURCE")"
 PACKAGE_ADMIN_FACTS="$(move_facts "$SOURCE_DIR/package_admin.move")"
 [[ "$LP_FEE_POLICY_FACTS$PACKAGE_ADMIN_FACTS" != *MALFORMED* ]] || \
@@ -1156,15 +1160,17 @@ package_admin_body() {
         | tr -d '[:space:]' | sed 's/,)/)/g'
 }
 [[ "$(move_production_type LpFeePolicy <<<"$LP_FEE_POLICY_FACTS")" \
-    == 'struct LpFeePolicy has key { id: UID, destination: Delayed<ProtocolDestinationKey, address>, defaults: Delayed<DefaultSharesKey, SharePair>, coins: Table<TypeName, Delayed<CoinSharesKey, Option<SharePair>>>, }' ]] \
+    == 'struct LpFeePolicy has key { id: UID, destination: Delayed<ProtocolDestinationKey, address>, defaults: Delayed<DefaultSharesKey, SharePair>, coins: DelayedMap<CoinSharesKey, TypeName, SharePair>, }' ]] \
     && [[ "$(move_production_type ProtocolDestinationKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct ProtocolDestinationKey() has copy, drop, store;' ]] \
     && [[ "$(move_production_type DefaultSharesKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct DefaultSharesKey() has copy, drop, store;' ]] \
-    && [[ "$(move_production_type CoinSharesKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct CoinSharesKey(TypeName) has copy, drop, store;' ]] || \
-    fail "LpFeePolicy must store its destination, defaults, and per-coin overrides as keyed Delayed values"
-[[ "$(policy_body new)" == 'assert!(@blast_lp_fee_destination!=@0x0,EInvalidProtocolDestination);letid=object::new(ctx);LpFeePolicy{destination:delayed::new(ProtocolDestinationKey(),&id,destination,delay_ms),defaults:delayed::new(DefaultSharesKey(),&id,defaults,delay_ms),coins:table::new(ctx),id,}' ]] \
-    && [[ "$(policy_body schedule_coin_shares)" == 'migrators_version.assert_current();letmeme=type_name::with_original_ids<Meme>();if(!self.coins.contains(meme)){letcoin_shares=delayed::new(CoinSharesKey(meme),&self.id,option::none(),self.defaults.delay_ms());self.coins.add(meme,coin_shares);};self.coins[meme].schedule(option::some(SharePair{meme_bps,quote_bps}),delay_ms,clock);' ]] \
+    && [[ "$(move_production_type CoinSharesKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct CoinSharesKey() has copy, drop, store;' ]] || \
+    fail "LpFeePolicy must store its destination and defaults as keyed Delayed values and its per-coin overrides as one keyed DelayedMap"
+[[ "$(policy_body new)" == 'assert!(@blast_lp_fee_destination!=@0x0,EInvalidProtocolDestination);letid=object::new(ctx);LpFeePolicy{destination:delayed::new(ProtocolDestinationKey(),&id,destination,delay_ms),defaults:delayed::new(DefaultSharesKey(),&id,defaults,delay_ms),coins:delayed_map::new(CoinSharesKey(),&id,delay_ms,ctx),id,}' ]] \
+    && [[ "$(policy_body schedule_coin_shares)" == 'migrators_version.assert_current();letmeme=type_name::with_original_ids<Meme>();self.coins.schedule(meme,option::some(SharePair{meme_bps,quote_bps}),clock);' ]] \
+    && [[ "$(policy_body schedule_clear_coin_shares)" == 'migrators_version.assert_current();self.coins.schedule(type_name::with_original_ids<Meme>(),option::none(),clock);' ]] \
+    && [[ "$(policy_body schedule_coin_shares_delay)" == 'migrators_version.assert_current();self.coins.schedule_delay(delay_ms,clock);' ]] \
     && [[ "$(policy_body schedule_protocol_destination)" == 'migrators_version.assert_current();assert!(destination!=@0x0,EInvalidProtocolDestination);self.destination.schedule(destination,delay_ms,clock);' ]] || \
-    fail "the policy must own its keyed values, open a coin entry under the applied default notice, and validate the destination before proposing"
+    fail "the policy must own its keyed values, open the coin overrides at its publication notice, propose every override and clear under their own notice, and validate the destination before proposing"
 require_errors "$LP_FEE_POLICY_SOURCE" "lp_fee_policy must use code 0 for its destination check" <<'EOF'
 0 EInvalidProtocolDestination Protocol destination must be a nonzero address.
 EOF
@@ -1175,14 +1181,14 @@ EOF
     fail "PackageAdmin must store upgrade custody's notice and proposal as one keyed DelayedAction of digest or immutability"
 [[ "$(package_admin_body authorize_upgrade)" == 'package_version.assert_current();letcustodian_id=self.id.to_inner();letaction=self.upgrade.take_action(clock);assert!(action==UpgradeAction::Upgrade(digest),EWrongUpgradeAction);self.custody.authorize_upgrade(custodian_id,digest)' ]] \
     && [[ "$(package_admin_body make_immutable)" == 'package_version.assert_current();letaction=self.upgrade.take_action(clock);assert!(action==UpgradeAction::MakeImmutable,EWrongUpgradeAction);self.custody.make_immutable(self.id.to_inner());' ]] \
-    && [[ "$(package_admin_body wrap)" == *'letupgrade=delayed::new_action(UpgradeKey(),&id,INITIAL_UPGRADE_DELAY_MS);transfer::share_object(PackageAdmin{id,custody,upgrade});'* ]] || \
+    && [[ "$(package_admin_body wrap)" == *'letupgrade=delayed_action::new(UpgradeKey(),&id,INITIAL_UPGRADE_DELAY_MS);transfer::share_object(PackageAdmin{id,custody,upgrade});'* ]] || \
     fail "upgrade custody must start at its 48-hour notice and act only on the exact ready action it asked for"
 require_errors "$SOURCE_DIR/package_admin.move" "package_admin must use sequential codes 0-1 for its action and digest checks" <<'EOF'
 0 EWrongUpgradeAction The ready action must match the requested upgrade digest or immutability.
 1 EInvalidDigest A package digest must contain 32 bytes.
 EOF
 reject_pattern '\b(new_pending|take_ready|Pending)\b' \
-    'the retired raw delayed proposal API is forbidden; store a keyed Delayed, DelayedAction, or DelayedSet'
+    'the retired raw delayed proposal API is forbidden; store a keyed Delayed, DelayedAction, DelayedSet, or DelayedMap'
 
 # === Package-wide custody rules ===
 
@@ -1358,10 +1364,12 @@ blast_holder_rewards:settle_gas_reserve:RewardsAdmin
 bluefin:buyback_and_burn:BuybackAdmin
 cetus:buyback_and_burn:BuybackAdmin
 lp_fee_policy:cancel_coin_shares:CancelAdmin
+lp_fee_policy:cancel_coin_shares_delay:CancelAdmin
 lp_fee_policy:cancel_default_shares:CancelAdmin
 lp_fee_policy:cancel_protocol_destination:CancelAdmin
 lp_fee_policy:schedule_clear_coin_shares:FeeAdmin
 lp_fee_policy:schedule_coin_shares:FeeAdmin
+lp_fee_policy:schedule_coin_shares_delay:FeeAdmin
 lp_fee_policy:schedule_default_shares:FeeAdmin
 lp_fee_policy:schedule_protocol_destination:TreasuryAdmin
 package_admin:authorize_upgrade:UpgradeAdmin

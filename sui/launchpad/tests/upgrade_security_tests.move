@@ -33,7 +33,7 @@ public struct Fixture {
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun upgrade_missing() { exercise(false, Case::Missing); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
@@ -42,10 +42,10 @@ fun upgrade_early() { exercise(false, Case::Early); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun upgrade_replacement() { exercise(false, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun upgrade_cancelled() { exercise(false, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun upgrade_replay() { exercise(false, Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_fun::errors::EWrongUpgradeAction, location = blast_fun::package_admin)]
@@ -69,7 +69,7 @@ fun upgrade_after_ready() { exercise(false, Case::Late); }
 #[test]
 fun upgrade_cancel_then_reschedule() { exercise(false, Case::Reschedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun immutable_missing() { exercise(true, Case::Missing); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
@@ -78,10 +78,10 @@ fun immutable_early() { exercise(true, Case::Early); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun immutable_replacement() { exercise(true, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun immutable_cancelled() { exercise(true, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun immutable_replay() { exercise(true, Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_fun::errors::EWrongUpgradeAction, location = blast_fun::package_admin)]

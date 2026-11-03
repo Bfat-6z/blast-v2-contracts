@@ -88,16 +88,16 @@ fun defaults_stale_cancel() { exercise(Setting::Defaults, Case::StaleCancel); }
 #[test]
 fun defaults_boundaries_and_cancel_reschedule() { exercise(Setting::Defaults, Case::Success); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_map)]
 fun coin_override_early() { exercise(Setting::CoinOverride, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_map)]
 fun coin_override_replacement_restarts_notice() { exercise(Setting::CoinOverride, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_map)]
 fun coin_override_cancelled() { exercise(Setting::CoinOverride, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_map)]
 fun coin_override_replay() { exercise(Setting::CoinOverride, Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
@@ -112,16 +112,16 @@ fun coin_override_stale_cancel() { exercise(Setting::CoinOverride, Case::StaleCa
 #[test]
 fun coin_override_boundaries_and_cancel_reschedule() { exercise(Setting::CoinOverride, Case::Success); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_map)]
 fun coin_clear_early() { exercise(Setting::CoinClear, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_map)]
 fun coin_clear_replacement_restarts_notice() { exercise(Setting::CoinClear, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_map)]
 fun coin_clear_cancelled() { exercise(Setting::CoinClear, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_map)]
 fun coin_clear_replay() { exercise(Setting::CoinClear, Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
@@ -141,7 +141,7 @@ fun coin_clear_uses_defaults_applied_during_its_notice() {
     let mut fixture = start(Setting::CoinClear);
     let f = &mut fixture;
     let fee_admin = blast_acl::witness_for_testing<FeeAdmin>();
-    f.policy.schedule_clear_coin_shares<CoinA>(&f.version, &fee_admin, 172_800_000, &f.clock);
+    f.policy.schedule_clear_coin_shares<CoinA>(&f.version, &fee_admin, &f.clock);
     f
         .policy
         .schedule_default_shares(
@@ -274,7 +274,6 @@ fun prepare_again(f: &mut Fixture, setting: Setting) { if (setting == Setting::C
                 &blast_acl::witness_for_testing<FeeAdmin>(),
                 bps::new(5),
                 bps::new(6),
-                172_800_000,
                 &f.clock
             );
         f.clock.set_for_testing(START + 3 * DELAY);
@@ -316,7 +315,6 @@ fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
                     &blast_acl::witness_for_testing<FeeAdmin>(),
                     bps::new(n),
                     bps::new(n + 1),
-                    172_800_000,
                     &f.clock
                 );
         },
@@ -327,7 +325,6 @@ fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
                 .schedule_clear_coin_shares<CoinA>(
                     &f.version,
                     &blast_acl::witness_for_testing<FeeAdmin>(),
-                    172_800_000,
                     &f.clock
                 );
         },
@@ -422,12 +419,13 @@ fun expected(setting: Setting, n: u64): vector<u8> {
 fun assert_value(f: &Fixture, setting: Setting, n: u64) { assert_eq!(snapshot(f, setting), expected(setting, n)); }
 
 /// Checks the last proposal the primitive recorded for `setting` as scheduled, or as cancelled.
+/// A coin proposal's key is the coin it changes.
 fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
     let (owner, key, value, delay_ms, ready_at_ms) = match (setting) {
         Setting::Destination => last_proposal<ProtocolDestinationKey, address>(scheduled),
         Setting::Defaults => last_proposal<DefaultSharesKey, SharePair>(scheduled),
-        Setting::CoinOverride => last_proposal<CoinSharesKey, Option<SharePair>>(scheduled),
-        Setting::CoinClear => last_proposal<CoinSharesKey, Option<SharePair>>(scheduled),
+        Setting::CoinOverride => last_coin_proposal(scheduled),
+        Setting::CoinClear => last_coin_proposal(scheduled),
     };
     let expected_value = match (setting) {
         Setting::Destination => expected(setting, n),
@@ -463,6 +461,22 @@ fun last_proposal<K: copy + drop + store, T: copy + drop + store>(
     }
 }
 
+/// The last scheduled or cancelled coin-entry change, with its coin and value BCS-encoded.
+fun last_coin_proposal(scheduled: bool): (ID, vector<u8>, vector<u8>, u64, u64) {
+    let (owner, change, delay_ms, ready_at_ms) = if (scheduled) {
+        let mut events = sui::event::events_by_type<MapScheduled<CoinSharesKey, TypeName, SharePair>>();
+        let (owner, _, change, delay_ms, ready_at_ms) = events.pop_back().map_scheduled_fields();
+        (owner, change, delay_ms, ready_at_ms)
+    } else {
+        let mut events = sui::event::events_by_type<MapCancelled<CoinSharesKey, TypeName, SharePair>>();
+        let (owner, _, change, delay_ms, ready_at_ms) = events.pop_back().map_cancelled_fields();
+        (owner, change, delay_ms, ready_at_ms)
+    };
+    let entry = change.entry_for_testing().destroy_some();
+
+    (owner, bcs::to_bytes(&entry), bcs::to_bytes(&change.entry_value_for_testing()), delay_ms, ready_at_ms)
+}
+
 fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     let mut bytes = vector[];
     values.do!(|v| bytes.append(bcs::to_bytes(&v)));
@@ -483,7 +497,11 @@ use blast_fun_migrators::{
     },
 };
 
-use blast_admin::{blast_acl, delayed::{DelayedCancelled, DelayedScheduled}};
+use blast_admin::{
+    blast_acl,
+    delayed::{DelayedCancelled, DelayedScheduled},
+    delayed_map::{MapCancelled, MapScheduled},
+};
 use blast_fun::{blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}, bps};
-use std::{bcs, unit_test::{assert_eq, destroy}};
+use std::{bcs, type_name::TypeName, unit_test::{assert_eq, destroy}};
 use sui::clock::Clock;

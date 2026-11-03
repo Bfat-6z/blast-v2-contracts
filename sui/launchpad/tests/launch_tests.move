@@ -186,7 +186,7 @@ fun security_curve_fee_cap_replacement_exact_ready() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun security_curve_fee_cap_cancelled() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -210,7 +210,7 @@ fun security_curve_fee_cap_cancelled() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun security_curve_fee_cap_replay() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -460,7 +460,7 @@ fun security_metadata_cap_replacement_exact_ready() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun security_metadata_cap_cancelled() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -484,7 +484,7 @@ fun security_metadata_cap_cancelled() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
 fun security_metadata_cap_replay() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -1992,7 +1992,7 @@ fun cap_notice_change_preserves_creator_and_existing_caps() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EWrongChange, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::EWrongChange, location = blast_admin::delayed_action)]
 fun a_cap_notice_change_cannot_be_applied_as_a_reassignment() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
@@ -2005,7 +2005,7 @@ fun a_cap_notice_change_cannot_be_applied_as_a_reassignment() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EWrongChange, location = blast_admin::delayed)]
+#[test, expected_failure(abort_code = blast_admin::errors::EWrongChange, location = blast_admin::delayed_action)]
 fun a_cap_reassignment_cannot_be_applied_as_a_notice_change() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
@@ -4779,7 +4779,7 @@ fun u64_bytes(value: u64): vector<u8> {
 
 use blast_admin::{
     blast_acl::{Self, AdminWitness},
-    delayed::{ActionApplied, ActionCancelled, ActionScheduled},
+    delayed_action::{ActionApplied, ActionCancelled, ActionScheduled},
 };
 
 use blast_fun::{

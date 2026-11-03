@@ -282,7 +282,7 @@ fun upgrade_delay_changes(): u64 {
 
 // === Imports ===
 
-use blast_admin::{blast_acl, delayed::{ActionApplied, ActionScheduled}};
+use blast_admin::{blast_acl, delayed_action::{ActionApplied, ActionScheduled}};
 use blast_fun_migrators::{
     blast_fun_migrators as marker,
     lp_fee_policy,

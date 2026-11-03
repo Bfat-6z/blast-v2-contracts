@@ -413,6 +413,10 @@ impl World {
         let next_delay = b.pure(172_800_000u64)?;
         call(&mut b, migrators, "lp_fee_policy", "schedule_default_shares", vec![], vec![policy_arg, version_arg, fee, meme_bps, quote_bps, next_delay, clock]);
         call(&mut b, migrators, "lp_fee_policy", "apply_default_shares", vec![], vec![policy_arg, version_arg, clock]);
+        // Per-coin overrides keep a notice of their own, raised here from the publication notice.
+        let next_delay = b.pure(172_800_000u64)?;
+        call(&mut b, migrators, "lp_fee_policy", "schedule_coin_shares_delay", vec![], vec![policy_arg, version_arg, fee, next_delay, clock]);
+        call(&mut b, migrators, "lp_fee_policy", "apply_coin_shares_delay", vec![], vec![policy_arg, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
         assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
         let (version, _) = h.wrap_launchpad(blast, &published, admin, &admin_published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
@@ -1421,8 +1425,7 @@ impl World {
         let meme_bps = self.bps(&mut b, shares.0)?;
         let quote_bps = self.bps(&mut b, shares.1)?;
         let admin_clock = b.obj(self.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        let next_delay = b.pure(172_800_000u64)?;
-        call(&mut b, self.migrators, "lp_fee_policy", "schedule_coin_shares", vec![launch.meme.clone()], vec![policy, migrators_version, signed_in, meme_bps, quote_bps, next_delay, admin_clock]);
+        call(&mut b, self.migrators, "lp_fee_policy", "schedule_coin_shares", vec![launch.meme.clone()], vec![policy, migrators_version, signed_in, meme_bps, quote_bps, admin_clock]);
         self.h.execute(b.finish())?.assert_success();
         blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![(self.migrators, "lp_fee_policy", "apply_coin_shares", vec![launch.meme.clone()], self.policy, self.migrators_version)])?;
 

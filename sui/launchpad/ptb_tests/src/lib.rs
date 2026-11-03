@@ -257,10 +257,20 @@ fn sui_move_build(package: &Path, work: &Path) -> Result<Command> {
     Ok(command)
 }
 
-// === blast_admin::delayed mirrors (BCS field order) ===
+// === blast_admin delayed-module mirrors (BCS field order) ===
 //
 // Every key is a zero-field positional struct such as `TradeFeesKey()`, which Move compiles with
 // one `dummy_field: bool`, so each `key` is one BCS byte.
+
+/// The `blast_admin` modules that emit delayed lifecycle events: settings in `delayed`, one-shot
+/// actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.
+/// Their event names are distinct, so a name alone selects one module's event.
+pub const DELAYED_MODULES: [&str; 4] = ["delayed", "delayed_action", "delayed_set", "delayed_map"];
+
+/// Whether `module` is one of `blast_admin`'s delayed modules.
+pub fn is_delayed_module(module: &str) -> bool {
+    DELAYED_MODULES.contains(&module)
+}
 
 /// Mirrors `blast_admin::delayed::Proposal<T>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
@@ -270,7 +280,7 @@ pub struct Proposal<T> {
     pub ready_at_ms: u64,
 }
 
-/// Mirrors `blast_admin::delayed::Change<A>`.
+/// Mirrors `blast_admin::delayed_action::Change<A>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Change<A> {
     Action(A),
@@ -287,7 +297,7 @@ pub struct Delayed<T> {
     pub pending: Option<Proposal<T>>,
 }
 
-/// Mirrors `blast_admin::delayed::DelayedAction<K, A>`.
+/// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct DelayedAction<A> {
     pub owner: ObjectID,
@@ -326,7 +336,7 @@ pub struct DelayedApplied<T> {
     pub delay_ms: u64,
 }
 
-/// Mirrors `blast_admin::delayed::ActionScheduled<K, A>` and `ActionCancelled<K, A>`.
+/// Mirrors `blast_admin::delayed_action::ActionScheduled<K, A>` and `ActionCancelled<K, A>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct ActionScheduled<A> {
     pub owner: ObjectID,
@@ -336,12 +346,38 @@ pub struct ActionScheduled<A> {
     pub ready_at_ms: u64,
 }
 
-/// Mirrors `blast_admin::delayed::ActionApplied<K, A>`.
+/// Mirrors `blast_admin::delayed_action::ActionApplied<K, A>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct ActionApplied<A> {
     pub owner: ObjectID,
     pub key: bool,
     pub change: Change<A>,
+    pub delay_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed_set::SetChange<E>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum SetChange<E> {
+    Admission(E),
+    Delay,
+}
+
+/// Mirrors `blast_admin::delayed_set::SetScheduled<K, E>` and `SetCancelled<K, E>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct SetScheduled<E> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub change: SetChange<E>,
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed_set::SetApplied<K, E>`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct SetApplied<E> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub change: SetChange<E>,
     pub delay_ms: u64,
 }
 
@@ -392,13 +428,14 @@ impl Outcome {
             .collect()
     }
 
-    /// Contents of `blast_admin::delayed::<name>` lifecycle events keyed by `key_module::key_name`,
-    /// in native order. The primitive emits these bare, generic in the owner's key type.
+    /// Contents of the `<name>` lifecycle events of `blast_admin`'s delayed modules keyed by
+    /// `key_module::key_name`, in native order. The primitives emit these bare, generic in the
+    /// owner's key type.
     pub fn delayed_events(&self, name: &str, key_module: &str, key_name: &str) -> Vec<&[u8]> {
         self.events
             .iter()
             .filter(|event| {
-                event.type_.module.as_str() == "delayed"
+                is_delayed_module(event.type_.module.as_str())
                     && event.type_.name.as_str() == name
                     && matches!(
                         event.type_.type_params.first(),
@@ -416,19 +453,19 @@ impl Outcome {
     ) -> Result<Vec<T>> {
         self.delayed_events(name, key_module, key_name)
             .into_iter()
-            .map(|bytes| bcs::from_bytes(bytes).with_context(|| format!("decode delayed::{name}<{key_module}::{key_name}>")))
+            .map(|bytes| bcs::from_bytes(bytes).with_context(|| format!("decode {name}<{key_module}::{key_name}>")))
             .collect()
     }
 
     /// Payload type names of every Blast event, in native order. Each must be a `package` payload
     /// inside `package`'s `blast_events::Event<T>` envelope, so a bare or foreign event fails. The
-    /// only exception is a `blast_admin::delayed` lifecycle event keyed by a `package` type, which
-    /// is bare by design and skipped here; read it with `delayed_events`.
+    /// only exception is a lifecycle event of a `blast_admin` delayed module keyed by a `package`
+    /// type, which is bare by design and skipped here; read it with `delayed_events`.
     pub fn wrapped_payloads(&self, package: ObjectID) -> Vec<String> {
         self.events
             .iter()
             .filter(|event| {
-                !(event.type_.module.as_str() == "delayed"
+                !(is_delayed_module(event.type_.module.as_str())
                     && matches!(
                         event.type_.type_params.first(),
                         Some(sui_types::TypeTag::Struct(key)) if ObjectID::from(key.address) == package
