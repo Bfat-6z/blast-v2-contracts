@@ -51,9 +51,11 @@ public struct ReplayFixture {
     replay: Replay,
 }
 
-/// Every fact reduced from decoded payloads, starting from the eventless publication state.
+/// Every fact reduced from decoded payloads, starting from the publication state.
 public struct Replay has drop {
+    policy_id: ID,
     default_shares: Shares,
+    default_shares_delay_ms: u64,
     coin_shares: vector<CoinShares>,
     coin_entries: vector<String>,
     protocol_destination: address,
@@ -869,26 +871,24 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
     let replay = &mut self.replay;
     let mut reduced = 0;
 
-    wrapped<events::ProtocolAllocationSet>().do!(|bytes| {
-        replay.protocol_allocation_set(bytes);
+    direct<DelayedApplied<ProtocolAllocationKey, ProtocolAllocation>>().do!(|bytes| {
+        replay.protocol_allocation_applied(bytes);
         reduced = reduced + 1;
     });
-    direct<blast_events::CoinSharesScheduled>().do!(|bytes| {
-        let mut r = bcs::new(bytes);
-        let meme = r.peel_type_name();
-        r.peel_shares();
-        r.peel_u64();
-        assert_eq!(r.peel_u64(), 172_800_000);
-        r.assert_consumed();
-        if (!replay.coin_entries.contains(&meme)) replay.coin_entries.push_back(meme);
+    direct<DelayedCreated<CoinSharesKey, Option<SharePair>>>().do!(|bytes| {
+        replay.coin_shares_created(bytes);
         reduced = reduced + 1;
     });
-    direct<blast_events::LpFeePolicyChanged>().do!(|bytes| {
-        replay.lp_fee_policy_changed(bytes);
+    direct<DelayedApplied<DefaultSharesKey, SharePair>>().do!(|bytes| {
+        replay.default_shares_applied(bytes);
         reduced = reduced + 1;
     });
-    direct<blast_events::LpFeeDestinationChanged>().do!(|bytes| {
-        replay.lp_fee_destination_changed(bytes);
+    direct<DelayedApplied<CoinSharesKey, Option<SharePair>>>().do!(|bytes| {
+        replay.coin_shares_applied(bytes);
+        reduced = reduced + 1;
+    });
+    direct<DelayedApplied<ProtocolDestinationKey, address>>().do!(|bytes| {
+        replay.protocol_destination_applied(bytes);
         reduced = reduced + 1;
     });
     wrapped<events::LaunchTicketCreated>().do!(|bytes| {
@@ -936,6 +936,10 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         replay.vault_created(bytes);
         reduced = reduced + 1;
     });
+    direct<DelayedCreated<FeeSplitKey, FeeSplit>>().do!(|bytes| {
+        replay.fee_split_created(bytes);
+        reduced = reduced + 1;
+    });
     direct<blast_events::FeesCollected>().do!(|bytes| {
         replay.fees_collected(bytes);
         reduced = reduced + 1;
@@ -944,16 +948,17 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         replay.auto_liquidity_added(bytes);
         reduced = reduced + 1;
     });
-    direct<blast_events::FeeSplitScheduled>().do!(|bytes| {
-        replay.fee_split_scheduled(bytes);
-        reduced = reduced + 1;
-    });
-    direct<blast_events::FeeSplitCancelled>().do!(|bytes| {
+    // A replacing schedule cancels the displaced proposal first.
+    direct<DelayedCancelled<FeeSplitKey, FeeSplit>>().do!(|bytes| {
         replay.fee_split_cancelled(bytes);
         reduced = reduced + 1;
     });
-    direct<blast_events::FeeSplitChanged>().do!(|bytes| {
-        replay.fee_split_changed(bytes);
+    direct<DelayedScheduled<FeeSplitKey, FeeSplit>>().do!(|bytes| {
+        replay.fee_split_scheduled(bytes);
+        reduced = reduced + 1;
+    });
+    direct<DelayedApplied<FeeSplitKey, FeeSplit>>().do!(|bytes| {
+        replay.fee_split_applied(bytes);
         reduced = reduced + 1;
     });
     direct<blast_events::BuybackBurned>().do!(|bytes| {
@@ -981,18 +986,21 @@ fun reduce_transaction(self: &mut ReplayFixture, sender: address) {
         reduced = reduced + 1;
     });
 
-    // This reducer tracks applied economics. Scheduling notices, intake admissions, and the
-    // creator capability claim do not change its state; nothing else may appear.
+    // This reducer tracks applied economics. Launch-config proposals and their application,
+    // intake admissions, policy proposals, the launch's cap-reassignment slots, and the creator
+    // capability claim do not change its state; nothing else may appear.
     let unreduced =
-        wrapped<blast_fun::events::MigrationWitnessScheduled>().length()
-        + wrapped<blast_fun::events::MigrationDelayChanged>().length()
-        + wrapped<blast_fun::events::TradeFeesScheduled>().length()
-        + wrapped<blast_fun::events::ProtocolAllocationScheduled>().length()
-        + direct<blast_events::DefaultSharesScheduled>().length()
-        + direct<blast_events::ProtocolDestinationScheduled>().length()
+        direct<ActionScheduled<MigrationWitnessKey, TypeName>>().length()
+        + direct<ActionApplied<MigrationWitnessKey, TypeName>>().length()
+        + direct<DelayedScheduled<TradeFeesKey, TradeFees>>().length()
+        + direct<DelayedApplied<TradeFeesKey, TradeFees>>().length()
+        + direct<DelayedScheduled<ProtocolAllocationKey, ProtocolAllocation>>().length()
+        + direct<DelayedScheduled<DefaultSharesKey, SharePair>>().length()
+        + direct<DelayedScheduled<CoinSharesKey, Option<SharePair>>>().length()
+        + direct<DelayedScheduled<ProtocolDestinationKey, address>>().length()
+        + direct<ActionCreated<CurveFeeCapReassignment, address>>().length()
+        + direct<ActionCreated<MetadataCapReassignment, address>>().length()
         + wrapped<events::QuoteSet>().length()
-        + wrapped<events::MigrationWitnessSet>().length()
-        + wrapped<events::LaunchTradeFeesChanged>().length()
         + wrapped<events::CreatorCapsClaimed>().length();
     assert_eq!(event::num_events() as u64, reduced + unreduced);
 }
@@ -1012,7 +1020,9 @@ fun direct<T: copy + drop>(): vector<vector<u8>> {
 
 fun new_replay(publisher: address): Replay {
     Replay {
+        policy_id: absent(),
         default_shares: Shares { meme_bps: 0, quote_bps: 0 },
+        default_shares_delay_ms: 0,
         coin_shares: vector[],
         coin_entries: vector[],
         protocol_destination: publisher,
@@ -1081,40 +1091,69 @@ fun new_replay(publisher: address): Replay {
     }
 }
 
-fun protocol_allocation_set(self: &mut Replay, bytes: vector<u8>) {
+/// Blast's migration allocation for later launches; the config's identity is not modeled.
+fun protocol_allocation_applied(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
-    let protocol_allocation = Shares { meme_bps: r.peel_u64(), quote_bps: r.peel_u64() };
+    r.peel_id();
+    r.peel_unit_key();
+    assert_eq!(r.peel_share_pair(), self.protocol_allocation);
+    self.protocol_allocation = r.peel_share_pair();
+    r.peel_u64();
     r.assert_consumed();
-
-    self.protocol_allocation = protocol_allocation;
 }
 
-fun lp_fee_policy_changed(self: &mut Replay, bytes: vector<u8>) {
+/// A coin's first pair creates its entry with no override under the applied default notice.
+fun coin_shares_created(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
-    let coin = r.peel_option!(|r| r.peel_type_name());
-    let old_pair = r.peel_shares();
-    let new_pair = r.peel_shares();
+    self.bind_policy(r.peel_id());
+    let meme = r.peel_type_name();
+    assert!(r.peel_option!(|r| r.peel_share_pair()).is_none());
+    assert_eq!(r.peel_u64(), self.default_shares_delay_ms);
     r.assert_consumed();
 
-    if (coin.is_none()) {
-        assert_eq!(old_pair, option::some(self.default_shares));
-        self.default_shares = new_pair.destroy_some();
-    } else {
-        let meme = coin.destroy_some();
-        assert_eq!(old_pair, self.own_shares(meme));
-        self.coin_shares = self.coin_shares.filter!(|entry| entry.meme != meme);
-        new_pair.do!(|shares| self.coin_shares.push_back(CoinShares { meme, shares }));
-    };
+    assert!(!self.coin_entries.contains(&meme));
+    self.coin_entries.push_back(meme);
 }
 
-fun lp_fee_destination_changed(self: &mut Replay, bytes: vector<u8>) {
+fun default_shares_applied(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
-    let old_destination = r.peel_address();
-    let new_destination = r.peel_address();
+    self.bind_policy(r.peel_id());
+    r.peel_unit_key();
+    assert_eq!(r.peel_share_pair(), self.default_shares);
+    self.default_shares = r.peel_share_pair();
+    self.default_shares_delay_ms = r.peel_u64();
+    r.assert_consumed();
+}
+
+/// A coin's own pair was set, changed, or cleared back to the live defaults.
+fun coin_shares_applied(self: &mut Replay, bytes: vector<u8>) {
+    let mut r = bcs::new(bytes);
+    self.bind_policy(r.peel_id());
+    let meme = r.peel_type_name();
+    let old_pair = r.peel_option!(|r| r.peel_share_pair());
+    let new_pair = r.peel_option!(|r| r.peel_share_pair());
+    r.peel_u64();
     r.assert_consumed();
 
-    assert_eq!(old_destination, self.protocol_destination);
-    self.protocol_destination = new_destination;
+    assert_eq!(old_pair, self.own_shares(meme));
+    self.coin_shares = self.coin_shares.filter!(|entry| entry.meme != meme);
+    new_pair.do!(|shares| self.coin_shares.push_back(CoinShares { meme, shares }));
+}
+
+fun protocol_destination_applied(self: &mut Replay, bytes: vector<u8>) {
+    let mut r = bcs::new(bytes);
+    self.bind_policy(r.peel_id());
+    r.peel_unit_key();
+    assert_eq!(r.peel_address(), self.protocol_destination);
+    self.protocol_destination = r.peel_address();
+    r.peel_u64();
+    r.assert_consumed();
+}
+
+/// Binds the first policy payload's owner and requires every later one to match it.
+fun bind_policy(self: &mut Replay, owner: ID) {
+    if (self.policy_id == absent()) self.policy_id = owner;
+    assert_eq!(owner, self.policy_id);
 }
 
 /// The ticket fixes the canonical supply: one billion whole tokens at its decimals.
@@ -1307,8 +1346,6 @@ fun vault_created(self: &mut Replay, bytes: vector<u8>) {
     assert_eq!(self.venue, self.migration_witness);
     assert_eq!(fee_split, self.launch_fee_split);
     self.fee_split = fee_split;
-    // This immutable package bytecode establishes the creation notice; the event carries value.
-    self.fee_split_delay_ms = 48 * 60 * 60 * 1_000;
     self.position_meme = self.position_meme - self.residual_meme;
     self.position_quote = self.position_quote - self.residual_quote;
 }
@@ -1450,37 +1487,55 @@ fun auto_liquidity_added(self: &mut Replay, bytes: vector<u8>) {
     self.position_quote = self.position_quote + added.quote;
 }
 
+/// The vault's split opens with the migration split under the vault's creation notice.
+fun fee_split_created(self: &mut Replay, bytes: vector<u8>) {
+    let mut r = bcs::new(bytes);
+    assert_eq!(r.peel_id(), self.binding.vault_id);
+    r.peel_unit_key();
+    assert_eq!(r.peel_fee_split(), self.fee_split);
+    self.fee_split_delay_ms = r.peel_u64();
+    r.assert_consumed();
+}
+
 fun fee_split_scheduled(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
     assert_eq!(r.peel_id(), self.binding.vault_id);
+    r.peel_unit_key();
     let value = r.peel_fee_split();
-    let ready_at_ms = r.peel_u64();
     let delay_ms = r.peel_u64();
+    let ready_at_ms = r.peel_u64();
     r.assert_consumed();
+
+    assert!(self.pending_fee_split.is_none());
     self.pending_fee_split = option::some(SplitProposal { value, delay_ms, ready_at_ms });
 }
 
 fun fee_split_cancelled(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
     assert_eq!(r.peel_id(), self.binding.vault_id);
-    let cancelled = r.peel_fee_split();
+    r.peel_unit_key();
+    let value = r.peel_fee_split();
+    let delay_ms = r.peel_u64();
+    let ready_at_ms = r.peel_u64();
     r.assert_consumed();
-    assert_eq!(self.pending_fee_split.extract().value, cancelled);
+
+    assert_eq!(self.pending_fee_split.extract(), SplitProposal { value, delay_ms, ready_at_ms });
 }
 
-fun fee_split_changed(self: &mut Replay, bytes: vector<u8>) {
+fun fee_split_applied(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
     assert_eq!(r.peel_id(), self.binding.vault_id);
-    let old_fee_split = r.peel_fee_split();
-    let new_fee_split = r.peel_fee_split();
+    r.peel_unit_key();
+    let previous_value = r.peel_fee_split();
+    let value = r.peel_fee_split();
     let delay_ms = r.peel_u64();
     r.assert_consumed();
 
-    assert_eq!(old_fee_split, self.fee_split);
+    assert_eq!(previous_value, self.fee_split);
     let accepted = self.pending_fee_split.extract();
-    assert_eq!(new_fee_split, accepted.value);
+    assert_eq!(value, accepted.value);
     assert_eq!(delay_ms, accepted.delay_ms);
-    self.fee_split = new_fee_split;
+    self.fee_split = value;
     self.fee_split_delay_ms = delay_ms;
 }
 
@@ -1668,13 +1723,17 @@ fun peel_type_name(r: &mut BCS): String {
     r.peel_vec_u8().to_ascii_string()
 }
 
-/// One optional Meme/Quote pair, present for both assets or for neither.
-fun peel_shares(r: &mut BCS): Option<Shares> {
-    let meme_bps = r.peel_option_u64();
-    let quote_bps = r.peel_option_u64();
+/// A positional unit key, which encodes as its compiler-added `false` field.
+fun peel_unit_key(r: &mut BCS) {
+    assert!(!r.peel_bool());
+}
 
-    assert_eq!(meme_bps.is_some(), quote_bps.is_some());
-    meme_bps.map!(|meme_bps| Shares { meme_bps, quote_bps: quote_bps.destroy_some() })
+/// One Meme share followed by one Quote share.
+fun peel_share_pair(r: &mut BCS): Shares {
+    let meme_bps = r.peel_u64();
+    let quote_bps = r.peel_u64();
+
+    Shares { meme_bps, quote_bps }
 }
 
 fun peel_plan(r: &mut BCS): PlanEntry {
@@ -1833,6 +1892,7 @@ fun assert_state(self: &mut ReplayFixture) {
 }
 
 fun assert_policy(self: &Replay, policy: &LpFeePolicy) {
+    assert_eq!(object::id(policy), self.policy_id);
     let (default_meme_bps, default_quote_bps) = policy.default_shares_for_testing();
     assert_eq!(default_meme_bps.value(), self.default_shares.meme_bps);
     assert_eq!(default_quote_bps.value(), self.default_shares.quote_bps);
@@ -2076,17 +2136,35 @@ const CREATOR_ADDRESS_TAG: u32 = 0;
 
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_admin::{
+    blast_acl,
+    delayed::{
+        ActionApplied,
+        ActionCreated,
+        ActionScheduled,
+        DelayedApplied,
+        DelayedCancelled,
+        DelayedCreated,
+        DelayedScheduled,
+    },
+};
 
 use blast_fun::{
-    allocation::{Self, AllocationPlan, FeeSplit, Route},
+    allocation::{Self, AllocationPlan, FeeSplit, ProtocolAllocation, Route},
     blast_events::Event as BlastEvent,
     blast_fun_domain::{AdapterAdmin, BuybackAdmin, FeeAdmin, ListingAdmin, RewardsAdmin, TreasuryAdmin},
     bps,
     creator_authority::{Self, CurveFeeCap},
     events,
-    launch::{Self, Launch},
-    launch_config::{Self, LaunchConfig},
+    launch::{Self, CurveFeeCapReassignment, Launch, MetadataCapReassignment},
+    launch_config::{
+        Self,
+        LaunchConfig,
+        MigrationWitnessKey,
+        ProtocolAllocationKey,
+        TradeFees,
+        TradeFeesKey,
+    },
     launch_ticket,
     blast_fun::{Self as package_version, PackageVersion},
     runtime_config::{Self, RuntimeConfig},
@@ -2095,13 +2173,20 @@ use blast_fun::{
 use blast_fun_migrators::{
     blast_events,
     blast_holder_rewards::{Self, Round},
-    lp_fee_policy::{Self, LpFeePolicy},
+    lp_fee_policy::{
+        Self,
+        CoinSharesKey,
+        DefaultSharesKey,
+        LpFeePolicy,
+        ProtocolDestinationKey,
+        SharePair,
+    },
     merkle,
     blast_fun_migrators::{Self as migrators_version, PackageVersion as MigratorsVersion},
-    vault::{Self, LpVault},
+    vault::{Self, FeeSplitKey, LpVault},
 };
 
-use std::{ascii::String, type_name, unit_test::{assert_eq, destroy}};
+use std::{ascii::String, type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 
 use sui::{
     balance::{Self, Balance},
@@ -2124,7 +2209,9 @@ use fun peel_id as BCS.peel_id;
 
 use fun peel_type_name as BCS.peel_type_name;
 
-use fun peel_shares as BCS.peel_shares;
+use fun peel_unit_key as BCS.peel_unit_key;
+
+use fun peel_share_pair as BCS.peel_share_pair;
 
 use fun peel_plan as BCS.peel_plan;
 

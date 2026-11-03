@@ -25,13 +25,10 @@ public struct PolicyFixture {
     policy: LpFeePolicy,
 }
 
-/// Independently encoded expectation for every policy event field in ABI order.
-public struct ExpectedChange has copy, drop {
-    meme: Option<TypeName>,
-    old_meme_bps: Option<u64>,
-    old_quote_bps: Option<u64>,
-    new_meme_bps: Option<u64>,
-    new_quote_bps: Option<u64>,
+/// Independently encoded `SharePair` in ABI order.
+public struct ExpectedPair has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64,
 }
 
 // === Tests ===
@@ -75,7 +72,7 @@ fun pending_override_and_delayed_clear_preserve_in_force_shares() {
 
 
 #[test]
-fun publication_shares_one_eventless_fifteen_percent_policy() {
+fun publication_shares_one_fifteen_percent_policy() {
     let mut fixture = start_init();
 
     fixture.next_tx!(PUBLISHER, |f| {
@@ -103,7 +100,7 @@ fun publisher_is_the_initial_protocol_destination_until_redirected() {
 }
 
 #[test]
-fun admin_redirects_the_protocol_destination_and_emits_old_and_new() {
+fun admin_redirects_the_protocol_destination_and_records_old_and_new() {
     let mut fixture = start_policy();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
@@ -111,22 +108,20 @@ fun admin_redirects_the_protocol_destination_and_emits_old_and_new() {
         f.policy.set_protocol_destination_for_testing(&f.migrators_version, &admin, @0xCAFE, f.scenario.ctx());
 
         assert_eq!(f.policy.protocol_destination(), @0xCAFE);
-        let events = event::events_by_type<blast_events::LpFeeDestinationChanged>();
-        let publisher = PUBLISHER;
-        let mut expected = bcs::to_bytes(&publisher);
-        expected.append(bcs::to_bytes(&@0xCAFE));
+        let events = event::events_by_type<DelayedApplied<ProtocolDestinationKey, address>>();
         assert_eq!(events.length(), 1);
-        assert_eq!(bcs::to_bytes(&events[0]), expected);
+        let (owner, _, previous_value, value, delay_ms) = events[0].delayed_applied_fields();
+        assert_eq!(owner, object::id(&f.policy));
+        assert_eq!(previous_value, PUBLISHER);
+        assert_eq!(value, @0xCAFE);
+        assert_eq!(delay_ms, 172_800_000);
     });
 
     fixture.end();
 }
 
 #[test]
-#[expected_failure(
-    abort_code = lp_fee_policy::EProtocolDestinationUnchanged,
-    location = blast_fun_migrators::lp_fee_policy,
-)]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun unchanged_protocol_destination_is_rejected() {
     let mut fixture = start_policy();
 
@@ -140,7 +135,7 @@ fun unchanged_protocol_destination_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = lp_fee_policy::EProtocolDestinationUnchanged,
+    abort_code = lp_fee_policy::EInvalidProtocolDestination,
     location = blast_fun_migrators::lp_fee_policy,
 )]
 fun zero_protocol_destination_is_rejected() {
@@ -172,16 +167,8 @@ fun active_admin_changes_independent_defaults_and_all_event_fields() {
 
         f.assert_shares<MemeA>(2_000, 7_000);
         f.assert_shares<MemeB>(2_000, 7_000);
-        let changes = policy_changes();
-        assert_eq!(changes.length(), 1);
-        assert_change(
-            changes[0],
-            option::none(),
-            option::some(0),
-            option::some(0),
-            option::some(2_000),
-            option::some(7_000),
-        );
+        assert_eq!(f.default_changes(), vector[default_change(pair(0, 0), pair(2_000, 7_000))]);
+        assert!(f.coin_changes().is_empty());
     });
 
     fixture.end();
@@ -213,23 +200,12 @@ fun changing_either_asset_alone_is_a_real_default_update() {
             );
 
         f.assert_shares<MemeA>(1, 2);
-        let changes = policy_changes();
-        assert_eq!(changes.length(), 2);
-        assert_change(
-            changes[0],
-            option::none(),
-            option::some(0),
-            option::some(0),
-            option::some(1),
-            option::some(0),
-        );
-        assert_change(
-            changes[1],
-            option::none(),
-            option::some(1),
-            option::some(0),
-            option::some(1),
-            option::some(2),
+        assert_eq!(
+            f.default_changes(),
+            vector[
+                default_change(pair(0, 0), pair(1, 0)),
+                default_change(pair(1, 0), pair(1, 2)),
+            ],
         );
     });
 
@@ -263,65 +239,18 @@ fun coin_pair_create_update_clear_readd_preserves_original_type_keys_and_event_h
         f.assert_shares<MemeA>(99, 0);
         assert_eq!(f.policy.coin_count_for_testing(), 2);
 
-        let changes = policy_changes();
-        let meme_a = option::some(type_name::with_original_ids<MemeA>());
-        let meme_b = option::some(type_name::with_original_ids<MemeB>());
-        assert_eq!(changes.length(), 7);
-        assert_change(
-            changes[0],
-            option::none(),
-            option::some(0),
-            option::some(0),
-            option::some(11),
-            option::some(22),
-        );
-        assert_change(
-            changes[1],
-            meme_a,
-            option::none(),
-            option::none(),
-            option::some(33),
-            option::some(44),
-        );
-        assert_change(
-            changes[2],
-            meme_b,
-            option::none(),
-            option::none(),
-            option::some(55),
-            option::some(66),
-        );
-        assert_change(
-            changes[3],
-            meme_a,
-            option::some(33),
-            option::some(44),
-            option::some(33),
-            option::some(77),
-        );
-        assert_change(
-            changes[4],
-            meme_a,
-            option::some(33),
-            option::some(77),
-            option::some(88),
-            option::some(77),
-        );
-        assert_change(
-            changes[5],
-            meme_a,
-            option::some(88),
-            option::some(77),
-            option::none(),
-            option::none(),
-        );
-        assert_change(
-            changes[6],
-            meme_a,
-            option::none(),
-            option::none(),
-            option::some(99),
-            option::some(0),
+        assert_eq!(f.default_changes(), vector[default_change(pair(0, 0), pair(11, 22))]);
+        let none = option::none();
+        assert_eq!(
+            f.coin_changes(),
+            vector[
+                coin_change<MemeA>(none, option::some(pair(33, 44))),
+                coin_change<MemeB>(none, option::some(pair(55, 66))),
+                coin_change<MemeA>(option::some(pair(33, 44)), option::some(pair(33, 77))),
+                coin_change<MemeA>(option::some(pair(33, 77)), option::some(pair(88, 77))),
+                coin_change<MemeA>(option::some(pair(88, 77)), none),
+                coin_change<MemeA>(none, option::some(pair(99, 0))),
+            ],
         );
     });
 
@@ -340,16 +269,8 @@ fun a_coin_pair_equal_to_the_defaults_is_real_and_skips_later_default_changes() 
 
         f.assert_shares<MemeA>(0, 0);
         f.assert_shares<MemeB>(1_234, 9_876);
-        let changes = policy_changes();
-        assert_eq!(changes.length(), 2);
-        assert_change(
-            changes[0],
-            option::some(type_name::with_original_ids<MemeA>()),
-            option::none(),
-            option::none(),
-            option::some(0),
-            option::some(0),
-        );
+        assert_eq!(f.coin_changes(), vector[coin_change<MemeA>(option::none(), option::some(pair(0, 0)))]);
+        assert_eq!(f.default_changes().length(), 1);
     });
 
     fixture.end();
@@ -529,10 +450,7 @@ fun both_assets_accept_zero_and_full_share_independently() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = lp_fee_policy::EProtocolFeeSharesUnchanged,
-    location = blast_fun_migrators::lp_fee_policy,
-)]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun unchanged_default_pair_is_rejected() {
     let mut fixture = start_policy();
 
@@ -553,10 +471,7 @@ fun unchanged_default_pair_is_rejected() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = lp_fee_policy::EProtocolFeeSharesUnchanged,
-    location = blast_fun_migrators::lp_fee_policy,
-)]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun unchanged_coin_pair_is_rejected() {
     let mut fixture = start_policy();
 
@@ -699,7 +614,15 @@ macro fun policy_next_tx(
 fun start_init(): InitFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     lp_fee_policy::init_for_testing(scenario.ctx());
-    assert_eq!(event::num_events(), 0);
+    assert_eq!(event::num_events(), 2);
+    let destination = event::events_by_type<DelayedCreated<ProtocolDestinationKey, address>>();
+    let (_, _, value, delay_ms) = destination[0].delayed_created_fields();
+    assert_eq!(value, @blast_lp_fee_destination);
+    assert_eq!(delay_ms, 0);
+    let defaults = event::events_by_type<DelayedCreated<DefaultSharesKey, SharePair>>();
+    let (_, _, value, delay_ms) = defaults[0].delayed_created_fields();
+    assert_eq!(bcs::to_bytes(&value), bcs::to_bytes(&pair(1_500, 1_500)));
+    assert_eq!(delay_ms, 0);
 
     scenario.next_tx(PUBLISHER);
     let policy = scenario.take_shared<LpFeePolicy>();
@@ -724,10 +647,6 @@ fun fee_admin(): AdminWitness<FeeAdmin> {
     blast_acl::witness_for_testing()
 }
 
-fun policy_changes(): vector<blast_events::LpFeePolicyChanged> {
-    event::events_by_type<blast_events::LpFeePolicyChanged>()
-}
-
 /// Asserts the pair a collection for `Meme` pays Blast right now.
 fun assert_shares<Meme>(self: &PolicyFixture, meme_bps: u64, quote_bps: u64) {
     let (live_meme_bps, live_quote_bps) = self.policy.shares<Meme>();
@@ -744,26 +663,49 @@ fun assert_default_shares(self: &PolicyFixture, meme_bps: u64, quote_bps: u64) {
     assert_eq!(default_quote_bps.value(), quote_bps);
 }
 
-fun assert_change(
-    change: blast_events::LpFeePolicyChanged,
-    meme: Option<TypeName>,
-    old_meme_bps: Option<u64>,
-    old_quote_bps: Option<u64>,
-    new_meme_bps: Option<u64>,
-    new_quote_bps: Option<u64>,
-) {
-    assert_eq!(
-        bcs::to_bytes(&change),
-        bcs::to_bytes(
-            &ExpectedChange {
-                meme,
-                old_meme_bps,
-                old_quote_bps,
-                new_meme_bps,
-                new_quote_bps,
-            },
-        ),
-    );
+fun pair(meme_bps: u64, quote_bps: u64): ExpectedPair {
+    ExpectedPair { meme_bps, quote_bps }
+}
+
+/// Encodes each applied default-pair change as its previous then new pair, checking its owner.
+fun default_changes(self: &PolicyFixture): vector<vector<u8>> {
+    let owner = object::id(&self.policy);
+
+    event::events_by_type<DelayedApplied<DefaultSharesKey, SharePair>>().map!(|applied| {
+        let (applied_owner, _, previous_value, value, _) = applied.delayed_applied_fields();
+        assert_eq!(applied_owner, owner);
+        let mut bytes = bcs::to_bytes(&previous_value);
+        bytes.append(bcs::to_bytes(&value));
+        bytes
+    })
+}
+
+/// Encodes each applied coin-pair change as its coin key, previous then new override, checking
+/// its owner.
+fun coin_changes(self: &PolicyFixture): vector<vector<u8>> {
+    let owner = object::id(&self.policy);
+
+    event::events_by_type<DelayedApplied<CoinSharesKey, Option<SharePair>>>().map!(|applied| {
+        let (applied_owner, key, previous_value, value, _) = applied.delayed_applied_fields();
+        assert_eq!(applied_owner, owner);
+        let mut bytes = bcs::to_bytes(&key);
+        bytes.append(bcs::to_bytes(&previous_value));
+        bytes.append(bcs::to_bytes(&value));
+        bytes
+    })
+}
+
+fun default_change(previous: ExpectedPair, value: ExpectedPair): vector<u8> {
+    let mut bytes = bcs::to_bytes(&previous);
+    bytes.append(bcs::to_bytes(&value));
+    bytes
+}
+
+fun coin_change<Meme>(previous: Option<ExpectedPair>, value: Option<ExpectedPair>): vector<u8> {
+    let mut bytes = bcs::to_bytes(&type_name::with_original_ids<Meme>());
+    bytes.append(bcs::to_bytes(&previous));
+    bytes.append(bcs::to_bytes(&value));
+    bytes
 }
 
 fun init_end(self: InitFixture) {
@@ -782,17 +724,23 @@ const PROTOCOL_ADMIN: address = @0xAD;
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminWitness};
+use blast_admin::{blast_acl::{Self, AdminWitness}, delayed::{DelayedApplied, DelayedCreated}};
 
 use blast_fun::{blast_fun_domain::{FeeAdmin, TreasuryAdmin}, bps};
 
 use blast_fun_migrators::{
-    blast_events,
-    lp_fee_policy::{Self, LpFeePolicy},
+    lp_fee_policy::{
+        Self,
+        CoinSharesKey,
+        DefaultSharesKey,
+        LpFeePolicy,
+        ProtocolDestinationKey,
+        SharePair,
+    },
     blast_fun_migrators::{Self as migrators_version, PackageVersion as MigratorsVersion},
 };
 
-use std::{bcs, type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
+use std::{bcs, type_name, unit_test::{assert_eq, destroy}};
 
 use sui::{dynamic_field, event, test_scenario::{Self, Scenario}};
 

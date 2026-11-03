@@ -15,15 +15,16 @@ module blast_fun_migrators::package_admin;
 public enum UpgradeAction has copy, drop, store {
     Upgrade(vector<u8>),
     MakeImmutable,
-    DelayOnly,
 }
+
+/// Keys the upgrade custody's delayed lifecycle.
+public struct UpgradeKey() has copy, drop, store;
 
 /// Shared custody for this package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: UpgradeCustody<BLAST_FUN_MIGRATORS>,
-    delay_ms: u64,
-    pending: Option<Pending<UpgradeAction>>,
+    upgrade: DelayedAction<UpgradeKey, UpgradeAction>,
 }
 
 // === Public Functions ===
@@ -41,13 +42,7 @@ public fun schedule_upgrade(
 
     assert!(digest.length() == 32, EInvalidDigest);
 
-    let action = UpgradeAction::Upgrade(digest);
-    let delay_ms = self.delay_ms;
-    let pending = delayed::new_pending(action, delay_ms, delay_ms, clock);
-
-    self.pending = option::some(pending);
-
-    blast_events::upgrade_action_scheduled(option::some(digest), pending.ready_at_ms(), delay_ms);
+    self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock);
 }
 
 /// Schedules the irreversible destruction of upgrade authority under the applied notice.
@@ -59,16 +54,10 @@ public fun schedule_make_immutable(
 ) {
     package_version.assert_current();
 
-    let action = UpgradeAction::MakeImmutable;
-    let delay_ms = self.delay_ms;
-    let pending = delayed::new_pending(action, delay_ms, delay_ms, clock);
-
-    self.pending = option::some(pending);
-
-    blast_events::upgrade_action_scheduled(option::none(), pending.ready_at_ms(), delay_ms);
+    self.upgrade.schedule(UpgradeAction::MakeImmutable, clock);
 }
 
-/// Cancels any scheduled action, even after its execution threshold.
+/// Cancels any scheduled action or notice change, even after its execution threshold.
 public fun cancel_upgrade_action(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
@@ -76,16 +65,7 @@ public fun cancel_upgrade_action(
 ) {
     package_version.assert_current();
 
-    assert!(self.pending.is_some(), ENoPendingAction);
-
-    let action = self.pending.extract().value();
-    let digest = match (action) {
-        UpgradeAction::Upgrade(digest) => option::some(digest),
-        UpgradeAction::MakeImmutable => option::none(),
-        UpgradeAction::DelayOnly => option::none()
-    };
-
-    blast_events::upgrade_action_cancelled(digest);
+    self.upgrade.cancel();
 }
 
 /// Consumes Publication forever, seals native capabilities, and enables Migrators.
@@ -93,8 +73,9 @@ public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxC
     let (publisher, generation) = publication.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN_MIGRATORS>(id.to_inner(), publisher, upgrade_cap);
+    let upgrade = delayed::new_action(UpgradeKey(), id.to_inner(), 0);
 
-    transfer::share_object(PackageAdmin { id, custody, delay_ms: 0, pending: option::none() });
+    transfer::share_object(PackageAdmin { id, custody, upgrade });
     generation.share_version(ctx);
 }
 
@@ -113,11 +94,8 @@ public fun authorize_upgrade(
 
     let custodian_id = self.id.to_inner();
 
-    assert!(self.pending.is_some(), ENoPendingAction);
-
-    let (action, _) = self.pending.destroy_some().take_ready(clock);
+    let action = self.upgrade.take_action(clock);
     assert!(action == UpgradeAction::Upgrade(digest), EWrongUpgradeAction);
-    self.pending = option::none();
 
     self.custody.authorize_upgrade(custodian_id, digest)
 }
@@ -150,11 +128,8 @@ public fun make_immutable(
 ) {
     package_version.assert_current();
 
-    assert!(self.pending.is_some(), ENoPendingAction);
-
-    let (action, _) = self.pending.destroy_some().take_ready(clock);
+    let action = self.upgrade.take_action(clock);
     assert!(action == UpgradeAction::MakeImmutable, EWrongUpgradeAction);
-    self.pending = option::none();
 
     self.custody.make_immutable(self.id.to_inner());
 }
@@ -170,12 +145,7 @@ public fun schedule_upgrade_delay(
 ) {
     package_version.assert_current();
 
-    let action = UpgradeAction::DelayOnly;
-    let pending = delayed::new_pending(action, self.delay_ms, delay_ms, clock);
-
-    self.pending = option::some(pending);
-
-    blast_events::upgrade_delay_scheduled(delay_ms, pending.ready_at_ms());
+    self.upgrade.schedule_delay(delay_ms, clock);
 }
 
 /// Applies a ready policy-only proposal; cannot consume an upgrade authorization.
@@ -186,14 +156,7 @@ public fun apply_upgrade_delay(
 ) {
     package_version.assert_current();
 
-    assert!(self.pending.is_some(), ENoPendingAction);
-
-    let (action, delay_ms) = self.pending.destroy_some().take_ready(clock);
-    assert!(action == UpgradeAction::DelayOnly, EWrongUpgradeAction);
-    self.pending = option::none();
-    self.delay_ms = delay_ms;
-
-    blast_events::upgrade_delay_changed(delay_ms);
+    self.upgrade.apply_delay(clock);
 }
 
 // === Test-Only Functions ===
@@ -201,7 +164,7 @@ public fun apply_upgrade_delay(
 #[test_only]
 /// Returns the currently applied notice period for upgrade actions.
 public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
-    self.delay_ms
+    self.upgrade.delay_ms()
 }
 
 #[test_only]
@@ -249,7 +212,9 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    PackageAdmin { id, custody, delay_ms: 172_800_000, pending: option::none() }
+    let upgrade = delayed::new_action(UpgradeKey(), id.to_inner(), 172_800_000);
+
+    PackageAdmin { id, custody, upgrade }
 }
 
 #[test_only]
@@ -262,20 +227,15 @@ public fun has_upgrade_cap_for_testing(self: &PackageAdmin): bool {
 #[error(code = 0)]
 const EWrongUpgradeAction: vector<u8> = b"The ready action must match the requested upgrade digest or immutability.";
 #[error(code = 1)]
-const ENoPendingAction: vector<u8> = b"No upgrade action is scheduled.";
-#[error(code = 2)]
 const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
 
 // === Imports ===
 
-use blast_fun_migrators::{
-    blast_events,
-    blast_fun_migrators::{BLAST_FUN_MIGRATORS, Publication, PackageVersion},
-};
+use blast_fun_migrators::blast_fun_migrators::{BLAST_FUN_MIGRATORS, Publication, PackageVersion};
 
 use blast_admin::{
     blast_acl::AdminWitness,
-    delayed::{Self, Pending},
+    delayed::{Self, DelayedAction},
     operational_version::OperationalVersion,
     upgrade_custody::{Self, UpgradeCustody},
 };

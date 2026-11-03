@@ -16,10 +16,19 @@ module blast_fun_migrators::lp_fee_policy;
 /// iteration or cardinality cap.
 public struct LpFeePolicy has key {
     id: UID,
-    destination: Delayed<address>,
-    defaults: Delayed<SharePair>,
-    coins: Table<TypeName, Delayed<Option<SharePair>>>,
+    destination: Delayed<ProtocolDestinationKey, address>,
+    defaults: Delayed<DefaultSharesKey, SharePair>,
+    coins: Table<TypeName, Delayed<CoinSharesKey, Option<SharePair>>>,
 }
+
+/// Keys the protocol destination's delayed lifecycle.
+public struct ProtocolDestinationKey() has copy, drop, store;
+
+/// Keys the default shares' delayed lifecycle.
+public struct DefaultSharesKey() has copy, drop, store;
+
+/// Keys one original Meme type's share override, so its lifecycle names the coin.
+public struct CoinSharesKey(TypeName) has copy, drop, store;
 
 /// Atomic pair of validated shares; a per-coin entry always replaces both assets together.
 public struct SharePair has copy, drop, store {
@@ -52,17 +61,9 @@ public fun schedule_protocol_destination(
 ) {
     migrators_version.assert_current();
 
-    assert!(destination != @0x0, EProtocolDestinationUnchanged);
+    assert!(destination != @0x0, EInvalidProtocolDestination);
 
-    let value = destination;
-    assert!(
-        value != self.destination.value() || delay_ms != self.destination.delay_ms(),
-        EProtocolDestinationUnchanged
-    );
-
-    let ready_at_ms = self.destination.schedule(value, delay_ms, clock);
-
-    blast_events::protocol_destination_scheduled(destination, ready_at_ms, delay_ms);
+    self.destination.schedule(destination, delay_ms, clock);
 }
 
 /// Applies the scheduled protocol destination permissionlessly once ready.
@@ -73,11 +74,7 @@ public fun apply_protocol_destination(
 ) {
     migrators_version.assert_current();
 
-    let old_destination = self.destination.value();
-    let value = self.destination.apply(clock);
-    let destination = value;
-
-    blast_events::lp_fee_destination_changed(old_destination, destination);
+    self.destination.apply(clock);
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -88,10 +85,7 @@ public fun cancel_protocol_destination(
 ) {
     migrators_version.assert_current();
 
-    let value = self.destination.cancel();
-    let destination = value;
-
-    blast_events::protocol_destination_cancelled(destination);
+    self.destination.cancel();
 }
 
 /// Changes both default shares for every coin without its own pair, from its next collection.
@@ -107,20 +101,7 @@ public fun schedule_default_shares(
 ) {
     migrators_version.assert_current();
 
-    let value = SharePair { meme_bps, quote_bps };
-    assert!(
-        value != self.defaults.value() || delay_ms != self.defaults.delay_ms(),
-        EProtocolFeeSharesUnchanged
-    );
-
-    let ready_at_ms = self.defaults.schedule(value, delay_ms, clock);
-
-    blast_events::default_shares_scheduled(
-        meme_bps.value(),
-        quote_bps.value(),
-        ready_at_ms,
-        delay_ms
-    );
+    self.defaults.schedule(SharePair { meme_bps, quote_bps }, delay_ms, clock);
 }
 
 /// Applies the scheduled default shares permissionlessly once ready.
@@ -131,18 +112,7 @@ public fun apply_default_shares(
 ) {
     migrators_version.assert_current();
 
-    let old_defaults = self.defaults.value();
-    let value = self.defaults.apply(clock);
-    let meme_bps = value.meme_bps;
-    let quote_bps = value.quote_bps;
-
-    blast_events::lp_fee_policy_changed(
-        option::none(),
-        option::some(old_defaults.meme_bps.value()),
-        option::some(old_defaults.quote_bps.value()),
-        option::some(meme_bps.value()),
-        option::some(quote_bps.value())
-    );
+    self.defaults.apply(clock);
 }
 
 /// Cancels a pending change, including after its delay has elapsed.
@@ -153,15 +123,12 @@ public fun cancel_default_shares(
 ) {
     migrators_version.assert_current();
 
-    let value = self.defaults.cancel();
-    let meme_bps = value.meme_bps;
-    let quote_bps = value.quote_bps;
-
-    blast_events::default_shares_cancelled(meme_bps.value(), quote_bps.value());
+    self.defaults.cancel();
 }
 
 /// Schedules both shares for this original Meme type after the administrative delay.
 /// Setting the current defaults is a real transition because later default changes skip the coin.
+/// A coin's first pair creates its entry with no override under the applied default notice.
 public fun schedule_coin_shares<Meme>(
     self: &mut LpFeePolicy,
     migrators_version: &MigratorsVersion,
@@ -174,23 +141,17 @@ public fun schedule_coin_shares<Meme>(
     migrators_version.assert_current();
 
     let meme = type_name::with_original_ids<Meme>();
-    let proposed = option::some(SharePair { meme_bps, quote_bps });
-    if (!self.coins.contains(meme))
-        self.coins.add(meme, delayed::new(option::none(), self.defaults.delay_ms()));
-    assert!(
-        self.coins[meme].value() != proposed || delay_ms != self.coins[meme].delay_ms(),
-        EProtocolFeeSharesUnchanged
-    );
+    if (!self.coins.contains(meme)) {
+        let coin_shares = delayed::new(
+            CoinSharesKey(meme),
+            self.id.to_inner(),
+            option::none(),
+            self.defaults.delay_ms(),
+        );
+        self.coins.add(meme, coin_shares);
+    };
 
-    let ready_at_ms = self.coins[meme].schedule(proposed, delay_ms, clock);
-
-    blast_events::coin_shares_scheduled(
-        meme,
-        option::some(meme_bps.value()),
-        option::some(quote_bps.value()),
-        ready_at_ms,
-        delay_ms
-    );
+    self.coins[meme].schedule(option::some(SharePair { meme_bps, quote_bps }), delay_ms, clock);
 }
 
 /// Removing an override may increase fees through defaults, so it also requires notice.
@@ -203,21 +164,7 @@ public fun schedule_clear_coin_shares<Meme>(
 ) {
     migrators_version.assert_current();
 
-    let meme = type_name::with_original_ids<Meme>();
-    assert!(
-        self.coins[meme].value().is_some() || delay_ms != self.coins[meme].delay_ms(),
-        EProtocolFeeSharesUnchanged
-    );
-
-    let ready_at_ms = self.coins[meme].schedule(option::none(), delay_ms, clock);
-
-    blast_events::coin_shares_scheduled(
-        meme,
-        option::none(),
-        option::none(),
-        ready_at_ms,
-        delay_ms
-    );
+    self.coins[type_name::with_original_ids<Meme>()].schedule(option::none(), delay_ms, clock);
 }
 
 /// Applies either the approved override or the approved return to live defaults.
@@ -228,17 +175,7 @@ public fun apply_coin_shares<Meme>(
 ) {
     migrators_version.assert_current();
 
-    let meme = type_name::with_original_ids<Meme>();
-    let previous = self.coins[meme].value();
-    let applied = self.coins[meme].apply(clock);
-
-    blast_events::lp_fee_policy_changed(
-        option::some(meme),
-        previous.map!(|p| p.meme_bps.value()),
-        previous.map!(|p| p.quote_bps.value()),
-        applied.map!(|p| p.meme_bps.value()),
-        applied.map!(|p| p.quote_bps.value())
-    );
+    self.coins[type_name::with_original_ids<Meme>()].apply(clock);
 }
 
 /// Cancels either pending operation without changing the live override.
@@ -249,14 +186,7 @@ public fun cancel_coin_shares<Meme>(
 ) {
     migrators_version.assert_current();
 
-    let meme = type_name::with_original_ids<Meme>();
-    let cancelled = self.coins[meme].cancel();
-
-    blast_events::coin_shares_cancelled(
-        meme,
-        cancelled.map!(|p| p.meme_bps.value()),
-        cancelled.map!(|p| p.quote_bps.value())
-    );
+    self.coins[type_name::with_original_ids<Meme>()].cancel();
 }
 
 // === Package Functions ===
@@ -284,11 +214,14 @@ fun new(
     delay_ms: u64,
     ctx: &mut TxContext,
 ): LpFeePolicy {
-    assert!(@blast_lp_fee_destination != @0x0, EProtocolDestinationUnchanged);
+    assert!(@blast_lp_fee_destination != @0x0, EInvalidProtocolDestination);
+    let id = object::new(ctx);
+    let owner = id.to_inner();
+
     LpFeePolicy {
-        id: object::new(ctx),
-        destination: delayed::new(destination, delay_ms),
-        defaults: delayed::new(defaults, delay_ms),
+        id,
+        destination: delayed::new(ProtocolDestinationKey(), owner, destination, delay_ms),
+        defaults: delayed::new(DefaultSharesKey(), owner, defaults, delay_ms),
         coins: table::new(ctx),
     }
 }
@@ -368,7 +301,7 @@ public fun set_protocol_destination_for_testing(
 }
 
 #[test_only]
-/// Runs eventless publication initialization under `test_scenario`.
+/// Runs publication initialization under `test_scenario`.
 public fun init_for_testing(ctx: &mut TxContext) {
     init(ctx);
 }
@@ -410,10 +343,7 @@ public fun default_shares_for_testing(self: &LpFeePolicy): (Bps, Bps) {
 // === Errors ===
 
 #[error(code = 0)]
-const EProtocolDestinationUnchanged: vector<u8> = b"Protocol destination must be a new nonzero address.";
-
-#[error(code = 1)]
-const EProtocolFeeSharesUnchanged: vector<u8> = b"LP-fee share update must change the stored pair.";
+const EInvalidProtocolDestination: vector<u8> = b"Protocol destination must be a nonzero address.";
 
 // === Imports ===
 
@@ -429,6 +359,6 @@ use sui::{
 
 use blast_fun::{blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}, bps::{Self, Bps}};
 
-use blast_fun_migrators::{blast_events, blast_fun_migrators::PackageVersion as MigratorsVersion};
+use blast_fun_migrators::{blast_fun_migrators::PackageVersion as MigratorsVersion};
 
 use std::type_name::{Self, TypeName};

@@ -151,7 +151,7 @@ fun the_migrated_vault_splits_later_collections_and_updates_its_split_under_the_
     assert_eq!(creator_meme, 100);
     assert_eq!(creator_quote, 200);
     assert_eq!(event::events_by_type<blast_events::FeesCollected>().length(), 2);
-    assert_eq!(event::events_by_type<blast_events::FeeSplitChanged>().length(), 1);
+    assert_eq!(event::events_by_type<DelayedApplied<FeeSplitKey, FeeSplit>>().length(), 1);
     let (meme, quote) = vault.claim_creator_fees(
         &f.migrators_version,
         &launch,
@@ -399,7 +399,7 @@ const EUnexpectedSuccess: vector<u8> = b"The guarded operation unexpectedly retu
 
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_admin::{blast_acl, delayed::DelayedApplied};
 
 use blast_fun::{
     allocation::{Self, FeeSplit},
@@ -419,7 +419,7 @@ use blast_fun_migrators::{
     blast_events,
     lp_fee_policy::{Self, LpFeePolicy},
     blast_fun_migrators::{Self as migrators_version, PackageVersion as MigratorsVersion},
-    vault::{Self, LpVault},
+    vault::{Self, FeeSplitKey, LpVault},
 };
 
 use std::unit_test::{assert_eq, destroy};

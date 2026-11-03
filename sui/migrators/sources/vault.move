@@ -19,6 +19,9 @@ public struct PositionKey<phantom Venue>() has copy, drop, store;
 /// position cannot receive more liquidity (Cetus burns it).
 public struct AutoLpPositionKey<phantom Venue>() has copy, drop, store;
 
+/// Keys the creator fee split's delayed lifecycle.
+public struct FeeSplitKey() has copy, drop, store;
+
 /// Shared per-launch custody for one position, its protocol migration residuals, and the balances
 /// its LP fees are split into.
 ///
@@ -40,7 +43,7 @@ public struct LpVault<phantom Meme, phantom Quote> has key {
     protocol_quote_residual: Balance<Quote>,
     unpaid_protocol_meme: Balance<Meme>,
     unpaid_protocol_quote: Balance<Quote>,
-    fee_split: Delayed<FeeSplit>,
+    fee_split: Delayed<FeeSplitKey, FeeSplit>,
     creator_meme: Balance<Meme>,
     creator_quote: Balance<Quote>,
     auto_lp_meme: Balance<Meme>,
@@ -67,14 +70,8 @@ public fun schedule_fee_split<Meme, Quote>(
 ) {
     migrators_version.assert_current();
     launch.assert_curve_fee_cap(curve_fee_cap);
-    assert!(
-        proposed != self.fee_split.value() || delay_ms != self.fee_split.delay_ms(),
-        EFeeSplitUnchanged,
-    );
 
-    let ready_at_ms = self.fee_split.schedule(proposed, delay_ms, clock);
-
-    blast_events::fee_split_scheduled(self.id.to_inner(), proposed, ready_at_ms, delay_ms);
+    self.fee_split.schedule(proposed, delay_ms, clock);
 }
 
 /// Cancels even a ready creator-split proposal with the launch's live curve-fee cap.
@@ -87,9 +84,7 @@ public fun cancel_fee_split<Meme, Quote>(
     migrators_version.assert_current();
     launch.assert_curve_fee_cap(curve_fee_cap);
 
-    let cancelled = self.fee_split.cancel();
-
-    blast_events::fee_split_cancelled(self.id.to_inner(), cancelled);
+    self.fee_split.cancel();
 }
 
 /// Claims the protocol-owned migration residuals under a treasury admin.
@@ -419,13 +414,7 @@ public(package) fun apply_fee_split<Meme, Quote>(
     self: &mut LpVault<Meme, Quote>,
     clock: &Clock,
 ) {
-    let old_fee_split = self.fee_split.value();
-
-    let applied = self.fee_split.apply(clock);
-
-    blast_events::fee_split_changed(
-        self.id.to_inner(), old_fee_split, applied, self.fee_split.delay_ms(),
-    );
+    self.fee_split.apply(clock);
 }
 
 /// Reserves holder-reward funds for the round numbered `next_round`, ending at `end_checkpoint`.
@@ -526,15 +515,22 @@ fun new<Meme, Quote, Venue, Position: key + store>(
     assert!(liquidity > 0, EZeroLiquidity);
 
     let position_id = object::id(&position);
+    let id = object::new(ctx);
+    let fee_split = delayed::new(
+        FeeSplitKey(),
+        id.to_inner(),
+        launch.lp_fee_split(),
+        DEFAULT_FEE_SPLIT_DELAY_MS,
+    );
     let mut vault = LpVault {
-        id: object::new(ctx),
+        id,
         pool_id,
         partner_id: launch.partner_id(),
         protocol_meme_residual,
         protocol_quote_residual,
         unpaid_protocol_meme: balance::zero(),
         unpaid_protocol_quote: balance::zero(),
-        fee_split: delayed::new(launch.lp_fee_split(), DEFAULT_FEE_SPLIT_DELAY_MS),
+        fee_split,
         creator_meme: balance::zero(),
         creator_quote: balance::zero(),
         auto_lp_meme: balance::zero(),
@@ -631,7 +627,7 @@ public fun fee_split_for_testing<Meme, Quote>(self: &LpVault<Meme, Quote>): FeeS
 /// Returns the applied split notice and the pending proposal, if present.
 public fun fee_split_policy_for_testing<Meme, Quote>(
     self: &LpVault<Meme, Quote>,
-): (u64, Option<Pending<FeeSplit>>) {
+): (u64, Option<Proposal<FeeSplit>>) {
     (self.fee_split.delay_ms(), self.fee_split.pending())
 }
 
@@ -673,27 +669,24 @@ public fun burn_quote_for_testing<Meme, Quote>(self: &LpVault<Meme, Quote>): u64
 const ENothingClaimable: vector<u8> = b"No protocol migration residuals are available to claim.";
 
 #[error(code = 1)]
-const EFeeSplitUnchanged: vector<u8> = b"Fee split or its notice must differ from the applied values.";
-
-#[error(code = 2)]
 const ENoCreatorFees: vector<u8> = b"No creator LP fees are available to claim.";
 
-#[error(code = 3)]
+#[error(code = 2)]
 const EZeroLiquidity: vector<u8> = b"Migration position must hold liquidity.";
 
-#[error(code = 4)]
+#[error(code = 3)]
 const EBuybackQuoteOutOfRange: vector<u8> =
     b"Buyback Quote must be positive and at most the burn Quote waiting to buy Meme back.";
 
-#[error(code = 5)]
+#[error(code = 4)]
 const EBuybackBelowMinimum: vector<u8> = b"Buyback must return at least the minimum Meme.";
 
-#[error(code = 6)]
+#[error(code = 5)]
 const EPartnerMismatch: vector<u8> = b"The partner is not the one the vault's launch named at creation.";
 
 // === Imports ===
 
-use blast_admin::{blast_acl::AdminWitness, delayed::{Self, Delayed, Pending}};
+use blast_admin::{blast_acl::AdminWitness, delayed::{Self, Delayed, Proposal}};
 
 use blast_fun::{
     allocation::FeeSplit,

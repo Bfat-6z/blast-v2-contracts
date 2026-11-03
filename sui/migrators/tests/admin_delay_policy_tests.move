@@ -155,7 +155,7 @@ fun an_upgrade_action_replaces_a_delay_proposal_without_changing_policy() {
 
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
         assert!(f.admin.has_upgrade_cap_for_testing());
-        assert_eq!(sui::event::events_by_type<blast_events::UpgradeDelayChanged>().length(), 1);
+        assert_eq!(upgrade_delay_changes(), 1);
     });
     fixture.end();
 }
@@ -174,7 +174,7 @@ fun immutability_keeps_the_applied_notice_without_applying_a_replaced_policy() {
         f.admin.make_immutable(&f.version, &witness, &f.clock);
         assert_eq!(f.admin.upgrade_delay_ms(), 100);
         assert!(!f.admin.has_upgrade_cap_for_testing());
-        assert_eq!(sui::event::events_by_type<blast_events::UpgradeDelayChanged>().length(), 1);
+        assert_eq!(upgrade_delay_changes(), 1);
     });
     fixture.end();
 }
@@ -245,10 +245,22 @@ fun configure_destination(self: &mut AdminDelayFixture) {
     assert_eq!(self.policy.protocol_destination(), @0xB0B);
 }
 
+/// Counts applied upgrade-notice changes, ignoring consumed upgrade actions.
+fun upgrade_delay_changes(): u64 {
+    sui::event::events_by_type<ActionApplied<UpgradeKey, UpgradeAction>>().count!(|applied| {
+        let (_, _, change, _) = applied.action_applied_fields();
+        change.action().is_none()
+    })
+}
+
 // === Imports ===
 
-use blast_admin::blast_acl;
-use blast_fun_migrators::{blast_fun_migrators as marker, blast_events, lp_fee_policy, package_admin};
+use blast_admin::{blast_acl, delayed::ActionApplied};
+use blast_fun_migrators::{
+    blast_fun_migrators as marker,
+    lp_fee_policy,
+    package_admin::{Self, UpgradeAction, UpgradeKey},
+};
 use blast_fun::{blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin}, bps};
 use std::unit_test::{assert_eq, destroy};
 use sui::{clock::Clock, sui::SUI, test_scenario::{Self, Scenario}};

@@ -78,14 +78,6 @@ public struct ExpectedCollection has copy, drop {
     recipient_quote: vector<u64>,
 }
 
-/// Independently encoded `FeeSplitChanged` in ABI order.
-public struct ExpectedFeeSplitChanged has copy, drop {
-    vault_id: ID,
-    old_fee_split: FeeSplit,
-    new_fee_split: FeeSplit,
-    delay_ms: u64,
-}
-
 /// Independently encoded `AutoLiquidityAdded` in ABI order.
 public struct ExpectedAutoLiquidityAdded has copy, drop {
     vault_id: ID,
@@ -136,19 +128,13 @@ fun settled_update_splits_accrued_fees_under_the_old_split_then_commits_the_next
         },
     ).assert_collection();
     assert!(event::events_by_type<blast_events::AutoLiquidityAdded>().is_empty());
-    let changes = event::events_by_type<blast_events::FeeSplitChanged>();
+    let changes = event::events_by_type<DelayedApplied<FeeSplitKey, FeeSplit>>();
     assert_eq!(changes.length(), 1);
-    assert_eq!(
-        bcs::to_bytes(&changes[0]),
-        bcs::to_bytes(
-            &ExpectedFeeSplitChanged {
-                vault_id: object::id(&f.vault),
-                old_fee_split: creator_and_a(),
-                new_fee_split: rewards_and_b(),
-                delay_ms: 172_800_000,
-            },
-        ),
-    );
+    let (owner, _, previous_value, value, delay_ms) = changes[0].delayed_applied_fields();
+    assert_eq!(owner, object::id(&f.vault));
+    assert_eq!(previous_value, creator_and_a());
+    assert_eq!(value, rewards_and_b());
+    assert_eq!(delay_ms, 172_800_000);
 
     // Collection needs no cap, and later fees follow the committed split: 3 Meme and 4 Quote
     // split 20/30/50 to auto-LP, rewards, and B, and the mock venue takes one unit of each.
@@ -195,7 +181,7 @@ fun zero_fee_settlement_still_commits_the_split_without_a_collection_event() {
     assert_eq!(f.vault.fee_split_for_testing(), rewards_and_b());
     assert!(event::events_by_type<blast_events::FeesCollected>().is_empty());
     assert!(event::events_by_type<blast_events::AutoLiquidityAdded>().is_empty());
-    assert_eq!(event::events_by_type<blast_events::FeeSplitChanged>().length(), 1);
+    assert_eq!(event::events_by_type<DelayedApplied<FeeSplitKey, FeeSplit>>().length(), 1);
     destroy(curve_fee_cap);
     f.end();
 }
@@ -216,7 +202,7 @@ fun a_reassigned_curve_fee_cap_updates_the_split() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EFeeSplitUnchanged, location = blast_fun_migrators::vault)]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
 fun an_identical_proposal_is_rejected() {
     let mut f = start(creator_and_a());
     let curve_fee_cap = f.claim_curve_fee_cap();
@@ -919,7 +905,7 @@ const POOL: address = @0x9001;
 
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_admin::{blast_acl, delayed::DelayedApplied};
 
 use blast_fun::{
     allocation::{Self, FeeSplit},
@@ -937,7 +923,7 @@ use blast_fun_migrators::{
     launch_fixture,
     lp_fee_policy::{Self, LpFeePolicy},
     blast_fun_migrators::{Self as migrators_version, PackageVersion as MigratorsVersion},
-    vault::{Self, LpVault},
+    vault::{Self, FeeSplitKey, LpVault},
 };
 
 use std::{bcs, unit_test::{assert_eq, destroy}};
