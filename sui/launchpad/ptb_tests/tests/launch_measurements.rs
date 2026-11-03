@@ -194,7 +194,7 @@ impl World {
     /// template per admitted precision.
     fn new(label: &'static str, protocol: [u64; 2]) -> Result<Self> {
         let sui_dir = sui_dir();
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture");
+        let fixture = blast_launchpad_ptb_tests::crate_dir().join("fixture");
         let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(label);
         let mut h = Harness::new()?;
         let timelock_dir = timelock_dir()?;

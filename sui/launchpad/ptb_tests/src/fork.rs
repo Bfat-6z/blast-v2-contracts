@@ -7,7 +7,7 @@
 
 use std::{
     collections::BTreeMap,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use anyhow::{Context, Result, ensure};
@@ -71,7 +71,7 @@ struct ManifestEntry {
 }
 
 fn snapshot_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fork/snapshot")
+    crate::crate_dir().join("fork/snapshot")
 }
 
 /// Inserts every snapshot package and object at its real ID and returns the checkpoint and the

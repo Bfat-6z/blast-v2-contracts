@@ -113,6 +113,21 @@ fun an_admin_without_the_presale_role_cannot_sign_in_to_it() {
 
 #[test]
 #[expected_failure(
+    abort_code = blast_admin::errors::EAdminRoleNotGranted,
+    location = blast_admin::blast_acl,
+)]
+fun a_rewards_operator_cannot_authorize_round_publication() {
+    let mut fixture = start();
+    fixture.grant<RewardsAdmin>();
+    let _: AdminWitness<RewardsAdmin> = fixture.acl.sign_in(&fixture.admin_cap);
+
+    let _: AdminWitness<TreasuryAdmin> = fixture.acl.sign_in(&fixture.admin_cap);
+
+    abort
+}
+
+#[test]
+#[expected_failure(
     abort_code = blast_admin::errors::EInvalidAdminCap,
     location = blast_admin::blast_acl,
 )]

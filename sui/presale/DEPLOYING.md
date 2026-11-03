@@ -40,13 +40,14 @@ operations; ordinary ACL operations configure policy before the chosen delay and
 5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
    (`blast_acl::grant_role` with each `blast_presale_domain` type) to the
    operations multisig's `AdminCap`, minting one with `blast_acl::grant_admin`
-   if needed. Grant each concern deliberately: `TreasuryAdmin` redirects Blast's
-   fee payouts; `FeeAdmin` sets the rates of every future sale, of a sale before
-   its start, and Blast's LP-fee rates on every vault, and chooses the Blast
-   partners new sales may name; `ListingAdmin` allows Quote types;
+   if needed. Keep `TreasuryAdmin` with the treasury multisig to govern fee
+   payouts and sign reviewed holder-reward rounds. `FeeAdmin` sets the rates
+   for future sales, individual sales before they start, and Blast's LP fees on
+   every vault. It also chooses which Blast partners new sales may name. `ListingAdmin` allows Quote types.
    `AdapterAdmin` allows migrators, each of which receives the liquidity of the
-   sales it creates; `RewardsAdmin` directs every vault's holder-reward share;
-   and `UpgradeAdmin` governs the upgrade notice and compatible upgrades with atomic
+   sales it creates. Grant the automated rewards worker only `RewardsAdmin` to
+   settle the gas reserves that the treasury multisig approved.
+   `UpgradeAdmin` governs the upgrade notice and compatible upgrades with atomic
    generation cutover. Each call signs in
    with `blast_acl::sign_in` in the same PTB. The root revokes a role or an
    administrator at once if a cap is lost or compromised.
