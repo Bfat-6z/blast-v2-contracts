@@ -38,20 +38,6 @@ public enum Case has copy, drop {
     EmptyCancel,
 }
 
-public struct ExpectedScheduled has copy, drop {
-    vault_id: ID,
-    proposed: FeeSplit,
-    ready_at_ms: u64,
-    delay_ms: u64,
-}
-public struct ExpectedCancelled has copy, drop { vault_id: ID, proposed: FeeSplit }
-public struct ExpectedChanged has copy, drop {
-    vault_id: ID,
-    old_fee_split: FeeSplit,
-    new_fee_split: FeeSplit,
-    delay_ms: u64,
-}
-
 // === Tests ===
 
 #[test]
@@ -101,8 +87,8 @@ fun replacement_restarts_the_applied_notice() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale_vault::EFeeSplitUnchanged,
-    location = blast_presale::presale_vault,
+    abort_code = blast_admin::errors::EUnchanged,
+    location = blast_admin::delayed,
 )]
 fun unchanged_value_and_notice_rejected() {
     exercise(Case::Unchanged);
@@ -183,28 +169,20 @@ fun old_split_remains_active_at_and_after_deadline_until_explicit_apply() {
     assert_eq!(f.applied(), initial_split());
     f.apply();
     f.assert_applied(next_split(), 0);
-    assert_eq!(
-        bcs::to_bytes(&event::events_by_type<presale_vault::FeeSplitScheduled>()[0]),
-        bcs::to_bytes(
-            &ExpectedScheduled {
-                vault_id: object::id(&f.vault),
-                proposed: next_split(),
-                ready_at_ms: START + NOTICE,
-                delay_ms: 0,
-            },
-        ),
-    );
-    assert_eq!(
-        bcs::to_bytes(&event::events_by_type<presale_vault::FeeSplitChanged<Meme, Quote>>()[0]),
-        bcs::to_bytes(
-            &ExpectedChanged {
-                vault_id: object::id(&f.vault),
-                old_fee_split: initial_split(),
-                new_fee_split: next_split(),
-                delay_ms: 0,
-            },
-        ),
-    );
+    let (owner, _, proposed, delay_ms, ready_at_ms) = event::events_by_type<
+        DelayedScheduled<FeeSplitKey, FeeSplit>,
+    >()[0].delayed_scheduled_fields();
+    assert_eq!(owner, object::id(&f.vault));
+    assert_eq!(proposed, next_split());
+    assert_eq!(delay_ms, 0);
+    assert_eq!(ready_at_ms, START + NOTICE);
+    let (owner, _, previous, applied, delay_ms) = event::events_by_type<
+        DelayedApplied<FeeSplitKey, FeeSplit>,
+    >()[0].delayed_applied_fields();
+    assert_eq!(owner, object::id(&f.vault));
+    assert_eq!(previous, initial_split());
+    assert_eq!(applied, next_split());
+    assert_eq!(delay_ms, 0);
     // Applied zero notice permits a later explicitly applied proposal in the same timestamp.
     f.schedule(initial_split(), 0);
     f.apply();
@@ -219,12 +197,12 @@ fun cancel_ready_proposal_preserves_notice_and_reschedule_waits_again() {
     f.clock.set_for_testing(START + NOTICE);
     f.cancel();
     f.assert_applied(initial_split(), NOTICE);
-    assert_eq!(
-        bcs::to_bytes(&event::events_by_type<presale_vault::FeeSplitCancelled>()[0]),
-        bcs::to_bytes(
-            &ExpectedCancelled { vault_id: object::id(&f.vault), proposed: next_split() },
-        ),
-    );
+    let (owner, _, proposed, _, ready_at_ms) = event::events_by_type<
+        DelayedCancelled<FeeSplitKey, FeeSplit>,
+    >()[0].delayed_cancelled_fields();
+    assert_eq!(owner, object::id(&f.vault));
+    assert_eq!(proposed, next_split());
+    assert_eq!(ready_at_ms, START + NOTICE);
     f.schedule(next_split(), 25);
     f.clock.set_for_testing(START + 2 * NOTICE);
     f.apply();
@@ -371,12 +349,13 @@ fun exercise(case: Case) {
 
 // === Imports ===
 
+use blast_admin::delayed::{DelayedApplied, DelayedCancelled, DelayedScheduled};
 use blast_presale::{
     blast_presale::{Self as presale, FeeSplit, PresaleCap},
     blast_presale_package::{Self as package_version, PackageVersion},
     bps,
     fee_policy,
-    presale_vault::{Self, Vault}
+    presale_vault::{Self, FeeSplitKey, Vault}
 };
-use std::{bcs, unit_test::{assert_eq, destroy}};
+use std::unit_test::{assert_eq, destroy};
 use sui::{clock::Clock, event};

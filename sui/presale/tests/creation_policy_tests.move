@@ -62,11 +62,11 @@ fun the_admin_allows_a_quote_and_a_migrator() {
     let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
     assert_eq!(quote, type_name<QUOTE>());
     assert_eq!(allowed, true);
-    let (migration_witness, allowed) = last_event<
-        MigrationWitnessSet,
-    >().migration_witness_set_fields();
-    assert_eq!(migration_witness, type_name<MIGRATOR>());
-    assert_eq!(allowed, true);
+    let (owner, _, admission, _) = last_event<
+        ActionApplied<MigrationWitnessKey, TypeName>,
+    >().action_applied_fields();
+    assert_eq!(owner, object::id(&policy));
+    assert_eq!(admission.action(), option::some(type_name<MIGRATOR>()));
 
     policy.destroy_for_testing();
 
@@ -145,11 +145,11 @@ fun disallowing_a_migrator_stops_later_creations() {
         &mut sui::tx_context::dummy()
     );
 
-    let (migration_witness, allowed) = last_event<
-        MigrationWitnessSet,
-    >().migration_witness_set_fields();
-    assert_eq!(migration_witness, type_name<MIGRATOR>());
-    assert_eq!(allowed, false);
+    let (owner, _, member) = last_event<
+        MemberRemoved<MigrationWitnessKey, TypeName>,
+    >().member_removed_fields();
+    assert_eq!(owner, object::id(&policy));
+    assert_eq!(member, type_name<MIGRATOR>());
     policy.assert_allowed<QUOTE, MIGRATOR>();
     std::unit_test::destroy(package_version);
     abort
@@ -189,8 +189,8 @@ fun an_unlisted_quote_cannot_be_disallowed() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EAllowanceUnchanged,
-    location = blast_presale::creation_policy,
+    abort_code = blast_admin::errors::EUnchanged,
+    location = blast_admin::delayed,
 )]
 fun an_allowed_migrator_cannot_be_allowed_again() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
@@ -210,8 +210,8 @@ fun an_allowed_migrator_cannot_be_allowed_again() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EAllowanceUnchanged,
-    location = blast_presale::creation_policy,
+    abort_code = blast_admin::errors::EUnchanged,
+    location = blast_admin::delayed,
 )]
 fun an_unlisted_migrator_cannot_be_disallowed() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
@@ -340,8 +340,8 @@ fun a_sui_framework_type_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EAllowanceUnchanged,
-    location = blast_presale::creation_policy,
+    abort_code = blast_admin::errors::EUnchanged,
+    location = blast_admin::delayed,
 )]
 /// Disallowing never needs the struct check: a primitive can never have been allowed.
 fun disallowing_a_primitive_is_an_unchanged_allowance() {
@@ -537,11 +537,11 @@ fun stale_version_cannot_allow_quotes() {
     let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
     assert_eq!(quote, type_name<QUOTE>());
     assert_eq!(allowed, true);
-    let (migration_witness, allowed) = last_event<
-        MigrationWitnessSet,
-    >().migration_witness_set_fields();
-    assert_eq!(migration_witness, type_name<MIGRATOR>());
-    assert_eq!(allowed, true);
+    let (owner, _, admission, _) = last_event<
+        ActionApplied<MigrationWitnessKey, TypeName>,
+    >().action_applied_fields();
+    assert_eq!(owner, object::id(&policy));
+    assert_eq!(admission.action(), option::some(type_name<MIGRATOR>()));
 
     policy.destroy_for_testing();
 
@@ -645,7 +645,7 @@ fun last_event<Event: copy + drop>(): Event {
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminWitness};
+use blast_admin::{blast_acl::{Self, AdminWitness}, delayed::{ActionApplied, MemberRemoved}};
 
 use blast_partners::blast_partners::{Self as partners, Partner};
 
@@ -654,7 +654,7 @@ use blast_presale::{
     creation_policy::{
         Self,
         CreationPolicy,
-        MigrationWitnessSet,
+        MigrationWitnessKey,
         PartnerAdded,
         PartnerRemoved,
         QuoteSet,

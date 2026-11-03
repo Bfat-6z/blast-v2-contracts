@@ -318,30 +318,44 @@ fun expected(setting: Setting, n: u64): vector<u8> {
 
 fun assert_value(f: &Fixture, setting: Setting, n: u64) { assert_eq!(snapshot(f, setting), expected(setting, n)); }
 
+/// Checks the primitive's last scheduled or cancelled proposal for `setting`: its owner, value
+/// and full notice, and for a schedule its deadline a full notice from now.
 fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
-    let mut expected = match (setting) {
-        Setting::Fees => { u64_fields_bytes(vector[n, n + 1, n + 2, n + 3]) },
-        Setting::Destination => { expected(setting, n) },
-        Setting::VaultFees => {
-            let mut bytes = bcs::to_bytes(&sui::object::id(&f.vault));
-            bytes.append(u64_fields_bytes(vector[n, n + 1]));
-            bytes
-        },
+    let ready_at_ms = if (scheduled) option::some(f.clock.timestamp_ms() + DELAY) else option::none();
+    match (setting) {
+        Setting::Fees => assert_proposal<FeesKey, ProtocolFees>(
+            sui::object::id(&f.policy),
+            u64_fields_bytes(vector[n, n + 1, n + 2, n + 3]),
+            ready_at_ms,
+        ),
+        Setting::Destination => assert_proposal<DestinationKey, address>(
+            sui::object::id(&f.policy),
+            expected(setting, n),
+            ready_at_ms,
+        ),
+        Setting::VaultFees => assert_proposal<ProtocolLpFeesKey, ProtocolFees>(
+            sui::object::id(&f.vault),
+            u64_fields_bytes(vector[11, 12, n, n + 1]),
+            ready_at_ms,
+        ),
+    }
+}
+
+/// A schedule when `ready_at_ms` is some, else a cancellation.
+fun assert_proposal<K: copy + drop + store, T: copy + drop + store>(
+    owner: ID,
+    value: vector<u8>,
+    ready_at_ms: Option<u64>,
+) {
+    let (actual_owner, _, actual_value, delay_ms, actual_ready_at_ms) = if (ready_at_ms.is_some()) {
+        sui::event::events_by_type<DelayedScheduled<K, T>>().pop_back().delayed_scheduled_fields()
+    } else {
+        sui::event::events_by_type<DelayedCancelled<K, T>>().pop_back().delayed_cancelled_fields()
     };
-    if (scheduled) {
-        expected.append(bcs::to_bytes(&(f.clock.timestamp_ms() + DELAY)));
-        let delay_ms = DELAY;
-        expected.append(bcs::to_bytes(&delay_ms));
-    };
-    let actual = match (setting) {
-        Setting::Fees => if (scheduled) last_event<fee_policy::FeesScheduled>()
-        else last_event<fee_policy::FeesCancelled>(),
-        Setting::Destination => if (scheduled) last_event<fee_policy::DestinationScheduled>()
-        else last_event<fee_policy::DestinationCancelled>(),
-        Setting::VaultFees => if (scheduled) last_event<presale_vault::ProtocolLpFeesScheduled>()
-        else last_event<presale_vault::ProtocolLpFeesCancelled>(),
-    };
-    assert_eq!(actual, expected);
+    assert_eq!(actual_owner, owner);
+    assert_eq!(bcs::to_bytes(&actual_value), value);
+    assert_eq!(delay_ms, DELAY);
+    ready_at_ms.do!(|expected| assert_eq!(actual_ready_at_ms, expected));
 }
 
 fun u64_fields_bytes(values: vector<u64>): vector<u8> {
@@ -350,19 +364,15 @@ fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     bytes
 }
 
-fun last_event<T: copy + drop>(): vector<u8> {
-    let mut events = sui::event::events_by_type<T>();
-    bcs::to_bytes(&events.pop_back())
-}
-
 // === Imports ===
 
 
 
 use blast_presale::{
-    blast_presale_package::{Self as package_version, PackageVersion}, blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}, bps, fee_policy::{Self, FeePolicy},
-    presale_vault::{Self, Vault}
+    blast_presale_package::{Self as package_version, PackageVersion}, blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin}, bps,
+    fee_policy::{Self, DestinationKey, FeePolicy, FeesKey, ProtocolFees},
+    presale_vault::{Self, ProtocolLpFeesKey, Vault}
 };
-use blast_admin::blast_acl;
+use blast_admin::{blast_acl, delayed::{DelayedCancelled, DelayedScheduled}};
 use std::{bcs, unit_test::{assert_eq, destroy}};
 use sui::clock::Clock;
