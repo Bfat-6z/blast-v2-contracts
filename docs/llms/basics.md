@@ -35,9 +35,9 @@ no state or code with the launchpad or the migrators, keeps its own admin caps
 instead of `blast_admin`, and holds migrated liquidity in its own
 `presale_vault::Vault`. Answer presale questions from the presale guide alone.
 
-`blast_fun_timelock` and `blast_fun_vesting` come from Blast's public utility
-repository (`interest-protocol/blast-util-contracts`); both are immutable on
-mainnet.
+`blast_fun_timelock` and `blast_fun_vesting` live in this repository at
+`sui/timelock` and `sui/vesting`; both are immutable on mainnet. The standalone
+OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values
 

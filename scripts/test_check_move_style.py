@@ -2,6 +2,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from check_move_style import check
 
@@ -26,6 +27,29 @@ class MoveStyleTests(unittest.TestCase):
             path = Path(directory) / filename
             path.write_text(source)
             check(path)
+
+    def test_published_utility_layout_does_not_relax_greenfield_layout(self):
+        source = """module example::vesting;
+// === Constants ===
+const LIMIT: u64 = 1;
+// === Public Functions ===
+public fun limit(): u64 { LIMIT }
+// === Events ===
+// === Errors ===
+// === Imports ===
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("check_move_style.ROOT", root):
+                for package in ("vesting", "launchpad"):
+                    path = root / "sui" / package / "sources" / "vesting.move"
+                    path.parent.mkdir(parents=True)
+                    path.write_text(source)
+                    if package == "vesting":
+                        check(path)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "sections must occur once"):
+                            check(path)
 
     def test_event_payload_and_nested_snapshot_pass(self):
         source = """module example::events;

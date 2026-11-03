@@ -1,0 +1,34 @@
+{
+  "name": "@interest-protocol/blast-util-sdk",
+  "version": "0.1.0",
+  "description": "Transaction builders, state reads, and event decoders for the Blast OTC and vesting packages on Sui",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./deployments": "./src/deployments.ts",
+    "./otc": "./src/otc/index.ts",
+    "./vesting": "./src/vesting/index.ts"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "check:abi": "node scripts/check-contract-abi.mjs",
+    "check": "npm run check:abi && npm run format:check && npm run lint && npm run typecheck && npm test",
+    "format": "biome format --write . && biome check --write --only=assist/source/organizeImports .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc"
+  },
+  "peerDependencies": {
+    "@mysten/sui": "^2.26.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@mysten/sui": "2.26.2",
+    "@types/node": "^24.3.0",
+    "typescript": "^7.0.2"
+  }
+}

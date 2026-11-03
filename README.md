@@ -14,13 +14,15 @@ Load deeper documentation only when the task requires it:
 - [deployment records](deployments/README.md)
 - [security audits](audits/README.md), including Asymptotic's October 2026 launchpad report
 - [Sui packages](sui/README.md)
+- [OTC, vesting, timelock and their SDK](docs/utilities.md)
 
 Package source, tests, manifests, and lockfiles are authoritative for current
 implementation and dependency details.
 
 ## License
 
-First-party Blast V2 contract code is licensed under the
+Except for the MIT-licensed utility packages and SDK below, first-party Blast
+V2 contract code is licensed under the
 [Business Source License 1.1](LICENSE) (`BUSL-1.1`). Non-production use, including
 development and testing, is permitted. Production use requires a separate
 commercial license from the licensor; there is no Additional Use Grant.
@@ -36,3 +38,8 @@ Third-party dependencies and the venue interfaces under
 `sui/boosts/aftermath_adapter/interfaces/` retain their own licensing terms and
 are excluded from this license grant. This change does not revoke rights in
 copies previously distributed under MIT or another license.
+
+The imported `sui/otc/`, `sui/vesting/`, `sui/timelock/`, and `sdk/` retain
+their MIT license, with the original notice in each directory. Their imported
+documentation, vectors, and deployment records retain the same terms; see
+[ADR 0135](docs/decisions/0135-utility-contracts-consolidation.md).

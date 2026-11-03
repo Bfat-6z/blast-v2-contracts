@@ -12,7 +12,10 @@ storage, ABI, upgrade, dependency, deployment, or cross-package decision.
 
 ## Greenfield development
 
-Treat first-party contracts as undeployed work in progress with no users.
+Treat first-party contracts as undeployed work in progress with no users, except
+`sui/otc`, `sui/vesting`, and `sui/timelock`: these are published immutable
+packages. Preserve their source, abort identities, and publication metadata;
+see [utility integration](docs/utilities.md) for provenance and verification.
 Change APIs and their callers together; delete obsolete paths and compatibility
 wrappers. Delete removed errors and renumber each error namespace sequentially
 from zero. Update exact-abort tests and source gates with the new codes; retain

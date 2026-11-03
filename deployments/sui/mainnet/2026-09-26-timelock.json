@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "chain": "sui",
+  "network": "mainnet",
+  "chainId": "35834a8a",
+  "recordedUtc": "2026-09-26T21:56:34.669Z",
+  "repository": {
+    "url": "https://github.com/interest-protocol/blast-util-contracts",
+    "commit": "8f29c593b4aa0b3b42f475e2e9d42b2d3027220a",
+    "workingTreeClean": false,
+    "trackedFilesCleanAtPublication": true,
+    "untrackedFilesAtPublication": [
+      ".agents/",
+      ".claude/",
+      "skills-lock.json"
+    ]
+  },
+  "toolchain": {
+    "suiCli": "1.77.2-51d177ad7d65",
+    "framework": "06734f6ff0af45d8632a14a4dc4b100197f6b1a2"
+  },
+  "deployer": "0x52ecee5e58e2f3a7461cc604f4efcc3b68031e4715456d821e3a2719b0593600",
+  "package": {
+    "name": "blast_fun_timelock",
+    "path": "sui/timelock",
+    "packageId": "0x7e17a8d6c068ccdfb7e8a0c222da363d9c9dcf9fcda97befa3352a7b54ff2f29",
+    "version": 1,
+    "owner": "Immutable",
+    "immutable": true,
+    "publication": {
+      "digest": "Hya1RkiSHLcmZ2BRbtNw4LB4dyaKCxqg7uvQU49VozAr",
+      "checkpoint": 327275801,
+      "timestampUtc": "2026-09-26T21:56:34.669Z",
+      "status": "success",
+      "gasUsed": {
+        "computationCost": 100000,
+        "storageCost": 8420800,
+        "storageRebate": 978120,
+        "nonRefundableStorageFee": 9880
+      },
+      "netGasMist": 7542680,
+      "commands": [
+        "Publish",
+        "0x2::package::make_immutable(Result(0))"
+      ],
+      "madeImmutableInSameTransaction": true,
+      "createdObjects": [
+        {
+          "objectId": "0x7e17a8d6c068ccdfb7e8a0c222da363d9c9dcf9fcda97befa3352a7b54ff2f29",
+          "kind": "package",
+          "owner": "Immutable"
+        }
+      ],
+      "upgradeCapObjectCreatedInEffects": false
+    },
+    "sourceVerified": "sui client --client.env mainnet verify-source sui/timelock: Source verification succeeded",
+    "superseded": {
+      "reason": "The package imposed a ten-year maximum delay on a generic primitive.",
+      "replacementPackageId": "0x1749b76a3ae065dedfe847578b07826fa83d1e18ff485d9e4f9647f3698e104d",
+      "replacementDigest": "FQhZPuNDEzBENZhvRuCW5oYme9KAeYKZtnaGBF2yR7oZ",
+      "replacementTimestampUtc": "2026-09-26T22:20:26.202Z"
+    }
+  },
+  "releaseGates": {
+    "unitTests": "18 passed, 0 failed",
+    "moveCoveragePercent": 100,
+    "mainnetDryRun": "success",
+    "dryRunCommands": [
+      "Publish",
+      "0x2::package::make_immutable(Result(0))"
+    ]
+  }
+}

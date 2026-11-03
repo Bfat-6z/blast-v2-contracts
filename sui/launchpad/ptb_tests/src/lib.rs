@@ -778,44 +778,17 @@ pub fn sui_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("sui directory")
 }
 
-/// Where the CLI checks out `name`, a git dependency of `sui/<package>` from blast-util-contracts.
-/// Pubfiles name it by this path, as they name local packages.
-fn git_dependency_dir(package: &str, name: &str) -> Result<PathBuf> {
-    let manifest = std::fs::read_to_string(sui_dir().join(package).join("Move.toml"))?;
-    let dependency = manifest
-        .lines()
-        .find(|line| line.starts_with(name))
-        .with_context(|| format!("{package}'s {name} dependency"))?;
-    let field = |key: &str| -> Result<&str> {
-        let (_, rest) = dependency.split_once(&format!("{key} = \"")).with_context(|| format!("{name} {key}"))?;
-        Ok(rest.split('"').next().unwrap_or_default())
-    };
-    let move_home = match std::env::var("MOVE_HOME") {
-        Ok(home) => PathBuf::from(home),
-        Err(_) => PathBuf::from(std::env::var("HOME")?).join(".move"),
-    };
-    let checkout = format!("{}_{}", field("git")?.replace([':', '/', '.'], "_"), field("rev")?);
-    let dir = move_home.join("git").join(checkout).join(field("subdir")?);
-    ensure!(
-        dir.join("Move.toml").is_file(),
-        "{} is missing; `sui move build` in sui/{package} fetches it",
-        dir.display(),
-    );
-
-    Ok(dir)
-}
-
-/// The cached checkout of `blast_fun_timelock`, which `blast_admin` links.
+/// The local immutable timelock package linked by `blast_admin`.
 pub fn timelock_dir() -> Result<PathBuf> {
-    git_dependency_dir("admin", "blast_fun_timelock")
+    Ok(sui_dir().join("timelock").canonicalize()?)
 }
 
-/// The cached checkout of `blast_fun_vesting`, which `blast_presale` links.
+/// The local immutable vesting package linked by `blast_presale`.
 pub fn vesting_dir() -> Result<PathBuf> {
-    git_dependency_dir("presale", "blast_fun_vesting")
+    Ok(sui_dir().join("vesting").canonicalize()?)
 }
 
-/// Compiles the timelock from a copy in `work`, so building never writes into the CLI's cache.
+/// Compiles the timelock from a copy in `work`, so building never writes into the source package.
 pub fn build_timelock(work: &Path) -> Result<CompiledPackage> {
     build_copy(&timelock_dir()?, "blast_fun_timelock", work)
 }
