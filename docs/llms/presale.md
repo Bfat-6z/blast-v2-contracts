@@ -101,7 +101,7 @@ reference. Each admin call names exactly one role in its signature:
 | `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
 | `blast_presale_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
 | `blast_presale_domain::AdapterAdmin` | `creation_policy::schedule_migration_witness` |
-| `blast_presale_domain::RewardsAdmin` | `holder_rewards::publish_round` |
+| `blast_presale_domain::RewardsAdmin` | `holder_rewards::publish_round`, `holder_rewards::settle_gas_reserve` |
 | `blast_presale_domain::UpgradeAdmin` | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` |
 
 A role from another package, such as `blast_fun_domain::FeeAdmin`, is a different type and

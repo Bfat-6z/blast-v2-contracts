@@ -9,6 +9,18 @@ import gen_llms
 
 
 class SummaryIdentityTests(unittest.TestCase):
+    def test_summary_uses_mainnet_regardless_of_cli_default(self):
+        with (
+            patch.object(gen_llms, 'PACKAGES', [('sui/example', 'Example')]),
+            patch.object(gen_llms, 'package_name', return_value='example'),
+            patch.object(gen_llms.subprocess, 'run') as run,
+        ):
+            run.return_value.returncode = 0
+            gen_llms.build_summaries(Path('summaries'))
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index('--build-env') + 1], 'mainnet')
+
     def test_genesis_alias_does_not_rename_package_or_type_references(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

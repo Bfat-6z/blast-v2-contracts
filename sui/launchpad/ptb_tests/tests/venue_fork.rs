@@ -28,7 +28,7 @@
 //!
 //! Run from `sui/launchpad/ptb_tests` with `cargo test --offline --test venue_fork`.
 
-use std::{collections::BTreeMap, path::Path, sync::OnceLock};
+use std::{collections::BTreeMap, sync::OnceLock};
 
 use anyhow::{Context, Result, bail, ensure};
 use blake2::{Blake2b, Digest, digest::consts::U32};
@@ -422,7 +422,7 @@ impl World {
         let (version, _) = h.wrap_launchpad(blast, &published, admin, &admin_published, case.quote(), tag(&format!("{migrators}::{}::Witness", case.module())))?;
         h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
         let project = build(
-            &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture/project"),
+            &blast_launchpad_ptb_tests::crate_dir().join("fixture/project"),
             &[core[0], core[1], core[2], (launchpad_dir.as_path(), blast)],
             &work,
         )?;

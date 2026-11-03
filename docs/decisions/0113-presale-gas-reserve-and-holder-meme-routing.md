@@ -19,6 +19,10 @@ before funding. A treasury change after planning or signing aborts the stale
 publication. It never rewrites the frozen round's recipient commitment. This
 binding also applies when reimbursement is disabled.
 
+The automated RewardsAdmin publishes rounds and settles their gas reserves. The
+worker validates the frozen manifest and its financial commitments before
+signing. TreasuryAdmin governs the fee destination independently.
+
 RewardsAdmin settles an enabled reserve exactly once: reimburse a chosen amount
 no larger than reserve, then return the entire remainder. The contract bounds
 custody; trusted off-chain evidence determines eligible actual gas cost.

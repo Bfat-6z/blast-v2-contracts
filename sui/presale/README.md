@@ -127,9 +127,10 @@ capability: Blast administers it through the one shared Blast ACL
 (`blast_admin`, [ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)),
 which it already links through `blast_partners`. `blast_presale_domain` declares
 roles: `FeeAdmin` sets Blast's rates and the partners new sales may name,
-`TreasuryAdmin` their destination, `ListingAdmin` and `AdapterAdmin` the Quote
-types and migrators new sales may use, `RewardsAdmin` publishes holder-reward
-rounds, and `UpgradeAdmin` authorizes compatible upgrades and atomic version cutovers.
+`TreasuryAdmin` governs the fee destination,
+`ListingAdmin` and `AdapterAdmin` admit Quote types and migrators for new sales,
+and `RewardsAdmin` publishes holder-reward rounds and settles capped gas reserves. `UpgradeAdmin` authorizes
+compatible upgrades and atomic version cutovers.
 [DEPLOYING.md](DEPLOYING.md) gives the complete order: custody verification, ordinary ACL configuration at zero delay,
 enabling each operation’s intended notice, then immediate UnpauseAdmin release. No presale can exist
 under an unsealed cap or before unpause.

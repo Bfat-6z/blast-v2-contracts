@@ -20,9 +20,9 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
-| `blast_fun` | Launchpad | live; source has changed since | `0x079a1b44c551613cbc63cc0406f8ff8d717407378dd6f17d43d9e1b3fd63a573` | `0x079a1b44c551613cbc63cc0406f8ff8d717407378dd6f17d43d9e1b3fd63a573` |
-| `blast_fun_migrators` | Migration and LP vaults | live; source has changed since | `0x4a5d11d8443e965d62abb3ff032e9b020d10aeaf4dfbc3bc59775b44a8af1f53` | `0x4a5d11d8443e965d62abb3ff032e9b020d10aeaf4dfbc3bc59775b44a8af1f53` |
-| `blast_partners` | Partner codes | live; source has changed since | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
+| `blast_fun` | Launchpad | not yet published | — | — |
+| `blast_fun_migrators` | Migration and LP vaults | not yet published | — | — |
+| `blast_partners` | Partner codes | not yet published | — | — |
 | `blast_admin` | Administration | not yet published | — | — |
 
 ## Calling Blast contracts
@@ -40,7 +40,7 @@ product guide below assumes it.
 | Partner codes | earn a share of Blast's fee on the flow an app brings | `blast_partners` |
 | Boosts | hold a leveraged long or short coin backed by Aftermath perpetuals | `blast_boosts_core`, `blast_boosts_products`, `blast_boosts_aftermath` |
 | blastSUI | stake SUI with one validator through funSUI and blastSUI | `blast_sui` |
-| Administration | Blast's operators manage roles, fees, and upgrades | `blast_admin` (the presale has its own admin caps) |
+| Administration | Blast's operators manage roles, fees, and upgrades | `blast_admin` |
 
 Each package and what it depends on:
 
@@ -48,7 +48,7 @@ Each package and what it depends on:
 blast_fun_migrators          -> blast_fun, blast_admin, Cetus, Bluefin
 blast_fun                    -> blast_partners, blast_admin
 blast_partners               -> blast_admin, blast_fun_timelock
-blast_presale                -> blast_partners, blast_fun_vesting, Cetus, Bluefin
+blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
 blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
@@ -57,10 +57,9 @@ blast_admin                  -> Sui framework only
 ```
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
-composes with it inside one PTB. The presale is a separate product: it shares
-no state or code with the launchpad or the migrators, keeps its own admin caps
-instead of `blast_admin`, and holds migrated liquidity in its own
-`presale_vault::Vault`. Answer presale questions from the presale guide alone.
+composes with it inside one PTB. Presale uses typed roles from the shared
+`blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
+Use the presale guide for presale calls.
 
 `blast_fun_timelock` (used only by `blast_partners`) and `blast_fun_vesting` live
 in this repository at `sui/timelock` and `sui/vesting`; both are immutable on
@@ -126,13 +125,13 @@ names.
 
 ### Versions and upgrades
 
-Each package has one upgrade posture:
+Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
 | Immutable | `blast_admin`, `blast_partners`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
-| Dependency-only | `blast_presale` | Presale logic is sealed; Blast can only relink newer Cetus, Bluefin, and Aftermath versions, and every generation runs identical code with no version gate. Call the latest package ID, because a venue rejects calls linked to a version it retired. |
-| Version-gated | `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
+| Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events
@@ -174,7 +173,7 @@ run) before signing it.
 
 ## Launchpad
 
-> **Deployment status:** `blast_fun` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
+> **Deployment status:** `blast_fun` is not yet published on mainnet; its interface may change before publication.
 
 ### What it is
 
@@ -1076,7 +1075,7 @@ never reaches its target stays `Live`, and holders exit by selling to the curve.
 
 ## Migration and LP vaults
 
-> **Deployment status:** `blast_fun_migrators` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
+> **Deployment status:** `blast_fun_migrators` is not yet published on mainnet; its interface may change before publication.
 
 ### What it is
 
@@ -1962,7 +1961,7 @@ its share in force at that moment, rounded down, and Blast's destination the res
 
 ## Partner codes
 
-> **Deployment status:** `blast_partners` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
+> **Deployment status:** `blast_partners` is not yet published on mainnet; its interface may change before publication.
 
 ### What it is
 
@@ -2263,7 +2262,7 @@ where you like); Blast takes no cut of it.
 
 ## API reference: `blast_fun` (Launchpad)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: every payload is emitted inside `blast_fun::blast_events::Event<T>`; filter on that type.
 
@@ -3697,7 +3696,7 @@ public fun revoke_creator_claim_signer(
 
 ## API reference: `blast_fun_migrators` (Migration and LP vaults)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -4660,7 +4659,7 @@ public struct VenueConfig has key {
 
 ## API reference: `blast_partners` (Partner codes)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 

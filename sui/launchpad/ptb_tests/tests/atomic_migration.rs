@@ -25,7 +25,7 @@
 //!
 //! Run from `sui/launchpad/ptb_tests` with `cargo test` (needs the pinned `sui` on PATH).
 
-use std::{collections::BTreeSet, path::Path, time::Duration};
+use std::{collections::BTreeSet, time::Duration};
 
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
@@ -1104,7 +1104,7 @@ fn setup() -> Result<(World, Launch, Launch)> {
 /// test passes its own `work` directory for build configuration.
 fn world(work: &str) -> Result<World> {
     let sui_dir = sui_dir();
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture");
+    let fixture = blast_launchpad_ptb_tests::crate_dir().join("fixture");
     let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(work);
     let mut h = Harness::new()?;
 

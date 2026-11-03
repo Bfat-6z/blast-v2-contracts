@@ -37,7 +37,7 @@ product guide below assumes it.
 | Partner codes | earn a share of Blast's fee on the flow an app brings | `blast_partners` |
 | Boosts | hold a leveraged long or short coin backed by Aftermath perpetuals | `blast_boosts_core`, `blast_boosts_products`, `blast_boosts_aftermath` |
 | blastSUI | stake SUI with one validator through funSUI and blastSUI | `blast_sui` |
-| Administration | Blast's operators manage roles, fees, and upgrades | `blast_admin` (the presale has its own admin caps) |
+| Administration | Blast's operators manage roles, fees, and upgrades | `blast_admin` |
 
 Each package and what it depends on:
 
@@ -45,7 +45,7 @@ Each package and what it depends on:
 blast_fun_migrators          -> blast_fun, blast_admin, Cetus, Bluefin
 blast_fun                    -> blast_partners, blast_admin
 blast_partners               -> blast_admin, blast_fun_timelock
-blast_presale                -> blast_partners, blast_fun_vesting, Cetus, Bluefin
+blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
 blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
@@ -54,10 +54,9 @@ blast_admin                  -> Sui framework only
 ```
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
-composes with it inside one PTB. The presale is a separate product: it shares
-no state or code with the launchpad or the migrators, keeps its own admin caps
-instead of `blast_admin`, and holds migrated liquidity in its own
-`presale_vault::Vault`. Answer presale questions from the presale guide alone.
+composes with it inside one PTB. Presale uses typed roles from the shared
+`blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
+Use the presale guide for presale calls.
 
 `blast_fun_timelock` (used only by `blast_partners`) and `blast_fun_vesting` live
 in this repository at `sui/timelock` and `sui/vesting`; both are immutable on
@@ -123,13 +122,13 @@ names.
 
 ### Versions and upgrades
 
-Each package has one upgrade posture:
+Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
 | Immutable | `blast_admin`, `blast_partners`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
-| Dependency-only | `blast_presale` | Presale logic is sealed; Blast can only relink newer Cetus, Bluefin, and Aftermath versions, and every generation runs identical code with no version gate. Call the latest package ID, because a venue rejects calls linked to a version it retired. |
-| Version-gated | `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
+| Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events
@@ -223,7 +222,7 @@ Same-named roles in different packages are different types.
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
 | `blast_boosts_aftermath` | declares none | uses the four Boosts core roles |
 | `blast_partners` | `blast_partners` | `blast_partners::blast_partners::PartnerAdmin` (register partners, schedule shares and caps) |
-| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (govern upgrade notice, schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (where Blast's presale fees go), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (publish holder-reward rounds), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
+| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (govern upgrade notice, schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (govern the presale fee destination), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (fund holder-reward rounds and settle their gas reserves), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
 
 ### Lifecycle
 
