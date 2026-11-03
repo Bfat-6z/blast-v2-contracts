@@ -252,11 +252,12 @@ fun a_setting_with_a_proposal_cannot_be_destroyed() {
 
 #[test]
 fun the_largest_representable_deadline_is_valid() {
-    let mut clock = clock_at(10);
-    let mut setting = new_setting(7, std::u64::max_value!() - 10);
+    let max = std::u64::max_value!();
+    let mut clock = clock_at(max - delayed::max_delay_ms());
+    let mut setting = new_setting(7, delayed::max_delay_ms());
 
-    assert_eq!(setting.schedule(2, 0, &clock), std::u64::max_value!());
-    clock.set_for_testing(std::u64::max_value!());
+    assert_eq!(setting.schedule(2, 0, &clock), max);
+    clock.set_for_testing(max);
     assert_eq!(setting.apply(&clock), 2);
 
     setting.destroy();
@@ -264,10 +265,49 @@ fun the_largest_representable_deadline_is_valid() {
 }
 
 #[test]
+fun the_ceiling_notice_is_accepted_and_can_be_changed_again() {
+    let mut clock = clock_at(1);
+    let mut setting = new_setting(7, NOTICE_MS);
+    setting.schedule_delay(delayed::max_delay_ms(), &clock);
+    clock.set_for_testing(1 + NOTICE_MS);
+    setting.apply(&clock);
+    assert_eq!(setting.delay_ms(), delayed::max_delay_ms());
+
+    let ready_at_ms = setting.schedule_delay(NOTICE_MS, &clock);
+    clock.set_for_testing(ready_at_ms);
+    setting.apply(&clock);
+
+    assert_eq!(setting.delay_ms(), NOTICE_MS);
+    setting.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun creation_rejects_a_notice_above_the_ceiling() {
+    let setting = new_setting(7, delayed::max_delay_ms() + 1);
+
+    setting.destroy();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun a_proposed_notice_above_the_ceiling_rejects() {
+    let clock = clock_at(1);
+    let mut setting = new_setting(7, NOTICE_MS);
+
+    setting.schedule_delay(delayed::max_delay_ms() + 1, &clock);
+
+    abort
+}
+
+#[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
 fun scheduling_rejects_an_overflowing_deadline() {
-    let clock = clock_at(1);
-    let mut setting = new_setting(7, std::u64::max_value!());
+    let clock = clock_at(std::u64::max_value!() - 1);
+    let mut setting = new_setting(7, 2);
 
     setting.schedule_value(8, &clock);
 
@@ -277,10 +317,10 @@ fun scheduling_rejects_an_overflowing_deadline() {
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
 fun a_proposed_notice_must_fit_at_its_earliest_application() {
-    let clock = clock_at(1);
+    let clock = clock_at(std::u64::max_value!() - delayed::max_delay_ms());
     let mut setting = new_setting(7, 1);
 
-    setting.schedule_delay(std::u64::max_value!() - 1, &clock);
+    setting.schedule_delay(delayed::max_delay_ms(), &clock);
 
     abort
 }
@@ -288,11 +328,12 @@ fun a_proposed_notice_must_fit_at_its_earliest_application() {
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
 fun applying_late_rejects_a_now_unrepresentable_notice() {
-    let mut clock = clock_at(1);
+    let start_ms = std::u64::max_value!() - delayed::max_delay_ms() - 2;
+    let mut clock = clock_at(start_ms);
     let mut setting = new_setting(7, 1);
-    setting.schedule_delay(std::u64::max_value!() - 2, &clock);
+    setting.schedule_delay(delayed::max_delay_ms(), &clock);
 
-    clock.set_for_testing(3);
+    clock.set_for_testing(start_ms + 3);
     setting.apply(&clock);
 
     abort
@@ -300,11 +341,11 @@ fun applying_late_rejects_a_now_unrepresentable_notice() {
 
 #[test]
 #[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
-fun an_unchanged_proposal_rejects_before_overflow_checks() {
-    let clock = clock_at(1);
-    let mut setting = new_setting(7, std::u64::max_value!());
+fun an_unchanged_proposal_rejects_before_ceiling_and_overflow_checks() {
+    let clock = clock_at(std::u64::max_value!());
+    let mut setting = new_setting(7, delayed::max_delay_ms());
 
-    setting.schedule(7, std::u64::max_value!(), &clock);
+    setting.schedule(7, delayed::max_delay_ms(), &clock);
 
     abort
 }
@@ -317,6 +358,29 @@ fun destruction_records_the_end_of_the_setting() {
 
     let (setting_owner, _) = collect<DelayedDestroyed<Fee, u64>>().delayed_destroyed_fields();
     assert_eq!(setting_owner, owner());
+}
+
+#[test]
+fun a_setting_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal() {
+    let clock = clock_at(0);
+    let mut setting = new_setting(7, 0);
+    assert!(!setting.is_guarded());
+
+    setting.schedule_delay(NOTICE_MS, &clock);
+    setting.apply(&clock);
+    assert!(setting.is_guarded());
+
+    setting.schedule_value(8, &clock);
+    assert!(setting.is_guarded());
+
+    setting.schedule(8, 0, &clock);
+    assert!(!setting.is_guarded());
+
+    setting.cancel();
+    assert!(setting.is_guarded());
+
+    setting.destroy();
+    clock.destroy_for_testing();
 }
 
 // === Test Helpers ===

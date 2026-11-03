@@ -30,7 +30,7 @@ use std::{collections::BTreeSet, time::Duration};
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
     ActionApplied, ActionScheduled, Change, CompiledPackage, Expected, Harness, Outcome, RuntimeConfigContents, SetApplied,
-    SetChange, SetScheduled, build, call, sui_dir,
+    SetChange, SetScheduled, append_unpause, build, call, sui_dir,
 };
 use move_binary_format::{CompiledModule, file_format::SignatureToken};
 use serde::{Deserialize, Serialize};
@@ -1132,7 +1132,7 @@ fn world(work: &str) -> Result<World> {
     let project = build(&fixture.join("project"), &linked, &work)?;
     let mut w = World { h, blast, adapter, version, runtime, config, project, core_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody };
 
-    w.h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
+    w.h.unpause(blast, "blast_fun_domain", admin, &admin_published, version, custody, [runtime, config], 7)?;
 
     // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap and each role the
     // setters below take; the cap then signs in once per role.
@@ -1273,9 +1273,12 @@ impl World {
 
     fn append_pause(&self, b: &mut ProgrammableTransactionBuilder, pause: bool, bits: u8, role: &str) -> Result<()> {
         let witness = self.sign_in(b, role)?;
+        if !pause {
+            return append_unpause(&self.h, b, self.blast, self.custody, self.version, witness, [self.runtime, self.config], bits);
+        }
         let version = b.obj(self.h.shared(self.version, true))?;
         let bits = b.pure(bits)?;
-        call(b, self.blast, "blast_fun", if pause { "pause" } else { "unpause" }, vec![], vec![version, witness, bits]);
+        call(b, self.blast, "blast_fun", "pause", vec![], vec![version, witness, bits]);
         Ok(())
     }
 

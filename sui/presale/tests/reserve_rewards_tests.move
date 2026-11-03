@@ -9,14 +9,17 @@ module blast_presale::reserve_rewards_tests;
 const OWNER: address = @0xA;
 const HOLDER: address = @0xB;
 const TREASURY: address = @0xC;
+/// The round notice every vault starts with.
+const ROUND_NOTICE_MS: u64 = 7_200_000;
 /// The claim window every helper schedules.
 const CLAIM_WINDOW_DURATION_MS: u64 = 604_800_000;
-/// The claim deadline of a round published at the fixture's start time of 1 ms.
-const DEADLINE_AT_MS: u64 = 604_800_001;
+/// The claim deadline of a round scheduled at the fixture's start time of 1 ms and published once
+/// the default notice elapses.
+const DEADLINE_AT_MS: u64 = 612_000_001;
 /// A raised round notice.
-const NOTICE_MS: u64 = 5_000;
-/// A publication time well after scheduling.
-const LATE_AT_MS: u64 = 50_000;
+const NOTICE_MS: u64 = 10_800_000;
+/// A publication time well after the default notice elapses.
+const LATE_AT_MS: u64 = 50_000_000;
 
 // === Test-Only Types ===
 
@@ -102,7 +105,7 @@ fun a_changed_treasury_is_rejected_before_an_overcommitted_budget() {
                 f.scenario.ctx()
             );
         f.drain_holder_rewards(1_000);
-        f.publish_scheduled();
+        f.publish_after_notice();
     });
     std::unit_test::destroy(package_version);
     abort
@@ -279,6 +282,47 @@ fun holder_quote_cannot_exceed_the_vault_before_reserve_is_checked() {
 
     fixture.publish_budget(1_001, 1);
 
+    abort
+}
+
+#[test]
+fun a_gas_reserve_of_a_tenth_of_the_holder_quote_is_accepted() {
+    let mut fixture = start_reserve_rewards();
+    fixture.publish_budget(900, 90);
+    assert_eq!(fixture.vault_balances(), vector[0, 10]);
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EGasReserveTooLarge, location = blast_presale::presale_vault)]
+fun a_gas_reserve_one_unit_above_a_tenth_of_the_holder_quote_is_rejected() {
+    let mut fixture = start_reserve_rewards();
+    fixture.schedule_budget_to(900, 91, TREASURY);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EGasReserveTooLarge, location = blast_presale::presale_vault)]
+fun a_meme_only_round_cannot_reserve_gas() {
+    let mut fixture = start_reserve_rewards();
+    let version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
+    let clock = clock::create_for_testing(fixture.ctx!());
+    fixture.vault.schedule_round(
+        &version,
+        &blast_acl::witness_for_testing<RewardsAdmin>(),
+        0,
+        0,
+        10,
+        hash::blake2b256(&b"root"),
+        hash::blake2b256(&b"manifest"),
+        1,
+        1,
+        0,
+        1,
+        CLAIM_WINDOW_DURATION_MS,
+        TREASURY,
+        &clock,
+    );
     abort
 }
 
@@ -478,24 +522,26 @@ fun claim_rejects_a_zero_beneficiary_before_the_merkle_proof() {
 // Delayed publication
 
 #[test]
-fun a_round_schedules_and_publishes_in_one_transaction_at_the_zero_notice() {
+fun a_round_publishes_exactly_when_the_default_notice_elapses() {
     let mut fixture = start_reserve_rewards();
-    assert_eq!(fixture.vault.round_publication_for_testing().delay_ms(), 0);
+    assert_eq!(fixture.vault.round_publication_for_testing().delay_ms(), ROUND_NOTICE_MS);
     fixture.next_tx!(OWNER, |f| {
         f.schedule_budget_to(970, 30, TREASURY);
         let scheduled = only_event<ActionScheduled<RoundPublicationKey, RoundTerms>>();
         let (owner, _, change, delay_ms, ready_at_ms) = scheduled.action_scheduled_fields();
         assert_eq!(owner, object::id(&f.vault));
         assert_eq!(change.action(), option::some(f.terms(970, 30)));
-        assert_eq!(delay_ms, 0);
-        assert_eq!(ready_at_ms, 1);
+        assert_eq!(delay_ms, ROUND_NOTICE_MS);
+        assert_eq!(ready_at_ms, 1 + ROUND_NOTICE_MS);
         assert_eq!(f.vault_balances(), vector[0, 1_000]);
         assert_eq!(f.vault.next_round(), 0);
-
+    });
+    fixture.next_tx!(HOLDER, |f| {
+        f.clock.set_for_testing(1 + ROUND_NOTICE_MS);
         f.publish_scheduled();
 
         only_event<ActionApplied<RoundPublicationKey, RoundTerms>>();
-        only_event<RoundPublished<MEME, QUOTE>>();
+        f.assert_published(970, 30, TREASURY, DEADLINE_AT_MS);
         assert_eq!(f.vault_balances(), vector[0, 0]);
         assert!(f.vault.round_publication_for_testing().pending().is_none());
     });
@@ -503,10 +549,22 @@ fun a_round_schedules_and_publishes_in_one_transaction_at_the_zero_notice() {
 }
 
 #[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun a_round_cannot_publish_one_millisecond_before_the_default_notice_elapses() {
+    let mut fixture = start_reserve_rewards();
+    fixture.next_tx!(OWNER, |f| f.schedule_budget_to(970, 0, TREASURY));
+    fixture.next_tx!(HOLDER, |f| {
+        f.clock.set_for_testing(ROUND_NOTICE_MS);
+        f.publish_scheduled();
+    });
+    abort
+}
+
+#[test]
 fun anyone_publishes_a_ready_round_in_a_later_transaction() {
     let mut fixture = start_reserve_rewards();
     fixture.next_tx!(OWNER, |f| f.schedule_budget_to(970, 0, TREASURY));
-    fixture.next_tx!(HOLDER, |f| f.publish_scheduled());
+    fixture.next_tx!(HOLDER, |f| f.publish_after_notice());
     fixture.next_tx!(HOLDER, |f| f.claim());
     fixture.next_tx!(HOLDER, |f| f.assert_payment(970));
     fixture.end();
@@ -534,7 +592,7 @@ fun a_late_publication_still_opens_the_full_claim_window() {
 fun a_claim_window_ending_beyond_u64_rejects_publication() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, 970, 0, std::u64::max_value!());
-    fixture.publish_scheduled();
+    fixture.publish_after_notice();
     abort
 }
 
@@ -544,7 +602,7 @@ fun a_raised_notice_makes_publication_wait_until_ready() {
     fixture.raise_notice(NOTICE_MS);
     fixture.schedule_budget_to(970, 0, TREASURY);
 
-    fixture.clock.set_for_testing(1 + NOTICE_MS);
+    fixture.clock.set_for_testing(1 + ROUND_NOTICE_MS + NOTICE_MS);
     fixture.publish_scheduled();
 
     assert_eq!(fixture.vault.next_round(), 1);
@@ -558,7 +616,7 @@ fun a_raised_notice_rejects_publication_one_millisecond_early() {
     fixture.raise_notice(NOTICE_MS);
     fixture.schedule_budget_to(970, 0, TREASURY);
 
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(ROUND_NOTICE_MS + NOTICE_MS);
     fixture.publish_scheduled();
 
     abort
@@ -616,7 +674,7 @@ fun rescheduling_replaces_the_pending_round_and_announces_its_cancellation() {
         TREASURY,
     );
     assert_eq!(change.action(), option::some(replaced));
-    fixture.publish_scheduled();
+    fixture.publish_after_notice();
     assert_eq!(fixture.vault_balances(), vector[0, 30]);
     fixture.next_tx!(HOLDER, |f| f.claim());
     fixture.next_tx!(HOLDER, |f| f.assert_payment(970));
@@ -630,7 +688,7 @@ fun publication_rechecks_the_budget_the_schedule_checked() {
     fixture.schedule_budget_to(970, 30, TREASURY);
     fixture.drain_holder_rewards(1);
 
-    fixture.publish_scheduled();
+    fixture.publish_after_notice();
 
     abort
 }
@@ -647,7 +705,7 @@ fun scheduling_checks_the_terms_before_the_vault() {
 #[expected_failure(abort_code = vault::EBudgetOverflow, location = blast_presale::presale_vault)]
 fun a_holder_quote_and_gas_reserve_beyond_u64_are_rejected() {
     let mut fixture = start_reserve_rewards();
-    fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, 1, std::u64::max_value!(), CLAIM_WINDOW_DURATION_MS);
+    fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, std::u64::max_value!(), 1, CLAIM_WINDOW_DURATION_MS);
     abort
 }
 
@@ -681,7 +739,7 @@ fun a_shorter_notice_waits_the_applied_one() {
     fixture.raise_notice(NOTICE_MS);
     fixture.schedule_notice(0);
 
-    fixture.clock.set_for_testing(1 + NOTICE_MS);
+    fixture.clock.set_for_testing(1 + ROUND_NOTICE_MS + NOTICE_MS);
     fixture.apply_notice();
 
     assert_eq!(fixture.vault.round_publication_for_testing().delay_ms(), 0);
@@ -695,7 +753,7 @@ fun a_shorter_notice_cannot_apply_before_the_applied_one_elapses() {
     fixture.raise_notice(NOTICE_MS);
     fixture.schedule_notice(0);
 
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(ROUND_NOTICE_MS + NOTICE_MS);
     fixture.apply_notice();
 
     abort
@@ -708,7 +766,7 @@ fun a_cancelled_notice_change_keeps_the_applied_notice() {
 
     fixture.cancel_notice();
 
-    assert_eq!(fixture.vault.round_publication_for_testing().delay_ms(), 0);
+    assert_eq!(fixture.vault.round_publication_for_testing().delay_ms(), ROUND_NOTICE_MS);
     assert!(fixture.vault.round_publication_for_testing().pending().is_none());
     fixture.end();
 }
@@ -968,7 +1026,7 @@ fun publish_budget_to(
     expected_treasury: address,
 ) {
     self.schedule_budget_to(holder_quote, reserve, expected_treasury);
-    self.publish_scheduled();
+    self.publish_after_notice();
     self.assert_published(holder_quote, reserve, expected_treasury, DEADLINE_AT_MS);
 }
 
@@ -1070,6 +1128,14 @@ fun publish_scheduled(self: &mut ReserveFixture) {
     std::unit_test::destroy(package_version);
 }
 
+/// Advances the clock by the applied notice, then publishes the round scheduled at the current
+/// time.
+fun publish_after_notice(self: &mut ReserveFixture) {
+    let delay_ms = self.vault.round_publication_for_testing().delay_ms();
+    self.clock.increment_for_testing(delay_ms);
+    self.publish_scheduled();
+}
+
 /// Publishes the scheduled round under `package_version`.
 fun publish_with(self: &mut ReserveFixture, package_version: &PackageVersion) {
     self.vault.publish_round(package_version, &self.policy, &self.clock, self.scenario.ctx());
@@ -1142,9 +1208,10 @@ fun cancel_notice(self: &mut ReserveFixture) {
     std::unit_test::destroy(package_version);
 }
 
-/// Raises the round notice from zero, which applies in the same transaction.
+/// Raises the round notice from the default, which applies once the default elapses.
 fun raise_notice(self: &mut ReserveFixture, delay_ms: u64) {
     self.schedule_notice(delay_ms);
+    self.clock.set_for_testing(1 + ROUND_NOTICE_MS);
     self.apply_notice();
     assert_eq!(self.vault.round_publication_for_testing().delay_ms(), delay_ms);
 }

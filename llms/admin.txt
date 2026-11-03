@@ -440,12 +440,19 @@ Rules shared by all four:
   the full applied notice.
 - **Zero-notice bootstrap.** A notice can start at zero, so a schedule and its
   apply in one PTB act as a setter. Raising a notice from zero applies at once.
-  There is no other mutation path.
+  There is no other mutation path. `delayed::is_guarded`, `delayed_action::is_guarded`
+  and `delayed_set::is_guarded` report whether every change still to come waits a
+  nonzero notice (for a set, also that no admission is pending); the launchpad and
+  presale `unpause` require it of their policies.
+- **Ceiling.** No notice exceeds `delayed::max_delay_ms` (2,592,000,000 ms, 30 days):
+  constructors and every proposed next notice abort with code 19 above it, so any
+  notice can always be changed again.
 - **No-op rejection.** A `Delayed` proposal that changes neither value nor notice,
   a notice proposal equal to the applied notice, admitting a current member, and
   a map change to the entry's applied value abort with code 20.
-- **Overflow.** Scheduling and application abort with code 19 when a deadline or
-  the next notice would not fit in a `u64` millisecond timestamp.
+- **Overflow.** Scheduling and application abort with code 19 when a notice exceeds
+  the ceiling, or a deadline or the next notice would not fit in a `u64` millisecond
+  timestamp.
 
 `Delayed`: `delayed::schedule` proposes a value and the next notice together;
 `delayed::schedule_value` keeps the notice; `delayed::schedule_delay` keeps the
@@ -587,7 +594,7 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 16 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
 | 17 | `ENotReady` | `delayed`; `delayed_set` for `delayed_set::apply_add`, `delayed_map` for `delayed_map::apply` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
 | 18 | `ENoPending` | the type's module | applying or cancelling when nothing is pending |
-| 19 | `EInvalidDelay` | `delayed` | a deadline or the next notice would overflow a Unix millisecond timestamp; choose a representable notice |
+| 19 | `EInvalidDelay` | `delayed` | a notice above `delayed::max_delay_ms` (30 days), or a deadline or next notice that would overflow a Unix millisecond timestamp; choose a notice of at most 30 days |
 | 20 | `EUnchanged` | the type's module | the proposal changes nothing, the member is already admitted, `remove` names an unknown member, or a map change repeats the entry's applied value (clearing an absent entry included) |
 | 21 | `EProposalPending` | the type's module | destroying a delayed value, action slot, set or map while a proposal is pending; cancel it first |
 | 22 | `EWrongChange` | `delayed_action` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
@@ -871,7 +878,7 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Settings that change only after their applied notice, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. Readers need no Clock.
+Settings that change only after their applied notice, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter notice included, waits the notice applied when it was scheduled. A notice can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No notice exceeds `max_delay_ms`, so a notice can always be changed again. Readers need no Clock.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed.move
 
@@ -913,11 +920,18 @@ public fun new<K: copy + drop + store, T: copy + drop + store>(
     delay_ms: u64,
 ): Delayed<K, T>
 
+/// The longest notice any delayed type accepts, in milliseconds.
+public fun max_delay_ms(): u64
+
 /// The applied value.
 public fun value<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): T
 
 /// The applied notice in milliseconds.
 public fun delay_ms<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): u64
+
+/// True when every change still to come waits a nonzero notice: the applied notice is nonzero
+/// and no proposal would set it to zero.
+public fun is_guarded<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): bool
 
 /// The proposed replacement, if any.
 public fun pending<K: copy + drop + store, T: copy + drop + store>(
@@ -1029,6 +1043,10 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
 }
 ```
 
+#### Constants
+
+- `MAX_DELAY_MS: u64 = 30 * 24 * 60 * 60 * 1_000`: The longest notice any delayed value, action, set or map accepts: 30 days.
+
 ### `blast_admin::delayed_action`
 
 One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied notice. The slot also governs its own notice. See `delayed` for the rules every delayed type shares.
@@ -1067,6 +1085,12 @@ public fun new<K: copy + drop + store, A: copy + drop + store>(
 
 /// The applied notice in milliseconds.
 public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64
+
+/// True when every action still to come waits a nonzero notice: the applied notice is nonzero
+/// and no proposal would set it to zero.
+public fun is_guarded<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): bool
 
 /// The proposed action or notice change, if any.
 public fun pending<K: copy + drop + store, A: copy + drop + store>(
@@ -1391,6 +1415,10 @@ public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>
 public fun pending_count<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
 ): u64
+
+/// True when every admission still to come waits a nonzero notice: the applied notice is
+/// nonzero, no proposal would set it to zero, and no admission scheduled earlier is pending.
+public fun is_guarded<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): bool
 
 /// The proposed next notice, if any.
 public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(

@@ -279,12 +279,39 @@ fun a_map_with_a_pending_notice_change_cannot_be_destroyed() {
 
 #[test, expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
 fun scheduling_rejects_an_overflowing_deadline() {
-    let clock = clock_at(1);
-    let mut map = new_map(std::u64::max_value!());
+    let clock = clock_at(std::u64::max_value!() - 1);
+    let mut map = new_map(2);
 
     map.schedule(@0xA, option::some(1), &clock);
 
     abort
+}
+
+#[test, expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun creation_rejects_a_notice_above_the_ceiling() {
+    let map = new_map(delayed::max_delay_ms() + 1);
+
+    map.destroy();
+
+    abort
+}
+
+#[test, expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
+fun a_proposed_notice_above_the_ceiling_rejects() {
+    let clock = clock_at(0);
+    let mut map = new_map(10);
+
+    map.schedule_delay(delayed::max_delay_ms() + 1, &clock);
+
+    abort
+}
+
+#[test]
+fun a_map_accepts_the_ceiling_notice() {
+    let map = new_map(delayed::max_delay_ms());
+
+    assert_eq!(map.delay_ms(), delayed::max_delay_ms());
+    map.destroy();
 }
 
 // === Test Helpers ===
@@ -331,6 +358,7 @@ fun collect<Event: copy + drop>(): Event {
 // === Imports ===
 
 use blast_admin::{
+    delayed,
     delayed_map::{
         Self,
         DelayedMap,

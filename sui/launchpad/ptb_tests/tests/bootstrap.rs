@@ -46,8 +46,9 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
 
     // Initial routes use real ACL roles at zero delay; enabling 48h needs no Clock advance.
     let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
-    let (version, _) = h.wrap_launchpad(blast, &publication, admin, &admin_publication, parse_sui_type_tag("0x2::sui::SUI")?, parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)?;
-    h.unpause(blast, "blast_fun", admin, &admin_publication, version, 7)?;
+    let runtime = publication.created(&h, "runtime_config", "RuntimeConfig")[0];
+    let (version, custody) = h.wrap_launchpad(blast, &publication, admin, &admin_publication, parse_sui_type_tag("0x2::sui::SUI")?, parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)?;
+    h.unpause(blast, "blast_fun_domain", admin, &admin_publication, version, custody, [runtime, config], 7)?;
     h.shared(version, false);
     assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
     // Simulacrum resolves historical owned inputs; test_scenario covers repeated intake.

@@ -78,6 +78,7 @@ fun pause_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::invalid_pause_bits!(), 38);
     assert_eq!(blast_fun::errors::pause_unchanged!(), 39);
     assert_eq!(blast_fun::errors::paused!(), 40);
+    assert_eq!(blast_fun::errors::unguarded_notice!(), 44);
 }
 
 #[test]

@@ -95,7 +95,7 @@ reference. Each admin call names exactly one role in its signature:
 | Role | Calls |
 | --- | --- |
 | `blast_presale_domain::PauseAdmin` | `blast_presale_package::pause` |
-| `blast_presale_domain::UnpauseAdmin` | `blast_presale_package::unpause` |
+| `blast_presale_domain::UnpauseAdmin` | `blast_presale::package_admin::unpause` |
 | `blast_presale_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_presale_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `presale_vault::schedule_protocol_lp_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
 | `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
@@ -151,7 +151,11 @@ wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
    role to schedule and apply its intended value and next notice. Upgrade custody
    already holds its 48-hour notice from publication.
    Read back every operation's notice and configured value before release.
-5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11). Unpause is immediate.
+5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11) with
+   `blast_presale::package_admin::unpause`. Unpause is immediate once every notice is guarded:
+   the fee destination, the fee rates and the adapter set each need a nonzero applied notice, no
+   pending proposal that would set it to zero, and no pending adapter admission. Otherwise it
+   aborts with `blast_presale::package_admin::EUnguardedNotice` (2).
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
 policy or recreate Publication. An outstanding zero-delay proposal remains ready
@@ -628,7 +632,9 @@ Quote gas reserve.
    address and Clock. The terms' own checks run first: root and manifest digest
    are 32 bytes, with 1..=65,536 leaves, a positive holder budget, a nonempty
    checkpoint interval, a holder Quote plus reserve that fits in a `u64`, a
-   nonzero expected treasury and a positive claim window. Then, to fail fast,
+   reserve of at most 10% of the holder Quote
+   (`presale_vault::EGasReserveTooLarge`), a nonzero expected treasury and a
+   positive claim window. Then, to fail fast,
    the number must be the vault's next round (starting at zero), the interval
    must start at or after the previous round ended (skipped periods need no
    funded round or number), and holder funding plus reserve must fit the
@@ -651,8 +657,9 @@ Quote gas reserve.
    with the absolute deadline. Zero reserve disables reimbursement for this
    round and requires no settlement. A positive reserve creates separate
    pending custody. Blast may cover gas and allocate the entire holder Quote
-   budget to holder leaves. With the round notice at zero, one PTB can call
-   `holder_rewards::schedule_round` and then `holder_rewards::publish_round`.
+   budget to holder leaves. The round notice starts at two hours, so a round is
+   public and cancellable before it publishes; a daily cadence publishes each
+   round before scheduling the next, since a new schedule replaces a waiting one.
 3. `holder_rewards::cancel_round`: *Blast admin* (`CancelAdmin`). It discards
    the scheduled round, even a ready one, and emits
    `delayed_action::ActionCancelled` with its terms. Nothing was reserved, so no
@@ -664,7 +671,8 @@ Quote gas reserve.
    applies it once ready; `holder_rewards::cancel_round_delay` (*Blast admin*,
    `CancelAdmin`) discards it (`presale_vault::EWrongRoundProposal` while a
    round is scheduled instead). A shorter notice, zero included, still waits the
-   applied one. Every vault starts with a zero notice.
+   applied one. Every vault starts with a 7,200,000 ms (2-hour) notice; no notice
+   exceeds `blast_admin::delayed::max_delay_ms` (30 days).
 5. `holder_rewards::claim`: *anyone* may relay. It takes the mutable shared
    round and beneficiary/amount proof and pays that beneficiary only, once
    per index. It emits `holder_rewards::RewardClaimed` and leaves gas custody
@@ -779,7 +787,9 @@ Publication-owned policy singletons start with zero notice for ordinary
 role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
 no upgrade or immutability action can run without notice, even during setup. Configure
 and apply each other operation's intended notice, and drain or cancel all earlier setup
-proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
+proposals before release. `blast_presale::package_admin::unpause` enforces the minimum: it
+aborts unless the fee destination, fee rates and adapter set each have a nonzero applied
+notice, no pending proposal that would set one to zero, and no pending adapter admission. Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
 Adapter admissions share one applied notice across witness types, held in the
@@ -802,7 +812,9 @@ which waits the vault's currently applied notice.
 ### Emergency pause
 
 A `PauseAdmin` calls `blast_presale_package::pause` to set selected bits on the shared
-package version. Only `UnpauseAdmin` may clear bits with `blast_presale_package::unpause`.
+package version. Only `UnpauseAdmin` may clear bits, with `blast_presale::package_admin::unpause`,
+which takes the shared PackageAdmin, PackageVersion, FeePolicy and CreationPolicy and first checks
+that every policy notice is guarded (see above).
 CREATE is 1, BUY is 2, MIGRATE is 8.
 Pauses never expire. Claims, refunds and mandatory settlement remain callable.
 Presale creation/sharing, all three commitment paths and migration check their respective bits; claim, cancel_unlaunched and settle stay open.
@@ -1129,7 +1141,8 @@ it. Common ones by flow (module `blast_presale` unless named):
   `EAboveFeePolicy`, `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EInvalidDestination`,
   `creation_policy::EAllowanceUnchanged`, `creation_policy::EInvalidMigrationWitness`, and the
   the round-terms checks in `presale_vault` (`EInvalidCommitment`, `EInvalidLeafCount`,
-  `EEmptyBudget`, `EEmptyInterval`, `EBudgetOverflow`, `EZeroTreasury`, `EZeroClaimWindow`), the
+  `EEmptyBudget`, `EEmptyInterval`, `EBudgetOverflow`, `EZeroTreasury`, `EZeroClaimWindow`,
+  `EGasReserveTooLarge`), the
   `holder_rewards` schedule and publish checks (`EWrongRound`, `EOverlappingInterval`,
   `EInsufficientBudget`, and at publication `ETreasuryChanged` and `EClaimDeadlineOverflow`), and
   `presale_vault::EWrongRoundProposal` for a cancel of the other kind of round proposal.

@@ -90,6 +90,7 @@ public fun schedule_fee_split<Meme, Quote>(
 ) {
     package_version.assert_current();
     self.assert_cap(cap);
+    proposed.assert_valid_fee_split();
 
     self.fee_split.schedule(proposed, delay_ms, clock);
 }
@@ -398,6 +399,7 @@ public(package) fun assert_fee_split_ready<Meme, Quote>(
     self: &Vault<Meme, Quote>, clock: &Clock,
 ) {
     self.fee_split.assert_ready(clock);
+    self.fee_split.pending().destroy_some().proposal_value().assert_valid_fee_split();
 }
 
 /// Applies the stored ready split after the venue's required settlement boundary.
@@ -457,6 +459,10 @@ public(package) fun new_round_terms(
     assert!(meme_amount > 0 || quote_amount > 0, EEmptyBudget);
     assert!(start_checkpoint < end_checkpoint, EEmptyInterval);
     assert!(quote_amount.checked_add(gas_reserve_amount).is_some(), EBudgetOverflow);
+    assert!(
+        (gas_reserve_amount as u128) * 10_000 <= (quote_amount as u128) * (MAX_GAS_RESERVE_BPS as u128),
+        EGasReserveTooLarge,
+    );
     assert!(expected_treasury != @0x0, EZeroTreasury);
     assert!(claim_window_duration_ms > 0, EZeroClaimWindow);
 
@@ -614,6 +620,7 @@ fun build<Meme, Quote>(
     migration_quote_residual: Balance<Quote>,
     ctx: &mut TxContext,
 ): Vault<Meme, Quote> {
+    fee_split.assert_valid_fee_split();
     let id = object::new(ctx);
     let round_publication = delayed_action::new(RoundPublicationKey(), &id, DEFAULT_ROUND_NOTICE_MS);
 
@@ -994,11 +1001,14 @@ const DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 const DEFAULT_PROTOCOL_LP_FEE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 /// Initial notice before a scheduled holder-reward round may publish, or its next notice
-/// period may change. Zero lets a round schedule and publish in one transaction.
-const DEFAULT_ROUND_NOTICE_MS: u64 = 0;
+/// period may change: 2 hours, so CancelAdmin can stop a bad round while daily rounds still fit.
+const DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;
 
 /// The most leaves one holder-reward round may commit.
 const MAX_REWARD_LEAVES: u64 = 65_536;
+
+/// Largest holder-reward gas reserve, in basis points of the round's holder Quote.
+const MAX_GAS_RESERVE_BPS: u64 = 1_000;
 
 // === Errors ===
 
@@ -1038,6 +1048,9 @@ const EZeroClaimWindow: vector<u8> = b"Claim window must be positive.";
 #[error(code = 11)]
 const EWrongRoundProposal: vector<u8> =
     b"The pending round publication is the other kind: a round, or a notice change.";
+
+#[error(code = 12)]
+const EGasReserveTooLarge: vector<u8> = b"Gas reserve must be at most 10% of the round's holder Quote.";
 
 // === Imports ===
 

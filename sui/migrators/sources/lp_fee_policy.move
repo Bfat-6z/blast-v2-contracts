@@ -9,6 +9,12 @@
 /// current payout destination.
 module blast_fun_migrators::lp_fee_policy;
 
+// === Constants ===
+
+/// The notice every policy change waits from publication: the genesis destination and default
+/// shares are compiled, so no setup needs a zero notice.
+const INITIAL_POLICY_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
+
 // === Public Types ===
 
 /// Shared singleton holding independent Meme/Quote Blast shares and the address every vault pays
@@ -42,7 +48,7 @@ fun init(ctx: &mut TxContext) {
     transfer::share_object(new(
         @blast_lp_fee_destination,
         SharePair { meme_bps: bps::new(1_500), quote_bps: bps::new(1_500) },
-        0,
+        INITIAL_POLICY_DELAY_MS,
         ctx,
     ));
 }
@@ -325,6 +331,17 @@ public fun set_protocol_destination_for_testing(
 /// Runs publication initialization under `test_scenario`.
 public fun init_for_testing(ctx: &mut TxContext) {
     init(ctx);
+}
+
+#[test_only]
+/// Shares the publication policy at zero notice, for tests of delayed-change semantics.
+public fun share_zero_notice_for_testing(ctx: &mut TxContext) {
+    transfer::share_object(new(
+        @blast_lp_fee_destination,
+        SharePair { meme_bps: bps::new(1_500), quote_bps: bps::new(1_500) },
+        0,
+        ctx,
+    ));
 }
 
 #[test_only]

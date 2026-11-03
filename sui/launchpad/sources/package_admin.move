@@ -132,6 +132,28 @@ public fun make_immutable(
     self.custody.make_immutable(self.id.to_inner());
 }
 
+/// Clears the requested pause bits once every launchpad notice is guarded: nonzero, with no
+/// pending change that would set one to zero and no pending admission. A notice left at its
+/// zero publication value therefore blocks release instead of going live. Claims, delivery and
+/// settlement never require unpausing.
+public fun unpause(
+    self: &PackageAdmin,
+    package_version: &mut PackageVersion,
+    _: &AdminWitness<UnpauseAdmin>,
+    runtime_config: &RuntimeConfig,
+    launch_config: &LaunchConfig,
+    bits: u8,
+) {
+    package_version.assert_current();
+
+    assert!(
+        self.upgrade.is_guarded() && runtime_config.is_guarded() && launch_config.is_guarded(),
+        blast_fun::errors::unguarded_notice!(),
+    );
+
+    package_version.clear_pause_bits(bits);
+}
+
 /// Changes only the upgrade notice period, after the currently applied notice.
 /// Replaces any pending upgrade or immutability action.
 public fun schedule_upgrade_delay(
@@ -267,7 +289,9 @@ use blast_admin::{
 
 use blast_fun::{
     blast_fun::{BLAST_FUN, Publication, PackageVersion},
-    blast_fun_domain::{CancelAdmin, UpgradeAdmin},
+    blast_fun_domain::{CancelAdmin, UnpauseAdmin, UpgradeAdmin},
+    launch_config::LaunchConfig,
+    runtime_config::RuntimeConfig,
 };
 
 use sui::{

@@ -23,12 +23,9 @@ own. It does own an independent operational generation and its own sealed
 
 Publication transfers an owned Publication holding the Publisher and initial
 generation. `package_admin::wrap` consumes it with the matching fresh UpgradeCap
-and shares the version. Publication-owned fee policies start at zero notice.
-Upgrade custody starts at 48 hours.
-Configure the initial LP-fee destination and default shares through ordinary ACL schedule/apply calls
-with Clock. Settle all setup proposals, enable each operation’s intended
-self-timelocked notice, and verify it before releasing launchpad migration. Later policy changes use
-that operation's applied delay. Migrators has no separate pause switch (ADR 0134).
+and shares the version. The LP-fee destination (the compiled `blast_lp_fee_destination`), default
+shares and per-coin overrides start with a 48-hour notice, like upgrade custody, so no setup
+change can apply without notice. Later policy changes use that operation's applied delay. Migrators has no separate pause switch (ADR 0134).
 
 Every protected mutation checks **this** package's generation. The Launchpad
 generation is no longer treated as this package's own: a composed call that
@@ -78,23 +75,23 @@ collection keeps each slice small (ADR 0089).
 Blast's off-chain system turns checkpointed holder balances into a Merkle
 allocation. A Blast administrator schedules it with
 `blast_holder_rewards::schedule_round` on the vault's delayed round-publication
-slot. Once the vault's round notice (zero by default) has elapsed, anyone calls
+slot. Once the vault's round notice (2 hours by default) has elapsed, anyone calls
 `blast_holder_rewards::publish_round`, which re-checks the terms, reserves the
 round's budget from the vault's rewards balance into a shared `Round`, and opens
 claims for the scheduled window. `CancelAdmin` can cancel a scheduled round,
 which reserved nothing. Anyone can relay a proof, and each leaf pays its
 committed beneficiary once before the round's claim deadline.
 An optional Quote gas reserve is funded separately, with its treasury bound to
-the governed LP-fee destination at publication. `RewardsAdmin` may settle a capped
-reimbursement once; unused reserve returns to the vault. Anyone may close at the
+the governed LP-fee destination at publication and capped at 10% of the round's holder
+Quote. `RewardsAdmin` may settle a reimbursement up to that reserve once; unused reserve returns to the vault. Anyone may close at the
 deadline to return unclaimed rewards and unsettled gas custody. Published
 checkpoint intervals may have gaps but must not overlap.
 
 **The administrator can assign unallocated rewards to any recipient in a new
 round.** Merkle proofs enforce the published allocation, not the truth of the
 off-chain holder accounting, so schedule from a multisig with independent
-accounting review, and raise the round notice so a compromised administrator's
-round can be cancelled before anyone publishes it. Each round reserves its full declared budget and keeps a
+accounting review; the round notice lets `CancelAdmin` cancel a compromised administrator's
+round before anyone publishes it. Each round reserves its full declared budget and keeps a
 claim bitmap until closure. The administrator cannot rewrite a root or
 cancel its holder claims before the deadline; permissionless close recovers
 remaining custody at the deadline. The leaf commits the vault ID, the round number, the index, the

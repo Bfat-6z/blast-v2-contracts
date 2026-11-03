@@ -38,8 +38,10 @@ before publication. Their deployer-owned Publication retains provenance only;
 it authorizes no policy setters (ADR 0134). Wrap consumes it permanently, seals
 native custody and creates the operational version. Launchpad and presale start
 fully paused. Configure initial policies through ordinary ACL roles after wrap;
-publication-owned policies initially have zero notice. Upgrade custody starts
-at 48 hours.
+publication-owned launchpad and presale policies initially have zero notice; upgrade
+custody and the migrators LP-fee policy start at 48 hours. `unpause` refuses to release
+until every launchpad or presale notice is nonzero with no pending zero-notice change or
+admission.
 Record the chosen fees, destinations, launchpad claim signer and allocation,
 Quote and reviewed adapter allowlists, and applied-value events. Apply or cancel
 every outstanding zero-notice proposal, including independent adapter admissions,

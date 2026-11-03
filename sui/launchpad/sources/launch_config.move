@@ -377,6 +377,14 @@ public(package) fun protocol_allocation(self: &LaunchConfig): ProtocolAllocation
     self.protocol_allocation.value()
 }
 
+/// True when every launch policy's notice is guarded (see `package_admin::unpause`).
+public(package) fun is_guarded(self: &LaunchConfig): bool {
+    self.trade_fees.is_guarded()
+        && self.migration_witnesses.is_guarded()
+        && self.protocol_allocation.is_guarded()
+        && self.creation_fee.is_guarded()
+}
+
 public(package) fun creation_fee(self: &LaunchConfig): u64 {
     self.creation_fee.value()
 }

@@ -8,6 +8,8 @@ module blast_presale::daily_rewards_tests;
 
 const OWNER: address = @0xA;
 const HOLDER: address = @0xB;
+/// The round notice every vault starts with.
+const ROUND_NOTICE_MS: u64 = 7_200_000;
 const CLAIM_WINDOW_DURATION_MS: u64 = 604_800_000;
 
 // === Test-Only Types ===
@@ -28,7 +30,7 @@ fun skipped_days_allow_a_new_daily_interval_with_an_independent_claim_window() {
     fixture.publish(0, 0, 10);
     assert_eq!(fixture.vault.next_round(), 1);
     fixture.next_tx!(OWNER, |f| {
-        f.clock.set_for_testing(1_000_000 + CLAIM_WINDOW_DURATION_MS);
+        f.clock.set_for_testing(1_000_000 + ROUND_NOTICE_MS + CLAIM_WINDOW_DURATION_MS);
         f.close();
     });
     assert_eq!(fixture.balances(), vector[0, 100]);
@@ -38,7 +40,7 @@ fun skipped_days_allow_a_new_daily_interval_with_an_independent_claim_window() {
     fixture.next_tx!(HOLDER, |f| f.claim());
     fixture.next_tx!(HOLDER, |f| f.assert_payment());
     fixture.next_tx!(OWNER, |f| {
-        f.clock.set_for_testing(1_000_000 + 2 * CLAIM_WINDOW_DURATION_MS);
+        f.clock.set_for_testing(1_000_000 + 2 * (ROUND_NOTICE_MS + CLAIM_WINDOW_DURATION_MS));
         f.close();
     });
     assert_eq!(fixture.balances(), vector[0, 90]);
@@ -123,6 +125,7 @@ fun publish(self: &mut DailyRewardsFixture, number: u64, start: u64, end: u64) {
         policy.destination(),
         &self.clock,
     );
+    self.clock.increment_for_testing(ROUND_NOTICE_MS);
     self.vault.publish_round(&package_version, &policy, &self.clock, self.scenario.ctx());
     policy.destroy_for_testing();
 

@@ -678,10 +678,7 @@ fun security_partial_unpause_keeps_new_paused() {
             .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
         f
             .package_version
-            .unpause(
-                &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UnpauseAdmin>(),
-                2
-            );
+            .clear_pause_bits(2);
         destroy(f.start_launch<TEST_QUOTE, _>(ticket, TEST_MIGRATION_WITNESS()));
     });
     fixture.end();
@@ -742,10 +739,7 @@ fun security_partial_unpause_keeps_migrate_paused() {
             .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
         f
             .package_version
-            .unpause(
-                &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UnpauseAdmin>(),
-                2
-            );
+            .clear_pause_bits(2);
         f.migrate(&mut launch);
         launch.put_back();
     });
@@ -928,10 +922,7 @@ fun clearing_trading_restores_buy_and_sell_while_migration_stays_paused() {
             );
         f
             .package_version
-            .unpause(
-                &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::UnpauseAdmin>(),
-                constants::trading_pause_bit!()
-            );
+            .clear_pause_bits(constants::trading_pause_bit!());
 
         let (meme, refund) = f.buy(&mut launch, 1_000_000, 1);
         assert!(meme.value() > 0);

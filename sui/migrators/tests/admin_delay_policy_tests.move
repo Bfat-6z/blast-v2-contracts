@@ -25,7 +25,7 @@ public struct AdminDelayFixture {
 // === Tests ===
 
 #[test]
-fun publication_setup_enables_different_notices_for_independent_operations() {
+fun zero_notice_setup_enables_different_notices_for_independent_operations() {
     let mut fixture = start();
     fixture.run!(|f| {
         f.schedule_fee(123, 100);
@@ -238,7 +238,7 @@ fun end(self: AdminDelayFixture) {
 fun start(): AdminDelayFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     marker::init_for_testing(scenario.ctx());
-    lp_fee_policy::init_for_testing(scenario.ctx());
+    lp_fee_policy::share_zero_notice_for_testing(scenario.ctx());
     scenario.next_tx(PUBLISHER);
     let publication = scenario.take_from_sender<marker::Publication>();
     let cap = sui::package::test_publish(@blast_fun_migrators.to_id(), scenario.ctx());

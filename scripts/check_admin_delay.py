@@ -261,7 +261,7 @@ for package, module, rewards, version, treasury in (
 ):
     source = module_path(package, module).read_text()
     require(source, 'round_publication: DelayedAction<RoundPublicationKey, RoundTerms>,',
-            'public struct RoundPublicationKey() has copy, drop, store;', 'DEFAULT_ROUND_NOTICE_MS: u64 = 0;')
+            'public struct RoundPublicationKey() has copy, drop, store;', 'DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;')
     slot = functions(package, module)
     require(slot['schedule_round_publication'][1], 'self.round_publication.schedule(terms, clock)')
     require(slot['take_round_publication'][1], 'self.round_publication.take_action(clock)')

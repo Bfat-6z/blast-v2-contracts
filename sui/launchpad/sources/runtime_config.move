@@ -210,6 +210,13 @@ public fun revoke_creator_claim_signer(
 
 // === Package Functions ===
 
+/// True when every runtime policy's notice is guarded (see `package_admin::unpause`).
+public(package) fun is_guarded(self: &RuntimeConfig): bool {
+    self.creator_claim_signers.is_guarded()
+        && self.protocol_fee_share_bps.is_guarded()
+        && self.treasury.is_guarded()
+}
+
 /// The keys that may sign account claims now.
 public(package) fun creator_claim_signers(self: &RuntimeConfig): vector<vector<u8>> {
     self.creator_claim_signers.members().into_keys()
@@ -283,6 +290,12 @@ public fun set_protocol_fee_share_for_testing(
 #[test_only]
 public fun init_for_testing(ctx: &mut TxContext) {
     init(ctx);
+}
+
+#[test_only]
+/// The configuration exactly as publication creates it, every notice at zero.
+public fun new_publication_for_testing(ctx: &mut TxContext): RuntimeConfig {
+    new(ctx)
 }
 
 #[test_only]

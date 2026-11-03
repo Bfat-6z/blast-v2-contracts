@@ -7,6 +7,9 @@
   `DelayedMap` for per-coin LP overrides; root transfer on `delayed_action`; delayed creator-claim
   signer admission with immediate removal
 - Amended: 2026-11-03 — holder-reward rounds publish from a delayed action slot on each vault
+- Amended: 2026-11-03 — pre-audit hardening: a 30-day notice ceiling, a guarded-notice release gate
+  on `unpause`, a 2-hour default round notice with a capped gas reserve, a 48-hour start for the
+  migrators LP-fee policy, and consumption-time validation of presale terms
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
   [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
   [0007](0007-acl-pause-and-versioning.md) (pause),
@@ -47,9 +50,8 @@ role alone does not cancel its proposal because ordinary application is permissi
 CancelAdmin therefore remains an independent multisig power.
 
 The primitive validates timestamp addition and that the proposed delay remains representable
-at scheduling and actual application. No arbitrary duration ceiling is imposed. These
-checks do not guarantee representability forever: every later schedule checks its own
-then-current timestamp. Applied-value reads need no Clock. Domain setters permit an
+at scheduling and actual application, and that no notice exceeds 30 days (amended
+2026-11-03; see the pre-audit hardening amendment). Applied-value reads need no Clock. Domain setters permit an
 unchanged value when the notice changes, and reject unchanged value-and-notice pairs
 where applicable.
 
@@ -369,8 +371,7 @@ change the notice, never the slot itself.
   `RoundPublicationKey`; `ActionScheduled` carries the full terms. There is no domain
   round-scheduled event. Claims, gas settlement and closure are unchanged.
 
-The notice starts at 0 for now, so a round can be scheduled and published in one
-transaction, as before.
+The notice started at 0; the pre-audit hardening amendment below sets it to 2 hours.
 
 ### Consequences
 
@@ -385,3 +386,66 @@ publication re-checks are defence in depth plus the treasury binding. Vault layo
 `publish_round`'s signature and both packages' error codes change, so SDK builders,
 indexers (which must follow `delayed_action` events keyed by `RoundPublicationKey` to
 show scheduled rounds) and the fresh publication follow together.
+
+## Amendment 2026-11-03: pre-audit hardening
+
+### Context
+
+An internal pre-audit of launchpad, presale, migrators and admin at `b841a81` found four
+low-severity gaps in the delayed-administration design:
+
+- A notice had no upper bound. One role could apply a notice near `u64::MAX`, after which
+  every later schedule aborts with `invalid_delay`; nothing pending means nothing to
+  cancel, so the setting, an upgrade slot included, froze for good.
+- Publication-owned launchpad and presale policies start at zero notice and `unpause`
+  checked nothing, so one missed runbook step left a policy changeable in one
+  transaction after release. The launchpad protocol fee share is read live by every trade,
+  so this reached every live launch's creator fees.
+- Holder-reward rounds started at zero notice, and the gas reserve had no cap: a
+  compromised RewardsAdmin could publish a self-serving round, or sweep a vault's
+  holder Quote to the treasury through the reserve, in one transaction.
+- Presale's validating value constructors take no `PackageVersion` and their consumers did
+  not re-check, so values built by superseded bytecode could skip tightened rules.
+
+### Decision
+
+- **Ceiling.** Every delayed type accepts notices up to `delayed::max_delay_ms` (30 days),
+  checked in each constructor and for every proposed next notice; above it aborts
+  `invalid_delay`. Any notice can therefore be changed again within 30 days, and only
+  `make_immutable` ends upgradeability.
+- **Release gate.** `unpause` moves to each package's `package_admin` (the configuration
+  modules import `PackageVersion`, so `blast_fun` and `blast_presale_package` cannot import
+  them back); `clear_pause_bits` stays package-only. It aborts with a new error unless every
+  notice it covers is guarded (`is_guarded` on `Delayed`, `DelayedAction` and `DelayedSet`):
+  the applied notice is nonzero, no pending proposal would set it to zero, and a set has no
+  pending admission. Launchpad covers upgrade custody, the claim-signer set, protocol fee
+  share, treasury, trade fees, the adapter set, protocol allocation and creation fee;
+  presale covers upgrade custody, the fee destination and rates, and the adapter set. Every
+  unpause is gated, whatever its bits. The owner chose nonzero, not a fixed 48-hour floor,
+  and no permanent floor: a later reduction remains possible, waits the applied notice and
+  is visible while it waits. The gate can delay an incident unpause only when an operator
+  lowered a notice to zero or left an admission pending; cancelling or applying it clears
+  the gate.
+- **Migrators LP-fee policy.** The destination, default shares and per-coin map start at
+  48 hours. Their genesis values are compiled, so no setup needs zero notice, and migrators
+  has no pause to gate.
+- **Holder-reward rounds.** Every vault starts its round notice at 2 hours: CancelAdmin and
+  watchers of `ActionScheduled` can stop a bad round, and a daily cadence still fits the one
+  slot. A round's gas reserve is at most 10% of its holder Quote (`EGasReserveTooLarge`), so a
+  Meme-only round has none. A per-round share-of-balance cap was rejected: the worker
+  distributes the whole unreserved balance each round, and sequential rounds would defeat it.
+- **Consumption-time validation.** Presale's constructors check through private
+  validators, which `finalize` re-runs on eligibility, the uncapped phase, participant and
+  recipient vesting and the fee split. `presale_vault` re-checks a fee split when a vault is
+  built, when a split is scheduled, and before a ready split applies. A value built by
+  superseded bytecode thus meets the current generation's rules. `Bps`'s 10,000 bound
+  remains a type invariant.
+
+### Consequences
+
+`unpause` changes package and signature in launchpad and presale, adding launchpad error 44
+and presale `package_admin::EUnguardedNotice`; migrators gains `vault::EGasReserveTooLarge`
+(14) and presale `presale_vault::EGasReserveTooLarge` (12). SDK builders, the admin console
+and runbooks follow. Accepted residual: the Merkle root stays opaque, so a compromised
+RewardsAdmin can still assign one round's unreserved holder balance once its 2-hour notice
+passes uncancelled; revoking the role and cancelling the round is the response.

@@ -47,6 +47,7 @@ public fun new<K: copy + drop + store, E: copy + drop + store, V: copy + drop + 
     delay_ms: u64,
     ctx: &mut TxContext,
 ): DelayedMap<K, E, V> {
+    delayed::assert_delay(delay_ms);
     let owner = owner.to_inner();
 
     sui::event::emit(MapCreated<K, E, V> { owner, key, delay_ms });

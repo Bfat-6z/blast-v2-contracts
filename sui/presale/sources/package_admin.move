@@ -135,6 +135,28 @@ public fun make_immutable(
     self.custody.make_immutable(self.id.to_inner());
 }
 
+/// Clears the requested pause bits once every presale notice is guarded: nonzero, with no
+/// pending change that would set one to zero and no pending admission. A notice left at its
+/// zero publication value therefore blocks release instead of going live. Settlement,
+/// cancellation, refunds and claims never require unpausing.
+public fun unpause(
+    self: &PackageAdmin,
+    package_version: &mut PackageVersion,
+    _: &AdminWitness<UnpauseAdmin>,
+    fee_policy: &FeePolicy,
+    creation_policy: &CreationPolicy,
+    bits: u8,
+) {
+    package_version.assert_current();
+
+    assert!(
+        self.upgrade.is_guarded() && fee_policy.is_guarded() && creation_policy.is_guarded(),
+        EUnguardedNotice,
+    );
+
+    package_version.clear_pause_bits(bits);
+}
+
 /// Changes only the upgrade notice period, after the currently applied notice.
 /// Replaces any pending upgrade or immutability action.
 public fun schedule_upgrade_delay(
@@ -265,6 +287,9 @@ public fun has_upgrade_cap_for_testing(self: &PackageAdmin): bool {
 const EWrongUpgradeAction: vector<u8> = b"The ready action must match the requested upgrade digest or immutability.";
 #[error(code = 1)]
 const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
+#[error(code = 2)]
+const EUnguardedNotice: vector<u8> =
+    b"Unpausing needs every policy notice nonzero, with no pending zero notice or admission.";
 
 // === Imports ===
 
@@ -276,8 +301,10 @@ use blast_admin::{
 };
 
 use blast_presale::{
-    blast_presale_domain::{CancelAdmin, UpgradeAdmin},
-    blast_presale_package::{BLAST_PRESALE_PACKAGE, Publication, PackageVersion}
+    blast_presale_domain::{CancelAdmin, UnpauseAdmin, UpgradeAdmin},
+    blast_presale_package::{BLAST_PRESALE_PACKAGE, Publication, PackageVersion},
+    creation_policy::CreationPolicy,
+    fee_policy::FeePolicy,
 };
 
 use sui::{

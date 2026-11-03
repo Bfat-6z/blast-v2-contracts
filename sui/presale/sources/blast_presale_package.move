@@ -69,18 +69,16 @@ public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: 
     sui::event::emit(Paused { bits, paused: self.paused });
 }
 
-/// Clears only the requested bits; claims and settlement never require unpausing.
-public fun unpause(self: &mut PackageVersion, _: &AdminWitness<UnpauseAdmin>, bits: u8) {
-    self.assert_current();
+// === Package Functions ===
 
+/// Clears only the requested bits once `package_admin::unpause` has checked every notice.
+public(package) fun clear_pause_bits(self: &mut PackageVersion, bits: u8) {
     assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
     assert!((self.paused & bits) != 0, EPauseUnchanged);
     self.paused = self.paused ^ (self.paused & bits);
 
     sui::event::emit(Unpaused { bits, paused: self.paused });
 }
-
-// === Package Functions ===
 
 /// Rejects a paused operation before its lifecycle or economic checks.
 public(package) fun assert_not_paused(self: &PackageVersion, bit: u8) {
@@ -183,6 +181,6 @@ const EPaused: vector<u8> = b"This operation is paused.";
 
 use blast_admin::{blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
 
-use blast_presale::blast_presale_domain::{PauseAdmin, UnpauseAdmin};
+use blast_presale::blast_presale_domain::PauseAdmin;
 
 use sui::package::Publisher;

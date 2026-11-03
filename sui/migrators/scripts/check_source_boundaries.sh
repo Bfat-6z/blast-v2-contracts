@@ -705,7 +705,7 @@ require_pattern "$VAULT_SOURCE" 'blast_fun_migrators::PackageVersion as Migrator
 require_exact_count '&AdminWitness<' 2 \
     "vault Launchpad authority must be exactly the protocol residual claim and the buyback" \
     <(production_section "$VAULT_SOURCE")
-require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-13 for its residual, creator, liquidity, buyback, partner, round-terms, and round-slot checks" <<'EOF'
+require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-14 for its residual, creator, liquidity, buyback, partner, round-terms, round-slot, and gas-reserve checks" <<'EOF'
 0 ENothingClaimable No protocol migration residuals are available to claim.
 1 ENoCreatorFees No creator LP fees are available to claim.
 2 EZeroLiquidity Migration position must hold liquidity.
@@ -720,6 +720,7 @@ require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-13 for its res
 11 EZeroTreasury Expected treasury must not be the zero address.
 12 EZeroClaimWindow Claim window must be positive.
 13 EWrongRoundProposal The pending round publication is the other kind: a round, or a notice change.
+14 EGasReserveTooLarge Gas reserve must be at most 10% of the round's holder Quote.
 EOF
 
 # === Holder rewards ===
@@ -745,8 +746,8 @@ rewards_body() {
 [[ "$(move_production_type RoundTerms <<<"$VAULT_FACTS")" \
     == 'struct RoundTerms has copy, drop, store { number: u64, start_checkpoint: u64, end_checkpoint: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, gas_reserve_amount: u64, claim_window_duration_ms: u64, expected_treasury: address, }' ]] \
     && [[ "$(move_production_type RoundPublicationKey <<<"$VAULT_FACTS")" == 'struct RoundPublicationKey() has copy, drop, store;' ]] \
-    && rg -q '^const DEFAULT_ROUND_NOTICE_MS: u64 = 0;$' "$VAULT_SOURCE" \
-    && [[ "$(vault_body new_round_terms)" == 'assert!(root.length()==constants::digest_length!()&&manifest_digest.length()==constants::digest_length!(),EInvalidCommitment);assert!(leaf_count>0&&leaf_count<=constants::max_reward_leaves!(),EInvalidLeafCount);assert!(meme_amount>0||quote_amount>0,EEmptyBudget);assert!(start_checkpoint<end_checkpoint,EEmptyInterval);assert!(quote_amount.checked_add(gas_reserve_amount).is_some(),EBudgetOverflow);assert!(expected_treasury!=@0x0,EZeroTreasury);assert!(claim_window_duration_ms>0,EZeroClaimWindow);RoundTerms{number,start_checkpoint,end_checkpoint,root,manifest_digest,leaf_count,meme_amount,quote_amount,gas_reserve_amount,claim_window_duration_ms,expected_treasury,}' ]] \
+    && rg -q '^const DEFAULT_ROUND_NOTICE_MS: u64 = 2 \* 60 \* 60 \* 1_000;$' "$VAULT_SOURCE" \
+    && [[ "$(vault_body new_round_terms)" == 'assert!(root.length()==constants::digest_length!()&&manifest_digest.length()==constants::digest_length!(),EInvalidCommitment);assert!(leaf_count>0&&leaf_count<=constants::max_reward_leaves!(),EInvalidLeafCount);assert!(meme_amount>0||quote_amount>0,EEmptyBudget);assert!(start_checkpoint<end_checkpoint,EEmptyInterval);assert!(quote_amount.checked_add(gas_reserve_amount).is_some(),EBudgetOverflow);assert!((gas_reserve_amountasu128)*10_000<=(quote_amountasu128)*(MAX_GAS_RESERVE_BPSasu128),EGasReserveTooLarge);assert!(expected_treasury!=@0x0,EZeroTreasury);assert!(claim_window_duration_ms>0,EZeroClaimWindow);RoundTerms{number,start_checkpoint,end_checkpoint,root,manifest_digest,leaf_count,meme_amount,quote_amount,gas_reserve_amount,claim_window_duration_ms,expected_treasury,}' ]] \
     && [[ "$(vault_body schedule_round_publication)" == 'self.round_publication.schedule(terms,clock);' ]] \
     && [[ "$(vault_body take_round_publication)" == 'self.round_publication.take_action(clock)' ]] \
     && [[ "$(vault_body cancel_round_publication)" == 'assert!(self.round_publication.pending().is_none_or!(|proposal|{proposal.proposal_value().action().is_some()}),EWrongRoundProposal);self.round_publication.cancel();' ]] \

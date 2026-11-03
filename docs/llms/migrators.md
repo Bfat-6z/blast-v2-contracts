@@ -110,7 +110,7 @@ Calls also take objects from other packages:
 - `burn_quote`: Quote waiting for a buyback.
 - `fee_split`: a `Delayed<FeeSplitKey, FeeSplit>` containing applied `value`, `delay_ms` and optional `pending` (the launch's split at migration, with a 48-hour notice).
 - `round_publication`: a `DelayedAction<RoundPublicationKey, RoundTerms>` (from
-  `blast_admin::delayed_action`) holding the applied round notice `delay_ms` (0 at creation) and at
+  `blast_admin::delayed_action`) holding the applied round notice `delay_ms` (7,200,000 ms, 2 hours, at creation) and at
   most one `pending` proposal: a scheduled round's `blast_fun_migrators::vault::RoundTerms`, or a
   notice change.
 - `pool_id`, `partner_id` (copied from the launch, never changes), `next_round`, `last_checkpoint`.
@@ -172,10 +172,12 @@ balances except the flows below.
    shared; no operational PackageVersion exists yet.
 2. Call `blast_fun_migrators::package_admin::wrap` with Publication by value and the matching
    never-upgraded UpgradeCap. It consumes Publication permanently, seals native
-   custody and shares PackageVersion. Publication-owned policy operations start with zero notice.
-3. Grant the required roles on the real Blast ACL. Configure destinations, fees
+   custody and shares PackageVersion. The `LpFeePolicy` destination, default shares and per-coin
+   overrides start with a 172,800,000 ms (48-hour) notice, because their genesis values are
+   compiled and need no setup.
+3. Grant the required roles on the real Blast ACL. Configure fees
    and reviewed adapter admission through the ordinary schedule/apply operations
-   with Clock. At zero delay these can run in one PTB. Quote admission uses its
+   with Clock. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation’s role
    to schedule and apply its intended value and next notice. Upgrade custody already
@@ -408,7 +410,9 @@ checkpoint interval, root and manifest digest, leaf count, exact holder Meme/Quo
 Quote gas reserve, claim window in milliseconds, expected treasury and `Clock`. After the version
 guard, the terms' own checks run: both digests contain 32 bytes, leaf count is 1..=65,536, at least
 one holder amount is nonzero, `start_checkpoint < end_checkpoint`, holder Quote plus gas reserve fits
-in a `u64`, the expected treasury is not `@0x0`, and the claim window is positive. Then, to fail
+in a `u64`, the gas reserve is at most 10% of the holder Quote (`gas_reserve_amount * 10,000 <=
+quote_amount * 1,000`, so a Meme-only round has no reserve), the expected treasury is not `@0x0`, and
+the claim window is positive. Then, to fail
 fast, the terms must fit the vault now: the number must equal `next_round`; the interval obeys
 `previous published end <= start_checkpoint`, and the first round may start anywhere; holder Meme
 must fit the vault's rewards Meme and holder Quote plus gas reserve its rewards Quote. Low-volume
@@ -437,8 +441,10 @@ in the shared `Round`, advances the vault's round number and checkpoint, and emi
 `blast_fun_migrators::blast_events::RoundPublished` with the absolute `claim_deadline_at_ms`. Zero
 reserve disables reimbursement. Positive reserve creates one pending reimbursement. The contract
 enforces the published allocation; it does not verify off-chain eligibility, actual gas
-attribution, or that the leaves sum to the holder budget. With the round notice at zero, one PTB
-can call `blast_holder_rewards::schedule_round` and then `blast_holder_rewards::publish_round`.
+attribution, or that the leaves sum to the holder budget. The round notice starts at two hours, so
+CancelAdmin and anyone watching `ActionScheduled` can stop a round before it publishes; a daily
+cadence schedules a round, waits the notice, then publishes it before scheduling the next, since a
+new schedule replaces a waiting round.
 
 Cancelling (Blast admin, `CancelAdmin`): `blast_holder_rewards::cancel_round` takes the mutable
 vault, migrators `PackageVersion` and role witness, and discards the scheduled round, even a ready
@@ -601,18 +607,15 @@ notice period, replacing any pending action. Anyone applies it with
 `blast_fun_migrators::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
 `blast_fun_migrators::package_admin::cancel_upgrade_action` cancels any of these proposals.
 
-Publication-owned policy singletons start with zero notice for ordinary
-role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
-no upgrade or immutability action can run without notice, even during setup. Configure
-and apply each other operation's intended notice, and drain or cancel all earlier setup
-proposals before release. Raising a notice never changes previously scheduled deadlines or next delays.
+The `LpFeePolicy` and package upgrade custody both start at 172,800,000 ms (48 hours), so no
+policy change, upgrade or immutability action can run without notice, even during setup. Every
+notice is at most `blast_admin::delayed::max_delay_ms` (30 days). Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
 Per-coin overrides share one notice of their own, which starts at the policy's publication
 notice and changes only through `lp_fee_policy::schedule_coin_shares_delay`. Every override
 and clear, for a new coin or an existing one, waits the coin notice applied when it was
-scheduled, so an override set during zero-notice setup gains no zero-delay later update once
-that notice is raised. The coin notice is independent of the defaults' notice: protect both.
+scheduled. The coin notice is independent of the defaults' notice: protect both.
 
 ### Economics
 
@@ -855,7 +858,7 @@ Blast admin abort with plain numeric codes from the named module.
 | partner payout | `EPartnerMismatch` (5, module `vault`) | Pass the `Partner` whose ID is the vault's `partner_id`; vaults without a partner have no payout. |
 | buyback | `EBuybackQuoteOutOfRange` (3), `EBuybackBelowMinimum` (4), module `vault` | Pass a `quote_in` between 1 and the vault's `burn_quote`; lower `min_meme_out` or retry at a better price. |
 | residual claim | `ENothingClaimable` (0, module `vault`) | Nothing left to claim. |
-| schedule round (terms) | `EInvalidCommitment` (6), `EInvalidLeafCount` (7), `EEmptyBudget` (8), `EEmptyInterval` (9), `EBudgetOverflow` (10), `EZeroTreasury` (11), `EZeroClaimWindow` (12) in module `vault` | Use 32-byte digests, 1..=65,536 leaves, a nonzero holder budget, `start_checkpoint < end_checkpoint`, a holder Quote plus reserve within `u64`, a nonzero expected treasury and a positive claim window. |
+| schedule round (terms) | `EInvalidCommitment` (6), `EInvalidLeafCount` (7), `EEmptyBudget` (8), `EEmptyInterval` (9), `EBudgetOverflow` (10), `EZeroTreasury` (11), `EZeroClaimWindow` (12), `EGasReserveTooLarge` (14) in module `vault` | Use 32-byte digests, 1..=65,536 leaves, a nonzero holder budget, `start_checkpoint < end_checkpoint`, a holder Quote plus reserve within `u64`, a reserve of at most 10% of the holder Quote, a nonzero expected treasury and a positive claim window. |
 | schedule or publish round (vault fit) | `EWrongRound` (0), `EOverlappingInterval` (1), `EInsufficientBudget` (9) in `blast_holder_rewards` | Use `next_round`, an interval starting at or after `last_checkpoint`, and fit holder Quote plus reserve within the rewards balance. |
 | publish round | `ETreasuryChanged` (7), `EClaimDeadlineOverflow` (8) in `blast_holder_rewards`; codes 17, 18, 22 from Blast admin as above | Schedule again with the governed protocol destination; choose a claim window that ends within `u64`; wait for `ready_at_ms`. |
 | cancel round or round notice | `EWrongRoundProposal` (13, module `vault`); code 18 from `delayed_action` | Use `cancel_round` for a scheduled round and `cancel_round_delay` for a notice change. |

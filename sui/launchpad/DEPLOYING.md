@@ -21,10 +21,14 @@ upgrade, restrict, transfer, or destroy it before wrapping. Move cannot block
 the framework's native upgrade while that cap remains in the wallet; an
 already-upgraded cap cannot activate this launchpad lineage. Once wrapped,
 upgrades require the launchpad's `UpgradeAdmin` witness, version checks and a
-ready proposal under custody's applied notice. That notice initially starts at
-zero for setup and must be configured before release.
+ready proposal under custody's applied notice, which starts at 172,800,000 ms
+(48 hours) at wrap.
 
 ## 1. Prepare and publish
+
+`blast_treasury` in `sui/launchpad/Move.toml` is a build-time named address: set it
+to the approved treasury in the publishing build. Publication aborts while it is
+`0x0` (`invalid_destination`).
 
 Use a reviewed source commit and its pinned dependencies. Confirm the active
 environment's chain ID is the intended Sui mainnet and the active address is
@@ -111,7 +115,8 @@ Require all of the following and retain the readbacks:
   Trading and Migrate). An aborted wrap leaves the
   Publication and cap unchanged and creates neither shared output.
 - Publication-owned policies start at zero notice. Upgrade custody starts at
-  48 hours. Verify that neither has a pending proposal.
+  48 hours. Verify that neither has a pending proposal. This setup state is not
+  the approved release policy.
 
 Write a normalized record under `deployments/sui/mainnet/` following
 [`deployments/README.md`](../../deployments/README.md). Include original and
@@ -131,23 +136,30 @@ live ACL for ordinary policy operations with the current PackageVersion. Configu
 treasury, protocol fee share, trade/creation fees, allocation and claim signer;
 admit each approved Quote and reviewed adapter. Protected policies use ordinary
 schedule/apply calls with Clock. At zero notice both calls can share a PTB;
-Quote-listing changes are immediate. Configure the claim-signer admission notice
-separately from the other policies. Build validated Bps inputs in the PTB. Zero fees and an empty signer are legal but require explicit approval.
+Quote-listing changes are immediate. Claim-signer admission waits the signer
+set's notice (zero during setup) and revocation is immediate. Build validated
+Bps inputs in the PTB. Zero fees and an empty signer are legal but require explicit approval.
 Read back the chosen values, routes and applied-value events.
 
 Before release, apply or cancel every outstanding zero-notice proposal, including
 each independent adapter admission. Configure and read back each operation's
-intended notice (172,800,000 ms = 48 hours for this rollout). Verify the
-initial 48-hour upgrade notice separately. Raising a notice never rewrites
-an earlier proposal's deadline or proposed next notice. Record all applied notices and
-pending-proposal state. Initial setup may span transactions while fully paused.
+intended notice (172,800,000 ms = 48 hours for this rollout). Upgrade custody
+already holds 48 hours; do not propose it again (an unchanged notice aborts).
+Raising a notice never rewrites an earlier proposal's deadline or proposed next
+notice. Record all applied notices and pending-proposal state. The release call
+below enforces the minimum: it aborts with `unguarded_notice` (44) while any
+covered notice is zero, any pending proposal would set one to zero, or any
+adapter or claim-signer admission is still pending. Initial setup may span transactions while fully paused.
 
 Complete the remaining release requirements, including approved destinations,
 nonempty approved Quote/adapter allowlists, consumer bindings and ACL/key custody
 from the deployment-record guidance. Keep root, cancellation and unpause powers
-under the approved independent multisig arrangement. Grant UnpauseAdmin
-through the shared Blast ACL, sign in with its AdminCap, and call
-`blast_fun::unpause` with the mutable PackageVersion and selected bits (all = 7).
+under the approved independent multisig arrangement: grant CancelAdmin and
+PauseAdmin to it before release so incident response can cancel pending proposals
+and pause. Grant UnpauseAdmin through the shared Blast ACL, sign in with its
+AdminCap, and call `package_admin::unpause` with the shared PackageAdmin, the
+mutable PackageVersion, the RuntimeConfig, the LaunchConfig and the selected bits
+(all = 7).
 This release is immediate and needs no Clock; retain its events and readback.
 A later pause cannot recreate Publication or reset a notice. Later protected
 changes wait the operation's applied notice; changing that notice waits its old
@@ -168,8 +180,11 @@ is no separate activation transaction or raw-cap escape path.
 The existing focused checks exercise fresh matching custody, foreign and
 already-upgraded cap rejection, and governed cutover:
 
+Use `scripts/test_admin_delay.sh`, which substitutes fixture named addresses
+(the committed `0x0` treasury aborts publication-initialization fixtures):
+
 ```bash
-sui move test -p sui/launchpad package_admin_tests
+MOVE_TEST_FILTER=package_admin_tests bash scripts/test_admin_delay.sh launchpad
 sui move test -p sui/admin upgrade_custody_tests
 bash sui/launchpad/scripts/check_source_boundaries.sh
 bash sui/admin/scripts/check_source_boundaries.sh

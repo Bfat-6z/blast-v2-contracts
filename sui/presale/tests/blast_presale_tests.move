@@ -143,10 +143,7 @@ fun security_partial_unpause_keeps_new_paused() {
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         11
     );
-    version.unpause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UnpauseAdmin>(),
-        2
-    );
+    version.clear_pause_bits(2);
     destroy(
         presale::new<BLAST_PRESALE_TESTS, QUOTE, TEST_MIGRATOR>(
             treasury,
@@ -238,10 +235,7 @@ fun security_partial_unpause_keeps_share_paused() {
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         11
     );
-    version.unpause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UnpauseAdmin>(),
-        2
-    );
+    version.clear_pause_bits(2);
     let clock = clock::create_for_testing(&mut ctx);
     sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
     destroy(cap);
@@ -354,10 +348,7 @@ fun security_partial_unpause_keeps_migrate_paused() {
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         11
     );
-    version.unpause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UnpauseAdmin>(),
-        2
-    );
+    version.clear_pause_bits(2);
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         let (meme, quote) = sale.migrate(
@@ -383,10 +374,7 @@ fun security_partial_unpause_restores_commitments() {
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         11
     );
-    version.unpause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::UnpauseAdmin>(),
-        2
-    );
+    version.clear_pause_bits(2);
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         sale
@@ -837,6 +825,15 @@ fun a_wallet_above_the_minimum_may_top_up_by_any_amount() {
 /// Filling every open slot at the minimum must fund the raise, or dust could block the sale.
 fun an_open_sale_whose_slots_cannot_reach_the_raise_is_rejected() {
     start_sale(presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2 - 1)).end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = presale::EInvalidEligibilityPolicy,
+    location = blast_presale::blast_presale,
+)]
+fun finalize_rechecks_eligibility_built_without_the_current_rules() {
+    start_sale(presale::open_eligibility_unchecked_for_testing(WALLET_CAP, 2, 0)).end();
 }
 
 #[test]
