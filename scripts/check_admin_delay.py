@@ -190,6 +190,8 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
             action_only = (
                 path.stem == 'package_admin' and name in ('schedule_upgrade', 'schedule_make_immutable')
                 or path.stem in ('launch_config', 'creation_policy') and name == 'schedule_migration_witness'
+                or package == 'launchpad' and path.stem == 'runtime_config'
+                and name == 'schedule_creator_claim_signer'
                 or package == 'launchpad' and path.stem == 'launch'
                 and name in ('schedule_curve_fee_cap_reassignment', 'schedule_metadata_cap_reassignment')
                 or package == 'migrators' and path.stem == 'lp_fee_policy'
@@ -307,12 +309,36 @@ for package, module, rewards, version, treasury in (
     fundable = functions(package, rewards)
     assert not any('fund_round(' in body for name, (_, body) in fundable.items() if name != 'publish_round'), package
 
+# Signer admission waits the set's notice and is capped; revocation stays immediate.
 signer = functions('launchpad', 'runtime_config')
-for name in ('set_creator_claim_signer', 'revoke_creator_claim_signer'):
-    require(signer[name][0], '&AdminWitness<ClaimSignerAdmin>')
-    assert signer[name][1].startswith('package_version.assert_current();')
-    assert 'creator_claim_signer_public_key =' in signer[name][1]
-assert 'schedule_creator_claim_signer' not in signer
+require((ROOT / 'sui/launchpad/sources/runtime_config.move').read_text(),
+        'creator_claim_signers: DelayedSet<ClaimSignerKey, vector<u8>>,')
+for name in signer:
+    if name.endswith(('_creator_claim_signer', '_creator_claim_signer_delay')):
+        assert signer[name][1].startswith('package_version.assert_current();'), name
+schedule_signature, schedule_body = signer['schedule_creator_claim_signer']
+require(schedule_signature, '&AdminWitness<ClaimSignerAdmin>', 'clock: &Clock')
+assert 'delay_ms: u64' not in schedule_signature
+require(schedule_body, 'constants::ed25519_public_key_length!()',
+        'signers.members().length() + signers.pending_count() - replaced',
+        '< constants::max_claim_signers!()', 'blast_fun::errors::too_many_claim_signers!()',
+        'self.creator_claim_signers.schedule_add(signer_public_key, clock)')
+assert schedule_body.index('max_claim_signers') < schedule_body.index('schedule_add')
+require(signer['apply_creator_claim_signer'][1], 'self.creator_claim_signers.apply_add(')
+require(signer['apply_creator_claim_signer'][0], 'clock: &Clock')
+require(signer['cancel_creator_claim_signer'][0], '&AdminWitness<CancelAdmin>')
+require(signer['cancel_creator_claim_signer'][1], 'self.creator_claim_signers.cancel_add(')
+require(signer['revoke_creator_claim_signer'][0], '&AdminWitness<ClaimSignerAdmin>')
+require(signer['revoke_creator_claim_signer'][1], 'self.creator_claim_signers.remove(')
+assert 'clock' not in signer['revoke_creator_claim_signer'][0]
+require(signer['schedule_creator_claim_signer_delay'][0], '&AdminWitness<ClaimSignerAdmin>', 'delay_ms: u64', 'clock: &Clock')
+require(signer['schedule_creator_claim_signer_delay'][1], 'self.creator_claim_signers.schedule_delay(delay_ms, clock)')
+require(signer['apply_creator_claim_signer_delay'][1], 'self.creator_claim_signers.apply_delay(clock)')
+require(signer['cancel_creator_claim_signer_delay'][0], '&AdminWitness<CancelAdmin>')
+require(signer['cancel_creator_claim_signer_delay'][1], 'self.creator_claim_signers.cancel_delay()')
+for name in ('apply_creator_claim_signer', 'apply_creator_claim_signer_delay'):
+    assert 'AdminWitness' not in signer[name][0], name
+assert 'set_creator_claim_signer' not in signer
 require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'self.coins.schedule(meme, option::some(SharePair { meme_bps, quote_bps }), clock)')
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
@@ -321,4 +347,4 @@ for package in ('launchpad', 'presale', 'migrators'):
     require(fs['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
     assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]
     require(fs['wrap'][1], 'delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS)')
-print('Per-operation notices, no bypass, immediate signer, and publication custody: OK')
+print('Per-operation notices, no bypass, delayed signer admission, and publication custody: OK')

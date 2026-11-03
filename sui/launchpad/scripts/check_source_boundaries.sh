@@ -404,7 +404,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'blast_fun:pause:PauseAdmin blast_fun:unpause:UnpauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_delay:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_delay:AdapterAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin package_admin:schedule_upgrade_delay:UpgradeAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin runtime_config:set_creator_claim_signer:ClaimSignerAdmin ' ]]; then
+  'blast_fun:pause:PauseAdmin blast_fun:unpause:UnpauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_migration_delay:CancelAdmin launch_config:cancel_migration_witness:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:remove_migration_witness:AdapterAdmin launch_config:remove_partner:FeeAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_migration_delay:AdapterAdmin launch_config:schedule_migration_witness:AdapterAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin package_admin:schedule_upgrade_delay:UpgradeAdmin runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))
@@ -755,21 +755,15 @@ runtime_config_source="$(move_normalized_source <<<"$runtime_config_facts")"
 
 events_facts="$(move_facts sources/lib/events.move)"
 
-runtime_config_mutation_event_payloads="$(awk -F'\t' '
-  $1 == "TYPE" && $5 == 0 && $2 == "CreatorClaimSignerSet" { print $8 }
-' <<<"$events_facts")"
-
-# The immediate signer has its own typed replay fact. Each delayed setting stores the primitive
-# keyed by its own operation, whose lifecycle events replace any consumer copy.
-if [[ "$(wc -l <<<"$runtime_config_mutation_event_payloads")" != 1 ]] \
-  || rg -q '\b(sequence|schema_version|action_tag|nonce)\b' \
-    <<<"$runtime_config_mutation_event_payloads" \
-  || rg -q '\bruntime_config_id\b' <<<"$runtime_config_mutation_event_payloads" \
-  || rg -q '\b(RuntimeConfigCreated|ProtocolFeeShare[A-Z]\w*|Treasury(Scheduled|Changed|Cancelled))\b' <<<"$events_facts" \
+# Every RuntimeConfig setting, the claim-signer set included, stores the primitive keyed by its own
+# operation, whose lifecycle events (delayed_set's for the signers) replace any consumer copy.
+if rg -q '\b(RuntimeConfigCreated|CreatorClaimSigner[A-Z]\w*|ProtocolFeeShare[A-Z]\w*|Treasury(Scheduled|Changed|Cancelled))\b' <<<"$events_facts" \
+  || ! rg -Fq 'creator_claim_signers: DelayedSet<ClaimSignerKey, vector<u8>>,' sources/runtime_config.move \
   || ! rg -Fq 'protocol_fee_share_bps: Delayed<ProtocolFeeShareKey, Bps>,' sources/runtime_config.move \
   || ! rg -Fq 'treasury: Delayed<TreasuryKey, address>,' sources/runtime_config.move \
-  || rg -n 'events::' <<<"$(move_production_body new <<<"$runtime_config_facts")"; then
-  echo 'Runtime-config creation must emit no consumer event; the signer emits its typed replay fact and each delayed setting stores the primitive keyed by its own operation.' >&2
+  || rg -q '\bcreator_claim_signer_public_key\b' sources \
+  || rg -n 'events::' <<<"$runtime_config_source"; then
+  echo 'Runtime config must emit no consumer event: the claim signers, protocol fee share and treasury each store the primitive keyed by its own operation.' >&2
   failures=$((failures + 1))
 fi
 
@@ -1284,7 +1278,7 @@ receiver_syntax_violations="$(
       | move_normalized_source \
       | sed 's/ *:: */::/g; s/ *(/(/g' \
       | rg -o \
-        '\b(blast_acl::(grant_admin|revoke_admin|destroy_admin_cap|begin_super_admin_transfer|cancel_super_admin_transfer|accept_super_admin_transfer|destroy_retired_super_admin_cap|sign_in)|runtime_config::((schedule|apply|cancel)_(creator_claim_signer|protocol_fee_share|treasury)|revoke_creator_claim_signer|creator_claim_signer|protocol_fee_share|treasury)|launch_config::(set_meme_decimals_allowed|set_quote_allowed|(schedule|apply|cancel)_(trade_fees|protocol_allocation|migration_witness|creation_fee)|remove_migration_witness|snapshot_for_launch|protocol_allocation|allowed_meme_decimals_count_for_testing|allowed_quote_count_for_testing|allowed_migration_witness_count_for_testing)|allocation::(recipients|apportion_fee_split|add_protocol|apportion_meme|apportion_quote|destinations|destination)|launch::(treasury_cap_mut|set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_protection|finalize|share|pool_tier|lp_fee_split|partner_id|claim_creator_caps|apply_curve_fee_cap_(reassignment|delay)|apply_metadata_cap_(reassignment|delay)|assert_curve_fee_cap|set_name|set_description|set_icon_url)|launch_ticket::(destroy|treasury_cap_mut|decimals)|fees::(accrue|claim_creator_fees|claim_protocol_fees)|package::test_upgrade|package_admin::(authorize_upgrade|commit_upgrade|publisher_id_for_testing|upgrade_cap_id_for_testing|package_id_for_testing|version_for_testing|policy_for_testing))(<[^>]+>)?\(' \
+        '\b(blast_acl::(grant_admin|revoke_admin|destroy_admin_cap|begin_super_admin_transfer|cancel_super_admin_transfer|accept_super_admin_transfer|destroy_retired_super_admin_cap|sign_in)|runtime_config::((schedule|apply|cancel)_(creator_claim_signer|creator_claim_signer_delay|protocol_fee_share|treasury)|revoke_creator_claim_signer|creator_claim_signers|protocol_fee_share|treasury)|launch_config::(set_meme_decimals_allowed|set_quote_allowed|(schedule|apply|cancel)_(trade_fees|protocol_allocation|migration_witness|creation_fee)|remove_migration_witness|snapshot_for_launch|protocol_allocation|allowed_meme_decimals_count_for_testing|allowed_quote_count_for_testing|allowed_migration_witness_count_for_testing)|allocation::(recipients|apportion_fee_split|add_protocol|apportion_meme|apportion_quote|destinations|destination)|launch::(treasury_cap_mut|set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_protection|finalize|share|pool_tier|lp_fee_split|partner_id|claim_creator_caps|apply_curve_fee_cap_(reassignment|delay)|apply_metadata_cap_(reassignment|delay)|assert_curve_fee_cap|set_name|set_description|set_icon_url)|launch_ticket::(destroy|treasury_cap_mut|decimals)|fees::(accrue|claim_creator_fees|claim_protocol_fees)|package::test_upgrade|package_admin::(authorize_upgrade|commit_upgrade|publisher_id_for_testing|upgrade_cap_id_for_testing|package_id_for_testing|version_for_testing|policy_for_testing))(<[^>]+>)?\(' \
       || true; } | sed "s|^|  ${move_file}: |"
   done
 )"
@@ -1372,7 +1366,7 @@ if rg -n '\b[a-z_]*claimed:[[:space:]]*bool|\bissue_creator_cap\b|\btransfer::' 
   || rg -q '\b(AdminWitness|blast_fun_domain|PackageVersion|package_version)\b' \
     <<<"$creator_authority_source" \
   || rg -v -Fx 'use blast_fun::constants;' sources/creator_authority.move | rg -q '^use blast_fun::' \
-  || [[ "$(move_production_function_contract claim_creator_caps <<<"$creator_authority_facts")" != 'package:0:0:fun claim_creator_caps<Meme>( recipient: CreatorRecipient, signer_public_key: &vector<u8>, attestation: Option<vector<u8>>, clock: &Clock, ctx: &mut TxContext, ): (CurveFeeCap<Meme>, BlastMetadataCap<Meme>)' ]] \
+  || [[ "$(move_production_function_contract claim_creator_caps <<<"$creator_authority_facts")" != 'package:0:0:fun claim_creator_caps<Meme>( recipient: CreatorRecipient, signer_public_keys: &vector<vector<u8>>, attestation: Option<vector<u8>>, clock: &Clock, ctx: &mut TxContext, ): (CurveFeeCap<Meme>, BlastMetadataCap<Meme>)' ]] \
   || [[ "$(move_production_function_contract new_curve_fee_cap <<<"$creator_authority_facts")" \
     != 'package:0:0:fun new_curve_fee_cap<Meme>(ctx: &mut TxContext): CurveFeeCap<Meme>' ]] \
   || [[ "$(move_production_function_contract new_metadata_cap <<<"$creator_authority_facts")" \

@@ -303,6 +303,27 @@ pub struct Delayed<T> {
     pub pending: Option<Proposal<T>>,
 }
 
+/// Mirrors `blast_admin::delayed::Notice`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Notice {
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
+/// Mirrors `blast_admin::delayed_set::DelayedSet<K, E>`, its `VecSet` and `VecMap` flattened.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DelayedSet<E> {
+    pub owner: ObjectID,
+    pub key: bool,
+    pub members: Vec<E>,
+    pub delay_ms: u64,
+    pub admissions: Vec<(E, Notice)>,
+    pub pending_delay: Option<Notice>,
+}
+
+/// A `RuntimeConfig` in BCS field order: claim signers, protocol fee share and treasury.
+pub type RuntimeConfigContents = (ObjectID, DelayedSet<Vec<u8>>, Delayed<u64>, Delayed<SuiAddress>);
+
 /// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct DelayedAction<A> {
@@ -705,7 +726,10 @@ impl Harness {
         let (version_id, paused, active_generation): (ObjectID, u8, u64) =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
         assert_eq!((version_id, paused, active_generation), (version[0], 7, generation));
-        let (_, _, _, treasury): (ObjectID, Vec<u8>, Delayed<u64>, Delayed<SuiAddress>) = bcs::from_bytes(&self.contents(runtime_id))?;
+        let (_, signers, _, treasury): RuntimeConfigContents =
+            bcs::from_bytes(&self.contents(runtime_id)).context("decode fresh RuntimeConfig")?;
+        assert!(signers.members.is_empty() && signers.admissions.is_empty(), "publication admits no claim signer");
+        assert_eq!(signers.delay_ms, 0, "publication starts the signer notice at zero");
         let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config = b.obj(self.shared(config_id, true))?;

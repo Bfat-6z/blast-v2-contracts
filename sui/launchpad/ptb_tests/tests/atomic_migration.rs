@@ -29,7 +29,7 @@ use std::{collections::BTreeSet, time::Duration};
 
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
-    ActionApplied, ActionScheduled, Change, CompiledPackage, Delayed, Expected, Harness, Outcome, SetApplied,
+    ActionApplied, ActionScheduled, Change, CompiledPackage, Expected, Harness, Outcome, RuntimeConfigContents, SetApplied,
     SetChange, SetScheduled, build, build_timelock, call, sui_dir, timelock_dir,
 };
 use move_binary_format::{CompiledModule, file_format::SignatureToken};
@@ -1257,7 +1257,7 @@ impl World {
     }
 
     fn applied_treasury(&self) -> Result<SuiAddress> {
-        let (_, _, _, treasury): (ObjectID, Vec<u8>, Delayed<u64>, Delayed<SuiAddress>) = bcs::from_bytes(&self.h.contents(self.runtime))?;
+        let (_, _, _, treasury): RuntimeConfigContents = bcs::from_bytes(&self.h.contents(self.runtime))?;
         assert_eq!(treasury.owner, self.runtime);
         Ok(treasury.value)
     }

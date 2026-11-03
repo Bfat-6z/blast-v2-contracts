@@ -122,6 +122,34 @@ fun rescheduling_a_pending_member_restarts_its_notice() {
 }
 
 #[test]
+/// Counts pending admissions only: a reschedule replaces one, and applying, cancelling or
+/// removing a member drops it, while admitted members and notice changes never count.
+fun pending_count_counts_only_pending_admissions() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(0);
+    assert_eq!(set.pending_count(), 0);
+
+    set.schedule_add(@0xA, &clock);
+    set.schedule_add(@0xB, &clock);
+    set.schedule_add(@0xC, &clock);
+    set.schedule_add(@0xA, &clock);
+    assert_eq!(set.pending_count(), 3);
+
+    set.apply_add(@0xA, &clock);
+    set.schedule_delay(100, &clock);
+    assert_eq!(set.pending_count(), 2);
+    assert_eq!(set.members().length(), 1);
+
+    set.cancel_add(@0xB);
+    set.remove(@0xC);
+    assert_eq!(set.pending_count(), 0);
+
+    set.cancel_delay();
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
 #[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed_set)]
 fun an_admitted_member_cannot_be_scheduled_again() {
     let clock = clock_at(0);

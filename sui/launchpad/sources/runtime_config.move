@@ -8,11 +8,11 @@ module blast_fun::runtime_config;
 
 // === Public Types ===
 
-/// The backend key that signs account claims (empty when none may), Blast's share of every
+/// The backend keys that may sign account claims (none when empty), Blast's share of every
 /// curve trade fee, and the treasury every launch pays Blast's fees to.
 public struct RuntimeConfig has key {
     id: UID,
-    creator_claim_signer_public_key: vector<u8>,
+    creator_claim_signers: DelayedSet<ClaimSignerKey, vector<u8>>,
     protocol_fee_share_bps: Delayed<ProtocolFeeShareKey, Bps>,
     treasury: Delayed<TreasuryKey, address>,
 }
@@ -23,6 +23,9 @@ public struct ProtocolFeeShareKey() has copy, drop, store;
 /// Keys the treasury's delayed lifecycle.
 public struct TreasuryKey() has copy, drop, store;
 
+/// Keys the account-claim signer set's delayed lifecycle.
+public struct ClaimSignerKey() has copy, drop, store;
+
 // === Private Initialization ===
 
 fun init(ctx: &mut TxContext) {
@@ -31,12 +34,14 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Immediately assigns the backend claim signer under the live, revocable role.
-public fun set_creator_claim_signer(
+/// Proposes admitting a backend key that may sign account claims, after the signer notice.
+/// Every admitted key signs with full authority, so admission waits; removal does not.
+public fun schedule_creator_claim_signer(
     self: &mut RuntimeConfig,
     package_version: &PackageVersion,
     _: &AdminWitness<ClaimSignerAdmin>,
-    signer_public_key: vector<u8>
+    signer_public_key: vector<u8>,
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
@@ -44,13 +49,75 @@ public fun set_creator_claim_signer(
         signer_public_key.length() == constants::ed25519_public_key_length!(),
         blast_fun::errors::invalid_creator_claim_public_key!()
     );
+    // Rescheduling a pending key replaces its admission rather than adding one.
+    let signers = &self.creator_claim_signers;
+    let replaced = if (signers.admission_ready_at_ms(&signer_public_key).is_some()) 1 else 0;
     assert!(
-        signer_public_key != self.creator_claim_signer_public_key,
-        blast_fun::errors::unchanged!()
+        signers.members().length() + signers.pending_count() - replaced
+            < constants::max_claim_signers!(),
+        blast_fun::errors::too_many_claim_signers!()
     );
-    self.creator_claim_signer_public_key = signer_public_key;
 
-    events::creator_claim_signer_set(signer_public_key);
+    self.creator_claim_signers.schedule_add(signer_public_key, clock);
+}
+
+/// Admits a ready signer key. Anyone may call.
+public fun apply_creator_claim_signer(
+    self: &mut RuntimeConfig,
+    package_version: &PackageVersion,
+    signer_public_key: vector<u8>,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+
+    self.creator_claim_signers.apply_add(signer_public_key, clock);
+}
+
+/// Discards a pending signer admission, even a ready one.
+public fun cancel_creator_claim_signer(
+    self: &mut RuntimeConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>,
+    signer_public_key: vector<u8>,
+) {
+    package_version.assert_current();
+
+    self.creator_claim_signers.cancel_add(signer_public_key);
+}
+
+/// Proposes the notice later signer admissions wait, after the applied one.
+public fun schedule_creator_claim_signer_delay(
+    self: &mut RuntimeConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<ClaimSignerAdmin>,
+    delay_ms: u64,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+
+    self.creator_claim_signers.schedule_delay(delay_ms, clock);
+}
+
+/// Applies a ready signer notice; pending admissions keep their deadlines. Anyone may call.
+public fun apply_creator_claim_signer_delay(
+    self: &mut RuntimeConfig,
+    package_version: &PackageVersion,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+
+    self.creator_claim_signers.apply_delay(clock);
+}
+
+/// Discards a pending signer notice change.
+public fun cancel_creator_claim_signer_delay(
+    self: &mut RuntimeConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>,
+) {
+    package_version.assert_current();
+
+    self.creator_claim_signers.cancel_delay();
 }
 
 /// Schedules protocol fee share after the full administrative delay.
@@ -128,24 +195,24 @@ public fun cancel_treasury(
     self.treasury.cancel();
 }
 
-/// Revokes the backend claim signer immediately.
+/// Revokes a signer key at once, live or pending, so a leaked key stops signing immediately.
+/// Attestations it already signed stop verifying too.
 public fun revoke_creator_claim_signer(
     self: &mut RuntimeConfig,
     package_version: &PackageVersion,
     _: &AdminWitness<ClaimSignerAdmin>,
+    signer_public_key: vector<u8>,
 ) {
     package_version.assert_current();
 
-    assert!(!self.creator_claim_signer_public_key.is_empty(), blast_fun::errors::unchanged!());
-    self.creator_claim_signer_public_key = vector[];
-
-    events::creator_claim_signer_set(vector[]);
+    self.creator_claim_signers.remove(signer_public_key);
 }
 
 // === Package Functions ===
 
-public(package) fun creator_claim_signer(self: &RuntimeConfig): &vector<u8> {
-    &self.creator_claim_signer_public_key
+/// The keys that may sign account claims now.
+public(package) fun creator_claim_signers(self: &RuntimeConfig): vector<vector<u8>> {
+    self.creator_claim_signers.members().into_keys()
 }
 
 public(package) fun protocol_fee_share(self: &RuntimeConfig): Bps {
@@ -164,7 +231,7 @@ fun new(ctx: &mut TxContext): RuntimeConfig {
     let id = object::new(ctx);
 
     RuntimeConfig {
-        creator_claim_signer_public_key: vector[],
+        creator_claim_signers: delayed_set::new(ClaimSignerKey(), &id, 0),
         protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), &id, bps::new(5_000), 0),
         treasury: delayed::new(TreasuryKey(), &id, @blast_treasury, 0),
         id,
@@ -225,15 +292,25 @@ public fun new_zero_fee_share_for_testing(ctx: &mut TxContext): RuntimeConfig {
 }
 
 #[test_only]
-/// Explicit zero-share fixture with a configured account-claim signer.
+/// Explicit zero-share fixture admitting `signer_public_key`, or no signer when it is empty,
+/// with the signer notice raised to two days.
 public fun new_zero_fee_share_with_signer_for_testing(
     signer_public_key: vector<u8>,
     ctx: &mut TxContext,
 ): RuntimeConfig {
     let id = object::new(ctx);
+    let clock = sui::clock::create_for_testing(ctx);
+    let mut creator_claim_signers = delayed_set::new(ClaimSignerKey(), &id, 0);
+    if (!signer_public_key.is_empty()) {
+        creator_claim_signers.schedule_add(signer_public_key, &clock);
+        creator_claim_signers.apply_add(signer_public_key, &clock);
+    };
+    creator_claim_signers.schedule_delay(172_800_000, &clock);
+    creator_claim_signers.apply_delay(&clock);
+    clock.destroy_for_testing();
 
     RuntimeConfig {
-        creator_claim_signer_public_key: signer_public_key,
+        creator_claim_signers,
         protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), &id, bps::new(0), 172_800_000),
         treasury: delayed::new(TreasuryKey(), &id, ctx.sender(), 172_800_000),
         id,
@@ -244,6 +321,7 @@ public fun new_zero_fee_share_with_signer_for_testing(
 
 use blast_admin::{
     delayed::{Self, Delayed},
+    delayed_set::{Self, DelayedSet},
     blast_acl::AdminWitness,
 };
 
@@ -253,6 +331,5 @@ use blast_fun::{
     blast_fun_domain::{CancelAdmin, ClaimSignerAdmin, FeeAdmin, TreasuryAdmin},
     bps::{Self, Bps},
     constants,
-    events,
     blast_fun::{PackageVersion},
 };

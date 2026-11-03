@@ -44,7 +44,7 @@ Same-named roles in different packages are different types.
 
 | Package | Declared in | Roles |
 | --- | --- | --- |
-| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (govern upgrade notice, authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::BuybackAdmin` (swap a vault's burn Quote for Meme to burn), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches, claim migration residuals), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (migration adapters), `blast_fun_domain::ClaimSignerAdmin` (the key that signs account claims), `blast_fun_domain::RewardsAdmin` (publish holder-reward rounds), `blast_fun_domain::PauseAdmin`, `blast_fun_domain::UnpauseAdmin`, `blast_fun_domain::CancelAdmin` |
+| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (govern upgrade notice, authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::BuybackAdmin` (swap a vault's burn Quote for Meme to burn), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches, claim migration residuals), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (migration adapters), `blast_fun_domain::ClaimSignerAdmin` (propose and revoke the keys that sign account claims, and their notice), `blast_fun_domain::RewardsAdmin` (publish holder-reward rounds), `blast_fun_domain::PauseAdmin`, `blast_fun_domain::UnpauseAdmin`, `blast_fun_domain::CancelAdmin` |
 | `blast_fun_migrators` | declares none | uses the launchpad's `UpgradeAdmin` (its own delay policy and upgrades), `FeeAdmin` (LP-fee shares), `TreasuryAdmin` (where Blast's LP fees go, migration residuals), `BuybackAdmin` (buyback and burn), `RewardsAdmin` (holder-reward rounds), and `CancelAdmin` (pending administration) |
 | `blast_sui` | `blast_sui_domain` | `blast_sui_domain::UpgradeAdmin` (attach package capabilities; authorize, commit, restrict, or seal upgrades), `blast_sui_domain::FeeAdmin` (blastSUI redemption fee) |
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
@@ -241,7 +241,7 @@ still uses it). Each module owns one type; consumers store four:
 | --- | --- | --- |
 | `delayed::Delayed<K, T>` | an applied `value`, its applied `delay_ms`, at most one `delayed::Proposal<T>` | fees, shares, treasuries, destinations, fee splits |
 | `delayed_action::DelayedAction<K, A>` | an applied `delay_ms`, at most one `delayed::Proposal<delayed_action::Change<A>>` | one-shot actions: upgrades, immutability, creator-cap reassignment, the root transfer |
-| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines, at most one proposed notice | migration-witness allowlists |
+| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines, at most one proposed notice | migration-witness allowlists, the launchpad's account-claim signer keys |
 | `delayed_map::DelayedMap<K, E, V>` | applied values by entry `E` in a `Table`, one applied `delay_ms`, at most one pending change per entry with a fixed deadline, at most one proposed notice | per-coin LP-share overrides |
 
 Every value carries an `owner` (the ID of the object that stores it) and a `key`
@@ -291,8 +291,9 @@ the reverse. `delayed_action::Change` is `Action(A)` or `Delay`;
 `DelayedSet`: `delayed_set::schedule_add` snapshots a member's deadline from the
 applied notice; a later notice change never moves it. `delayed_set::apply_add`
 admits a ready member; `delayed_set::remove` removes a member and discards its
-pending admission at once. `delayed_set::contains` is the membership check.
-`delayed_set::SetChange` is `Admission(E)` or `Delay`.
+pending admission at once. `delayed_set::contains` is the membership check, and
+`delayed_set::pending_count` counts pending admissions (an owner capping its set adds it to the
+member count). `delayed_set::SetChange` is `Admission(E)` or `Delay`.
 
 `DelayedMap`: `delayed_map::schedule` proposes setting an entry to a value, or
 clearing it with none, and snapshots its deadline from the applied notice; a later
@@ -307,8 +308,9 @@ The destroy calls (`delayed::destroy`, `delayed_action::destroy`,
 is pending, so every proposal ends in an event; each emits its module's
 `Destroyed` event.
 
-The creator-claim backend signer is a plain value assigned and revoked immediately
-under ClaimSignerAdmin. ACL administrator and role grants remain immediate.
+The launchpad's account-claim signer keys are a `DelayedSet`: ClaimSignerAdmin's admissions wait
+the set's notice, so a compromised ClaimSignerAdmin cannot sign claims without warning, and its
+revocations are immediate. ACL administrator and role grants remain immediate.
 
 ### Time rules
 

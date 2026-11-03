@@ -4,7 +4,8 @@
 - Date: 2026-10-31
 - Amended: 2026-11-02 — operation-owned notices, delayed creator splits, and bonding reward custody
 - Amended: 2026-11-03 — keyed delayed primitives in four modules that own their lifecycle events, a
-  `DelayedMap` for per-coin LP overrides; root transfer on `delayed_action`
+  `DelayedMap` for per-coin LP overrides; root transfer on `delayed_action`; delayed creator-claim
+  signer admission with immediate removal
 - Amended: 2026-11-03 — holder-reward rounds publish from a delayed action slot on each vault
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
   [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
@@ -146,11 +147,26 @@ with insufficient volume. Closing a round does not rewind its number or checkpoi
 cursor. Publication, claims, gas settlement and closure events preserve the separate
 holder and gas accounting for replay.
 
-### Immediate signer and administrator authority
+### Signer and administrator authority
 
-The backend creator-claim signer is a plain key, outside the delayed-value abstraction.
-ClaimSignerAdmin assignment and revocation are immediate and check the live package
-version. SuperAdmin sits behind the multisig, which can disable a compromised administrator
+(Amended 2026-11-03.) The backend keys that sign account claims form a
+`DelayedSet<ClaimSignerKey, vector<u8>>` in `RuntimeConfig`. Admission is delayed:
+ClaimSignerAdmin schedules a 32-byte key, anyone applies it after the set's own signer
+notice, and CancelAdmin may cancel it, even once ready. Removal is immediate:
+ClaimSignerAdmin revokes a live or pending key in one call, and attestations it signed,
+including earlier ones, stop verifying. Every admitted key signs claims with full authority,
+so an immediate assignment would let a compromised ClaimSignerAdmin sign claims without
+notice; the delay gives the multisig time to cancel the admission or replace the
+administrator, while immediate revocation still stops a leaked key at once. Claims verify
+against any admitted key, so rotation admits the new key before revoking the old one
+without downtime. Live and pending keys together are capped at four (two live during a
+rotation, two staged), keeping every claim's verification loop bounded; rescheduling a
+pending key replaces its admission and does not count twice. The signer notice has its own
+schedule/apply/cancel lifecycle under ClaimSignerAdmin and CancelAdmin, starts at zero at
+publication so setup admits the first key at once, and is raised before release like every
+other notice. Every call checks the live package version.
+
+SuperAdmin sits behind the multisig, which can disable a compromised administrator
 immediately. Administrator registration, role assignment and AdminCap transfer remain
 immediate. The exception does not extend to creator-cap reassignment, fees, treasury or code.
 
