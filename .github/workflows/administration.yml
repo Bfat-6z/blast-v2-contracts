@@ -1,0 +1,42 @@
+name: administration
+
+on:
+  push:
+    branches: [main]
+    paths: ['sui/**', 'scripts/check_admin_delay.py', 'scripts/test_admin_delay.sh', '.github/workflows/administration.yml']
+  pull_request:
+    paths: ['sui/**', 'scripts/check_admin_delay.py', 'scripts/test_admin_delay.sh', '.github/workflows/administration.yml']
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        package: [admin, partners, launchpad, presale, migrators, presale_testkit, vendors/aftermath_dao_presale]
+    env:
+      SUI_RELEASE: mainnet-v1.77.2
+      CARGO_BUILD_JOBS: 1
+      RAYON_NUM_THREADS: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install pinned Sui CLI
+        run: |
+          curl -fsSL -o sui.tgz \
+            "https://github.com/MystenLabs/sui/releases/download/${SUI_RELEASE}/sui-${SUI_RELEASE}-ubuntu-x86_64.tgz"
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf sui.tgz -C "$HOME/.local/bin" ./sui
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Lint and test the fresh stack
+        env:
+          MOVE_PACKAGE: ${{ matrix.package }}
+        run: bash scripts/test_admin_delay.sh "$MOVE_PACKAGE"
+      - name: Check administration boundaries
+        if: contains(fromJSON('["admin", "launchpad", "presale", "migrators"]'), matrix.package)
+        env:
+          MOVE_PACKAGE: ${{ matrix.package }}
+        run: bash scripts/test_admin_delay.sh --boundaries-only "$MOVE_PACKAGE"

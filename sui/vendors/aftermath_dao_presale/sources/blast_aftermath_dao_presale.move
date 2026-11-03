@@ -137,10 +137,11 @@ public fun migrate<Lp, SaleToken, Quote>(
             ctx,
         )
     };
-    assert!(
-        pool.balance_of<Lp, SaleToken>() == token_amount
-            && pool.balance_of<Lp, Quote>() == quote_amount,
-        EPoolMismatch,
+    assert_pool_balances!(
+        pool.balance_of<Lp, SaleToken>(),
+        token_amount,
+        pool.balance_of<Lp, Quote>(),
+        quote_amount,
     );
 
     let pool_id = object::id(&pool);
@@ -151,9 +152,11 @@ public fun migrate<Lp, SaleToken, Quote>(
         TREASURY,
         ctx,
     );
-    assert!(
-        dao_fee_pool.fee_bps() == DAO_FEE_BPS && dao_fee_pool.fee_recipient() == TREASURY,
-        EDaoFeePoolMismatch,
+    assert_dao_fee_terms!(
+        dao_fee_pool.fee_bps(),
+        DAO_FEE_BPS,
+        dao_fee_pool.fee_recipient(),
+        TREASURY,
     );
 
     event::emit(Migrated<Lp, SaleToken, Quote> {
@@ -171,6 +174,28 @@ public fun migrate<Lp, SaleToken, Quote>(
 }
 
 // === Private Functions ===
+
+// Lazy arguments preserve short-circuit order for the external reads.
+macro fun assert_pool_balances(
+    $actual_meme: u64,
+    $expected_meme: u64,
+    $actual_quote: u64,
+    $expected_quote: u64
+) {
+    assert!($actual_meme == $expected_meme && $actual_quote == $expected_quote, EPoolMismatch);
+}
+
+macro fun assert_dao_fee_terms(
+    $actual_bps: u16,
+    $expected_bps: u16,
+    $actual_recipient: address,
+    $expected_recipient: address
+) {
+    assert!(
+        $actual_bps == $expected_bps && $actual_recipient == $expected_recipient,
+        EDaoFeePoolMismatch
+    );
+}
 
 /// Creates the 50/50 pool from both coins, which must be in Aftermath's coin order.
 fun create_pool<Lp, Coin1, Coin2>(
@@ -235,6 +260,36 @@ public fun pool_creation_reserved_fields<Lp, SaleToken, Quote>(
     event: &PoolCreationReserved<Lp, SaleToken, Quote>,
 ): (ID, ID) {
     (event.presale_id, event.pool_creation_id)
+}
+
+#[test_only]
+public fun assert_pool_balances_for_testing(
+    actual_meme: u64,
+    expected_meme: u64,
+    actual_quote: u64,
+    expected_quote: u64
+) {
+    assert_pool_balances!(actual_meme, expected_meme, actual_quote, expected_quote);
+}
+
+#[test_only]
+public fun assert_dao_fee_terms_for_testing(
+    actual_bps: u16,
+    expected_bps: u16,
+    actual_recipient: address,
+    expected_recipient: address
+) {
+    assert_dao_fee_terms!(actual_bps, expected_bps, actual_recipient, expected_recipient);
+}
+
+#[test_only]
+public fun assert_pool_short_circuit_for_testing() {
+    assert_pool_balances!(99, 100, abort, 200);
+}
+
+#[test_only]
+public fun assert_dao_fee_short_circuit_for_testing() {
+    assert_dao_fee_terms!(199, 200, abort, @0xA);
 }
 
 // === Events ===

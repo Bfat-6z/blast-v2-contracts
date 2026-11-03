@@ -50,17 +50,22 @@ fun publication_cannot_supply_the_version_required_to_create_presales() {
 }
 
 #[test]
-fun wrapping_enables_guarded_mutations_and_consumes_bootstrap() {
+fun wrapping_enables_guarded_mutations_and_consumes_publication() {
     let mut fixture = start_custody();
 
     fixture.next_tx!(PUBLISHER, |f| {
         f
             .runtime
-            .set_destination(&f.package_version, &blast_acl::witness_for_testing(), PROTOCOL_ADMIN);
+            .set_destination_for_testing(
+                &f.package_version,
+                &blast_acl::witness_for_testing(),
+                PROTOCOL_ADMIN,
+                f.scenario.ctx()
+            );
 
         assert_eq!(f.runtime.destination(), PROTOCOL_ADMIN);
         assert_eq!(f.package_version.version_for_testing(), 1);
-        assert!(!f.has_bootstrap());
+        assert!(!f.has_publication());
     });
 
     fixture.end();
@@ -68,17 +73,17 @@ fun wrapping_enables_guarded_mutations_and_consumes_bootstrap() {
 
 #[test]
 #[expected_failure(abort_code = sui::test_scenario::EEmptyInventory, location = sui::test_scenario)]
-fun consumed_bootstrap_cannot_be_taken_for_another_wrap() {
+fun consumed_publication_cannot_be_taken_for_another_wrap() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        let bootstrap = f.take_bootstrap();
+        let publication = f.take_publication();
         let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), f.ctx!());
 
-        package_admin::wrap(bootstrap, upgrade_cap, f.ctx!());
+        f.wrap(publication, upgrade_cap);
     });
     fixture.next_tx!(PUBLISHER, |f| {
-        destroy(f.take_bootstrap());
+        destroy(f.take_publication());
     });
 
     fixture.end();
@@ -86,12 +91,12 @@ fun consumed_bootstrap_cannot_be_taken_for_another_wrap() {
 
 #[test]
 #[expected_failure(abort_code = sui::test_scenario::EEmptyInventory, location = sui::test_scenario)]
-fun another_sender_cannot_take_the_publication_bootstrap() {
+fun another_sender_cannot_take_the_publication_proof() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let bootstrap = f.take_bootstrap();
-        destroy(bootstrap);
+        let publication = f.take_publication();
+        destroy(publication);
     });
 
     fixture.end();
@@ -135,10 +140,10 @@ fun wrap_rejects_upgrade_cap_for_another_package() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        let bootstrap = f.take_bootstrap();
+        let publication = f.take_publication();
         let foreign_upgrade_cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), f.ctx!());
 
-        package_admin::wrap(bootstrap, foreign_upgrade_cap, f.ctx!());
+        f.wrap(publication, foreign_upgrade_cap);
     });
 
     fixture.end();
@@ -214,8 +219,8 @@ fun commit_rejects_a_skipped_generation_before_the_native_cap_is_touched() {
 
 #[test]
 #[expected_failure(
-    abort_code = errors::EInvalidPackageDigest,
-    location = blast_admin::upgrade_custody,
+    abort_code = package_admin::EInvalidDigest,
+    location = blast_presale::package_admin,
 )]
 fun authorization_rejects_non_digest_length() {
     let mut fixture = start();
@@ -225,11 +230,11 @@ fun authorization_rejects_non_digest_length() {
 
         let ticket = f
             .package_admin
-            .authorize_upgrade(
+            .authorize_upgrade_for_testing(
                 &f.package_version,
                 &admin_witness,
                 x"11223344556677889900aabbccddeeffffeeddccbbaa009988776655443322",
-            );
+             f.scenario.ctx());
 
         destroy(ticket);
     });
@@ -251,11 +256,11 @@ fun stale_generation_rejects_package_admin_before_digest_validation() {
 
         let ticket = f
             .package_admin
-            .authorize_upgrade(
+            .authorize_upgrade_for_testing(
                 &f.package_version,
                 &admin_witness,
                 vector[],
-            );
+             f.scenario.ctx());
 
         destroy(ticket);
     });
@@ -269,10 +274,11 @@ fun compatible_upgrade_commits_and_advances_together() {
     let fixture = &mut owned;
     let ticket = fixture
         .package_admin
-        .authorize_upgrade(
+        .authorize_upgrade_for_testing(
             &fixture.package_version,
             &upgrade_admin(),
             package_digest(),
+            &mut sui::tx_context::dummy()
         );
     assert_eq!(ticket.ticket_policy(), package::compatible_policy());
     let receipt = ticket.test_upgrade();
@@ -296,11 +302,11 @@ fun compatible_upgrade_commits_and_advances_together() {
 )]
 fun wrap_rejects_an_already_upgraded_cap() {
     let mut fixture = start_unwrapped();
-    let bootstrap = fixture.take_bootstrap();
+    let publication = fixture.take_publication();
     let mut cap = package::test_publish(PACKAGE_ID.to_id(), fixture.ctx!());
     let ticket = cap.authorize_upgrade(package::compatible_policy(), package_digest());
     cap.commit(ticket.test_upgrade());
-    package_admin::wrap(bootstrap, cap, fixture.scenario.ctx());
+    fixture.wrap(publication, cap);
     fixture.end();
 }
 
@@ -314,10 +320,11 @@ fun committed_upgrade_disables_old_bytecode() {
     let fixture = &mut owned;
     let ticket = fixture
         .package_admin
-        .authorize_upgrade(
+        .authorize_upgrade_for_testing(
             &fixture.package_version,
             &upgrade_admin(),
             package_digest(),
+            &mut sui::tx_context::dummy()
         );
     let receipt = ticket.test_upgrade();
     fixture
@@ -329,10 +336,11 @@ fun committed_upgrade_disables_old_bytecode() {
         );
     fixture
         .runtime
-        .set_destination(
+        .set_destination_for_testing(
             &fixture.package_version,
             &blast_acl::witness_for_testing(),
             PROTOCOL_ADMIN,
+            &mut sui::tx_context::dummy()
         );
     destroy(owned);
 }
@@ -374,6 +382,11 @@ macro fun wrap_ctx($fixture: &mut WrapFixture): &mut TxContext {
     fixture.scenario.ctx()
 }
 
+
+fun wrap(self: &mut WrapFixture, publication: marker::Publication, upgrade_cap: UpgradeCap) {
+    package_admin::wrap(publication, upgrade_cap, self.ctx!());
+}
+
 fun start_unwrapped(): WrapFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     marker::init_for_testing(scenario.ctx());
@@ -386,12 +399,12 @@ fun has_shared_version(_: &WrapFixture): bool {
     test_scenario::has_most_recent_shared<marker::PackageVersion>()
 }
 
-fun take_bootstrap(self: &WrapFixture): marker::Bootstrap {
+fun take_publication(self: &WrapFixture): marker::Publication {
     self.scenario.take_from_sender()
 }
 
-fun has_bootstrap(self: &CustodyFixture): bool {
-    self.scenario.has_most_recent_for_sender<marker::Bootstrap>()
+fun has_publication(self: &CustodyFixture): bool {
+    self.scenario.has_most_recent_for_sender<marker::Publication>()
 }
 
 /// Runs the production wrap flow so the fixture custodies the real shared object.
@@ -401,9 +414,9 @@ fun start_custody(): CustodyFixture {
     fee_policy::init_for_testing(scenario.ctx());
 
     scenario.next_tx(PUBLISHER);
-    let bootstrap = scenario.take_from_sender<marker::Bootstrap>();
+    let publication = scenario.take_from_sender<marker::Publication>();
     package_admin::wrap(
-        bootstrap,
+        publication,
         package::test_publish(PACKAGE_ID.to_id(), scenario.ctx()),
         scenario.ctx(),
     );
@@ -465,7 +478,7 @@ use blast_presale::{
     blast_presale_domain::UpgradeAdmin,
     blast_presale_package::{Self as marker, BLAST_PRESALE_PACKAGE},
     fee_policy,
-    package_admin
+    package_admin,
 };
 
 use std::unit_test::{assert_eq, destroy};

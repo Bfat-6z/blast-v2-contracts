@@ -51,32 +51,50 @@ fun quote_round_trip<Quote>(admit_exact: bool) {
     scenario.next_tx(@0xa);
     let listing_admin = blast_acl::witness_for_testing<ListingAdmin>();
     let adapter_admin = blast_acl::witness_for_testing<AdapterAdmin>();
+    let clock = clock::create_for_testing(scenario.ctx());
     let mut config = scenario.take_shared<LaunchConfig>();
     if (admit_exact) {
         config.set_quote_allowed<Quote>(&version, &listing_admin, true);
     } else {
         config.set_quote_allowed<BlastBoost<Long2x>>(&version, &listing_admin, true);
     };
-    config.set_migration_witness_allowed<Migration>(&version, &adapter_admin, true);
+    config.schedule_migration_witness<Migration>(&version, &adapter_admin, &clock);
+    config.apply_migration_witness<Migration>(&version, &clock);
     let runtime = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
     let ticket = launch_ticket::new(
-        test_utils::create_one_time_witness<QUOTE_COMPOSITION_TESTS>(), 9,
-        b"MEME".to_string(), b"Composition".to_string(),
-        b"Native Vault Quote test".to_string(), b"".to_string(),
-        creator_authority::new_address(@0xa), false, 0, scenario.ctx(),
+        test_utils::create_one_time_witness<QUOTE_COMPOSITION_TESTS>(),
+        9,
+        b"MEME".to_string(),
+        b"Composition".to_string(),
+        b"Native Vault Quote test".to_string(),
+        b"".to_string(),
+        creator_authority::new_address(@0xa),
+        false,
+        0,
+        scenario.ctx(),
     );
     scenario.next_tx(@0xa);
     let mut currency = scenario.take_from_address<Currency<QUOTE_COMPOSITION_TESTS>>(@0xc);
     let mut initializer = launch::new<_, Quote, _>(
-        ticket, &version, &config, Migration(), POOL_TICK_SPACING, POOL_FEE_RATE,
+        ticket,
+        &version,
+        &config,
+        Migration(),
+        POOL_TICK_SPACING,
+        POOL_FEE_RATE,
     );
     initializer.set_virtual_quote(&version, 5_000_000);
     initializer.set_graduation_target(&version, 25_000_000);
     initializer.set_allocation_plan(&version, default_allocation_plan());
     initializer.set_lp_fee_split(&version, default_fee_split());
     let creation_fee = coin::zero(scenario.ctx());
-    let market = initializer.finalize(&version, &mut currency, &config, creation_fee, scenario.ctx());
-    let clock = clock::create_for_testing(scenario.ctx());
+    let market = initializer.finalize(
+        &version,
+        &mut currency,
+        &config,
+        creation_fee,
+        scenario.ctx()
+    );
     market.share(&version, &clock);
     test_scenario::return_shared(config);
     test_scenario::return_to_address(@0xc, currency);

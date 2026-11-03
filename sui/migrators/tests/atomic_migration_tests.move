@@ -134,8 +134,11 @@ fun the_migrated_vault_splits_later_collections_and_updates_its_split_under_the_
         bps::new(0),
         vector[allocation::route(ADMIN, bps::new(10_000))],
     );
-    vault.assert_fee_split_update(&launch, &curve_fee_cap, next_split);
-    vault.update_fee_split(next_split);
+    vault.schedule_fee_split(&f.migrators_version, &launch, &curve_fee_cap, next_split, 172_800_000, &f.clock);
+    let now = f.clock.timestamp_ms();
+    f.clock.set_for_testing(now + 172_800_000);
+    vault.assert_fee_split_ready(&f.clock);
+    vault.apply_fee_split(&f.clock);
     vault.split_fees(
         &policy,
         &mut currency,
@@ -252,17 +255,17 @@ fun start(): Fixture {
     scenario.next_tx(ADMIN);
     let mut config = scenario.take_shared<LaunchConfig>();
     config.set_quote_allowed<QUOTE>(&version, &blast_acl::witness_for_testing<ListingAdmin>(), true);
-    config.set_migration_witness_allowed<Venue>(
+    config.set_migration_witness_allowed_for_testing<Venue>(
         &version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
         true,
-    );
-    config.set_trade_fees(
+     scenario.ctx());
+    config.set_trade_fees_for_testing(
         &version,
         &blast_acl::witness_for_testing<FeeAdmin>(),
         bps::new(100),
         bps::new(100),
-    );
+     scenario.ctx());
     let launch_id = scenario.share_launch(&version, &config, &clock);
     test_scenario::return_shared(config);
 

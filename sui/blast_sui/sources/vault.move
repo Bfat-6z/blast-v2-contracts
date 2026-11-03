@@ -58,20 +58,24 @@ public fun create(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     assert!(
         fun_cap.total_supply() == 0 && blast_cap.total_supply() == 0,
         blast_sui::errors::nonzero_initial_supply!(),
     );
+
     let fun_reserve_sui = constants::fun_rounding_reserve_mist!();
     assert!(
         owner_seed.value() >= constants::native_min_stake_mist!() + fun_reserve_sui,
         blast_sui::errors::bootstrap_below_native_minimum!(),
     );
+
     let validator = system_state.validator_address_by_pool_id(&pool_id);
     assert!(
         system_state.active_validator_addresses_ref().contains(&validator),
         blast_sui::errors::validator_not_active!(),
     );
+
     let epoch = ctx.epoch();
     let (is_current, rate_sui, rate_pool_tokens) = system_state.exchange_rate_at(&pool_id, epoch);
     assert!(is_current, blast_sui::errors::stale_exchange_rate!());
@@ -123,6 +127,7 @@ public fun mint_fun_sui(
     ctx: &mut TxContext,
 ): Coin<FUN_SUI> {
     package_version.assert_current();
+
     let amount = sui_in.value();
     assert!(amount > 0, blast_sui::errors::zero_amount!());
     self.refresh(system_state, ctx);
@@ -147,17 +152,20 @@ public fun redeem_fun_sui(
     ctx: &mut TxContext,
 ): Coin<SUI> {
     package_version.assert_current();
+
     let amount = fun_in.value();
     assert!(amount > 0, blast_sui::errors::zero_amount!());
     self.refresh(system_state, ctx);
 
-    let sui_out = self.fun_custody.withdraw_exact(
-        system_state,
-        amount,
-        self.rate_sui,
-        self.rate_pool_tokens,
-        ctx,
-    );
+    let sui_out = self
+        .fun_custody
+        .withdraw_exact(
+            system_state,
+            amount,
+            self.rate_sui,
+            self.rate_pool_tokens,
+            ctx,
+        );
     self.treasury_cap_mut<FUN_SUI>().burn(fun_in);
     self.protect_fun_exit_liquidity(system_state, ctx);
     self.stake_idle(system_state, ctx);
@@ -181,6 +189,7 @@ public fun request_blast_sui(
     ctx: &mut TxContext,
 ): BlastSuiDepositReceipt {
     package_version.assert_current();
+
     let amount = sui_in.value();
     assert!(
         amount >= constants::native_min_stake_mist!(),
@@ -195,6 +204,7 @@ public fun request_blast_sui(
         staked_sui.pool_id() == self.pool_id,
         blast_sui::errors::wrong_delegation_pool!(),
     );
+
     let receipt = deposit_receipt::new(self.id.to_inner(), staked_sui, ctx);
     self.stake_idle(system_state, ctx);
 
@@ -223,6 +233,7 @@ public fun claim_blast_sui(
     ctx: &mut TxContext,
 ): Coin<BLAST_SUI> {
     package_version.assert_current();
+
     receipt.assert_binding(self.id.to_inner(), self.pool_id);
     assert!(
         receipt.activation_epoch() <= ctx.epoch(),
@@ -252,11 +263,13 @@ public fun claim_blast_sui(
     );
     assert!(blast_out >= min_blast_out, blast_sui::errors::slippage_exceeded!());
 
-    self.blast_custody.join_active_at_rate(
-        active_stake,
-        self.rate_sui,
-        self.rate_pool_tokens,
-    );
+    self
+        .blast_custody
+        .join_active_at_rate(
+            active_stake,
+            self.rate_sui,
+            self.rate_pool_tokens,
+        );
     let blast_coin = self.treasury_cap_mut<BLAST_SUI>().mint(blast_out, ctx);
     self.stake_idle(system_state, ctx);
 
@@ -287,6 +300,7 @@ public fun donate_sui(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     let amount = sui_in.value();
     assert!(amount > 0, blast_sui::errors::zero_amount!());
     self.refresh(system_state, ctx);
@@ -313,6 +327,7 @@ public fun redeem_blast_sui(
     ctx: &mut TxContext,
 ): Coin<SUI> {
     package_version.assert_current();
+
     let shares = blast_in.value();
     assert!(shares > 0, blast_sui::errors::zero_amount!());
     self.refresh(system_state, ctx);
@@ -326,13 +341,15 @@ public fun redeem_blast_sui(
     assert!(net_sui > 0, blast_sui::errors::zero_sui_after_fee!());
     assert!(net_sui >= min_sui_out, blast_sui::errors::slippage_exceeded!());
 
-    let sui_out = self.blast_custody.withdraw_exact(
-        system_state,
-        net_sui,
-        self.rate_sui,
-        self.rate_pool_tokens,
-        ctx,
-    );
+    let sui_out = self
+        .blast_custody
+        .withdraw_exact(
+            system_state,
+            net_sui,
+            self.rate_sui,
+            self.rate_pool_tokens,
+            ctx,
+        );
     self.treasury_cap_mut<BLAST_SUI>().burn(blast_in);
     self.stake_idle(system_state, ctx);
 
@@ -349,10 +366,12 @@ public fun set_redeem_fee(
     redeem_fee_bps: u64,
 ) {
     package_version.assert_current();
+
     assert!(
         redeem_fee_bps <= constants::max_redeem_fee_bps!(),
         blast_sui::errors::redeem_fee_above_maximum!(),
     );
+
     let old_redeem_fee_bps = self.redeem_fee_bps;
     assert!(
         redeem_fee_bps != old_redeem_fee_bps,
@@ -373,6 +392,7 @@ public fun sync(
     ctx: &mut TxContext,
 ) {
     package_version.assert_current();
+
     self.refresh(system_state, ctx);
     self.stake_idle(system_state, ctx);
 
@@ -434,7 +454,10 @@ fun refresh_active_native(
 ) {
     let epoch = ctx.epoch();
     let (is_current, rate_sui, rate_pool_tokens) =
-        system_state.exchange_rate_at(&self.pool_id, epoch);
+        system_state.exchange_rate_at(
+        &self.pool_id,
+        epoch
+    );
     if (is_current) {
         self.rate_epoch = epoch;
         self.rate_sui = rate_sui;
@@ -498,6 +521,7 @@ fun exchange_rate_at(
     if (!rates.contains(epoch)) return (false, 0, 0);
 
     let rate = &rates[epoch];
+
     (true, rate.sui_amount(), rate.pool_token_amount())
 }
 
@@ -526,16 +550,19 @@ fun sweep_fun_yield(self: &mut Vault, ctx: &mut TxContext) {
         self.rate_pool_tokens,
     ).min(self.fun_custody.active_pool_tokens());
     if (pool_tokens > 0) {
-        self.fun_custody.transfer_active_tokens(
-            &mut self.blast_custody,
-            pool_tokens,
-            self.rate_sui,
-            self.rate_pool_tokens,
-            ctx,
-        );
+        self
+            .fun_custody
+            .transfer_active_tokens(
+                &mut self.blast_custody,
+                pool_tokens,
+                self.rate_sui,
+                self.rate_pool_tokens,
+                ctx,
+            );
     };
 
-    let swept_sui = liquid_sui + math::sui_at_rate_down(
+    let swept_sui =
+        liquid_sui + math::sui_at_rate_down(
         pool_tokens,
         self.rate_sui,
         self.rate_pool_tokens,
@@ -558,13 +585,15 @@ fun stake_idle(self: &mut Vault, system_state: &mut SuiSystemState, ctx: &mut Tx
 
     let pool_id = self.pool_id;
     let validator = system_state.validator_address_by_pool_id(&pool_id);
-    self.fun_custody.stake_idle(
-        system_state,
-        validator,
-        &pool_id,
-        constants::fun_rounding_reserve_mist!(),
-        ctx,
-    );
+    self
+        .fun_custody
+        .stake_idle(
+            system_state,
+            validator,
+            &pool_id,
+            constants::fun_rounding_reserve_mist!(),
+            ctx,
+        );
     self.blast_custody.stake_idle(system_state, validator, &pool_id, 0, ctx);
 }
 

@@ -463,8 +463,8 @@ fun blast_share_is_the_coins_own_pair_or_the_defaults_read_at_each_collection() 
     f.assert_protocol_amounts(10, 25);
 
     f.scenario.next_tx(ADMIN);
-    f.administer!(|policy, version, admin| {
-        policy.set_coin_shares<VAULT_TESTS>(version, admin, bps::new(10_000), bps::new(0));
+    f.administer!(|policy, version, admin, ctx| {
+        policy.set_coin_shares_for_testing<VAULT_TESTS>(version, admin, bps::new(10_000), bps::new(0), ctx);
     });
     f.split(&mut vault, 100, 100);
     f.assert_protocol_amounts(100, 0);
@@ -477,8 +477,8 @@ fun blast_share_is_the_coins_own_pair_or_the_defaults_read_at_each_collection() 
 
     // Clearing the pair falls back to the defaults current now.
     f.scenario.next_tx(ADMIN);
-    f.administer!(|policy, version, admin| {
-        policy.clear_coin_shares<VAULT_TESTS>(version, admin);
+    f.administer!(|policy, version, admin, ctx| {
+        policy.clear_coin_shares_for_testing<VAULT_TESTS>(version, admin, ctx);
     });
     f.split(&mut vault, 100, 100);
     f.assert_protocol_amounts(50, 50);
@@ -501,8 +501,8 @@ fun protocol_destination_is_read_live_at_each_collection() {
 
     f.scenario.next_tx(ADMIN);
     f.split(&mut vault, 3, 5);
-    f.administer!(|policy, version, admin| {
-        policy.set_protocol_destination(version, admin, @0xCAFE);
+    f.administer!(|policy, version, admin, ctx| {
+        policy.set_protocol_destination_for_testing(version, admin, @0xCAFE, ctx);
     });
     f.split(&mut vault, 7, 11);
 
@@ -806,8 +806,8 @@ fun held_lp_fees_go_to_the_destination_in_force_at_the_claim() {
     f.scenario.next_tx(ADMIN);
     f.split(&mut vault, 10, 0);
 
-    f.administer!(|policy, version, admin| {
-        policy.set_protocol_destination(version, admin, @0xCAFE);
+    f.administer!(|policy, version, admin, ctx| {
+        policy.set_protocol_destination_for_testing(version, admin, @0xCAFE, ctx);
     });
     f.claim_lp_fees_with_partner(&mut vault);
 
@@ -1248,7 +1248,12 @@ fun start_partnered(fee_split: FeeSplit, cut_bps: u64): VaultFixture {
 
 /// Opens the fixture launch under `ADMIN` with a partner whose cut is `cut_bps`, which the launch
 /// names when `names_partner`.
-fun open_fixture(fee_split: FeeSplit, burnable: bool, cut_bps: u64, names_partner: bool): VaultFixture {
+fun open_fixture(
+    fee_split: FeeSplit,
+    burnable: bool,
+    cut_bps: u64,
+    names_partner: bool
+): VaultFixture {
     let mut scenario = test_scenario::begin(PROTOCOL);
     let version = package_version::new_for_testing(scenario.ctx());
     let migrators_version = migrators_version::new_for_testing(scenario.ctx());
@@ -1258,25 +1263,28 @@ fun open_fixture(fee_split: FeeSplit, burnable: bool, cut_bps: u64, names_partne
     let clock = clock::create_for_testing(scenario.ctx());
 
     scenario.next_tx(ADMIN);
-    config.admit<QUOTE, TestVenue>(&version);
+    config.admit<QUOTE, TestVenue>(&version, scenario.ctx());
     let otw = test_utils::create_one_time_witness<VAULT_TESTS>();
-    let (launch, currency) = if (names_partner) scenario.open_partnered_launch<_, QUOTE, _>(
-        otw,
-        &version,
-        &mut config,
-        TestVenue(),
-        fee_split,
-        burnable,
-        &partner,
-        &clock,
-    ) else scenario.open_launch<_, QUOTE, _>(
-        otw,
-        &version,
-        &config,
-        TestVenue(),
-        fee_split,
-        burnable,
-    );
+    let (launch, currency) = if (names_partner)
+        scenario.open_partnered_launch<_, QUOTE, _>(
+            otw,
+            &version,
+            &mut config,
+            TestVenue(),
+            fee_split,
+            burnable,
+            &partner,
+            &clock,
+        )
+    else
+        scenario.open_launch<_, QUOTE, _>(
+            otw,
+            &version,
+            &config,
+            TestVenue(),
+            fee_split,
+            burnable,
+        );
     destroy(config);
     destroy(version);
 
@@ -1419,17 +1427,17 @@ fun buyback_admin(): AdminWitness<BuybackAdmin> {
 /// Runs one policy administration under the live migrators generation, as the role `$fn` needs.
 macro fun administer<$Role>(
     $self: &mut VaultFixture,
-    $fn: |&mut LpFeePolicy, &MigratorsVersion, &AdminWitness<$Role>|,
+    $fn: |&mut LpFeePolicy, &MigratorsVersion, &AdminWitness<$Role>, &mut TxContext|,
 ) {
     let self = $self;
     let admin = blast_acl::witness_for_testing<$Role>();
 
-    $fn(&mut self.policy, &self.migrators_version, &admin);
+    $fn(&mut self.policy, &self.migrators_version, &admin, self.scenario.ctx());
 }
 
 fun set_defaults(self: &mut VaultFixture, meme_bps: u64, quote_bps: u64) {
-    self.administer!(|policy, version, admin| {
-        policy.set_default_shares(version, admin, bps::new(meme_bps), bps::new(quote_bps));
+    self.administer!(|policy, version, admin, ctx| {
+        policy.set_default_shares_for_testing(version, admin, bps::new(meme_bps), bps::new(quote_bps), ctx);
     });
 }
 

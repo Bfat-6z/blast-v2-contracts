@@ -44,6 +44,112 @@ public struct AB() has drop;
 // === Tests ===
 
 #[test]
+/// Unreceived DAO-fee coins have collection-time accounting: expiry alone retains the old
+/// recipient, while explicit activation changes how already-delivered but unreceived coins pay.
+fun delayed_split_accounts_separate_fee_coins_when_received() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
+    let clock = sui::clock::create_for_testing(scenario.ctx());
+    let mut clock = clock;
+    let sale_id = object::id_from_address(@0xCAFE);
+    let cap = presale::cap_for_testing(sale_id, scenario.ctx());
+    let mut vault = aftermath::vault_for_testing<AFTERMATH_TESTS, QUOTE, _>(
+        sale_id,
+        object::id(&cap),
+        whole_split_to_fee_recipient(),
+        fee_policy::protocol_fees_for_testing(0, 0, 0, 0),
+        option::none(),
+        TestPosition { id: object::new(scenario.ctx()) },
+        1,
+        scenario.ctx(),
+    );
+    let coins = send_coins<AFTERMATH_TESTS>(
+        vector[10, 20],
+        object::id(&vault).to_address(),
+        &mut scenario,
+    );
+    let next = presale::fee_split(
+        vector[presale::recipient_share(PARTICIPANT, bps::new(10_000))],
+        bps::new(0),
+    );
+    vault.schedule_fee_split(&version, &cap, next, 0, &clock);
+    clock.set_for_testing(172_800_000);
+    scenario.next_tx(KEEPER);
+    // Only one coin is received. The second existed under the old policy but remains unreceived.
+    vault.collect_fees(
+        &version,
+        &policy,
+        vector[test_scenario::receiving_ticket_by_id<Coin<AFTERMATH_TESTS>>(coins[0])],
+        vector[],
+        scenario.ctx(),
+    );
+    aftermath::apply_fee_split(&mut vault, &version, &clock);
+    vault.collect_fees(
+        &version,
+        &policy,
+        vector[test_scenario::receiving_ticket_by_id<Coin<AFTERMATH_TESTS>>(coins[1])],
+        vector[],
+        scenario.ctx(),
+    );
+    scenario.next_tx(FEE_RECIPIENT);
+    assert_eq!(scenario.take_from_sender<Coin<AFTERMATH_TESTS>>().burn_for_testing(), 10);
+    scenario.next_tx(PARTICIPANT);
+    assert_eq!(scenario.take_from_sender<Coin<AFTERMATH_TESTS>>().burn_for_testing(), 20);
+    let (applied, delay, pending) = vault.fee_split_policy_for_testing();
+    assert_eq!(applied, next);
+    assert_eq!(delay, 0);
+    assert!(pending.is_none());
+    vault.destroy_for_testing();
+    clock.destroy_for_testing();
+    destroy(cap);
+    destroy(policy);
+    destroy(version);
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = aftermath::EWrongVault, location = blast_presale::aftermath)]
+fun fee_split_apply_rejects_another_venue_before_missing_pending() {
+    let mut ctx = sui::tx_context::dummy();
+    let version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let clock = sui::clock::create_for_testing(&mut ctx);
+    let mut vault = vault::new_for_testing<AFTERMATH_TESTS, QUOTE>(
+        object::id_from_address(@0xCAFE),
+        object::id_from_address(@0xCA9),
+        whole_split_to_fee_recipient(),
+        fee_policy::protocol_fees_for_testing(0, 0, 0, 0),
+        option::none(),
+        &mut ctx,
+    );
+    aftermath::apply_fee_split(&mut vault, &version, &clock);
+    abort
+}
+
+#[
+    test,
+    expected_failure(
+        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        location = blast_admin::operational_version,
+    ),
+]
+fun fee_split_apply_stale_version_precedes_venue_and_pending() {
+    let mut ctx = sui::tx_context::dummy();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    version.set_for_testing(2);
+    let clock = sui::clock::create_for_testing(&mut ctx);
+    let mut vault = vault::new_for_testing<AFTERMATH_TESTS, QUOTE>(
+        object::id_from_address(@0xCAFE),
+        object::id_from_address(@0xCA9),
+        whole_split_to_fee_recipient(),
+        fee_policy::protocol_fees_for_testing(0, 0, 0, 0),
+        option::none(),
+        &mut ctx,
+    );
+    aftermath::apply_fee_split(&mut vault, &version, &clock);
+    abort
+}
+
+#[test]
 /// A sale started here names this migrator and records its DAO fee as the venue tier, with no
 /// tick spacing, under the sale token's type.
 fun new_records_the_witness_and_the_dao_fee_tier() {
@@ -617,6 +723,48 @@ fun a_cancelled_sales_reservation_cannot_be_consumed() {
     );
     std::unit_test::destroy(package_version);
     abort
+}
+
+#[test]
+fun migration_postconditions_accept_exact_balances_fee_and_recipient() {
+    aftermath::assert_pool_balances_for_testing(100, 100, 200, 200);
+    aftermath::assert_dao_fee_terms_for_testing(200, 200, @0xA, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+fun migration_rejects_wrong_meme_balance() {
+    aftermath::assert_pool_balances_for_testing(99, 100, 200, 200);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+fun migration_rejects_wrong_quote_balance() {
+    aftermath::assert_pool_balances_for_testing(100, 100, 199, 200);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+fun migration_rejects_wrong_dao_fee() {
+    aftermath::assert_dao_fee_terms_for_testing(199, 200, @0xA, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+fun migration_rejects_wrong_dao_fee_recipient() {
+    aftermath::assert_dao_fee_terms_for_testing(200, 200, @0xB, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+fun meme_mismatch_rejects_before_reading_quote() {
+    aftermath::assert_pool_short_circuit_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+fun fee_mismatch_rejects_before_reading_recipient() {
+    aftermath::assert_dao_fee_short_circuit_for_testing();
 }
 
 // === Test Helpers ===

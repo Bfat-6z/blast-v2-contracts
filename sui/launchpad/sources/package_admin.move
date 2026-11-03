@@ -8,21 +8,86 @@ module blast_fun::package_admin;
 
 // === Public Types ===
 
+/// A proposed upgrade, irreversible immutability, or delay policy change.
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+    DelayOnly,
+}
+
 /// Shared custody for the package's framework Publisher and UpgradeCap.
 public struct PackageAdmin has key {
     id: UID,
     custody: UpgradeCustody<BLAST_FUN>,
+    delay_ms: u64,
+    pending: Option<Pending<UpgradeAction>>,
 }
 
 // === Public Functions ===
 
-/// Consumes publication bootstrap, seals native custody, and enables the initial generation.
-public fun wrap(bootstrap: Bootstrap, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
-    let (publisher, generation) = bootstrap.destroy();
+/// Schedules one exact code digest under the applied notice, replacing any previous action.
+/// Changing the notice requires a separate policy-only proposal.
+public fun schedule_upgrade(
+    self: &mut PackageAdmin,
+    package_version: &PackageVersion,
+    _: &AdminWitness<UpgradeAdmin>,
+    digest: vector<u8>,
+    clock: &Clock
+) {
+    package_version.assert_current();
+
+    assert!(digest.length() == 32, blast_fun::errors::invalid_digest!());
+
+    let action = UpgradeAction::Upgrade(digest);
+    let delay_ms = self.delay_ms;
+    let pending = delayed::new_pending(action, delay_ms, delay_ms, clock);
+
+    self.pending = option::some(pending);
+
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+}
+
+/// Schedules the irreversible destruction of upgrade authority under the applied notice.
+public fun schedule_make_immutable(
+    self: &mut PackageAdmin,
+    package_version: &PackageVersion,
+    _: &AdminWitness<UpgradeAdmin>,
+    clock: &Clock
+) {
+    package_version.assert_current();
+
+    let action = UpgradeAction::MakeImmutable;
+    let delay_ms = self.delay_ms;
+    let pending = delayed::new_pending(action, delay_ms, delay_ms, clock);
+
+    self.pending = option::some(pending);
+
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+}
+
+/// Cancels any scheduled action, even after its execution threshold.
+public fun cancel_upgrade_action(
+    self: &mut PackageAdmin,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>
+) {
+    package_version.assert_current();
+
+    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
+
+    let action = self.pending.extract().value();
+
+    events::upgrade_action_cancelled(action);
+}
+
+/// Consumes the unique publication proof and seals native custody before activation.
+/// The initial operational generation starts fully paused; UnpauseAdmin releases it immediately.
+public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxContext) {
+    let (publisher, generation) = publication.destroy();
     let id = object::new(ctx);
     let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap);
 
-    transfer::share_object(PackageAdmin { id, custody });
+    transfer::share_object(PackageAdmin { id, custody, delay_ms: 0, pending: option::none() });
     generation.share_version(ctx);
 }
 
@@ -32,9 +97,17 @@ public fun authorize_upgrade(
     package_version: &PackageVersion,
     _: &AdminWitness<UpgradeAdmin>,
     digest: vector<u8>,
+    clock: &Clock,
 ): UpgradeTicket {
     package_version.assert_current();
+
     let custodian_id = self.id.to_inner();
+
+    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
+
+    let (action, _) = self.pending.destroy_some().take_ready(clock);
+    assert!(action == UpgradeAction::Upgrade(digest), blast_fun::errors::wrong_upgrade_action!());
+    self.pending = option::none();
 
     self.custody.authorize_upgrade(custodian_id, digest)
 }
@@ -47,6 +120,7 @@ public fun commit_upgrade_and_advance(
     receipt: UpgradeReceipt,
 ) {
     package_version.assert_next();
+
     let custodian_id = self.id.to_inner();
 
     self.custody.commit_upgrade(custodian_id, receipt);
@@ -54,18 +128,101 @@ public fun commit_upgrade_and_advance(
 }
 
 /// Irreversibly destroys native upgrade authority and freezes this package generation.
+
+/// Executes a ready immutability decision under the live upgrade role.
 public fun make_immutable(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
     _: &AdminWitness<UpgradeAdmin>,
+    clock: &Clock
 ) {
     package_version.assert_current();
-    let custodian_id = self.id.to_inner();
 
-    self.custody.make_immutable(custodian_id);
+    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
+
+    let (action, _) = self.pending.destroy_some().take_ready(clock);
+    assert!(action == UpgradeAction::MakeImmutable, blast_fun::errors::wrong_upgrade_action!());
+    self.pending = option::none();
+
+    self.custody.make_immutable(self.id.to_inner());
+}
+
+/// Changes only the upgrade notice period, after the currently applied notice.
+/// Replaces any pending upgrade or immutability action.
+public fun schedule_upgrade_delay(
+    self: &mut PackageAdmin,
+    package_version: &PackageVersion,
+    _: &AdminWitness<UpgradeAdmin>,
+    delay_ms: u64,
+    clock: &Clock
+) {
+    package_version.assert_current();
+
+    let action = UpgradeAction::DelayOnly;
+    let pending = delayed::new_pending(action, self.delay_ms, delay_ms, clock);
+
+    self.pending = option::some(pending);
+
+    events::upgrade_action_scheduled(action, pending.ready_at_ms(), delay_ms);
+}
+
+/// Applies a ready policy-only proposal; cannot consume an upgrade authorization.
+public fun apply_upgrade_delay(
+    self: &mut PackageAdmin,
+    package_version: &PackageVersion,
+    clock: &Clock
+) {
+    package_version.assert_current();
+
+    assert!(self.pending.is_some(), blast_fun::errors::no_pending_action!());
+
+    let (action, delay_ms) = self.pending.destroy_some().take_ready(clock);
+    assert!(action == UpgradeAction::DelayOnly, blast_fun::errors::wrong_upgrade_action!());
+    self.pending = option::none();
+    self.delay_ms = delay_ms;
+
+    events::upgrade_delay_changed(delay_ms);
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// Returns the currently applied notice period for upgrade actions.
+public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
+    self.delay_ms
+}
+
+#[test_only]
+/// Fixture helper exercising both public phases with a synthetic 48-hour advance.
+public fun authorize_upgrade_for_testing(
+    self: &mut PackageAdmin,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<UpgradeAdmin>,
+    digest: vector<u8>,
+    ctx: &mut TxContext,
+): UpgradeTicket {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    self.schedule_upgrade(package_version, admin, digest, &clock);
+    clock.set_for_testing(172_800_000);
+    let ticket = self.authorize_upgrade(package_version, admin, digest, &clock);
+    clock.destroy_for_testing();
+
+    ticket
+}
+
+#[test_only]
+public fun make_immutable_for_testing(
+    self: &mut PackageAdmin,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<UpgradeAdmin>,
+    ctx: &mut TxContext,
+) {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    self.schedule_make_immutable(package_version, admin, &clock);
+    clock.set_for_testing(172_800_000);
+    self.make_immutable(package_version, admin, &clock);
+    clock.destroy_for_testing();
+}
 
 #[test_only]
 /// Creates unshared package administration around simulated package capabilities.
@@ -80,7 +237,7 @@ public fun new_for_testing(ctx: &mut TxContext): PackageAdmin {
         ),
     );
 
-    PackageAdmin { id, custody }
+    PackageAdmin { id, custody, delay_ms: 172_800_000, pending: option::none() }
 }
 
 #[test_only]
@@ -123,15 +280,20 @@ public fun has_upgrade_cap_for_testing(self: &PackageAdmin): bool {
 
 use blast_admin::{
     blast_acl::AdminWitness,
+    delayed::{Self, Pending},
     operational_version::OperationalVersion,
     upgrade_custody::{Self, UpgradeCustody},
 };
 
 use blast_fun::{
-    blast_fun::{BLAST_FUN, Bootstrap, PackageVersion},
-    blast_fun_domain::UpgradeAdmin,
+    events,
+    blast_fun::{BLAST_FUN, Publication, PackageVersion},
+    blast_fun_domain::{CancelAdmin, UpgradeAdmin},
 };
 
-use sui::package::{UpgradeCap, UpgradeReceipt, UpgradeTicket};
+use sui::{
+    clock::Clock,
+    package::{UpgradeCap, UpgradeReceipt, UpgradeTicket},
+};
 
 use fun blast_fun::blast_fun::share_version as OperationalVersion.share_version;

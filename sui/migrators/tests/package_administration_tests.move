@@ -61,7 +61,15 @@ fun a_stale_generation_rejects_an_lp_fee_policy_change() {
         let admin_witness = blast_acl::witness_for_testing<FeeAdmin>();
         f.package_version.set_for_testing(2);
 
-        f.policy.set_default_shares(&f.package_version, &admin_witness, bps::new(1), bps::new(2));
+        f
+            .policy
+            .set_default_shares_for_testing(
+                &f.package_version,
+                &admin_witness,
+                bps::new(1),
+                bps::new(2),
+                f.scenario.ctx()
+            );
     });
 
     fixture.end();
@@ -80,7 +88,15 @@ fun a_stale_generation_rejects_upgrade_authorization() {
         let admin_witness = upgrade_admin();
         f.package_version.set_for_testing(2);
 
-        let ticket = f.package_admin.authorize_upgrade(&f.package_version, &admin_witness, DIGEST);
+        let ticket = f
+            .package_admin
+            .authorize_upgrade_for_testing(
+                &f.package_version,
+                &admin_witness,
+                DIGEST,
+                f.scenario.ctx()
+            );
+        assert_eq!(*ticket.ticket_digest(), DIGEST);
         destroy(ticket);
     });
 
@@ -88,17 +104,21 @@ fun a_stale_generation_rejects_upgrade_authorization() {
 }
 
 #[test]
-#[expected_failure(abort_code = sui::package::EAlreadyAuthorized, location = sui::package)]
-/// Launchpad's upgrade-admin role reaches this package's sealed UpgradeCap. A unit-test cap
-/// belongs to package `0x0`, which the framework reads as an authorization already in flight, so
-/// reaching the cap shows as the framework's own abort.
+/// Launchpad's upgrade-admin role can issue the approved digest after the delay.
 fun the_launchpad_upgrade_admin_reaches_this_packages_upgrade_cap() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = upgrade_admin();
 
-        let ticket = f.package_admin.authorize_upgrade(&f.package_version, &admin_witness, DIGEST);
+        let ticket = f
+            .package_admin
+            .authorize_upgrade_for_testing(
+                &f.package_version,
+                &admin_witness,
+                DIGEST,
+                f.scenario.ctx()
+            );
         destroy(ticket);
     });
 
@@ -107,14 +127,14 @@ fun the_launchpad_upgrade_admin_reaches_this_packages_upgrade_cap() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EInvalidPackagePublisher,
+    abort_code = blast_admin::errors::EInvalidUpgradeCap,
     location = blast_admin::upgrade_custody,
 )]
-/// Custody accepts only this package's Publisher, not Launchpad's or any other package's.
-fun a_publisher_from_another_package_cannot_seal_the_package_custody() {
+/// The publication Publication cannot seal another package's native upgrade authority.
+fun a_cap_from_another_package_cannot_seal_the_package_custody() {
     let mut fixture = start();
 
-    fixture.next_tx!(PUBLISHER, |f| f.wrap_with_foreign_package_publisher());
+    fixture.next_tx!(PUBLISHER, |f| f.wrap_with_foreign_package_cap());
 
     fixture.end();
 }
@@ -175,16 +195,13 @@ fun foreign_receipt(self: &mut AdminFixtureState): UpgradeReceipt {
     receipt
 }
 
-/// Wraps this package's UpgradeCap with a Publisher claimed from a Launchpad module.
-fun wrap_with_foreign_package_publisher(self: &mut AdminFixtureState) {
-    let ctx = self.scenario.ctx();
-    let publisher = package::test_claim(bps::new(0), ctx);
-    let upgrade_cap = package::test_publish(
-        type_name::original_id<BLAST_FUN_MIGRATORS>().to_id(),
-        ctx,
-    );
+fun wrap_with_foreign_package_cap(self: &mut AdminFixtureState) {
+    package_version::init_for_testing(self.scenario.ctx());
+    self.scenario.next_tx(PUBLISHER);
+    let bootstrap = self.scenario.take_from_sender<package_version::Publication>();
+    let upgrade_cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), self.scenario.ctx());
 
-    package_admin::wrap(publisher, upgrade_cap, ctx);
+    package_admin::wrap(bootstrap, upgrade_cap, self.scenario.ctx());
 }
 
 fun admin_end(self: AdminFixtureState) {
@@ -209,12 +226,12 @@ use blast_admin::blast_acl::{Self, AdminWitness};
 use blast_fun::{blast_fun_domain::{FeeAdmin, UpgradeAdmin}, bps};
 
 use blast_fun_migrators::{
-    blast_fun_migrators::{Self as package_version, BLAST_FUN_MIGRATORS, PackageVersion},
+    blast_fun_migrators::{Self as package_version, PackageVersion},
     lp_fee_policy::{Self, LpFeePolicy},
     package_admin::{Self, PackageAdmin},
 };
 
-use std::{type_name, unit_test::{assert_eq, destroy}};
+use std::unit_test::{assert_eq, destroy};
 
 use sui::{package::{Self, UpgradeReceipt}, test_scenario::{Self, Scenario}};
 

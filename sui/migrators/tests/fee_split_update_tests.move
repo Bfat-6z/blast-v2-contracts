@@ -17,6 +17,20 @@ module blast_fun_migrators::fee_split_update_tests;
 /// This module's one-time witness stands in for a generated package's.
 public struct FEE_SPLIT_UPDATE_TESTS has drop {}
 
+public enum Case has copy, drop {
+    Early,
+    Missing,
+    Replay,
+    Cancelled,
+    Replacement,
+    EmptyCancel,
+    StaleSchedule,
+    StaleCancel,
+    OverflowSchedule,
+    OverflowApply,
+    RetiredCancel,
+}
+
 public struct QUOTE() has drop;
 
 /// The test adapter's launch witness, which is also its vault venue marker.
@@ -69,6 +83,7 @@ public struct ExpectedFeeSplitChanged has copy, drop {
     vault_id: ID,
     old_fee_split: FeeSplit,
     new_fee_split: FeeSplit,
+    delay_ms: u64,
 }
 
 /// Independently encoded `AutoLiquidityAdded` in ABI order.
@@ -100,7 +115,8 @@ fun settled_update_splits_accrued_fees_under_the_old_split_then_commits_the_next
     f.settle_exact_position(&curve_fee_cap, rewards_and_b());
 
     assert_eq!(f.vault.fee_split_for_testing(), rewards_and_b());
-    (ExpectedCollection {
+    (
+        ExpectedCollection {
             vault_id: object::id(&f.vault),
             gross_meme: 10,
             gross_quote: 20,
@@ -117,7 +133,8 @@ fun settled_update_splits_accrued_fees_under_the_old_split_then_commits_the_next
             burn_quote: 0,
             recipient_meme: vector[5],
             recipient_quote: vector[10],
-        }).assert_collection();
+        },
+    ).assert_collection();
     assert!(event::events_by_type<blast_events::AutoLiquidityAdded>().is_empty());
     let changes = event::events_by_type<blast_events::FeeSplitChanged>();
     assert_eq!(changes.length(), 1);
@@ -128,6 +145,7 @@ fun settled_update_splits_accrued_fees_under_the_old_split_then_commits_the_next
                 vault_id: object::id(&f.vault),
                 old_fee_split: creator_and_a(),
                 new_fee_split: rewards_and_b(),
+                delay_ms: 172_800_000,
             },
         ),
     );
@@ -137,7 +155,8 @@ fun settled_update_splits_accrued_fees_under_the_old_split_then_commits_the_next
     f.scenario.next_tx(KEEPER);
     f.accrue(3, 4);
     f.collect_exact_position();
-    (ExpectedCollection {
+    (
+        ExpectedCollection {
             vault_id: object::id(&f.vault),
             gross_meme: 3,
             gross_quote: 4,
@@ -154,7 +173,8 @@ fun settled_update_splits_accrued_fees_under_the_old_split_then_commits_the_next
             burn_quote: 0,
             recipient_meme: vector[1],
             recipient_quote: vector[2],
-        }).assert_collection();
+        },
+    ).assert_collection();
     f.assert_auto_liquidity_added(1, 1, 0, 0);
     assert_balances!(|| f.vault.creator_balances_for_testing(), 5, 10);
     assert_balances!(|| f.vault.rewards_balances(), 1, 1);
@@ -184,7 +204,7 @@ fun zero_fee_settlement_still_commits_the_split_without_a_collection_event() {
 fun a_reassigned_curve_fee_cap_updates_the_split() {
     let mut f = start(creator_and_a());
     let retired = f.claim_curve_fee_cap();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     let curve_fee_cap = f.take_reassigned_cap();
     f.settle_exact_position(&curve_fee_cap, rewards_and_b());
@@ -209,14 +229,15 @@ fun an_identical_proposal_is_rejected() {
 }
 
 #[test]
-#[expected_failure(
+#[
+    expected_failure(
     abort_code = blast_fun::errors::ECreatorCapNotLive,
     location = blast_fun::launch,
 )]
 fun a_retired_curve_fee_cap_cannot_update_the_split() {
     let mut f = start(creator_and_a());
     let retired = f.claim_curve_fee_cap();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     f.settle_exact_position(&retired, rewards_and_b());
 
@@ -232,11 +253,160 @@ fun a_retired_curve_fee_cap_cannot_update_the_split() {
 fun the_live_cap_is_checked_before_the_proposal() {
     let mut f = start(creator_and_a());
     let retired = f.claim_curve_fee_cap();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     f.settle_exact_position(&retired, creator_and_a());
 
     destroy(retired);
+    f.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
+fun bonding_zero_next_notice_waits_old_notice() {
+    exercise_delayed(Case::Early);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
+fun bonding_apply_requires_pending() {
+    exercise_delayed(Case::Missing);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
+fun bonding_application_consumes_proposal() {
+    exercise_delayed(Case::Replay);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
+fun bonding_cancellation_prevents_application() {
+    exercise_delayed(Case::Cancelled);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
+fun bonding_replacement_restarts_old_notice() {
+    exercise_delayed(Case::Replacement);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
+fun bonding_cancel_requires_pending() {
+    exercise_delayed(Case::EmptyCancel);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
+fun bonding_stale_schedule_precedes_value_validation() {
+    exercise_delayed(Case::StaleSchedule);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
+fun bonding_stale_cancel_precedes_no_pending() {
+    exercise_delayed(Case::StaleCancel);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EInvalidDelay,
+    location = blast_admin::delayed,
+)]
+fun bonding_maximum_notice_rejected() {
+    exercise_delayed(Case::OverflowSchedule);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EInvalidDelay,
+    location = blast_admin::delayed,
+)]
+fun bonding_late_apply_rechecks_representability() {
+    exercise_delayed(Case::OverflowApply);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_fun::errors::ECreatorCapNotLive,
+    location = blast_fun::launch,
+)]
+fun bonding_retired_cap_cannot_cancel() {
+    exercise_delayed(Case::RetiredCancel);
+}
+
+#[test]
+fun bonding_mature_notice_keeps_old_split_until_settlement_and_apply() {
+    let mut f = start(creator_and_a());
+    let cap = f.claim_curve_fee_cap();
+    f.schedule_split(&cap, rewards_and_b(), 0);
+    let now = f.clock.timestamp_ms();
+    f.clock.set_for_testing(now + 172_800_000 + 1);
+    f.accrue(10, 20);
+    f.collect_exact_position();
+    assert_eq!(f.vault.fee_split_for_testing(), creator_and_a());
+    assert_balances!(|| f.vault.creator_balances_for_testing(), 5, 10);
+    f.apply_stored_split();
+    assert_eq!(f.vault.fee_split_for_testing(), rewards_and_b());
+    let (delay, pending) = f.vault.fee_split_policy_for_testing();
+    assert_eq!(delay, 0);
+    assert!(pending.is_none());
+    destroy(cap);
+    f.end();
+}
+
+#[test]
+fun bonding_delay_only_changes_cancel_reschedule_and_ready_cap_reassignment() {
+    let mut f = start(creator_and_a());
+    let cap = f.claim_curve_fee_cap();
+    f.schedule_split(&cap, creator_and_a(), 25);
+    let now = f.clock.timestamp_ms();
+    f.clock.set_for_testing(now + 172_800_000);
+    f.cancel_split(&cap);
+    let (delay, pending) = f.vault.fee_split_policy_for_testing();
+    assert_eq!(delay, 172_800_000);
+    assert!(pending.is_none());
+    f.schedule_split(&cap, creator_and_a(), 0);
+    let now = f.clock.timestamp_ms();
+    f.clock.set_for_testing(now + 172_800_000);
+    // Accepted creator decisions remain applicable after cap rotation; application needs no cap.
+    f.apply_curve_fee_cap_update();
+    f.apply_stored_split();
+    let (delay, pending) = f.vault.fee_split_policy_for_testing();
+    assert_eq!(delay, 0);
+    assert!(pending.is_none());
+    assert_eq!(f.vault.fee_split_for_testing(), creator_and_a());
+    let live = f.take_reassigned_cap();
+    f.schedule_split(&live, rewards_and_b(), 25);
+    f.apply_stored_split();
+    assert_eq!(f.vault.fee_split_for_testing(), rewards_and_b());
+    destroy(cap);
+    destroy(live);
     f.end();
 }
 
@@ -309,7 +479,7 @@ fun a_reassigned_cap_claims_the_creator_fees_accrued_before_the_reassignment() {
     f.scenario.next_tx(KEEPER);
     f.accrue(4, 0);
     f.collect_exact_position();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     let curve_fee_cap = f.take_reassigned_cap();
     let (meme, quote) = f.claim_creator_fees(&curve_fee_cap);
@@ -322,7 +492,8 @@ fun a_reassigned_cap_claims_the_creator_fees_accrued_before_the_reassignment() {
 }
 
 #[test]
-#[expected_failure(
+#[
+    expected_failure(
     abort_code = blast_fun::errors::ECreatorCapNotLive,
     location = blast_fun::launch,
 )]
@@ -332,7 +503,7 @@ fun a_retired_cap_cannot_claim_creator_fees() {
     f.scenario.next_tx(KEEPER);
     f.accrue(4, 4);
     f.collect_exact_position();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
 
     let (meme, quote) = f.claim_creator_fees(&retired);
 
@@ -377,14 +548,15 @@ fun a_drained_creator_balance_cannot_be_claimed_again() {
 }
 
 #[test]
-#[expected_failure(
+#[
+    expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
     location = blast_admin::operational_version,
 )]
 fun a_stale_generation_rejects_the_creator_claim_before_the_cap_and_balance_checks() {
     let mut f = start(creator_and_a());
     let retired = f.claim_curve_fee_cap();
-    f.reassign_curve_fee_cap();
+    f.apply_curve_fee_cap_update();
     f.migrators_version.set_for_testing(2);
 
     let (meme, quote) = f.claim_creator_fees(&retired);
@@ -408,7 +580,7 @@ fun start(fee_split: FeeSplit): FeeSplitFixture {
     let mut config = launch_config::new_zero_fees_for_testing(scenario.ctx());
 
     scenario.next_tx(ADMIN);
-    config.admit<QUOTE, Venue>(&version);
+    config.admit<QUOTE, Venue>(&version, scenario.ctx());
     let (launch, currency) = scenario.open_launch<_, QUOTE, _>(
         test_utils::create_one_time_witness<FEE_SPLIT_UPDATE_TESTS>(),
         &version,
@@ -469,11 +641,11 @@ fun claim_curve_fee_cap(self: &mut FeeSplitFixture): CurveFeeCap<FEE_SPLIT_UPDAT
 }
 
 /// Retires the live curve-fee cap and delivers a fresh one to the creator.
-fun reassign_curve_fee_cap(self: &mut FeeSplitFixture) {
+fun apply_curve_fee_cap_update(self: &mut FeeSplitFixture) {
     self.scenario.next_tx(ADMIN);
     let admin = blast_acl::witness_for_testing<CreatorAdmin>();
     let mut launch = self.take_launch();
-    launch.reassign_curve_fee_cap(
+    launch.reassign_curve_fee_cap_for_testing(
         &self.version,
         &admin,
         launch_fixture::creator(),
@@ -506,8 +678,8 @@ fun collect_exact_position(self: &mut FeeSplitFixture) {
     self.compound();
 }
 
-/// Adapter-only wrapper: checks `curve_fee_cap` and `proposed`, collects under the current split,
-/// then commits `proposed`, all in one creator transaction.
+/// Schedules under the live cap, advances the fixture notice, then settles under the old split
+/// before explicit activation, matching the public venue boundary.
 fun settle_exact_position(
     self: &mut FeeSplitFixture,
     curve_fee_cap: &CurveFeeCap<FEE_SPLIT_UPDATE_TESTS>,
@@ -515,11 +687,97 @@ fun settle_exact_position(
 ) {
     self.scenario.next_tx(launch_fixture::creator());
     let launch = self.take_launch();
-    self.vault.assert_fee_split_update(&launch, curve_fee_cap, proposed);
-
+    self
+        .vault
+        .schedule_fee_split(
+            &self.migrators_version,
+            &launch,
+            curve_fee_cap,
+            proposed,
+            172_800_000,
+            &self.clock,
+        );
+    let (delay_ms, _) = self.vault.fee_split_policy_for_testing();
+    let now = self.clock.timestamp_ms();
+    self.clock.set_for_testing(now + delay_ms);
+    self.vault.assert_fee_split_ready(&self.clock);
     self.collect_exact_position();
-    self.vault.update_fee_split(proposed);
+    self.vault.apply_fee_split(&self.clock);
     test_scenario::return_shared(launch);
+}
+
+fun schedule_split(
+    self: &mut FeeSplitFixture,
+    cap: &CurveFeeCap<FEE_SPLIT_UPDATE_TESTS>,
+    proposed: FeeSplit,
+    delay: u64,
+) {
+    self.scenario.next_tx(launch_fixture::creator());
+    let launch = self.take_launch();
+    self
+        .vault
+        .schedule_fee_split(&self.migrators_version, &launch, cap, proposed, delay, &self.clock);
+    test_scenario::return_shared(launch);
+}
+
+fun cancel_split(self: &mut FeeSplitFixture, cap: &CurveFeeCap<FEE_SPLIT_UPDATE_TESTS>) {
+    self.scenario.next_tx(launch_fixture::creator());
+    let launch = self.take_launch();
+    self.vault.cancel_fee_split(&self.migrators_version, &launch, cap);
+    test_scenario::return_shared(launch);
+}
+
+fun apply_stored_split(self: &mut FeeSplitFixture) {
+    self.vault.assert_fee_split_ready(&self.clock);
+    self.collect_exact_position();
+    self.vault.apply_fee_split(&self.clock);
+}
+
+fun exercise_delayed(case: Case) {
+    let mut f = start(creator_and_a());
+    let cap = f.claim_curve_fee_cap();
+    match (case) {
+        Case::Missing => f.apply_stored_split(),
+        Case::EmptyCancel => f.cancel_split(&cap),
+        Case::StaleSchedule => {
+            f.migrators_version.set_for_testing(2);
+            f.schedule_split(&cap, creator_and_a(), 172_800_000);
+        },
+        Case::StaleCancel => {
+            f.migrators_version.set_for_testing(2);
+            f.cancel_split(&cap);
+        },
+        Case::OverflowSchedule => f.schedule_split(
+            &cap,
+            rewards_and_b(),
+            18_446_744_073_709_551_615,
+        ),
+        Case::OverflowApply => {
+            let next = 18_446_744_073_709_551_615 - f.clock.timestamp_ms() - 172_800_000;
+            f.schedule_split(&cap, rewards_and_b(), next);
+            let now = f.clock.timestamp_ms();
+            f.clock.set_for_testing(now + 172_800_001);
+            f.apply_stored_split();
+        },
+        Case::RetiredCancel => {
+            f.apply_curve_fee_cap_update();
+            f.cancel_split(&cap);
+        },
+        _ => {
+            f.schedule_split(&cap, rewards_and_b(), 0);
+            let now = f.clock.timestamp_ms();
+            f.clock.set_for_testing(now + 172_800_000 - if (case == Case::Early) 1 else 0);
+            match (case) {
+                Case::Cancelled => f.cancel_split(&cap),
+                Case::Replacement => f.schedule_split(&cap, rewards_and_b(), 0),
+                Case::Replay => f.apply_stored_split(),
+                _ => (),
+            };
+            f.apply_stored_split();
+        },
+    };
+    destroy(cap);
+    f.end();
 }
 
 /// The mock venue adds an equal amount of both waiting assets, as much as the scarcer side allows.

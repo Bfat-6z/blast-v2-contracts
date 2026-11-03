@@ -6,6 +6,28 @@ module blast_fun::constants;
 
 // === Package Constants ===
 
+/// Stops launch creation, finalization, and sharing.
+macro public(package) fun create_pause_bit(): u8 {
+    1
+}
+
+/// Stops buying, selling, and opening-round entry and settlement.
+macro public(package) fun trading_pause_bit(): u8 {
+    2
+}
+
+/// Stops voluntary launch migration.
+macro public(package) fun migration_pause_bit(): u8 {
+    4
+}
+
+/// Every supported launchpad pause flag.
+macro public(package) fun valid_pause_bits(): u8 {
+    blast_fun::constants::create_pause_bit!()
+        | blast_fun::constants::trading_pause_bit!()
+        | blast_fun::constants::migration_pause_bit!()
+}
+
 /// Denominator for protocol rates expressed in basis points.
 macro public(package) fun basis_points_denominator(): u64 {
     10_000

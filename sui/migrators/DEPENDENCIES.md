@@ -49,9 +49,11 @@ with their witnesses, local interfaces, and dependency pins.
   `lp_fee_policy::LpFeePolicy` and every recipient, and credits the creator,
   auto-LP, and rewards balances; the adapter then adds the auto-LP balances
   back to the position with the venue's own add-liquidity call. A split change
-  first checks the launch's live `CurveFeeCap` and the proposal with
-  `vault::assert_fee_split_update`, runs the same settlement, then commits with
-  `vault::update_fee_split` (ADR 0089).
+  is scheduled or cancelled by the launch's live `CurveFeeCap` holder through
+  `vault::schedule_fee_split` / `vault::cancel_fee_split`. The initial notice is
+  48 hours. Ready application is permissionless: the adapter checks readiness,
+  runs the same settlement under the old split, then invokes package-only
+  `vault::apply_fee_split` (ADR 0134).
 - **Creator-chosen venue tiers.** The creator passes the pool tier to the
   adapter's `new`, which validates it against the venue before `launch::new`
   stores it; migration reads it from the launch and never trusts a migration
@@ -168,8 +170,13 @@ Each file is then bound to an exact expectation:
   carry an immutable 40-hex `rev` and must not carry `branch` or `tag`, whatever
   the expectation says;
 - `[package]` may declare only known keys, `published-at` must equal the current
-  package id, `[addresses]` must equal the original package id, and no table
-  outside `package`, `dependencies`, and `addresses` may appear;
+  package id, package identity addresses must match their pins, and no table
+  outside `package`, `dependencies`, and `addresses` may appear. The root
+  manifest's `blast_lp_fee_destination` must be a valid Sui address: the source
+  placeholder `0x0` and configured destinations are accepted by this ABI gate.
+  Fresh publication requires a nonzero destination as described in
+  [`deployments/README.md`](../../deployments/README.md); all other address keys
+  and values remain exact;
 - `Move.lock` must declare format version 4, exactly the 15 expected pinned nodes
   in the `mainnet` environment and no other (Blast deploys to mainnet only), each
   node's exact `source`
@@ -199,7 +206,7 @@ node scripts/check_mainnet_abi.mjs --self-test
 
 Makes no network request and mutates no file. It renders a well-formed function
 and struct fixture, validates the committed manifests and lock, and then asserts
-that 57 mutated inputs are rejected — null lists, a missing or null `isEntry`,
+that mutated inputs are rejected — null lists, a missing or null `isEntry`,
 unknown and duplicate abilities and constraints, unknown visibility, novel type
 bodies and reference kinds, an explicit null `signature.ref`, extra response
 fields, duplicate type origins with conflicting and with identical defining ids,
@@ -208,8 +215,12 @@ wrong-but-40-hex Sui revision, wrong repositories and subdirectories, added and
 dropped `override` rules, duplicate keys and tables, extra and missing lock
 nodes, rebound `deps` edges, boolean, malformed, and lowercase
 `manifest_digest` values, and a struct pinned to its introducing revision
-resolved against the original package. Six positive fixtures pin the accepted
+resolved against the original package. Positive fixtures pin the accepted
 shapes, including a by-value parameter with `ref` absent and that revision pin.
+Genesis destination fixtures accept the zero placeholder, a short nonzero
+address, and a full-length address; reject malformed, non-string, and missing
+destinations; and keep rejecting extra addresses, package identity drift, and
+dependency drift when a nonzero destination is configured.
 Every case that a live run cannot reach without a real venue upgrade is covered
 here instead.
 
@@ -413,7 +424,7 @@ disassemble`); the dev-inspect fixtures re-confirm it end to end:
 | `new` | Starts a launch in `Quote` at the creator's tick spacing through the core and reserves the pair's Cetus pool creation; aborts unless `LaunchConfig` admits `cetus::Witness` and the Quote |
 | `migrate` | Permissionless; type arguments `<Meme, Quote, CoinA, CoinB>` with the pool's coins in Cetus order (ADR 0100); burns the position through the shared `BurnManager` |
 | `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and adds the auto-LP share back through `add_liquidity_fix_coin` / `repay_add_liquidity`, fixing the side `clmm_math::get_liquidity_by_amount` says the other balance covers |
-| `settle_and_update_fee_split` | Under the launch's live `CurveFeeCap`; settles under the current split, then commits the proposed one |
+| `settle_and_apply_fee_split` | Permissionless ready stored proposal; settles under the applied split, then activates the accepted split and notice |
 | `buyback_and_burn` | Under the buyback-admin role (ADR 0091); swaps the administrator's `quote_in` of the vault's burn Quote for Meme in its own pool through `flash_swap` / `swap_pay_amount` / `repay_flash_swap` at the widest sqrt-price limit, then burns the Meme if it reaches the administrator's minimum |
 
 Each Cetus fixture must show:
@@ -453,7 +464,7 @@ Each Cetus fixture must show:
 | `new` | Starts a launch in `Quote` at the creator's tier through the core; aborts with `EInvalidTier` outside tick spacing 1–400 and fee rate 1–20,000, and unless `LaunchConfig` admits `bluefin::Witness` and the Quote |
 | `migrate` | Permissionless; creates `Pool<Meme, Quote>` with Meme as coin A |
 | `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and adds the auto-LP share back through `add_liquidity_with_fixed_amount`, fixing the side chosen from the pool's and the position's bound tick sqrt prices with a two-atom margin |
-| `settle_and_update_fee_split` | Under the launch's live `CurveFeeCap`; settles under the current split, then commits the proposed one |
+| `settle_and_apply_fee_split` | Permissionless ready stored proposal; settles under the applied split, then activates the accepted split and notice |
 | `buyback_and_burn` | Under the buyback-admin role (ADR 0091); swaps the administrator's `quote_in` of the vault's burn Quote for Meme in its own pool through `swap` at the widest sqrt-price limit, then burns the Meme if it reaches the administrator's minimum |
 
 Each Bluefin fixture must show:

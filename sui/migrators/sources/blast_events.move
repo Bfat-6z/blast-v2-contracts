@@ -7,6 +7,57 @@ module blast_fun_migrators::blast_events;
 
 // === Public Types ===
 
+/// Values removed from the pending schedule.
+public struct ProtocolDestinationCancelled has copy, drop { destination: address }
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct ProtocolDestinationScheduled has copy, drop {
+    destination: address,
+    ready_at_ms: u64,
+    delay_ms: u64
+}
+
+/// Values removed from the pending schedule.
+public struct DefaultSharesCancelled has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64
+}
+
+/// Proposed values and Unix millisecond execution threshold.
+public struct DefaultSharesScheduled has copy, drop {
+    meme_bps: u64,
+    quote_bps: u64,
+    ready_at_ms: u64,
+    delay_ms: u64
+}
+
+/// The cancelled per-coin decision.
+public struct CoinSharesCancelled has copy, drop {
+    meme: TypeName,
+    meme_bps: Option<u64>,
+    quote_bps: Option<u64>
+}
+
+/// None announces a return to the live defaults, not an immediate override deletion.
+public struct CoinSharesScheduled has copy, drop {
+    meme: TypeName,
+    meme_bps: Option<u64>,
+    quote_bps: Option<u64>,
+    ready_at_ms: u64,
+    delay_ms: u64
+}
+
+/// Cancelled digest; None denotes the cancelled immutability decision.
+public struct UpgradeActionCancelled has copy, drop { digest: Option<vector<u8>> }
+
+/// Announced digest and execution threshold; None denotes immutability.
+public struct UpgradeActionScheduled has copy, drop {
+    digest: Option<vector<u8>>,
+    ready_at_ms: u64,
+    /// Applied notice for an action, or proposed next notice for a policy-only proposal.
+    delay_ms: u64
+}
+
 /// Blast's default pair (no `meme`) or one coin's pair changed; absent old/new pairs represent a
 /// coin's own pair being created or removed.
 public struct LpFeePolicyChanged has copy, drop {
@@ -86,11 +137,26 @@ public struct AutoLpPositionOpened has copy, drop {
     position_id: ID,
 }
 
-/// The live curve-fee cap holder committed a new fee split.
+/// A creator announced a split and the next notice, waiting the applied notice.
+public struct FeeSplitScheduled has copy, drop {
+    vault_id: ID,
+    proposed: FeeSplit,
+    ready_at_ms: u64,
+    delay_ms: u64,
+}
+
+/// The live creator discarded the pending split without changing applied policy.
+public struct FeeSplitCancelled has copy, drop {
+    vault_id: ID,
+    proposed: FeeSplit,
+}
+
+/// A ready split and notice became active after settling the position's accrued fees.
 public struct FeeSplitChanged has copy, drop {
     vault_id: ID,
     old_fee_split: FeeSplit,
     new_fee_split: FeeSplit,
+    delay_ms: u64,
 }
 
 /// The live curve-fee cap holder claimed the creator's accrued LP fees.
@@ -107,6 +173,7 @@ public struct RoundPublished has copy, drop {
     number: u64,
     start_checkpoint: u64,
     end_checkpoint: u64,
+    claim_deadline_at_ms: u64,
     root: vector<u8>,
     manifest_digest: vector<u8>,
     leaf_count: u64,
@@ -114,6 +181,29 @@ public struct RoundPublished has copy, drop {
     quote_amount: u64,
     meme_unallocated: u64,
     quote_unallocated: u64,
+    treasury: address,
+    gas_reserve_amount: u64,
+}
+
+/// One-shot gas reimbursement and the unused Quote restored to its vault.
+public struct GasReserveSettled has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    treasury: address,
+    reimbursement_amount: u64,
+    reserve_returned: u64,
+    quote_unallocated: u64,
+}
+
+/// Deadline recovery of unclaimed holder assets and any unsettled reserve.
+public struct RoundClosed has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    meme_returned: u64,
+    quote_returned: u64,
+    gas_reserve_returned: u64,
 }
 
 /// A completed holder-reward payout and both remaining round balances.
@@ -156,7 +246,77 @@ public struct CetusPoolReserved has copy, drop {
     tick_spacing: u32,
 }
 
+/// A policy-only proposal, replacing any pending upgrade action.
+public struct UpgradeDelayScheduled has copy, drop {
+    delay_ms: u64,
+    ready_at_ms: u64
+}
+/// Applied notice period for future upgrade actions.
+public struct UpgradeDelayChanged has copy, drop { delay_ms: u64 }
+
 // === Package Functions ===
+
+public(package) fun upgrade_delay_scheduled(delay_ms: u64, ready_at_ms: u64) {
+    sui::event::emit(UpgradeDelayScheduled { delay_ms, ready_at_ms });
+}
+public(package) fun upgrade_delay_changed(delay_ms: u64) {
+    sui::event::emit(UpgradeDelayChanged { delay_ms });
+}
+
+public(package) fun protocol_destination_cancelled(destination: address) {
+    sui::event::emit(ProtocolDestinationCancelled { destination });
+}
+
+public(package) fun protocol_destination_scheduled(
+    destination: address,
+    ready_at_ms: u64,
+    delay_ms: u64
+) {
+    sui::event::emit(ProtocolDestinationScheduled { destination, ready_at_ms, delay_ms });
+}
+
+public(package) fun default_shares_cancelled(meme_bps: u64, quote_bps: u64) {
+    sui::event::emit(DefaultSharesCancelled { meme_bps, quote_bps });
+}
+
+public(package) fun default_shares_scheduled(
+    meme_bps: u64,
+    quote_bps: u64,
+    ready_at_ms: u64,
+    delay_ms: u64
+) {
+    sui::event::emit(DefaultSharesScheduled { meme_bps, quote_bps, ready_at_ms, delay_ms });
+}
+
+public(package) fun coin_shares_cancelled(
+    meme: TypeName,
+    meme_bps: Option<u64>,
+    quote_bps: Option<u64>
+) {
+    sui::event::emit(CoinSharesCancelled { meme, meme_bps, quote_bps });
+}
+
+public(package) fun coin_shares_scheduled(
+    meme: TypeName,
+    meme_bps: Option<u64>,
+    quote_bps: Option<u64>,
+    ready_at_ms: u64,
+    delay_ms: u64
+) {
+    sui::event::emit(CoinSharesScheduled { meme, meme_bps, quote_bps, ready_at_ms, delay_ms });
+}
+
+public(package) fun upgrade_action_cancelled(digest: Option<vector<u8>>) {
+    sui::event::emit(UpgradeActionCancelled { digest });
+}
+
+public(package) fun upgrade_action_scheduled(
+    digest: Option<vector<u8>>,
+    ready_at_ms: u64,
+    delay_ms: u64
+) {
+    sui::event::emit(UpgradeActionScheduled { digest, ready_at_ms, delay_ms });
+}
 
 /// Emits a default or original-type partner policy mutation with complete old/new pairs.
 public(package) fun lp_fee_policy_changed(
@@ -280,8 +440,21 @@ public(package) fun fee_split_changed(
     vault_id: ID,
     old_fee_split: FeeSplit,
     new_fee_split: FeeSplit,
+    delay_ms: u64,
 ) {
-    sui::event::emit(FeeSplitChanged { vault_id, old_fee_split, new_fee_split });
+    sui::event::emit(FeeSplitChanged { vault_id, old_fee_split, new_fee_split, delay_ms });
+}
+
+/// Emits the accepted creator-split proposal and its execution threshold.
+public(package) fun fee_split_scheduled(
+    vault_id: ID, proposed: FeeSplit, ready_at_ms: u64, delay_ms: u64,
+) {
+    sui::event::emit(FeeSplitScheduled { vault_id, proposed, ready_at_ms, delay_ms });
+}
+
+/// Emits the discarded creator-split proposal.
+public(package) fun fee_split_cancelled(vault_id: ID, proposed: FeeSplit) {
+    sui::event::emit(FeeSplitCancelled { vault_id, proposed });
 }
 
 /// Emits a creator LP-fee claim.
@@ -296,6 +469,7 @@ public(package) fun round_published(
     number: u64,
     start_checkpoint: u64,
     end_checkpoint: u64,
+    claim_deadline_at_ms: u64,
     root: vector<u8>,
     manifest_digest: vector<u8>,
     leaf_count: u64,
@@ -303,6 +477,8 @@ public(package) fun round_published(
     quote_amount: u64,
     meme_unallocated: u64,
     quote_unallocated: u64,
+    treasury: address,
+    gas_reserve_amount: u64,
 ) {
     sui::event::emit(RoundPublished {
         vault_id,
@@ -310,6 +486,7 @@ public(package) fun round_published(
         number,
         start_checkpoint,
         end_checkpoint,
+        claim_deadline_at_ms,
         root,
         manifest_digest,
         leaf_count,
@@ -317,6 +494,48 @@ public(package) fun round_published(
         quote_amount,
         meme_unallocated,
         quote_unallocated,
+        treasury,
+        gas_reserve_amount,
+    });
+}
+
+/// Emits gas reserve settled.
+public(package) fun gas_reserve_settled(
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    treasury: address,
+    reimbursement_amount: u64,
+    reserve_returned: u64,
+    quote_unallocated: u64,
+) {
+    sui::event::emit(GasReserveSettled {
+        vault_id,
+        round_id,
+        number,
+        treasury,
+        reimbursement_amount,
+        reserve_returned,
+        quote_unallocated,
+    });
+}
+
+/// Emits round closed.
+public(package) fun round_closed(
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    meme_returned: u64,
+    quote_returned: u64,
+    gas_reserve_returned: u64,
+) {
+    sui::event::emit(RoundClosed {
+        vault_id,
+        round_id,
+        number,
+        meme_returned,
+        quote_returned,
+        gas_reserve_returned,
     });
 }
 

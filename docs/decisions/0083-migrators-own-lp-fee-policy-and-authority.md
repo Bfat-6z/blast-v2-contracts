@@ -110,7 +110,7 @@ recovery. The distributor exposes `lock_lp_fees`.
 - `issue_lp_fee_cap` drops the launchpad `PackageVersion` and `Launch` arguments.
 - An administrator can no longer redirect pending LP fees away from a creator who
   still holds the launch's curve-fee capability. Takeover of an abandoned launch
-  goes through `reassign_curve_fee_cap`, so nothing becomes unrecoverable.
+  goes through `apply_curve_fee_cap_update`, so nothing becomes unrecoverable.
 - Indexers read LP-fee policy and authority events from migrators.
 - Dex and Auto-LP are parked in `scratch-sui/` until the native migration is
   redesigned; the distributor is the only enrolled fee custodian meanwhile.

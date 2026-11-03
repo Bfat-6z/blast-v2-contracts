@@ -27,13 +27,19 @@ public(package) fun fixed_to_u64_up(value: u256, decimals: u64): (u64, bool) {
 ///
 /// `usd / price` in IFixed is `usd × 10^18 / price`; the product is split into
 /// whole and fractional parts so no intermediate exceeds u256.
-public(package) fun usd_fixed_to_collateral_fixed(usd: u256, collateral_price: u256, round_up: bool): (u256, bool) {
+public(package) fun usd_fixed_to_collateral_fixed(
+    usd: u256,
+    collateral_price: u256,
+    round_up: bool
+): (u256, bool) {
     if (collateral_price == 0) return (0, false);
 
     let one = constants::ifixed_one!();
     let whole_scaled = (usd / collateral_price).checked_mul(one).destroy_or!(return (0, false));
     let fraction_scaled = (usd % collateral_price).checked_mul(one).destroy_or!(return (0, false));
-    let quotient = whole_scaled.checked_add(fraction_scaled / collateral_price).destroy_or!(return (0, false));
+    let quotient = whole_scaled
+        .checked_add(fraction_scaled / collateral_price)
+        .destroy_or!(return (0, false));
     if (!round_up || fraction_scaled % collateral_price == 0) return (quotient, true);
 
     if (quotient == std::u256::max_value!()) { (0, false) } else { (quotient + 1, true) }
@@ -65,7 +71,11 @@ public fun normalize_raw_fixed_for_testing(value: u256, decimals: u64, round_up:
 }
 
 #[test_only]
-public fun usd_fixed_to_collateral_for_testing(usd: u256, collateral_price: u256, round_up: bool): (u256, bool) {
+public fun usd_fixed_to_collateral_for_testing(
+    usd: u256,
+    collateral_price: u256,
+    round_up: bool
+): (u256, bool) {
     usd_fixed_to_collateral_fixed(usd, collateral_price, round_up)
 }
 

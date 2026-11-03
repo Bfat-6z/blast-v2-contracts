@@ -4,6 +4,8 @@ from pathlib import Path
 import re
 import unittest
 
+from move_source import replace_code
+
 
 OPERATIONS = Path(__file__).resolve().parents[1] / "sources" / "operations.move"
 
@@ -37,13 +39,13 @@ class SettlementRoutingTests(unittest.TestCase):
         source = OPERATIONS.read_text()
         completion = "vault.complete_settlement_unwind(before, after, collateral_price);"
         mutations = [
-            source.replace(completion, completion.replace("collateral_price", "base_price")),
-            source.replace(completion, completion.replace("collateral_price", "1_000_000_000_000_000_000")),
-            source.replace(completion, "// " + completion),
-            source.replace(completion, completion.replace("before, after", "before, before")),
-            source.replace("let after = binding.capture_checkpoint(", "let before = binding.capture_checkpoint("),
-            source.replace(completion, "vault.apply_post_capture(before, preexisting);\n" + completion),
-            source.replace(completion, "clearing_house.update_funding(clock);\n" + completion),
+            replace_code(source, completion, completion.replace("collateral_price", "base_price")),
+            replace_code(source, completion, completion.replace("collateral_price", "1_000_000_000_000_000_000")),
+            replace_code(source, completion, "// " + completion),
+            replace_code(source, completion, completion.replace("before, after", "before, before")),
+            replace_code(source, "let after = binding.capture_checkpoint(", "let before = binding.capture_checkpoint("),
+            replace_code(source, completion, "vault.apply_post_capture(before, preexisting);\n" + completion),
+            replace_code(source, completion, "clearing_house.update_funding(clock);\n" + completion),
         ]
         for mutated in mutations:
             with self.subTest():

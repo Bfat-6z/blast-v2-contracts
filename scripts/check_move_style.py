@@ -6,10 +6,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SECTIONS = [
-    "Constants", "Package Constants", "Errors", "Public Types",
+    "Constants", "Package Constants", "Public Types",
     "Private Initialization", "Public Functions", "Package Functions",
     "Private Functions", "Test-Only Types", "Test-Only Functions",
-    "Tests", "Test Helpers", "Imports",
+    "Tests", "Test Helpers", "Errors", "Imports",
 ]
 TRAILING = ["Constants", "Package Constants", "Errors"]
 # A module may instead end with its events, constants and errors, just before Imports.
@@ -98,9 +98,41 @@ def section_for(path, test_module, kind, attributes, declaration, events):
     return "Private Functions"
 
 
+def check_event_types(path, items):
+    """Event modules own payload schemas, not storable or unrelated domain values."""
+    if not path.stem.endswith("events"):
+        return
+    production = [mask(declaration) for _, _, attributes, declaration in items
+                  if "#[test_only]" not in attributes]
+    types = {}
+    for _, kind, attributes, declaration in items:
+        if kind not in ("struct", "enum") or "#[test_only]" in attributes:
+            continue
+        text = mask(declaration)
+        name = re.search(r"\b(?:struct|enum)\s+(\w+)", text)[1]
+        header = text.split("{")[0].split(";")[0]
+        if re.search(r"\bhas\s+[^{};]*\b(?:key|store)\b", header):
+            raise ValueError(f"{name}: declare stored domain values in their owning module, not event modules")
+        types[name] = text
+    payloads = set(re.findall(r"\b(?:emit|emit_event)\(\s*(\w+)", "\n".join(production)))
+    # Event-only snapshots may be nested inside an emitted payload.
+    pending = list(payloads & types.keys())
+    reachable = set(pending)
+    while pending:
+        name = pending.pop()
+        type_names = set(re.findall(r"\b\w+\b", types[name]))
+        nested = (type_names & types.keys()) - reachable
+        reachable.update(nested)
+        pending.extend(nested)
+    unrelated = types.keys() - reachable
+    if unrelated:
+        raise ValueError(f"{', '.join(sorted(unrelated))}: event modules may declare only emitted payloads and event-only snapshots")
+
+
 def check(path):
     source = path.read_text()
     items = list(declarations(source))
+    check_event_types(path, items)
     module_start = re.search(r"\bmodule\b", mask(source)).start()
     test_module = "#[test_only]" in source[:module_start]
     headings = list(re.finditer(r"^// === (.*?) ===$", source, re.M))
@@ -115,17 +147,20 @@ def check(path):
     if not (in_order(SECTIONS) or in_order(TAIL_SECTIONS)):
         raise ValueError("sections must occur once, in the order in AGENTS.md")
     previous_kind = None
-    constants_closed = False
+    closed_constant_sections = set()
+    previous_section = None
     for start, kind, attributes, declaration in items:
         section = next((h[1] for h in reversed(headings) if h.start() < start), None)
         expected = section_for(path, test_module, kind, attributes, declaration, events)
         if section != expected:
             line = source[:start].count("\n") + 1
             raise ValueError(f"line {line}: declaration belongs under {expected}, found {section}")
-        if kind == "const" and constants_closed:
-            raise ValueError("group all constants together, first or just before Imports")
-        constants_closed = constants_closed or (previous_kind == "const" and kind != "const")
+        if kind == "const" and section in closed_constant_sections:
+            raise ValueError("group all constants together within their section")
+        if previous_kind == "const" and kind != "const":
+            closed_constant_sections.add(previous_section)
         previous_kind = kind
+        previous_section = section
     codes = [int(code) for code in re.findall(r"#\[error\(code = (\d+)\)\]", mask(source))]
     if codes != list(range(len(codes))):
         raise ValueError("local error codes must be sequential from zero")

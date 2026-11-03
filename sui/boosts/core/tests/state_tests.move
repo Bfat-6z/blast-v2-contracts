@@ -47,12 +47,20 @@ fun profit_realization_preserves_position_and_accounting_for_long_and_short() {
     vector[policy::long(), policy::short()].do!(|side| {
         let state = rebalance_state(side);
         let before = standard_observation(side);
-        let plan = state.prepare_profit_realization(before.into_position_observation(), 300_000, 600_000, 10, REFERENCE_AT_MS);
+        let plan = state.prepare_profit_realization(
+            before.into_position_observation(),
+            300_000,
+            600_000,
+            10,
+            REFERENCE_AT_MS
+        );
         let base = plan.base_to_realize();
         assert!(base > 0 && base < SEED_BASE && base % LOT_SIZE == 0);
         assert!(base <= state.max_order_base(&plan.realization_position(), false));
         let (equity_before, equity_after, realized, cost) = state.complete_profit_realization(
-            plan, before.with_venue_equity(SEED_VENUE_EQUITY - 1_000).into_position_observation(), REFERENCE_AT_MS,
+            plan,
+            before.with_venue_equity(SEED_VENUE_EQUITY - 1_000).into_position_observation(),
+            REFERENCE_AT_MS,
         );
         assert_eq!(equity_before, SEED_VENUE_EQUITY);
         assert_eq!(equity_after, SEED_VENUE_EQUITY - 1_000);
@@ -69,10 +77,18 @@ fun profit_realization_preserves_position_and_accounting_for_long_and_short() {
 fun profit_realization_small_order_cap_allows_bounded_repeated_progress() {
     let state = initialized_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_profit_realization(before.into_position_observation(), 300_000, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        before.into_position_observation(),
+        300_000,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     assert_eq!(plan.base_to_realize(), state.max_order_base(&plan.realization_position(), false));
     let (_, _, _, cost) = state.complete_profit_realization(
-        plan, before.with_venue_equity(SEED_VENUE_EQUITY - 5).into_position_observation(), REFERENCE_AT_MS,
+        plan,
+        before.with_venue_equity(SEED_VENUE_EQUITY - 5).into_position_observation(),
+        REFERENCE_AT_MS,
     );
     assert_eq!(cost, 5);
     state.destroy_for_testing();
@@ -82,7 +98,13 @@ fun profit_realization_small_order_cap_allows_bounded_repeated_progress() {
 fun profit_realization_sizes_a_useful_minimum_for_a_one_atom_shortfall() {
     let state = rebalance_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_profit_realization(before.into_position_observation(), 1, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        before.into_position_observation(),
+        1,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     assert!(plan.base_to_realize() > LOT_SIZE && plan.base_to_realize() < SEED_BASE / 1_000);
     state.complete_profit_realization(plan, before.into_position_observation(), REFERENCE_AT_MS);
     state.destroy_for_testing();
@@ -94,12 +116,22 @@ fun profit_realization_size_is_monotonic_whole_lots_and_capped() {
     let mut previous = 0;
     vector[1, 2, 10, 100, 1_000, 10_000, 100_000, 300_000, 555_597].do!(|shortfall| {
         let before = standard_observation(policy::short());
-        let plan = state.prepare_profit_realization(before.into_position_observation(), shortfall, 600_000, 10, REFERENCE_AT_MS);
+        let plan = state.prepare_profit_realization(
+            before.into_position_observation(),
+            shortfall,
+            600_000,
+            10,
+            REFERENCE_AT_MS
+        );
         let base = plan.base_to_realize();
         assert!(base >= previous && base <= SEED_BASE && base % LOT_SIZE == 0);
         assert!(base <= state.max_order_base(&plan.realization_position(), false));
         previous = base;
-        state.complete_profit_realization(plan, before.into_position_observation(), REFERENCE_AT_MS);
+        state.complete_profit_realization(
+            plan,
+            before.into_position_observation(),
+            REFERENCE_AT_MS
+        );
     });
     state.destroy_for_testing();
 }
@@ -108,7 +140,13 @@ fun profit_realization_size_is_monotonic_whole_lots_and_capped() {
 #[expected_failure(abort_code = errors::EProfitRealizationNotNeeded, location = blast_boosts_core::state)]
 fun profit_realization_rejects_no_shortfall() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long())).into_position_observation(), 0, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (standard_observation(policy::long())).into_position_observation(),
+        0,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -117,7 +155,13 @@ fun profit_realization_rejects_no_shortfall() {
 #[expected_failure(abort_code = errors::EProfitRealizationNotNeeded, location = blast_boosts_core::state)]
 fun profit_realization_rejects_no_profit() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long())).into_position_observation(), 100, 0, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (standard_observation(policy::long())).into_position_observation(),
+        100,
+        0,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -126,7 +170,13 @@ fun profit_realization_rejects_no_profit() {
 #[expected_failure(abort_code = errors::EProfitRealizationUneconomic, location = blast_boosts_core::state)]
 fun profit_realization_rejects_profit_that_cannot_cover_costs() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long())).into_position_observation(), 100, 10_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (standard_observation(policy::long())).into_position_observation(),
+        100,
+        10_000,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -135,7 +185,13 @@ fun profit_realization_rejects_profit_that_cannot_cover_costs() {
 #[expected_failure(abort_code = errors::EProfitRealizationUneconomic, location = blast_boosts_core::state)]
 fun profit_realization_rejects_a_shortfall_larger_than_all_profit() {
     let state = rebalance_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long())).into_position_observation(), 700_000, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (standard_observation(policy::long())).into_position_observation(),
+        700_000,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -145,7 +201,13 @@ fun profit_realization_rejects_a_shortfall_larger_than_all_profit() {
 fun profit_realization_rejects_shortfall_one_atom_above_cost_headroom() {
     let state = rebalance_state(policy::short());
     // 600,000 profit minus 44,400 full-position cost minus three rounding atoms.
-    let plan = state.prepare_profit_realization((standard_observation(policy::short())).into_position_observation(), 555_598, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (standard_observation(policy::short())).into_position_observation(),
+        555_598,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -154,7 +216,13 @@ fun profit_realization_rejects_shortfall_one_atom_above_cost_headroom() {
 #[expected_failure(abort_code = errors::EProfitRealizationUneconomic, location = blast_boosts_core::state)]
 fun profit_realization_rejects_maximum_shortfall_without_overflow() {
     let state = rebalance_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long())).into_position_observation(), std::u64::max_value!(), 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (standard_observation(policy::long())).into_position_observation(),
+        std::u64::max_value!(),
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -164,7 +232,13 @@ fun profit_realization_rejects_maximum_shortfall_without_overflow() {
 fun profit_realization_capped_sequence_stops_when_cost_consumes_headroom() {
     let state = initialized_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_profit_realization(before.into_position_observation(), 555_597, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        before.into_position_observation(),
+        555_597,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     let realized = 600_000u64.mul_div(plan.base_to_realize(), SEED_BASE);
     assert!(realized < 555_597);
     let after = before.with_venue_equity(SEED_VENUE_EQUITY - 1);
@@ -172,7 +246,11 @@ fun profit_realization_capped_sequence_stops_when_cost_consumes_headroom() {
     // The same position costs the same to close and reopen. The first step's
     // one-atom cost consumes the slack even though it converted profit to cash.
     let plan = state.prepare_profit_realization(
-        after.into_position_observation(), 555_597 - realized + 1, 600_000 - realized, 10, REFERENCE_AT_MS,
+        after.into_position_observation(),
+        555_597 - realized + 1,
+        600_000 - realized,
+        10,
+        REFERENCE_AT_MS,
     );
     destroy(plan);
     state.destroy_for_testing();
@@ -182,7 +260,13 @@ fun profit_realization_capped_sequence_stops_when_cost_consumes_headroom() {
 #[expected_failure(abort_code = errors::EVenueFeeUnusable, location = blast_boosts_core::state)]
 fun profit_realization_rejects_unusable_live_fee() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long())).into_position_observation(), 100, 600_000, 10_001, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (standard_observation(policy::long())).into_position_observation(),
+        100,
+        600_000,
+        10_001,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -191,7 +275,15 @@ fun profit_realization_rejects_unusable_live_fee() {
 #[expected_failure(abort_code = errors::EActiveLeverageAboveCap, location = blast_boosts_core::state)]
 fun profit_realization_rejects_emergency_leverage() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long()).with_venue_equity(700_000)).into_position_observation(), 100, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (
+            standard_observation(policy::long()).with_venue_equity(700_000)
+        ).into_position_observation(),
+        100,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -201,10 +293,20 @@ fun profit_realization_rejects_emergency_leverage() {
 fun profit_realization_rejects_cost_that_crosses_the_hard_cap() {
     let state = initialized_state(policy::long());
     let before = standard_observation(policy::long()).with_venue_equity(766_667);
-    let plan = state.prepare_profit_realization(before.into_position_observation(), 100, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        before.into_position_observation(),
+        100,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     // One atom is within the trade-cost allowance but leaves NAV just below
     // the 666,667 atoms needed to support 2,000,000 notional at the 3x cap.
-    state.complete_profit_realization(plan, before.with_venue_equity(766_666).into_position_observation(), REFERENCE_AT_MS);
+    state.complete_profit_realization(
+        plan,
+        before.with_venue_equity(766_666).into_position_observation(),
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -212,7 +314,15 @@ fun profit_realization_rejects_cost_that_crosses_the_hard_cap() {
 #[expected_failure(abort_code = errors::EStalePrice, location = blast_boosts_core::policy)]
 fun profit_realization_rejects_stale_prices() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long()).with_base_price_published_at_ms(1)).into_position_observation(), 100, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (
+            standard_observation(policy::long()).with_base_price_published_at_ms(1)
+        ).into_position_observation(),
+        100,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -221,7 +331,13 @@ fun profit_realization_rejects_stale_prices() {
 #[expected_failure(abort_code = errors::EProfitRealizationNotNeeded, location = blast_boosts_core::state)]
 fun profit_realization_rejects_flat_position() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_profit_realization((standard_observation(policy::long()).with_position_base(0)).into_position_observation(), 100, 600_000, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        (standard_observation(policy::long()).with_position_base(0)).into_position_observation(),
+        100,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -231,8 +347,18 @@ fun profit_realization_rejects_flat_position() {
 fun profit_realization_rejects_incomplete_reopening() {
     let state = initialized_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_profit_realization(before.into_position_observation(), 300_000, 600_000, 10, REFERENCE_AT_MS);
-    state.complete_profit_realization(plan, before.with_position_base(SEED_BASE - LOT_SIZE).into_position_observation(), REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        before.into_position_observation(),
+        300_000,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
+    state.complete_profit_realization(
+        plan,
+        before.with_position_base(SEED_BASE - LOT_SIZE).into_position_observation(),
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -241,8 +367,18 @@ fun profit_realization_rejects_incomplete_reopening() {
 fun profit_realization_rejects_extra_exposure() {
     let state = initialized_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_profit_realization(before.into_position_observation(), 300_000, 600_000, 10, REFERENCE_AT_MS);
-    state.complete_profit_realization(plan, before.with_position_base(SEED_BASE + LOT_SIZE).into_position_observation(), REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        before.into_position_observation(),
+        300_000,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
+    state.complete_profit_realization(
+        plan,
+        before.with_position_base(SEED_BASE + LOT_SIZE).into_position_observation(),
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -251,8 +387,18 @@ fun profit_realization_rejects_extra_exposure() {
 fun profit_realization_rejects_cost_above_bound() {
     let state = initialized_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_profit_realization(before.into_position_observation(), 300_000, 600_000, 10, REFERENCE_AT_MS);
-    state.complete_profit_realization(plan, before.with_venue_equity(SEED_VENUE_EQUITY - 100).into_position_observation(), REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        before.into_position_observation(),
+        300_000,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
+    state.complete_profit_realization(
+        plan,
+        before.with_venue_equity(SEED_VENUE_EQUITY - 100).into_position_observation(),
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -261,8 +407,18 @@ fun profit_realization_rejects_cost_above_bound() {
 fun profit_realization_rejects_changed_oracle_pair() {
     let state = initialized_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_profit_realization(before.into_position_observation(), 300_000, 600_000, 10, REFERENCE_AT_MS);
-    state.complete_profit_realization(plan, before.with_base_price(1_010_000_000).into_position_observation(), REFERENCE_AT_MS);
+    let plan = state.prepare_profit_realization(
+        before.into_position_observation(),
+        300_000,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
+    state.complete_profit_realization(
+        plan,
+        before.with_base_price(1_010_000_000).into_position_observation(),
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -329,9 +485,17 @@ fun unwind_prices_both_sides_at_the_ordinary_bound_when_shutdown_has_just_begun(
     vector[policy::long(), policy::short()].do!(|side| {
         let mut state = initialized_state(side);
         state.begin_shutdown(REFERENCE_AT_MS);
-        let (actual_side, max_order_base, base_price, collateral_price, bound) = state.unwind_constraints(
+        let (
+            actual_side,
+            max_order_base,
+            base_price,
+            collateral_price,
+            bound
+        ) = state.unwind_constraints(
             observation::new_price(1_000_000_000, 0, REFERENCE_AT_MS),
-            observation::new_price(1_000_000_000, 0, REFERENCE_AT_MS), LOT_SIZE, REFERENCE_AT_MS,
+            observation::new_price(1_000_000_000, 0, REFERENCE_AT_MS),
+            LOT_SIZE,
+            REFERENCE_AT_MS,
         );
         assert_eq!(actual_side, side);
         // Prices are 1:1, so base is notional scaled by `10^(9 - 6)`, floored to the lot.
@@ -367,7 +531,9 @@ fun a_fresh_shutdown_rejects_a_close_at_the_emergency_bound() {
     state.begin_shutdown(REFERENCE_AT_MS);
     let (_, _, _, _, bound) = state.unwind_constraints(
         observation::new_price(1_000_000_000, 0, REFERENCE_AT_MS),
-        observation::new_price(1_000_000_000, 0, REFERENCE_AT_MS), LOT_SIZE, REFERENCE_AT_MS,
+        observation::new_price(1_000_000_000, 0, REFERENCE_AT_MS),
+        LOT_SIZE,
+        REFERENCE_AT_MS,
     );
     bound.assert_execution(1_000_000_000, 950_000_000);
     abort
@@ -380,7 +546,10 @@ fun ordinary_unwind_never_falls_back_to_a_stale_price() {
     state.begin_shutdown(REFERENCE_AT_MS);
     state.unwind_constraints(
         observation::new_price(1_000_000_000, 0, 0),
-        observation::new_price(1_000_000_000, 0, 0), LOT_SIZE, REFERENCE_AT_MS);
+        observation::new_price(1_000_000_000, 0, 0),
+        LOT_SIZE,
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -407,7 +576,14 @@ fun invalid_rebalance_fee_precedes_invalid_observation() {
 #[expected_failure(abort_code = errors::EMintOutsideRebalanceBand, location = blast_boosts_core::state)]
 fun mint_outside_band_precedes_deposit_arithmetic() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_mint(standard_observation(policy::long()).with_notional(1_000_000).into_position_observation(), 0, 1_000_000, 1, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_mint(
+        standard_observation(policy::long()).with_notional(1_000_000).into_position_observation(),
+        0,
+        1_000_000,
+        1,
+        10,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -416,8 +592,19 @@ fun mint_outside_band_precedes_deposit_arithmetic() {
 #[expected_failure(abort_code = errors::EActiveFillIncomplete, location = blast_boosts_core::state)]
 fun mint_completion_rejects_missing_attributable_fill() {
     let mut state = initialized_state(policy::long());
-    let plan = state.prepare_mint(standard_observation(policy::long()).into_position_observation(), 1_000_000, 1_000_000, 1, 10, REFERENCE_AT_MS);
-    state.complete_mint(plan, standard_observation(policy::long()).into_position_observation(), REFERENCE_AT_MS);
+    let plan = state.prepare_mint(
+        standard_observation(policy::long()).into_position_observation(),
+        1_000_000,
+        1_000_000,
+        1,
+        10,
+        REFERENCE_AT_MS
+    );
+    state.complete_mint(
+        plan,
+        standard_observation(policy::long()).into_position_observation(),
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -426,8 +613,18 @@ fun mint_completion_rejects_missing_attributable_fill() {
 fun redemption_rejects_output_one_above_net() {
     let mut state = initialized_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_redemption(before.into_position_observation(), 500_000, 1_000_000, 499_501, REFERENCE_AT_MS);
-    state.complete_redemption(plan, before.with_position_base(1_000_000_000).into_position_observation(), REFERENCE_AT_MS);
+    let plan = state.prepare_redemption(
+        before.into_position_observation(),
+        500_000,
+        1_000_000,
+        499_501,
+        REFERENCE_AT_MS
+    );
+    state.complete_redemption(
+        plan,
+        before.with_position_base(1_000_000_000).into_position_observation(),
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -436,8 +633,22 @@ fun redemption_rejects_output_one_above_net() {
 fun mint_amount_supply_swap_cannot_satisfy_the_original_minimum() {
     let mut state = initialized_state(policy::long());
     let before = standard_observation(policy::long());
-    let plan = state.prepare_mint(before.into_position_observation(), 1_000_000, 500_000, 600_000, 10, REFERENCE_AT_MS);
-    state.complete_mint(plan, before.with_venue_equity(2_098_000).with_position_base(3_998_000_000).into_position_observation(), REFERENCE_AT_MS);
+    let plan = state.prepare_mint(
+        before.into_position_observation(),
+        1_000_000,
+        500_000,
+        600_000,
+        10,
+        REFERENCE_AT_MS
+    );
+    state.complete_mint(
+        plan,
+        before
+            .with_venue_equity(2_098_000)
+            .with_position_base(3_998_000_000)
+            .into_position_observation(),
+        REFERENCE_AT_MS
+    );
     state.destroy_for_testing();
 }
 
@@ -445,7 +656,13 @@ fun mint_amount_supply_swap_cannot_satisfy_the_original_minimum() {
 #[expected_failure(abort_code = errors::EInvalidShareAmount, location = blast_boosts_core::accounting_math)]
 fun redemption_shares_supply_swap_is_rejected() {
     let state = initialized_state(policy::long());
-    let plan = state.prepare_redemption(standard_observation(policy::long()).into_position_observation(), 1_000_000, 500_000, 1, REFERENCE_AT_MS);
+    let plan = state.prepare_redemption(
+        standard_observation(policy::long()).into_position_observation(),
+        1_000_000,
+        500_000,
+        1,
+        REFERENCE_AT_MS
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -516,7 +733,12 @@ fun nav_cap_setter_rejects_a_cap_whose_max_leverage_notional_overflows() {
 fun live_fee_setter_accepts_each_exact_immutable_cap() {
     let witness = vault_issuer();
     let issuance: Issuance<Product> = state::issue(
-        &witness, fee_capped_vault_policy(100, 200, 3_000), MAX_ORDER_NOTIONAL, NAV_CAP, 9, 6,
+        &witness,
+        fee_capped_vault_policy(100, 200, 3_000),
+        MAX_ORDER_NOTIONAL,
+        NAV_CAP,
+        9,
+        6,
     );
     let (mut state, _) = issuance.activate_with(standard_observation(policy::long()), SEED_RESERVE);
     state.set_fees(100, 200, 3_000);
@@ -531,19 +753,66 @@ fun active_mint_and_redemption_are_generic_for_long_and_short_2x_4x_6x() {
         vector[policy::long(), policy::short()].do!(|side| {
             let witness = vault_issuer();
             let vault_policy = policy::new_vault_policy(
-                side, policy::new_rebalance_policy(target - 2_000, target, target + 2_000, target + 10_000, 100, 500, 10),
-                policy::new_price_policy(30_000, 2_000, 100, 500), 0, 0, 0, 0, 0, 100, MAX_RESERVE_BPS,
+                side,
+                policy::new_rebalance_policy(
+                    target - 2_000,
+                    target,
+                    target + 2_000,
+                    target + 10_000,
+                    100,
+                    500,
+                    10
+                ),
+                policy::new_price_policy(30_000, 2_000, 100, 500),
+                0,
+                0,
+                0,
+                0,
+                0,
+                100,
+                MAX_RESERVE_BPS,
             );
             let notional = target * 100;
-            let (mut state, _, _) = state::issue<Product>(&witness, vault_policy, 2_000_000, NAV_CAP, 9, 6)
+            let (mut state, _, _) = state::issue<Product>(
+                &witness,
+                vault_policy,
+                2_000_000,
+                NAV_CAP,
+                9,
+                6
+            )
                 .activate(rebalance_observation(1_100_000, notional, side), 100_000, REFERENCE_AT_MS);
-            let plan = state.prepare_mint(rebalance_observation(1_100_000, notional, side), 1_000_000, 1_000_000, 1_000_000, 10, REFERENCE_AT_MS);
+            let plan = state.prepare_mint(
+                rebalance_observation(1_100_000, notional, side),
+                1_000_000,
+                1_000_000,
+                1_000_000,
+                10,
+                REFERENCE_AT_MS
+            );
             assert_eq!(plan.base_to_buy(), notional * 1_000);
-            let (shares, contribution, _, _, _) = state.complete_mint(plan, rebalance_observation(2_100_000, notional * 2, side), REFERENCE_AT_MS);
-            assert_eq!(vector[shares, contribution, state.maintenance_reserve()], vector[1_000_000, 1_000_000, 100_000]);
-            let plan = state.prepare_redemption(rebalance_observation(2_100_000, notional * 2, side), 500_000, 2_000_000, 500_000, REFERENCE_AT_MS);
+            let (shares, contribution, _, _, _) = state.complete_mint(
+                plan,
+                rebalance_observation(2_100_000, notional * 2, side),
+                REFERENCE_AT_MS
+            );
+            assert_eq!(
+                vector[shares, contribution, state.maintenance_reserve()],
+                vector[1_000_000, 1_000_000, 100_000]
+            );
+            let plan = state.prepare_redemption(
+                rebalance_observation(2_100_000, notional * 2, side),
+                500_000,
+                2_000_000,
+                500_000,
+                REFERENCE_AT_MS
+            );
             assert_eq!(plan.base_to_sell(), notional * 500);
-            let (net, admin, fee, _) = state.complete_redemption(plan, rebalance_observation(2_100_000, notional * 3 / 2, side), REFERENCE_AT_MS);
+            let (net, admin, fee, _) = state.complete_redemption(
+                plan,
+                rebalance_observation(2_100_000, notional * 3 / 2, side),
+                REFERENCE_AT_MS
+            );
             assert_eq!(vector[net, admin, fee], vector[500_000, 0, 0]);
             state.destroy_for_testing();
         });
@@ -556,7 +825,13 @@ fun active_redemption_rejects_a_stale_price() {
     let state = initialized_state(policy::short());
     let mut invalid = standard_observation(policy::short());
     invalid.base_publish_time_ms = 0;
-    destroy(state.prepare_redemption(invalid.into_position_observation(), 500_000, HEALTH_SHARE_SUPPLY, 1, REFERENCE_AT_MS));
+    destroy(state.prepare_redemption(
+        invalid.into_position_observation(),
+        500_000,
+        HEALTH_SHARE_SUPPLY,
+        1,
+        REFERENCE_AT_MS
+    ));
     state.destroy_for_testing();
 }
 
@@ -580,15 +855,30 @@ fun fee_update_rejects_an_unchanged_tuple() {
 #[expected_failure(abort_code = errors::ENonpositiveContribution, location = blast_boosts_core::state)]
 fun mint_rejects_input_consumed_by_rounded_fee_before_sizing_exposure() {
     let state = initialized_state(policy::long());
-    destroy(state.prepare_mint(standard_observation(policy::long()).into_position_observation(), 1, HEALTH_SHARE_SUPPLY, 0, 10, REFERENCE_AT_MS));
+    destroy(state.prepare_mint(
+        standard_observation(policy::long()).into_position_observation(),
+        1,
+        HEALTH_SHARE_SUPPLY,
+        0,
+        10,
+        REFERENCE_AT_MS
+    ));
     state.destroy_for_testing();
 }
 
 #[test]
 fun a_rebalance_plan_reports_whether_it_buys_or_sells() {
     let state = rebalance_state(policy::long());
-    let buying = state.prepare_rebalance(rebalance_observation(1_100_000, 1_000_000, policy::long()), 10, REFERENCE_AT_MS);
-    let selling = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let buying = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 1_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
+    let selling = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     assert!(buying.is_increasing() && !selling.is_increasing());
     assert!(!buying.is_emergency_rebalance() && !selling.is_emergency_rebalance());
     destroy(buying);
@@ -599,14 +889,30 @@ fun a_rebalance_plan_reports_whether_it_buys_or_sells() {
 #[test]
 fun rebalance_increase_reserves_cost_and_keeps_buffer_unchanged() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 1_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 1_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
     assert_eq!(order.order_base(), 978_452_000);
     assert!(order.is_increase() && !order.is_emergency());
     let filled = order.order_base();
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_089_226, 1_978_452, policy::long()), filled, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_089_226, 1_978_452, policy::long()),
+        filled,
+        REFERENCE_AT_MS
+    );
     assert_eq!(state.next_rebalance_order(&plan).order_base(), 0);
-    let (before_equity, after_equity, before_base, after_base, increased) = state.complete_rebalance(plan);
+    let (
+        before_equity,
+        after_equity,
+        before_base,
+        after_base,
+        increased
+    ) = state.complete_rebalance(plan);
     assert_eq!(before_equity, 1_100_000);
     assert_eq!(after_equity, 1_089_226);
     assert_eq!(before_base, 1_000_000_000);
@@ -624,7 +930,11 @@ fun rebalance_increase_reserves_cost_and_keeps_buffer_unchanged() {
 fun rebalance_short_emergency_reduction_sells_to_the_cap_and_stops_below_it() {
     let state = rebalance_state(policy::short());
     // 3.2x on a 1_000_000 NAV: the 3x cap is 3_000_000 of notional, 200_000_000 of base above it.
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_200_000, policy::short()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_200_000, policy::short()),
+        10,
+        REFERENCE_AT_MS
+    );
     assert!(plan.is_emergency_rebalance());
     let order = state.next_rebalance_order(&plan);
     assert_eq!(order.order_base(), 200_000_000);
@@ -632,11 +942,23 @@ fun rebalance_short_emergency_reduction_sells_to_the_cap_and_stops_below_it() {
     assert_eq!(order.bound().slippage_bps(), 500);
     order.bound().assert_execution(100, 104);
     // The fill's cost leaves the position a hair above the cap, so a small emergency order follows.
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_099_500, 3_000_000, policy::short()), 200_000_000, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_099_500, 3_000_000, policy::short()),
+        200_000_000,
+        REFERENCE_AT_MS
+    );
     let residual = state.next_rebalance_order(&plan);
     assert_eq!(residual.order_base(), 1_500_000);
     assert!(residual.is_emergency());
-    state.accept_rebalance_fill(&mut plan, residual, rebalance_observation(1_099_500, 2_998_500, policy::short()), 1_500_000, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        residual,
+        rebalance_observation(1_099_500, 2_998_500, policy::short()),
+        1_500_000,
+        REFERENCE_AT_MS
+    );
     let next = state.next_rebalance_order(&plan);
     assert_eq!(next.order_base(), 0);
     assert!(!next.is_emergency());
@@ -653,11 +975,21 @@ fun rebalance_short_emergency_reduction_sells_to_the_cap_and_stops_below_it() {
 #[test]
 fun an_emergency_plan_barely_above_the_cap_sells_one_lot_and_completes_on_the_restored_cap() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_001, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_001, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
     assert_eq!(order.order_base(), LOT_SIZE);
     assert!(order.is_emergency());
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_100_000, 3_000_000, policy::long()), LOT_SIZE, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        LOT_SIZE,
+        REFERENCE_AT_MS
+    );
     assert_eq!(state.next_rebalance_order(&plan).order_base(), 0);
 
     let (_, _, before_base, after_base, increased) = state.complete_rebalance(plan);
@@ -672,10 +1004,20 @@ fun an_emergency_plan_barely_above_the_cap_sells_one_lot_and_completes_on_the_re
 #[test]
 fun an_emergency_plan_still_above_the_cap_can_keep_a_real_reduction() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_200_000, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_200_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
     // One lot of the cap-sized order fills and leaves leverage essentially where it was.
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_100_000, 3_199_999, policy::long()), LOT_SIZE, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_100_000, 3_199_999, policy::long()),
+        LOT_SIZE,
+        REFERENCE_AT_MS
+    );
     state.complete_rebalance(plan);
     state.destroy_for_testing();
 }
@@ -685,7 +1027,11 @@ fun an_emergency_plan_still_above_the_cap_can_keep_a_real_reduction() {
 fun an_emergency_order_never_exceeds_the_per_order_cap() {
     let state = rebalance_state(policy::long());
     // 6x on a 1_000_000 NAV: 3_000_000 of notional above the cap against a 2_000_000 order cap.
-    let plan = state.prepare_rebalance(rebalance_observation(1_100_000, 6_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 6_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
     assert_eq!(order.order_base(), 1_904_761_000);
     assert!(order.is_emergency());
@@ -704,10 +1050,20 @@ fun rebalance_exact_upper_endpoint_rejects() { rebalance_endpoint(2_600_000); }
 #[test]
 fun rebalance_one_rational_atom_below_lower_is_not_hidden_by_report_rounding() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_001, 1_600_001, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_001, 1_600_001, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
     assert!(order.order_base() > 0 && order.is_increase() && !order.is_emergency());
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_100_001, 1_600_002, policy::long()), 1_000, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_100_001, 1_600_002, policy::long()),
+        1_000,
+        REFERENCE_AT_MS
+    );
     state.complete_rebalance(plan);
     state.destroy_for_testing();
 }
@@ -716,9 +1072,19 @@ fun rebalance_one_rational_atom_below_lower_is_not_hidden_by_report_rounding() {
 #[expected_failure(abort_code = errors::ERebalanceNoProgress, location = blast_boosts_core::state)]
 fun rebalance_reduction_without_leverage_improvement_rejects() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_000_000, 2_700_000, policy::long()), 300_000_000, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_000_000, 2_700_000, policy::long()),
+        300_000_000,
+        REFERENCE_AT_MS
+    );
     state.complete_rebalance(plan);
     state.destroy_for_testing();
 }
@@ -727,9 +1093,19 @@ fun rebalance_reduction_without_leverage_improvement_rejects() {
 #[expected_failure(abort_code = errors::EActiveLeverageAboveCap, location = blast_boosts_core::state)]
 fun rebalance_increase_rejects_post_cost_target_overshoot() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 1_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 1_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_089_225, 1_978_452, policy::long()), 978_452_000, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_089_225, 1_978_452, policy::long()),
+        978_452_000,
+        REFERENCE_AT_MS
+    );
     state.complete_rebalance(plan);
     state.destroy_for_testing();
 }
@@ -738,7 +1114,11 @@ fun rebalance_increase_rejects_post_cost_target_overshoot() {
 #[expected_failure(abort_code = errors::EExecutionOutsideMaxSlippage, location = blast_boosts_core::policy)]
 fun rebalance_hard_threshold_equality_does_not_enable_wide_tolerance() {
     let state = rebalance_state(policy::long());
-    let plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     state.next_rebalance_order(&plan).bound().assert_execution(100, 102);
     state.complete_rebalance(plan);
     state.destroy_for_testing();
@@ -749,9 +1129,19 @@ fun a_flat_short_product_redeems_without_inventing_a_long_position() {
     let mut state = initialized_state(policy::short());
     let flat = standard_observation(policy::long())
         .with_position_base(0);
-    let plan = state.prepare_redemption(flat.into_position_observation(), 500_000, 1_000_000, 499_500, REFERENCE_AT_MS);
+    let plan = state.prepare_redemption(
+        flat.into_position_observation(),
+        500_000,
+        1_000_000,
+        499_500,
+        REFERENCE_AT_MS
+    );
     assert_eq!(plan.base_to_sell(), 0);
-    let (net, admin, fee, _) = state.complete_redemption(plan, flat.into_position_observation(), REFERENCE_AT_MS);
+    let (net, admin, fee, _) = state.complete_redemption(
+        plan,
+        flat.into_position_observation(),
+        REFERENCE_AT_MS
+    );
     assert_eq!(vector[net, admin], vector[499_500, 0]);
     assert_eq!(fee, 500);
     state.destroy_for_testing();
@@ -762,7 +1152,10 @@ fun redemption_keeps_remaining_nav_and_allocates_its_own_fee() {
     let mut state = initialized_state(policy::short());
     let plan = state.prepare_redemption(
         standard_observation(policy::short()).into_position_observation(),
-        500_000, 1_000_000, 497_502, REFERENCE_AT_MS,
+        500_000,
+        1_000_000,
+        497_502,
+        REFERENCE_AT_MS,
     );
     assert_eq!(plan.base_to_sell(), 1_000_000_000);
     let (net, admin, fee, _) = state.complete_redemption(
@@ -790,7 +1183,8 @@ fun mint_credits_at_most_the_deposit_net_of_fee_when_the_fill_is_favorable() {
         standard_observation(policy::long()).into_position_observation(),
         1_000_000,
         1_000_000,
-        999_000, 10,
+        999_000,
+        10,
         REFERENCE_AT_MS,
     );
     assert_eq!(plan.base_to_buy(), 1_998_000_000);
@@ -802,11 +1196,16 @@ fun mint_credits_at_most_the_deposit_net_of_fee_when_the_fill_is_favorable() {
             .into_position_observation(),
         REFERENCE_AT_MS,
     );
-    assert_eq!(vector[shares, contribution, fee, admin, buffer], vector[999_000, 999_000, 1_000, 0, 1_000]);
+    assert_eq!(
+        vector[shares, contribution, fee, admin, buffer],
+        vector[999_000, 999_000, 1_000, 0, 1_000]
+    );
     assert_eq!(state.maintenance_reserve(), 101_000);
     // Remaining NAV per share rose: 2_001_000 / 1_999_000 > 1_000_000 / 1_000_000.
     let nav_after = 2_102_000 - state.maintenance_reserve();
-    assert!((nav_after as u128) * (HEALTH_SHARE_SUPPLY as u128) > (SEED_NAV as u128) * ((HEALTH_SHARE_SUPPLY + shares) as u128));
+    assert!(
+        (nav_after as u128) * (HEALTH_SHARE_SUPPLY as u128) > (SEED_NAV as u128) * ((HEALTH_SHARE_SUPPLY + shares) as u128)
+    );
     state.destroy_for_testing();
 }
 
@@ -817,7 +1216,10 @@ fun redemption_pays_at_most_the_proportional_claim_when_the_sell_is_favorable() 
     let mut state = initialized_state(policy::long());
     let plan = state.prepare_redemption(
         standard_observation(policy::long()).into_position_observation(),
-        500_000, 1_000_000, 499_500, REFERENCE_AT_MS,
+        500_000,
+        1_000_000,
+        499_500,
+        REFERENCE_AT_MS,
     );
     assert_eq!(plan.base_to_sell(), 1_000_000_000);
     let (net, admin, fee, buffer) = state.complete_redemption(
@@ -844,7 +1246,8 @@ fun mint_prices_actual_contribution_after_the_attributable_cost() {
         standard_observation(policy::long()).into_position_observation(),
         1_000_000,
         1_000_000,
-        997_000, 10,
+        997_000,
+        10,
         REFERENCE_AT_MS,
     );
     assert_eq!(plan.base_to_buy(), 1_998_000_000);
@@ -867,7 +1270,12 @@ fun mint_prices_actual_contribution_after_the_attributable_cost() {
 fun fee_updates_change_future_allocations_without_relabeling_the_buffer() {
     let witness = vault_issuer();
     let issuance: Issuance<Product> = state::issue(
-        &witness, fee_capped_vault_policy(100, 100, 3_000), MAX_ORDER_NOTIONAL, NAV_CAP, 9, 6,
+        &witness,
+        fee_capped_vault_policy(100, 100, 3_000),
+        MAX_ORDER_NOTIONAL,
+        NAV_CAP,
+        9,
+        6,
     );
     let (mut state, _) = issuance.activate_with(standard_observation(policy::long()), SEED_RESERVE);
     let (fee, admin, buffer) = state.fee_allocation_for_testing(1_000_000, true);
@@ -934,7 +1342,14 @@ fun initialization_strict_execution_rejects_one_unit_past_tolerance() {
 fun an_authorized_issuance_activates_into_the_issued_terms() {
     let witness = vault_issuer();
     let expected_policy = standard_vault_policy();
-    let (state, _) = state::issue<Product>(&witness, expected_policy, MAX_ORDER_NOTIONAL, NAV_CAP, 9, 6).activate_with(standard_observation(policy::long()), SEED_RESERVE);
+    let (state, _) = state::issue<Product>(
+        &witness,
+        expected_policy,
+        MAX_ORDER_NOTIONAL,
+        NAV_CAP,
+        9,
+        6
+    ).activate_with(standard_observation(policy::long()), SEED_RESERVE);
 
     assert!(state.is_active_for_testing());
     assert_eq!(state.maintenance_reserve(), SEED_RESERVE);
@@ -957,7 +1372,14 @@ fun max_order_notional_must_be_positive() {
 #[test]
 fun max_order_notional_moves_both_directions_and_returns_the_previous_value() {
     let witness = vault_issuer();
-    let (mut state, _) = state::issue<Product>(&witness, standard_vault_policy(), MAX_ORDER_NOTIONAL, NAV_CAP, 9, 6).activate_with(standard_observation(policy::long()), SEED_RESERVE);
+    let (mut state, _) = state::issue<Product>(
+        &witness,
+        standard_vault_policy(),
+        MAX_ORDER_NOTIONAL,
+        NAV_CAP,
+        9,
+        6
+    ).activate_with(standard_observation(policy::long()), SEED_RESERVE);
 
     state.set_nav_cap(2_000_000);
     assert_eq!(state.set_test_order_cap(150), MAX_ORDER_NOTIONAL);
@@ -974,7 +1396,14 @@ fun max_order_notional_moves_both_directions_and_returns_the_previous_value() {
 )]
 fun max_order_notional_rejects_the_current_value() {
     let witness = vault_issuer();
-    let (mut state, _) = state::issue<Product>(&witness, standard_vault_policy(), MAX_ORDER_NOTIONAL, NAV_CAP, 9, 6).activate_with(standard_observation(policy::long()), SEED_RESERVE);
+    let (mut state, _) = state::issue<Product>(
+        &witness,
+        standard_vault_policy(),
+        MAX_ORDER_NOTIONAL,
+        NAV_CAP,
+        9,
+        6
+    ).activate_with(standard_observation(policy::long()), SEED_RESERVE);
 
     state.set_test_order_cap(MAX_ORDER_NOTIONAL);
 
@@ -987,7 +1416,14 @@ fun max_order_notional_rejects_the_current_value() {
 )]
 fun max_order_notional_rejects_zero() {
     let witness = vault_issuer();
-    let (mut state, _) = state::issue<Product>(&witness, standard_vault_policy(), MAX_ORDER_NOTIONAL, NAV_CAP, 9, 6).activate_with(standard_observation(policy::long()), SEED_RESERVE);
+    let (mut state, _) = state::issue<Product>(
+        &witness,
+        standard_vault_policy(),
+        MAX_ORDER_NOTIONAL,
+        NAV_CAP,
+        9,
+        6
+    ).activate_with(standard_observation(policy::long()), SEED_RESERVE);
 
     state.set_test_order_cap(0);
 
@@ -997,7 +1433,14 @@ fun max_order_notional_rejects_zero() {
 #[test]
 fun active_state_begins_shutdown() {
     let witness = vault_issuer();
-    let (mut state, _) = state::issue<Product>(&witness, standard_vault_policy(), MAX_ORDER_NOTIONAL, NAV_CAP, 9, 6).activate_with(standard_observation(policy::long()), SEED_RESERVE);
+    let (mut state, _) = state::issue<Product>(
+        &witness,
+        standard_vault_policy(),
+        MAX_ORDER_NOTIONAL,
+        NAV_CAP,
+        9,
+        6
+    ).activate_with(standard_observation(policy::long()), SEED_RESERVE);
 
     state.begin_shutdown(REFERENCE_AT_MS);
 
@@ -1452,7 +1895,10 @@ fun a_seed_reserve_above_the_ceiling_cannot_activate() {
 /// A seed reserve exactly at the ceiling activates; the ceiling is inclusive.
 #[test]
 fun a_seed_reserve_at_the_ceiling_activates() {
-    let (state, seed_nav) = capped_issuance(500).activate_with(standard_observation(policy::long()), SEED_RESERVE);
+    let (state, seed_nav) = capped_issuance(500).activate_with(
+        standard_observation(policy::long()),
+        SEED_RESERVE
+    );
     assert_eq!(seed_nav, SEED_NAV);
     assert_eq!(state.maintenance_reserve(), SEED_RESERVE);
     state.destroy_for_testing();
@@ -1466,7 +1912,10 @@ fun redemption_releases_reserve_above_the_ceiling_for_the_smaller_position() {
     let mut state = capped_initialized_state(500);
     let plan = state.prepare_redemption(
         standard_observation(policy::long()).into_position_observation(),
-        500_000, 1_000_000, 499_500, REFERENCE_AT_MS,
+        500_000,
+        1_000_000,
+        499_500,
+        REFERENCE_AT_MS,
     );
     let (net, admin, fee, buffer) = state.complete_redemption(
         plan,
@@ -1478,7 +1927,10 @@ fun redemption_releases_reserve_above_the_ceiling_for_the_smaller_position() {
     );
     let final_equity = 1_102_000 - net - admin;
     // Same payout and physical equity as with a wide ceiling.
-    assert_eq!(vector[net, admin, fee, buffer, final_equity], vector[499_500, 0, 500, 500, 602_500]);
+    assert_eq!(
+        vector[net, admin, fee, buffer, final_equity],
+        vector[499_500, 0, 500, 500, 602_500]
+    );
     // The ceiling for 1_000_000 of notional at 5% is 50_000; the other 50_500 is NAV now.
     assert_eq!(state.maintenance_reserve(), 50_000);
     assert_eq!(final_equity - state.maintenance_reserve(), 552_500);
@@ -1520,8 +1972,11 @@ fun a_mint_prices_shares_after_releasing_reserve_above_the_ceiling() {
 fun a_donation_above_the_ceiling_is_accepted_and_the_excess_is_nav() {
     let mut state = capped_initialized_state(500);
     state.donate(
-        standard_observation(policy::long()).with_venue_equity(SEED_VENUE_EQUITY + 70_000).into_position_observation(),
-        70_000, REFERENCE_AT_MS,
+        standard_observation(policy::long())
+            .with_venue_equity(SEED_VENUE_EQUITY + 70_000)
+            .into_position_observation(),
+        70_000,
+        REFERENCE_AT_MS,
     );
     assert_eq!(state.maintenance_reserve(), 100_000);
     state.destroy_for_testing();
@@ -1532,7 +1987,11 @@ fun a_donation_above_the_ceiling_is_accepted_and_the_excess_is_nav() {
 fun a_flat_position_keeps_the_reserve_for_the_position_that_reopens() {
     let mut state = capped_initialized_state(500);
     let flat = standard_observation(policy::long()).with_position_base(0);
-    state.donate(flat.with_venue_equity(SEED_VENUE_EQUITY + 70_000).into_position_observation(), 70_000, REFERENCE_AT_MS);
+    state.donate(
+        flat.with_venue_equity(SEED_VENUE_EQUITY + 70_000).into_position_observation(),
+        70_000,
+        REFERENCE_AT_MS
+    );
     assert_eq!(state.maintenance_reserve(), 170_000);
     state.destroy_for_testing();
 }
@@ -1594,13 +2053,23 @@ fun seed_terms_reject_a_reserve_above_the_seed() {
 /// At a base price of 3 the target and the cap both leave a sub-lot remainder unopened.
 #[test]
 fun flat_seed_preflight_floors_the_order_cap_to_whole_lots() {
-    let issuance = state::issue<Product>(&vault_issuer(), standard_vault_policy(), 500, NAV_CAP, 9, 6);
+    let issuance = state::issue<Product>(
+        &vault_issuer(),
+        standard_vault_policy(),
+        500,
+        NAV_CAP,
+        9,
+        6
+    );
     let flat = standard_observation(policy::long())
         .with_position_base(0)
         .with_base_price(3_000_000_000)
         .with_mark_price(3_000_000_000);
 
-    let (target_base, max_order_base, seed_position) = issuance.seed_terms(flat.into_position_observation(), SEED_RESERVE);
+    let (target_base, max_order_base, seed_position) = issuance.seed_terms(
+        flat.into_position_observation(),
+        SEED_RESERVE
+    );
 
     // 2_000_000 of notional buys 666_666_666 base at 3; 250 buys 83_333. Both floor to the lot.
     assert_eq!(target_base, 666_666_000);
@@ -1673,7 +2142,9 @@ fun an_active_state_reads_the_frozen_side() {
 #[test]
 fun max_order_base_floors_the_live_cap_to_whole_lots() {
     let (state, _, seeded) = issued(policy::long()).activate(
-        standard_observation(policy::long()).with_lot_size(4_000).into_position_observation(), SEED_RESERVE, REFERENCE_AT_MS,
+        standard_observation(policy::long()).with_lot_size(4_000).into_position_observation(),
+        SEED_RESERVE,
+        REFERENCE_AT_MS,
     );
 
     // 250 of notional is 250_000 base at 1:1, floored to the 4_000 lot.
@@ -1687,7 +2158,11 @@ fun max_order_base_floors_the_live_cap_to_whole_lots() {
 #[expected_failure(abort_code = errors::EExecutionOutsideMaxSlippage, location = blast_boosts_core::policy)]
 fun emergency_execution_rejects_one_unit_past_the_wide_bound() {
     let state = rebalance_state(policy::long());
-    let plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_200_000, policy::long()), 10, REFERENCE_AT_MS);
+    let plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_200_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     state.next_rebalance_order(&plan).bound().assert_execution(1_000_000_000, 1_050_000_001);
     abort
 }
@@ -1719,7 +2194,14 @@ fun seed_orders_run_under_the_ordinary_bound() {
 #[expected_failure(abort_code = errors::EInvalidShareSupply, location = blast_boosts_core::state)]
 fun mint_rejects_a_zero_share_supply() {
     let state = initialized_state(policy::long());
-    destroy(state.prepare_mint(standard_observation(policy::long()).into_position_observation(), 1_000_000, 0, 1, 10, REFERENCE_AT_MS));
+    destroy(state.prepare_mint(
+        standard_observation(policy::long()).into_position_observation(),
+        1_000_000,
+        0,
+        1,
+        10,
+        REFERENCE_AT_MS
+    ));
     abort
 }
 
@@ -1750,7 +2232,14 @@ fun mint_admits_both_band_endpoints() {
 #[expected_failure(abort_code = errors::EZeroAmount, location = blast_boosts_core::accounting_math)]
 fun a_zero_deposit_mint_is_refused() {
     let state = initialized_state(policy::long());
-    destroy(state.prepare_mint(standard_observation(policy::long()).into_position_observation(), 0, HEALTH_SHARE_SUPPLY, 1, 10, REFERENCE_AT_MS));
+    destroy(state.prepare_mint(
+        standard_observation(policy::long()).into_position_observation(),
+        0,
+        HEALTH_SHARE_SUPPLY,
+        1,
+        10,
+        REFERENCE_AT_MS
+    ));
     abort
 }
 
@@ -1762,10 +2251,21 @@ fun completed_mints_preserve_both_exact_band_edges_for_both_sides() {
         vector[1_600_000, 2_600_000].do!(|notional| {
             let mut state = initialized_state(side);
             let before = standard_observation(side).with_notional(notional);
-            let plan = state.prepare_mint(before.into_position_observation(), 101, HEALTH_SHARE_SUPPLY, 1, 10, REFERENCE_AT_MS);
+            let plan = state.prepare_mint(
+                before.into_position_observation(),
+                101,
+                HEALTH_SHARE_SUPPLY,
+                1,
+                10,
+                REFERENCE_AT_MS
+            );
             let base_after = before.position_base + plan.base_to_buy();
             let (shares, contribution, fee, _, _) = state.complete_mint(
-                plan, before.with_venue_equity(SEED_VENUE_EQUITY + 101).with_position_base(base_after).into_position_observation(),
+                plan,
+                before
+                    .with_venue_equity(SEED_VENUE_EQUITY + 101)
+                    .with_position_base(base_after)
+                    .into_position_observation(),
                 REFERENCE_AT_MS,
             );
             assert_eq!(vector[shares, contribution, fee], vector[100, 100, 1]);
@@ -1873,7 +2373,11 @@ fun a_mint_landing_exactly_on_the_nav_cap_is_accepted() {
     state.set_nav_cap(1_997_000);
     let plan = state.standard_mint_plan();
 
-    let (shares, _, _, _, _) = state.complete_mint(plan, standard_mint_fill().into_position_observation(), REFERENCE_AT_MS);
+    let (shares, _, _, _, _) = state.complete_mint(
+        plan,
+        standard_mint_fill().into_position_observation(),
+        REFERENCE_AT_MS
+    );
 
     assert_eq!(shares, 997_000);
     assert_eq!(state.maintenance_reserve(), 101_000);
@@ -1898,11 +2402,21 @@ fun a_mint_landing_one_atom_over_the_nav_cap_is_refused() {
 fun mint_completion_rejects_post_fill_leverage_above_the_cap() {
     let mut state = initialized_state(policy::long());
     let before = standard_observation(policy::long()).with_notional(2_600_000);
-    let plan = state.prepare_mint(before.into_position_observation(), 1_000_000, HEALTH_SHARE_SUPPLY, 1, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_mint(
+        before.into_position_observation(),
+        1_000_000,
+        HEALTH_SHARE_SUPPLY,
+        1,
+        10,
+        REFERENCE_AT_MS
+    );
     assert_eq!(plan.base_to_buy(), 2_597_400_000);
     state.complete_mint(
         plan,
-        before.with_venue_equity(1_800_000).with_position_base(5_197_400_000).into_position_observation(),
+        before
+            .with_venue_equity(1_800_000)
+            .with_position_base(5_197_400_000)
+            .into_position_observation(),
         REFERENCE_AT_MS,
     );
     abort
@@ -1913,10 +2427,18 @@ fun mint_completion_rejects_post_fill_leverage_above_the_cap() {
 /// the rest is NAV, priced into the shares the newcomer receives.
 #[test]
 fun a_mint_fee_above_the_ceiling_is_released_to_holders() {
-    let (mut state, seed_nav) = capped_issuance(1).activate_with(standard_observation(policy::long()), 200);
+    let (mut state, seed_nav) = capped_issuance(1).activate_with(
+        standard_observation(policy::long()),
+        200
+    );
     assert_eq!(seed_nav, 1_099_800);
     let plan = state.prepare_mint(
-        standard_observation(policy::long()).into_position_observation(), 1_000_000, HEALTH_SHARE_SUPPLY, 1, 10, REFERENCE_AT_MS,
+        standard_observation(policy::long()).into_position_observation(),
+        1_000_000,
+        HEALTH_SHARE_SUPPLY,
+        1,
+        10,
+        REFERENCE_AT_MS,
     );
     // 2e9 * 999_000 / 1_099_800 floored to the lot.
     assert_eq!(plan.base_to_buy(), 1_816_693_000);
@@ -1933,9 +2455,14 @@ fun a_mint_fee_above_the_ceiling_is_released_to_holders() {
     // 1 bps of the 3_816_693 post-mint notional, not 200 + 1_000.
     assert_eq!(state.maintenance_reserve(), 381);
     // 1_000_000 * 999_000 / 1_099_800: the newcomer pays the pre-release NAV per share.
-    assert_eq!(vector[shares, contribution, fee, admin, reserve_fee], vector[908_346, 999_000, 1_000, 0, 1_000]);
+    assert_eq!(
+        vector[shares, contribution, fee, admin, reserve_fee],
+        vector[908_346, 999_000, 1_000, 0, 1_000]
+    );
     let nav_after = 2_100_000 - state.maintenance_reserve();
-    assert!((nav_after as u128) * (HEALTH_SHARE_SUPPLY as u128) >= (seed_nav as u128) * ((HEALTH_SHARE_SUPPLY + shares) as u128));
+    assert!(
+        (nav_after as u128) * (HEALTH_SHARE_SUPPLY as u128) >= (seed_nav as u128) * ((HEALTH_SHARE_SUPPLY + shares) as u128)
+    );
     state.destroy_for_testing();
 }
 
@@ -1946,7 +2473,13 @@ fun a_mint_fee_above_the_ceiling_is_released_to_holders() {
 #[expected_failure(abort_code = errors::EOrderBelowMinLots, location = blast_boosts_core::accounting_math)]
 fun a_dust_redemption_below_the_minimum_order_is_refused() {
     let state = initialized_state(policy::long());
-    destroy(state.prepare_redemption(standard_observation(policy::long()).into_position_observation(), 1, HEALTH_SHARE_SUPPLY, 0, REFERENCE_AT_MS));
+    destroy(state.prepare_redemption(
+        standard_observation(policy::long()).into_position_observation(),
+        1,
+        HEALTH_SHARE_SUPPLY,
+        0,
+        REFERENCE_AT_MS
+    ));
     abort
 }
 
@@ -1958,7 +2491,11 @@ fun redemption_completion_is_refused_once_shutdown_began() {
     let mut state = initialized_state(policy::long());
     let plan = state.standard_redemption_plan();
     state.begin_shutdown(REFERENCE_AT_MS);
-    state.complete_redemption(plan, standard_redemption_fill().into_position_observation(), REFERENCE_AT_MS);
+    state.complete_redemption(
+        plan,
+        standard_redemption_fill().into_position_observation(),
+        REFERENCE_AT_MS
+    );
     abort
 }
 
@@ -2022,7 +2559,11 @@ fun a_redemption_with_an_admin_share_splits_the_fee() {
 fun a_venue_fee_of_exactly_the_denominator_is_usable() {
     let state = rebalance_state(policy::long());
 
-    let plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_000, policy::long()), 10_000, REFERENCE_AT_MS);
+    let plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        10_000,
+        REFERENCE_AT_MS
+    );
 
     let order = state.next_rebalance_order(&plan);
     assert_eq!(order.order_base(), 1_000_000_000);
@@ -2040,12 +2581,22 @@ fun a_venue_fee_of_exactly_the_denominator_is_usable() {
 #[test]
 fun a_reduction_that_crosses_the_cap_mid_plan_keeps_the_ordinary_bound() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
     assert!(!order.is_emergency());
     assert!(!plan.is_emergency_rebalance());
 
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_050_000, 2_900_000, policy::long()), 100_000_000, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_050_000, 2_900_000, policy::long()),
+        100_000_000,
+        REFERENCE_AT_MS
+    );
 
     let next = state.next_rebalance_order(&plan);
     assert!(!next.is_emergency());
@@ -2054,7 +2605,11 @@ fun a_reduction_that_crosses_the_cap_mid_plan_keeps_the_ordinary_bound() {
     destroy(plan);
 
     // A fresh plan against the same observation is emergency from its first order.
-    let fresh = state.prepare_rebalance(rebalance_observation(1_050_000, 2_900_000, policy::long()), 10, REFERENCE_AT_MS);
+    let fresh = state.prepare_rebalance(
+        rebalance_observation(1_050_000, 2_900_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     assert!(state.next_rebalance_order(&fresh).is_emergency());
     assert!(fresh.is_emergency_rebalance());
     destroy(fresh);
@@ -2110,7 +2665,11 @@ fun a_rebalance_fill_the_observation_disagrees_with_is_refused() {
 #[expected_failure(abort_code = errors::ERebalanceNoProgress, location = blast_boosts_core::state)]
 fun rebalance_completion_without_a_fill_is_refused() {
     let state = rebalance_state(policy::long());
-    let plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     state.complete_rebalance(plan);
     abort
 }
@@ -2120,9 +2679,19 @@ fun rebalance_completion_without_a_fill_is_refused() {
 #[expected_failure(abort_code = errors::ERebalanceNoProgress, location = blast_boosts_core::state)]
 fun rebalance_increase_whose_leverage_did_not_rise_is_refused() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_001, 1_600_001, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_001, 1_600_001, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_200_000, 1_600_002, policy::long()), 1_000, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_200_000, 1_600_002, policy::long()),
+        1_000,
+        REFERENCE_AT_MS
+    );
     assert_eq!(plan.rebalance_position().base(), 1_600_001_000);
     state.complete_rebalance(plan);
     abort
@@ -2132,7 +2701,11 @@ fun rebalance_increase_whose_leverage_did_not_rise_is_refused() {
 #[expected_failure(abort_code = errors::EOperationNotPermittedInLifecycle, location = blast_boosts_core::lifecycle)]
 fun rebalance_completion_is_refused_once_shutdown_began() {
     let mut state = rebalance_state(policy::long());
-    let plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     state.begin_shutdown(REFERENCE_AT_MS);
     state.complete_rebalance(plan);
     abort
@@ -2141,17 +2714,36 @@ fun rebalance_completion_is_refused_once_shutdown_began() {
 #[test]
 fun a_reduction_reaching_target_ends_the_plan() {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 3_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 3_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
     assert_eq!(order.order_base(), 1_000_000_000);
-    state.accept_rebalance_fill(&mut plan, order, rebalance_observation(1_100_000, 2_000_000, policy::long()), 1_000_000_000, REFERENCE_AT_MS);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        rebalance_observation(1_100_000, 2_000_000, policy::long()),
+        1_000_000_000,
+        REFERENCE_AT_MS
+    );
 
     let next = state.next_rebalance_order(&plan);
     assert_eq!(next.order_base(), 0);
     assert!(!next.is_emergency());
-    let (before_equity, after_equity, before_base, after_base, increased) = state.complete_rebalance(plan);
+    let (
+        before_equity,
+        after_equity,
+        before_base,
+        after_base,
+        increased
+    ) = state.complete_rebalance(plan);
 
-    assert_eq!(vector[before_equity, after_equity, before_base, after_base], vector[1_100_000, 1_100_000, 3_000_000_000, 2_000_000_000]);
+    assert_eq!(
+        vector[before_equity, after_equity, before_base, after_base],
+        vector[1_100_000, 1_100_000, 3_000_000_000, 2_000_000_000]
+    );
     assert!(!increased);
     state.destroy_for_testing();
 }
@@ -2183,15 +2775,30 @@ fun a_funding_credit_can_fit_when_its_conservation_total_exceeds_u64() {
         vector[std::u64::max_value!() - 1, std::u64::max_value!()].do!(|credit| {
             let mut state = initialized_state(side);
             state.settle_funding(observation::funding_cost(SEED_RESERVE + 1));
-            assert_eq!(vector[state.maintenance_reserve(), state.uncovered_deficit()], vector[0, 1]);
+            assert_eq!(
+                vector[state.maintenance_reserve(), state.uncovered_deficit()],
+                vector[0, 1]
+            );
             // A real donation rebuilds reserve without repaying the holder deficit.
-            state.donate(standard_observation(side).with_venue_equity(SEED_NAV).into_position_observation(), 1, REFERENCE_AT_MS);
-            assert_eq!(vector[state.maintenance_reserve(), state.uncovered_deficit()], vector[1, 1]);
+            state.donate(
+                standard_observation(side).with_venue_equity(SEED_NAV).into_position_observation(),
+                1,
+                REFERENCE_AT_MS
+            );
+            assert_eq!(
+                vector[state.maintenance_reserve(), state.uncovered_deficit()],
+                vector[1, 1]
+            );
 
-            let (absorbed, uncovered, restored) = state.settle_funding(observation::funding_credit(credit));
+            let (absorbed, uncovered, restored) = state.settle_funding(
+                observation::funding_credit(credit)
+            );
 
             assert_eq!(vector[absorbed, uncovered, restored], vector[0, 0, 1]);
-            assert_eq!(vector[state.maintenance_reserve(), state.uncovered_deficit()], vector[credit, 0]);
+            assert_eq!(
+                vector[state.maintenance_reserve(), state.uncovered_deficit()],
+                vector[credit, 0]
+            );
             assert!(state.is_active_for_testing());
             state.destroy_for_testing();
         });
@@ -2203,7 +2810,13 @@ fun a_funding_credit_can_fit_when_its_conservation_total_exceeds_u64() {
 fun a_funding_credit_still_rejects_a_post_reserve_above_u64() {
     let mut state = initialized_state(policy::long());
     state.settle_funding(observation::funding_cost(SEED_RESERVE + 1));
-    state.donate(standard_observation(policy::long()).with_venue_equity(SEED_NAV + 1).into_position_observation(), 2, REFERENCE_AT_MS);
+    state.donate(
+        standard_observation(policy::long())
+            .with_venue_equity(SEED_NAV + 1)
+            .into_position_observation(),
+        2,
+        REFERENCE_AT_MS
+    );
     assert_eq!(vector[state.maintenance_reserve(), state.uncovered_deficit()], vector[2, 1]);
 
     // Repaying one atom still leaves a reserve of MAX + 1, which must fail.
@@ -2230,7 +2843,11 @@ fun a_zero_donation_is_refused() {
 #[expected_failure(abort_code = errors::EArithmeticOverflow, location = blast_boosts_core::state)]
 fun the_maximum_donation_cannot_wrap() {
     let mut state = initialized_state(policy::long());
-    state.donate(standard_observation(policy::long()).into_position_observation(), std::u64::max_value!(), REFERENCE_AT_MS);
+    state.donate(
+        standard_observation(policy::long()).into_position_observation(),
+        std::u64::max_value!(),
+        REFERENCE_AT_MS
+    );
     abort
 }
 
@@ -2291,7 +2908,10 @@ fun unwind_rejects_a_low_confidence_base_price() {
     let mut state = initialized_state(policy::long());
     state.begin_shutdown(REFERENCE_AT_MS);
     state.unwind_constraints(
-        observation::new_price(1_000_000_000, 10_000_001, REFERENCE_AT_MS), fresh_price(1_000_000_000), LOT_SIZE, REFERENCE_AT_MS,
+        observation::new_price(1_000_000_000, 10_000_001, REFERENCE_AT_MS),
+        fresh_price(1_000_000_000),
+        LOT_SIZE,
+        REFERENCE_AT_MS,
     );
     abort
 }
@@ -2414,7 +3034,15 @@ fun nav_cap_may_be_lowered_below_the_live_nav() {
 #[expected_failure(abort_code = errors::EInvalidPositionObservation, location = blast_boosts_core::state)]
 fun an_active_operation_rejects_a_non_flat_observation_on_the_wrong_side() {
     let state = initialized_state(policy::long());
-    state.needs_rebalance(standard_observation(policy::long()).with_observed_side(policy::short()).into_position_observation(), observation::funding_credit(0), true, 10, REFERENCE_AT_MS);
+    state.needs_rebalance(
+        standard_observation(policy::long())
+            .with_observed_side(policy::short())
+            .into_position_observation(),
+        observation::funding_credit(0),
+        true,
+        10,
+        REFERENCE_AT_MS
+    );
     abort
 }
 
@@ -2422,7 +3050,15 @@ fun an_active_operation_rejects_a_non_flat_observation_on_the_wrong_side() {
 #[expected_failure(abort_code = errors::EInvalidNav, location = blast_boosts_core::state)]
 fun an_active_operation_rejects_equity_equal_to_the_reserve() {
     let state = initialized_state(policy::long());
-    state.needs_rebalance(standard_observation(policy::long()).with_venue_equity(SEED_RESERVE).into_position_observation(), observation::funding_credit(0), true, 10, REFERENCE_AT_MS);
+    state.needs_rebalance(
+        standard_observation(policy::long())
+            .with_venue_equity(SEED_RESERVE)
+            .into_position_observation(),
+        observation::funding_credit(0),
+        true,
+        10,
+        REFERENCE_AT_MS
+    );
     abort
 }
 
@@ -2435,10 +3071,15 @@ fun a_priced_operation_admits_equity_that_covers_the_admitted_reserve() {
     let mut state = capped_initialized_state(500);
     state.settle_funding(observation::funding_credit(50_000));
     assert_eq!(state.maintenance_reserve(), 150_000);
-    let observation = standard_observation(policy::long()).with_venue_equity(140_000).into_position_observation();
+    let observation = standard_observation(policy::long())
+        .with_venue_equity(140_000)
+        .into_position_observation();
 
     let plan = state.prepare_redemption(observation, 500_000, 1_000_000, 0, REFERENCE_AT_MS);
-    let after = standard_observation(policy::long()).with_venue_equity(140_000).with_position_base(1_000_000_000).into_position_observation();
+    let after = standard_observation(policy::long())
+        .with_venue_equity(140_000)
+        .with_position_base(1_000_000_000)
+        .into_position_observation();
     let (net, _, _, _) = state.complete_redemption(plan, after, REFERENCE_AT_MS);
     assert!(net > 0);
     assert!(state.maintenance_reserve() <= 100_000);
@@ -2451,15 +3092,30 @@ fun a_priced_operation_admits_equity_that_covers_the_admitted_reserve() {
 fun a_priced_operation_is_refused_when_equity_only_covers_the_admitted_reserve() {
     let mut state = capped_initialized_state(500);
     state.settle_funding(observation::funding_credit(50_000));
-    state.needs_rebalance(standard_observation(policy::long()).with_venue_equity(100_000).into_position_observation(), observation::funding_credit(0), true, 10, REFERENCE_AT_MS);
+    state.needs_rebalance(
+        standard_observation(policy::long()).with_venue_equity(100_000).into_position_observation(),
+        observation::funding_credit(0),
+        true,
+        10,
+        REFERENCE_AT_MS
+    );
     abort
 }
 
 #[test]
 fun seed_and_admin_accept_the_first_cap_covering_the_live_minimum() {
     // 100 lots at $1 with 1% headroom and the extra price atom cost 102 atoms.
-    let issuance = state::issue<Product>(&vault_issuer(), standard_vault_policy(), 102, 1_600_000, 9, 6);
-    let flat = standard_observation(policy::long()).with_position_base(0).into_position_observation();
+    let issuance = state::issue<Product>(
+        &vault_issuer(),
+        standard_vault_policy(),
+        102,
+        1_600_000,
+        9,
+        6
+    );
+    let flat = standard_observation(policy::long())
+        .with_position_base(0)
+        .into_position_observation();
     let (_, capacity, _) = issuance.seed_terms(flat, SEED_RESERVE);
     assert!(capacity >= MIN_EXPOSURE_LOTS * LOT_SIZE);
     destroy(issuance);
@@ -2472,8 +3128,17 @@ fun seed_and_admin_accept_the_first_cap_covering_the_live_minimum() {
 #[test]
 #[expected_failure(abort_code = errors::EOrderCapBelowMinimum, location = blast_boosts_core::state)]
 fun seed_rejects_one_atom_below_minimum_order_capacity() {
-    let issuance = state::issue<Product>(&vault_issuer(), standard_vault_policy(), 101, 1_600_000, 9, 6);
-    let flat = standard_observation(policy::long()).with_position_base(0).into_position_observation();
+    let issuance = state::issue<Product>(
+        &vault_issuer(),
+        standard_vault_policy(),
+        101,
+        1_600_000,
+        9,
+        6
+    );
+    let flat = standard_observation(policy::long())
+        .with_position_base(0)
+        .into_position_observation();
     issuance.seed_terms(flat, SEED_RESERVE);
     destroy(issuance);
 }
@@ -2491,7 +3156,13 @@ fun admin_rejects_one_atom_below_minimum_order_capacity() {
 #[expected_failure(abort_code = errors::EStalePrice, location = blast_boosts_core::policy)]
 fun order_cap_update_requires_fresh_prices() {
     let mut state = initialized_state(policy::long());
-    state.set_max_order_notional(500, fresh_price(1_000_000_000), fresh_price(1_000_000_000), LOT_SIZE, REFERENCE_AT_MS + 100_000);
+    state.set_max_order_notional(
+        500,
+        fresh_price(1_000_000_000),
+        fresh_price(1_000_000_000),
+        LOT_SIZE,
+        REFERENCE_AT_MS + 100_000
+    );
     state.destroy_for_testing();
 }
 
@@ -2499,7 +3170,13 @@ fun order_cap_update_requires_fresh_prices() {
 #[expected_failure(abort_code = errors::EInvalidMaxOrderNotional, location = blast_boosts_core::state)]
 fun invalid_cap_is_rejected_before_stale_prices() {
     let mut state = initialized_state(policy::long());
-    state.set_max_order_notional(0, fresh_price(1_000_000_000), fresh_price(1_000_000_000), LOT_SIZE, REFERENCE_AT_MS + 100_000);
+    state.set_max_order_notional(
+        0,
+        fresh_price(1_000_000_000),
+        fresh_price(1_000_000_000),
+        LOT_SIZE,
+        REFERENCE_AT_MS + 100_000
+    );
     state.destroy_for_testing();
 }
 
@@ -2508,10 +3185,21 @@ fun invalid_cap_is_rejected_before_stale_prices() {
 fun mint_at_band_edge(side: PositionSide, notional: u64, deposit: u64, equity_increase: u64) {
     let mut state = initialized_state(side);
     let before = standard_observation(side).with_notional(notional);
-    let plan = state.prepare_mint(before.into_position_observation(), deposit, HEALTH_SHARE_SUPPLY, 1, 10, REFERENCE_AT_MS);
+    let plan = state.prepare_mint(
+        before.into_position_observation(),
+        deposit,
+        HEALTH_SHARE_SUPPLY,
+        1,
+        10,
+        REFERENCE_AT_MS
+    );
     let base_after = before.position_base + plan.base_to_buy();
     state.complete_mint(
-        plan, before.with_venue_equity(SEED_VENUE_EQUITY + equity_increase).with_position_base(base_after).into_position_observation(),
+        plan,
+        before
+            .with_venue_equity(SEED_VENUE_EQUITY + equity_increase)
+            .with_position_base(base_after)
+            .into_position_observation(),
         REFERENCE_AT_MS,
     );
     state.destroy_for_testing();
@@ -2547,7 +3235,11 @@ fun unwind_bound_bps_at(state: &State<Product>, now_at_ms: u64): u64 {
 
 fun rebalance_endpoint(notional: u64) {
     let state = rebalance_state(policy::long());
-    let plan = state.prepare_rebalance(rebalance_observation(1_100_000, notional, policy::long()), 10, REFERENCE_AT_MS);
+    let plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, notional, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     state.complete_rebalance(plan);
     state.destroy_for_testing();
 }
@@ -2584,7 +3276,11 @@ fun vault_policy(side: PositionSide): VaultPolicy {
 }
 
 /// The standard long policy with fee caps the admin may move up to.
-fun fee_capped_vault_policy(mint_fee_cap_bps: u64, redeem_fee_cap_bps: u64, admin_share_cap_bps: u64): VaultPolicy {
+fun fee_capped_vault_policy(
+    mint_fee_cap_bps: u64,
+    redeem_fee_cap_bps: u64,
+    admin_share_cap_bps: u64
+): VaultPolicy {
     policy::new_vault_policy(
         policy::long(),
         policy::new_rebalance_policy(16_000, 20_000, 26_000, 30_000, 100, 500, 10),
@@ -2630,8 +3326,16 @@ fun issued(side: PositionSide): Issuance<Product> {
 }
 
 /// Activates the issuance on `spec`, at the fixture's decimals and clock; returns the state and seed NAV.
-fun activate_with(self: Issuance<Product>, spec: ObservationSpec, seed_reserve: u64): (State<Product>, u64) {
-    let (state, seed_nav, _) = self.activate(spec.into_position_observation(), seed_reserve, REFERENCE_AT_MS);
+fun activate_with(
+    self: Issuance<Product>,
+    spec: ObservationSpec,
+    seed_reserve: u64
+): (State<Product>, u64) {
+    let (state, seed_nav, _) = self.activate(
+        spec.into_position_observation(),
+        seed_reserve,
+        REFERENCE_AT_MS
+    );
     (state, seed_nav)
 }
 
@@ -2651,7 +3355,12 @@ fun initialize_once(spec: ObservationSpec, side: PositionSide, seed_reserve: u64
 /// The standard 1_000_000 deposit against the seed: 999_000 of contribution buys 1_998_000_000 of base.
 fun standard_mint_plan(state: &State<Product>): MintPlan<Product> {
     let plan = state.prepare_mint(
-        standard_observation(policy::long()).into_position_observation(), 1_000_000, HEALTH_SHARE_SUPPLY, 1, 10, REFERENCE_AT_MS,
+        standard_observation(policy::long()).into_position_observation(),
+        1_000_000,
+        HEALTH_SHARE_SUPPLY,
+        1,
+        10,
+        REFERENCE_AT_MS,
     );
     assert_eq!(plan.base_to_buy(), 1_998_000_000);
 
@@ -2666,7 +3375,11 @@ fun standard_mint_fill(): ObservationSpec {
 /// Half the supply redeemed against the seed: a 1_000_000_000 sell.
 fun standard_redemption_plan(state: &State<Product>): RedemptionPlan<Product> {
     let plan = state.prepare_redemption(
-        standard_observation(policy::long()).into_position_observation(), 500_000, HEALTH_SHARE_SUPPLY, 1, REFERENCE_AT_MS,
+        standard_observation(policy::long()).into_position_observation(),
+        500_000,
+        HEALTH_SHARE_SUPPLY,
+        1,
+        REFERENCE_AT_MS,
     );
     assert_eq!(plan.base_to_sell(), 1_000_000_000);
 
@@ -2685,7 +3398,11 @@ fun fresh_price(price: u64): PriceObservation {
 /// Opens the standard increase plan, whose first order is 978_452_000, and presents one fill.
 fun accept_increase_fill_once(after: PositionObservation, filled_base: u64) {
     let state = rebalance_state(policy::long());
-    let mut plan = state.prepare_rebalance(rebalance_observation(1_100_000, 1_000_000, policy::long()), 10, REFERENCE_AT_MS);
+    let mut plan = state.prepare_rebalance(
+        rebalance_observation(1_100_000, 1_000_000, policy::long()),
+        10,
+        REFERENCE_AT_MS
+    );
     let order = state.next_rebalance_order(&plan);
     assert_eq!(order.order_base(), 978_452_000);
 

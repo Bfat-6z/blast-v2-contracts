@@ -47,34 +47,34 @@ fun each_presale_role_signs_in_to_its_own_operations() {
     let mut creation_policy = creation_policy::new_for_testing(fixture.scenario.ctx());
     let mut package_admin = package_admin::new_for_testing(fixture.scenario.ctx());
 
-    fee_policy.set_fees(
+    fee_policy.set_fees_for_testing(
         &package_version,
         &fixture.acl.sign_in<FeeAdmin>(&fixture.admin_cap),
         bps::new(100),
         bps::new(200),
         bps::new(300),
         bps::new(400),
-    );
-    fee_policy.set_destination(
+     fixture.scenario.ctx());
+    fee_policy.set_destination_for_testing(
         &package_version,
         &fixture.acl.sign_in<TreasuryAdmin>(&fixture.admin_cap),
         TREASURY,
-    );
+     fixture.scenario.ctx());
     creation_policy.set_quote_allowed<QUOTE>(
         &package_version,
         &fixture.acl.sign_in<ListingAdmin>(&fixture.admin_cap),
         true,
     );
-    creation_policy.set_migration_witness_allowed<MIGRATOR>(
+    creation_policy.set_migration_witness_allowed_for_testing<MIGRATOR>(
         &package_version,
         &fixture.acl.sign_in<AdapterAdmin>(&fixture.admin_cap),
         true,
-    );
-    let ticket = package_admin.authorize_upgrade(
+     fixture.scenario.ctx());
+    let ticket = package_admin.authorize_upgrade_for_testing(
         &package_version,
         &fixture.acl.sign_in<UpgradeAdmin>(&fixture.admin_cap),
         DIGEST,
-    );
+     fixture.scenario.ctx());
 
     assert_eq!(fee_policy.fees(), fee_policy::protocol_fees_for_testing(100, 200, 300, 400));
     assert_eq!(fee_policy.destination(), TREASURY);

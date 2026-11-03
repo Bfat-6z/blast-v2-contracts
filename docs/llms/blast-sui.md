@@ -362,10 +362,10 @@ Codes are plain `u64` values, raised in the `blast_sui` module that detects them
 | 22 | `EMissingPackageCapability` | `blast_sui::package_admin::share` | attach all three capabilities first |
 | 23 | `EPackageCapabilityAlreadyExists` | `blast_sui::package_admin::add_capability` | each capability type is attached once |
 
-Calls into outdated bytecode after an upgrade abort with code 13 from
+Calls into outdated bytecode after an upgrade abort with code 12 from
 `blast_admin`'s `operational_version` module: rebuild the PTB against the latest
 package version. A role failure in `blast_acl::sign_in` aborts with
-`blast_admin` code 1 or 6.
+`blast_admin` code 1 or 5.
 
 ### Pitfalls
 
@@ -383,7 +383,7 @@ package version. A role failure in `blast_acl::sign_in` aborts with
 - The fee applies to every blastSUI redemption, however small or large.
 - Every vault call takes the shared `Vault` mutably, so vault transactions are
   sequenced through consensus.
-- After an upgrade, PTBs pinned to the old package ID abort (code 13 from
+- After an upgrade, PTBs pinned to the old package ID abort (code 12 from
   `operational_version`).
 
 ### Q&A

@@ -159,12 +159,12 @@ fun start(): BluefinFixture {
 
     scenario.next_tx(ADMIN);
     config.set_quote_allowed<QUOTE>(&version, &blast_acl::witness_for_testing<ListingAdmin>(), true);
-    config.set_trade_fees(
+    config.set_trade_fees_for_testing(
         &version,
         &blast_acl::witness_for_testing<FeeAdmin>(),
         bps::new(100),
         bps::new(100),
-    );
+     scenario.ctx());
     BluefinFixture { scenario, version, migrators_version, config }
 }
 
@@ -188,7 +188,14 @@ fun start_rejected_tier(tick_spacing: u32, fee_rate: u64) {
 
 fun admit_bluefin(f: &mut BluefinFixture) {
     let admin = blast_acl::witness_for_testing<AdapterAdmin>();
-    f.config.set_migration_witness_allowed<bluefin::Witness>(&f.version, &admin, true);
+    f
+        .config
+        .set_migration_witness_allowed_for_testing<bluefin::Witness>(
+            &f.version,
+            &admin,
+            true,
+            &mut sui::tx_context::dummy()
+        );
 }
 
 fun new_ticket(f: &mut BluefinFixture): LaunchTicket<BLUEFIN_TESTS> {

@@ -25,7 +25,7 @@
 //!
 //! Run from `sui/launchpad/ptb_tests` with `cargo test --offline --test presale_venue_fork`.
 
-use std::{collections::BTreeMap, path::Path, sync::OnceLock, time::Duration};
+use std::{collections::{BTreeMap, BTreeSet}, path::Path, sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
@@ -110,6 +110,158 @@ const fn address(suffix: &[u8]) -> ObjectID {
 
 // === Tests ===
 
+/// Every reachable pause state against every u8 input, through unmodified production bytecode.
+#[test]
+fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> Result<()> {
+    let mut w = World::new(Route::Bluefin)?;
+    w.change_role("PauseAdmin", true)?;
+    w.change_role("UnpauseAdmin", true)?;
+    // A set oracle keeps expected transitions independent of the contract's bitwise formulas.
+    let states: [&[u8]; 8] = [&[], &[1], &[2], &[1, 2], &[8], &[1, 8], &[2, 8], &[1, 2, 8]];
+    let sale = w.open_sale(&Terms::standard(Route::Bluefin))?;
+    let watched = [w.version, w.acl, w.admin_cap, w.creation_policy, w.fee_policy,
+        w.venue_config, w.custody, sale.presale, sale.cap, sale.currency];
+    let mut successes = 0;
+    let mut invalid = 0;
+    let mut unchanged = 0;
+    let mut stale = 0;
+    for generation in [1, 2] {
+        for flags in states {
+            let mask: u8 = flags.iter().sum();
+            w.set_pause_generation_for_fixture(1)?;
+            w.replace_pause_mask(mask)?;
+            w.set_pause_generation_for_fixture(generation)?;
+            let before: BTreeSet<_> = flags.iter().copied().collect();
+            for bits in 0..=u8::MAX {
+                for pausing in [true, false] {
+                    let requested: BTreeSet<_> = [1u8, 2, 8].into_iter()
+                        .filter(|flag| (bits / flag) % 2 == 1).collect();
+                    let after: BTreeSet<u8> = if pausing {
+                        before.union(&requested).copied().collect()
+                    } else {
+                        before.difference(&requested).copied().collect()
+                    };
+                    let pt = w.pause_command(pausing, bits)?;
+                    let rejected = if generation != 1 {
+                        stale += 1;
+                        Some(Expected::Abort { package: w.admin, module: "operational_version", code: 12 })
+                    } else if bits == 0 || requested.iter().sum::<u8>() != bits {
+                        invalid += 1;
+                        Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: 0 })
+                    } else if after == before {
+                        unchanged += 1;
+                        Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: 1 })
+                    } else {
+                        None
+                    };
+                    if let Some(expected) = rejected {
+                        w.h.assert_rolled_back(pt, expected, &watched, &[w.h.sender])?;
+                    } else {
+                        let untouched = w.h.snapshot(&watched[1..], &[w.h.sender]);
+                        let outcome = w.h.execute(pt)?;
+                        outcome.assert_success();
+                        let name = if pausing { "Paused" } else { "Unpaused" };
+                        let next: u8 = after.iter().sum();
+                        assert_eq!(outcome.events.len(), 1);
+                        assert_eq!(ObjectID::from(outcome.events[0].type_.address), w.presale);
+                        assert_eq!(outcome.events[0].type_.module.as_str(), "blast_presale_package");
+                        assert_eq!(outcome.events[0].type_.name.as_str(), name);
+                        assert_eq!(outcome.events[0].contents, [bits, next]);
+                        assert_eq!(w.pause_state()?, (w.version, next, generation));
+                        assert_eq!(w.h.snapshot(&watched[1..], &[w.h.sender]), untouched);
+                        w.replace_pause_mask(mask)?;
+                        successes += 1;
+                    }
+                    assert_eq!(w.pause_state()?, (w.version, mask, generation),
+                        "pausing={pausing}, bits={bits}, initial={mask}, generation={generation}");
+                }
+            }
+        }
+    }
+    assert_eq!((successes, invalid, unchanged, stale), (74, 3984, 38, 4096));
+    Ok(())
+}
+
+#[test]
+fn presale_pause_roles_revocation_and_failed_sequences_preserve_state_and_events() -> Result<()> {
+    let mut w = World::new(Route::Bluefin)?;
+    let watched = [w.version, w.acl, w.admin_cap];
+    // A live AdminCap with neither role authorizes neither operation.
+    for pausing in [true, false] {
+        w.h.assert_rolled_back(w.pause_command(pausing, 1)?,
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    }
+    w.change_role("PauseAdmin", true)?;
+    w.set_pause(true, 1)?;
+    w.h.assert_rolled_back(w.pause_command(false, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    w.append_pause(&mut b, false, 1, "PauseAdmin")?;
+    w.h.assert_rolled_back(b.finish(), Expected::Error("TypeMismatch"), &watched, &[w.h.sender])?;
+    w.change_role("PauseAdmin", false)?;
+    w.h.assert_rolled_back(w.pause_command(true, 2)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    w.change_role("UnpauseAdmin", true)?;
+    w.set_pause(false, 1)?;
+    w.h.assert_rolled_back(w.pause_command(true, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    w.append_pause(&mut b, true, 1, "UnpauseAdmin")?;
+    w.h.assert_rolled_back(b.finish(), Expected::Error("TypeMismatch"), &watched, &[w.h.sender])?;
+    w.change_role("UnpauseAdmin", false)?;
+    w.h.assert_rolled_back(w.pause_command(false, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+
+    w.change_role("PauseAdmin", true)?;
+    w.change_role("UnpauseAdmin", true)?;
+    for (sequence, code) in [
+        (vec![(true, 1), (true, 1)], 1),
+        (vec![(true, 1), (false, 1), (false, 1)], 1),
+        (vec![(true, 1), (true, 5)], 0),
+    ] {
+        let mut b = ProgrammableTransactionBuilder::new();
+        for (pausing, bits) in sequence {
+            w.append_pause(&mut b, pausing, bits, if pausing { "PauseAdmin" } else { "UnpauseAdmin" })?;
+        }
+        // Earlier successful commands emitted events, but the later failure commits none.
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.presale, module: "blast_presale_package", code }, &watched, &[w.h.sender])?;
+        assert_eq!(w.pause_state()?, (w.version, 0, 1));
+    }
+
+    // Interleaved successful commands preserve native event order and replay to the final mask.
+    let steps = [(true, 1, 1), (true, 3, 3), (false, 9, 2),
+        (true, 8, 10), (false, 2, 8), (false, 9, 0)];
+    let mut b = ProgrammableTransactionBuilder::new();
+    for &(pausing, bits, _) in &steps {
+        w.append_pause(&mut b, pausing, bits, if pausing { "PauseAdmin" } else { "UnpauseAdmin" })?;
+    }
+    let outcome = w.h.execute(b.finish())?;
+    outcome.assert_success();
+    let names: Vec<_> = steps.iter().map(|(pausing, _, _)| if *pausing { "Paused" } else { "Unpaused" }).collect();
+    assert_eq!(outcome.events.len(), steps.len());
+    assert_eq!(outcome.events.iter().map(|event| event.type_.name.as_str()).collect::<Vec<_>>(), names);
+    for (event, &(_, bits, next)) in outcome.events.iter().zip(&steps) {
+        assert_eq!(ObjectID::from(event.type_.address), w.presale);
+        assert_eq!(event.type_.module.as_str(), "blast_presale_package");
+        assert_eq!(event.contents, [bits, next]);
+    }
+    assert_eq!(w.pause_state()?, (w.version, 0, 1));
+
+    // Revoking the whole administrator defeats both roles even while it still owns its cap.
+    let mut b = ProgrammableTransactionBuilder::new();
+    let acl = b.obj(w.h.shared(w.acl, true))?;
+    let root = b.obj(w.h.owned(w.root))?;
+    let cap = b.pure(w.admin_cap)?;
+    call(&mut b, w.admin, "blast_acl", "revoke_admin", vec![], vec![acl, root, cap]);
+    w.h.impersonate_cap_owner(w.root, b.finish())?.assert_success();
+    for pausing in [true, false] {
+        w.h.assert_rolled_back(w.pause_command(pausing, 1)?,
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 1 }, &watched, &[w.h.sender])?;
+    }
+    Ok(())
+}
+
 #[test]
 fn presale_cetus_meme_a_with_sui_against_mainnet_bytecode() -> Result<()> {
     run(Route::CetusMemeA)
@@ -173,6 +325,7 @@ fn run_world(mut w: World) -> Result<()> {
     ensure!(fees.gross_meme > 0 && fees.gross_quote > 0, "both sides accrued fees");
     w.report(format!("collect_fees two-sided: {}", fees.line()));
 
+    w.delayed_fee_split(&sale, &m, &terms)?;
     w.other_pool_is_refused(&sale, &m, &terms)?;
     w.claim_residuals(&sale, &m)?;
 
@@ -211,57 +364,6 @@ fn run_near_equal(route: Route) -> Result<()> {
     ));
 
     w.print_report();
-    Ok(())
-}
-
-/// Grants the simulator sender typed roles through the production ACL path, then enables the route.
-fn allow_route(h: &mut Harness,
-    admin: ObjectID,
-    admin_published: &Outcome,
-    presale: ObjectID,
-    version: ObjectID, creation_policy: ObjectID, route: Route,
-    quote: TypeTag,
-) -> Result<()> {
-    let acl = admin_published.created(h, "blast_acl", "ACL")[0];
-    let root = admin_published.created(h, "blast_acl", "SuperAdminCap")[0];
-    let mut b = ProgrammableTransactionBuilder::new();
-    let acl_arg = b.obj(h.shared(acl, true))?;
-    let root_arg = b.obj(h.owned(root))?;
-    let recipient = b.pure(h.sender)?;
-    call(&mut b, admin, "blast_acl", "grant_admin", vec![], vec![acl_arg, root_arg, recipient]);
-    let granted = h.impersonate_cap_owner(root, b.finish())?;
-    granted.assert_success();
-    let cap = granted.created(h, "blast_acl", "AdminCap")[0];
-    let mut b = ProgrammableTransactionBuilder::new();
-    let acl_arg = b.obj(h.shared(acl, true))?;
-    let root_arg = b.obj(h.owned(root))?;
-    let cap_id = b.pure(cap)?;
-    for role in ["ListingAdmin", "AdapterAdmin"] {
-        let role = tag(&format!("{presale}::blast_presale_domain::{role}"));
-        call(&mut b, admin, "blast_acl", "grant_role", vec![role], vec![acl_arg, root_arg, cap_id]);
-    }
-    h.impersonate_cap_owner(root, b.finish())?.assert_success();
-
-    let mut b = ProgrammableTransactionBuilder::new();
-    let acl = b.obj(h.shared(acl, false))?;
-    let cap = b.obj(h.owned(cap))?;
-    let policy = b.obj(h.shared(creation_policy, true))?;
-    let version = b.obj(h.shared(version, false))?;
-    let allowed = b.pure(true)?;
-    for (role, function, ty) in [
-        ("ListingAdmin", "set_quote_allowed", quote),
-        (
-            "AdapterAdmin",
-            "set_migration_witness_allowed",
-            tag(&format!("{presale}::{}::Witness", route.module())),
-        ),
-    ] {
-        let role = tag(&format!("{presale}::blast_presale_domain::{role}"));
-        let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]);
-    call(&mut b, presale, "creation_policy", function, vec![ty], vec![policy, version, witness, allowed]);
-    }
-    h.execute(b.finish())?.assert_success();
-
     Ok(())
 }
 
@@ -407,7 +509,7 @@ impl Terms {
 fn presale() -> &'static UnlinkedPackage {
     static PRESALE: OnceLock<UnlinkedPackage> = OnceLock::new();
     PRESALE.get_or_init(|| {
-        let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join("presale_venue_fork");
+        let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("presale_venue_fork");
         build_unlinked(
             &sui_dir().join("presale"),
             &["blast_fun_timelock", "blast_admin", "blast_partners", "blast_fun_vesting"],
@@ -444,6 +546,11 @@ struct World {
     venue: BTreeMap<String, ObjectID>,
     presale: ObjectID,
     version: ObjectID,
+    admin: ObjectID,
+    acl: ObjectID,
+    root: ObjectID,
+    admin_cap: ObjectID,
+    custody: ObjectID,
     venue_config: ObjectID,
     creation_policy: ObjectID,
     fee_policy: ObjectID,
@@ -451,6 +558,7 @@ struct World {
     quote_type: TypeTag,
     quote_currency: ObjectID,
     coins: u64,
+    projected_fee_weights: [u64; 3],
     lines: Vec<String>,
 }
 
@@ -463,7 +571,7 @@ impl World {
 
     fn new_with_quote(route: Route, custom_quote: bool) -> Result<Self> {
         let work =
-            Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join(format!("presale_fork_{route:?}"));
+            blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(format!("presale_fork_{route:?}"));
         let mut h = Harness::new()?;
         let (checkpoint, venue) = insert_snapshot(&mut h)?;
 
@@ -500,17 +608,6 @@ impl World {
         ensure!(fee_policy.len() == 1 && h.object(fee_policy[0]).is_shared());
         let creation_policy = published.created(&h, "creation_policy", "CreationPolicy");
         ensure!(creation_policy.len() == 1 && h.object(creation_policy[0]).is_shared());
-        let bootstrap = published.created(&h, "blast_presale_package", "Bootstrap")[0];
-        let upgrade_cap = published.created(&h, "package", "UpgradeCap")[0];
-        let mut b = ProgrammableTransactionBuilder::new();
-        let bootstrap = b.obj(h.owned(bootstrap))?;
-        let upgrade_cap = b.obj(h.owned(upgrade_cap))?;
-        call(&mut b, presale, "package_admin", "wrap", vec![], vec![bootstrap, upgrade_cap]);
-        let wrapped = h.execute(b.finish())?;
-        wrapped.assert_success();
-        let versions = wrapped.created(&h, "blast_presale_package", "PackageVersion");
-        ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
-        let version = versions[0];
         let token = build(&Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture/presale_token"), &[], &work)?;
         let (quote_type, quote_currency) = if custom_quote {
             let (package, published) = h.publish(token.clone())?;
@@ -522,24 +619,66 @@ impl World {
         } else {
             (route.quote(), *venue.get("sui_currency").context("SUI currency")?)
         };
-        allow_route(
-            &mut h,
-            admin,
-            &admin_published,
-            presale,
-            version,
-            creation_policy[0],
-            route,
-            quote_type.clone(),
-        )?;
+        assert!(published.created(&h, "blast_presale_package", "PackageVersion").is_empty());
+        let clock_before = h.contents(SUI_CLOCK_OBJECT_ID);
+        let bootstrap_id = published.created(&h, "blast_presale_package", "Publication")[0];
+        let bootstrap = bootstrap_id;
+        let upgrade_cap = published.created(&h, "package", "UpgradeCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let bootstrap = b.obj(h.owned(bootstrap))?;
+        let upgrade_cap = b.obj(h.owned(upgrade_cap))?;
+        call(&mut b, presale, "package_admin", "wrap", vec![], vec![bootstrap, upgrade_cap]);
+        let wrapped = h.execute(b.finish())?;
+        wrapped.assert_success();
+        let versions = wrapped.created(&h, "blast_presale_package", "PackageVersion");
+        ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
+        let version = versions[0];
+        let (_, paused, generation): (ObjectID, u8, u64) = bcs::from_bytes(&h.contents(version))?;
+        ensure!(paused == 11 && generation == 1);
+        ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap_id));
+        let config_cap = h.configuration_admin(admin, &admin_published, presale, "blast_presale_domain", &["ListingAdmin", "AdapterAdmin", "TreasuryAdmin", "FeeAdmin", "UpgradeAdmin"])?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let listing = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "ListingAdmin")?;
+        let adapter = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "AdapterAdmin")?;
+        let treasury = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "TreasuryAdmin")?;
+        let fee_admin = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "FeeAdmin")?;
+        let policy = b.obj(h.shared(creation_policy[0], true))?;
+        let version_arg = b.obj(h.shared(version, false))?;
+        let clock = b.obj(h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        let allowed = b.pure(true)?;
+        let witness = tag(&format!("{presale}::{}::Witness", route.module()));
+        call(&mut b, presale, "creation_policy", "set_quote_allowed", vec![quote_type.clone()], vec![policy, version_arg, listing, allowed]);
+        call(&mut b, presale, "creation_policy", "schedule_migration_witness", vec![witness.clone()], vec![policy, version_arg, adapter, clock]);
+        call(&mut b, presale, "creation_policy", "apply_migration_witness", vec![witness], vec![policy, version_arg, clock]);
+        let delay = b.pure(172_800_000u64)?;
+        call(&mut b, presale, "creation_policy", "schedule_migration_delay", vec![], vec![policy, version_arg, adapter, delay, clock]);
+        call(&mut b, presale, "creation_policy", "apply_migration_delay", vec![], vec![policy, version_arg, clock]);
+        let fees = b.obj(h.shared(fee_policy[0], true))?;
+        let destination = b.pure(h.sender)?;
+        let next_delay = b.pure(172_800_000u64)?;
+        call(&mut b, presale, "fee_policy", "schedule_destination", vec![], vec![fees, version_arg, treasury, destination, next_delay, clock]);
+        call(&mut b, presale, "fee_policy", "apply_destination", vec![], vec![fees, version_arg, clock]);
+        // Venue arithmetic cases use an explicit zero-fee policy rather than publication defaults.
+        let zero = b.pure(0u64)?;
+        let zero_bps = call(&mut b, presale, "bps", "new", vec![], vec![zero]);
+        call(&mut b, presale, "fee_policy", "schedule_fees", vec![], vec![fees, version_arg, fee_admin, zero_bps, zero_bps, zero_bps, zero_bps, next_delay, clock]);
+        call(&mut b, presale, "fee_policy", "apply_fees", vec![], vec![fees, version_arg, clock]);
+        h.execute(b.finish())?.assert_success();
+        h.configure_upgrade_delay(presale, "blast_presale_package", admin, &admin_published, config_cap, version, wrapped.created(&h, "package_admin", "PackageAdmin")[0], 172_800_000)?;
+        h.unpause(presale, "blast_presale_package", admin, &admin_published, version, 11)?;
+        ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
         Ok(World {
-            h,
             route,
             checkpoint,
             venue,
             presale,
             version,
+            admin,
+            acl: admin_published.created(&h, "blast_acl", "ACL")[0],
+            root: admin_published.created(&h, "blast_acl", "SuperAdminCap")[0],
+            admin_cap: config_cap,
+            custody: wrapped.created(&h, "package_admin", "PackageAdmin")[0],
             venue_config: venue_config[0],
             creation_policy: creation_policy[0],
             fee_policy: fee_policy[0],
@@ -547,8 +686,72 @@ impl World {
             quote_type,
             quote_currency,
             coins: 0,
+            projected_fee_weights: [0; 3],
             lines: Vec::new(),
+            h,
         })
+    }
+
+    fn sign_in(&self, b: &mut ProgrammableTransactionBuilder, role: &str) -> Result<Argument> {
+        let acl = b.obj(self.h.shared(self.acl, false))?;
+        let cap = b.obj(self.h.owned(self.admin_cap))?;
+        let role = tag(&format!("{}::blast_presale_domain::{role}", self.presale));
+        Ok(call(b, self.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]))
+    }
+
+    fn change_role(&mut self, role: &str, grant: bool) -> Result<()> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl = b.obj(self.h.shared(self.acl, true))?;
+        let root = b.obj(self.h.owned(self.root))?;
+        let cap = b.pure(self.admin_cap)?;
+        let role = tag(&format!("{}::blast_presale_domain::{role}", self.presale));
+        call(&mut b, self.admin, "blast_acl", if grant { "grant_role" } else { "revoke_role" }, vec![role], vec![acl, root, cap]);
+        self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
+        Ok(())
+    }
+
+    fn set_pause(&mut self, pause: bool, bits: u8) -> Result<()> {
+        self.h.execute(self.pause_command(pause, bits)?)?.assert_success();
+        Ok(())
+    }
+
+    fn pause_command(&self, pause: bool, bits: u8) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        self.append_pause(&mut b, pause, bits, if pause { "PauseAdmin" } else { "UnpauseAdmin" })?;
+        Ok(b.finish())
+    }
+
+    fn append_pause(&self, b: &mut ProgrammableTransactionBuilder, pause: bool, bits: u8, role: &str) -> Result<()> {
+        let witness = self.sign_in(b, role)?;
+        let version = b.obj(self.h.shared(self.version, true))?;
+        let bits = b.pure(bits)?;
+        call(b, self.presale, "blast_presale_package", if pause { "pause" } else { "unpause" }, vec![], vec![version, witness, bits]);
+        Ok(())
+    }
+
+    fn pause_state(&self) -> Result<(ObjectID, u8, u64)> {
+        Ok(bcs::from_bytes(&self.h.contents(self.version))?)
+    }
+
+    fn replace_pause_mask(&mut self, mask: u8) -> Result<()> {
+        let (_, current, _) = self.pause_state()?;
+        if current != 0 {
+            self.set_pause(false, current)?;
+        }
+        if mask != 0 {
+            self.set_pause(true, mask)?;
+        }
+        Ok(())
+    }
+
+    /// Only seed the stored generation; masks are always reached through real public calls.
+    fn set_pause_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+        let (id, paused, _) = self.pause_state()?;
+        let mut object = self.h.object(self.version);
+        object.data.try_as_move_mut().expect("PackageVersion")
+            .set_contents_unsafe(bcs::to_bytes(&(id, paused, generation))?);
+        self.h.insert(object);
+        Ok(())
     }
 
     fn report(&mut self, line: String) {
@@ -1016,6 +1219,7 @@ impl World {
                 && created.holder_rewards_bps == HOLDER_REWARDS_BPS
                 && (created.protocol_lp_fee_meme_bps, created.protocol_lp_fee_quote_bps) == (0, 0)
         );
+        self.projected_fee_weights = [created.fee_recipient_bps[0], created.fee_recipient_bps[1], created.holder_rewards_bps];
         let residual = (created.migration_meme_residual, created.migration_quote_residual);
         let m = Migration {
             pool: created.pool_id,
@@ -1243,10 +1447,14 @@ impl World {
 
     /// `collect_fees` against `pool`.
     fn collect_pt(&self, sale: &Sale, m: &Migration, pool: ObjectID) -> Result<ProgrammableTransaction> {
+        self.collect_route_pt(sale, m, pool, false)
+    }
+
+    fn collect_route_pt(&self, sale: &Sale, m: &Migration, pool: ObjectID, apply: bool) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
         let vault = self.shared(&mut b, m.vault, true)?;
         if self.route.is_cetus() {
-            let args = vec![
+            let mut args = vec![
                 vault,
                 self.shared(&mut b, self.version, false)?,
                 self.shared(&mut b, self.fee_policy, false)?,
@@ -1256,7 +1464,8 @@ impl World {
             ];
             let mut types = self.pair(sale);
             types.extend(self.pool_pair(&sale.meme));
-            call(&mut b, self.presale, "cetus", "collect_fees", types, args);
+            if apply { args.push(self.clock(&mut b)?); }
+            call(&mut b, self.presale, "cetus", if apply { "settle_and_apply_fee_split" } else { "collect_fees" }, types, args);
         } else {
             let args = vec![
                 vault,
@@ -1266,7 +1475,7 @@ impl World {
                 self.shared(&mut b, pool, true)?,
                 self.clock(&mut b)?,
             ];
-            call(&mut b, self.presale, "bluefin", "collect_fees", self.pair(sale), args);
+            call(&mut b, self.presale, "bluefin", if apply { "settle_and_apply_fee_split" } else { "collect_fees" }, self.pair(sale), args);
         }
 
         Ok(b.finish())
@@ -1276,8 +1485,12 @@ impl World {
     /// position, every fee recipient is paid its apportioned share, and the rest grows the vault's
     /// holder Quote balance and pays holder Meme to the treasury.
     fn collect(&mut self, sale: &Sale, m: &Migration) -> Result<FeesCollected> {
+        self.collect_impl(sale, m, false)
+    }
+
+    fn collect_impl(&mut self, sale: &Sale, m: &Migration, apply: bool) -> Result<FeesCollected> {
         let before = self.vault(m)?;
-        let pt = self.collect_pt(sale, m, m.pool)?;
+        let pt = self.collect_route_pt(sale, m, m.pool, apply)?;
         let outcome = self.h.execute(pt)?;
         outcome.assert_success();
 
@@ -1296,13 +1509,15 @@ impl World {
         ensure!(fees.len() == 1, "one FeesCollected");
         let fees = fees[0].clone();
         ensure!(fees.vault_id == m.vault && (fees.gross_meme, fees.gross_quote) == (gross_meme, gross_quote));
-        // The publisher's zero-rate policy takes no Blast share.
+        let treasury = self.h.sender;
+        // Publication selected this treasury; the zero-rate policy takes no Blast share.
         ensure!(
-            (fees.protocol_destination, fees.protocol_meme, fees.protocol_quote) == (Some(self.h.sender), 0, 0),
+            (fees.protocol_destination, fees.protocol_meme, fees.protocol_quote)
+                == (Some(treasury), 0, 0),
             "a zero-rate policy pays Blast nothing"
         );
 
-        let weights = [FEE_BPS[0], FEE_BPS[1], HOLDER_REWARDS_BPS];
+        let weights = self.projected_fee_weights;
         let meme = apportion(&weights, gross_meme);
         let quote = apportion(&weights, gross_quote);
         ensure!(
@@ -1323,10 +1538,18 @@ impl World {
             "holder Quote accrues in the vault; holder Meme is paid to the treasury"
         );
         ensure!(
-            outcome.coins_created_for(&self.h, self.h.sender)
+            outcome.coins_created_for(&self.h, treasury)
                 == self.coins(&sale.meme, fees.holder_rewards_meme, 0),
             "holder Meme paid exactly to the treasury"
         );
+        if apply {
+            let changes: Vec<FeeSplitChanged> = self.events(&outcome, "presale_vault", "FeeSplitChanged");
+            ensure!(changes.len() == 1 && changes[0].vault_id == m.vault);
+            ensure!(changes[0].old_fee_split == before.fee_split.0 && changes[0].new_fee_split == after.fee_split.0);
+            ensure!(changes[0].delay_ms == after.fee_split.1 && after.fee_split.2.is_none());
+            let (recipients, holders) = &changes[0].new_fee_split;
+            self.projected_fee_weights = [recipients[0].bps, recipients[1].bps, *holders];
+        }
         ensure!(after.holder_rewards_quote > before.holder_rewards_quote);
         ensure!(
             (after.migration_meme_residual, after.migration_quote_residual)
@@ -1335,6 +1558,58 @@ impl World {
         ensure!(self.position_liquidity(m.position)? == m.liquidity, "collection keeps the liquidity");
 
         Ok(fees)
+    }
+
+    fn schedule_split_pt(&self, sale: &Sale, m: &Migration, next_delay: u64) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let mut recipients = Vec::new();
+        for (recipient, share) in [(CREATOR, 3_000), (FEE_B, 2_000)] {
+            let args = vec![b.pure(SuiAddress::from(recipient))?, self.bps(&mut b, share)?];
+            recipients.push(call(&mut b, self.presale, "blast_presale", "recipient_share", vec![], args));
+        }
+        let recipient_type = self.presale_tag("blast_presale", "RecipientShare");
+        let recipients = b.command(Command::make_move_vec(Some(recipient_type), recipients));
+        let holder = self.bps(&mut b, 5_000)?;
+        let split = call(&mut b, self.presale, "blast_presale", "fee_split", vec![], vec![recipients, holder]);
+        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?,
+            b.obj(self.h.owned(sale.cap))?, split, b.pure(next_delay)?, self.clock(&mut b)?];
+        call(&mut b, self.presale, "presale_vault", "schedule_fee_split", self.pair(sale), args);
+        Ok(b.finish())
+    }
+
+    fn delayed_fee_split(&mut self, sale: &Sale, m: &Migration, terms: &Terms) -> Result<()> {
+        let old = self.vault(m)?.fee_split;
+        let pt = self.schedule_split_pt(sale, m, 0)?;
+        let scheduled = self.h.execute(pt)?;
+        scheduled.assert_success();
+        ensure!(self.vault(m)?.fee_split.0 == old.0, "scheduling retains the old recipients");
+        let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
+        let watched = [m.vault, m.pool];
+        self.set_pause_generation_for_fixture(2)?;
+        let stale = self.collect_route_pt(sale, m, m.pool, true)?;
+        self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "operational_version", code: 12}, &watched, &owners)?;
+        self.set_pause_generation_for_fixture(1)?;
+        let early = self.collect_route_pt(sale, m, m.pool, true)?;
+        self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 20}, &watched, &owners)?;
+        // An Aftermath endpoint cannot bypass collectible position settlement.
+        let mut b = ProgrammableTransactionBuilder::new();
+        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?, self.clock(&mut b)?];
+        call(&mut b, self.presale, "aftermath", "apply_fee_split", self.pair(sale), args);
+        self.h.assert_rolled_back(b.finish(), Expected::Abort {package: self.presale, module: "aftermath", code: 4}, &watched, &owners)?;
+        self.h.sim.advance_clock(std::time::Duration::from_millis(old.1));
+        self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
+        self.swap(sale, m, Side::MemeIn, terms.lp_tokens() / 100)?;
+        let mut rollback = self.collect_route_pt(sale, m, m.pool, true)?;
+        rollback.commands.push(rollback.commands.last().expect("apply").clone());
+        self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 21}, &watched, &owners)?;
+        self.collect_impl(sale, m, true)?; // Existing payout oracle uses the OLD split.
+        let active = self.vault(m)?.fee_split;
+        ensure!(active.0.0[0].bps == 3_000 && active.0.0[1].bps == 2_000 && active.0.1 == 5_000);
+        ensure!(active.1 == 0 && active.2.is_none());
+        self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
+        self.collect(sale, m)?; // The same oracle now reads the explicitly applied split.
+        self.report("48-hour creator split: early apply and wrong-venue Aftermath rejected; later PTB abort restores fees/proposal; settled apply pays old recipients; next collection uses new split".into());
+        Ok(())
     }
 
     /// Anyone can create another pool of the same type (Cetus at an unreserved tick spacing,
@@ -1414,6 +1689,14 @@ impl World {
         let pt = self.collect_pt(sale, m, other)?;
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
         self.h.assert_rolled_back(pt, expected, &[m.vault, other], &owners)?;
+        let schedule = self.schedule_split_pt(sale, m, 25)?;
+        self.h.execute(schedule)?.assert_success(); // Applied notice is now zero; delay-only proposal is ready.
+        let ready_wrong_pool = self.collect_route_pt(sale, m, other, true)?;
+        self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.presale, module: self.route.module(), code}, &[m.vault, other], &owners)?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?, b.obj(self.h.owned(sale.cap))?];
+        call(&mut b, self.presale, "presale_vault", "cancel_fee_split", self.pair(sale), args);
+        self.h.execute(b.finish())?.assert_success();
         self.report(format!("collect_fees against another pool {other} of the same type: EPositionPoolMismatch, rolled back"));
 
         Ok(())
@@ -1669,6 +1952,14 @@ struct ProtocolFees {
     _lp_fee_quote_bps: u64,
 }
 
+#[derive(Deserialize)]
+struct FeeSplitChanged {
+    vault_id: ObjectID,
+    old_fee_split: (Vec<RecipientShare>, u64),
+    new_fee_split: (Vec<RecipientShare>, u64),
+    delay_ms: u64,
+}
+
 /// Mirrors `blast_presale::presale_vault::Vault`.
 #[derive(Debug, Deserialize)]
 struct VaultState {
@@ -1676,9 +1967,9 @@ struct VaultState {
     presale_id: ObjectID,
     presale_cap_id: ObjectID,
     pool_id: ObjectID,
-    _fee_recipients: Vec<RecipientShare>,
-    _holder_rewards_bps: u64,
-    _protocol_fees: ProtocolFees,
+    fee_split: ((Vec<RecipientShare>, u64), u64, Option<((Vec<RecipientShare>, u64), u64, u64)>),
+    // Delayed<ProtocolFees>: applied value and notice, then optional (proposal, notice, ready_at_ms).
+    _protocol_fees: (ProtocolFees, u64, Option<(ProtocolFees, u64, u64)>),
     _partner_id: Option<ObjectID>,
     _unpaid_protocol_meme: u64,
     _unpaid_protocol_quote: u64,

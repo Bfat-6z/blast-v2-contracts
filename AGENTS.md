@@ -22,18 +22,28 @@ venue interfaces still follow their upstream ABI.
 ## Module layout
 
 Use one declaration order across first-party Move sources and tests, omitting
-empty sections: Constants, Package Constants, Errors, Public Types, Private
+empty sections: Constants, Package Constants, Public Types, Private
 Initialization, Public Functions, Package Functions, Private Functions,
-Test-Only Types, Test-Only Functions, Tests, Test Helpers, Imports. A module
+Test-Only Types, Test-Only Functions, Tests, Test Helpers, Errors, Imports. A module
 may instead end with Events, Constants, Package Constants and Errors, just
 before Imports (`blast_partners` does); Events then holds every struct the
-module emits. Use `// === Title ===` headings. Keep imports
-and receiver aliases together at the end, overriding the generic skill's import
-placement. Keep domain subdivisions as ordinary comments within these sections.
+module emits. Errors always form the final section before Imports and receiver
+aliases; when imports are absent, Errors is the last section. Use
+`// === Title ===` headings. Keep imports and receiver aliases together at the
+end, overriding the generic skill's import placement. Keep domain subdivisions
+as ordinary comments within these sections.
 
-Group all constants together. In error registries, put all `#[test_only]`
-constants first, then all `macro public(package) fun` declarations in matching
-numeric order. Keep invariant-owned local errors in their owning module.
+Declare stored domain values and types used by domain function parameters or
+returns in the module that owns their invariants. This is a hard rule even when
+those values also appear in events. Dedicated event modules contain only event
+payloads, envelopes and event-only snapshots, never domain value definitions.
+Keep payloads beside their domain owner when centralization would create a
+module dependency cycle; use the package's existing emission envelope.
+
+Group ordinary constants together and error constants together in their
+respective sections. In error registries, put all `#[test_only]` constants first,
+then all `macro public(package) fun` declarations in matching numeric order.
+Keep invariant-owned local errors in their owning module.
 Run `python3 scripts/check_move_style.py` after editing Move files.
 
 ## Sui Move coding and review

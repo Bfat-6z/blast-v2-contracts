@@ -10,7 +10,7 @@ module blast_fun::blast_fun_domain;
 
 // === Public Types ===
 
-/// Authorizes and commits package upgrades, and makes a package immutable.
+/// Governs the administrative delay, authorizes upgrades and terminal immutability.
 public struct UpgradeAdmin()
 
 /// Revokes and reissues a launch's creator capabilities.
@@ -37,3 +37,12 @@ public struct ClaimSignerAdmin()
 
 /// Publishes holder-reward rounds.
 public struct RewardsAdmin()
+
+/// May set emergency pause bits, never clear them.
+public struct PauseAdmin()
+
+/// May clear pause bits after an incident.
+public struct UnpauseAdmin()
+
+/// May cancel any scheduled administrative action.
+public struct CancelAdmin()

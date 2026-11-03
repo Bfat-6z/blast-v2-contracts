@@ -102,7 +102,8 @@ public(package) fun stake_idle(
     if (stakeable < constants::native_min_stake_mist!()) return;
 
     let receipt_count = self.pending_stakes.length();
-    let joins_newest = receipt_count > 0
+    let joins_newest =
+        receipt_count > 0
         && self.pending_stakes[receipt_count - 1].activation_epoch() == ctx.epoch() + 1;
     if (!joins_newest && receipt_count >= constants::max_pending_stakes!()) return;
 
@@ -179,11 +180,12 @@ public(package) fun join_active_at_rate(
 
 /// Revalues the active position at the given pool exchange rate.
 public(package) fun revalue(self: &mut Custody, rate_sui: u64, rate_pool_tokens: u64) {
-    self.active_sui = math::sui_at_rate_down(
-        self.active_pool_tokens(),
-        rate_sui,
-        rate_pool_tokens,
-    );
+    self.active_sui =
+        math::sui_at_rate_down(
+            self.active_pool_tokens(),
+            rate_sui,
+            rate_pool_tokens,
+        );
 }
 
 /// Moves exactly `amount` MIST out of custody: liquid first, then pending, then active.

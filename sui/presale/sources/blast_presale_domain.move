@@ -10,7 +10,7 @@ module blast_presale::blast_presale_domain;
 
 // === Public Types ===
 
-/// Authorizes compatible package upgrades and their atomic operational-version cutover.
+/// Governs administrative delay and compatible upgrades with atomic version cutover.
 public struct UpgradeAdmin()
 
 /// Sets the address every protocol fee is paid to.
@@ -28,3 +28,12 @@ public struct AdapterAdmin()
 
 /// Publishes holder-reward rounds and settles capped gas reserves.
 public struct RewardsAdmin()
+
+/// May set emergency pause bits, never clear them.
+public struct PauseAdmin()
+
+/// May clear pause bits after an incident.
+public struct UnpauseAdmin()
+
+/// May cancel any scheduled administrative action.
+public struct CancelAdmin()

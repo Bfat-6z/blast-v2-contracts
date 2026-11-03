@@ -4,7 +4,7 @@
 
 Package `blast_admin` is Blast's administration layer. It holds one shared
 access-control list (ACL) for every Blast package, with one cold root capability
-and up to 32 administrator capabilities. Each administrator holds roles, and a
+and a Table of administrator capabilities with no inline cardinality limit. Each administrator holds roles, and a
 role is a Move type that a consumer package declares, so a role from one package
 can never act in another. The package also provides two primitives that
 upgradeable Blast packages embed: an operational version that rejects calls into
@@ -43,13 +43,13 @@ Same-named roles in different packages are different types.
 
 | Package | Declared in | Roles |
 | --- | --- | --- |
-| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::BuybackAdmin` (swap a vault's burn Quote for Meme to burn), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches, claim migration residuals), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (migration adapters), `blast_fun_domain::ClaimSignerAdmin` (the key that signs account claims), `blast_fun_domain::RewardsAdmin` (publish holder-reward rounds) |
-| `blast_fun_migrators` | declares none | uses the launchpad's `UpgradeAdmin` (its own upgrades), `FeeAdmin` (LP-fee shares), `TreasuryAdmin` (where Blast's LP fees go, migration residuals), `BuybackAdmin` (buyback and burn), and `RewardsAdmin` (holder-reward rounds) |
+| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (govern upgrade notice, authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::BuybackAdmin` (swap a vault's burn Quote for Meme to burn), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches, claim migration residuals), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (migration adapters), `blast_fun_domain::ClaimSignerAdmin` (the key that signs account claims), `blast_fun_domain::RewardsAdmin` (publish holder-reward rounds), `blast_fun_domain::PauseAdmin`, `blast_fun_domain::UnpauseAdmin`, `blast_fun_domain::CancelAdmin` |
+| `blast_fun_migrators` | declares none | uses the launchpad's `UpgradeAdmin` (its own delay policy and upgrades), `FeeAdmin` (LP-fee shares), `TreasuryAdmin` (where Blast's LP fees go, migration residuals), `BuybackAdmin` (buyback and burn), `RewardsAdmin` (holder-reward rounds), and `CancelAdmin` (pending administration) |
 | `blast_sui` | `blast_sui_domain` | `blast_sui_domain::UpgradeAdmin` (attach package capabilities; authorize, commit, restrict, or seal upgrades), `blast_sui_domain::FeeAdmin` (blastSUI redemption fee) |
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
 | `blast_boosts_aftermath` | declares none | uses the four Boosts core roles |
 | `blast_partners` | `blast_partners` | `blast_partners::blast_partners::PartnerAdmin` (register partners, schedule shares and caps) |
-| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (authorize and commit dependency-only upgrades), `blast_presale_domain::TreasuryAdmin` (where Blast's presale fees go), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (publish holder-reward rounds) |
+| `blast_presale` | `blast_presale_domain` | `blast_presale_domain::UpgradeAdmin` (govern upgrade notice, schedule and execute compatible upgrades or immutability), `blast_presale_domain::TreasuryAdmin` (where Blast's presale fees go), `blast_presale_domain::FeeAdmin` (rates for new sales, one sale before its start, and one vault; partners new sales may name), `blast_presale_domain::ListingAdmin` (Quotes new sales may use), `blast_presale_domain::AdapterAdmin` (migrators that may create sales), `blast_presale_domain::RewardsAdmin` (publish holder-reward rounds), `blast_presale_domain::PauseAdmin`, `blast_presale_domain::UnpauseAdmin`, `blast_presale_domain::CancelAdmin` |
 
 ### Lifecycle
 
@@ -89,7 +89,7 @@ what each transaction leaves on chain.
    reference. It aborts unless the cap is live and holds `Role`. It returns an
    `AdminWitness<Role>`.
 2. Pass the witness by reference to each consumer call that names that role, in
-   the same PTB, for example `launch_config::set_creation_fee` with
+   the same PTB, for example `launch_config::schedule_creation_fee` with
    `AdminWitness<blast_fun_domain::FeeAdmin>`. One witness serves any number of
    calls of the same role.
 3. A PTB that needs two roles signs in twice. The witness drops at the end of
@@ -118,7 +118,14 @@ what each transaction leaves on chain.
 
 #### Upgrade a consumer package (Blast admin)
 
-For consumers other than the Boosts adapter, use one PTB:
+Launchpad, presale and migrators first require `schedule_upgrade` with the exact
+digest and `Clock`, followed by that package custody's applied upgrade notice. A `CancelAdmin` can cancel
+even a ready action. Their `authorize_upgrade` also takes `Clock` and consumes
+the matching ready action. Immutability follows the same scheduling rule. Action
+schedules retain the applied notice; only the explicit `schedule_upgrade_delay` /
+`apply_upgrade_delay` policy path changes it.
+
+For consumers other than the Boosts adapter, execution uses one PTB:
 
 1. `blast_acl::sign_in` with the package's upgrade role (for example
    `blast_sui_domain::UpgradeAdmin`).
@@ -190,13 +197,19 @@ that takes it and must call the latest package version.
 `UpgradeCap` (version 1) after checking both belong to the package of `M`.
 Neither can leave the custody. The consumer's shared `PackageAdmin` wraps it and
 gates authorization behind its upgrade role. Boosts receipt commit instead carries
-the native authorized receipt. `wrap`, and Blast SUI's `new` and `share`, need
-only the package's own `Publisher` and `UpgradeCap`:
+the native authorized receipt. Wrap in launchpad, presale and migrators consumes their
+unique Publication and matching fresh UpgradeCap. Publication carries
+provenance only and is permanently consumed at wrap. Ordinary ACL operations
+configure policies using each publication-owned operation's initial zero notice. Each operation
+stores its own self-timelocked notice period; see ADR 0134.
+
+Blast SUI's `new` and `share`
+use its own Publisher and UpgradeCap directly:
 
 | Package | Custody object | Transitions exposed |
 | --- | --- | --- |
 | `blast_fun` | `blast_fun::package_admin::PackageAdmin` | `blast_fun::package_admin::wrap`, `blast_fun::package_admin::authorize_upgrade`, `blast_fun::package_admin::commit_upgrade_and_advance`, `blast_fun::package_admin::make_immutable` |
-| `blast_fun_migrators` | `blast_fun_migrators::package_admin::PackageAdmin` | `blast_fun_migrators::package_admin::wrap`, `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` (no restriction, no immutability: always upgradeable) |
+| `blast_fun_migrators` | `blast_fun_migrators::package_admin::PackageAdmin` | `blast_fun_migrators::package_admin::wrap`, `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance`, delayed `blast_fun_migrators::package_admin::make_immutable` |
 | `blast_sui` | `blast_sui::package_admin::PackageAdmin` | `blast_sui::package_admin::new`, `blast_sui::package_admin::add_capability`, `blast_sui::package_admin::share`, `blast_sui::package_admin::authorize_upgrade`, `blast_sui::package_admin::commit_upgrade_and_advance`, `blast_sui::package_admin::restrict_to_additive`, `blast_sui::package_admin::make_immutable`, `blast_sui::package_admin::has_upgrade_cap` |
 | `blast_boosts_aftermath` | `blast_boosts_aftermath::package_admin::PackageAdmin` | `blast_boosts_aftermath::package_admin::wrap`, `blast_boosts_aftermath::package_admin::authorize_upgrade`, `blast_boosts_aftermath::package_admin::commit_upgrade`, `blast_boosts_aftermath::package_admin::activate_upgrade`, `blast_boosts_aftermath::package_admin::make_immutable` |
 
@@ -208,10 +221,40 @@ and `upgrade_custody::restrict_to_dependency_only` (irreversible narrowing),
 `upgrade_custody::has_upgrade_cap`, and `upgrade_custody::publisher` (borrows
 the `Publisher` by reference for features like Display; no current consumer
 exposes it). After `make_immutable`, every transition that needs the
-`UpgradeCap` (authorize, commit, restrict, make immutable) aborts with code 18.
+`UpgradeCap` (authorize, commit, restrict, make immutable) aborts with code 17.
 The packages
 `blast_admin`, `blast_partners`, and `blast_boosts_core` are published immutable
 and have no custody at all.
+
+### Explicit-application delayed values
+
+Each `Delayed<T>` owns its applied `value`, its applied `delay_ms`, and at most one
+pending proposal containing the next value, next delay and absolute `ready_at_ms`.
+`delayed::schedule` always waits the **stored old delay**; the supplied `delay_ms`
+is the notice period that becomes active together with the proposed value.
+`delayed::schedule_value` retains the old delay. `delayed::schedule_delay` retains
+the applied value and replaces any existing value proposal. Both use ordinary
+scheduling, and `delayed::apply` handles all proposals. There is no immediate setter.
+Reads need no Clock. `delayed::pending_value` has the receiver alias `Pending.value()`;
+`delayed::pending_delay_ms` has the alias `Pending.delay_ms()`.
+
+Zero permits publication setup through ordinary ACL roles. Once a positive delay
+is applied, reducing it, including to zero, waits that old delay. Different operations
+can have different notice periods. Replacing a proposal restarts its full old notice;
+cancellation preserves both applied fields and remains possible after readiness.
+Application is explicit and consumes the proposal once. The primitive accepts no-op
+proposals; domain setters reject unchanged value-and-delay pairs where applicable.
+
+`delayed::new_pending` supports standalone actions: its owner supplies the stored
+current delay and proposed next delay. `delayed::take_ready` returns the value and
+next delay. A value-and-policy or policy-only application clears its pending slot
+and persists that delay. An action-only application clears its proposal and preserves
+the live applied notice, even if independent policy has changed since scheduling.
+Overflow at scheduling or actual application aborts with registry code 22
+(`EInvalidDelay`). Later scheduling checks again because time continues advancing.
+The creator-claim backend signer is a plain value assigned and revoked immediately
+under ClaimSignerAdmin. ACL administrator and role grants remain immediate. The
+ACL root and partner registry retain their independent seven-day timelocks.
 
 ### Time rules
 
@@ -277,26 +320,28 @@ Codes are plain `u64` values raised in the `blast_admin` module named.
 | 0 | `EInvalidSuperAdminCap` | `blast_acl` | the root cap is not the active one |
 | 1 | `EInvalidAdminCap` | `blast_acl` | the `AdminCap` is revoked or unknown (in `sign_in`, `grant_role`, `revoke_role`, `revoke_admin`) |
 | 2 | `EInvalidAdminRecipient` | `blast_acl` | `grant_admin` to `0x0` |
-| 3 | `EAdminCapacityReached` | `blast_acl` | 32 admins already live |
-| 4 | `EAdminRoleCapacityReached` | `blast_acl` | the cap already holds 32 roles |
-| 5 | `EAdminRoleAlreadyGranted` | `blast_acl` | the cap already holds the role |
-| 6 | `EAdminRoleNotGranted` | `blast_acl` | `sign_in` or `revoke_role` for a role the cap does not hold; grant it first or use the right role type |
-| 7 | `EInvalidSuperAdminRecipient` | `blast_acl` | nominee is `0x0` or the sender; or publish with `blast_acl_root` left at `0x0` |
-| 8 | `ESuperAdminTransferUnchanged` | `blast_acl` | that address is already the nominee |
-| 9 | `ENoPendingSuperAdminTransfer` | `blast_acl` | cancel with nothing pending |
-| 10 | `ENotPendingSuperAdminRecipient` | `blast_acl` | accept from an address that is not the nominee |
-| 11 | `ESuperAdminTransferNotReady` | `blast_acl` | accept before `execute_after_ms` |
-| 12 | `ESuperAdminCapStillActive` | `blast_acl` | destroying the active root |
-| 13 | `EOperationalVersionMismatch` | `operational_version` | the call reached outdated bytecode; call the latest package version (or the upgrade did not compile the next generation) |
-| 14 | `EOperationalVersionOverflow` | `operational_version` | generation at `u64` max |
-| 15 | `EInvalidPackagePublisher` | `upgrade_custody` | the `Publisher` is not from the package |
-| 16 | `EInvalidUpgradeCap` | `upgrade_custody` | the cap is for another package or already upgraded |
-| 17 | `EInvalidPackageDigest` | `upgrade_custody` | digest is not 32 bytes |
-| 18 | `EUpgradeCapUnavailable` | `upgrade_custody` | the package was made immutable |
-| 19 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
-| 20 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
+| 3 | `EAdminRoleCapacityReached` | `blast_acl` | the cap already holds 32 roles |
+| 4 | `EAdminRoleAlreadyGranted` | `blast_acl` | the cap already holds the role |
+| 5 | `EAdminRoleNotGranted` | `blast_acl` | `sign_in` or `revoke_role` for a role the cap does not hold; grant it first or use the right role type |
+| 6 | `EInvalidSuperAdminRecipient` | `blast_acl` | nominee is `0x0` or the sender; or publish with `blast_acl_root` left at `0x0` |
+| 7 | `ESuperAdminTransferUnchanged` | `blast_acl` | that address is already the nominee |
+| 8 | `ENoPendingSuperAdminTransfer` | `blast_acl` | cancel with nothing pending |
+| 9 | `ENotPendingSuperAdminRecipient` | `blast_acl` | accept from an address that is not the nominee |
+| 10 | `ESuperAdminTransferNotReady` | `blast_acl` | accept before `execute_after_ms` |
+| 11 | `ESuperAdminCapStillActive` | `blast_acl` | destroying the active root |
+| 12 | `EOperationalVersionMismatch` | `operational_version` | the call reached outdated bytecode; call the latest package version (or the upgrade did not compile the next generation) |
+| 13 | `EOperationalVersionOverflow` | `operational_version` | generation at `u64` max |
+| 14 | `EInvalidPackagePublisher` | `upgrade_custody` | the `Publisher` is not from the package |
+| 15 | `EInvalidUpgradeCap` | `upgrade_custody` | the cap is for another package or already upgraded |
+| 16 | `EInvalidPackageDigest` | `upgrade_custody` | digest is not 32 bytes |
+| 17 | `EUpgradeCapUnavailable` | `upgrade_custody` | the package was made immutable |
+| 18 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
+| 19 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
+| 20 | `ENotReady` | `delayed` | applying a change before its snapshotted deadline |
+| 21 | `ENoPending` | `delayed` | applying or cancelling when no change is pending |
+| 22 | `EInvalidDelay` | `delayed` | the delay would overflow its Unix millisecond deadline; choose a representable delay |
 
-The one an integrator most often meets is code 13 from `operational_version`: a
+The one an integrator most often meets is code 12 from `operational_version`: a
 PTB built against an old package ID after an upgrade.
 
 ### Pitfalls
@@ -309,7 +354,7 @@ PTB built against an old package ID after an upgrade.
   the full type name, including the package address.
 - After any upgrade of `blast_fun`, `blast_fun_migrators`, `blast_sui`, or
   `blast_boosts_aftermath`, PTBs pinned to the old package ID abort with code
-  13.
+  12.
 
 ### Q&A
 
@@ -351,5 +396,5 @@ digest, `UpgradeCommitted` with the new package ID, and
 be created with `M`'s one-time witness inside `M`'s package `init`, and only the
 module holding it can advance it.
 
-**Does the presale use this ACL?** Yes. `blast_presale_domain` declares six
+**Does the presale use this ACL?** Yes. `blast_presale_domain` declares nine
 presale roles, granted like any other package's.

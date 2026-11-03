@@ -23,8 +23,8 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | `blast_boosts_core` | Boosts core | live; source has changed since | `0xac10e88ff25bd98a841f60cfcdc4006b4ad3d3afb577b5024043798ff7f4cafe` | `0xac10e88ff25bd98a841f60cfcdc4006b4ad3d3afb577b5024043798ff7f4cafe` |
 | `blast_boosts_products` | Boost product tags | live; source has changed since | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` |
 | `blast_boosts_aftermath` | Boosts Aftermath adapter | not yet published | — | — |
-| `blast_partners` | Partner codes | live | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
-| `blast_admin` | Administration | live | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
+| `blast_partners` | Partner codes | live; source has changed since | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` | `0x163a96aa9b88afe77e51febc195a9e0fa8534a6122bc09c6bd46d176c91a99f9` |
+| `blast_admin` | Administration | live; source has changed since | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
 
 ## Calling Blast contracts
 
@@ -1142,7 +1142,7 @@ Codes repeat across packages. Decode by the aborting module: modules
 `checkpoint`, `snapshot`, `venue_account`, `blast_boosts_aftermath`,
 `package_admin` belong to `blast_boosts_aftermath`. A call through an
 outdated adapter package aborts in the `operational_version` module of the
-`blast_admin` package with code 13.
+`blast_admin` package with code 12.
 
 #### Adapter (`blast_boosts_aftermath`)
 
@@ -1234,7 +1234,7 @@ outdated adapter package aborts in the `operational_version` module of the
   admitted forced reduction; other drift may require ShutdownAdmin to shut
   the Boost down. Market-wide margin changes are accepted automatically.
 - Decoding an abort by code alone. Core and adapter codes overlap.
-- Calling an old adapter generation after activation (blast_admin code 13). Types
+- Calling an old adapter generation after activation (blast_admin code 12). Types
   keep their original package IDs; calls must target the current package.
 - Treating the tag name as the policy. `NVDA_BULL_2X` is a label; read `side`
   and `target_leverage_bps` from the Vault.
@@ -1306,7 +1306,7 @@ Boost down so holders can claim what remains.
 
 ## Partner codes
 
-> **Deployment status:** `blast_partners` is live on mainnet.
+> **Deployment status:** `blast_partners` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
 
 ### What it is
 
@@ -1317,8 +1317,9 @@ presales. A partner is one deal: a shared `Partner` object with a share of
 Blast's fee (0% to 80%) and a recipient address. A company holds one
 `PartnerCap` that controls the recipient of every deal registered under it.
 Users never pay for a partner: a partner is only ever paid out of Blast's own
-fee. Every change Blast makes to a partner's share or managing cap waits seven
-days, and the package is published immutable, so no one can shorten that delay.
+fee. Initial shares apply immediately. Later changes Blast makes to a partner's
+share or managing cap wait seven days. The package is published immutable, so no
+one can shorten that delay.
 
 ### Objects and authority
 
@@ -1364,8 +1365,8 @@ destroying a live cap leaves its partners with no working cap until a cap Blast
 schedules with `blast_partners::schedule_cap` takes effect, seven days later.
 
 **Partner.** `blast_partners::blast_partners::register` creates and shares the
-partner with its share and cap in force immediately (`before == after`,
-`at_ms == 0`). From then on:
+partner with the agreed share and managing cap in force immediately. Registration
+needs no `Clock`; there is no initial waiting period. From then on:
 
 1. Blast schedules a new share or cap; the old value stays in force for seven
    days.
@@ -1405,7 +1406,7 @@ accepted for seven more days. A partner is accepted while the field exists and
    its owned `AdminCap`; then `blast_partners::blast_partners::register` with a
    reference to that `AdminWitness<PartnerAdmin>`, your cap ID, the recipient,
    and the share. The new `Partner` is shared; its ID is in the `PartnerUpdated`
-   event and the transaction's created objects.
+   event and the transaction's created objects. Its initial share is active immediately.
 4. Blast's admin for each product adds the partner to that product's list.
 
 `blast_partners::blast_partners::register` accepts any ID as the cap. Confirm on
@@ -1484,6 +1485,7 @@ Rules common to every product:
 
 - Delay: `blast_partners::blast_partners::delay_ms()` returns 604,800,000 (seven
   days). It is a compile-time constant of an immutable package.
+- The initial share and managing cap apply at registration, without a Clock.
 - A scheduled share or cap is in force from the first transaction whose `Clock`
   reads `at_ms` or later.
 - A recipient change applies in the same transaction.
@@ -3795,13 +3797,13 @@ public struct VenueAccount has store {
 
 ## API reference: `blast_partners` (Partner codes)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
 ### `blast_partners::blast_partners`
 
-Blast partner codes, shared by every Blast product.  A partner is one deal: it is paid a share of the fee Blast charges on every trade that names it, in the same transaction. A company holds one `PartnerCap` for all its deals, each a separate partner with its own share. Blast's partner administrator registers partners under a cap, sets each one's share, and can move a partner to another cap; the cap's holder sets where each of its partners is paid. Everything Blast changes takes effect only `PARTNER_CHANGE_DELAY_MS` after it is scheduled, and this package is published immutable, so no one can shorten that delay. The recipient the cap holder sets applies at once.  Products call `pay` with Blast's own fee on a trade. `pay` emits `PartnerPaid` for what the partner received; the product records the trade and the amount in its own event.
+Blast partner codes, shared by every Blast product.  A partner is one deal: it is paid a share of the fee Blast charges on every trade that names it, in the same transaction. A company holds one `PartnerCap` for all its deals, each a separate partner with its own share. Blast's partner administrator registers partners under a cap, sets each one's share, and can move a partner to another cap; the cap's holder sets where each of its partners is paid. Initial terms apply at registration. Later Blast changes take effect only `PARTNER_CHANGE_DELAY_MS` after scheduling. This package is published immutable, so no one can shorten that delay. The recipient the cap holder sets applies at once.  Products call `pay` with Blast's own fee on a trade. `pay` emits `PartnerPaid` for what the partner received; the product records the trade and the amount in its own event.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/blast_partners.move
 
@@ -3837,7 +3839,7 @@ public struct PartnerCap has key, store {
 public fun new_cap(ctx: &mut TxContext): PartnerCap
 
 /// Registers and shares a partner managed by the cap `cap_id`, with its share
-/// and cap in force at once. Every later change to either waits `PARTNER_CHANGE_DELAY_MS`.
+/// and managing cap in force immediately.
 public fun register(
     _: &blast_admin::blast_acl::AdminWitness<PartnerAdmin>,
     cap_id: ID,
@@ -3919,7 +3921,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 ## API reference: `blast_admin` (Administration)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -3930,24 +3932,26 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 0 | `EInvalidSuperAdminCap` |  |
 | 1 | `EInvalidAdminCap` |  |
 | 2 | `EInvalidAdminRecipient` |  |
-| 3 | `EAdminCapacityReached` |  |
-| 4 | `EAdminRoleCapacityReached` |  |
-| 5 | `EAdminRoleAlreadyGranted` |  |
-| 6 | `EAdminRoleNotGranted` |  |
-| 7 | `EInvalidSuperAdminRecipient` |  |
-| 8 | `ESuperAdminTransferUnchanged` |  |
-| 9 | `ENoPendingSuperAdminTransfer` |  |
-| 10 | `ENotPendingSuperAdminRecipient` |  |
-| 11 | `ESuperAdminTransferNotReady` |  |
-| 12 | `ESuperAdminCapStillActive` |  |
-| 13 | `EOperationalVersionMismatch` |  |
-| 14 | `EOperationalVersionOverflow` |  |
-| 15 | `EInvalidPackagePublisher` |  |
-| 16 | `EInvalidUpgradeCap` |  |
-| 17 | `EInvalidPackageDigest` |  |
-| 18 | `EUpgradeCapUnavailable` |  |
-| 19 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 20 | `EInvalidPackageMarker` |  |
+| 3 | `EAdminRoleCapacityReached` |  |
+| 4 | `EAdminRoleAlreadyGranted` |  |
+| 5 | `EAdminRoleNotGranted` |  |
+| 6 | `EInvalidSuperAdminRecipient` |  |
+| 7 | `ESuperAdminTransferUnchanged` |  |
+| 8 | `ENoPendingSuperAdminTransfer` |  |
+| 9 | `ENotPendingSuperAdminRecipient` |  |
+| 10 | `ESuperAdminTransferNotReady` |  |
+| 11 | `ESuperAdminCapStillActive` |  |
+| 12 | `EOperationalVersionMismatch` |  |
+| 13 | `EOperationalVersionOverflow` |  |
+| 14 | `EInvalidPackagePublisher` |  |
+| 15 | `EInvalidUpgradeCap` |  |
+| 16 | `EInvalidPackageDigest` |  |
+| 17 | `EUpgradeCapUnavailable` |  |
+| 18 | `EUpgradePolicyNotMoreRestrictive` |  |
+| 19 | `EInvalidPackageMarker` |  |
+| 20 | `ENotReady` |  |
+| 21 | `ENoPending` |  |
+| 22 | `EInvalidDelay` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -3962,7 +3966,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
-    admins: VecMap<ID, VecSet<TypeName>>,
+    admins: Table<ID, VecSet<TypeName>>,
     /// The nominated next super admin: none until the transfer delay passes.
     pending_super_admin: blast_fun_timelock::Timelocked<Option<address>>,
 }
@@ -4029,7 +4033,6 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role>
 
 #### Constants
 
-- `MAX_ADMINS: u64 = 32`
 - `MAX_ROLES_PER_ADMIN: u64 = 32`
 - `SUPER_ADMIN_TRANSFER_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The wait before a nominated super admin may accept the root.
 
@@ -4140,6 +4143,103 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     final_native_version: u64,
     final_policy: u8,
 }
+```
+
+### `blast_admin::delayed`
+
+Explicit changes that always wait their operation's currently applied notice period.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
+
+#### Types
+
+```move
+/// Applied value and notice period, with at most one atomic replacement.
+/// Readers need no Clock. There is no immediate mutation or bypass operation.
+public struct Delayed<T: copy + drop + store> has store {
+    value: T,
+    delay_ms: u64,
+    pending: Option<Pending<T>>,
+}
+
+/// Proposed value and next notice period, bound to a Unix millisecond threshold.
+public struct Pending<T: copy + drop + store> has copy, drop, store {
+    value: T,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+```
+
+#### Functions
+
+```move
+/// Initializes a value and the notice period anchored at each future scheduling time.
+public fun new<T: copy + drop + store>(value: T, delay_ms: u64): Delayed<T>
+
+/// Returns the explicitly applied value.
+public fun value<T: copy + drop + store>(self: &Delayed<T>): T
+
+/// Returns this operation's currently applied notice period in milliseconds.
+public fun delay_ms<T: copy + drop + store>(self: &Delayed<T>): u64
+
+/// Returns the current proposal, if any.
+public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
+
+/// Replaces the proposal and restarts the full currently applied delay.
+/// `delay_ms` is the NEXT notice period, never the wait for this proposal.
+public fun schedule<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Changes only the value, retaining the applied notice period.
+public fun schedule_value<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    clock: &Clock,
+): u64
+
+/// Changes only the notice period, retaining the applied value.
+/// A reduction, including to zero, still waits the old notice period.
+public fun schedule_delay<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Checks that an application can proceed without consuming the stored proposal.
+/// Adapters use this before settling accrued economics under the currently applied value.
+public fun assert_ready<T: copy + drop + store>(self: &Delayed<T>, clock: &Clock)
+
+/// Applies both proposed fields once, only after the stored deadline.
+public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
+
+/// Cancels even a ready proposal without changing the applied value or delay.
+public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
+
+/// Snapshots a standalone operation's applied delay and proposed next delay.
+/// Its owner must persist the returned next delay on successful application.
+public fun new_pending<T: copy + drop + store>(
+    value: T,
+    current_delay_ms: u64,
+    delay_ms: u64,
+    clock: &Clock,
+): Pending<T>
+
+/// Returns a ready proposal's value and next delay. Rechecks representability at actual application.
+/// Future scheduling still checks its own timestamp addition as time advances.
+public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): (T, u64)
+
+/// Returns the proposed value for cancellation and diagnostics.
+public fun pending_value<T: copy + drop + store>(self: &Pending<T>): T
+
+/// Returns the proposed next notice period.
+public fun pending_delay_ms<T: copy + drop + store>(self: &Pending<T>): u64
+
+/// Returns the Unix millisecond execution threshold.
+public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
 ```
 
 ### `blast_admin::operational_version`

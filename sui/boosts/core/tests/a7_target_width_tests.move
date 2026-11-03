@@ -23,17 +23,39 @@ fun profit_above_the_nav_cap_and_old_target_limit_keeps_rebalancing() {
         vector[max / 2, max / 2 + 1, max].do!(|equity| {
             let state = seeded(side);
             assert!(equity > state.nav_cap_for_testing());
-            assert!(state.needs_rebalance(position(side, equity, 2_000_000), observation::funding_credit(0), true, 37, NOW));
+            assert!(
+                state.needs_rebalance(
+                    position(side, equity, 2_000_000),
+                    observation::funding_credit(0),
+                    true,
+                    37,
+                    NOW
+                )
+            );
             let mut plan = state.prepare_rebalance(position(side, equity, 2_000_000), 37, NOW);
             let order = state.next_rebalance_order(&plan);
             let filled = order.order_base();
             // Independent execution-price cap, with the same atomic units.
-            assert!(filled > 0 && (filled as u128) * 1_010_000_001 <= (ORDER_CAP as u128) * (PRICE as u128));
+            assert!(
+                filled > 0 && (filled as u128) * 1_010_000_001 <= (ORDER_CAP as u128) * (PRICE as u128)
+            );
             let cost = filled.div_ceil(100);
             let fee = ((filled + cost) * 37).div_ceil(10_000);
             let final_equity = equity - cost - fee;
-            state.accept_rebalance_fill(&mut plan, order, position(side, final_equity, 2_000_000 + filled), filled, NOW);
-            let (equity_before, equity_after, base_before, base_after, increase) = state.complete_rebalance(plan);
+            state.accept_rebalance_fill(
+                &mut plan,
+                order,
+                position(side, final_equity, 2_000_000 + filled),
+                filled,
+                NOW
+            );
+            let (
+                equity_before,
+                equity_after,
+                base_before,
+                base_after,
+                increase
+            ) = state.complete_rebalance(plan);
             assert!(increase);
             assert_eq!(equity_before, equity);
             assert_eq!(equity_after, final_equity);
@@ -56,7 +78,15 @@ fun an_unreachable_target_stops_at_the_actual_position_limit() {
         state.accept_rebalance_fill(&mut plan, order, position(side, max - 1, max), 5, NOW);
         assert_eq!(state.next_rebalance_order(&plan).order_base(), 0);
         state.complete_rebalance(plan);
-        assert!(!state.needs_rebalance(position(side, max - 1, max), observation::funding_credit(0), true, 0, NOW));
+        assert!(
+            !state.needs_rebalance(
+                position(side, max - 1, max),
+                observation::funding_credit(0),
+                true,
+                0,
+                NOW
+            )
+        );
         state.destroy_for_testing();
     });
 }

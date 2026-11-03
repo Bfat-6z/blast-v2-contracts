@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Canonical package provenance, publication bootstrap, and operational generation.
+/// Canonical publication custody and operational generation.
 ///
 /// The one-time witness seeds the generation and claims the Publisher. Both stay in owned
-/// bootstrap custody until package administration seals the native capabilities.
+/// publication custody until package administration seals the native capabilities.
 module blast_fun::blast_fun;
 
 // === Constants ===
@@ -21,7 +21,7 @@ const NEXT_PACKAGE_VERSION: u64 = 2;
 public struct BLAST_FUN() has drop;
 
 /// Publication-only custody; it cannot supply the PackageVersion required by launch activity.
-public struct Bootstrap has key {
+public struct Publication has key {
     id: UID,
     publisher: Publisher,
     generation: OperationalVersion<BLAST_FUN>,
@@ -30,6 +30,7 @@ public struct Bootstrap has key {
 /// Singleton operational package generation.
 public struct PackageVersion has key {
     id: UID,
+    paused: u8,
     generation: OperationalVersion<BLAST_FUN>,
 }
 
@@ -39,14 +40,49 @@ fun init(otw: BLAST_FUN, ctx: &mut TxContext) {
     let generation = operational_version::new(&otw);
     let publisher = sui::package::claim(otw, ctx);
 
-    transfer::transfer(Bootstrap { id: object::new(ctx), publisher, generation }, ctx.sender());
+    transfer::transfer(Publication { id: object::new(ctx), publisher, generation }, ctx.sender());
+}
+
+// === Public Functions ===
+
+/// Freezes selected operations immediately; does not authorize unpausing.
+public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8) {
+    self.assert_current();
+
+    assert!(
+        bits != 0 && (bits & constants::valid_pause_bits!()) == bits,
+        blast_fun::errors::invalid_pause_bits!()
+    );
+    assert!((self.paused | bits) != self.paused, blast_fun::errors::pause_unchanged!());
+    self.paused = self.paused | bits;
+
+    events::paused(bits, self.paused);
+}
+
+/// Clears only the requested bits; claims and settlement never require unpausing.
+public fun unpause(self: &mut PackageVersion, _: &AdminWitness<UnpauseAdmin>, bits: u8) {
+    self.assert_current();
+
+    assert!(
+        bits != 0 && (bits & constants::valid_pause_bits!()) == bits,
+        blast_fun::errors::invalid_pause_bits!()
+    );
+    assert!((self.paused & bits) != 0, blast_fun::errors::pause_unchanged!());
+    self.paused = self.paused ^ (self.paused & bits);
+
+    events::unpaused(bits, self.paused);
 }
 
 // === Package Functions ===
 
-/// Consumes the unique bootstrap for package-admin custody intake.
-public(package) fun destroy(self: Bootstrap): (Publisher, OperationalVersion<BLAST_FUN>) {
-    let Bootstrap { id, publisher, generation } = self;
+/// Rejects a paused operation before its lifecycle or economic checks.
+public(package) fun assert_not_paused(self: &PackageVersion, bit: u8) {
+    assert!((self.paused & bit) == 0, blast_fun::errors::paused!());
+}
+
+/// Consumes the unique publication for package-admin custody intake.
+public(package) fun destroy(self: Publication): (Publisher, OperationalVersion<BLAST_FUN>) {
+    let Publication { id, publisher, generation } = self;
     id.delete();
 
     (publisher, generation)
@@ -54,7 +90,11 @@ public(package) fun destroy(self: Bootstrap): (Publisher, OperationalVersion<BLA
 
 /// Publishes the usable generation in the same transaction that seals capability custody.
 public(package) fun share_version(generation: OperationalVersion<BLAST_FUN>, ctx: &mut TxContext) {
-    transfer::share_object(PackageVersion { id: object::new(ctx), generation });
+    transfer::share_object(PackageVersion {
+        paused: constants::valid_pause_bits!(),
+        id: object::new(ctx),
+        generation
+    });
 }
 
 /// Rejects callable bytecode from every package generation except the active one.
@@ -85,12 +125,12 @@ public fun init_for_testing(ctx: &mut TxContext) {
 public fun new_for_testing(ctx: &mut TxContext): PackageVersion {
     let otw = BLAST_FUN();
 
-    PackageVersion { id: object::new(ctx), generation: operational_version::new(&otw) }
+    PackageVersion { paused: 0, id: object::new(ctx), generation: operational_version::new(&otw) }
 }
 
 #[test_only]
 /// Inspects the canonical Publisher retained by initialization without releasing it.
-public fun publisher_for_bootstrap_testing(self: &Bootstrap): &Publisher {
+public fun publisher_for_publication_testing(self: &Publication): &Publisher {
     &self.publisher
 }
 
@@ -120,6 +160,8 @@ public fun publisher_for_testing(ctx: &mut TxContext): Publisher {
 
 // === Imports ===
 
-use blast_admin::operational_version::{Self, OperationalVersion};
+use blast_admin::{blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
+
+use blast_fun::{blast_fun_domain::{PauseAdmin, UnpauseAdmin}, constants, events};
 
 use sui::package::Publisher;

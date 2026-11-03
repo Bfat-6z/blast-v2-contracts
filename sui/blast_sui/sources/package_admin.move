@@ -100,6 +100,7 @@ public fun commit_upgrade_and_advance(
     receipt: UpgradeReceipt,
 ) {
     package_version.assert_next();
+
     let custodian_id = self.id.to_inner();
 
     self.custody.commit_upgrade(custodian_id, receipt);
@@ -153,6 +154,7 @@ fun attach_capability<Capability: key + store>(
         !self.has_capability<Capability>(),
         blast_sui::errors::package_capability_already_exists!(),
     );
+
     let capability_id = object::id(&capability);
     self.id.add_dynamic_object_field(CapabilityKey<Capability>(), capability);
 
@@ -183,6 +185,7 @@ public fun new_for_testing(
     self.attach_capability(fun_metadata_cap);
     self.attach_capability(blast_metadata_cap);
     self.attach_capability(display_cap);
+
     self
 }
 

@@ -66,7 +66,14 @@ fun an_increasing_fill_must_still_have_opening_margin() {
 #[expected_failure(abort_code = errors::EVenueNotReady, location = blast_boosts_aftermath::snapshot)]
 fun reduction_does_not_bypass_pending_orders() {
     let state = seeded(policy::long());
-    let (plan, _) = snapshot::captured_health_for_testing(checkpoint(), 1_000, false, 1, true, true)
+    let (plan, _) = snapshot::captured_health_for_testing(
+        checkpoint(),
+        1_000,
+        false,
+        1,
+        true,
+        true
+    )
         .into_rebalance_plan(&state, 10, NOW);
     destroy(plan);
     destroy(state);
@@ -76,7 +83,14 @@ fun reduction_does_not_bypass_pending_orders() {
 #[expected_failure(abort_code = errors::EVenueNotReady, location = blast_boosts_aftermath::snapshot)]
 fun reduction_does_not_bypass_a_paused_or_frozen_venue() {
     let state = seeded(policy::long());
-    let (plan, _) = snapshot::captured_health_for_testing(checkpoint(), 1_000, false, 0, false, true)
+    let (plan, _) = snapshot::captured_health_for_testing(
+        checkpoint(),
+        1_000,
+        false,
+        0,
+        false,
+        true
+    )
         .into_rebalance_plan(&state, 10, NOW);
     destroy(plan);
     destroy(state);
@@ -86,7 +100,14 @@ fun reduction_does_not_bypass_a_paused_or_frozen_venue() {
 #[expected_failure(abort_code = errors::ENormalizationOverflow, location = blast_boosts_aftermath::snapshot)]
 fun reduction_does_not_accept_unrepresentable_economics() {
     let state = seeded(policy::long());
-    let (plan, _) = snapshot::captured_health_for_testing(checkpoint(), 1_000, false, 0, true, false)
+    let (plan, _) = snapshot::captured_health_for_testing(
+        checkpoint(),
+        1_000,
+        false,
+        0,
+        true,
+        false
+    )
         .into_rebalance_plan(&state, 10, NOW);
     destroy(plan);
     destroy(state);
@@ -98,7 +119,12 @@ fun keeper_readiness_admits_low_margin_reductions_in_both_directions() {
         let side = if (short) { policy::short() } else { policy::long() };
         let state = seeded(side);
         vector[2_500, 3_600].do!(|notional| {
-            let ready = capture(notional, side, false).into_rebalance_readiness(&state, checkpoint::unchanged_change(), 10, NOW);
+            let ready = capture(notional, side, false).into_rebalance_readiness(
+                &state,
+                checkpoint::unchanged_change(),
+                10,
+                NOW
+            );
             assert!(ready);
         });
         destroy(state);
@@ -108,8 +134,18 @@ fun keeper_readiness_admits_low_margin_reductions_in_both_directions() {
 #[test]
 fun keeper_readiness_filters_only_unsafe_increases() {
     let state = seeded(policy::long());
-    let unsafe_increase = capture(1_000, policy::long(), false).into_rebalance_readiness(&state, checkpoint::unchanged_change(), 10, NOW);
-    let safe_increase = capture(1_000, policy::long(), true).into_rebalance_readiness(&state, checkpoint::unchanged_change(), 10, NOW);
+    let unsafe_increase = capture(1_000, policy::long(), false).into_rebalance_readiness(
+        &state,
+        checkpoint::unchanged_change(),
+        10,
+        NOW
+    );
+    let safe_increase = capture(1_000, policy::long(), true).into_rebalance_readiness(
+        &state,
+        checkpoint::unchanged_change(),
+        10,
+        NOW
+    );
     assert!(!unsafe_increase && safe_increase);
     destroy(state);
 }
@@ -117,7 +153,12 @@ fun keeper_readiness_filters_only_unsafe_increases() {
 #[test]
 fun keeper_readiness_does_not_trigger_inside_the_band_without_opening_margin() {
     let state = seeded(policy::long());
-    let ready = capture(1_800, policy::long(), false).into_rebalance_readiness(&state, checkpoint::unchanged_change(), 10, NOW);
+    let ready = capture(1_800, policy::long(), false).into_rebalance_readiness(
+        &state,
+        checkpoint::unchanged_change(),
+        10,
+        NOW
+    );
     assert!(!ready);
     destroy(state);
 }
@@ -147,7 +188,12 @@ fun reduce_below_margin(side: PositionSide, initial_notional: u64, emergency: bo
         assert!(!order.is_increase());
         base = base - filled;
         let (after, _) = snapshot::captured_position_for_testing(
-            checkpoint(), 1_000, base, side, false, true,
+            checkpoint(),
+            1_000,
+            base,
+            side,
+            false,
+            true,
         ).into_rebalance_observation(&plan);
         state.accept_rebalance_fill(&mut plan, order, after, filled, NOW);
         steps = steps + 1;
@@ -162,15 +208,38 @@ fun reduce_below_margin(side: PositionSide, initial_notional: u64, emergency: bo
 
 fun seeded(side: PositionSide): State<Product> {
     let vault_policy = policy::new_vault_policy(
-        side, policy::new_rebalance_policy(16_000, 20_000, 26_000, 30_000, 100, 200, 100),
+        side,
+        policy::new_rebalance_policy(16_000, 20_000, 26_000, 30_000, 100, 200, 100),
         policy::new_price_policy(60_000, 1_000, 100, 100),
-        0, 0, 100, 100, 3_000, 65, 1_000,
+        0,
+        0,
+        100,
+        100,
+        3_000,
+        65,
+        1_000,
     );
-    let (state, _, _) = state::issue<Product>(&blast_admin::blast_acl::witness_for_testing<blast_boosts_core::blast_boosts_core::VaultIssuer>(), vault_policy, 100, 160_000, 9, 6).activate(
+    let (state, _, _) = state::issue<Product>(
+        &blast_admin::blast_acl::witness_for_testing<
+            blast_boosts_core::blast_boosts_core::VaultIssuer
+        >(),
+        vault_policy,
+        100,
+        160_000,
+        9,
+        6
+    ).activate(
         observation::new_position(
-            1_000, 1_800 * BASE_PER_NOTIONAL, 1, side,
-            observation::new_price(PRICE, 0, NOW), observation::new_price(PRICE, 0, NOW), PRICE,
-        ), 100, NOW,
+            1_000,
+            1_800 * BASE_PER_NOTIONAL,
+            1,
+            side,
+            observation::new_price(PRICE, 0, NOW),
+            observation::new_price(PRICE, 0, NOW),
+            PRICE,
+        ),
+        100,
+        NOW,
     );
     state
 }

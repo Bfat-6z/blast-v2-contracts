@@ -52,7 +52,9 @@ fun stopping_after_two_partial_recovery_sessions_cannot_mint_shares() {
     let mut vault = shrunk_vault(policy::short());
     vault.venue_mut().set_fill_ratio_bps(5_000);
     let now = vault.venue().now_ms();
-    let plan = vault.state().prepare_mint(vault.venue().observe(), 50_000, vault.supply(), 1, 5, now);
+    let plan = vault
+        .state()
+        .prepare_mint(vault.venue().observe(), 50_000, vault.supply(), 1, 5, now);
     let price = plan.mint_position().base_price();
     let mut remaining = plan.base_to_buy();
     vault.venue_mut().deposit(50_000);

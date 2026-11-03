@@ -2457,11 +2457,13 @@ fun issue_test_receipt(
 ) {
     self.next_tx!(USER, |f| {
         let validator = f.runner.genesis_validator_addresses()[validator_index];
-        let staked_sui = f.system!().request_add_stake_non_entry(
-            coin::mint_for_testing(amount, f.ctx!()),
-            validator,
-            f.ctx!(),
-        );
+        let staked_sui = f
+            .system!()
+            .request_add_stake_non_entry(
+                coin::mint_for_testing(amount, f.ctx!()),
+                validator,
+                f.ctx!(),
+            );
         let receipt = deposit_receipt::new(vault_id, staked_sui, f.ctx!());
         receipt.keep(f.ctx!());
     });
@@ -2702,7 +2704,12 @@ fun assert_pool(
     tokens: u64,
     active_sui: u64,
 ) {
-    let (actual_liquid, actual_pending, actual_tokens, actual_active_sui) =
+    let (
+        actual_liquid,
+        actual_pending,
+        actual_tokens,
+        actual_active_sui
+    ) =
         custody.pool_custody_fields();
     assert_eq!(actual_liquid, liquid);
     assert_eq!(actual_pending, pending);
@@ -2711,7 +2718,13 @@ fun assert_pool(
 }
 
 fun assert_custody_matches(custody: &events::VaultCustody, vault: &Vault) {
-    let (fun_custody, blast_custody, rate, fun_supply, blast_supply) =
+    let (
+        fun_custody,
+        blast_custody,
+        rate,
+        fun_supply,
+        blast_supply
+    ) =
         custody.vault_custody_fields();
     assert_eq!(fun_custody, vault.fun_custody_for_testing());
     assert_eq!(blast_custody, vault.blast_custody_for_testing());

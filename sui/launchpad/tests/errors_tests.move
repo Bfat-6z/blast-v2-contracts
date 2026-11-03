@@ -72,6 +72,20 @@ fun creator_authority_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::invalid_virtual_quote!(), 33);
 }
 
+#[test]
+fun pause_error_registry_is_stable() {
+    assert_eq!(blast_fun::errors::invalid_pause_bits!(), 38);
+    assert_eq!(blast_fun::errors::pause_unchanged!(), 39);
+    assert_eq!(blast_fun::errors::paused!(), 40);
+}
+
+#[test]
+fun upgrade_error_registry_is_stable() {
+    assert_eq!(blast_fun::errors::wrong_upgrade_action!(), 41);
+    assert_eq!(blast_fun::errors::no_pending_action!(), 42);
+    assert_eq!(blast_fun::errors::invalid_digest!(), 43);
+}
+
 // === Imports ===
 
 use std::unit_test::assert_eq;

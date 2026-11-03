@@ -12,15 +12,15 @@ const TREASURY: address = @0x7EA5;
 // === Tests ===
 
 #[test]
-/// Publication shares the map fee policy and pays the publisher.
-fun publication_shares_the_map_fee_policy_paying_the_publisher() {
+/// Publication shares the map fee policy and uses the genesis treasury.
+fun publication_shares_the_map_fee_policy_paying_the_genesis_treasury() {
     let mut scenario = test_scenario::begin(PUBLISHER);
     fee_policy::init_for_testing(scenario.ctx());
 
     scenario.next_tx(PUBLISHER);
     let policy = scenario.take_shared<FeePolicy>();
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(200, 100, 1_500, 1_500));
-    assert_eq!(policy.destination(), PUBLISHER);
+    assert_eq!(policy.destination(), @blast_treasury);
 
     test_scenario::return_shared(policy);
     scenario.end();
@@ -34,14 +34,14 @@ fun the_admin_sets_maximum_and_zero_rates() {
     );
     let mut policy = new_policy();
 
-    policy.set_fees(
+    policy.set_fees_for_testing(
         &package_version,
         &fee_admin(),
         bps::new(9_999),
         bps::new(9_998),
         bps::new(10_000),
         bps::new(10_000),
-    );
+     &mut sui::tx_context::dummy());
 
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
     let (raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps) = last_event<
@@ -52,14 +52,14 @@ fun the_admin_sets_maximum_and_zero_rates() {
         vector[9_999, 9_998, 10_000, 10_000],
     );
 
-    policy.set_fees(
+    policy.set_fees_for_testing(
         &package_version,
         &fee_admin(),
         bps::new(0),
         bps::new(0),
         bps::new(0),
         bps::new(0),
-    );
+     &mut sui::tx_context::dummy());
 
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(0, 0, 0, 0));
 
@@ -72,20 +72,20 @@ fun the_admin_sets_maximum_and_zero_rates() {
 #[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
 /// Blast cannot take the whole raise, which would leave the pool no Quote.
 fun the_raise_share_must_stay_below_full() {
-    set_fees(10_000, 0, 0, 0);
+    set_fees_for_testing(10_000, 0, 0, 0);
 }
 
 #[test]
 #[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
 /// The sale and LP allocations each need at least one BPS of the supply.
 fun the_token_share_must_leave_two_bps() {
-    set_fees(0, 9_999, 0, 0);
+    set_fees_for_testing(0, 9_999, 0, 0);
 }
 
 #[test]
 #[expected_failure(abort_code = fee_policy::EFeesUnchanged, location = blast_presale::fee_policy)]
 fun a_fee_update_must_change_the_rates() {
-    set_fees(0, 0, 0, 0);
+    set_fees_for_testing(0, 0, 0, 0);
 }
 
 #[test]
@@ -108,7 +108,7 @@ fun the_admin_sets_the_destination() {
     );
     let mut policy = new_policy();
 
-    policy.set_destination(&package_version, &treasury_admin(), TREASURY);
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, &mut sui::tx_context::dummy());
 
     assert_eq!(policy.destination(), TREASURY);
     assert_eq!(last_event<DestinationChanged>().destination_changed_fields(), TREASURY);
@@ -124,7 +124,7 @@ fun the_admin_sets_the_destination() {
     location = blast_presale::fee_policy,
 )]
 fun the_destination_cannot_be_the_zero_address() {
-    set_destination(@0x0);
+    set_destination_for_testing(@0x0);
 }
 
 #[test]
@@ -133,7 +133,7 @@ fun the_destination_cannot_be_the_zero_address() {
     location = blast_presale::fee_policy,
 )]
 fun a_destination_update_must_change_the_address() {
-    set_destination(tx_context::dummy().sender());
+    set_destination_for_testing(tx_context::dummy().sender());
 }
 
 #[test]
@@ -148,7 +148,7 @@ fun stale_version_cannot_redirect_fees() {
     let mut policy = new_policy();
 
     package_version.set_for_testing(2);
-    policy.set_destination(&package_version, &treasury_admin(), TREASURY);
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, &mut sui::tx_context::dummy());
 
     assert_eq!(policy.destination(), TREASURY);
     assert_eq!(last_event<DestinationChanged>().destination_changed_fields(), TREASURY);
@@ -170,14 +170,14 @@ fun stale_version_cannot_set_fees() {
     let mut policy = new_policy();
 
     package_version.set_for_testing(2);
-    policy.set_fees(
+    policy.set_fees_for_testing(
         &package_version,
         &fee_admin(),
         bps::new(9_999),
         bps::new(9_998),
         bps::new(10_000),
         bps::new(10_000),
-    );
+     &mut sui::tx_context::dummy());
 
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
     let (raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps) = last_event<
@@ -188,14 +188,14 @@ fun stale_version_cannot_set_fees() {
         vector[9_999, 9_998, 10_000, 10_000],
     );
 
-    policy.set_fees(
+    policy.set_fees_for_testing(
         &package_version,
         &fee_admin(),
         bps::new(0),
         bps::new(0),
         bps::new(0),
         bps::new(0),
-    );
+     &mut sui::tx_context::dummy());
 
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(0, 0, 0, 0));
 
@@ -213,19 +213,25 @@ fun new_policy(): FeePolicy {
     fee_policy::new_zero_fees_for_testing(&mut ctx)
 }
 
-fun set_fees(raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_bps: u64) {
+fun set_fees_for_testing(
+    raise_bps: u64,
+    token_bps: u64,
+    lp_fee_meme_bps: u64,
+    lp_fee_quote_bps: u64
+) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = new_policy();
 
-    policy.set_fees(
+    policy.set_fees_for_testing(
         &package_version,
         &fee_admin(),
         bps::new(raise_bps),
         bps::new(token_bps),
         bps::new(lp_fee_meme_bps),
         bps::new(lp_fee_quote_bps),
+        &mut sui::tx_context::dummy()
     );
 
     policy.destroy_for_testing();
@@ -233,13 +239,13 @@ fun set_fees(raise_bps: u64, token_bps: u64, lp_fee_meme_bps: u64, lp_fee_quote_
     std::unit_test::destroy(package_version);
 }
 
-fun set_destination(destination: address) {
+fun set_destination_for_testing(destination: address) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = new_policy();
 
-    policy.set_destination(&package_version, &treasury_admin(), destination);
+    policy.set_destination_for_testing(&package_version, &treasury_admin(), destination, &mut sui::tx_context::dummy());
 
     policy.destroy_for_testing();
 

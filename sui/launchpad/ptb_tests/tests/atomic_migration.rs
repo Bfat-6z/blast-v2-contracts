@@ -25,7 +25,7 @@
 //!
 //! Run from `sui/launchpad/ptb_tests` with `cargo test` (needs the pinned `sui` on PATH).
 
-use std::{path::Path, time::Duration};
+use std::{collections::BTreeSet, path::Path, time::Duration};
 
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
@@ -64,7 +64,10 @@ const RECIPIENT_CAPACITY_REACHED: u64 = 8;
 const INVALID_LAUNCH_LIFECYCLE: u64 = 15;
 const OPENING_ROUND_ENDED: u64 = 18;
 const OPENING_ROUND_NOT_ENDED: u64 = 19;
+const INVALID_CREATOR_RECIPIENT: u64 = 25;
 const ZERO_OPENING_ROUND_BID: u64 = 34;
+const INVALID_PAUSE_BITS: u64 = 38;
+const PAUSE_UNCHANGED: u64 = 39;
 
 const DESTINATION: ObjectID = address(&[0xD5]);
 /// Blast's one-time share of both the Meme supply and the final Quote reserve.
@@ -103,6 +106,417 @@ struct World {
     custody: ObjectID,
 }
 
+const ADMIN_DELAY_MS: u64 = 172_800_000;
+
+#[test]
+fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()> {
+    let mut w = world("admin-security")?;
+    w.change_role("CancelAdmin", true)?;
+    let destination: SuiAddress = address(&[0xCA, 0xFE]).into();
+    w.h.execute(w.schedule_treasury(destination)?)?.assert_success();
+    w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS - 1));
+    let watched = [w.runtime, w.config, w.acl, w.admin_cap];
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+        Expected::Abort { package: w.admin, module: "delayed", code: 20 }, &watched, &[w.h.sender])?;
+    w.h.sim.advance_clock(Duration::from_millis(1));
+
+    // Apply a ready treasury, emit its event, then fail a different not-ready action.
+    // The failed PTB must preserve the original treasury AND the still-pending proposal.
+    let mut b = ProgrammableTransactionBuilder::new();
+    let fee_admin = w.sign_in(&mut b, "FeeAdmin")?;
+    let config = b.obj(w.h.shared(w.config, true))?;
+    let version = b.obj(w.h.shared(w.version, false))?;
+    let fee = b.pure(123u64)?;
+    let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+    let next_delay = b.pure(172_800_000u64)?;
+    call(&mut b, w.blast, "launch_config", "schedule_creation_fee", vec![], vec![config, version, fee_admin, fee, next_delay, clock]);
+    w.h.execute(b.finish())?.assert_success();
+    let mut b = ProgrammableTransactionBuilder::new();
+    let runtime = b.obj(w.h.shared(w.runtime, true))?;
+    let config = b.obj(w.h.shared(w.config, true))?;
+    let version = b.obj(w.h.shared(w.version, false))?;
+    let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, w.blast, "runtime_config", "apply_treasury", vec![], vec![runtime, version, clock]);
+    call(&mut b, w.blast, "launch_config", "apply_creation_fee", vec![], vec![config, version, clock]);
+    w.h.assert_rolled_back(b.finish(), Expected::Abort { package: w.admin, module: "delayed", code: 20 }, &watched, &[w.h.sender])?;
+
+    w.change_role("TreasuryAdmin", false)?;
+    w.h.assert_rolled_back(w.schedule_treasury(address(&[0xAB]).into())?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    // Revocation intentionally does not cancel a proposal. Apply requires no cap or role.
+    w.h.execute(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?)?.assert_success();
+    assert_eq!(w.applied_treasury()?, destination);
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+        Expected::Abort { package: w.admin, module: "delayed", code: 21 }, &watched, &[w.h.sender])?;
+
+    w.change_role("TreasuryAdmin", true)?;
+    w.h.execute(w.schedule_treasury(address(&[0xAB]).into())?)?.assert_success();
+    w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS));
+    let mut b = ProgrammableTransactionBuilder::new();
+    let cancel = w.sign_in(&mut b, "CancelAdmin")?;
+    let runtime = b.obj(w.h.shared(w.runtime, true))?;
+    let version = b.obj(w.h.shared(w.version, false))?;
+    call(&mut b, w.blast, "runtime_config", "cancel_treasury", vec![], vec![runtime, version, cancel]);
+    w.h.execute(b.finish())?.assert_success();
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+        Expected::Abort { package: w.admin, module: "delayed", code: 21 }, &watched, &[w.h.sender])?;
+    assert_eq!(w.applied_treasury()?, destination);
+    Ok(())
+}
+
+#[test]
+fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> {
+    let mut w = world("adapter-policy-order")?;
+    for (policy_first, old_delay, next_delay) in [
+        (true, ADMIN_DELAY_MS, 100u64),
+        (false, 100u64, 25u64),
+    ] {
+        let first = w.h.publish(w.adapter_code.clone())?.0;
+        let second = w.h.publish(w.adapter_code.clone())?.0;
+        let adapters = [first, second].map(|id| {
+            parse_sui_type_tag(&format!("{id}::mock_adapter::Venue")).unwrap()
+        });
+        let mut b = ProgrammableTransactionBuilder::new();
+        let admin = w.sign_in(&mut b, "AdapterAdmin")?;
+        let config = b.obj(w.h.shared(w.config, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        for adapter in &adapters {
+            call(&mut b, w.blast, "launch_config", "schedule_migration_witness",
+                vec![adapter.clone()], vec![config, version, admin, clock]);
+        }
+        let delay = b.pure(next_delay)?;
+        call(&mut b, w.blast, "launch_config", "schedule_migration_delay",
+            vec![], vec![config, version, admin, delay, clock]);
+        w.h.execute(b.finish())?.assert_success();
+
+        let mut apply = ProgrammableTransactionBuilder::new();
+        let config = apply.obj(w.h.shared(w.config, true))?;
+        let version = apply.obj(w.h.shared(w.version, false))?;
+        let clock = apply.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        if policy_first {
+            call(&mut apply, w.blast, "launch_config", "apply_migration_delay",
+                vec![], vec![config, version, clock]);
+        }
+        for adapter in adapters.iter().rev() {
+            call(&mut apply, w.blast, "launch_config", "apply_migration_witness",
+                vec![adapter.clone()], vec![config, version, clock]);
+        }
+        if !policy_first {
+            call(&mut apply, w.blast, "launch_config", "apply_migration_delay",
+                vec![], vec![config, version, clock]);
+        }
+        let apply = apply.finish();
+        let watched = [w.config, w.version, w.acl, w.admin_cap];
+        w.h.sim.advance_clock(Duration::from_millis(old_delay - 1));
+        w.h.assert_rolled_back(apply.clone(),
+            Expected::Abort { package: w.admin, module: "delayed", code: 20 },
+            &watched, &[w.h.sender])?;
+        w.h.sim.advance_clock(Duration::from_millis(1));
+        let applied = w.h.execute(apply)?;
+        applied.assert_success();
+        let expected = if policy_first {
+            ["MigrationDelayChanged", "MigrationWitnessSet", "MigrationWitnessSet"]
+        } else {
+            ["MigrationWitnessSet", "MigrationWitnessSet", "MigrationDelayChanged"]
+        };
+        assert_eq!(applied.wrapped_payloads(w.blast), expected);
+        assert_eq!(applied.events_of("events", "MigrationDelayChanged"),
+            [bcs::to_bytes(&next_delay)?.as_slice()]);
+        for (bytes, adapter) in applied.events_of("events", "MigrationWitnessSet")
+            .iter().zip(adapters.iter().rev()) {
+            let (witness, allowed): (String, bool) = bcs::from_bytes(bytes)?;
+            assert_eq!(witness, adapter.to_canonical_string(false));
+            assert!(allowed);
+        }
+
+        // A fresh admission uses the new policy, even after applying older admissions.
+        let later = w.h.publish(w.adapter_code.clone())?.0;
+        let later = parse_sui_type_tag(&format!("{later}::mock_adapter::Venue"))?;
+        let (_, now): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let admin = w.sign_in(&mut b, "AdapterAdmin")?;
+        let config = b.obj(w.h.shared(w.config, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, w.blast, "launch_config", "schedule_migration_witness",
+            vec![later.clone()], vec![config, version, admin, clock]);
+        let scheduled = w.h.execute(b.finish())?;
+        scheduled.assert_success();
+        let payloads = scheduled.events_of("events", "MigrationWitnessScheduled");
+        assert_eq!(payloads.len(), 1);
+        let (witness, ready_at_ms, delay_ms): (String, u64, u64) = bcs::from_bytes(payloads[0])?;
+        assert_eq!(witness, later.to_canonical_string(false));
+        assert_eq!((ready_at_ms, delay_ms), (now + next_delay, next_delay));
+
+        let mut b = ProgrammableTransactionBuilder::new();
+        let config = b.obj(w.h.shared(w.config, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, w.blast, "launch_config", "apply_migration_witness",
+            vec![later], vec![config, version, clock]);
+        let apply = b.finish();
+        w.h.sim.advance_clock(Duration::from_millis(next_delay - 1));
+        w.h.assert_rolled_back(apply.clone(),
+            Expected::Abort { package: w.admin, module: "delayed", code: 20 },
+            &watched, &[w.h.sender])?;
+        w.h.sim.advance_clock(Duration::from_millis(1));
+        w.h.execute(apply)?.assert_success();
+    }
+    Ok(())
+}
+
+#[test]
+fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Result<()> {
+    let mut w = world("pause-security")?;
+    w.change_role("PauseAdmin", true)?;
+    w.change_role("UnpauseAdmin", true)?;
+    let round = w.open_launch(OPENING_ROUND_MS)?;
+    w.h.execute(w.join(&round, BID)?)?.assert_success();
+    let ready = w.open_launch(NO_OPENING_ROUND)?;
+    w.buy_to_migration(&ready)?;
+    let (ticket, currency, meme) = w.publish_ticket()?;
+    w.set_pause(true, 7)?;
+    let watched = [round.launch, ready.launch, ready.currency, ticket, currency, w.version];
+    let abort = || Expected::Abort { package: w.blast, module: "blast_fun", code: 40 };
+    w.h.assert_rolled_back(w.create_launch(ticket, currency, &meme, &FeeSplit::single(DESTINATION), NO_OPENING_ROUND)?, abort(), &watched, &[w.h.sender])?;
+    w.h.assert_rolled_back(w.join(&round, BID)?, abort(), &watched, &[w.h.sender])?;
+    w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, abort(), &watched, &[w.h.sender])?;
+    w.h.sim.advance_clock(Duration::from_millis(OPENING_ROUND_MS));
+    w.h.assert_rolled_back(w.settle(&round)?, abort(), &watched, &[w.h.sender])?;
+    w.set_pause(false, 2)?;
+    w.h.execute(w.settle(&round)?)?.assert_success();
+    // Releasing trading must not release migration or creation.
+    w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, Expected::Abort { package: w.blast, module: "blast_fun", code: 40 }, &watched, &[w.h.sender])?;
+    w.set_pause(true, 2)?;
+    let delivered = w.h.execute(w.deliver(&round, w.h.sender)?)?;
+    delivered.assert_success();
+    assert!(delivered.wrapped_payloads(w.blast).iter().any(|name| name == "OpeningRoundDelivered"));
+    Ok(())
+}
+
+/// Every reachable pause state against every u8 input, through unmodified production bytecode.
+#[test]
+fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> Result<()> {
+    let mut w = world("pause-mask-matrix")?;
+    w.change_role("PauseAdmin", true)?;
+    w.change_role("UnpauseAdmin", true)?;
+    // A set oracle keeps expected transitions independent of the contract's bitwise formulas.
+    let states: [&[u8]; 8] = [&[], &[1], &[2], &[1, 2], &[4], &[1, 4], &[2, 4], &[1, 2, 4]];
+    let watched = [w.version, w.acl, w.admin_cap, w.runtime, w.config, w.custody];
+    let mut successes = 0;
+    let mut invalid = 0;
+    let mut unchanged = 0;
+    let mut stale = 0;
+    for generation in [1, 2] {
+        for (mask, flags) in states.iter().enumerate() {
+            w.set_pause_generation_for_fixture(1)?;
+            w.replace_pause_mask(mask as u8)?;
+            w.set_pause_generation_for_fixture(generation)?;
+            let before: BTreeSet<_> = flags.iter().copied().collect();
+            for bits in 0..=u8::MAX {
+                for pausing in [true, false] {
+                    let requested: BTreeSet<_> = [1u8, 2, 4].into_iter()
+                        .filter(|flag| (bits / flag) % 2 == 1).collect();
+                    let after: BTreeSet<u8> = if pausing {
+                        before.union(&requested).copied().collect()
+                    } else {
+                        before.difference(&requested).copied().collect()
+                    };
+                    let pt = w.pause_command(pausing, bits)?;
+                    let rejected = if generation != 1 {
+                        stale += 1;
+                        Some(Expected::Abort { package: w.admin, module: "operational_version", code: 12 })
+                    } else if !(1..=7).contains(&bits) {
+                        invalid += 1;
+                        Some(Expected::Abort { package: w.blast, module: "blast_fun", code: INVALID_PAUSE_BITS })
+                    } else if after == before {
+                        unchanged += 1;
+                        Some(Expected::Abort { package: w.blast, module: "blast_fun", code: PAUSE_UNCHANGED })
+                    } else {
+                        None
+                    };
+                    if let Some(expected) = rejected {
+                        w.h.assert_rolled_back(pt, expected, &watched, &[w.h.sender])?;
+                    } else {
+                        let untouched = w.h.snapshot(&watched[1..], &[w.h.sender]);
+                        let outcome = w.h.execute(pt)?;
+                        outcome.assert_success();
+                        let name = if pausing { "Paused" } else { "Unpaused" };
+                        let next: u8 = after.iter().sum();
+                        assert_eq!(outcome.wrapped_payloads(w.blast), [name]);
+                        assert_eq!(outcome.events_of("events", name), [vec![bits, next].as_slice()]);
+                        assert_eq!(w.pause_state()?, (w.version, next, generation));
+                        assert_eq!(w.h.snapshot(&watched[1..], &[w.h.sender]), untouched);
+                        w.replace_pause_mask(mask as u8)?;
+                        successes += 1;
+                    }
+                    assert_eq!(w.pause_state()?, (w.version, mask as u8, generation),
+                        "pausing={pausing}, bits={bits}, initial={mask}, generation={generation}");
+                }
+            }
+        }
+    }
+    assert_eq!((successes, invalid, unchanged, stale), (74, 3984, 38, 4096));
+    Ok(())
+}
+
+#[test]
+fn pause_roles_revocation_and_failed_sequences_preserve_state_and_events() -> Result<()> {
+    let mut w = world("pause-authority")?;
+    let watched = [w.version, w.acl, w.admin_cap];
+    // A live AdminCap with neither role authorizes neither operation.
+    for pausing in [true, false] {
+        w.h.assert_rolled_back(w.pause_command(pausing, 1)?,
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    }
+    w.change_role("PauseAdmin", true)?;
+    w.set_pause(true, 1)?;
+    w.h.assert_rolled_back(w.pause_command(false, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    w.append_pause(&mut b, false, 1, "PauseAdmin")?;
+    w.h.assert_rolled_back(b.finish(), Expected::Error("TypeMismatch"), &watched, &[w.h.sender])?;
+    w.change_role("PauseAdmin", false)?;
+    w.h.assert_rolled_back(w.pause_command(true, 2)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    w.change_role("UnpauseAdmin", true)?;
+    w.set_pause(false, 1)?;
+    w.h.assert_rolled_back(w.pause_command(true, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    w.append_pause(&mut b, true, 1, "UnpauseAdmin")?;
+    w.h.assert_rolled_back(b.finish(), Expected::Error("TypeMismatch"), &watched, &[w.h.sender])?;
+    w.change_role("UnpauseAdmin", false)?;
+    w.h.assert_rolled_back(w.pause_command(false, 1)?,
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
+
+    w.change_role("PauseAdmin", true)?;
+    w.change_role("UnpauseAdmin", true)?;
+    for (sequence, code) in [
+        (vec![(true, 1), (true, 1)], PAUSE_UNCHANGED),
+        (vec![(true, 1), (false, 1), (false, 1)], PAUSE_UNCHANGED),
+        (vec![(true, 1), (true, 9)], INVALID_PAUSE_BITS),
+    ] {
+        let mut b = ProgrammableTransactionBuilder::new();
+        for (pausing, bits) in sequence {
+            w.append_pause(&mut b, pausing, bits, if pausing { "PauseAdmin" } else { "UnpauseAdmin" })?;
+        }
+        // Earlier successful commands emitted events, but the later failure commits none.
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.blast, module: "blast_fun", code }, &watched, &[w.h.sender])?;
+        assert_eq!(w.pause_state()?, (w.version, 0, 1));
+    }
+
+    // Interleaved successful commands preserve native event order and replay to the final mask.
+    let steps = [(true, 1, 1), (true, 3, 3), (false, 5, 2),
+        (true, 4, 6), (false, 2, 4), (false, 5, 0)];
+    let mut b = ProgrammableTransactionBuilder::new();
+    for &(pausing, bits, _) in &steps {
+        w.append_pause(&mut b, pausing, bits, if pausing { "PauseAdmin" } else { "UnpauseAdmin" })?;
+    }
+    let outcome = w.h.execute(b.finish())?;
+    outcome.assert_success();
+    let names: Vec<_> = steps.iter().map(|(pausing, _, _)| if *pausing { "Paused" } else { "Unpaused" }).collect();
+    assert_eq!(outcome.wrapped_payloads(w.blast), names);
+    for (event, &(_, bits, next)) in outcome.events.iter().zip(&steps) {
+        assert_eq!(event.contents, [bits, next]);
+    }
+    assert_eq!(w.pause_state()?, (w.version, 0, 1));
+
+    // Revoking the whole administrator defeats both roles even while it still owns its cap.
+    let mut b = ProgrammableTransactionBuilder::new();
+    let acl = b.obj(w.h.shared(w.acl, true))?;
+    let root = b.obj(w.h.owned(w.root))?;
+    let cap = b.pure(w.admin_cap)?;
+    call(&mut b, w.admin, "blast_acl", "revoke_admin", vec![], vec![acl, root, cap]);
+    w.h.impersonate_cap_owner(w.root, b.finish())?.assert_success();
+    for pausing in [true, false] {
+        w.h.assert_rolled_back(w.pause_command(pausing, 1)?,
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 1 }, &watched, &[w.h.sender])?;
+    }
+    Ok(())
+}
+
+#[test]
+fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements() -> Result<()> {
+    let mut w = world("cap-recipient-authority")?;
+    let recipient = SuiAddress::from(DESTINATION);
+    for (cap, cap_type, scheduled_name, reassigned_name, changed_name) in [
+        ("curve_fee_cap", "CurveFeeCap", "CurveFeeCapReassignmentScheduled", "CurveFeeCapReassigned", "CurveFeeCapDelayChanged"),
+        ("metadata_cap", "BlastMetadataCap", "MetadataCapReassignmentScheduled", "MetadataCapReassigned", "MetadataCapDelayChanged"),
+    ] {
+        let launch = w.open_launch(NO_OPENING_ROUND)?;
+        let watched = [launch.launch, launch.currency, w.version, w.acl, w.admin_cap, w.config];
+        let owners = [w.h.sender, recipient];
+        // A real live AdminCap with other roles cannot schedule either cap replacement.
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", recipient)?;
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &owners)?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "TreasuryAdmin", recipient)?;
+        w.h.assert_rolled_back(b.finish(), Expected::Error("TypeMismatch"), &watched, &owners)?;
+
+        w.change_role("CreatorAdmin", true)?;
+        let (_, scheduled_at_ms): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", recipient)?;
+        let scheduled = w.h.execute(b.finish())?;
+        scheduled.assert_success();
+        assert_eq!(scheduled.wrapped_payloads(w.blast), [scheduled_name]);
+        assert_eq!(scheduled.events_of("events", scheduled_name),
+            [bcs::to_bytes(&(launch.launch, recipient, scheduled_at_ms + ADMIN_DELAY_MS, ADMIN_DELAY_MS))?.as_slice()]);
+        assert!(scheduled.created(&w.h, "creator_authority", "CurveFeeCap").is_empty());
+        assert!(scheduled.created(&w.h, "creator_authority", "BlastMetadataCap").is_empty());
+
+        // Invalid replacements cannot erase the already accepted recipient or its deadline.
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", SuiAddress::ZERO)?;
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.blast, module: "launch", code: INVALID_CREATOR_RECIPIENT }, &watched, &owners)?;
+
+        // A later failing command rolls back the earlier reschedule and all its events.
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", w.h.sender)?;
+        let launch_arg = b.obj(w.h.shared(launch.launch, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, w.blast, "launch", &format!("apply_{cap}_update"),
+            vec![launch.meme.clone(), sui()], vec![launch_arg, version, clock]);
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.admin, module: "delayed", code: 20 }, &watched, &owners)?;
+
+        w.change_role("CreatorAdmin", false)?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", w.h.sender)?;
+        w.h.assert_rolled_back(b.finish(),
+            Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &owners)?;
+
+        // Revocation blocks new schedules; accepted proposals remain permissionlessly applicable.
+        w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS));
+        let mut b = ProgrammableTransactionBuilder::new();
+        let launch_arg = b.obj(w.h.shared(launch.launch, true))?;
+        let version = b.obj(w.h.shared(w.version, false))?;
+        let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, w.blast, "launch", &format!("apply_{cap}_update"),
+            vec![launch.meme.clone(), sui()], vec![launch_arg, version, clock]);
+        let applied = w.h.execute(b.finish())?;
+        applied.assert_success();
+        assert_eq!(applied.wrapped_payloads(w.blast), [changed_name, reassigned_name]);
+        assert_eq!(applied.events_of("events", changed_name),
+            [bcs::to_bytes(&(launch.launch, ADMIN_DELAY_MS))?.as_slice()]);
+        let caps = applied.created(&w.h, "creator_authority", cap_type);
+        assert_eq!(caps.len(), 1);
+        assert_eq!(w.h.object(caps[0]).owner().get_address_owner_address()?, recipient);
+        assert_eq!(applied.events_of("events", reassigned_name),
+            [bcs::to_bytes(&(launch.launch, caps[0], recipient))?.as_slice()]);
+        let other_cap = if cap_type == "BlastMetadataCap" { "CurveFeeCap" } else { "BlastMetadataCap" };
+        assert!(applied.created(&w.h, "creator_authority", other_cap).is_empty());
+    }
+    Ok(())
+}
+
 #[test]
 fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> Result<()> {
     let mut w = world("mixed-generation-creation")?;
@@ -137,6 +551,44 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
 
     let custody = w.custody;
     let digest = MovePackage::compute_digest_for_modules_and_deps(&code.modules, &code.dependencies, true);
+    let mut schedule = ProgrammableTransactionBuilder::new();
+    let acl = schedule.obj(w.h.shared(w.acl, false))?;
+    let cap = schedule.obj(w.h.owned(w.admin_cap))?;
+    let witness = call(&mut schedule, w.admin, "blast_acl", "sign_in", vec![role.clone()], vec![acl, cap]);
+    let custody_arg = schedule.obj(w.h.shared(custody, true))?;
+    let version = schedule.obj(w.h.shared(w.version, false))?;
+    let proposed = schedule.pure(digest.to_vec())?;
+    let clock = schedule.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut schedule, original, "package_admin", "schedule_upgrade", vec![], vec![custody_arg, version, witness, proposed, clock]);
+    let schedule = schedule.finish();
+    let (_, scheduled_at_ms): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
+    let scheduled = w.h.execute(schedule.clone())?;
+    scheduled.assert_success();
+    assert_eq!(scheduled.events.len(), 1);
+    assert_eq!(TypeTag::Struct(Box::new(scheduled.events[0].type_.clone())), parse_sui_type_tag(
+        &format!("{original}::blast_events::Event<{original}::events::UpgradeActionScheduled<{original}::package_admin::UpgradeAction>>")
+    )?);
+    let mut action_bytes = vec![0u8];
+    action_bytes.extend(bcs::to_bytes(&digest.to_vec())?);
+    let mut scheduled_bytes = action_bytes.clone();
+    scheduled_bytes.extend(bcs::to_bytes(&(scheduled_at_ms + ADMIN_DELAY_MS))?);
+    scheduled_bytes.extend(bcs::to_bytes(&ADMIN_DELAY_MS)?);
+    assert_eq!(scheduled.events[0].contents, scheduled_bytes);
+
+    w.change_role("CancelAdmin", true)?;
+    let mut cancel = ProgrammableTransactionBuilder::new();
+    let witness = w.sign_in(&mut cancel, "CancelAdmin")?;
+    let custody_arg = cancel.obj(w.h.shared(custody, true))?;
+    let version = cancel.obj(w.h.shared(w.version, false))?;
+    call(&mut cancel, original, "package_admin", "cancel_upgrade_action", vec![], vec![custody_arg, version, witness]);
+    let cancelled = w.h.execute(cancel.finish())?;
+    cancelled.assert_success();
+    assert_eq!(cancelled.events.len(), 1);
+    assert_eq!(TypeTag::Struct(Box::new(cancelled.events[0].type_.clone())), parse_sui_type_tag(
+        &format!("{original}::blast_events::Event<{original}::events::UpgradeActionCancelled<{original}::package_admin::UpgradeAction>>")
+    )?);
+    assert_eq!(cancelled.events[0].contents, action_bytes);
+    w.h.execute(schedule)?.assert_success();
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, false))?;
     let cap = b.obj(w.h.owned(w.admin_cap))?;
@@ -144,14 +596,32 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let custody_arg = b.obj(w.h.shared(custody, true))?;
     let version = b.obj(w.h.shared(w.version, true))?;
     let digest = b.pure(digest.to_vec())?;
-    let upgrade_ticket = call(&mut b, original, "package_admin", "authorize_upgrade", vec![], vec![custody_arg, version, witness, digest]);
+    let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+    let upgrade_ticket = call(&mut b, original, "package_admin", "authorize_upgrade", vec![], vec![custody_arg, version, witness, digest, clock]);
     let receipt = b.upgrade(original, upgrade_ticket, code.dependencies, code.modules);
     call(&mut b, original, "package_admin", "commit_upgrade_and_advance", vec![], vec![custody_arg, version, witness, receipt]);
-    let upgraded = w.h.execute(b.finish())?;
+    let upgrade = b.finish();
+    w.h.assert_rolled_back(
+        upgrade.clone(),
+        Expected::Abort { package: w.admin, module: "delayed", code: 20 },
+        &[custody, w.version, w.admin_cap],
+        &[w.h.sender],
+    )?;
+    w.h.sim.advance_clock(Duration::from_millis(172_800_000));
+    // Readiness does not retain a revoked UpgradeAdmin's right to authorize code.
+    w.change_role("UpgradeAdmin", false)?;
+    w.h.assert_rolled_back(
+        upgrade.clone(),
+        Expected::Abort { package: w.admin, module: "blast_acl", code: 5 },
+        &[custody, w.version, w.admin_cap, w.acl],
+        &[w.h.sender],
+    )?;
+    w.change_role("UpgradeAdmin", true)?;
+    let upgraded = w.h.execute(upgrade)?;
     upgraded.assert_success();
     w.blast = upgraded.effects.created().into_iter()
         .map(|(reference, _)| reference.0).find(|id| w.h.object(*id).is_package()).unwrap();
-    let (_, generation): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(w.version))?;
+    let (_, _, generation): (ObjectID, u8, u64) = bcs::from_bytes(&w.h.contents(w.version))?;
     assert_eq!(generation, 2);
 
     // A fresh adapter links to the active dependency while preserving core type origins.
@@ -167,9 +637,11 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let witness = call(&mut b, w.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]);
     let config = b.obj(w.h.shared(w.config, true))?;
     let version = b.obj(w.h.shared(w.version, false))?;
-    let allowed = b.pure(true)?;
-    call(&mut b, w.blast, "launch_config", "set_migration_witness_allowed", vec![w.adapter_type("Venue")?], vec![config, version, witness, allowed]);
+
+    let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, w.blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config, version, witness, admin_clock]);
     w.h.execute(b.finish())?.assert_success();
+    blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![(w.blast, "launch_config", "apply_migration_witness", vec![parse_sui_type_tag(&format!("{}::mock_adapter::Venue", w.adapter))?], w.config, w.version)])?;
 
     let current = w.create_launch(ticket, currency, &meme, &FeeSplit::single(DESTINATION), OPENING_ROUND_MS)?;
     for name in ["set_virtual_quote", "set_graduation_target", "set_allocation_plan", "set_lp_fee_split", "set_opening_round", "finalize", "share"] {
@@ -609,7 +1081,7 @@ fn setup() -> Result<(World, Launch, Launch)> {
 fn world(work: &str) -> Result<World> {
     let sui_dir = sui_dir();
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture");
-    let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join(work);
+    let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(work);
     let mut h = Harness::new()?;
 
     let timelock_dir = timelock_dir()?;
@@ -631,16 +1103,14 @@ fn world(work: &str) -> Result<World> {
     let root = one(&admin_published, "blast_acl", "SuperAdminCap");
     let config = one(&published, "launch_config", "LaunchConfig");
     let runtime = one(&published, "runtime_config", "RuntimeConfig");
-    let version = h.wrap_launchpad(blast, &published)?;
     let linked = [core[0], core[1], core[2], (launchpad_dir.as_path(), blast)];
     let adapter_code = build(&fixture.join("adapter"), &linked, &work)?;
     let (adapter, _) = h.publish(adapter_code.clone())?;
+    let (version, custody) = h.wrap_launchpad(blast, &published, admin, &admin_published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
     let project = build(&fixture.join("project"), &linked, &work)?;
-    let mut w = World { h, blast, adapter, version, runtime, config, project, core_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody: ObjectID::ZERO };
+    let mut w = World { h, blast, adapter, version, runtime, config, project, core_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody };
 
-    w.custody = w.h.sim.store().get_transaction_effects(&w.h.object(version).previous_transaction).unwrap()
-        .created().into_iter().map(|(reference, _)| reference.0)
-        .find(|id| w.h.is_type(*id, "package_admin", "PackageAdmin")).unwrap();
+    w.h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
 
     // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap and each role the
     // setters below take; the cap then signs in once per role.
@@ -674,47 +1144,145 @@ fn world(work: &str) -> Result<World> {
     for role in roles {
         witnesses.push(call(&mut builder, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, admin_cap]));
     }
-    let [listing_admin, adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
+    let [_listing_admin, _adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
         witnesses.try_into().expect("one witness per role");
     let config_arg = builder.obj(w.h.shared(config, true))?;
     let version_arg = builder.obj(w.h.shared(version, false))?;
-    let quote_allowed = builder.pure(true)?;
-    call(&mut builder, blast, "launch_config", "set_quote_allowed", vec![sui()], vec![
-        config_arg,
-        version_arg,
-        listing_admin,
-        quote_allowed,
-    ]);
-    let allowed = builder.pure(true)?;
-    call(&mut builder, blast, "launch_config", "set_migration_witness_allowed", vec![w.adapter_type("Venue")?], vec![
-        config_arg,
-        version_arg,
-        adapter_admin,
-        allowed,
-    ]);
     let hundred = builder.pure(100u64)?;
     let fee = call(&mut builder, blast, "bps", "new", vec![], vec![hundred]);
-    call(&mut builder, blast, "launch_config", "set_trade_fees", vec![], vec![
-        config_arg,
+    let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let next_delay = builder.pure(172_800_000u64)?;
+    call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg,
         version_arg,
         fee_admin,
         fee,
-        fee,
-    ]);
+        fee, next_delay, admin_clock]);
     let blast_bps = w.bps(&mut builder, BLAST_BPS)?;
-    call(&mut builder, blast, "launch_config", "set_protocol_allocation", vec![], vec![
-        config_arg,
+    let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let next_delay = builder.pure(172_800_000u64)?;
+    call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg,
         version_arg,
         treasury_admin,
         blast_bps,
-        blast_bps,
-    ]);
+        blast_bps, next_delay, admin_clock]);
     w.h.execute(builder.finish())?.assert_success();
+    blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![
+        (blast, "launch_config", "apply_trade_fees", vec![], config, version),
+        (blast, "launch_config", "apply_protocol_allocation", vec![], config, version),
+    ])?;
 
     Ok(w)
 }
 
 impl World {
+    fn sign_in(&self, b: &mut ProgrammableTransactionBuilder, role: &str) -> Result<Argument> {
+        let acl = b.obj(self.h.shared(self.acl, false))?;
+        let cap = b.obj(self.h.owned(self.admin_cap))?;
+        let role = parse_sui_type_tag(&format!("{}::blast_fun_domain::{role}", self.blast))?;
+        Ok(call(b, self.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]))
+    }
+
+    fn change_role(&mut self, role: &str, grant: bool) -> Result<()> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl = b.obj(self.h.shared(self.acl, true))?;
+        let root = b.obj(self.h.owned(self.root))?;
+        let cap = b.pure(self.admin_cap)?;
+        let role = parse_sui_type_tag(&format!("{}::blast_fun_domain::{role}", self.blast))?;
+        call(&mut b, self.admin, "blast_acl", if grant { "grant_role" } else { "revoke_role" }, vec![role], vec![acl, root, cap]);
+        self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
+        Ok(())
+    }
+
+    fn schedule_treasury(&self, destination: SuiAddress) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.sign_in(&mut b, "TreasuryAdmin")?;
+        let config = b.obj(self.h.shared(self.runtime, true))?;
+        let version = b.obj(self.h.shared(self.version, false))?;
+        let destination = b.pure(destination)?;
+        let clock = b.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        let next_delay = b.pure(172_800_000u64)?;
+        call(&mut b, self.blast, "runtime_config", "schedule_treasury", vec![], vec![config, version, witness, destination, next_delay, clock]);
+        Ok(b.finish())
+    }
+
+    fn append_cap_recipient(
+        &self,
+        b: &mut ProgrammableTransactionBuilder,
+        launch: &Launch,
+        cap: &str,
+        role: &str,
+        recipient: SuiAddress,
+    ) -> Result<()> {
+        let witness = self.sign_in(b, role)?;
+        let launch_arg = b.obj(self.h.shared(launch.launch, true))?;
+        let version = b.obj(self.h.shared(self.version, false))?;
+        let recipient = b.pure(recipient)?;
+        let clock = b.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(b, self.blast, "launch", &format!("schedule_{cap}_reassignment"),
+            vec![launch.meme.clone(), sui()], vec![launch_arg, version, witness, recipient, clock]);
+        Ok(())
+    }
+
+    fn apply_setting(&self, module: &str, function: &str, object: ObjectID) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let config = b.obj(self.h.shared(object, true))?;
+        let version = b.obj(self.h.shared(self.version, false))?;
+        let clock = b.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, self.blast, module, function, vec![], vec![config, version, clock]);
+        Ok(b.finish())
+    }
+
+    fn applied_treasury(&self) -> Result<SuiAddress> {
+        #[derive(Deserialize)]
+        struct Delayed<T> { value: T, _delay_ms: u64, _pending: Option<(T, u64, u64)> }
+        let (_, _, _, treasury): (ObjectID, Vec<u8>, Delayed<u64>, Delayed<SuiAddress>) = bcs::from_bytes(&self.h.contents(self.runtime))?;
+        Ok(treasury.value)
+    }
+
+    fn set_pause(&mut self, pause: bool, bits: u8) -> Result<()> {
+        self.h.execute(self.pause_command(pause, bits)?)?.assert_success();
+        Ok(())
+    }
+
+    fn pause_command(&self, pause: bool, bits: u8) -> Result<ProgrammableTransaction> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        self.append_pause(&mut b, pause, bits, if pause { "PauseAdmin" } else { "UnpauseAdmin" })?;
+        Ok(b.finish())
+    }
+
+    fn append_pause(&self, b: &mut ProgrammableTransactionBuilder, pause: bool, bits: u8, role: &str) -> Result<()> {
+        let witness = self.sign_in(b, role)?;
+        let version = b.obj(self.h.shared(self.version, true))?;
+        let bits = b.pure(bits)?;
+        call(b, self.blast, "blast_fun", if pause { "pause" } else { "unpause" }, vec![], vec![version, witness, bits]);
+        Ok(())
+    }
+
+    fn pause_state(&self) -> Result<(ObjectID, u8, u64)> {
+        Ok(bcs::from_bytes(&self.h.contents(self.version))?)
+    }
+
+    fn replace_pause_mask(&mut self, mask: u8) -> Result<()> {
+        let (_, current, _) = self.pause_state()?;
+        if current != 0 {
+            self.set_pause(false, current)?;
+        }
+        if mask != 0 {
+            self.set_pause(true, mask)?;
+        }
+        Ok(())
+    }
+
+    /// Only seed the stored generation; masks are always reached through real public calls.
+    fn set_pause_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+        let (id, paused, _) = self.pause_state()?;
+        let mut object = self.h.object(self.version);
+        object.data.try_as_move_mut().expect("PackageVersion")
+            .set_contents_unsafe(bcs::to_bytes(&(id, paused, generation))?);
+        self.h.insert(object);
+        Ok(())
+    }
+
     /// Publishes one generated project and opens its SUI-quoted launch with `opening_round_ms`,
     /// with the LP-fee split paying `DESTINATION` wholly.
     fn open_launch(&mut self, opening_round_ms: u64) -> Result<Launch> {

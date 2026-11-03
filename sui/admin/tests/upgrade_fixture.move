@@ -73,7 +73,9 @@ public fun custodian_id(self: &PackageAdmin): ID {
     self.id.to_inner()
 }
 
-public fun custody(self: &PackageAdmin): &upgrade_custody::UpgradeCustody<package_marker::PACKAGE_MARKER> {
+public fun custody(
+    self: &PackageAdmin
+): &upgrade_custody::UpgradeCustody<package_marker::PACKAGE_MARKER> {
     &self.custody
 }
 

@@ -103,7 +103,7 @@ vault through `aftermath::collect_fees` (ADR 0116). Configured recipients receiv
 distinct allocations in that same transaction. Claims open only after success.
 
 Permissionless fee collection pays Blast its share of each asset at the vault's
-current rates, or holds it for a partnered sale's partner payout, then applies the immutable creation-time split to the rest: every fee recipient
+current rates, or holds it for a partnered sale's partner payout, then applies the explicitly active creator split to the rest: every fee recipient
 is paid in the same transaction, and the holder-reward share stays
 in the vault. Blast's `RewardsAdmin` publishes Merkle
 rounds funded from that share, each with a claim deadline after which anyone can
@@ -120,19 +120,19 @@ allocation remains permanently locked in the presale and the supply mode cannot
 be reversed.
 
 Run `scripts/verify.sh`. Publish to mainnet with `scripts/publish.sh --preview`,
-repeat with `--execute`, then seal the returned `UpgradeCap` with
-`scripts/wrap_package_admin.sh <package-id> <bootstrap-id> <upgrade-cap-id> --preview` and
+repeat with `--execute`, then seal custody with
+`scripts/wrap_package_admin.sh <package-id> <publication-id> <upgrade-cap-id> --preview` and
 `--execute` before creating any presale. The package mints no administrator
 capability: Blast administers it through the one shared Blast ACL
 (`blast_admin`, [ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)),
 which it already links through `blast_partners`. `blast_presale_domain` declares
-six roles: `FeeAdmin` sets Blast's rates and the partners new sales may name,
+roles: `FeeAdmin` sets Blast's rates and the partners new sales may name,
 `TreasuryAdmin` their destination, `ListingAdmin` and `AdapterAdmin` the Quote
 types and migrators new sales may use, `RewardsAdmin` publishes holder-reward
 rounds, and `UpgradeAdmin` authorizes compatible upgrades and atomic version cutovers.
-[DEPLOYING.md](DEPLOYING.md) gives the complete order: custody is verified on
-chain before any Quote type or migrator is allowed, so no presale can exist
-under an unsealed cap.
+[DEPLOYING.md](DEPLOYING.md) gives the complete order: custody verification, ordinary ACL configuration at zero delay,
+enabling each operation’s intended notice, then immediate UnpauseAdmin release. No presale can exist
+under an unsealed cap or before unpause.
 
 The accepted design is [ADR 0099](../../docs/decisions/0099-standalone-overflow-presale.md);
 Blast's fees are proposed in [ADR 0101](../../docs/decisions/0101-presale-protocol-fees.md)
@@ -141,7 +141,20 @@ creation through the initializer, the sale-level hard cap, and early close are p
 [ADR 0110](../../docs/decisions/0110-presale-initializer-and-early-close.md).
 
 Presale activation and operational versioning follow launchpad: publication transfers
-`blast_presale_package::Bootstrap`, and wrapping it with the matching fresh cap
-shares `PackageVersion`. Every state-changing call requires that version. See
+`blast_presale_package::Publication`, and wrapping it with the matching fresh cap
+shares PackageVersion fully paused while publication-owned operations have zero notice. Ordinary ACL
+operations configure initial policy; settle setup proposals and enable each operation’s intended
+notice before release. Later delay changes wait the old policy, and existing
+pending actions keep their deadlines. See
+
 [ADR 0117](../../docs/decisions/0117-presale-versioning-and-activation.md). This
 source requires fresh publication; existing dependency-only releases stay unchanged.
+
+The migrated sale's exact `PresaleCap` holder schedules or cancels a new creator
+split with `presale_vault::schedule_fee_split` / `cancel_fee_split`. Its initial
+notice is 48 hours; replacements and notice reductions wait the full old notice.
+Expiry alone retains the old split. Anyone applies a ready stored proposal through
+Bluefin or Cetus `settle_and_apply_fee_split`, collecting position fees under the
+old split first. Aftermath `apply_fee_split` retains collection-time accounting:
+separate DAO-fee coins use the applied split when received, even if sent before
+activation. Standalone vaults have no matching creator cap and retain their split.

@@ -81,7 +81,10 @@ fun start_daily_rewards(): DailyRewardsFixture {
     );
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
     vault.credit_fees_for_testing(
-        &policy, balance::zero(), balance::create_for_testing<QUOTE>(100), scenario.ctx(),
+        &policy,
+        balance::zero(),
+        balance::create_for_testing<QUOTE>(100),
+        scenario.ctx(),
     );
     policy.destroy_for_testing();
     let mut clock = clock::create_for_testing(scenario.ctx());

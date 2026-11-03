@@ -8,9 +8,9 @@
 /// `PartnerCap` for all its deals, each a separate partner with its own share.
 /// Blast's partner administrator registers partners under a cap, sets each
 /// one's share, and can move a partner to another cap; the cap's holder sets
-/// where each of its partners is paid. Everything Blast changes takes effect
-/// only `PARTNER_CHANGE_DELAY_MS` after it is scheduled, and this package is published
-/// immutable, so no one can shorten that delay. The recipient the cap holder
+/// where each of its partners is paid. Initial terms apply at registration. Later
+/// Blast changes take effect only `PARTNER_CHANGE_DELAY_MS` after scheduling.
+/// This package is published immutable, so no one can shorten that delay. The recipient the cap holder
 /// sets applies at once.
 ///
 /// Products call `pay` with Blast's own fee on a trade. `pay` emits
@@ -49,7 +49,7 @@ public fun new_cap(ctx: &mut TxContext): PartnerCap {
 }
 
 /// Registers and shares a partner managed by the cap `cap_id`, with its share
-/// and cap in force at once. Every later change to either waits `PARTNER_CHANGE_DELAY_MS`.
+/// and managing cap in force immediately.
 public fun register(
     _: &AdminWitness<PartnerAdmin>,
     cap_id: ID,
@@ -180,7 +180,12 @@ public fun new_scheduled_for_testing(
     Partner {
         id: object::new(ctx),
         recipient,
-        share_bps: timelock::new_scheduled_for_testing(before, after, at_ms, PARTNER_CHANGE_DELAY_MS),
+        share_bps: timelock::new_scheduled_for_testing(
+            before,
+            after,
+            at_ms,
+            PARTNER_CHANGE_DELAY_MS
+        ),
         cap_id: timelock::new(object::id_from_address(@0x0), PARTNER_CHANGE_DELAY_MS),
     }
 }
@@ -197,7 +202,9 @@ public fun partner_paid_fields<T>(self: &PartnerPaid<T>): (ID, u64) {
 }
 
 #[test_only]
-public fun partner_updated_fields(self: &PartnerUpdated): (ID, address, Timelocked<u64>, Timelocked<ID>) {
+public fun partner_updated_fields(
+    self: &PartnerUpdated
+): (ID, address, Timelocked<u64>, Timelocked<ID>) {
     (self.partner_id, self.recipient, self.share_bps, self.cap_id)
 }
 

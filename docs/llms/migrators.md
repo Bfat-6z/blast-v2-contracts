@@ -20,9 +20,9 @@ migration itself, and everything the vault does afterwards.
 | --- | --- | --- |
 | `blast_fun_migrators::vault::LpVault` (`LpVault<Meme, Quote>`) | one per migrated launch | Holds the venue position, Blast's migration residuals, and every balance a collection feeds. |
 | `lp_fee_policy::LpFeePolicy` | singleton | Blast's LP-fee share (a default pair and optional per-coin pairs) and the address Blast's share is paid to. |
-| `blast_holder_rewards::Round` (`Round<Meme, Quote>`) | one per published round | A funded Merkle allocation of holder rewards and its claim bitmap. |
+| `blast_holder_rewards::Round` (`Round<Meme, Quote>`) | one per published round | A funded Merkle allocation, claim bitmap and deadline, frozen treasury and independent optional Quote gas reserve. |
 | `blast_fun_migrators::venue_config::VenueConfig` | singleton | Keeps each Cetus launch's `PoolCreationCap` forever, under `blast_fun_migrators::cetus::CreationCapKey` (typed by the Meme). |
-| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation. Every public call except `wrap` checks it first. |
+| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation. Created by wrap before ACL configuration; operational mutations check it first. |
 | `blast_fun_migrators::package_admin::PackageAdmin` | singleton | Sealed custody of this package's `Publisher` and `UpgradeCap`. |
 
 Calls also take objects from other packages:
@@ -39,20 +39,25 @@ Calls also take objects from other packages:
 
 #### Capabilities and roles
 
+- `blast_fun_migrators::blast_fun_migrators::Publication` (`key` only, owned):
+  created once at publication and sent to the deployer. It holds the canonical
+  Publisher and initial generation and is consumed permanently by custody wrap.
+  It has no policy authority.
+
 - `creator_authority::CurveFeeCap` (`CurveFeeCap<Meme>`, owned, transferable). The launch records
   the ID of the one live cap. Its holder claims the creator's LP fees and changes the fee split. The
   creator gets it from `launch::claim_creator_caps`. A Blast admin with
   `blast_fun_domain::CreatorAdmin` can retire it and issue a new one with
-  `launch::reassign_curve_fee_cap`; the new cap then controls the vault too.
+  `launch::apply_curve_fee_cap_update`; the new cap then controls the vault too.
 - Blast admin roles. An admin calls `blast_acl::sign_in` (type argument `Role`) with the shared
   `blast_acl::ACL` and its own `blast_acl::AdminCap`, which yields a droppable
   `blast_acl::AdminWitness` (`AdminWitness<Role>`). Each admin call takes the witness for exactly
   one role:
   - `blast_fun_domain::BuybackAdmin`: buyback and burn.
-  - `blast_fun_domain::RewardsAdmin`: publish holder-reward rounds.
+  - `blast_fun_domain::RewardsAdmin`: publish holder-reward rounds and settle their gas reserves.
   - `blast_fun_domain::TreasuryAdmin`: claim migration residuals; set the LP-fee destination.
   - `blast_fun_domain::FeeAdmin`: set Blast's default and per-coin LP-fee shares.
-  - `blast_fun_domain::UpgradeAdmin`: authorize and commit package upgrades.
+  - `blast_fun_domain::UpgradeAdmin`: govern upgrade notice and authorize package upgrades.
 
   These role types belong to the launchpad; this package declares no roles of its own. Integrators
   cannot call admin functions.
@@ -65,16 +70,18 @@ Calls also take objects from other packages:
 | `blast_fun_migrators::cetus::migrate`, `blast_fun_migrators::bluefin::migrate` | anyone |
 | `blast_fun_migrators::cetus::collect_fees`, `blast_fun_migrators::bluefin::collect_fees` | anyone |
 | `blast_fun_migrators::vault::claim_protocol_lp_fees_with_partner` | anyone |
-| `blast_holder_rewards::claim` | anyone (pays only the leaf's beneficiary) |
+| `blast_holder_rewards::claim` | anyone (pays only the leaf's beneficiary before its deadline) |
+| `blast_holder_rewards::close_round` | anyone (returns custody to its funding vault at the deadline) |
 | `blast_fun_migrators::vault::claim_creator_fees` | cap holder: the live `CurveFeeCap<Meme>` |
-| `blast_fun_migrators::cetus::settle_and_update_fee_split`, `blast_fun_migrators::bluefin::settle_and_update_fee_split` | cap holder: the live `CurveFeeCap<Meme>` |
+| `blast_fun_migrators::cetus::settle_and_apply_fee_split`, `blast_fun_migrators::bluefin::settle_and_apply_fee_split` | anyone: settle and apply the stored ready proposal |
+| `blast_fun_migrators::vault::schedule_fee_split`, `blast_fun_migrators::vault::cancel_fee_split` | cap holder: the live `CurveFeeCap<Meme>` |
 | `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `BuybackAdmin` |
-| `blast_holder_rewards::publish_round` | Blast admin: `RewardsAdmin` |
+| `blast_holder_rewards::publish_round`, `blast_holder_rewards::settle_gas_reserve` | Blast admin: `RewardsAdmin` |
 | `blast_fun_migrators::vault::claim_protocol_fees` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::set_protocol_destination` | Blast admin: `TreasuryAdmin` |
-| `lp_fee_policy::set_default_shares`, `lp_fee_policy::set_coin_shares`, `lp_fee_policy::clear_coin_shares` | Blast admin: `FeeAdmin` |
+| `lp_fee_policy::schedule_protocol_destination` | Blast admin: `TreasuryAdmin` |
+| `lp_fee_policy::schedule_default_shares`, `lp_fee_policy::schedule_coin_shares`, `lp_fee_policy::schedule_clear_coin_shares` | Blast admin: `FeeAdmin` |
 | `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance` | Blast admin: `UpgradeAdmin` |
-| `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publisher` and `UpgradeCap` (done once at deployment) |
+| `blast_fun_migrators::package_admin::wrap` | cap holder: the package's `Publication` and native `UpgradeCap` (done once at deployment) |
 
 #### What an `LpVault` holds
 
@@ -93,7 +100,7 @@ Calls also take objects from other packages:
 - `auto_lp_meme`, `auto_lp_quote`: auto-LP amounts the pool has not taken yet.
 - `rewards_meme`, `rewards_quote`: holder-reward funds not yet reserved by a round.
 - `burn_quote`: Quote waiting for a buyback.
-- `fee_split`: the current split (the launch's at migration).
+- `fee_split`: a delayed policy containing applied `value`, `delay_ms` and optional `pending` (the launch's split at migration, with a 48-hour notice).
 - `pool_id`, `partner_id` (copied from the launch, never changes), `next_round`, `last_checkpoint`.
 
 No function removes or transfers a position. No function withdraws the auto-LP, rewards, or burn
@@ -107,13 +114,14 @@ balances except the flows below.
   different: Cetus LP Burn has burned it, and its `CetusLPBurnProof` can only collect fees. The
   Bluefin position, the Cetus auto-LP position, and every vault balance depend on this package's
   code.
-- **Blast sets its own share at any time.** `FeeAdmin` can set Blast's LP-fee share anywhere from 0
-  to 10,000 BPS per asset, by default or per coin, with no delay. It applies from the next
-  collection. `TreasuryAdmin` can redirect Blast's share at any time.
+- **Blast controls its own share.** `FeeAdmin` schedules Blast's LP-fee share
+  from 0 to 10,000 BPS per asset, by default or per coin. `TreasuryAdmin` schedules
+  payout destination changes. Anyone applies a scheduled change after the snapshotted deadline;
+  it applies from the next collection.
 - **The admin can publish any round.** Merkle proofs enforce the published allocation, not the truth
   of Blast's off-chain holder accounting. `RewardsAdmin` can assign unreserved rewards to any
-  recipient in a new round. Rounds never expire, and nothing cancels a round or sweeps its funds, so
-  a wrong root or an over-sized budget cannot be recovered through the current functions.
+  recipient in a new round. Claims remain available until its fixed deadline. No administrator can
+  rewrite the root; anyone can recover unclaimed custody to its funding vault at the deadline.
 - **Auto-LP price-move skim.** Auto-LP adds at the pool's current price. A caller can move the price
   in the same transaction, collect, and move it back, skimming part of that call's auto-LP amount.
   Frequent collection keeps each exposed slice small. Buybacks are admin-only with a minimum out for
@@ -130,15 +138,38 @@ balances except the flows below.
   recorded at start can migrate it. A failed migration aborts the whole transaction and leaves the
   launch `MigrationReady`.
 - **Vault.** Created and shared inside `migrate` with the launch's `FeeSplit`. Each
-  `settle_and_update_fee_split` replaces the split. On Cetus, the auto-LP position appears the
+  `settle_and_apply_fee_split` replaces the split. On Cetus, the auto-LP position appears the
   first time a collection finds both auto-LP balances nonzero, even if nothing is then added. The
   vault never closes.
 - **Rounds.** `next_round` starts at 0 and rises by 1 per published round. Each round's checkpoint
-  interval must start where the previous one ended. A round stays claimable forever.
+  interval must start at or after the previous published end. Gaps are allowed. Claims stop at the
+  fixed deadline; anyone can then close the round and restore its remaining custody to its vault.
 
 ### Flows
 
-Every public call in this package except the one-time `wrap` takes
+#### Publication and initial configuration
+
+1. Publish the package. The deployer receives the unique `blast_fun_migrators::blast_fun_migrators::Publication`,
+   holding its canonical Publisher and initial generation. Policy singletons are
+   shared; no operational PackageVersion exists yet.
+2. Call `blast_fun_migrators::package_admin::wrap` with Publication by value and the matching
+   never-upgraded UpgradeCap. It consumes Publication permanently, seals native
+   custody and shares PackageVersion. Publication-owned policy operations start with zero notice.
+3. Grant the required roles on the real Blast ACL. Configure destinations, fees
+   and reviewed adapter admission through the ordinary schedule/apply operations
+   with Clock. At zero delay these can run in one PTB. Quote admission uses its
+   ordinary ListingAdmin setter. No publication proof authorizes policy changes.
+4. Apply or cancel every outstanding zero-delay proposal. Use each operation’s role
+   to schedule and apply its intended value and next notice. Configure upgrade notice
+   through UpgradeAdmin’s policy-only proposal. Read each applied notice before release.
+5. Finish launchpad configuration and enable each operation’s notice before unpausing migration. Migrators has no independent pause switch.
+
+Setup may span transactions. Pausing and upgrades never reset the administrative
+policy or recreate Publication. An outstanding zero-delay proposal remains ready
+after enabling positive notices, which is why setup must settle those proposals
+before release. Route admission remains checked when creating launches or sales.
+
+Operational state-changing calls take
 `blast_fun_migrators::blast_fun_migrators::PackageVersion` (shared) and checks it before anything
 else. Calls whose launchpad step checks the launchpad generation (`new`, `migrate`) take the
 launchpad's `blast_fun::blast_fun::PackageVersion` as well, because each package checks only its own
@@ -304,26 +335,31 @@ which pays the creator's bonding-curve trade fees.
 
 #### Changing the fee split
 
-The live `CurveFeeCap` holder replaces the split. Fees already in the pool settle under the old
-split first, so every fee follows the split it accrued under.
+The live `CurveFeeCap<Meme>` holder schedules or cancels the vault's creator split. The
+initial notice is 48 hours (`172_800_000` milliseconds). Expiry only makes the stored proposal
+ready; collections keep using the applied split until an explicit settlement and application.
 
-1. Build the new split in the PTB: one `allocation::route` (destination, BPS) per recipient, a
-   `MakeMoveVec` of those routes, then `allocation::fee_split` (creator, auto-LP, rewards, and burn
-   BPS, then the routes), with each `Bps` from `blast_fun::bps::new`. The parts must sum to exactly
-   10,000; at most 16 recipients; destinations nonzero and distinct.
-2. Call `blast_fun_migrators::cetus::settle_and_update_fee_split` with `<Meme, Quote, CoinA, CoinB>`
-   or `blast_fun_migrators::bluefin::settle_and_update_fee_split` with `<Meme, Quote>`. Arguments,
-   in order: the `LpVault` (mutable), migrators `PackageVersion`, `LpFeePolicy`, the `Launch`
-   (read-only), the live `CurveFeeCap<Meme>`, `Currency<Meme>` (mutable), the venue objects exactly
-   as in that venue's `collect_fees` (Cetus `GlobalConfig`, `BurnManager`, pool; or Bluefin
-   `GlobalConfig`, pool), the new `FeeSplit` from step 1, and `Clock`.
+1. Build the proposed split with `allocation::route`, a `MakeMoveVec`, and
+   `allocation::fee_split`. Its parts total 10,000 BPS with at most 16 distinct, nonzero routes.
+2. The cap holder calls `blast_fun_migrators::vault::schedule_fee_split<Meme, Quote>` with the
+   mutable vault, migrators version, read-only launch, live curve-fee cap, proposed split,
+   **next** notice in milliseconds, and `Clock`. Both applied fields remain unchanged. The
+   proposal waits the full currently applied notice, even when reducing the next notice to zero.
+   A replacement restarts that wait. An unchanged value and notice abort with `EFeeSplitUnchanged`.
+3. At or after the stored threshold, **anyone** calls
+   `blast_fun_migrators::cetus::settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>` or
+   `blast_fun_migrators::bluefin::settle_and_apply_fee_split<Meme, Quote>`. Supply the same vault,
+   migrators version, fee policy, currency, venue objects and `Clock` as `collect_fees`.
+   Application accepts no cap or caller-selected split. It checks readiness, collects every
+   position's fees under the old split, adds auto-LP, and activates the stored split and notice.
 
-Order: generation check; (Cetus) pair proof; live-cap check (launchpad code 22); proposal differs
-from the current split (`EFeeSplitUnchanged`); a full collection exactly as above under the old
-split; then the new split commits and emits `FeeSplitChanged`. A settlement that finds no fees
-still commits. Balances already in the vault (creator, auto-LP leftovers, rewards, burn Quote) stay
-where they are; auto-LP leftovers keep being added on later collections even if the new split has
-no auto-LP part.
+The live cap holder may call `blast_fun_migrators::vault::cancel_fee_split` even after readiness;
+it discards the proposal and retains the applied split and notice. Cap reassignment preserves an
+accepted proposal: its ready application stays permissionless, and only the new live cap may
+cancel or replace it. A delay-only change uses the same settlement boundary. Zero fees still allow
+activation. Already allocated creator, holder, burn and auto-LP balances retain their allocation.
+`FeeSplitScheduled`, `FeeSplitCancelled` and `FeeSplitChanged` identify each transition; the last
+includes old/new splits and the newly applied notice.
 
 #### Buyback and burn (Blast admin)
 
@@ -347,24 +383,56 @@ Blast's off-chain system turns holder balances between checkpoints into a Merkle
 contract enforces only the published allocation, not how it was computed.
 
 Publishing (Blast admin, `RewardsAdmin`): `blast_holder_rewards::publish_round` (`<Meme, Quote>`)
-with the vault (mutable), migrators `PackageVersion`, `&AdminWitness<RewardsAdmin>`, `number`,
-`start_checkpoint`, `end_checkpoint`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`,
-`quote_amount`. Checks, in order: `number` equals the vault's `next_round` (`EWrongRound`);
-`start_checkpoint < end_checkpoint` and, after the first round, `start_checkpoint` equals the
-previous `end_checkpoint` (`EInvalidInterval`); `root` and `manifest_digest` are 32 bytes each
-(`EInvalidCommitment`); `leaf_count` is 1..=65,536 (`EInvalidLeafCount`); at least one amount is
-nonzero (`EEmptyBudget`). It moves the budget out of `rewards_meme`/`rewards_quote` (a Sui balance
-abort if the vault holds less), shares a new `Round`, and emits `RoundPublished`. The contract never
-checks that the leaves sum to the budget. Checkpoints are opaque u64 values to the contract.
+takes the mutable vault, migrators `PackageVersion`, role witness, shared
+`LpFeePolicy`, expected treasury, round number, checkpoint interval, root and
+manifest digest, leaf count, exact holder Meme/Quote amounts, optional Quote gas
+reserve, future claim deadline in Unix milliseconds, and `Clock`. After the
+version guard, the expected treasury must match
+the LP policy’s applied protocol destination, including when the reserve is
+zero. The round freezes that treasury; later policy changes cannot
+redirect its reimbursement.
 
-Claiming (anyone): `blast_holder_rewards::claim` (`<Meme, Quote>`) with the `Round` (mutable),
-migrators `PackageVersion`, `index`, `beneficiary`, `meme_amount`, `quote_amount`, and `proof`
-(`vector<vector<u8>>`, leaf to root). Checks, in order: `index < leaf_count` (`EInvalidIndex`); the
-leaf is unpaid (`EAlreadyClaimed`); `beneficiary` is not `@0x0` (`EInvalidBeneficiary`); an amount
-is nonzero (`EEmptyBudget`); the proof verifies (`EInvalidProof`). It marks the leaf paid, transfers
-the nonzero amounts as coins to `beneficiary` (never to the sender; a Sui balance abort if the round
-holds less), and emits `RewardPaid`. Anyone can relay a claim; the beneficiary receives the same
-coins either way. There is no deadline.
+The number must equal `next_round`. The interval obeys
+`previous published end <= start_checkpoint < end_checkpoint`; the first round
+may start anywhere. Low-volume periods may be skipped without consuming a round
+number. Overlaps are rejected. Both digests contain 32 bytes, leaf count is
+1..=65,536, at least one holder amount is nonzero, and the claim deadline must be
+strictly after the current `Clock`. Holder Meme must fit the vault balance and
+holder Quote plus gas reserve must fit its Quote balance. This combined check
+rejects overcommitment before addition, including `u64` overflow attempts.
+
+Publication atomically moves holder funds and gas custody into separate balances
+in the shared `Round`, advances the vault's round number and checkpoint, and emits
+`blast_fun_migrators::blast_events::RoundPublished`. Zero reserve disables
+reimbursement. Positive reserve creates one pending reimbursement. The contract
+enforces the published allocation; it does not verify off-chain eligibility,
+actual gas attribution, or that the leaves sum to the holder budget.
+
+Claiming (anyone): `blast_holder_rewards::claim` (`<Meme, Quote>`) takes the
+mutable round, current migrators version, leaf index, committed beneficiary,
+Meme/Quote amounts, positional proof and `Clock`. Claims are accepted only while
+`clock.timestamp_ms() < claim_deadline_at_ms`. They require an in-range unpaid
+index, nonzero beneficiary and amount, and valid proof. Payment goes only to the
+committed beneficiary, and the event is
+`blast_fun_migrators::blast_events::RewardPaid`. Claims never spend gas custody.
+
+Settlement (Blast admin, `RewardsAdmin`):
+`blast_holder_rewards::settle_gas_reserve` takes the mutable round, current
+migrators version, role witness, the exact funding vault and measured Quote
+reimbursement. It consumes the pending reserve once, pays at most that reserve
+to the frozen treasury, returns every unused unit to the vault, and emits
+`blast_fun_migrators::blast_events::GasReserveSettled`. Zero reimbursement returns
+the entire reserve. Disabled and repeated settlement abort. Settlement remains
+possible after the claim deadline until the round is closed. This is an
+administrator-attested reimbursement in Quote, not direct payment of network gas.
+
+Recovery (anyone): `blast_holder_rewards::close_round` consumes the shared round
+with its current migrators version, exact funding vault and `Clock`, at or after
+its deadline. It returns unclaimed holder assets and any unsettled gas reserve
+to that vault, emits `blast_fun_migrators::blast_events::RoundClosed`, and deletes
+the round. It does not rewind round numbers or checkpoint history. No admin role
+is required, so revocation cannot strand custody. Close before settlement leaves
+the gas cost with Blast. Passing the deadline alone moves no assets.
 
 Leaf and proof format (Blake2b-256 throughout, BCS encoding):
 
@@ -394,28 +462,66 @@ sits in the launch and is claimed through the launchpad.
 
 #### LP-fee policy (Blast admin)
 
-- `lp_fee_policy::set_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
+- `lp_fee_policy::schedule_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
   coin without its own pair. Aborts with `EProtocolFeeSharesUnchanged` if unchanged.
-- `lp_fee_policy::set_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
+- `lp_fee_policy::schedule_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
   keyed by its original type name. A pair equal to the defaults is still a real entry: later default
   changes skip that coin. Aborts if it equals the coin's current pair.
-- `lp_fee_policy::clear_coin_shares` (type argument `Meme`; `FeeAdmin`): removes the coin's pair so
-  the defaults apply again. Aborts in Sui's table code if the coin has no pair.
-- `lp_fee_policy::set_protocol_destination` (`TreasuryAdmin`): redirects every later Blast payout.
+- `lp_fee_policy::schedule_clear_coin_shares` (type argument `Meme`; `FeeAdmin`): schedules a return to live defaults. The table entry remains with an applied `None` after application; there is no immediate deletion.
+- `lp_fee_policy::schedule_protocol_destination` (`TreasuryAdmin`): redirects every later Blast payout.
   Aborts with `EProtocolDestinationUnchanged` for `@0x0` or the current address.
 
-Each takes effect from the next collection or partner payout. At publication the defaults are 0 BPS
-for both assets and the destination is the publishing address; read the live object for current
-values.
+Each takes effect only after its delay and explicit application. At publication the defaults are 1,500 BPS (15%)
+for both assets and the destination is the configured genesis recipient; read the live object for current values.
 
 #### Package upgrades (Blast admin)
 
-`blast_fun_migrators::package_admin::authorize_upgrade` returns an upgrade ticket for an exact
-digest; `blast_fun_migrators::package_admin::commit_upgrade_and_advance` commits the receipt and
+`blast_fun_migrators::package_admin::schedule_upgrade` announces an exact digest. After its snapshotted deadline,
+`blast_fun_migrators::package_admin::authorize_upgrade` takes `Clock` and returns its upgrade ticket; `blast_fun_migrators::package_admin::commit_upgrade_and_advance` commits the receipt and
 moves `PackageVersion` to the next generation in the same call. From then on, every call to the old
 package's code aborts the generation check, so integrators must call the current package address.
 Type names keep the original package address. Upgrading this package leaves the launchpad on its own
 generation.
+
+### Delayed administration
+
+Each treasury, fee or upgrade operation owns its applied notice period. A delayed-value
+schedule accepts a proposed value and **next** `delay_ms`, but its execution deadline is
+`ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
+current wait. The proposed value and next notice become active together only after
+explicit application with the current version and canonical Clock. A value-only
+change supplies the applied delay; a delay-only change supplies the applied value.
+Different operations, including operations in the same package, can use different delays.
+
+Rescheduling replaces the proposal and restarts the full currently applied notice.
+`CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
+Ordinary value applications need no role; code authorization and immutability execution
+still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
+later schedules check their own timestamp addition too. Scheduled events include the
+proposed next delay for value/policy replacements, or the unchanged applied notice
+for action-only proposals. Read the live notice before relying on a cancellation window.
+
+`blast_fun_migrators::package_admin::schedule_upgrade` takes the exact digest and
+uses the stored upgrade notice, with no delay argument.
+`blast_fun_migrators::package_admin::authorize_upgrade` consumes only a ready matching digest;
+its ticket must feed the native upgrade command and its receipt the ordinary finalizer.
+`blast_fun_migrators::package_admin::schedule_make_immutable` and
+`blast_fun_migrators::package_admin::make_immutable` govern destruction of upgrade authority.
+These action schedules accept no delay argument and their execution preserves the notice.
+`blast_fun_migrators::package_admin::schedule_upgrade_delay` uses UpgradeAdmin to propose only the
+notice period, replacing any pending action. Anyone applies it with
+`blast_fun_migrators::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
+`blast_fun_migrators::package_admin::cancel_upgrade_action` cancels any of these proposals.
+
+Publication-owned policy singletons and package custody start with zero notice for
+ordinary role-authorized setup. Configure and apply each operation's intended notice
+(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
+release. Raising a notice never changes previously scheduled deadlines or next delays.
+Pausing and upgrades cannot reset notices. This source requires a fresh stack.
+
+A newly introduced coin override inherits the defaults operation's applied notice.
+Clearing or cancelling an override retains its table entry and its applied notice;
+a fresh override cannot obtain a zero-delay first update once defaults are protected.
 
 ### Economics
 
@@ -496,10 +602,11 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 ### Time rules
 
 - No deadlines exist in this package. Collections, payouts, claims, and buybacks work at any time.
-- Policy changes apply from the next collection; there is no delay.
+- Policy changes wait the applied administrative delay and explicit application,
+  then affect the next collection.
 - A partner payout uses the partner's share in force at payout, not at collection.
-- Holder-reward rounds never expire. Their checkpoint intervals must be contiguous and nonempty.
-- `migrate`, `collect_fees`, `settle_and_update_fee_split`, and `buyback_and_burn` take `Clock`
+- Holder claims stop at the round's claim deadline. Anyone may close at that deadline to restore unclaimed assets and unsettled gas custody. Checkpoint intervals must be nonempty and nonoverlapping; gaps are allowed.
+- `migrate`, `collect_fees`, `settle_and_apply_fee_split`, and `buyback_and_burn` take `Clock`
   (`0x6`) for the venue's own use (`new` takes none); the partner payout takes it for the partner's
   timelocked share.
 
@@ -507,8 +614,12 @@ becomes the vault's protocol residuals. Position principal plus residuals equals
 
 This package has no public getters for its objects. Read object fields over RPC or GraphQL.
 
+`Delayed<T>` contains the applied `value`, applied `delay_ms` and an optional `pending` record with the proposed
+`value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Reaching that timestamp does not change live
+economics: the proposal becomes applied only when its apply call succeeds.
+
 - **Vault** (`LpVault<Meme, Quote>`): the fields listed under "What an `LpVault` holds". Each
-  `Balance` shows its value. `fee_split` holds `creator_bps`, `auto_lp_bps`, `rewards_bps`,
+  `Balance` shows its value. `fee_split.value` holds `creator_bps`, `auto_lp_bps`, `rewards_bps`,
   `burn_bps` (each a `Bps` wrapping one u64) and `recipients` (each with `destination` and `bps`).
   The position is a dynamic object field of the vault: list its dynamic fields, or read the child
   object by the ID in `VaultCreated.position_id`.
@@ -517,11 +628,15 @@ This package has no public getters for its objects. Read object fields over RPC 
   Quote>` is unique per Meme.
 - **Blast's live share for a coin:** `LpFeePolicy.coins` is a table keyed by the standard library's
   `TypeName` holding the Meme's original type name (64 hex digits without `0x`, then the module and
-  type names, each after two colons). If the coin has an entry, use its `meme_bps`/`quote_bps`;
-  otherwise use `defaults`. `destination` is the current payee.
-- **Round** (`Round<Meme, Quote>`): `vault`, `number`, `root`, `leaf_count`, `meme` and `quote`
-  (funds left), and `claimed`, a bitmap of u256 words: leaf `i` is paid when bit `i mod 256` of word
-  `i / 256` is set.
+  type names, each after two colons). Each entry holds `Delayed<Option<SharePair>>`. Read the
+  entry's applied `value`: use the pair when it is `Some`, and use `defaults.value` when it is
+  `None` or the table entry is absent. Each pair contains `meme_bps` and `quote_bps`, each a `Bps`
+  positional struct wrapping one u64. `destination.value` is the current payee. Both `defaults`
+  and `destination` are delayed fields; their pending proposals do not affect these reads.
+- **Round** (`Round<Meme, Quote>`): `vault`, `number`, `claim_deadline_at_ms`, `root`,
+  `leaf_count`, `meme` and `quote` (holder funds left), frozen `treasury`, independent
+  `gas_reserve` (`None` when disabled or settled), and `claimed`, a bitmap of u256 words:
+  leaf `i` is paid when bit `i mod 256` of word `i / 256` is set.
 - **Cetus reservation:** `VenueConfig` has a dynamic object field `CreationCapKey<Meme>` holding the
   pair's `PoolCreationCap`.
 - **Launch facts** (public launchpad getters): `launch::pool_tier` (tick spacing and fee rate),
@@ -530,6 +645,19 @@ This package has no public getters for its objects. Read object fields over RPC 
   holds the number.
 - **Pending fees and the next split:** dry-run `collect_fees`; the emitted `FeesCollected` and
   `AutoLiquidityAdded` show exactly what a collection would do now.
+
+For example, with applied defaults of 100/200 BPS for Meme/Quote and a proposed override of
+300/400 BPS:
+
+| Coin policy state | Applied entry value | Live Meme/Quote BPS |
+| --- | --- | --- |
+| No entry | Absent | 100/200 from applied defaults |
+| First override scheduled, including after readiness but before application | `None` | 100/200 from applied defaults |
+| Override applied, including while its clear is pending | `Some` pair | 300/400 from the applied override |
+| Clear applied; the table entry remains | `None` | 100/200 from applied defaults |
+
+When using defaults, always read their current applied value. If defaults change during a
+clear's notice period, applying that clear restores those updated defaults.
 
 ### Events
 
@@ -543,10 +671,14 @@ This package emits its events directly, with no envelope. The launchpad wraps it
 | `FeesCollected` | nonzero collection | `vault_id`, `gross_meme`, `gross_quote`, `protocol_destination` (none when held for a partner), `protocol_meme`, `protocol_quote`, `creator_*`, `auto_lp_*`, `rewards_*`, `burn_meme` (burned), `burn_quote` (waits), `recipient_meme`, `recipient_quote` (split order) |
 | `AutoLpPositionOpened` | first Cetus collection with both auto-LP balances nonzero | `vault_id`, `position_id` |
 | `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `meme_pending`, `quote_pending` |
-| `FeeSplitChanged` | split update | `vault_id`, `old_fee_split`, `new_fee_split` |
+| `FeeSplitScheduled` | creator schedule | `vault_id`, `proposed`, `ready_at_ms`, next `delay_ms` |
+| `FeeSplitCancelled` | creator cancellation | `vault_id`, discarded `proposed` |
+| `FeeSplitChanged` | settled application | `vault_id`, `old_fee_split`, `new_fee_split`, applied `delay_ms` |
 | `CreatorFeesClaimed` | creator LP-fee claim | `vault_id`, `meme_amount`, `quote_amount` |
 | `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `quote_pending` |
-| `RoundPublished` | round publish | `vault_id`, `round_id`, `number`, `start_checkpoint`, `end_checkpoint`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`, `quote_amount`, `meme_unallocated`, `quote_unallocated` |
+| `RoundPublished` | round publish | `vault_id`, `round_id`, `number`, `start_checkpoint`, `end_checkpoint`, `claim_deadline_at_ms`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`, `quote_amount`, `meme_unallocated`, `quote_unallocated`, `treasury`, `gas_reserve_amount` |
+| `GasReserveSettled` | gas settlement | `vault_id`, `round_id`, `number`, `treasury`, `reimbursement_amount`, `reserve_returned`, `quote_unallocated` |
+| `RoundClosed` | deadline recovery | `vault_id`, `round_id`, `number`, `meme_returned`, `quote_returned`, `gas_reserve_returned` |
 | `RewardPaid` | reward claim | `round_id`, `index`, `beneficiary`, `meme_amount`, `quote_amount`, `meme_remaining`, `quote_remaining` |
 | `ProtocolFeesClaimed` | residual claim | `vault_id`, `meme`, `quote` (type names), `claimant`, `meme_amount`, `quote_amount` |
 | `ProtocolLpFeesClaimed` | partner payout | `vault_id`, `protocol_destination`, `protocol_meme`, `protocol_quote`, `partner_meme`, `partner_quote` |
@@ -583,9 +715,11 @@ residual_quote`. Then reduce:
   `@0x0`).
 - `RoundPublished`: rewards balances become `meme_unallocated`/`quote_unallocated`; `next_round`
   becomes `number + 1` and `last_checkpoint` becomes `end_checkpoint`; record the round's budget
-  under `round_id`.
+  under `round_id`, with its deadline, frozen treasury and independent optional gas reserve.
 - `RewardPaid`: find the round by `round_id`; its funds become `meme_remaining`/`quote_remaining`;
-  mark `index` paid.
+  mark `index` paid. Gas custody is unchanged.
+- `GasReserveSettled`: clear the round's pending reserve, credit the treasury reimbursement, and adopt `quote_unallocated` as the vault's rewards Quote.
+- `RoundClosed`: remove the round; add `meme_returned` and `quote_returned + gas_reserve_returned` to the vault's rewards balances.
 
 A collection that finds no fees emits no `FeesCollected` and changes no balance except through
 auto-LP. The replay reproduces every vault balance exactly.
@@ -597,7 +731,7 @@ Blast admin abort with plain numeric codes from the named module.
 
 | Flow | Abort | Fix |
 | --- | --- | --- |
-| any | code 13 from Blast admin's `operational_version` module | Call the current package address with the current `PackageVersion` objects; pass the launchpad's too on `new`/`migrate`. |
+| any | code 12 from Blast admin's `operational_version` module | Call the current package address with the current `PackageVersion` objects; pass the launchpad's too on `new`/`migrate`. |
 | Cetus `migrate` | `EInvalidCoinOrder` (0, module `cetus`) | Swap `CoinA` and `CoinB`. |
 | Cetus routes | `EWrongCoinPair` (2, module `cetus`) | `CoinA`/`CoinB` must be exactly the launch's Meme and Quote. |
 | collect, settle, buyback | `EPositionPoolMismatch` (Cetus 1, Bluefin 0) | Pass the pool whose ID is the vault's `pool_id`. |
@@ -612,12 +746,16 @@ Blast admin abort with plain numeric codes from the named module.
 | partner payout | `EPartnerMismatch` (6, module `vault`) | Pass the `Partner` whose ID is the vault's `partner_id`; vaults without a partner have no payout. |
 | buyback | `EBuybackQuoteOutOfRange` (4), `EBuybackBelowMinimum` (5), module `vault` | Pass a `quote_in` between 1 and the vault's `burn_quote`; lower `min_meme_out` or retry at a better price. |
 | residual claim | `ENothingClaimable` (0, module `vault`) | Nothing left to claim. |
-| publish round | `EWrongRound` (0), `EInvalidInterval` (1), `EInvalidCommitment` (2), `EInvalidLeafCount` (3), `EEmptyBudget` (4) in `blast_holder_rewards` | Use `next_round`, a contiguous interval, 32-byte digests, 1..=65,536 leaves, a nonzero budget within the rewards balance. |
+| publish round | `EWrongRound` (0), `EInvalidInterval` (1), `EInvalidCommitment` (2), `EInvalidLeafCount` (3), `EEmptyBudget` (4), `ETreasuryChanged` (9), `EInvalidClaimDeadline` (10), `EInsufficientBudget` (11) in `blast_holder_rewards` | Use `next_round`, a nonoverlapping interval, 32-byte digests, 1..=65,536 leaves, and a nonzero holder budget. Match the governed treasury, choose a future deadline, and fit holder Quote plus reserve within the rewards balance. |
 | reward claim | `EInvalidIndex` (5), `EAlreadyClaimed` (6), `EInvalidBeneficiary` (7), `EEmptyBudget` (4), `EInvalidProof` (8) in `blast_holder_rewards` | Pass the leaf exactly as committed with its full-depth proof; each leaf pays once. |
 | policy | `EProtocolDestinationUnchanged` (0), `EProtocolFeeSharesUnchanged` (1) in `lp_fee_policy` | Change the stored value. |
 
 Venue-side aborts (Cetus or Bluefin refusing a tier, a pair, or a fee amount) carry the venue's own
 codes.
+
+Gas settlement rejects `EWrongVault` (13), `EReserveSettled` (14), and
+`EOverReserve` (15). Close rejects `EWrongVault` (13) and `EClaimsStillOpen` (16).
+Claims at or after the deadline reject `EClaimsClosed` (12) before proof work.
 
 ### Pitfalls
 
@@ -678,10 +816,12 @@ skim.
 
 **How do holders claim rewards?** Blast publishes a round with a Merkle root; a holder (or any
 relayer) calls `blast_holder_rewards::claim` with the leaf's index, beneficiary, amounts, and proof.
-The coins go to the beneficiary. Claims never expire, and each leaf pays once.
+The coins go to the beneficiary and each leaf pays once. Claims require the canonical `Clock`
+and must execute strictly before the round's deadline. At the deadline, anyone can close and
+return remaining custody to the funding vault.
 
-**Can the fee split change after migration?** Yes. The live `CurveFeeCap` holder calls the venue's
-`settle_and_update_fee_split`, which first collects and splits pending fees under the old split,
+**Can the fee split change after migration?** Yes. The live `CurveFeeCap` holder schedules it;
+after the applied notice, anyone calls `settle_and_apply_fee_split`, which settles under the old split,
 then commits the new one as the next generation.
 
 **When does a partner get its cut of LP fees?** When anyone calls

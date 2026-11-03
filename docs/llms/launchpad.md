@@ -25,23 +25,23 @@ collection, auto-LP, buyback, and holder rewards are in the migrators guide.
 
 | Object | Created | Holds | Who writes it |
 | --- | --- | --- | --- |
-| `blast_fun::blast_fun::PackageVersion` | `blast_fun::package_admin::wrap` | the active package generation | upgrade admin only |
+| `blast_fun::blast_fun::PackageVersion` | `blast_fun::package_admin::wrap` | the active generation and Create/Trading/Migrate pause flags | upgrade, pause and unpause admins |
 | `launch_config::LaunchConfig` | package publish | policy that new launches snapshot: admitted Meme decimals, admitted Quote types, trade fees, admitted adapters, Blast's migration allocation, the creation fee, accepted partners | Blast admins |
 | `runtime_config::RuntimeConfig` | package publish | settings read live: the account-claim signer key, Blast's share of every trade fee, the treasury address | Blast admins |
 | `launch::Launch<Meme, Quote>` | `launch::finalize`, shared by `launch::share` | one launch: lifecycle, curve reserves, settings, fee ledger, opening-round pot, migration allocations | trades, claims, migration |
 | `blast_fun::package_admin::PackageAdmin` | `blast_fun::package_admin::wrap` | the package's `Publisher` and `UpgradeCap` | upgrade admin only |
 | `Currency<Meme>` | `0x2::coin_registry::finalize_registration` | the coin's name, symbol, decimals, description, icon URL, and supply state (Sui Coin Registry) | the launch, through its internal `MetadataCap<Meme>` |
 
-`launch::new` and configuration setters require the shared `PackageVersion`. It does not exist
-until `blast_fun::package_admin::wrap` consumes the publication bootstrap and the matching,
-never-upgraded native UpgradeCap. That transaction seals both native capabilities in
-`PackageAdmin` and creates `PackageVersion` atomically. A rejected wrap leaves the bootstrap
-intact and the launchpad inactive. After activation, version-guarded calls abort when the caller
-links old bytecode after an upgrade (see Aborts).
+`launch::new` and routine configuration setters require the shared `PackageVersion`.
+PackageVersion does not exist until `blast_fun::package_admin::wrap` consumes
+Publication and the matching never-upgraded UpgradeCap. Wrapping seals custody
+and shares the version fully paused, with administrative delay zero. Ordinary
+ACL-authorized setters configure the package after wrap. Version-guarded calls
+reject old bytecode after an upgrade (see Aborts).
 
 #### Owned objects and capabilities
 
-- `blast_fun::blast_fun::Bootstrap` (`key` only): created once at package publication and sent
+- `blast_fun::blast_fun::Publication` (`key` only): created once at package publication and sent
   to the deployer. It holds the canonical Publisher and initial operational generation. Its
   only production consumer is `blast_fun::package_admin::wrap`; it cannot be transferred by
   another package, shared, or used in place of `PackageVersion`.
@@ -100,13 +100,16 @@ role authorizes only the functions that name it. The roles are types in `blast_f
 
 | Role | Launchpad functions it authorizes |
 | --- | --- |
+| `blast_fun_domain::PauseAdmin` | `blast_fun::pause` |
+| `blast_fun_domain::UnpauseAdmin` | `blast_fun::unpause` |
+| `blast_fun_domain::CancelAdmin` | Each `cancel_*` administrative operation |
 | `blast_fun_domain::UpgradeAdmin` | `blast_fun::package_admin::authorize_upgrade`, `blast_fun::package_admin::commit_upgrade_and_advance`, `blast_fun::package_admin::make_immutable` |
-| `blast_fun_domain::CreatorAdmin` | `launch::reassign_curve_fee_cap`, `launch::reassign_metadata_cap` |
-| `blast_fun_domain::TreasuryAdmin` | `launch_config::set_protocol_allocation`, `runtime_config::set_treasury` |
-| `blast_fun_domain::FeeAdmin` | `launch_config::set_trade_fees`, `launch_config::set_creation_fee`, `launch_config::add_partner`, `launch_config::remove_partner`, `runtime_config::set_protocol_fee_share` |
+| `blast_fun_domain::CreatorAdmin` | `launch::schedule_curve_fee_cap_reassignment`, `launch::schedule_metadata_cap_reassignment`, `launch::schedule_curve_fee_cap_delay`, `launch::schedule_metadata_cap_delay` |
+| `blast_fun_domain::TreasuryAdmin` | `launch_config::schedule_protocol_allocation`, `runtime_config::schedule_treasury` |
+| `blast_fun_domain::FeeAdmin` | `launch_config::schedule_trade_fees`, `launch_config::schedule_creation_fee`, `launch_config::add_partner`, `launch_config::remove_partner`, `runtime_config::schedule_protocol_fee_share` |
 | `blast_fun_domain::ListingAdmin` | `launch_config::set_meme_decimals_allowed`, `launch_config::set_quote_allowed` |
-| `blast_fun_domain::AdapterAdmin` | `launch_config::set_migration_witness_allowed` |
-| `blast_fun_domain::ClaimSignerAdmin` | `runtime_config::set_creator_claim_signer` |
+| `blast_fun_domain::AdapterAdmin` | `launch_config::schedule_migration_witness`, `launch_config::remove_migration_witness` |
+| `blast_fun_domain::ClaimSignerAdmin` | `runtime_config::set_creator_claim_signer`, `runtime_config::revoke_creator_claim_signer` |
 | `blast_fun_domain::BuybackAdmin`, `blast_fun_domain::RewardsAdmin` | migrators only (buyback, holder-reward rounds) |
 
 Integrators cannot call these. What each setter changes is under "Admin operations".
@@ -134,6 +137,29 @@ reassignments. `launch::deliver_opening_round` works in every state after `Openi
 expiry, or refund path.
 
 ### Flows
+
+#### Publication and initial configuration
+
+1. Publish the package. The deployer receives the unique `blast_fun::blast_fun::Publication`,
+   holding its canonical Publisher and initial generation. Policy singletons are
+   shared; no operational PackageVersion exists yet.
+2. Call `blast_fun::package_admin::wrap` with Publication by value and the matching
+   never-upgraded UpgradeCap. It consumes Publication permanently, seals native
+   custody and shares PackageVersion. Publication-owned policy operations start with zero notice. All operations start paused (combined mask = 7).
+3. Grant the required roles on the real Blast ACL. Configure destinations, fees
+   and reviewed adapter admission through the ordinary schedule/apply operations
+   with Clock. At zero delay these can run in one PTB. Quote admission uses its
+   ordinary ListingAdmin setter. No publication proof authorizes policy changes.
+4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
+   role to schedule and apply its intended value and next notice. Use UpgradeAdmin's
+   policy-only upgrade proposal to enable upgrade notice without a code change.
+   Read back every operation's notice and configured value before release.
+5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 7). Unpause is immediate.
+
+Setup may span transactions. Pausing and upgrades never reset the administrative
+policy or recreate Publication. An outstanding zero-delay proposal remains ready
+after enabling positive notices, which is why setup must settle those proposals
+before release. Route admission remains checked when creating launches or sales.
 
 Creating a launch takes three transactions, because each step needs an object the previous one
 creates.
@@ -365,38 +391,126 @@ allow/remove toggles for Quotes, decimals, and adapters instead abort inside the
   a Quote for new launches; existing launches keep trading. Emits `blast_fun::events::QuoteSet`.
 - `launch_config::set_meme_decimals_allowed` (ListingAdmin), with `decimals: u8` and `allowed`.
   Emits `blast_fun::events::MemeDecimalsSet`.
-- `launch_config::set_migration_witness_allowed<Witness>` (AdapterAdmin), with `allowed`: admits or
-  removes an adapter; rejects types defined at `0x1` or `0x2`. Existing launches keep their adapter.
-  Emits `blast_fun::events::MigrationWitnessSet`.
-- `launch_config::set_trade_fees` (FeeAdmin), with Quote and Meme fee `Bps`, each at most 1,000;
-  only launches started afterward use them. Emits `blast_fun::events::LaunchTradeFeesChanged`.
-- `launch_config::set_creation_fee` (FeeAdmin), with an amount in MIST. Emits
+- `launch_config::schedule_migration_witness<Witness>` (AdapterAdmin), with `Clock`: schedules admission; rejects types defined at `0x1` or `0x2`. `apply_migration_witness` admits it after the snapshotted deadline. `remove_migration_witness` removes it immediately and cancels pending admission. Existing launches keep their adapter.
+- `launch_config::schedule_trade_fees` (FeeAdmin), with Quote and Meme fee `Bps`, each at most 1,000;
+  only launches started afterward use them. Application emits `blast_fun::events::LaunchTradeFeesChanged`.
+- `launch_config::schedule_creation_fee` (FeeAdmin), with an amount in MIST. Emits
   `blast_fun::events::CreationFeeChanged`.
-- `launch_config::set_protocol_allocation` (TreasuryAdmin), with Meme and Quote `Bps`: Blast's
+- `launch_config::schedule_protocol_allocation` (TreasuryAdmin), with Meme and Quote `Bps`: Blast's
   one-time share for launches finalized afterward; Meme at most 9,998 and Quote at most 9,999.
-  Emits `blast_fun::events::ProtocolAllocationSet`.
+  Application emits `blast_fun::events::ProtocolAllocationSet`.
 - `launch_config::add_partner` (FeeAdmin), with a `Partner`: new launches may name it at once;
   cancels a pending removal. Emits `blast_fun::events::PartnerAdded`.
 - `launch_config::remove_partner` (FeeAdmin), with a `Partner` and `Clock`: new launches may still
   name it for `blast_partners::blast_partners::delay_ms` (seven days); launches that already name it
   keep paying it. Aborts with `EPartnerNotAccepted` when it is not accepted now. Emits
   `blast_fun::events::PartnerRemoved`.
-- `runtime_config::set_protocol_fee_share` (FeeAdmin), with a `Bps`: Blast's share of every trade
-  fee on every launch, from the next trade. Emits `blast_fun::events::ProtocolFeeShareChanged`.
-- `runtime_config::set_treasury` (TreasuryAdmin), with a non-zero address: every later Blast fee
-  claim on every launch pays it. Emits `blast_fun::events::TreasuryChanged`.
+- `runtime_config::schedule_protocol_fee_share` (FeeAdmin), with a `Bps`: Blast's share of every trade
+  fee on every launch, from the next trade. Application emits `blast_fun::events::ProtocolFeeShareChanged`.
+- `runtime_config::schedule_treasury` (TreasuryAdmin), with a non-zero address: every later Blast fee
+  claim on every launch pays it. Application emits `blast_fun::events::TreasuryChanged`.
 - `runtime_config::set_creator_claim_signer` (ClaimSignerAdmin), with a 32-byte Ed25519 public key,
-  or empty bytes to stop all account claims. Emits `blast_fun::events::CreatorClaimSignerSet`.
-- `launch::reassign_curve_fee_cap` and `launch::reassign_metadata_cap` (CreatorAdmin), with a
-  non-zero recipient: mint a fresh cap, record it as the live one, send it to the recipient, and
-  cancel any unclaimed creator claim. The old cap stops working; unclaimed curve fees follow the
-  new cap. Emit `blast_fun::events::CurveFeeCapReassigned` or
+  with immediate revocation handled by the separate revoke operation. Application emits `blast_fun::events::CreatorClaimSignerSet`.
+- `launch::apply_curve_fee_cap_update` and `launch::apply_metadata_cap_update` (anyone after the delay)
+  apply the pending proposal. A delay-only proposal updates the notice and keeps the live cap.
+  A reassignment mints a fresh cap, records it as the live one, sends it to the scheduled non-zero
+  recipient, and cancels any unclaimed creator claim. The old cap stops working; unclaimed curve
+  fees follow the new cap. Reassignments emit `blast_fun::events::CurveFeeCapReassigned` or
   `blast_fun::events::MetadataCapReassigned`.
 - Upgrades (UpgradeAdmin): `blast_fun::package_admin::authorize_upgrade` returns an
   `UpgradeTicket` for an exact digest; after the Upgrade command,
   `blast_fun::package_admin::commit_upgrade_and_advance` commits the receipt and advances
   `PackageVersion` in the same transaction; `blast_fun::package_admin::make_immutable` ends
   upgrades for good.
+
+### Delayed administration
+
+Each treasury, fee or upgrade operation owns its applied notice period. A delayed-value
+schedule accepts a proposed value and **next** `delay_ms`, but its execution deadline is
+`ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
+current wait. The proposed value and next notice become active together only after
+explicit application with the current version and canonical Clock. A value-only
+change retains the applied delay; a delay-only change retains the applied value.
+Different operations, including operations in the same package, can use different delays.
+
+Rescheduling replaces the proposal and restarts the full currently applied notice.
+`CancelAdmin` can cancel even a ready proposal, preserving the applied value and delay.
+Ordinary value applications need no role; code authorization and immutability execution
+still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
+later schedules check their own timestamp addition too. Scheduled events include the
+proposed next delay for value/policy replacements, or the unchanged applied notice
+for action-only proposals. Read the live notice before relying on a cancellation window.
+
+`blast_fun::package_admin::schedule_upgrade` takes only the digest in addition to
+its state, authority and Clock inputs, and uses the stored upgrade notice.
+`blast_fun::package_admin::authorize_upgrade` consumes only a ready matching digest;
+its ticket must feed the native upgrade command and its receipt the ordinary finalizer.
+`blast_fun::package_admin::schedule_make_immutable` and
+`blast_fun::package_admin::make_immutable` govern destruction of upgrade authority.
+These action schedules accept no delay argument and their execution preserves the notice.
+`blast_fun::package_admin::schedule_upgrade_delay` uses UpgradeAdmin to propose only the
+notice period, replacing any pending action. Anyone applies it with
+`blast_fun::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
+`blast_fun::package_admin::cancel_upgrade_action` cancels any of these proposals.
+
+Publication-owned policy singletons and package custody start with zero notice for
+ordinary role-authorized setup. Configure and apply each operation's intended notice
+(172,800,000 ms gives 48 hours), and drain or cancel all earlier setup proposals before
+release. Raising a notice never changes previously scheduled deadlines or next delays.
+Pausing and upgrades cannot reset notices. This source requires a fresh stack.
+
+Adapter admissions share one persistent `witness_delay_ms` across witness types;
+a fresh type cannot reopen setup. `launch_config::schedule_migration_witness` accepts
+only the witness type in addition to its state, authority and Clock inputs. It snapshots
+the applied notice and deadline; application only admits that witness and preserves the
+live notice. `launch_config::schedule_migration_delay` proposes a new notice under
+AdapterAdmin; anyone calls `launch_config::apply_migration_delay`, and CancelAdmin uses
+`launch_config::cancel_migration_delay`. Applying admissions before or after a policy
+change cannot overwrite that policy. Existing admission deadlines remain fixed; settle
+or cancel all zero-notice admissions before completing setup. Immediate adapter removal
+cancels that type's pending admission and preserves the applied notice.
+
+Creator-claim signer assignment and revocation are immediate under ClaimSignerAdmin,
+using a plain key value. Creator-cap reassignment is a separate delayed operation:
+each new launch starts both cap notices at 48 hours. The cap delay-only scheduling
+helpers propose no recipient; the matching reassignment application applies the notice
+without issuing, retiring or transferring a cap. Subsequent reassignments use that
+launch's independently applied cap notice.
+
+### Emergency pause
+
+A `PauseAdmin` calls `blast_fun::blast_fun::pause` to set selected bits on the shared
+package version. Only `UnpauseAdmin` may clear bits with `blast_fun::blast_fun::unpause`.
+CREATE is 1, TRADING is 2, MIGRATE is 4; all flags together are 7.
+TRADING pauses buying and selling together. The package constants
+`create_pause_bit`, `trading_pause_bit`, and `migration_pause_bit` live in the
+launchpad constants module; `valid_pause_bits` combines them.
+Pauses never expire. Claims, refunds and mandatory settlement remain callable.
+Launch creation/finalization/sharing checks CREATE. Buys, sells and opening-round
+entry/settlement check TRADING. Migration checks MIGRATE; opening-round delivery stays open.
+
+CreatorAdmin schedules each cap replacement separately with
+`launch::schedule_curve_fee_cap_reassignment` or
+`launch::schedule_metadata_cap_reassignment`. Both accept a recipient and preserve
+that operation's applied notice. CreatorAdmin changes only the notice with
+`launch::schedule_curve_fee_cap_delay` or `launch::schedule_metadata_cap_delay`;
+the change waits the old notice. Each operation has one pending proposal, so either
+kind of schedule replaces its previous proposal. Anyone executes the corresponding
+`launch::apply_curve_fee_cap_update` or `launch::apply_metadata_cap_update` after the delay.
+Delay-only execution keeps the current cap's authority; reassignment retires it.
+CancelAdmin can cancel either proposal.
+Delay policy has distinct event types for each cap: scheduling emits
+`blast_fun::events::CurveFeeCapDelayScheduled` or
+`blast_fun::events::MetadataCapDelayScheduled`; applying emits
+`blast_fun::events::CurveFeeCapDelayChanged` or
+`blast_fun::events::MetadataCapDelayChanged`; cancelling a policy-only proposal emits
+`blast_fun::events::CurveFeeCapDelayCancelled` or
+`blast_fun::events::MetadataCapDelayCancelled`. Applying a recipient proposal also
+emits its cap's delay-changed event before the reassignment event.
+ClaimSignerAdmin may immediately revoke the signer with
+`runtime_config::revoke_creator_claim_signer`; assignment and revocation take effect immediately.
+AdapterAdmin may immediately remove an adapter with `launch_config::remove_migration_witness`.
+Genesis treasury is configured before publication, never defaulted to the publisher.
 
 ### Economics
 
@@ -420,7 +534,7 @@ An `AllocationPlan` splits two totals at migration:
   `protocol_meme_bps` + each recipient's `meme_bps` = 10,000. Curve and pool Meme shares must be
   positive.
 - Final real Quote reserve: `lp_quote_bps` (seeds the pool) + Blast's `protocol_quote_bps` + each
-  recipient's `quote_bps` = 10,000.
+  recipient's `quote_bps` = 10,000. The pool's Quote share must be positive.
 
 The creator's plan leaves Blast's fields at zero; `launch::finalize` copies
 `LaunchConfig.protocol_allocation` into them and then checks both sums. So the creator's shares
@@ -569,12 +683,29 @@ object's type arguments.
 | Is this cap live? | its object ID equals `curve_fee_cap_id` or `blast_metadata_cap_id` |
 | Coin metadata, supply mode, total supply | the shared `Currency<Meme>` |
 
-`LaunchConfig` fields: `meme_decimals`, `quotes` (a `Table` keyed by the Quote `TypeName` with
-original IDs), `quote_fee_bps`, `meme_fee_bps`, `migration_witnesses`, `protocol_allocation`
-(`meme_bps`, `quote_bps`), `creation_fee` (MIST); accepted partners are dynamic fields
-`launch_config::PartnerKey(ID)` holding `accepted_until_ms`. `RuntimeConfig` fields:
-`creator_claim_signer_public_key`, `protocol_fee_share_bps`, `treasury`. Preview a trade exactly by
-dev-inspecting `launch::buy` or `launch::sell` against the live launch.
+A `Delayed<T>` stores the applied `value`, applied `delay_ms`, and an optional `pending` record containing the
+proposed `value`, next `delay_ms` and `ready_at_ms` (Unix milliseconds). Read the applied
+`value` for live economics. Reaching `ready_at_ms` makes a proposal executable; the matching
+apply call must still succeed before it becomes the applied value.
+
+`LaunchConfig` keeps `meme_decimals`, `quotes` (a `Table` keyed by the Quote `TypeName` with
+original IDs), and admitted adapters in `migration_witnesses`. Its delayed economic fields are:
+
+| Field | Applied value |
+| --- | --- |
+| `trade_fees` | `trade_fees.value` contains `quote_fee_bps` and `meme_fee_bps`, each a `Bps` |
+| `protocol_allocation` | `protocol_allocation.value` contains `meme_bps` and `quote_bps`, each a `Bps` |
+| `creation_fee` | `creation_fee.value` is the creation fee in MIST |
+
+`pending_witnesses` maps original adapter type names to admission proposals with `value`,
+snapshotted `delay_ms` and `ready_at_ms`; applying admission never writes that delay back
+to the shared policy. Admission becomes active only when applied to `migration_witnesses`. Accepted
+partners are dynamic fields `launch_config::PartnerKey(ID)` holding `accepted_until_ms`.
+
+`RuntimeConfig` stores the plain `creator_claim_signer_public_key` as its active signer.
+Its delayed fields are `protocol_fee_share_bps`, whose applied value is a `Bps`, and
+`treasury`, whose applied value is the current payee. A `Bps` is a positional struct wrapping one u64. Preview a trade exactly
+by dev-inspecting `launch::buy` or `launch::sell` against the live launch.
 
 ### Events
 
@@ -586,6 +717,15 @@ the transaction sender; take it from the transaction.
 
 | Event | Emitted by | Key fields and what to derive |
 | --- | --- | --- |
+| `blast_fun::events::Paused`, `blast_fun::events::Unpaused` | pause admin or unpause admin | requested `bits`, resulting `paused` mask |
+| `blast_fun::events::TreasuryScheduled`, `blast_fun::events::TreasuryCancelled` | treasury schedule or cancel | proposed `treasury`; schedule includes `ready_at_ms` and next `delay_ms` |
+| `blast_fun::events::ProtocolFeeShareScheduled`, `blast_fun::events::ProtocolFeeShareCancelled` | fee-share schedule or cancel | proposed `protocol_fee_share_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
+| `blast_fun::events::CreatorClaimSignerSet` | immediate signer assignment or revocation | applied `signer_public_key`; empty means revoked |
+| `blast_fun::events::MigrationWitnessScheduled`, `blast_fun::events::MigrationWitnessCancelled` | adapter admission schedule, cancellation or removal | proposed `witness`; schedule includes `ready_at_ms` and the applied `delay_ms` used for its deadline |
+| `blast_fun::events::ProtocolAllocationScheduled`, `blast_fun::events::ProtocolAllocationCancelled` | protocol allocation schedule or cancel | proposed `meme_bps` and `quote_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
+| `blast_fun::events::CreationFeeScheduled`, `blast_fun::events::CreationFeeCancelled` | creation fee schedule or cancel | proposed `creation_fee`; schedule includes `ready_at_ms` and next `delay_ms` |
+| `blast_fun::events::TradeFeesScheduled`, `blast_fun::events::TradeFeesCancelled` | trade fee schedule or cancel | proposed `quote_fee_bps` and `meme_fee_bps`; schedule includes `ready_at_ms` and next `delay_ms` |
+| `blast_fun::events::UpgradeActionScheduled<blast_fun::package_admin::UpgradeAction>`, `blast_fun::events::UpgradeActionCancelled<blast_fun::package_admin::UpgradeAction>` | upgrade or immutability schedule or cancel | `action` uses `blast_fun::package_admin::UpgradeAction`; schedule includes `ready_at_ms` and the applied notice, or next `delay_ms` for a delay-only proposal |
 | `blast_fun::events::LaunchTicketCreated` | coin publish | `ticket_id`, `meme` type, `decimals`, `metadata_cap_id`, `creator`, `burnable`, `sell_burn_bps` |
 | `blast_fun::events::LaunchCreated` | `launch::finalize` | `launch_id`, `ticket_id` (join to the ticket for the Meme type), `quote` type, `migration_witness`, pool tier, `lp_fee_split`, `virtual_quote`, `graduation_target`, both fee rates, the full `allocation_plan` with Blast's shares, `opening_round_ms`, `creation_fee`, `partner_id` |
 | `blast_fun::events::LaunchShared` | `launch::share` | `public_start_ms`; round end is this plus `opening_round_ms` |
@@ -595,7 +735,9 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::Bought` | buy, settlement | `quote_in` (gross used), `meme_out_gross`, `meme_out_net`, `quote_refund`, the four fee parts, reserves after; graduated when `real_quote_reserve >= graduation_target`. A `Bought` before `LaunchShared` in the creation transaction is the creator's buy; the one beside `OpeningRoundSettled` is the pot's |
 | `blast_fun::events::Sold` | sell | `meme_in_gross`, `pending_burn` added, `quote_out_gross`, the four fee parts, reserves after |
 | `blast_fun::events::CreatorCapsClaimed` | creator claim | `meme` type and both cap IDs (no launch ID: one launch per Meme type) |
-| `blast_fun::events::CurveFeeCapReassigned`, `blast_fun::events::MetadataCapReassigned` | admin | `launch_id`, new cap ID, `recipient` |
+| `blast_fun::events::CurveFeeCapReassignmentScheduled`, `blast_fun::events::MetadataCapReassignmentScheduled` | creator admin schedules replacement | `launch_id`, proposed `recipient`, `ready_at_ms`, next `delay_ms` |
+| `blast_fun::events::CurveFeeCapReassignmentCancelled`, `blast_fun::events::MetadataCapReassignmentCancelled` | cancel admin cancels replacement | `launch_id`, cancelled `recipient` |
+| `blast_fun::events::CurveFeeCapReassigned`, `blast_fun::events::MetadataCapReassigned` | anyone applying a ready proposal | `launch_id`, new cap ID, `recipient` |
 | `blast_fun::events::MemeMetadataUpdated` | metadata setters | `launch_id`, current `name`, `description`, `icon_url` |
 | `blast_fun::events::CreatorFeesClaimed` | creator fee claim | `launch_id`, `meme_amount`, `quote_amount` |
 | `blast_fun::events::ProtocolFeesClaimed` | Blast fee claims | `treasury` and its Meme, Quote, SUI amounts; partner amounts (0 without a partner) |
@@ -619,11 +761,14 @@ that detected it.
 
 | Flow | Code, constant (module) | Fix |
 | --- | --- | --- |
-| any | 13 in `blast_admin::operational_version` | call the launchpad's current package ID |
+| any | 12 in `blast_admin::operational_version` | call the launchpad's current package ID |
+| pause, unpause | 38 `blast_fun::errors::EInvalidPauseBits`, 39 `blast_fun::errors::EPauseUnchanged` (`blast_fun`) | select nonzero supported bits that change the active mask |
+| create, buy, sell, voluntary migration | 40 `blast_fun::errors::EPaused` (`blast_fun`) | wait for an `UnpauseAdmin` to clear the operation's bit |
+| package administration | 41 `blast_fun::errors::EWrongUpgradeAction`, 42 `blast_fun::errors::ENoPendingAction`, 43 `blast_fun::errors::EInvalidDigest` (`package_admin`) | execute the exact scheduled action; schedule before applying or cancelling; use a 32-byte digest |
 | publish | 9 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 25 `blast_fun::errors::EInvalidCreatorRecipient`, 26 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | start | 11 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 32 `blast_fun::errors::EQuoteNotAllowed`, 3 `blast_fun::errors::EMigrationWitnessNotAllowed`, 2 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, adapter, and decimals |
-| building values | 0 `blast_fun::errors::EInvalidBps` (`bps`); 6 `blast_fun::errors::EInvalidDestination`, 7 `blast_fun::errors::EInvalidShares`, 8 `blast_fun::errors::ERecipientCapacityReached`, 24 `blast_fun::errors::EDuplicateDestination` (`allocation`) | rates at most 10,000; non-zero addresses; curve and pool Meme positive; split sums to 10,000; at most 16 distinct routes |
+| building values | 0 `blast_fun::errors::EInvalidBps` (`bps`); 6 `blast_fun::errors::EInvalidDestination`, 7 `blast_fun::errors::EInvalidShares`, 8 `blast_fun::errors::ERecipientCapacityReached`, 24 `blast_fun::errors::EDuplicateDestination` (`allocation`) | rates at most 10,000; non-zero addresses; curve Meme and pool Meme/Quote positive; split sums to 10,000; at most 16 distinct routes |
 | finalize | `std::option` `EOPTION_NOT_SET` | set the virtual Quote, target, plan, and LP-fee split |
 | finalize | 35 `blast_fun::errors::EInvalidCreationFee`, 33 `blast_fun::errors::EInvalidVirtualQuote`, 13 `blast_fun::errors::EInvalidOpeningRound`, 12 `blast_fun::errors::EMemeSymbolTooLong`, 14 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; symbol at most 32 bytes; target big enough that the pool's Quote share is at least 1 |
 | finalize | 7 `blast_fun::errors::EInvalidShares`, 8 (`allocation`) | plan plus Blast's allocation must sum to 10,000 per asset; at most 16 recipients |

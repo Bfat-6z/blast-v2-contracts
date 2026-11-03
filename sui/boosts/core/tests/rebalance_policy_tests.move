@@ -70,7 +70,15 @@ fun every_strictly_ordered_small_tuple_is_accepted_and_preserved() {
         (rebalance_below + 1).range_do!(8, |target| {
             (target + 1).range_do!(8, |rebalance_above| {
                 (rebalance_above + 1).range_do!(8, |max_leverage| {
-                    let value = policy::new_rebalance_policy(rebalance_below, target, rebalance_above, max_leverage, 0, 0, 1);
+                    let value = policy::new_rebalance_policy(
+                        rebalance_below,
+                        target,
+                        rebalance_above,
+                        max_leverage,
+                        0,
+                        0,
+                        1
+                    );
                     assert_eq!(value.rebalance_below_bps(), rebalance_below);
                     assert_eq!(value.target_leverage_bps(), target);
                     assert_eq!(value.rebalance_above_bps(), rebalance_above);
@@ -228,7 +236,10 @@ fun the_widest_bound_keeps_every_limit_positive_and_representable() {
     assert_eq!(bound.limit_price(1, true, 1), 1);
     assert_eq!(bound.limit_price(1, false, 1), 1);
     assert_eq!(bound.limit_price(max, true, 1), 1_844_674_407_370_956);
-    assert_eq!(bound.limit_price(max / 2, false, 1), (max / 2) / 10_000 * 19_999 + ((max / 2) % 10_000) * 19_999 / 10_000);
+    assert_eq!(
+        bound.limit_price(max / 2, false, 1),
+        (max / 2) / 10_000 * 19_999 + ((max / 2) % 10_000) * 19_999 / 10_000
+    );
 }
 
 /// Every limit the production formula prices lands inside its bound and equals an
@@ -236,7 +247,15 @@ fun the_widest_bound_keeps_every_limit_positive_and_representable() {
 #[test]
 fun every_limit_price_matches_the_rounding_reference_and_stays_inside_its_bound() {
     vector[0u64, 1, 250, 5_000, 9_999].do!(|slippage_bps| {
-        let bound = policy::new_rebalance_policy(0, 1, 2, 3, slippage_bps, slippage_bps, 1).execution_bound(false);
+        let bound = policy::new_rebalance_policy(
+            0,
+            1,
+            2,
+            3,
+            slippage_bps,
+            slippage_bps,
+            1
+        ).execution_bound(false);
         let mut reference = 1u64;
         while (reference <= 40) {
             let mut tick = 1u64;

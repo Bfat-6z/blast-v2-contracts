@@ -58,3 +58,27 @@ The approved shared-ingestion/outbox financial decisions own the economics.
 The user's 2026-10-10 clarifications remove compatibility requirements and make
 gas reimbursement an explicit per-round administrator choice. Local Move, SDK
 and indexed tests verify source semantics; they are not live publication proof.
+
+## Bonding-curve holder rewards, 2 November 2026
+
+The same optional reserve and recovery lifecycle now applies to migrators'
+`blast_holder_rewards::Round`. Its canonical reimbursement treasury is the
+migrators-owned `LpFeePolicy.protocol_destination()` at publication. The signed
+expected destination must match even for zero reserve, and later policy changes
+cannot rewrite a round's frozen treasury. Holder Meme routing is unchanged:
+bonding-curve Meme rewards remain holder funds, rather than adopting presale's
+Meme-to-treasury collection rule.
+
+Bonding rounds now take a future claim deadline. Claims stop exactly at it;
+permissionless close at or after it returns unclaimed holder assets and any
+unsettled reserve to the exact funding vault, without rewinding checkpoint or
+round history. Settlement remains possible until close, including after the
+deadline. Current-generation guards protect every transition. Same-PTB failures
+must roll back reserve extraction, treasury payment, restored vault funds and
+events together.
+
+This changes the greenfield Round layout, public publication and claim APIs,
+and event ABI together. Consumers must supply the LP policy, expected treasury,
+reserve, deadline and clock; handle gas settlement and close; and decode the
+extended publication plus settlement/recovery events. No compatibility wrapper,
+existing-object migration or live deployment is included.

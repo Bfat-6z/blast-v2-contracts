@@ -10,21 +10,21 @@ const PUBLISHER: address = @0xA11CE;
 
 // === Test-Only Types ===
 
-/// Custodies the bootstrap delivered by production package initialization.
-public struct BootstrapFixture {
+/// Custodies the publication delivered by production package initialization.
+public struct PublicationFixture {
     scenario: Scenario,
-    bootstrap: marker::Bootstrap,
+    publication: marker::Publication,
 }
 
 // === Tests ===
 
 #[test]
-fun package_init_retains_canonical_publisher_in_bootstrap() {
+fun package_init_retains_canonical_publisher_in_publication() {
     let mut fixture = start();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        assert!(f.bootstrap.publisher_for_bootstrap_testing().from_module<marker::BLAST_FUN>());
-        assert!(f.bootstrap.publisher_for_bootstrap_testing().from_package<marker::BLAST_FUN>());
+        assert!(f.publication.publisher_for_publication_testing().from_module<marker::BLAST_FUN>());
+        assert!(f.publication.publisher_for_publication_testing().from_package<marker::BLAST_FUN>());
     });
 
     fixture.end();
@@ -33,9 +33,9 @@ fun package_init_retains_canonical_publisher_in_bootstrap() {
 // === Test Helpers ===
 
 macro fun next_tx(
-    $fixture: &mut BootstrapFixture,
+    $fixture: &mut PublicationFixture,
     $sender: address,
-    $fn: |&mut BootstrapFixture|,
+    $fn: |&mut PublicationFixture|,
 ) {
     let fixture = $fixture;
 
@@ -43,17 +43,17 @@ macro fun next_tx(
     $fn(fixture);
 }
 
-fun start(): BootstrapFixture {
+fun start(): PublicationFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     marker::init_for_testing(scenario.ctx());
 
     scenario.next_tx(PUBLISHER);
-    let bootstrap = scenario.take_from_sender<marker::Bootstrap>();
+    let publication = scenario.take_from_sender<marker::Publication>();
 
-    BootstrapFixture { scenario, bootstrap }
+    PublicationFixture { scenario, publication }
 }
 
-fun end(self: BootstrapFixture) {
+fun end(self: PublicationFixture) {
     destroy(self);
 }
 

@@ -66,6 +66,7 @@ public fun publish_round<Meme, Quote>(
     assert!(leaf_count > 0 && leaf_count <= MAX_REWARD_LEAVES, EInvalidLeafCount);
     assert!(meme_amount > 0 || quote_amount > 0, EEmptyBudget);
     assert!(claim_deadline_at_ms > clock.timestamp_ms(), EInvalidClaimDeadline);
+
     let (available_meme, available_quote) = vault.holder_rewards_balances();
     assert!(
         meme_amount <= available_meme && quote_amount <= available_quote
@@ -113,6 +114,7 @@ public fun publish_round<Meme, Quote>(
         treasury,
         gas_reserve_amount,
     });
+
     transfer::share_object(round);
 }
 
@@ -130,17 +132,21 @@ public fun claim<Meme, Quote>(
     package_version.assert_current();
 
     assert!(index < self.leaf_count, EInvalidIndex);
+
     let (word, bit) = claim_bit(index);
     assert!(self.claimed_bitmap[word] & bit == 0, EAlreadyClaimed);
     assert!(beneficiary != @0x0, EInvalidBeneficiary);
     assert!(meme_amount > 0 || quote_amount > 0, EEmptyClaim);
+
     let digest = leaf(self.vault_id, self.number, index, beneficiary, meme_amount, quote_amount);
     assert!(merkle_tree::verify(self.root, digest, index, self.leaf_count, &proof), EInvalidProof);
 
     let claimed_word = &mut self.claimed_bitmap[word];
+
     *claimed_word = *claimed_word | bit;
     self.meme.pay(meme_amount, beneficiary, ctx);
     self.quote.pay(quote_amount, beneficiary, ctx);
+
     event::emit(RewardClaimed<Meme, Quote> {
         round_id: self.id.to_inner(),
         index,
@@ -173,6 +179,7 @@ public fun settle_gas_reserve<Meme, Quote>(
     reserve.pay(reimbursement_amount, self.treasury, ctx);
     vault.restore_holder_rewards(balance::zero(), reserve);
     let (_, quote_unallocated) = vault.holder_rewards_balances();
+
     event::emit(GasReserveSettled<Meme, Quote> {
         vault_id: self.vault_id,
         round_id: self.id.to_inner(),
@@ -203,6 +210,7 @@ public fun close_round<Meme, Quote>(
     let gas_reserve_returned = reserve.value();
     quote.join(reserve);
     vault.restore_holder_rewards(meme, quote);
+
     event::emit(RoundClosed<Meme, Quote> {
         vault_id,
         round_id: id.to_inner(),
@@ -211,6 +219,7 @@ public fun close_round<Meme, Quote>(
         quote_returned,
         gas_reserve_returned,
     });
+
     id.delete();
 }
 
@@ -242,6 +251,7 @@ fun leaf(
     bytes.append(bcs::to_bytes(&beneficiary));
     bytes.append(bcs::to_bytes(&meme));
     bytes.append(bcs::to_bytes(&quote));
+
     hash::blake2b256(&bytes)
 }
 

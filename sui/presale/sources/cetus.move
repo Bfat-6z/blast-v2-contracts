@@ -190,6 +190,26 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     vault.split_fees(fee_policy, meme.into_balance(), quote.into_balance(), ctx);
 }
 
+/// Anyone may collect every accrued position fee under the applied split, then activate the
+/// stored ready split and notice. `CoinA` and `CoinB` are the pool's coin order.
+public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
+    vault: &mut Vault<Meme, Quote>,
+    package_version: &PackageVersion,
+    fee_policy: &FeePolicy,
+    cetus_config: &GlobalConfig,
+    burn_manager: &BurnManager,
+    pool: &mut Pool<CoinA, CoinB>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    package_version.assert_current();
+    vault.assert_fee_split_ready(clock);
+
+    collect_fees(vault, package_version, fee_policy, cetus_config, burn_manager, pool, ctx);
+
+    vault.apply_fee_split(clock);
+}
+
 // === Private Functions ===
 
 /// Whether Meme is `CoinA`, after proving `(CoinA, CoinB)` is exactly the presale's pair.

@@ -270,7 +270,11 @@ public fun vesting_terms(
         EInvalidVestingTerms,
     );
 
-    VestingTerms { cliff_ms: vesting_cliff_delay_ms, period_ms: vesting_period_duration_ms, periods }
+    VestingTerms {
+        cliff_ms: vesting_cliff_delay_ms,
+        period_ms: vesting_period_duration_ms,
+        periods
+    }
 }
 
 /// The LP-fee split a sale and its vault pay collected fees under: at most `MAX_FEE_RECIPIENTS`
@@ -303,6 +307,8 @@ public fun new<SaleToken, Quote, MigrationWitness: drop>(
     fee_policy: &FeePolicy,
 ): PresaleInitializer<SaleToken, Quote> {
     package_version.assert_current();
+
+    package_version.assert_not_paused(1);
 
     creation_policy.assert_allowed<Quote, MigrationWitness>();
     assert!(
@@ -527,9 +533,14 @@ public fun finalize<SaleToken, Quote>(
         protocol_fees.token_bps(),
         &recipient_allocations,
     );
-    assert!(commitment_duration_ms > 0 && liquidity_window_duration_ms >= MIN_LIQUIDITY_WINDOW_DURATION_MS, EInvalidWindow);
+    assert!(
+        commitment_duration_ms > 0 && liquidity_window_duration_ms >= MIN_LIQUIDITY_WINDOW_DURATION_MS,
+        EInvalidWindow
+    );
     assert!(eligibility.can_reach(raise_target), EUnreachableRaise);
-    uncapped.do_ref!(|phase| phase.assert_uncapped_phase(commitment_duration_ms, eligibility, raise_target));
+    uncapped.do_ref!(
+        |phase| phase.assert_uncapped_phase(commitment_duration_ms, eligibility, raise_target)
+    );
     hard_cap.do_ref!(|cap| assert!(cap.starts_after_ms < commitment_duration_ms, EInvalidHardCap));
 
     let (
@@ -646,12 +657,16 @@ public fun share<SaleToken, Quote>(
 ) {
     package_version.assert_current();
 
+    package_version.assert_not_paused(1);
+
     assert!(self.lifecycle == Lifecycle::Pending, EInvalidLifecycle);
 
     // Every deadline is derived from the start, so the share proves each one fits in u64. Closing
     // early only brings the end and the LP deadline forward.
     let commitment_starts_at_ms = commitment_starts_at_ms.max(clock.timestamp_ms());
-    let commitment_ends_at_ms = commitment_starts_at_ms.checked_add(self.duration_ms).destroy_or!(abort EInvalidWindow);
+    let commitment_ends_at_ms = commitment_starts_at_ms
+        .checked_add(self.duration_ms)
+        .destroy_or!(abort EInvalidWindow);
     let liquidity_deadline_at_ms = commitment_ends_at_ms
         .checked_add(self.liquidity_window_ms)
         .destroy_or!(abort EInvalidWindow);
@@ -681,6 +696,7 @@ public fun set_protocol_fees<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &PackageVersion,
     _: &AdminWitness<FeeAdmin>,
+    fee_policy: &FeePolicy,
     raise_bps: Bps,
     token_bps: Bps,
     lp_fee_meme_bps: Bps,
@@ -699,6 +715,14 @@ public fun set_protocol_fees<SaleToken, Quote>(
         token_bps,
         lp_fee_meme_bps,
         lp_fee_quote_bps,
+    );
+    let ceiling = fee_policy.fees();
+    assert!(
+        raise_bps.value() <= ceiling.raise_bps().value()
+        && token_bps.value() <= ceiling.token_bps().value()
+        && lp_fee_meme_bps.value() <= ceiling.lp_fee_meme_bps().value()
+        && lp_fee_quote_bps.value() <= ceiling.lp_fee_quote_bps().value(),
+        EAboveFeePolicy
     );
     assert!(protocol_fees != self.protocol_fees, EProtocolFeesUnchanged);
 
@@ -743,6 +767,8 @@ public fun commit_open<SaleToken, Quote>(
 ): Coin<Quote> {
     package_version.assert_current();
 
+    package_version.assert_not_paused(2);
+
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
 
@@ -765,15 +791,19 @@ public fun commit_allowlisted<SaleToken, Quote>(
 ): Coin<Quote> {
     package_version.assert_current();
 
+    package_version.assert_not_paused(2);
+
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
 
-    let max_participants = self.eligibility.verify_allowlisted(
-        index,
-        ctx.sender(),
-        wallet_cap,
-        &proof,
-    );
+    let max_participants = self
+        .eligibility
+        .verify_allowlisted(
+            index,
+            ctx.sender(),
+            wallet_cap,
+            &proof,
+        );
 
     // Allowlisted wallets are few and named, so any positive commitment counts.
     self.record_commitment(quote_in, wallet_cap, max_participants, 1, clock, ctx)
@@ -789,6 +819,8 @@ public fun commit_uncapped<SaleToken, Quote>(
     ctx: &mut TxContext,
 ): Coin<Quote> {
     package_version.assert_current();
+
+    package_version.assert_not_paused(2);
 
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
@@ -811,8 +843,12 @@ public fun settle<SaleToken, Quote>(
     package_version.assert_current();
 
     assert!(self.lifecycle == Lifecycle::Open, EInvalidLifecycle);
+
     let now_at_ms = clock.timestamp_ms();
-    assert!(now_at_ms >= self.commitment_ends_at_ms() || self.can_close_early(now_at_ms), EPresaleNotEnded);
+    assert!(
+        now_at_ms >= self.commitment_ends_at_ms() || self.can_close_early(now_at_ms),
+        EPresaleNotEnded
+    );
 
     // A sale closing early ends now, so its LP deadline counts from now.
     if (now_at_ms < self.commitment_ends_at_ms()) self.duration_ms = now_at_ms - self.start_ms;
@@ -912,6 +948,8 @@ public fun migrate<SaleToken, Quote, MigrationWitness: drop>(
     ctx: &mut TxContext,
 ): (Balance<SaleToken>, Balance<Quote>) {
     package_version.assert_current();
+
+    package_version.assert_not_paused(8);
 
     assert!(self.lifecycle == Lifecycle::Funded, EInvalidLifecycle);
     assert!(
@@ -1055,7 +1093,10 @@ fun liquidity_deadline_at_ms<SaleToken, Quote>(self: &Presale<SaleToken, Quote>)
 /// below the duration, or the end of a sale without one. Read only while the sale is open, before
 /// an early close can shorten the duration below it.
 fun uncapped_starts_at_ms<SaleToken, Quote>(self: &Presale<SaleToken, Quote>): u64 {
-    self.uncapped.map_ref!(|phase| self.start_ms + phase.starts_after_ms).destroy_or!(self.commitment_ends_at_ms())
+    self
+        .uncapped
+        .map_ref!(|phase| self.start_ms + phase.starts_after_ms)
+        .destroy_or!(self.commitment_ends_at_ms())
 }
 
 /// When the hard cap takes hold: its offset into the window, which `finalize` bounds below the
@@ -1268,6 +1309,7 @@ fun apportion_raise(
     // Apportioned in this order: each recipient, Blast, then the LP, which keeps the rest.
     let allocated_bps = total_bps(raise_allocations) + protocol_raise_bps.value();
     let mut shares = raise_allocations.map_ref!(|allocation| allocation.bps);
+
     shares.push_back(protocol_raise_bps);
     shares.push_back(bps::new(bps::denominator() - allocated_bps));
     let amounts = apportion(shares, raise_target);
@@ -1402,6 +1444,7 @@ fun record_commitment<SaleToken, Quote>(
         !is_new_participant || self.participants < max_participants,
         EParticipantCapacityReached,
     );
+
     let total_commitments = self
         .total_commitments
         .checked_add(accepted_quote)
@@ -1536,6 +1579,7 @@ fun allowlist_leaf(index: u64, wallet: address, wallet_cap: u64): vector<u8> {
     bytes.append(bcs::to_bytes(&index));
     bytes.append(bcs::to_bytes(&wallet));
     bytes.append(bcs::to_bytes(&wallet_cap));
+
     hash::blake2b256(&bytes)
 }
 
@@ -2272,6 +2316,9 @@ const EMissingSetting: vector<u8> = b"A presale needs its eligibility policy and
 
 #[error(code = 35)]
 const ESaleTokenNotUnregulated: vector<u8> = b"The sale currency must be confirmed unregulated; regulated and unknown legacy currencies are not allowed.";
+
+#[error(code = 36)]
+const EAboveFeePolicy: vector<u8> = b"A sale fee override cannot exceed the currently applied fee policy.";
 
 // === Imports ===
 

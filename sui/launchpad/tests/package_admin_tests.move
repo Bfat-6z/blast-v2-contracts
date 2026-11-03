@@ -13,7 +13,7 @@ const PROTOCOL_ADMIN: address = @0xAD;
 const OTHER_PACKAGE_ID: address = @0xBAD;
 
 /// This package's canonical original address under test compilation.
-const PACKAGE_ID: address = @0x0;
+const PACKAGE_ID: address = @blast_fun;
 
 // === Test-Only Types ===
 
@@ -50,15 +50,22 @@ fun publication_cannot_supply_the_version_required_to_launch() {
 }
 
 #[test]
-fun wrapping_enables_guarded_mutations_and_consumes_bootstrap() {
+fun wrapping_enables_guarded_mutations_and_consumes_publication() {
     let mut fixture = start_custody();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        f.runtime.set_treasury(&f.package_version, &blast_acl::witness_for_testing(), PROTOCOL_ADMIN);
+        f
+            .runtime
+            .set_treasury_for_testing(
+                &f.package_version,
+                &blast_acl::witness_for_testing(),
+                PROTOCOL_ADMIN,
+                f.ctx!()
+            );
 
         assert_eq!(f.runtime.treasury(), PROTOCOL_ADMIN);
         assert_eq!(f.package_version.version_for_testing(), 1);
-        assert!(!f.has_bootstrap());
+        assert!(!f.has_publication());
     });
 
     fixture.end();
@@ -66,17 +73,17 @@ fun wrapping_enables_guarded_mutations_and_consumes_bootstrap() {
 
 #[test]
 #[expected_failure(abort_code = sui::test_scenario::EEmptyInventory, location = sui::test_scenario)]
-fun consumed_bootstrap_cannot_be_taken_for_another_wrap() {
+fun consumed_publication_cannot_be_taken_for_another_wrap() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        let bootstrap = f.take_bootstrap();
+        let publication = f.take_publication();
         let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), f.ctx!());
 
-        package_admin::wrap(bootstrap, upgrade_cap, f.ctx!());
+        f.wrap(publication, upgrade_cap);
     });
     fixture.next_tx!(PUBLISHER, |f| {
-        destroy(f.take_bootstrap());
+        destroy(f.take_publication());
     });
 
     fixture.end();
@@ -84,12 +91,12 @@ fun consumed_bootstrap_cannot_be_taken_for_another_wrap() {
 
 #[test]
 #[expected_failure(abort_code = sui::test_scenario::EEmptyInventory, location = sui::test_scenario)]
-fun another_sender_cannot_take_the_publication_bootstrap() {
+fun another_sender_cannot_take_the_publication_proof() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let bootstrap = f.take_bootstrap();
-        destroy(bootstrap);
+        let publication = f.take_publication();
+        destroy(publication);
     });
 
     fixture.end();
@@ -136,11 +143,11 @@ fun wrap_rejects_upgrade_cap_for_another_package() {
     let mut fixture = start_unwrapped();
 
     fixture.next_tx!(PUBLISHER, |f| {
-        let bootstrap = f.take_bootstrap();
+        let publication = f.take_publication();
         let foreign_upgrade_cap =
             package::test_publish(OTHER_PACKAGE_ID.to_id(), f.ctx!());
 
-        package_admin::wrap(bootstrap, foreign_upgrade_cap, f.ctx!());
+        f.wrap(publication, foreign_upgrade_cap);
     });
 
     fixture.end();
@@ -229,7 +236,7 @@ fun package_admin_can_permanently_destroy_native_upgrade_authority() {
         let admin_witness = upgrade_admin();
         let upgrade_cap_id = f.package_admin.upgrade_cap_id_for_testing();
 
-        f.package_admin.make_immutable(&f.package_version, &admin_witness);
+        f.package_admin.make_immutable_for_testing(&f.package_version, &admin_witness, f.ctx!());
 
         let destroyed = blast_admin_events::collect_one<
             blast_admin_events::UpgradeCapDestroyed<BLAST_FUN>,
@@ -257,16 +264,16 @@ fun authorization_is_rejected_after_immutability() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = upgrade_admin();
-        f.package_admin.make_immutable(&f.package_version, &admin_witness);
+        f.package_admin.make_immutable_for_testing(&f.package_version, &admin_witness, f.ctx!());
         let _ = blast_admin_events::collect_one<
             blast_admin_events::UpgradeCapDestroyed<BLAST_FUN>,
         >(0);
 
-        let ticket = f.package_admin.authorize_upgrade(
+        let ticket = f.package_admin.authorize_upgrade_for_testing(
             &f.package_version,
             &admin_witness,
             package_digest(),
-        );
+         f.ctx!());
 
         destroy(ticket);
     });
@@ -284,12 +291,12 @@ fun repeated_immutability_is_rejected() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = upgrade_admin();
-        f.package_admin.make_immutable(&f.package_version, &admin_witness);
+        f.package_admin.make_immutable_for_testing(&f.package_version, &admin_witness, f.ctx!());
         let _ = blast_admin_events::collect_one<
             blast_admin_events::UpgradeCapDestroyed<BLAST_FUN>,
         >(0);
 
-        f.package_admin.make_immutable(&f.package_version, &admin_witness);
+        f.package_admin.make_immutable_for_testing(&f.package_version, &admin_witness, f.ctx!());
     });
 
     fixture.end();
@@ -297,8 +304,8 @@ fun repeated_immutability_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = errors::EInvalidPackageDigest,
-    location = blast_admin::upgrade_custody,
+    abort_code = blast_fun::errors::EInvalidDigest,
+    location = blast_fun::package_admin,
 )]
 fun authorization_rejects_non_digest_length() {
     let mut fixture = start();
@@ -306,11 +313,11 @@ fun authorization_rejects_non_digest_length() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = upgrade_admin();
 
-        let ticket = f.package_admin.authorize_upgrade(
+        let ticket = f.package_admin.authorize_upgrade_for_testing(
             &f.package_version,
             &admin_witness,
             x"11223344556677889900aabbccddeeffffeeddccbbaa009988776655443322",
-        );
+         f.ctx!());
 
         destroy(ticket);
     });
@@ -330,11 +337,11 @@ fun stale_generation_rejects_package_admin_before_digest_validation() {
         let admin_witness = upgrade_admin();
         f.package_version.set_for_testing(2);
 
-        let ticket = f.package_admin.authorize_upgrade(
+        let ticket = f.package_admin.authorize_upgrade_for_testing(
             &f.package_version,
             &admin_witness,
             vector[],
-        );
+         f.ctx!());
 
         destroy(ticket);
     });
@@ -343,6 +350,16 @@ fun stale_generation_rejects_package_admin_before_digest_validation() {
 }
 
 // === Test Helpers ===
+
+macro fun custody_ctx($fixture: &mut CustodyFixture): &mut TxContext {
+    let fixture = $fixture;
+    fixture.scenario.ctx()
+}
+
+macro fun upgrade_ctx($fixture: &mut UpgradeFixture): &mut TxContext {
+    let fixture = $fixture;
+    fixture.scenario.ctx()
+}
 
 macro fun wrap_next_tx(
     $fixture: &mut WrapFixture,
@@ -383,6 +400,11 @@ macro fun wrap_ctx($fixture: &mut WrapFixture): &mut TxContext {
     fixture.scenario.ctx()
 }
 
+
+fun wrap(self: &mut WrapFixture, publication: marker::Publication, upgrade_cap: UpgradeCap) {
+    package_admin::wrap(publication, upgrade_cap, self.ctx!());
+}
+
 fun start_unwrapped(): WrapFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     marker::init_for_testing(scenario.ctx());
@@ -395,12 +417,12 @@ fun has_shared_version(_: &WrapFixture): bool {
     test_scenario::has_most_recent_shared<marker::PackageVersion>()
 }
 
-fun take_bootstrap(self: &WrapFixture): marker::Bootstrap {
+fun take_publication(self: &WrapFixture): marker::Publication {
     self.scenario.take_from_sender()
 }
 
-fun has_bootstrap(self: &CustodyFixture): bool {
-    self.scenario.has_most_recent_for_sender<marker::Bootstrap>()
+fun has_publication(self: &CustodyFixture): bool {
+    self.scenario.has_most_recent_for_sender<marker::Publication>()
 }
 
 /// Runs the production wrap flow so the fixture custodies the real shared object.
@@ -410,9 +432,9 @@ fun start_custody(): CustodyFixture {
     runtime_config::init_for_testing(scenario.ctx());
 
     scenario.next_tx(PUBLISHER);
-    let bootstrap = scenario.take_from_sender<marker::Bootstrap>();
+    let publication = scenario.take_from_sender<marker::Publication>();
     package_admin::wrap(
-        bootstrap,
+        publication,
         package::test_publish(PACKAGE_ID.to_id(), scenario.ctx()),
         scenario.ctx(),
     );
@@ -460,7 +482,7 @@ fun package_digest(): vector<u8> {
 /// `sui::package::authorize_upgrade` rejects, so no receipt can match the custodied cap here;
 /// the finalizer's own guards run before the framework compares caps.
 fun foreign_receipt(self: &mut UpgradeFixture): (UpgradeReceipt, UpgradeCap) {
-    let mut cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), self.scenario.ctx());
+    let mut cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), self.ctx!());
     let receipt = cap.authorize_upgrade(package::compatible_policy(), package_digest()).test_upgrade();
 
     (receipt, cap)
@@ -498,3 +520,7 @@ use fun wrap_ctx as WrapFixture.ctx;
 use fun wrap_end as WrapFixture.end;
 
 use fun wrap_next_tx as WrapFixture.next_tx;
+
+use fun upgrade_ctx as UpgradeFixture.ctx;
+
+use fun custody_ctx as CustodyFixture.ctx;

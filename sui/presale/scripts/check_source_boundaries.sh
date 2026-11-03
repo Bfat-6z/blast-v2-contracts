@@ -5,6 +5,7 @@ set -euo pipefail
 
 package_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 sources="$package_dir/sources"
+python3 "$package_dir/../../scripts/check_admin_delay.py"
 
 fail() {
   printf 'check_source_boundaries: %s\n' "$1" >&2
@@ -26,50 +27,26 @@ if rg -n 'fun ' "$domain_source"; then
 fi
 [ "$(rg '^public struct ' "$domain_source" | sort)" == "$(printf '%s\n' \
   'public struct AdapterAdmin()' \
+  'public struct CancelAdmin()' \
+  'public struct PauseAdmin()' \
+  'public struct UnpauseAdmin()' \
   'public struct FeeAdmin()' \
   'public struct ListingAdmin()' \
   'public struct RewardsAdmin()' \
   'public struct TreasuryAdmin()' \
   'public struct UpgradeAdmin()' | sort)" ] \
   || fail "blast_presale_domain must declare exactly the reviewed ability-free roles."
-presale_roles='AdapterAdmin|FeeAdmin|ListingAdmin|RewardsAdmin|TreasuryAdmin|UpgradeAdmin'
-for file in "$sources"/*.move; do
-  production "$file" | { rg -n '^[^/]*AdminWitness<' || true; } \
-    | { rg -v "^[0-9]+:    _: &AdminWitness<($presale_roles)>,\$" || true; } \
-    | sed "s|^|$(basename "$file"):|"
-done | { ! rg .; } \
-  || fail "Every administrator witness must be a borrowed, unused AdminWitness of one presale role."
+presale_roles='CancelAdmin|PauseAdmin|UnpauseAdmin|AdapterAdmin|FeeAdmin|ListingAdmin|RewardsAdmin|TreasuryAdmin|UpgradeAdmin'
 admin_roles="$(for file in "$sources"/*.move; do
-  production "$file" | awk -v module="$(basename "$file" .move)" '
-    /^(public(\(package\))? )?(entry )?fun / {
-      name = $0
-      sub(/^.*fun /, "", name)
-      sub(/[<(].*$/, "", name)
-    }
-    /^[^/]*AdminWitness</ && match($0, /AdminWitness<[A-Za-z]+>/) {
-      print module ":" name ":" substr($0, RSTART + 13, RLENGTH - 14)
-    }
-  '
+ awk -f "$package_dir/../launchpad/scripts/move_facts.awk" "$file" | awk -F'\t' -v module="$(basename "$file" .move)" '
+ $1 == "FN" && $6 == 0 && match($9, /AdminWitness<[A-Za-z]+>/) { print module ":" $2 ":" substr($9, RSTART + 13, RLENGTH - 14) }'
 done | sort)"
-[ "$admin_roles" == "$(printf '%s\n' \
-  'blast_presale:set_protocol_fees:FeeAdmin' \
-  'creation_policy:add_partner:FeeAdmin' \
-  'creation_policy:remove_partner:FeeAdmin' \
-  'creation_policy:set_migration_witness_allowed:AdapterAdmin' \
-  'creation_policy:set_quote_allowed:ListingAdmin' \
-  'fee_policy:set_destination:TreasuryAdmin' \
-  'fee_policy:set_fees:FeeAdmin' \
-  'holder_rewards:publish_round:RewardsAdmin' \
-  'holder_rewards:settle_gas_reserve:RewardsAdmin' \
-  'package_admin:authorize_upgrade:UpgradeAdmin' \
-  'package_admin:commit_upgrade_and_advance:UpgradeAdmin' \
-  'presale_vault:set_protocol_lp_fees:FeeAdmin' | sort)" ] \
-  || { printf '%s\n' "$admin_roles" >&2; fail "Every administrator action must take exactly its pinned presale role."; }
+[ "$admin_roles" == "$(printf '%s\n' 'blast_presale:set_protocol_fees:FeeAdmin' 'blast_presale_package:pause:PauseAdmin' 'blast_presale_package:unpause:UnpauseAdmin' 'creation_policy:add_partner:FeeAdmin' 'creation_policy:cancel_migration_delay:CancelAdmin' 'creation_policy:cancel_migration_witness:CancelAdmin' 'creation_policy:remove_migration_witness:AdapterAdmin' 'creation_policy:remove_partner:FeeAdmin' 'creation_policy:schedule_migration_delay:AdapterAdmin' 'creation_policy:schedule_migration_witness:AdapterAdmin' 'creation_policy:set_quote_allowed:ListingAdmin' 'fee_policy:cancel_destination:CancelAdmin' 'fee_policy:cancel_fees:CancelAdmin' 'fee_policy:schedule_destination:TreasuryAdmin' 'fee_policy:schedule_fees:FeeAdmin' 'holder_rewards:publish_round:RewardsAdmin' 'holder_rewards:settle_gas_reserve:RewardsAdmin' 'package_admin:authorize_upgrade:UpgradeAdmin' 'package_admin:cancel_upgrade_action:CancelAdmin' 'package_admin:commit_upgrade_and_advance:UpgradeAdmin' 'package_admin:make_immutable:UpgradeAdmin' 'package_admin:schedule_make_immutable:UpgradeAdmin' 'package_admin:schedule_upgrade:UpgradeAdmin' 'package_admin:schedule_upgrade_delay:UpgradeAdmin' 'presale_vault:cancel_protocol_lp_fees:CancelAdmin' 'presale_vault:schedule_protocol_lp_fees:FeeAdmin' | sort)" ] || fail "Every administrator action must take its pinned role."
 
 # 2. Publication cannot activate presales; custody intake alone shares the version.
 admin_production="$(production "$sources/package_admin.move")"
 marker_production="$(production "$sources/blast_presale_package.move")"
-if rg -n '\bmake_immutable\b|\bonly_additive_upgrades\b|\bonly_dep_upgrades\b' "$sources"; then
+if rg -n '\bonly_additive_upgrades\b|\bonly_dep_upgrades\b' "$sources"; then
   fail "Presale custody must retain compatible, relinkable upgrades."
 fi
 if rg -U -n '^public fun [^(]+\([^)]*\): (&)?(mut )?UpgradeCap' <<<"$admin_production"; then
@@ -80,8 +57,8 @@ if rg -n 'transfer::(public_)?transfer\(' <<<"$admin_production"; then
 fi
 rg -Fq 'generation.share_version(ctx);' <<<"$admin_production" \
   || fail "wrap must share the operational version after custody validation."
-rg -Fq 'transfer::transfer(Bootstrap' <<<"$marker_production" \
-  || fail "Publication must transfer an owned bootstrap."
+rg -Fq 'transfer::transfer(Publication' <<<"$marker_production" \
+  || fail "Publication must transfer an owned publication proof."
 python3 "$package_dir/scripts/check_version_boundaries.py"
 
 # 3. A sale's Blast partner is named only by set_partner on its initializer, so `finalize` fixes it

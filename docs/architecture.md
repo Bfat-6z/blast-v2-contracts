@@ -66,11 +66,11 @@ without returning to core for its post-conditions.
 | Allocation math | the migration allocation plan, the LP-fee split, and their exact apportionment | lifecycle state, custody, claims, venue costs, transfers, or DEX dependencies |
 | Off-chain SDK | deterministic curve-release and native-Quote valuation previews from immutable launch facts | contract authority, balance mutation, migration permission, or a second source of truth |
 | Fees | creator/protocol curve-fee splitting and the launch's accrued accounting for creation, curve, and one-time migration fees; the embedding launch checks its live curve-fee capability or bound custodian | recurring LP fees, venue residuals, arbitrary recipient execution, or referral attribution |
-| LP vault (migrators) | permanent position and venue-residual custody and the fee split; every permissionless collection pays Blast's live share, or holds it when the launch named a partner until a permissionless payout gives the partner its cut and Blast the rest, pays the recipients, credits the creator and rewards balances, burns the burn share's Meme and keeps its Quote, and adds the auto-LP share back to the position; creator claims and split updates under the launch's live curve-fee cap; buyback-and-burn of the burn Quote under the buyback-admin role | launch pricing or pre-migration settings |
-| Holder rewards (migrators) | Merkle rounds a Blast administrator funds from a vault's rewards balance, and one-time proof claims | holder accounting, which stays off-chain |
+| LP vault (migrators) | permanent position and venue-residual custody and the fee split; every permissionless collection pays Blast's live share, or holds it when the launch named a partner until a permissionless payout gives the partner its cut and Blast the rest, pays the recipients, credits the creator and rewards balances, burns the burn share's Meme and keeps its Quote, and adds the auto-LP share back to the position; creator claims and delayed split schedule/cancel under the launch's live curve-fee cap, with permissionless ready settlement and application; buyback-and-burn of the burn Quote under the buyback-admin role | launch pricing or pre-migration settings |
+| Holder rewards (migrators) | Merkle rounds funded from a vault's rewards balance, independent optional Quote gas custody bound to the governed treasury, one-shot capped reimbursement, proof claims before a deadline and permissionless deadline recovery | holder accounting, which stays off-chain |
 | Migration interface | one-time liquidity handoff, linear migration value, and reconciled completion | DEX-specific object/storage details |
 | Adapter | start a launch at a venue-valid tier, prepare its venue, complete a migration, and collect the position's fees | changing core economics |
-| Standalone presale | require a zero-supply meme TreasuryCap; derive and escrow BPS allocations; lock Quote commitments; settle one proportional fill; atomically migrate permissionlessly to the configured venue; custody LP; pay collected fees to configured recipients and fund Blast-published Merkle holder rewards; pay the Blast partner named at creation its cut of Blast's raise fee and, from its vault, of Blast's LP fees | launchpad curves or state, fixed-supply policy, giving a partner a cut of Blast's token fee, or post-creation economic changes |
+| Standalone presale | require a zero-supply meme TreasuryCap; derive and escrow BPS allocations; lock Quote commitments; settle one proportional fill; atomically migrate permissionlessly to the configured venue; custody LP; delayed creator-cap schedule/cancel of migrated-vault fee splits with permissionless venue settlement/application; pay collected fees to applied recipients and fund Blast-published Merkle holder rewards; pay the Blast partner named at creation its cut of Blast's raise fee and, from its vault, of Blast's LP fees | launchpad curves or state, fixed-supply policy, giving a partner a cut of Blast's token fee, or post-creation sale-economics changes |
 
 Modules may begin together in the single chain project. These are dependency
 directions, not a demand for seven packages.
@@ -301,18 +301,18 @@ Upgradeability is a product/security decision, not a default convenience.
   through the mandatory shared-object version gate after installing replacement
   authorization (ADR 0034); no pre-planted cutover flag exists.
   The launchpad's OTW retains its Publisher and initial generation in an owned
-  `Bootstrap`. Only validated capability wrapping consumes it and creates the
-  shared `PackageVersion` required by launch creation and configuration setters
+  `Publication`. Only validated capability wrapping consumes it and creates the
+  shared `PackageVersion` required by launch creation and routine configuration setters
   ([ADR 0114](decisions/0114-launchpad-custody-before-activation.md)).
   The only upgrade finalizer commits the native receipt and advances the
   operational version to the exact next compiled generation in the same call;
   there is no separate activation step.
 - The migrators package keeps its `UpgradeCap` in its own `PackageAdmin` and is
-  never made immutable: Cetus and Bluefin gate callers by package version and
-  launchpad cutovers advance the launchpad version, so the adapters must always
-  be able to relink (ADR 0088). Every migrators upgrade uses the compatible
-  policy and bumps both compiled generation constants; its custody has no
-  policy-narrowing or immutability path.
+  normally retains upgradeability: Cetus and Bluefin gate callers by package
+  version, and launchpad cutovers require adapter relinks (ADR 0088). Every
+  migrators upgrade uses the compatible policy and bumps both compiled
+  generation constants. ADR 0134 permits a delayed terminal immutability
+  decision only after dependency and exit review; no path narrows cap policy.
 
 - Boosts Aftermath separates native receipt commit from successor activation
   ([ADR 0123](decisions/0123-successor-activated-boosts-upgrades.md)). The successor
@@ -330,10 +330,25 @@ governance, delay, recovery, and remaining shared-state cutover coverage require
 approval before the first public deployment.
 
 Presale uses launchpad-style custody-before-activation (ADR 0117): an owned
-Bootstrap precedes the shared PackageVersion. Its separate provenance module
+Publication precedes the shared PackageVersion. Its separate provenance module
 `blast_presale_package` avoids policy/economics module cycles. SDK callers pass
-the same read-only version to each public mutation; upgrade commit advances it
+the same version to each operational mutation; upgrade commit advances it
 atomically and makes prior-generation bytecode unusable.
+
+Launchpad, presale and migrators retain the canonical Publisher and generation
+in a unique owned Publication until validated custody wrap consumes it. It has
+no policy authority. Wrap shares the canonical PackageVersion; launchpad and
+presale start fully paused. Ordinary ACL operations configure policy after wrap.
+Each protected operation owns its applied notice, initially zero for publication-owned
+policy. A proposal binds its value, next notice and a deadline derived from the old
+applied notice. Application commits both fields; cancellation preserves both applied
+fields. Delay-only changes follow the same timelock, with no immediate setter or
+bypass. Upgrade custody persists its own notice independently of other policy.
+Settle or cancel all setup proposals, configure and verify every operation's intended
+notice, then unpause. New creator-cap and presale-vault operations begin at 48 hours;
+per-coin LP policy inherits the applied defaults notice. Pausing, cancellation and
+upgrading never reset an applied notice. The backend creator-claim signer remains
+a separate immediate, revocable ACL setting (ADR 0134).
 
 Boosts margin recovery separates the ability to open risk from the ability to
 reduce it ([ADR 0124](decisions/0124-margin-recovery-and-initial-headroom.md)).

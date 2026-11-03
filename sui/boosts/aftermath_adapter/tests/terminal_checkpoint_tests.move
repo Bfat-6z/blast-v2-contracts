@@ -207,22 +207,71 @@ fun unsettled_funding_prevents_terminal_finality_even_when_flat() {
 fun terminal_cash_floors_only_nonnegative_allocated_collateral() {
     assert_eq!(checkpoint(0, 0, 0, 0, 9, 5).recoverable_cash_for_testing(false, 0), 5);
     assert_eq!(checkpoint(0, 0, 1, 0, 9, 5).recoverable_cash_for_testing(false, 1), 5);
-    assert_eq!(checkpoint(0, 0, 999_999_999_999, 0, 9, 5)
-        .recoverable_cash_for_testing(false, 999_999_999_999), 5);
-    assert_eq!(checkpoint(0, 0, 1_000_000_000_000, 0, 9, 5)
-        .recoverable_cash_for_testing(false, 1_000_000_000_000), 6);
+    assert_eq!(
+        checkpoint(0, 0, 999_999_999_999, 0, 9, 5)
+        .recoverable_cash_for_testing(
+            false,
+            999_999_999_999
+        ),
+        5
+    );
+    assert_eq!(
+        checkpoint(0, 0, 1_000_000_000_000, 0, 9, 5)
+        .recoverable_cash_for_testing(
+            false,
+            1_000_000_000_000
+        ),
+        6
+    );
 }
 
 #[test]
 fun terminal_withdrawal_preserves_the_exact_unrecoverable_raw_remainder() {
     checkpoint(0, 0, 0, 0, 9, 5).assert_terminal_withdrawal_checkpoint_decoded_for_testing(
-        &checkpoint(0, 0, 0, 0, 9, 0), 5, false, 0);
-    checkpoint(0, 0, 1_000_000_000_000, 0, 9, 5).assert_terminal_withdrawal_checkpoint_decoded_for_testing(
-        &checkpoint(0, 0, 0, 0, 9, 0), 6, false, 1_000_000_000_000);
-    checkpoint(0, 0, 1_000_000_000_001, 0, 9, 5).assert_terminal_withdrawal_checkpoint_decoded_for_testing(
-        &checkpoint(0, 0, 1, 0, 9, 0), 6, false, 1_000_000_000_001);
-    checkpoint(0, 0, 999_999_999_999, 0, 9, 5).assert_terminal_withdrawal_checkpoint_decoded_for_testing(
-        &checkpoint(0, 0, 999_999_999_999, 0, 9, 0), 5, false, 999_999_999_999);
+        &checkpoint(0, 0, 0, 0, 9, 0),
+        5,
+        false,
+        0
+    );
+    checkpoint(
+        0,
+        0,
+        1_000_000_000_000,
+        0,
+        9,
+        5
+    ).assert_terminal_withdrawal_checkpoint_decoded_for_testing(
+        &checkpoint(0, 0, 0, 0, 9, 0),
+        6,
+        false,
+        1_000_000_000_000
+    );
+    checkpoint(
+        0,
+        0,
+        1_000_000_000_001,
+        0,
+        9,
+        5
+    ).assert_terminal_withdrawal_checkpoint_decoded_for_testing(
+        &checkpoint(0, 0, 1, 0, 9, 0),
+        6,
+        false,
+        1_000_000_000_001
+    );
+    checkpoint(
+        0,
+        0,
+        999_999_999_999,
+        0,
+        9,
+        5
+    ).assert_terminal_withdrawal_checkpoint_decoded_for_testing(
+        &checkpoint(0, 0, 999_999_999_999, 0, 9, 0),
+        5,
+        false,
+        999_999_999_999
+    );
 }
 
 #[test]
@@ -279,9 +328,33 @@ fun signed_negative_liability_cannot_be_recovered_as_cash() {
 
 // === Test Helpers ===
 
-fun checkpoint(base: u256, quote: u256, allocated: u256, pending: u64, funding: u256, free: u64): Checkpoint {
-    checkpoint::checkpoint_for_testing(free, allocated, base, quote, funding, 10, 9, 10,
-        1_000, 0, 0, pending, 0, false, 0, 0, 0)
+fun checkpoint(
+    base: u256,
+    quote: u256,
+    allocated: u256,
+    pending: u64,
+    funding: u256,
+    free: u64
+): Checkpoint {
+    checkpoint::checkpoint_for_testing(
+        free,
+        allocated,
+        base,
+        quote,
+        funding,
+        10,
+        9,
+        10,
+        1_000,
+        0,
+        0,
+        pending,
+        0,
+        false,
+        0,
+        0,
+        0
+    )
 }
 
 // === Imports ===

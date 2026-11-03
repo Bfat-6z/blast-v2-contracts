@@ -21,7 +21,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
 | `blast_sui` | blastSUI and funSUI | not yet published | — | — |
-| `blast_admin` | Administration | live | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
+| `blast_admin` | Administration | live; source has changed since | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
 
 ## Calling Blast contracts
 
@@ -535,10 +535,10 @@ Codes are plain `u64` values, raised in the `blast_sui` module that detects them
 | 22 | `EMissingPackageCapability` | `blast_sui::package_admin::share` | attach all three capabilities first |
 | 23 | `EPackageCapabilityAlreadyExists` | `blast_sui::package_admin::add_capability` | each capability type is attached once |
 
-Calls into outdated bytecode after an upgrade abort with code 13 from
+Calls into outdated bytecode after an upgrade abort with code 12 from
 `blast_admin`'s `operational_version` module: rebuild the PTB against the latest
 package version. A role failure in `blast_acl::sign_in` aborts with
-`blast_admin` code 1 or 6.
+`blast_admin` code 1 or 5.
 
 ### Pitfalls
 
@@ -556,7 +556,7 @@ package version. A role failure in `blast_acl::sign_in` aborts with
 - The fee applies to every blastSUI redemption, however small or large.
 - Every vault call takes the shared `Vault` mutably, so vault transactions are
   sequenced through consensus.
-- After an upgrade, PTBs pinned to the old package ID abort (code 13 from
+- After an upgrade, PTBs pinned to the old package ID abort (code 12 from
   `operational_version`).
 
 ### Q&A
@@ -1190,7 +1190,7 @@ public fun sync(
 
 ## API reference: `blast_admin` (Administration)
 
-Live on mainnet. This reference matches the published source.
+Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -1201,24 +1201,26 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 0 | `EInvalidSuperAdminCap` |  |
 | 1 | `EInvalidAdminCap` |  |
 | 2 | `EInvalidAdminRecipient` |  |
-| 3 | `EAdminCapacityReached` |  |
-| 4 | `EAdminRoleCapacityReached` |  |
-| 5 | `EAdminRoleAlreadyGranted` |  |
-| 6 | `EAdminRoleNotGranted` |  |
-| 7 | `EInvalidSuperAdminRecipient` |  |
-| 8 | `ESuperAdminTransferUnchanged` |  |
-| 9 | `ENoPendingSuperAdminTransfer` |  |
-| 10 | `ENotPendingSuperAdminRecipient` |  |
-| 11 | `ESuperAdminTransferNotReady` |  |
-| 12 | `ESuperAdminCapStillActive` |  |
-| 13 | `EOperationalVersionMismatch` |  |
-| 14 | `EOperationalVersionOverflow` |  |
-| 15 | `EInvalidPackagePublisher` |  |
-| 16 | `EInvalidUpgradeCap` |  |
-| 17 | `EInvalidPackageDigest` |  |
-| 18 | `EUpgradeCapUnavailable` |  |
-| 19 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 20 | `EInvalidPackageMarker` |  |
+| 3 | `EAdminRoleCapacityReached` |  |
+| 4 | `EAdminRoleAlreadyGranted` |  |
+| 5 | `EAdminRoleNotGranted` |  |
+| 6 | `EInvalidSuperAdminRecipient` |  |
+| 7 | `ESuperAdminTransferUnchanged` |  |
+| 8 | `ENoPendingSuperAdminTransfer` |  |
+| 9 | `ENotPendingSuperAdminRecipient` |  |
+| 10 | `ESuperAdminTransferNotReady` |  |
+| 11 | `ESuperAdminCapStillActive` |  |
+| 12 | `EOperationalVersionMismatch` |  |
+| 13 | `EOperationalVersionOverflow` |  |
+| 14 | `EInvalidPackagePublisher` |  |
+| 15 | `EInvalidUpgradeCap` |  |
+| 16 | `EInvalidPackageDigest` |  |
+| 17 | `EUpgradeCapUnavailable` |  |
+| 18 | `EUpgradePolicyNotMoreRestrictive` |  |
+| 19 | `EInvalidPackageMarker` |  |
+| 20 | `ENotReady` |  |
+| 21 | `ENoPending` |  |
+| 22 | `EInvalidDelay` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -1233,7 +1235,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
-    admins: VecMap<ID, VecSet<TypeName>>,
+    admins: Table<ID, VecSet<TypeName>>,
     /// The nominated next super admin: none until the transfer delay passes.
     pending_super_admin: blast_fun_timelock::Timelocked<Option<address>>,
 }
@@ -1300,7 +1302,6 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role>
 
 #### Constants
 
-- `MAX_ADMINS: u64 = 32`
 - `MAX_ROLES_PER_ADMIN: u64 = 32`
 - `SUPER_ADMIN_TRANSFER_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The wait before a nominated super admin may accept the root.
 
@@ -1411,6 +1412,103 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     final_native_version: u64,
     final_policy: u8,
 }
+```
+
+### `blast_admin::delayed`
+
+Explicit changes that always wait their operation's currently applied notice period.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed.move
+
+#### Types
+
+```move
+/// Applied value and notice period, with at most one atomic replacement.
+/// Readers need no Clock. There is no immediate mutation or bypass operation.
+public struct Delayed<T: copy + drop + store> has store {
+    value: T,
+    delay_ms: u64,
+    pending: Option<Pending<T>>,
+}
+
+/// Proposed value and next notice period, bound to a Unix millisecond threshold.
+public struct Pending<T: copy + drop + store> has copy, drop, store {
+    value: T,
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+```
+
+#### Functions
+
+```move
+/// Initializes a value and the notice period anchored at each future scheduling time.
+public fun new<T: copy + drop + store>(value: T, delay_ms: u64): Delayed<T>
+
+/// Returns the explicitly applied value.
+public fun value<T: copy + drop + store>(self: &Delayed<T>): T
+
+/// Returns this operation's currently applied notice period in milliseconds.
+public fun delay_ms<T: copy + drop + store>(self: &Delayed<T>): u64
+
+/// Returns the current proposal, if any.
+public fun pending<T: copy + drop + store>(self: &Delayed<T>): Option<Pending<T>>
+
+/// Replaces the proposal and restarts the full currently applied delay.
+/// `delay_ms` is the NEXT notice period, never the wait for this proposal.
+public fun schedule<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Changes only the value, retaining the applied notice period.
+public fun schedule_value<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    value: T,
+    clock: &Clock,
+): u64
+
+/// Changes only the notice period, retaining the applied value.
+/// A reduction, including to zero, still waits the old notice period.
+public fun schedule_delay<T: copy + drop + store>(
+    self: &mut Delayed<T>,
+    delay_ms: u64,
+    clock: &Clock,
+): u64
+
+/// Checks that an application can proceed without consuming the stored proposal.
+/// Adapters use this before settling accrued economics under the currently applied value.
+public fun assert_ready<T: copy + drop + store>(self: &Delayed<T>, clock: &Clock)
+
+/// Applies both proposed fields once, only after the stored deadline.
+public fun apply<T: copy + drop + store>(self: &mut Delayed<T>, clock: &Clock): T
+
+/// Cancels even a ready proposal without changing the applied value or delay.
+public fun cancel<T: copy + drop + store>(self: &mut Delayed<T>): T
+
+/// Snapshots a standalone operation's applied delay and proposed next delay.
+/// Its owner must persist the returned next delay on successful application.
+public fun new_pending<T: copy + drop + store>(
+    value: T,
+    current_delay_ms: u64,
+    delay_ms: u64,
+    clock: &Clock,
+): Pending<T>
+
+/// Returns a ready proposal's value and next delay. Rechecks representability at actual application.
+/// Future scheduling still checks its own timestamp addition as time advances.
+public fun take_ready<T: copy + drop + store>(self: Pending<T>, clock: &Clock): (T, u64)
+
+/// Returns the proposed value for cancellation and diagnostics.
+public fun pending_value<T: copy + drop + store>(self: &Pending<T>): T
+
+/// Returns the proposed next notice period.
+public fun pending_delay_ms<T: copy + drop + store>(self: &Pending<T>): u64
+
+/// Returns the Unix millisecond execution threshold.
+public fun ready_at_ms<T: copy + drop + store>(self: &Pending<T>): u64
 ```
 
 ### `blast_admin::operational_version`

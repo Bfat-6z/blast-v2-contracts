@@ -33,7 +33,13 @@ fun emergency_reductions_accept_a_divergent_mark_through_the_cap_restoring_fill(
                 assert!(order.is_emergency());
                 assert!(!order.is_increase());
                 base = base - filled;
-                state.accept_rebalance_fill(&mut plan, order, position(side, 1_000_000, base, mark), filled, NOW);
+                state.accept_rebalance_fill(
+                    &mut plan,
+                    order,
+                    position(side, 1_000_000, base, mark),
+                    filled,
+                    NOW
+                );
                 steps = steps + 1;
             };
             assert!(steps > 1 && steps <= state::max_rebalance_orders());
@@ -51,7 +57,15 @@ fun emergency_reductions_accept_a_divergent_mark_through_the_cap_restoring_fill(
 fun keeper_hint_reports_emergency_even_without_opening_margin_or_matching_mark() {
     vector[policy::long(), policy::short()].do!(|side| {
         let state = new_state(side);
-        assert!(state.needs_rebalance(position(side, 1_000_000, 3_000_001, DIVERGENT_MARK), observation::funding_credit(0), false, 10, NOW));
+        assert!(
+            state.needs_rebalance(
+                position(side, 1_000_000, 3_000_001, DIVERGENT_MARK),
+                observation::funding_credit(0),
+                false,
+                10,
+                NOW
+            )
+        );
         state.destroy_for_testing();
     });
 }
@@ -59,7 +73,11 @@ fun keeper_hint_reports_emergency_even_without_opening_margin_or_matching_mark()
 #[test]
 fun emergency_classification_excludes_the_maintenance_reserve_from_holder_backing() {
     let state = new_state_with_reserve(policy::long(), 100_000);
-    let plan = state.prepare_rebalance(position(policy::long(), 1_100_000, 3_000_001, DIVERGENT_MARK), 10, NOW);
+    let plan = state.prepare_rebalance(
+        position(policy::long(), 1_100_000, 3_000_001, DIVERGENT_MARK),
+        10,
+        NOW
+    );
     assert!(plan.is_emergency_rebalance());
     destroy(plan);
     state.destroy_for_testing();
@@ -68,7 +86,11 @@ fun emergency_classification_excludes_the_maintenance_reserve_from_holder_backin
 #[test]
 fun an_ordinary_reduction_accepts_exactly_the_existing_mark_tolerance() {
     let state = new_state(policy::long());
-    let plan = state.prepare_rebalance(position(policy::long(), 1_000_000, 2_900_000, 1_050_000_000), 10, NOW);
+    let plan = state.prepare_rebalance(
+        position(policy::long(), 1_000_000, 2_900_000, 1_050_000_000),
+        10,
+        NOW
+    );
     assert!(!plan.is_emergency_rebalance());
     destroy(plan);
     state.destroy_for_testing();
@@ -118,7 +140,13 @@ fun one_unit_beyond_the_ordinary_mark_tolerance_fails() {
 #[expected_failure(abort_code = errors::EMarkOracleDivergenceExceedsBound, location = blast_boosts_core::policy)]
 fun keeper_hint_at_the_cap_keeps_the_mark_check() {
     let state = new_state(policy::long());
-    state.needs_rebalance(position(policy::long(), 1_000_000, 3_000_000, DIVERGENT_MARK), observation::funding_credit(0), false, 10, NOW);
+    state.needs_rebalance(
+        position(policy::long(), 1_000_000, 3_000_000, DIVERGENT_MARK),
+        observation::funding_credit(0),
+        false,
+        10,
+        NOW
+    );
     state.destroy_for_testing();
 }
 
@@ -142,10 +170,20 @@ fun redemption_keeps_its_existing_mark_check() {
 #[expected_failure(abort_code = errors::EMarkOracleDivergenceExceedsBound, location = blast_boosts_core::policy)]
 fun an_ordinary_plan_cannot_gain_the_exception_after_adverse_costs() {
     let state = new_state(policy::long());
-    let mut plan = state.prepare_rebalance(position(policy::long(), 1_000_000, 2_900_000, PRICE), 10, NOW);
+    let mut plan = state.prepare_rebalance(
+        position(policy::long(), 1_000_000, 2_900_000, PRICE),
+        10,
+        NOW
+    );
     let order = state.next_rebalance_order(&plan);
     let filled = order.order_base();
-    state.accept_rebalance_fill(&mut plan, order, position(policy::long(), 900_000, 2_900_000 - filled, DIVERGENT_MARK), filled, NOW);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        position(policy::long(), 900_000, 2_900_000 - filled, DIVERGENT_MARK),
+        filled,
+        NOW
+    );
     destroy(plan);
     state.destroy_for_testing();
 }
@@ -154,12 +192,26 @@ fun an_ordinary_plan_cannot_gain_the_exception_after_adverse_costs() {
 #[expected_failure(abort_code = errors::EMarkOracleDivergenceExceedsBound, location = blast_boosts_core::policy)]
 fun a_later_ordinary_plan_after_recovery_requires_the_mark_check() {
     let state = new_state(policy::long());
-    let mut plan = state.prepare_rebalance(position(policy::long(), 1_000_000, 3_000_001, DIVERGENT_MARK), 10, NOW);
+    let mut plan = state.prepare_rebalance(
+        position(policy::long(), 1_000_000, 3_000_001, DIVERGENT_MARK),
+        10,
+        NOW
+    );
     let order = state.next_rebalance_order(&plan);
     assert_eq!(order.order_base(), 1);
-    state.accept_rebalance_fill(&mut plan, order, position(policy::long(), 1_000_000, 3_000_000, DIVERGENT_MARK), 1, NOW);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        position(policy::long(), 1_000_000, 3_000_000, DIVERGENT_MARK),
+        1,
+        NOW
+    );
     state.complete_rebalance(plan);
-    destroy(state.prepare_rebalance(position(policy::long(), 1_000_000, 3_000_000, DIVERGENT_MARK), 10, NOW));
+    destroy(state.prepare_rebalance(
+        position(policy::long(), 1_000_000, 3_000_000, DIVERGENT_MARK),
+        10,
+        NOW
+    ));
     state.destroy_for_testing();
 }
 
@@ -168,8 +220,13 @@ fun a_later_ordinary_plan_after_recovery_requires_the_mark_check() {
 fun emergency_start_rejects_stale_base_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, 0), observation::new_price(PRICE, 0, NOW), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, 0),
+        observation::new_price(PRICE, 0, NOW),
+        DIVERGENT_MARK,
     );
     destroy(state.prepare_rebalance(observed, 10, NOW));
     state.destroy_for_testing();
@@ -180,8 +237,13 @@ fun emergency_start_rejects_stale_base_price() {
 fun emergency_start_rejects_future_base_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, NOW + 2_001), observation::new_price(PRICE, 0, NOW), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, NOW + 2_001),
+        observation::new_price(PRICE, 0, NOW),
+        DIVERGENT_MARK,
     );
     destroy(state.prepare_rebalance(observed, 10, NOW));
     state.destroy_for_testing();
@@ -192,8 +254,13 @@ fun emergency_start_rejects_future_base_price() {
 fun emergency_start_rejects_uncertain_base_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 10_000_001, NOW), observation::new_price(PRICE, 0, NOW), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 10_000_001, NOW),
+        observation::new_price(PRICE, 0, NOW),
+        DIVERGENT_MARK,
     );
     destroy(state.prepare_rebalance(observed, 10, NOW));
     state.destroy_for_testing();
@@ -204,8 +271,13 @@ fun emergency_start_rejects_uncertain_base_price() {
 fun emergency_start_rejects_stale_collateral_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, NOW), observation::new_price(PRICE, 0, 0), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, NOW),
+        observation::new_price(PRICE, 0, 0),
+        DIVERGENT_MARK,
     );
     destroy(state.prepare_rebalance(observed, 10, NOW));
     state.destroy_for_testing();
@@ -216,8 +288,13 @@ fun emergency_start_rejects_stale_collateral_price() {
 fun emergency_start_rejects_future_collateral_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, NOW), observation::new_price(PRICE, 0, NOW + 2_001), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, NOW),
+        observation::new_price(PRICE, 0, NOW + 2_001),
+        DIVERGENT_MARK,
     );
     destroy(state.prepare_rebalance(observed, 10, NOW));
     state.destroy_for_testing();
@@ -228,8 +305,13 @@ fun emergency_start_rejects_future_collateral_price() {
 fun emergency_start_rejects_uncertain_collateral_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, NOW), observation::new_price(PRICE, 10_000_001, NOW), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, NOW),
+        observation::new_price(PRICE, 10_000_001, NOW),
+        DIVERGENT_MARK,
     );
     destroy(state.prepare_rebalance(observed, 10, NOW));
     state.destroy_for_testing();
@@ -256,8 +338,13 @@ fun emergency_start_checks_zero_nav_before_mark_divergence() {
 fun emergency_fill_rejects_stale_base_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, 0), observation::new_price(PRICE, 0, NOW), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, 0),
+        observation::new_price(PRICE, 0, NOW),
+        DIVERGENT_MARK,
     );
     state.accept_emergency_observation(observed);
     state.destroy_for_testing();
@@ -268,8 +355,13 @@ fun emergency_fill_rejects_stale_base_price() {
 fun emergency_fill_rejects_future_base_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, NOW + 2_001), observation::new_price(PRICE, 0, NOW), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, NOW + 2_001),
+        observation::new_price(PRICE, 0, NOW),
+        DIVERGENT_MARK,
     );
     state.accept_emergency_observation(observed);
     state.destroy_for_testing();
@@ -280,8 +372,13 @@ fun emergency_fill_rejects_future_base_price() {
 fun emergency_fill_rejects_uncertain_base_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 10_000_001, NOW), observation::new_price(PRICE, 0, NOW), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 10_000_001, NOW),
+        observation::new_price(PRICE, 0, NOW),
+        DIVERGENT_MARK,
     );
     state.accept_emergency_observation(observed);
     state.destroy_for_testing();
@@ -292,8 +389,13 @@ fun emergency_fill_rejects_uncertain_base_price() {
 fun emergency_fill_rejects_stale_collateral_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, NOW), observation::new_price(PRICE, 0, 0), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, NOW),
+        observation::new_price(PRICE, 0, 0),
+        DIVERGENT_MARK,
     );
     state.accept_emergency_observation(observed);
     state.destroy_for_testing();
@@ -304,8 +406,13 @@ fun emergency_fill_rejects_stale_collateral_price() {
 fun emergency_fill_rejects_future_collateral_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, NOW), observation::new_price(PRICE, 0, NOW + 2_001), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, NOW),
+        observation::new_price(PRICE, 0, NOW + 2_001),
+        DIVERGENT_MARK,
     );
     state.accept_emergency_observation(observed);
     state.destroy_for_testing();
@@ -316,8 +423,13 @@ fun emergency_fill_rejects_future_collateral_price() {
 fun emergency_fill_rejects_uncertain_collateral_price() {
     let state = new_state(policy::long());
     let observed = observation::new_position(
-        1_000_000, 3_000_048, 1, policy::long(),
-        observation::new_price(PRICE, 0, NOW), observation::new_price(PRICE, 10_000_001, NOW), DIVERGENT_MARK,
+        1_000_000,
+        3_000_048,
+        1,
+        policy::long(),
+        observation::new_price(PRICE, 0, NOW),
+        observation::new_price(PRICE, 10_000_001, NOW),
+        DIVERGENT_MARK,
     );
     state.accept_emergency_observation(observed);
     state.destroy_for_testing();
@@ -383,10 +495,20 @@ fun emergency_fill_still_proves_the_exact_base_movement() {
 #[test]
 fun emergency_fill_can_keep_real_exposure_reduction_despite_ratio_costs() {
     let state = new_state(policy::long());
-    let mut plan = state.prepare_rebalance(position(policy::long(), 1_000_000, 3_001_000, DIVERGENT_MARK), 10, NOW);
+    let mut plan = state.prepare_rebalance(
+        position(policy::long(), 1_000_000, 3_001_000, DIVERGENT_MARK),
+        10,
+        NOW
+    );
     let order = state.next_rebalance_order(&plan);
     let filled = order.order_base();
-    state.accept_rebalance_fill(&mut plan, order, position(policy::long(), 900_000, 3_001_000 - filled, DIVERGENT_MARK), filled, NOW);
+    state.accept_rebalance_fill(
+        &mut plan,
+        order,
+        position(policy::long(), 900_000, 3_001_000 - filled, DIVERGENT_MARK),
+        filled,
+        NOW
+    );
     state.complete_rebalance(plan);
     state.destroy_for_testing();
 }
@@ -394,7 +516,11 @@ fun emergency_fill_can_keep_real_exposure_reduction_despite_ratio_costs() {
 // === Test Helpers ===
 
 fun accept_emergency_observation(self: &State<Product>, after: PositionObservation) {
-    let mut plan = self.prepare_rebalance(position(policy::long(), 1_000_000, 3_001_000, DIVERGENT_MARK), 10, NOW);
+    let mut plan = self.prepare_rebalance(
+        position(policy::long(), 1_000_000, 3_001_000, DIVERGENT_MARK),
+        10,
+        NOW
+    );
     let order = self.next_rebalance_order(&plan);
     let filled = order.order_base();
     self.accept_rebalance_fill(&mut plan, order, after, filled, NOW);

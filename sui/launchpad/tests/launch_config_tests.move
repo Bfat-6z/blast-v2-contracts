@@ -106,7 +106,7 @@ fun protocol_allocation_updates_and_emits_rates() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_allocation(500, 250);
+        f.set_protocol_allocation_for_testing(500, 250);
 
         let mut expected = u64_bytes(500);
         expected.append(u64_bytes(250));
@@ -126,8 +126,8 @@ fun protocol_allocation_accepts_zero_shares() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_allocation(1, 1);
-        f.set_protocol_allocation(0, 0);
+        f.set_protocol_allocation_for_testing(1, 1);
+        f.set_protocol_allocation_for_testing(0, 0);
 
         assert_eq!(
             f.config.protocol_allocation(),
@@ -143,7 +143,7 @@ fun protocol_allocation_maxima_leave_one_unit_for_the_curve_and_the_pool() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_allocation(9_998, 9_999);
+        f.set_protocol_allocation_for_testing(9_998, 9_999);
 
         assert_eq!(
             f.config.protocol_allocation(),
@@ -159,8 +159,8 @@ fun protocol_allocation_can_be_updated_for_future_launches() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_allocation(1, 1);
-        f.set_protocol_allocation(2, 3);
+        f.set_protocol_allocation_for_testing(1, 1);
+        f.set_protocol_allocation_for_testing(2, 3);
 
         assert_eq!(
             f.config.protocol_allocation(),
@@ -176,7 +176,7 @@ fun protocol_allocation_can_be_updated_for_future_launches() {
 fun protocol_allocation_rejects_an_unchanged_value() {
     let mut fixture = start();
 
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation(0, 0));
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(0, 0));
 
     fixture.end();
 }
@@ -191,7 +191,7 @@ fun protocol_allocation_rejects_an_unchanged_value() {
 fun protocol_allocation_rejects_meme_9999() {
     let mut fixture = start();
 
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation(9_999, 0));
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(9_999, 0));
 
     fixture.end();
 }
@@ -207,7 +207,7 @@ fun protocol_allocation_rejects_meme_10000_at_policy_surface() {
     let mut fixture = start();
 
     // Bps admits 10,000 inclusively; the stricter allocation policy owns this abort.
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation(10_000, 0));
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(10_000, 0));
 
     fixture.end();
 }
@@ -222,7 +222,7 @@ fun protocol_allocation_rejects_meme_10000_at_policy_surface() {
 fun protocol_allocation_cannot_leave_no_pool_quote() {
     let mut fixture = start();
 
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation(0, 10_000));
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(0, 10_000));
 
     fixture.end();
 }
@@ -240,7 +240,7 @@ fun stale_package_version_rejects_protocol_allocation_before_its_bounds() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.package_version.set_for_testing(2);
 
-        f.set_protocol_allocation(10_000, 10_000);
+        f.set_protocol_allocation_for_testing(10_000, 10_000);
     });
 
     fixture.end();
@@ -550,12 +550,12 @@ fun admin_sets_trade_fees_for_future_launch_snapshots() {
         f.allow_test_migration_witness();
         f
             .config
-            .set_trade_fees(
+            .set_trade_fees_for_testing(
                 &f.package_version,
                 &fee_admin(),
                 bps::new(QUOTE_FEE_BPS),
                 bps::new(MEME_FEE_BPS),
-            );
+             f.ctx!());
 
         let (quote_fee_bps, meme_fee_bps) = f
             .config
@@ -580,14 +580,14 @@ fun trade_fees_accept_zero_and_launch_ceiling_boundaries() {
 
         f
             .config
-            .set_trade_fees(
+            .set_trade_fees_for_testing(
                 &f.package_version,
                 &admin_witness,
                 bps::new(constants::max_launch_fee_bps!()),
                 bps::new(constants::max_launch_fee_bps!()),
-            );
-        f.config.set_trade_fees(&f.package_version, &admin_witness, bps::new(0), bps::new(0));
-        f.config.set_trade_fees(&f.package_version, &admin_witness, bps::new(0), bps::new(1));
+             f.ctx!());
+        f.config.set_trade_fees_for_testing(&f.package_version, &admin_witness, bps::new(0), bps::new(0), f.ctx!());
+        f.config.set_trade_fees_for_testing(&f.package_version, &admin_witness, bps::new(0), bps::new(1), f.ctx!());
 
         let (quote_fee_bps, meme_fee_bps) = f.config.rate_defaults_for_testing();
 
@@ -614,12 +614,12 @@ fun trade_fees_reject_quote_rate_above_ceiling() {
 
         f
             .config
-            .set_trade_fees(
+            .set_trade_fees_for_testing(
                 &f.package_version,
                 &admin_witness,
                 bps::new(constants::max_launch_fee_bps!() + 1),
                 bps::new(0),
-            );
+             f.ctx!());
     });
 
     fixture.end();
@@ -640,12 +640,12 @@ fun trade_fees_reject_meme_rate_above_ceiling() {
 
         f
             .config
-            .set_trade_fees(
+            .set_trade_fees_for_testing(
                 &f.package_version,
                 &admin_witness,
                 bps::new(0),
                 bps::new(constants::max_launch_fee_bps!() + 1),
-            );
+             f.ctx!());
     });
 
     fixture.end();
@@ -664,7 +664,7 @@ fun trade_fees_reject_unchanged_pair() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = fee_admin();
 
-        f.config.set_trade_fees(&f.package_version, &admin_witness, bps::new(0), bps::new(0));
+        f.config.set_trade_fees_for_testing(&f.package_version, &admin_witness, bps::new(0), bps::new(0), f.ctx!());
     });
 
     fixture.end();
@@ -686,12 +686,12 @@ fun stale_package_version_rejects_trade_fees_before_their_bounds() {
 
         f
             .config
-            .set_trade_fees(
+            .set_trade_fees_for_testing(
                 &f.package_version,
                 &admin_witness,
                 bps::new(constants::max_launch_fee_bps!() + 1),
                 bps::new(0),
-            );
+             f.ctx!());
     });
 
     fixture.end();
@@ -725,11 +725,11 @@ fun disallowing_migration_witness_does_not_change_an_existing_launch_snapshot() 
 
         f
             .config
-            .set_migration_witness_allowed<TEST_MIGRATION_WITNESS>(
+            .set_migration_witness_allowed_for_testing<TEST_MIGRATION_WITNESS>(
                 &f.package_version,
                 &adapter_admin(),
                 false,
-            );
+             f.ctx!());
 
         let set = collect<events::MigrationWitnessSet>();
         let mut expected = bcs::to_bytes(&test_witness());
@@ -746,8 +746,8 @@ fun disallowing_migration_witness_does_not_change_an_existing_launch_snapshot() 
 #[test]
 #[
     expected_failure(
-        abort_code = sui::vec_set::EKeyDoesNotExist,
-        location = sui::vec_set,
+        abort_code = blast_fun::errors::EUnchanged,
+        location = blast_fun::launch_config,
     ),
 ]
 fun disallowing_migration_witness_rejects_unlisted_type() {
@@ -758,11 +758,11 @@ fun disallowing_migration_witness_rejects_unlisted_type() {
 
         f
             .config
-            .set_migration_witness_allowed<TEST_MIGRATION_WITNESS>(
+            .set_migration_witness_allowed_for_testing<TEST_MIGRATION_WITNESS>(
                 &f.package_version,
                 &admin_witness,
                 false,
-            );
+             f.ctx!());
     });
 
     fixture.end();
@@ -771,8 +771,8 @@ fun disallowing_migration_witness_rejects_unlisted_type() {
 #[test]
 #[
     expected_failure(
-        abort_code = sui::vec_set::EKeyAlreadyExists,
-        location = sui::vec_set,
+        abort_code = blast_fun::errors::EUnchanged,
+        location = blast_fun::launch_config,
     ),
 ]
 fun allowing_migration_witness_rejects_duplicate_type() {
@@ -789,8 +789,8 @@ fun allowing_migration_witness_rejects_duplicate_type() {
 #[test]
 #[
     expected_failure(
-        abort_code = std::type_name::ENonModuleType,
-        location = std::type_name,
+        abort_code = blast_fun::errors::EInvalidMigrationWitnessType,
+        location = blast_fun::launch_config,
     ),
 ]
 fun allowing_migration_witness_rejects_a_primitive_type() {
@@ -800,7 +800,7 @@ fun allowing_migration_witness_rejects_a_primitive_type() {
         let admin_witness = adapter_admin();
 
         // Only module types have an origin package, so the framework rejects this one first.
-        f.config.set_migration_witness_allowed<bool>(&f.package_version, &admin_witness, true);
+        f.config.set_migration_witness_allowed_for_testing<bool>(&f.package_version, &admin_witness, true, f.ctx!());
     });
 
     fixture.end();
@@ -809,8 +809,8 @@ fun allowing_migration_witness_rejects_a_primitive_type() {
 #[test]
 #[
     expected_failure(
-        abort_code = std::type_name::ENonModuleType,
-        location = std::type_name,
+        abort_code = blast_fun::errors::EInvalidMigrationWitnessType,
+        location = blast_fun::launch_config,
     ),
 ]
 fun allowing_migration_witness_rejects_a_vector_type() {
@@ -822,11 +822,11 @@ fun allowing_migration_witness_rejects_a_vector_type() {
         // Only module types have an origin package, so the framework rejects this one first.
         f
             .config
-            .set_migration_witness_allowed<vector<u8>>(
+            .set_migration_witness_allowed_for_testing<vector<u8>>(
                 &f.package_version,
                 &admin_witness,
                 true,
-            );
+             f.ctx!());
     });
 
     fixture.end();
@@ -847,11 +847,11 @@ fun allowing_migration_witness_rejects_a_standard_library_type() {
 
         f
             .config
-            .set_migration_witness_allowed<std::string::String>(
+            .set_migration_witness_allowed_for_testing<std::string::String>(
                 &f.package_version,
                 &admin_witness,
                 true,
-            );
+             f.ctx!());
     });
 
     fixture.end();
@@ -872,11 +872,11 @@ fun allowing_migration_witness_rejects_a_sui_framework_type() {
 
         f
             .config
-            .set_migration_witness_allowed<sui::object::ID>(
+            .set_migration_witness_allowed_for_testing<sui::object::ID>(
                 &f.package_version,
                 &admin_witness,
                 true,
-            );
+             f.ctx!());
     });
 
     fixture.end();
@@ -885,7 +885,7 @@ fun allowing_migration_witness_rejects_a_sui_framework_type() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_fun::errors::EInvalidMigrationWitnessType,
+        abort_code = blast_fun::errors::EUnchanged,
         location = blast_fun::launch_config,
     ),
 ]
@@ -897,11 +897,11 @@ fun disallowing_a_framework_type_rejects_the_type_before_the_unchanged_check() {
 
         f
             .config
-            .set_migration_witness_allowed<sui::object::ID>(
+            .set_migration_witness_allowed_for_testing<sui::object::ID>(
                 &f.package_version,
                 &admin_witness,
                 false,
-            );
+             f.ctx!());
     });
 
     fixture.end();
@@ -921,7 +921,7 @@ fun stale_package_version_rejects_migration_witness_before_its_type_check() {
         let admin_witness = adapter_admin();
         f.package_version.set_for_testing(2);
 
-        f.config.set_migration_witness_allowed<bool>(&f.package_version, &admin_witness, true);
+        f.config.set_migration_witness_allowed_for_testing<bool>(&f.package_version, &admin_witness, true, f.ctx!());
     });
 
     fixture.end();
@@ -954,7 +954,7 @@ fun admin_sets_the_creation_fee_and_it_emits_the_new_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creation_fee(2_000_000_000);
+        f.set_creation_fee_for_testing(2_000_000_000);
 
         assert_eq!(f.config.creation_fee(), 2_000_000_000);
         assert_eq!(
@@ -971,7 +971,7 @@ fun creation_fee_rejects_the_current_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creation_fee(0);
+        f.set_creation_fee_for_testing(0);
     });
 
     fixture.end();
@@ -984,7 +984,7 @@ fun creation_fee_checks_the_version_before_the_current_value() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.package_version.set_for_testing(2);
 
-        f.set_creation_fee(0);
+        f.set_creation_fee_for_testing(0);
     });
 
     fixture.end();
@@ -1146,6 +1146,11 @@ fun removing_a_partner_checks_the_version_before_the_list() {
 
 // === Test Helpers ===
 
+macro fun config_ctx($fixture: &mut ConfigFixture): &mut TxContext {
+    let fixture = $fixture;
+    fixture.scenario.ctx()
+}
+
 /// The binding a ticket bound to the test adapter hands to launch intake.
 fun test_witness(): TypeName {
     type_name::with_original_ids<TEST_MIGRATION_WITNESS>()
@@ -1203,7 +1208,7 @@ fun start_init(): InitFixture {
     InitFixture { scenario, config }
 }
 
-/// Explicit zero-fee policy for administration boundary tests.
+/// The shared configuration exactly as package initialization leaves it.
 fun start(): ConfigFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     let package_version = package_version::new_for_testing(scenario.ctx());
@@ -1231,7 +1236,7 @@ fun adapter_admin(): AdminWitness<AdapterAdmin> {
 }
 
 /// Sets Blast's allocation as the treasury admin.
-fun set_protocol_allocation(
+fun set_protocol_allocation_for_testing(
     self: &mut ConfigFixture,
     meme_bps: u64,
     quote_bps: u64,
@@ -1240,31 +1245,31 @@ fun set_protocol_allocation(
 
     self
         .config
-        .set_protocol_allocation(
+        .set_protocol_allocation_for_testing(
             &self.package_version,
             &admin_witness,
             bps::new(meme_bps),
             bps::new(quote_bps),
-        );
+         self.ctx!());
 }
 
 /// Admits the test adapter as the adapter admin.
 fun allow_test_migration_witness(self: &mut ConfigFixture) {
     self
         .config
-        .set_migration_witness_allowed<TEST_MIGRATION_WITNESS>(
+        .set_migration_witness_allowed_for_testing<TEST_MIGRATION_WITNESS>(
             &self.package_version,
             &adapter_admin(),
             true,
-        );
+         self.ctx!());
 }
 
-fun set_creation_fee(self: &mut ConfigFixture, creation_fee: u64) {
-    self.config.set_creation_fee(&self.package_version, &fee_admin(), creation_fee);
+fun set_creation_fee_for_testing(self: &mut ConfigFixture, creation_fee: u64) {
+    self.config.set_creation_fee_for_testing(&self.package_version, &fee_admin(), creation_fee, self.ctx!());
 }
 
 fun new_partner(self: &mut ConfigFixture): Partner {
-    partners::new_for_testing(PARTNER, 4_000, self.scenario.ctx())
+    partners::new_for_testing(PARTNER, 4_000, self.ctx!())
 }
 
 fun add_partner(self: &mut ConfigFixture, partner: &Partner) {
@@ -1311,3 +1316,5 @@ use fun config_next_tx as ConfigFixture.next_tx;
 use fun init_end as InitFixture.end;
 
 use fun init_next_tx as InitFixture.next_tx;
+
+use fun config_ctx as ConfigFixture.ctx;

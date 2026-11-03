@@ -36,7 +36,10 @@ public fun observed_venue_change_reason(): ShutdownReason { ShutdownReason::Obse
 public(package) fun active(): Lifecycle { Lifecycle::Active }
 
 public(package) fun is_active(self: &Lifecycle): bool {
-    match (self) { Lifecycle::Active => true, _ => false }
+    match (self) {
+        Lifecycle::Active => true,
+        _ => false
+    }
 }
 
 public(package) fun assert_active(self: &Lifecycle) {
@@ -75,7 +78,10 @@ public(package) fun protects_shutdown_balances(self: &Lifecycle): bool {
 }
 
 public(package) fun is_unwinding(self: &Lifecycle): bool {
-    match (self) { Lifecycle::Unwinding { .. } => true, _ => false }
+    match (self) {
+        Lifecycle::Unwinding { .. } => true,
+        _ => false
+    }
 }
 
 /// The adapter clock reading shutdown began at; only an unwinding Vault has one.
@@ -87,7 +93,10 @@ public(package) fun shutdown_began_at_ms(self: &Lifecycle): u64 {
 }
 
 public(package) fun assert_unwinding(self: &Lifecycle) {
-    assert!(self.is_unwinding(), blast_boosts_core::errors::operation_not_permitted_in_lifecycle!());
+    assert!(
+        self.is_unwinding(),
+        blast_boosts_core::errors::operation_not_permitted_in_lifecycle!()
+    );
 }
 
 /// The owning adapter must first recover all cash and prove venue finality.
@@ -98,7 +107,10 @@ public(package) fun finalize_shutdown(self: &mut Lifecycle) {
 }
 
 public(package) fun is_settled(self: &Lifecycle): bool {
-    match (self) { Lifecycle::Settled => true, _ => false }
+    match (self) {
+        Lifecycle::Settled => true,
+        _ => false
+    }
 }
 
 public(package) fun assert_settled(self: &Lifecycle) {
@@ -108,7 +120,9 @@ public(package) fun assert_settled(self: &Lifecycle) {
 // === Test-Only Functions ===
 
 #[test_only]
-public(package) fun unwinding_for_testing(): Lifecycle { Lifecycle::Unwinding { began_at_ms: 0, protect_balances: false } }
+public(package) fun unwinding_for_testing(): Lifecycle {
+    Lifecycle::Unwinding { began_at_ms: 0, protect_balances: false }
+}
 
 #[test_only]
 public(package) fun settled_for_testing(): Lifecycle { Lifecycle::Settled }

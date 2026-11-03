@@ -327,19 +327,19 @@ public(package) fun vault_initialized<Product>(
 ) {
     emit_event(
         VaultInitialized<Product> {
-            vault_id,
-            binding,
-            seed_amount,
-            seed_venue_equity,
-            seed_reserve,
-            seed_shareholder_nav,
-            locked_shares,
-            position_base,
-            lot_size,
-            position_side,
-            position_imr,
-            checkpoint,
-        },
+        vault_id,
+        binding,
+        seed_amount,
+        seed_venue_equity,
+        seed_reserve,
+        seed_shareholder_nav,
+        locked_shares,
+        position_base,
+        lot_size,
+        position_side,
+        position_imr,
+        checkpoint,
+    },
     );
 }
 
@@ -385,8 +385,17 @@ public(package) fun minted<Product>(
     checkpoint: Checkpoint,
 ) {
     emit_event(Minted<Product> {
-        vault_id, deposit, shares, contribution, fee, admin_fee, reserve_fee,
-        reserve_after, admin_cash_after, supply_after, checkpoint,
+        vault_id,
+        deposit,
+        shares,
+        contribution,
+        fee,
+        admin_fee,
+        reserve_fee,
+        reserve_after,
+        admin_cash_after,
+        supply_after,
+        checkpoint,
     });
 }
 
@@ -405,7 +414,16 @@ public(package) fun redeemed<Product>(
     checkpoint: Checkpoint,
 ) {
     emit_event(Redeemed<Product> {
-        vault_id, shares, net, fee, admin_fee, reserve_fee, reserve_after, admin_cash_after, supply_after, checkpoint,
+        vault_id,
+        shares,
+        net,
+        fee,
+        admin_fee,
+        reserve_fee,
+        reserve_after,
+        admin_cash_after,
+        supply_after,
+        checkpoint,
     });
 }
 
@@ -444,8 +462,16 @@ public(package) fun rebalanced<Product>(
     checkpoint: Checkpoint,
 ) {
     emit_event(Rebalanced<Product> {
-        vault_id, equity_before, equity_after, base_before, base_after, increase,
-        reserve_after, admin_cash_after, supply_after, checkpoint,
+        vault_id,
+        equity_before,
+        equity_after,
+        base_before,
+        base_after,
+        increase,
+        reserve_after,
+        admin_cash_after,
+        supply_after,
+        checkpoint,
     });
 }
 
@@ -460,8 +486,14 @@ public(package) fun profit_realized<Product>(
     checkpoint: Checkpoint,
 ) {
     emit_event(ProfitRealized<Product> {
-        vault_id, equity_before, equity_after, base_realized, shortfall_before,
-        shortfall_after, previous_checkpoint, checkpoint,
+        vault_id,
+        equity_before,
+        equity_after,
+        base_realized,
+        shortfall_before,
+        shortfall_after,
+        previous_checkpoint,
+        checkpoint,
     });
 }
 
@@ -481,17 +513,17 @@ public(package) fun funding_settled<Product>(
 ) {
     emit_event(
         FundingSettled<Product> {
-            vault_id,
-            is_cost,
-            raw_amount,
-            amount,
-            absorbed_by_reserve,
-            uncovered_cost,
-            restored_to_holders,
-            reserve_after,
-            previous_checkpoint,
-            checkpoint,
-        },
+        vault_id,
+        is_cost,
+        raw_amount,
+        amount,
+        absorbed_by_reserve,
+        uncovered_cost,
+        restored_to_holders,
+        reserve_after,
+        previous_checkpoint,
+        checkpoint,
+    },
     );
 }
 
@@ -507,9 +539,17 @@ public(package) fun checkpoint_rebaselined<Product>(
     emit_event(CheckpointRebaselined<Product> { vault_id, previous_checkpoint, checkpoint });
 }
 
-public(package) fun donated<Product>(vault_id: ID, amount: u64, reserve_after: u64, checkpoint: Checkpoint) {
+public(package) fun donated<Product>(
+    vault_id: ID,
+    amount: u64,
+    reserve_after: u64,
+    checkpoint: Checkpoint
+) {
     emit_event(Donated<Product> {
-        vault_id, amount, reserve_after, checkpoint,
+        vault_id,
+        amount,
+        reserve_after,
+        checkpoint,
     });
 }
 
@@ -521,8 +561,18 @@ public(package) fun shutdown_begun<Product>(vault_id: ID, reason: ShutdownReason
     );
 }
 
-public(package) fun protected_shutdown_begun<Product>(vault_id: ID, checkpoint: Checkpoint, total_supply: u64, locked_shares: u64) {
-    emit_event(ProtectedShutdownBegun<Product> { vault_id, checkpoint, total_supply, locked_shares });
+public(package) fun protected_shutdown_begun<Product>(
+    vault_id: ID,
+    checkpoint: Checkpoint,
+    total_supply: u64,
+    locked_shares: u64
+) {
+    emit_event(ProtectedShutdownBegun<Product> {
+        vault_id,
+        checkpoint,
+        total_supply,
+        locked_shares
+    });
 }
 
 public(package) fun unwind_progress<Product>(
@@ -533,7 +583,11 @@ public(package) fun unwind_progress<Product>(
     filled_quote: Option<u256>,
 ) {
     emit_event(UnwindProgress<Product> {
-        vault_id, before, after, market_orders, filled_quote,
+        vault_id,
+        before,
+        after,
+        market_orders,
+        filled_quote,
     });
 }
 
@@ -547,8 +601,13 @@ public(package) fun shutdown_finalized<Product>(
     protected_seed_cash: u64,
 ) {
     emit_event(ShutdownFinalized<Product> {
-        vault_id, recovered_cash, eligible_supply, checkpoint, unrecoverable_collateral_raw,
-        protected_reserve_cash, protected_seed_cash,
+        vault_id,
+        recovered_cash,
+        eligible_supply,
+        checkpoint,
+        unrecoverable_collateral_raw,
+        protected_reserve_cash,
+        protected_seed_cash,
     });
 }
 
@@ -560,7 +619,11 @@ public(package) fun shutdown_redeemed<Product>(
     eligible_remaining: u64,
 ) {
     emit_event(ShutdownRedeemed<Product> {
-        vault_id, shares, cash_paid, cash_remaining, eligible_remaining,
+        vault_id,
+        shares,
+        cash_paid,
+        cash_remaining,
+        eligible_remaining,
     });
 }
 
@@ -576,40 +639,66 @@ public(package) fun fees_updated<Product>(
     admin_share_bps: u64,
 ) {
     emit_event(FeesUpdated<Product> {
-        vault_id, previous_mint_bps, previous_redeem_bps, previous_admin_bps,
-        mint_bps, redeem_bps, admin_share_bps,
+        vault_id,
+        previous_mint_bps,
+        previous_redeem_bps,
+        previous_admin_bps,
+        mint_bps,
+        redeem_bps,
+        admin_share_bps,
     });
 }
 
 public(package) fun nav_cap_updated<Product>(vault_id: ID, previous_nav_cap: u64, nav_cap: u64) {
     emit_event(NavCapUpdated<Product> {
-        vault_id, previous_nav_cap, nav_cap,
+        vault_id,
+        previous_nav_cap,
+        nav_cap,
     });
 }
 
-public(package) fun max_order_notional_updated<Product>(vault_id: ID, previous: u64, max_order_notional: u64) {
+public(package) fun max_order_notional_updated<Product>(
+    vault_id: ID,
+    previous: u64,
+    max_order_notional: u64
+) {
     emit_event(
         MaxOrderNotionalUpdated<Product> { vault_id, previous, max_order_notional },
     );
 }
 
-public(package) fun metadata_updated<Product>(vault_id: ID, name: String, description: String, icon_url: String) {
+public(package) fun metadata_updated<Product>(
+    vault_id: ID,
+    name: String,
+    description: String,
+    icon_url: String
+) {
     emit_event(MetadataUpdated<Product> { vault_id, name, description, icon_url });
 }
 
 public(package) fun admin_fees_withdrawn<Product>(vault_id: ID, amount: u64, remaining: u64) {
     emit_event(AdminFeesWithdrawn<Product> {
-        vault_id, amount, remaining,
+        vault_id,
+        amount,
+        remaining,
     });
 }
 
 // === Test-Only Functions ===
 
 #[test_only]
-public fun profit_realized_fields<Product>(self: &ProfitRealized<Product>): (ID, u64, u64, u64, u64, u64, Checkpoint, Checkpoint) {
+public fun profit_realized_fields<Product>(
+    self: &ProfitRealized<Product>
+): (ID, u64, u64, u64, u64, u64, Checkpoint, Checkpoint) {
     (
-        self.vault_id, self.equity_before, self.equity_after, self.base_realized,
-        self.shortfall_before, self.shortfall_after, self.previous_checkpoint, self.checkpoint,
+        self.vault_id,
+        self.equity_before,
+        self.equity_after,
+        self.base_realized,
+        self.shortfall_before,
+        self.shortfall_after,
+        self.previous_checkpoint,
+        self.checkpoint,
     )
 }
 
@@ -690,9 +779,20 @@ public fun minted_checkpoint_fields<Product>(self: &Minted<Product>): (ID, Check
 }
 
 #[test_only]
-public fun minted_amounts<Product>(self: &Minted<Product>): (u64, u64, u64, u64, u64, u64, u64, u64, u64) {
-    (self.deposit, self.shares, self.contribution, self.fee, self.admin_fee, self.reserve_fee,
-        self.reserve_after, self.admin_cash_after, self.supply_after)
+public fun minted_amounts<Product>(
+    self: &Minted<Product>
+): (u64, u64, u64, u64, u64, u64, u64, u64, u64) {
+    (
+        self.deposit,
+        self.shares,
+        self.contribution,
+        self.fee,
+        self.admin_fee,
+        self.reserve_fee,
+        self.reserve_after,
+        self.admin_cash_after,
+        self.supply_after
+    )
 }
 
 // --- Redemption ---
@@ -719,14 +819,24 @@ public fun partner_removed_fields(self: &PartnerRemoved): (ID, u64) {
 
 #[test_only]
 public fun redeemed_amounts<Product>(self: &Redeemed<Product>): vector<u64> {
-    vector[self.shares, self.net, self.fee, self.admin_fee, self.reserve_fee,
-        self.reserve_after, self.admin_cash_after, self.supply_after]
+    vector[
+        self.shares,
+        self.net,
+        self.fee,
+        self.admin_fee,
+        self.reserve_fee,
+        self.reserve_after,
+        self.admin_cash_after,
+        self.supply_after
+    ]
 }
 
 // --- Rebalance ---
 
 #[test_only]
-public fun rebalanced_checkpoint_fields<Product>(self: &Rebalanced<Product>): (ID, u64, u64, u64, Checkpoint) {
+public fun rebalanced_checkpoint_fields<Product>(
+    self: &Rebalanced<Product>
+): (ID, u64, u64, u64, Checkpoint) {
     (self.vault_id, self.reserve_after, self.admin_cash_after, self.supply_after, self.checkpoint)
 }
 
@@ -761,7 +871,9 @@ public fun checkpoint_drifted_fields<Product>(self: &CheckpointDrifted<Product>)
 }
 
 #[test_only]
-public fun checkpoint_rebaselined_fields<Product>(self: &CheckpointRebaselined<Product>): (ID, Checkpoint, Checkpoint) {
+public fun checkpoint_rebaselined_fields<Product>(
+    self: &CheckpointRebaselined<Product>
+): (ID, Checkpoint, Checkpoint) {
     (self.vault_id, self.previous_checkpoint, self.checkpoint)
 }
 
@@ -778,7 +890,9 @@ public fun shutdown_reason<Product>(self: &ShutdownBegun<Product>): ShutdownReas
 }
 
 #[test_only]
-public fun protected_shutdown_begun_fields<Product>(self: &ProtectedShutdownBegun<Product>): (ID, Checkpoint, u64, u64) {
+public fun protected_shutdown_begun_fields<Product>(
+    self: &ProtectedShutdownBegun<Product>
+): (ID, Checkpoint, u64, u64) {
     (self.vault_id, self.checkpoint, self.total_supply, self.locked_shares)
 }
 
@@ -801,23 +915,38 @@ public fun shutdown_finalized_fields<Product>(
     self: &ShutdownFinalized<Product>,
 ): (ID, u64, u64, Checkpoint, u256, u64, u64) {
     (
-        self.vault_id, self.recovered_cash, self.eligible_supply,
-        self.checkpoint, self.unrecoverable_collateral_raw,
-        self.protected_reserve_cash, self.protected_seed_cash,
+        self.vault_id,
+        self.recovered_cash,
+        self.eligible_supply,
+        self.checkpoint,
+        self.unrecoverable_collateral_raw,
+        self.protected_reserve_cash,
+        self.protected_seed_cash,
     )
 }
 
 #[test_only]
-public fun shutdown_redeemed_fields<Product>(self: &ShutdownRedeemed<Product>): (ID, u64, u64, u64, u64) {
+public fun shutdown_redeemed_fields<Product>(
+    self: &ShutdownRedeemed<Product>
+): (ID, u64, u64, u64, u64) {
     (self.vault_id, self.shares, self.cash_paid, self.cash_remaining, self.eligible_remaining)
 }
 
 // --- Administration ---
 
 #[test_only]
-public fun fees_updated_fields<Product>(self: &FeesUpdated<Product>): (ID, u64, u64, u64, u64, u64, u64) {
-    (self.vault_id, self.previous_mint_bps, self.previous_redeem_bps, self.previous_admin_bps,
-        self.mint_bps, self.redeem_bps, self.admin_share_bps)
+public fun fees_updated_fields<Product>(
+    self: &FeesUpdated<Product>
+): (ID, u64, u64, u64, u64, u64, u64) {
+    (
+        self.vault_id,
+        self.previous_mint_bps,
+        self.previous_redeem_bps,
+        self.previous_admin_bps,
+        self.mint_bps,
+        self.redeem_bps,
+        self.admin_share_bps
+    )
 }
 
 #[test_only]
@@ -833,12 +962,16 @@ public fun max_order_notional_updated_fields<Product>(
 }
 
 #[test_only]
-public fun metadata_updated_fields<Product>(self: &MetadataUpdated<Product>): (ID, String, String, String) {
+public fun metadata_updated_fields<Product>(
+    self: &MetadataUpdated<Product>
+): (ID, String, String, String) {
     (self.vault_id, self.name, self.description, self.icon_url)
 }
 
 #[test_only]
-public fun admin_fees_withdrawn_fields<Product>(self: &AdminFeesWithdrawn<Product>): (ID, u64, u64) {
+public fun admin_fees_withdrawn_fields<Product>(
+    self: &AdminFeesWithdrawn<Product>
+): (ID, u64, u64) {
     (self.vault_id, self.amount, self.remaining)
 }
 
@@ -848,8 +981,15 @@ public fun order_filled_fields<Product>(
     self: &OrderFilled<Product>,
 ): (ID, bool, bool, u64, u64, u256, u64, u64, u64) {
     (
-        self.account_object_id, self.is_ask, self.reduce_only, self.requested_base,
-        self.filled_base, self.filled_quote, self.reference_price, self.limit_price, self.executed_price,
+        self.account_object_id,
+        self.is_ask,
+        self.reduce_only,
+        self.requested_base,
+        self.filled_base,
+        self.filled_quote,
+        self.reference_price,
+        self.limit_price,
+        self.executed_price,
     )
 }
 

@@ -24,15 +24,14 @@ public struct ConfigFixture {
 // === Tests ===
 
 #[test]
-/// Package initialization shares a silent configuration with account claims disabled,
-/// a 50/50 protocol/creator split, and Blast's fees paid to the publisher.
-fun package_init_uses_a_half_protocol_share_and_pays_the_publisher_without_signer() {
+/// Package initialization disables account claims, splits trade fees 50/50, and uses the genesis treasury.
+fun package_init_uses_a_half_protocol_share_and_genesis_treasury_without_signer() {
     let (events, signer_public_key, protocol_fee_share_bps, treasury) = published_config();
 
     assert_eq!(events, 0);
     assert!(signer_public_key.is_empty());
     assert_eq!(protocol_fee_share_bps, 5_000);
-    assert_eq!(treasury, PUBLISHER);
+    assert_eq!(treasury, @blast_treasury);
 }
 
 // --- Protocol fee share ---
@@ -42,7 +41,7 @@ fun admin_sets_the_protocol_fee_share_and_it_emits_the_new_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_fee_share(bps::new(7_000));
+        f.set_protocol_fee_share_for_testing(bps::new(7_000));
 
         assert_eq!(f.config.protocol_fee_share().value(), 7_000);
         assert_eq!(
@@ -59,10 +58,10 @@ fun protocol_fee_share_accepts_both_percentage_boundaries() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_fee_share(bps::new(10_000));
+        f.set_protocol_fee_share_for_testing(bps::new(10_000));
         assert_eq!(f.config.protocol_fee_share().value(), 10_000);
 
-        f.set_protocol_fee_share(bps::new(0));
+        f.set_protocol_fee_share_for_testing(bps::new(0));
         assert_eq!(f.config.protocol_fee_share().value(), 0);
 
         let changes = collect<events::ProtocolFeeShareChanged>();
@@ -79,7 +78,7 @@ fun protocol_fee_share_rejects_the_current_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_fee_share(bps::new(0));
+        f.set_protocol_fee_share_for_testing(bps::new(0));
     });
 
     fixture.end();
@@ -92,7 +91,7 @@ fun protocol_fee_share_checks_the_version_before_the_current_value() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.package_version.set_for_testing(2);
 
-        f.set_protocol_fee_share(bps::new(0));
+        f.set_protocol_fee_share_for_testing(bps::new(0));
     });
 
     fixture.end();
@@ -105,7 +104,7 @@ fun admin_sets_the_claim_signer_and_it_emits_the_key() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creator_claim_signer(signer_public_key());
+        f.set_creator_claim_signer_for_testing(signer_public_key());
 
         assert_eq!(*f.config.creator_claim_signer(), signer_public_key());
         assert_eq!(
@@ -123,11 +122,11 @@ fun an_empty_key_revokes_the_claim_signer() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creator_claim_signer(signer_public_key());
+        f.set_creator_claim_signer_for_testing(signer_public_key());
     });
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creator_claim_signer(vector[]);
+        f.set_creator_claim_signer_for_testing(vector[]);
 
         assert!(f.config.creator_claim_signer().is_empty());
         assert_eq!(
@@ -144,7 +143,7 @@ fun claim_signer_rejects_a_key_that_is_not_32_bytes() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creator_claim_signer(x"00");
+        f.set_creator_claim_signer_for_testing(x"00");
     });
 
     fixture.end();
@@ -155,8 +154,8 @@ fun claim_signer_rejects_the_current_key() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creator_claim_signer(signer_public_key());
-        f.set_creator_claim_signer(signer_public_key());
+        f.set_creator_claim_signer_for_testing(signer_public_key());
+        f.set_creator_claim_signer_for_testing(signer_public_key());
     });
 
     fixture.end();
@@ -167,7 +166,7 @@ fun claim_signer_rejects_revoking_an_absent_signer() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_creator_claim_signer(vector[]);
+        f.set_creator_claim_signer_for_testing(vector[]);
     });
 
     fixture.end();
@@ -180,7 +179,7 @@ fun claim_signer_checks_the_version_before_the_key_length() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.package_version.set_for_testing(2);
 
-        f.set_creator_claim_signer(x"00");
+        f.set_creator_claim_signer_for_testing(x"00");
     });
 
     fixture.end();
@@ -193,7 +192,7 @@ fun admin_sets_the_treasury_and_it_emits_the_new_address() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_treasury(TREASURY);
+        f.set_treasury_for_testing(TREASURY);
 
         assert_eq!(f.config.treasury(), TREASURY);
         assert_eq!(
@@ -203,7 +202,7 @@ fun admin_sets_the_treasury_and_it_emits_the_new_address() {
     });
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_treasury(PUBLISHER);
+        f.set_treasury_for_testing(PUBLISHER);
 
         assert_eq!(f.config.treasury(), PUBLISHER);
         assert_eq!(
@@ -220,7 +219,7 @@ fun treasury_rejects_the_zero_address() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_treasury(@0x0);
+        f.set_treasury_for_testing(@0x0);
     });
 
     fixture.end();
@@ -231,7 +230,7 @@ fun treasury_rejects_the_current_address() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_treasury(PUBLISHER);
+        f.set_treasury_for_testing(PUBLISHER);
     });
 
     fixture.end();
@@ -244,7 +243,7 @@ fun treasury_checks_the_version_before_the_address() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.package_version.set_for_testing(2);
 
-        f.set_treasury(@0x0);
+        f.set_treasury_for_testing(@0x0);
     });
 
     fixture.end();
@@ -292,19 +291,27 @@ fun start(): ConfigFixture {
 fun config_set_protocol_fee_share(self: &mut ConfigFixture, protocol_fee_share_bps: Bps) {
     let admin_witness = blast_acl::witness_for_testing<FeeAdmin>();
 
-    self.config.set_protocol_fee_share(&self.package_version, &admin_witness, protocol_fee_share_bps);
+    self
+        .config
+        .set_protocol_fee_share_for_testing(
+            &self.package_version,
+            &admin_witness,
+            protocol_fee_share_bps,
+            self.scenario.ctx()
+        );
 }
 
 fun config_set_creator_claim_signer(self: &mut ConfigFixture, signer_public_key: vector<u8>) {
     let admin_witness = blast_acl::witness_for_testing<ClaimSignerAdmin>();
 
-    self.config.set_creator_claim_signer(&self.package_version, &admin_witness, signer_public_key);
+    if (signer_public_key.is_empty()) self.config.revoke_creator_claim_signer(&self.package_version, &admin_witness)
+    else self.config.set_creator_claim_signer(&self.package_version, &admin_witness, signer_public_key);
 }
 
 fun config_set_treasury(self: &mut ConfigFixture, treasury: address) {
     let admin_witness = blast_acl::witness_for_testing<TreasuryAdmin>();
 
-    self.config.set_treasury(&self.package_version, &admin_witness, treasury);
+    self.config.set_treasury_for_testing(&self.package_version, &admin_witness, treasury, self.scenario.ctx());
 }
 
 fun config_end(self: ConfigFixture) {
@@ -351,8 +358,8 @@ use fun config_end as ConfigFixture.end;
 
 use fun config_next_tx as ConfigFixture.next_tx;
 
-use fun config_set_creator_claim_signer as ConfigFixture.set_creator_claim_signer;
+use fun config_set_creator_claim_signer as ConfigFixture.set_creator_claim_signer_for_testing;
 
-use fun config_set_protocol_fee_share as ConfigFixture.set_protocol_fee_share;
+use fun config_set_protocol_fee_share as ConfigFixture.set_protocol_fee_share_for_testing;
 
-use fun config_set_treasury as ConfigFixture.set_treasury;
+use fun config_set_treasury as ConfigFixture.set_treasury_for_testing;

@@ -12,7 +12,7 @@ claim deadlines serve different purposes.
 
 ## Decision
 
-Presale publication requires `previous published end <= new start < new end`.
+Presale and bonding-curve holder-reward publication require `previous published end <= new start < new end`.
 Only funded publications advance the sequential round number. Authority,
 funding checks, the 1–65,536 leaf bound, beneficiary proofs and claim bitmap
 remain unchanged. Events preserve the actual interval. Publication tooling
@@ -48,3 +48,11 @@ overlap rejection and a deadline based on current preparation time.
 | --- | --- |
 | S1 | Shared ingestion and outbox discovery D-025/D-033 and approved specification REQ-019/AC-016, 2026-10-10 |
 | S2 | Existing publication and dependency-only policy: [presale package at 8a2c0fa2b0469ab229b0057089e462fe5943a5df](https://github.com/interest-protocol/blast-v2-contracts/tree/8a2c0fa2b0469ab229b0057089e462fe5943a5df/sui/presale) |
+
+## Bonding-curve parity, 2 November 2026
+
+Migrators use the same nonoverlap rule. A low-volume period can be skipped
+without funding an empty round, extending the next allocation's holding period,
+or advancing its published number. Equality remains valid, gaps are accepted,
+and overlaps, empty intervals and reversed intervals are rejected. The holding
+interval remains independent of the future claim deadline.

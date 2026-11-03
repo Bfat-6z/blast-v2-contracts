@@ -195,7 +195,7 @@ impl World {
     fn new(label: &'static str, protocol: [u64; 2]) -> Result<Self> {
         let sui_dir = sui_dir();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture");
-        let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join(label);
+        let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(label);
         let mut h = Harness::new()?;
         let timelock_dir = timelock_dir()?;
         let admin_dir = sui_dir.join("admin");
@@ -215,9 +215,10 @@ impl World {
         let root = one(&admin_published, "blast_acl", "SuperAdminCap");
         let config = one(&published, "launch_config", "LaunchConfig");
         let runtime = one(&published, "runtime_config", "RuntimeConfig");
-        let version = h.wrap_launchpad(blast, &published)?;
         let linked = [core[0], core[1], core[2], (launchpad_dir.as_path(), blast)];
         let (adapter, _) = h.publish(build(&fixture.join("adapter"), &linked, &work)?)?;
+        let (version, _) = h.wrap_launchpad(blast, &published, admin, &admin_published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
+        h.unpause(blast, "blast_fun", admin, &admin_published, version, 7)?;
         let mut templates = Vec::new();
         for decimals in [6u8, 9] {
             templates.push((decimals, build(&generate_template(&work, decimals)?, &linked, &work)?));
@@ -277,54 +278,27 @@ impl World {
         for role in roles {
             witnesses.push(call(&mut builder, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, admin_cap]));
         }
-        let [listing_admin, adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
+        let [_listing_admin, _adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
             witnesses.try_into().expect("one witness per role");
         let config_arg = builder.obj(w.h.shared(config, true))?;
         let version_arg = builder.obj(w.h.shared(version, false))?;
-        let quote_allowed = builder.pure(true)?;
-        call(
-            &mut builder,
-            blast,
-            "launch_config",
-            "set_quote_allowed",
-            vec![sui()],
-            vec![config_arg, version_arg, listing_admin, quote_allowed],
-        );
-        let witness = parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?;
-        let allowed = builder.pure(true)?;
-        call(
-            &mut builder,
-            blast,
-            "launch_config",
-            "set_migration_witness_allowed",
-            vec![witness],
-            vec![config_arg, version_arg, adapter_admin, allowed],
-        );
         let fee = w.bps(&mut builder, 100)?;
-        call(
-            &mut builder,
-            blast,
-            "launch_config",
-            "set_trade_fees",
-            vec![],
-            vec![config_arg, version_arg, fee_admin, fee, fee],
-        );
-        // `LaunchConfig` starts with a zero protocol allocation and its setter rejects an unchanged
-        // value, so only a nonzero allocation is set.
-        if protocol != [0, 0] {
-            let [meme_bps, quote_bps] = protocol;
-            let meme_bps = w.bps(&mut builder, meme_bps)?;
-            let quote_bps = w.bps(&mut builder, quote_bps)?;
-            call(
-                &mut builder,
-                blast,
-                "launch_config",
-                "set_protocol_allocation",
-                vec![],
-                vec![config_arg, version_arg, treasury_admin, meme_bps, quote_bps],
-            );
-        }
+        let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    let next_delay = builder.pure(172_800_000u64)?;
+    call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee_admin, fee, fee, next_delay, admin_clock]);
+        // Every measurement family configures its own allocation, including the zero case.
+        let [meme_bps, quote_bps] = protocol;
+        let meme_bps = w.bps(&mut builder, meme_bps)?;
+        let quote_bps = w.bps(&mut builder, quote_bps)?;
+        let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let next_delay = builder.pure(172_800_000u64)?;
+        call(&mut builder, blast, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_admin, meme_bps, quote_bps, next_delay, admin_clock]);
         w.h.execute(builder.finish())?.assert_success();
+        let changes = vec![
+            (blast, "launch_config", "apply_trade_fees", vec![], config, version),
+            (blast, "launch_config", "apply_protocol_allocation", vec![], config, version),
+        ];
+        blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, changes)?;
 
         Ok(w)
     }
@@ -809,7 +783,7 @@ impl World {
     /// Writes every record and a summary of each record's margins to the isolated output directory.
     fn write(&self) -> Result<()> {
         let dir = std::env::var_os("BLAST_MEASUREMENTS_DIR").map(PathBuf::from).unwrap_or_else(|| {
-            Path::new(env!("CARGO_TARGET_TMPDIR")).join(env!("CARGO_PKG_NAME")).join("launch_measurements")
+            blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("launch_measurements")
         });
         std::fs::create_dir_all(&dir)?;
         let summary: Vec<_> = self

@@ -56,10 +56,19 @@ public(package) fun assert_object_graph(
     registry_id: ID,
     clearing_house_id: ID,
 ) {
-    assert!(self.account_object_id == account_object_id, blast_boosts_aftermath::errors::account_object_mismatch!());
-    assert!(self.account_number == account_number, blast_boosts_aftermath::errors::account_number_mismatch!());
+    assert!(
+        self.account_object_id == account_object_id,
+        blast_boosts_aftermath::errors::account_object_mismatch!()
+    );
+    assert!(
+        self.account_number == account_number,
+        blast_boosts_aftermath::errors::account_number_mismatch!()
+    );
     assert!(self.registry_id == registry_id, blast_boosts_aftermath::errors::registry_mismatch!());
-    assert!(self.clearing_house_id == clearing_house_id, blast_boosts_aftermath::errors::clearing_house_mismatch!());
+    assert!(
+        self.clearing_house_id == clearing_house_id,
+        blast_boosts_aftermath::errors::clearing_house_mismatch!()
+    );
 }
 
 /// Each price-feed storage is the one the bound market prices with now, base
@@ -74,8 +83,10 @@ public(package) fun assert_market_oracles<Collateral>(
 ) {
     let params = clearing_house.market_params();
     assert_market_oracle_ids!(
-        base_oracle.storage_id(), params.base_storage_id(),
-        collateral_oracle.storage_id(), params.collateral_storage_id(),
+        base_oracle.storage_id(),
+        params.base_storage_id(),
+        collateral_oracle.storage_id(),
+        params.collateral_storage_id(),
     );
 }
 
@@ -162,10 +173,20 @@ public(package) fun execute_order<Collateral>(
     self.binding.assert_market_account(account, &clearing_house);
     clearing_house.assert_market_oracles(base_oracle, collateral_oracle);
 
-    self.admin_cap.execute_order_with_cap(
-        account, clearing_house, base_oracle, collateral_oracle, is_ask, base, limit_price, reduce_only,
-        clock, ctx,
-    )
+    self
+        .admin_cap
+        .execute_order_with_cap(
+            account,
+            clearing_house,
+            base_oracle,
+            collateral_oracle,
+            is_ask,
+            base,
+            limit_price,
+            reduce_only,
+            clock,
+            ctx,
+        )
 }
 
 /// One immediate-or-cancel limit order in its own session under an explicit
@@ -190,11 +211,22 @@ public(package) fun execute_order_with_cap<Collateral>(
     ctx: &TxContext,
 ): (ClearingHouse<Collateral>, SessionSummary) {
     let mut session = clearing_house.start_session(
-        admin_cap, account, base_oracle, collateral_oracle, option::none(), clock, ctx,
+        admin_cap,
+        account,
+        base_oracle,
+        collateral_oracle,
+        option::none(),
+        clock,
+        ctx,
     );
     // Immediate-or-cancel never posts, so the venue returns no resting order id.
     let _ = session.place_limit_order(
-        is_ask, base, limit_price, constants::immediate_or_cancel_order_type!(), option::none(), reduce_only,
+        is_ask,
+        base,
+        limit_price,
+        constants::immediate_or_cancel_order_type!(),
+        option::none(),
+        reduce_only,
         option::none(),
     );
 
@@ -223,9 +255,17 @@ public(package) fun withdraw<Collateral>(
     if (free < amount) {
         let required = amount - free;
         let deallocated = clearing_house.deallocate_collateral(
-            &self.admin_cap, account, base_oracle, collateral_oracle, required, clock,
+            &self.admin_cap,
+            account,
+            base_oracle,
+            collateral_oracle,
+            required,
+            clock,
         );
-        assert!(deallocated == required, blast_boosts_aftermath::errors::cash_checkpoint_mismatch!());
+        assert!(
+            deallocated == required,
+            blast_boosts_aftermath::errors::cash_checkpoint_mismatch!()
+        );
     };
 
     account.withdraw_collateral(&self.admin_cap, registry, amount, ctx)
@@ -257,12 +297,22 @@ public(package) fun update_funding_when_due<Collateral>(
     clock: &Clock,
 ) {
     let params = clearing_house.market_params();
-    self.assert_funding_update_inputs(object::id(clearing_house), base_oracle.storage_id(), params.base_storage_id());
+    self.assert_funding_update_inputs(
+        object::id(clearing_house),
+        base_oracle.storage_id(),
+        params.base_storage_id()
+    );
 
     let (funding_update_interval_duration_ms, _) = params.funding_params();
     let funding_last_updated_at_ms = clearing_house.market_state().funding_last_upd_ms();
 
-    if (is_time_to_update_funding(clock.timestamp_ms(), funding_last_updated_at_ms, funding_update_interval_duration_ms)) {
+    if (
+        is_time_to_update_funding(
+            clock.timestamp_ms(),
+            funding_last_updated_at_ms,
+            funding_update_interval_duration_ms
+        )
+    ) {
         clearing_house.update_funding(base_oracle, clock);
     };
 }
@@ -277,8 +327,14 @@ macro fun assert_market_oracle_ids(
     $collateral_storage_id: u32,
     $market_collateral_storage_id: u32,
 ) {
-    assert!($base_storage_id == $market_base_storage_id, blast_boosts_aftermath::errors::base_oracle_mismatch!());
-    assert!($collateral_storage_id == $market_collateral_storage_id, blast_boosts_aftermath::errors::collateral_oracle_mismatch!());
+    assert!(
+        $base_storage_id == $market_base_storage_id,
+        blast_boosts_aftermath::errors::base_oracle_mismatch!()
+    );
+    assert!(
+        $collateral_storage_id == $market_collateral_storage_id,
+        blast_boosts_aftermath::errors::collateral_oracle_mismatch!()
+    );
 }
 
 /// Rejects a market that is not the bound one, then a base oracle storage the
@@ -294,13 +350,22 @@ fun assert_funding_update_inputs(
         self.clearing_house_id == clearing_house_id,
         blast_boosts_aftermath::errors::clearing_house_mismatch!(),
     );
-    assert!(base_storage_id == market_base_storage_id, blast_boosts_aftermath::errors::base_oracle_mismatch!());
+    assert!(
+        base_storage_id == market_base_storage_id,
+        blast_boosts_aftermath::errors::base_oracle_mismatch!()
+    );
 }
 
 /// The account object, its venue number, and its collateral type are the bound ones.
 fun assert_account<Collateral>(self: &Binding, account: &Account<Collateral>) {
-    assert!(object::id(account) == self.account_object_id, blast_boosts_aftermath::errors::account_object_mismatch!());
-    assert!(account.account_id() == self.account_number, blast_boosts_aftermath::errors::account_number_mismatch!());
+    assert!(
+        object::id(account) == self.account_object_id,
+        blast_boosts_aftermath::errors::account_object_mismatch!()
+    );
+    assert!(
+        account.account_id() == self.account_number,
+        blast_boosts_aftermath::errors::account_number_mismatch!()
+    );
 }
 
 /// The account and the market a session touches are the bound ones.
@@ -317,7 +382,10 @@ fun assert_market_account<Collateral>(
 }
 
 fun assert_registry(self: &Binding, registry: &Registry) {
-    assert!(object::id(registry) == self.registry_id, blast_boosts_aftermath::errors::registry_mismatch!());
+    assert!(
+        object::id(registry) == self.registry_id,
+        blast_boosts_aftermath::errors::registry_mismatch!()
+    );
 }
 
 /// Returns whether the venue's cumulative funding is due for an update at `now_at_ms`.
@@ -357,7 +425,12 @@ public fun assert_market_oracle_ids_for_testing(
     collateral_storage_id: u32,
     market_collateral_storage_id: u32,
 ) {
-    assert_market_oracle_ids!(base_storage_id, market_base_storage_id, collateral_storage_id, market_collateral_storage_id);
+    assert_market_oracle_ids!(
+        base_storage_id,
+        market_base_storage_id,
+        collateral_storage_id,
+        market_collateral_storage_id
+    );
 }
 
 #[test_only]
@@ -383,11 +456,18 @@ public fun is_time_to_update_funding_for_testing(
     funding_last_updated_at_ms: u64,
     funding_update_interval_duration_ms: u64,
 ): bool {
-    is_time_to_update_funding(now_at_ms, funding_last_updated_at_ms, funding_update_interval_duration_ms)
+    is_time_to_update_funding(
+        now_at_ms,
+        funding_last_updated_at_ms,
+        funding_update_interval_duration_ms
+    )
 }
 
 #[test_only]
-public fun next_funding_update_time_ms_for_testing(funding_last_updated_at_ms: u64, funding_update_interval_duration_ms: u64): u64 {
+public fun next_funding_update_time_ms_for_testing(
+    funding_last_updated_at_ms: u64,
+    funding_update_interval_duration_ms: u64
+): u64 {
     next_funding_update_at_ms(funding_last_updated_at_ms, funding_update_interval_duration_ms)
 }
 

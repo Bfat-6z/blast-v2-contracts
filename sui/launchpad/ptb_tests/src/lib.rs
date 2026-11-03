@@ -46,6 +46,12 @@ use sui_types::{
 /// The Sui revision `Cargo.toml` pins for the simulator. The CLI that compiles the packages must
 /// be built from the same revision, or bytecode and framework could disagree.
 const PINNED_SUI_REVISION: &str = "51d177ad7d65";
+pub const TEST_GENESIS_RECIPIENT: &str = "0xa";
+
+/// Keep fixture output with its checkout even when Cargo's compiler cache is shared.
+pub fn test_work_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("target/ptb-fixtures")
+}
 
 /// Compiled modules and the on-chain packages they link against.
 #[derive(Clone)]
@@ -61,6 +67,7 @@ static BUILD_LOCK: Mutex<()> = Mutex::new(());
 /// published at in the simulator, so the bytecode links against those IDs.
 pub fn build(package: &Path, published: &[(&Path, ObjectID)], work: &Path) -> Result<CompiledPackage> {
     let _build = BUILD_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _genesis = GenesisFixture::configure(package)?;
     let mut command = sui_move_build(package, work)?;
     command.args(["--dump", "-e", "mainnet", "--no-tree-shaking"]);
     if !published.is_empty() {
@@ -120,6 +127,7 @@ pub fn build_unlinked(package: &Path, local: &[&str], work: &Path) -> Result<Unl
         .find_map(|line| line.strip_prefix("name = \""))
         .and_then(|rest| rest.strip_suffix('"'))
         .context("package name")?;
+    let _genesis = GenesisFixture::configure(package)?;
     let mut command = sui_move_build(package, work)?;
     let output = command.args(["-e", "mainnet"]).output().context("run the sui CLI")?;
     if !output.status.success() {
@@ -191,7 +199,41 @@ impl UnlinkedPackage {
     }
 }
 
-/// A `sui move build` command for `package` under the pinned CLI and an offline client config.
+/// Compile simulator packages with an explicit nonzero genesis recipient, restoring the source.
+/// Callers hold BUILD_LOCK until compilation completes.
+struct GenesisFixture { path: PathBuf, original: String }
+impl GenesisFixture {
+    fn configure(package: &Path) -> Result<Self> {
+        let path = package.join("Move.toml");
+        let original = std::fs::read_to_string(&path)?;
+        let fixture = original.replace("blast_treasury = \"0x0\"", &format!("blast_treasury = \"{TEST_GENESIS_RECIPIENT}\""))
+            .replace("blast_lp_fee_destination = \"0x0\"", &format!("blast_lp_fee_destination = \"{TEST_GENESIS_RECIPIENT}\""));
+        std::fs::write(&path, fixture)?;
+        Ok(Self { path, original })
+    }
+}
+impl Drop for GenesisFixture {
+    fn drop(&mut self) { std::fs::write(&self.path, &self.original).expect("restore genesis fixture manifest"); }
+}
+
+/// Advance the simulator through the administrative delay, then execute public apply calls.
+pub fn apply_admin_changes(
+    h: &mut Harness,
+    changes: Vec<(ObjectID, &str, &str, Vec<sui_types::TypeTag>, ObjectID, ObjectID)>,
+) -> Result<()> {
+    h.sim.advance_clock(std::time::Duration::from_millis(172_800_000));
+    let mut b = ProgrammableTransactionBuilder::new();
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    for (package, module, function, types, object, version) in changes {
+        let object = b.obj(h.shared(object, true))?;
+        let version = b.obj(h.shared(version, false))?;
+        call(&mut b, package, module, function, types, vec![object, version, clock]);
+    }
+    h.execute(b.finish())?.assert_success();
+    Ok(())
+}
+
+/// A `sui move build` command under the pinned CLI and an offline client config.
 fn sui_move_build(package: &Path, work: &Path) -> Result<Command> {
     let binary = std::env::var("SUI_BINARY").unwrap_or_else(|_| "sui".into());
     let version = Command::new(&binary).arg("--version").output().context("run the sui CLI")?;
@@ -439,10 +481,12 @@ impl Harness {
         Ok((published[0], outcome))
     }
 
-    /// Seals the publication capabilities before any launchpad configuration or launch.
-    pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
+    /// Configures initial admission and seals custody; operations remain paused until release.
+    pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome, admin: ObjectID, admin_publication: &Outcome, quote: sui_types::TypeTag, witness: sui_types::TypeTag) -> Result<(ObjectID, ObjectID)> {
         assert!(publication.created(self, "blast_fun", "PackageVersion").is_empty());
-        let bootstrap = publication.created(self, "blast_fun", "Bootstrap");
+        let config_id = publication.created(self, "launch_config", "LaunchConfig")[0];
+        let runtime_id = publication.created(self, "runtime_config", "RuntimeConfig")[0];
+        let bootstrap = publication.created(self, "blast_fun", "Publication");
         let cap = publication.created(self, "package", "UpgradeCap");
         assert_eq!(bootstrap.len(), 1);
         assert_eq!(cap.len(), 1);
@@ -460,19 +504,162 @@ impl Harness {
         assert_eq!(outcome.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>(), cap);
         let version = outcome.created(self, "blast_fun", "PackageVersion");
         assert_eq!(version.len(), 1);
-        let admin = outcome.created(self, "package_admin", "PackageAdmin");
-        assert_eq!(admin.len(), 1);
-        self.shared(admin[0], false);
-        let (admin_id, sealed_publisher, sealed_caps): (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>) =
-            bcs::from_bytes(&self.contents(admin[0]))?;
-        assert_eq!(admin_id, admin[0]);
+        let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
+        assert_eq!(package_admin.len(), 1);
+        self.shared(package_admin[0], false);
+        #[derive(serde::Deserialize)]
+        enum UpgradeAction { Upgrade { _digest: Vec<u8> }, MakeImmutable, DelayOnly }
+        let (admin_id, sealed_publisher, sealed_caps, delay_ms, pending):
+            (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, u64, Option<(UpgradeAction, u64, u64)>) =
+            bcs::from_bytes(&self.contents(package_admin[0])).context("decode fresh PackageAdmin")?;
+        assert!(pending.is_none(), "fresh custody has no scheduled action");
+        assert_eq!(delay_ms, 0);
+        assert_eq!(admin_id, package_admin[0]);
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
         assert_eq!(bcs::to_bytes(&sealed_caps[0])?, cap_contents);
-        let (version_id, active_generation): (ObjectID, u64) = bcs::from_bytes(&self.contents(version[0]))?;
-        assert_eq!((version_id, active_generation), (version[0], generation));
+        let (version_id, paused, active_generation): (ObjectID, u8, u64) =
+            bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
+        assert_eq!((version_id, paused, active_generation), (version[0], 7, generation));
+        let (_, _, _, treasury): (ObjectID, Vec<u8>, (u64, u64, Option<(u64, u64, u64)>), (SuiAddress, u64, Option<(SuiAddress, u64, u64)>)) = bcs::from_bytes(&self.contents(runtime_id))?;
+        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "UpgradeAdmin", "FeeAdmin", "TreasuryAdmin"])?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let config = b.obj(self.shared(config_id, true))?;
+        let version_arg = b.obj(self.shared(version[0], false))?;
+        let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let listing = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "ListingAdmin")?;
+        let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "AdapterAdmin")?;
+        let allowed = b.pure(true)?;
+        call(&mut b, package, "launch_config", "set_quote_allowed", vec![quote], vec![config, version_arg, listing, allowed]);
+        call(&mut b, package, "launch_config", "schedule_migration_witness", vec![witness.clone()], vec![config, version_arg, adapter, clock]);
+        call(&mut b, package, "launch_config", "apply_migration_witness", vec![witness], vec![config, version_arg, clock]);
+        let delay = b.pure(172_800_000u64)?;
+        call(&mut b, package, "launch_config", "schedule_migration_delay", vec![], vec![config, version_arg, adapter, delay, clock]);
+        call(&mut b, package, "launch_config", "apply_migration_delay", vec![], vec![config, version_arg, clock]);
+        self.execute(b.finish())?.assert_success();
+        // Set independent operation notices during publication setup using ordinary ACL roles.
+        let mut b = ProgrammableTransactionBuilder::new();
+        let config_arg = b.obj(self.shared(config_id, true))?;
+        let runtime = b.obj(self.shared(runtime_id, true))?;
+        let version_arg = b.obj(self.shared(version[0], false))?;
+        let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let fee = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "FeeAdmin")?;
+        let treasury_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "TreasuryAdmin")?;
+        let zero = b.pure(0u64)?;
+        let delay = b.pure(172_800_000u64)?;
+        let destination = b.pure(treasury.0)?;
+        call(&mut b, package, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, zero, delay, clock]);
+        call(&mut b, package, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
+        call(&mut b, package, "runtime_config", "schedule_treasury", vec![], vec![runtime, version_arg, treasury_role, destination, delay, clock]);
+        call(&mut b, package, "runtime_config", "apply_treasury", vec![], vec![runtime, version_arg, clock]);
+        self.execute(b.finish())?.assert_success();
+        self.configure_upgrade_delay(package, "blast_fun", admin, admin_publication, config_cap, version[0], package_admin[0], 172_800_000)?;
+        Ok((version[0], package_admin[0]))
+    }
 
+    /// Creates a real ACL administrator for initial zero-delay configuration.
+    pub fn configuration_admin(&mut self, admin: ObjectID, publication: &Outcome, package: ObjectID,
+        domain: &str, roles: &[&str],
+    ) -> Result<ObjectID> {
+        let acl = publication.created(self, "blast_acl", "ACL")[0];
+        let root = publication.created(self, "blast_acl", "SuperAdminCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, true))?;
+        let root_arg = b.obj(self.owned(root))?;
+        let recipient = b.pure(self.sender)?;
+        call(&mut b, admin, "blast_acl", "grant_admin", vec![], vec![acl_arg, root_arg, recipient]);
+        let granted = self.impersonate_cap_owner(root, b.finish())?;
+        granted.assert_success();
+        let cap = granted.created(self, "blast_acl", "AdminCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, true))?;
+        let root_arg = b.obj(self.owned(root))?;
+        let cap_id = b.pure(cap)?;
+        for role in roles {
+            let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::{role}"))?;
+            call(&mut b, admin, "blast_acl", "grant_role", vec![role], vec![acl_arg, root_arg, cap_id]);
+        }
+        self.impersonate_cap_owner(root, b.finish())?.assert_success();
+        Ok(cap)
+    }
+
+    pub fn configuration_witness(&self, b: &mut ProgrammableTransactionBuilder, admin: ObjectID,
+        publication: &Outcome, cap: ObjectID, package: ObjectID, domain: &str, role: &str,
+    ) -> Result<Argument> {
+        let acl = publication.created(self, "blast_acl", "ACL")[0];
+        let acl_arg = b.obj(self.shared(acl, false))?;
+        let cap_arg = b.obj(self.owned(cap))?;
+        let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::{role}"))?;
+        Ok(call(b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, cap_arg]))
+    }
+
+    /// Schedules and applies through real ACL authority; only usable at the old policy's readiness.
+    pub fn configure_upgrade_delay(&mut self, package: ObjectID, marker: &str, admin: ObjectID,
+        publication: &Outcome, cap: ObjectID, version: ObjectID, custody: ObjectID, delay_ms: u64,
+    ) -> Result<()> {
+        let domain = if marker == "blast_presale_package" { "blast_presale_domain" } else { "blast_fun_domain" };
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.configuration_witness(&mut b, admin, publication, cap, package, domain, "UpgradeAdmin")?;
+        let version_arg = b.obj(self.shared(version, true))?;
+        let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        let delay = b.pure(delay_ms)?;
+        let custody = b.obj(self.shared(custody, true))?;
+        call(&mut b, package, "package_admin", "schedule_upgrade_delay", vec![], vec![custody, version_arg, witness, delay, clock]);
+        call(&mut b, package, "package_admin", "apply_upgrade_delay", vec![], vec![custody, version_arg, clock]);
+        self.execute(b.finish())?.assert_success();
+        Ok(())
+    }
+
+    /// Migrators shares no operational version until its one-time Publication enters custody.
+    pub fn wrap_migrators(&mut self, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
+        assert!(publication.created(self, "blast_fun_migrators", "PackageVersion").is_empty());
+        let bootstrap = publication.created(self, "blast_fun_migrators", "Publication")[0];
+        let cap = publication.created(self, "package", "UpgradeCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let bootstrap_arg = b.obj(self.owned(bootstrap))?;
+        let cap_arg = b.obj(self.owned(cap))?;
+        call(&mut b, package, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
+        let outcome = self.execute(b.finish())?;
+        outcome.assert_success();
+        assert!(outcome.effects.deleted().iter().any(|object| object.0 == bootstrap));
+        let version = outcome.created(self, "blast_fun_migrators", "PackageVersion");
+        assert_eq!(version.len(), 1);
         Ok(version[0])
+    }
+
+    /// Uses the real ACL and immediate UnpauseAdmin path without advancing the Clock.
+    pub fn unpause(&mut self, package: ObjectID, marker: &str, admin: ObjectID,
+        publication: &Outcome, version: ObjectID, bits: u8,
+    ) -> Result<()> {
+        let acl = publication.created(self, "blast_acl", "ACL")[0];
+        let root = publication.created(self, "blast_acl", "SuperAdminCap")[0];
+        let domain = if marker == "blast_fun" { "blast_fun_domain" } else { "blast_presale_domain" };
+        let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::UnpauseAdmin"))?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, true))?;
+        let root_arg = b.obj(self.owned(root))?;
+        let recipient = b.pure(self.sender)?;
+        call(&mut b, admin, "blast_acl", "grant_admin", vec![], vec![acl_arg, root_arg, recipient]);
+        let granted = self.impersonate_cap_owner(root, b.finish())?;
+        granted.assert_success();
+        let cap = granted.created(self, "blast_acl", "AdminCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, true))?;
+        let root_arg = b.obj(self.owned(root))?;
+        let cap_id = b.pure(cap)?;
+        call(&mut b, admin, "blast_acl", "grant_role", vec![role.clone()], vec![acl_arg, root_arg, cap_id]);
+        self.impersonate_cap_owner(root, b.finish())?.assert_success();
+        let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl_arg = b.obj(self.shared(acl, false))?;
+        let cap_arg = b.obj(self.owned(cap))?;
+        let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, cap_arg]);
+        let version_arg = b.obj(self.shared(version, true))?;
+        let bits = b.pure(bits)?;
+        call(&mut b, package, marker, "unpause", vec![], vec![version_arg, witness, bits]);
+        self.execute(b.finish())?.assert_success();
+        assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
+        Ok(())
     }
 
     pub fn snapshot(&self, objects: &[ObjectID], owners: &[SuiAddress]) -> Snapshot {

@@ -870,19 +870,35 @@ fun issue_and_share_with_policy<Product>(
 }
 
 /// Activates on the standard 2x seed: 1,100 collateral of equity, a 100 reserve, 2,000 of notional held as base.
-fun activate<Product>(self: &mut Fixture, issuance: VaultIssuance<Product, SUI>): (Vault<Product, SUI>, u64) {
+fun activate<Product>(
+    self: &mut Fixture,
+    issuance: VaultIssuance<Product, SUI>
+): (Vault<Product, SUI>, u64) {
     self.activate_at(issuance, 20_000)
 }
 
 /// Activates on a seed whose notional is `target_bps` of the seed NAV, at the unit price.
-fun activate_at<Product>(self: &mut Fixture, issuance: VaultIssuance<Product, SUI>, target_bps: u64): (Vault<Product, SUI>, u64) {
+fun activate_at<Product>(
+    self: &mut Fixture,
+    issuance: VaultIssuance<Product, SUI>,
+    target_bps: u64
+): (Vault<Product, SUI>, u64) {
     let seeded = observation::new_position(
-        SEED_EQUITY, SEED_NAV * target_bps / 10_000 * BASE_PER_NOTIONAL, LOT_SIZE, issuance.issuance().seed_side(),
-        observation::new_price(PRICE, 0, REFERENCE_AT_MS), observation::new_price(PRICE, 0, REFERENCE_AT_MS), PRICE,
+        SEED_EQUITY,
+        SEED_NAV * target_bps / 10_000 * BASE_PER_NOTIONAL,
+        LOT_SIZE,
+        issuance.issuance().seed_side(),
+        observation::new_price(PRICE, 0, REFERENCE_AT_MS),
+        observation::new_price(PRICE, 0, REFERENCE_AT_MS),
+        PRICE,
     );
     let venue_account = fixture_venue_account(self.scenario.ctx());
     let (vault, seed_nav, _) = issuance.activate(
-        seeded, SEED_RESERVE, venue_account, REFERENCE_AT_MS, self.scenario.ctx(),
+        seeded,
+        SEED_RESERVE,
+        venue_account,
+        REFERENCE_AT_MS,
+        self.scenario.ctx(),
     );
     (vault, seed_nav)
 }

@@ -14,18 +14,22 @@ fun the_leverage_limit_rounds_up_and_treats_a_flat_position_as_zero() {
     assert!(!accounting_math::is_accounting_leverage_below_limit(100, 100, 0, 10_000));
     assert!(accounting_math::is_accounting_leverage_below_limit(100, 100, 0, 10_001));
     assert!(!accounting_math::is_accounting_leverage_below_limit(200, 100, 0, 20_000));
-    assert!(!accounting_math::is_accounting_leverage_below_limit(
-        200_000_001,
-        100_000_000,
-        0,
-        20_001,
-    ));
-    assert!(accounting_math::is_accounting_leverage_below_limit(
-        200_000_001,
-        100_000_000,
-        0,
-        20_002,
-    ));
+    assert!(
+        !accounting_math::is_accounting_leverage_below_limit(
+            200_000_001,
+            100_000_000,
+            0,
+            20_001,
+        )
+    );
+    assert!(
+        accounting_math::is_accounting_leverage_below_limit(
+            200_000_001,
+            100_000_000,
+            0,
+            20_002,
+        )
+    );
     assert!(!accounting_math::is_accounting_leverage_below_limit(1, 10_000, 0, 1));
     assert!(!accounting_math::is_accounting_leverage_below_limit(1, 10_001, 0, 1));
     assert!(accounting_math::is_accounting_leverage_below_limit(1, 10_001, 0, 2));
@@ -146,8 +150,17 @@ fun the_mint_base_delta_supports_maximum_supported_values() {
 /// Pins the calibrated successor profile's smallest net deposit in collateral atoms.
 #[test]
 fun calibrated_minimum_still_admits_a_small_mint_and_partial_redemption() {
-    assert_eq!(accounting_math::mint_base_to_buy_down(73_644, 8_810_000, 998_147, 10_000, 65), 650_000);
-    let (minimum, maximum) = accounting_math::redemption_base_bounds(73_643, 8_810_000, 998_147, 10_000, 65);
+    assert_eq!(
+        accounting_math::mint_base_to_buy_down(73_644, 8_810_000, 998_147, 10_000, 65),
+        650_000
+    );
+    let (minimum, maximum) = accounting_math::redemption_base_bounds(
+        73_643,
+        8_810_000,
+        998_147,
+        10_000,
+        65
+    );
     assert_eq!(minimum, 8_160_000);
     assert_eq!(maximum, 8_160_000);
     assert!(accounting_math::is_base_above_min_order(8_810_000, 10_000, 65));

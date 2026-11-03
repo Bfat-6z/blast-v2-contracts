@@ -8,10 +8,6 @@
 /// vault and can fail after the launch has migrated.
 module ptb_adapter::mock_adapter;
 
-// === Errors ===
-
-const EAdapterFailure: u64 = 0;
-
 // === Public Types ===
 
 /// Adapter identity only this module can construct.
@@ -51,6 +47,10 @@ public fun migrate<Meme>(
     transfer::share_object(MockVault { id: object::new(ctx), meme, quote });
     assert!(!fail, EAdapterFailure);
 }
+
+// === Errors ===
+
+const EAdapterFailure: u64 = 0;
 
 // === Imports ===
 

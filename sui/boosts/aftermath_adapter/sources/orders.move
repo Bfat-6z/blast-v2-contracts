@@ -58,15 +58,30 @@ public(package) fun seed_position<Product, Collateral>(
 ): ClearingHouse<Collateral> {
     binding.update_funding_when_due(&mut clearing_house, base_oracle, clock);
 
-    let (flat_observation, _) = binding.capture(
-        account, registry, &clearing_house, base_oracle, collateral_oracle, clock,
-    ).into_observation();
+    let (flat_observation, _) = binding
+        .capture(
+            account,
+            registry,
+            &clearing_house,
+            base_oracle,
+            collateral_oracle,
+            clock,
+        )
+        .into_observation();
     let (target_base, max_order_base, seed) = issuance.seed_terms(flat_observation, seed_reserve);
 
     issuance.open_seed_position(
-        account, admin_cap, clearing_house, base_oracle, collateral_oracle,
-        order_sizes(target_base, max_order_base), seed.lot_size(), seed.base_price(), seed.collateral_price(),
-        clock, ctx,
+        account,
+        admin_cap,
+        clearing_house,
+        base_oracle,
+        collateral_oracle,
+        order_sizes(target_base, max_order_base),
+        seed.lot_size(),
+        seed.base_price(),
+        seed.collateral_price(),
+        clock,
+        ctx,
     )
 }
 
@@ -74,12 +89,18 @@ public(package) fun seed_position<Product, Collateral>(
 
 /// The terms of an operation that increases the vault's side: direction from
 /// policy, the live cap, and the plan's sealed prices.
-public(package) fun increasing_terms<Product, Collateral>(vault: &Vault<Product, Collateral>, position: ActivePosition): OrderTerms {
+public(package) fun increasing_terms<Product, Collateral>(
+    vault: &Vault<Product, Collateral>,
+    position: ActivePosition
+): OrderTerms {
     vault.active_terms(false, position)
 }
 
 /// The terms of a reduce-only operation against the vault's side, otherwise as `increasing_terms`.
-public(package) fun reducing_terms<Product, Collateral>(vault: &Vault<Product, Collateral>, position: ActivePosition): OrderTerms {
+public(package) fun reducing_terms<Product, Collateral>(
+    vault: &Vault<Product, Collateral>,
+    position: ActivePosition
+): OrderTerms {
     vault.active_terms(true, position)
 }
 
@@ -92,14 +113,25 @@ public(package) fun unwind_terms<Product, Collateral>(
     now_at_ms: u64,
 ): (OrderTerms, u64, Checkpoint) {
     let before = capture.checkpoint();
-    let (side, max_order_base, base_price, collateral_price, bound) = vault.state().unwind_constraints(
-        capture.base_price_observation(), capture.collateral_price_observation(), before.lot_size(), now_at_ms,
-    );
+    let (side, max_order_base, base_price, collateral_price, bound) = vault
+        .state()
+        .unwind_constraints(
+            capture.base_price_observation(),
+            capture.collateral_price_observation(),
+            before.lot_size(),
+            now_at_ms,
+        );
 
     let terms = OrderTerms {
-        is_ask: !opens_with_ask(side), reduce_only: true, max_order_base,
-        lot_size: before.lot_size(), base_price, collateral_price, bound,
+        is_ask: !opens_with_ask(side),
+        reduce_only: true,
+        max_order_base,
+        lot_size: before.lot_size(),
+        base_price,
+        collateral_price,
+        bound,
     };
+
     (terms, before.base_to_close(side), before)
 }
 
@@ -114,7 +146,9 @@ public(package) fun base_to_close(self: &Checkpoint, side: PositionSide): u64 {
 
 /// Reads the ordinary taker fee for increase sizing. Only emergency reductions
 /// can use priority gas; those size and prove progress from actual post-fill equity.
-public(package) fun live_venue_fee_bps<Collateral>(clearing_house: &ClearingHouse<Collateral>): u64 {
+public(package) fun live_venue_fee_bps<Collateral>(
+    clearing_house: &ClearingHouse<Collateral>
+): u64 {
     venue_fee_bound(ifixed_math::nonnegative_rate(clearing_house.market_params().taker_fee()))
 }
 
@@ -140,12 +174,24 @@ public(package) fun fill_orders<Product, Collateral>(
     while (remaining > 0) {
         let requested = terms.next_order_size(remaining, index);
         let (next_market, receipt) = vault.place_order(
-            account, clearing_house, base_oracle, collateral_oracle, &terms, requested, terms.bound, clock, ctx,
+            account,
+            clearing_house,
+            base_oracle,
+            collateral_oracle,
+            &terms,
+            requested,
+            terms.bound,
+            clock,
+            ctx,
         );
         clearing_house = next_market;
 
         let after_checkpoint = binding.capture_checkpoint(
-            account, registry, &clearing_house, base_oracle, collateral_oracle,
+            account,
+            registry,
+            &clearing_house,
+            base_oracle,
+            collateral_oracle,
         );
         let (filled, _) = receipt.proven_fill(&terms, &checkpoint, &after_checkpoint);
 
@@ -182,14 +228,28 @@ public(package) fun rebalance_orders<Product, Collateral>(
         if (order.order_base() == 0) break;
 
         let (next_market, receipt) = vault.place_order(
-            account, clearing_house, base_oracle, collateral_oracle, terms, order.order_base(),
-            order.bound(), clock, ctx,
+            account,
+            clearing_house,
+            base_oracle,
+            collateral_oracle,
+            terms,
+            order.order_base(),
+            order.bound(),
+            clock,
+            ctx,
         );
         clearing_house = next_market;
 
-        let (after, after_checkpoint) = binding.capture(
-            account, registry, &clearing_house, base_oracle, collateral_oracle, clock,
-        ).into_rebalance_observation(plan);
+        let (after, after_checkpoint) = binding
+            .capture(
+                account,
+                registry,
+                &clearing_house,
+                base_oracle,
+                collateral_oracle,
+                clock,
+            )
+            .into_rebalance_observation(plan);
         let (filled, _) = receipt.proven_fill(terms, &checkpoint, &after_checkpoint);
         vault.state().accept_rebalance_fill(plan, order, after, filled, clock.timestamp_ms());
 
@@ -217,12 +277,28 @@ public(package) fun realize_profit_orders<Product, Collateral>(
     ctx: &TxContext,
 ): ClearingHouse<Collateral> {
     let (clearing_house, reduced) = vault.fill_exact_order(
-        account, registry, clearing_house, base_oracle, collateral_oracle,
-        &before, vault.reducing_terms(position), base, clock, ctx,
+        account,
+        registry,
+        clearing_house,
+        base_oracle,
+        collateral_oracle,
+        &before,
+        vault.reducing_terms(position),
+        base,
+        clock,
+        ctx,
     );
     let (clearing_house, _) = vault.fill_exact_order(
-        account, registry, clearing_house, base_oracle, collateral_oracle,
-        &reduced, vault.increasing_terms(position), base, clock, ctx,
+        account,
+        registry,
+        clearing_house,
+        base_oracle,
+        collateral_oracle,
+        &reduced,
+        vault.increasing_terms(position),
+        base,
+        clock,
+        ctx,
     );
 
     clearing_house
@@ -254,19 +330,33 @@ public(package) fun close_orders<Product, Collateral>(
     while (orders < constants::max_active_orders!() && remaining > 0) {
         let requested = terms.next_order_size(remaining, orders);
         let (next_market, receipt) = vault.place_order(
-            account, clearing_house, base_oracle, collateral_oracle, terms, requested, terms.bound, clock, ctx,
+            account,
+            clearing_house,
+            base_oracle,
+            collateral_oracle,
+            terms,
+            requested,
+            terms.bound,
+            clock,
+            ctx,
         );
         clearing_house = next_market;
 
         let after = binding.capture_checkpoint(
-            account, registry, &clearing_house, base_oracle, collateral_oracle,
+            account,
+            registry,
+            &clearing_house,
+            base_oracle,
+            collateral_oracle,
         );
         let (filled, quote) = receipt.proven_fill(terms, &checkpoint, &after);
 
         checkpoint = after;
         remaining = remaining - filled;
-        filled_quote = filled_quote.checked_add(quote)
-            .destroy_or!(abort blast_boosts_aftermath::errors::normalization_overflow!());
+        filled_quote =
+            filled_quote
+                .checked_add(quote)
+                .destroy_or!(abort blast_boosts_aftermath::errors::normalization_overflow!());
         orders = orders + 1;
     };
 
@@ -304,28 +394,51 @@ fun open_seed_position<Product, Collateral>(
     while (!orders.is_empty()) {
         let order_base = orders.pop_back();
         let limit_price = bound.limit_price(
-            reference_base_price, aftermath_order_side, clearing_house.market_params().tick_size(),
+            reference_base_price,
+            aftermath_order_side,
+            clearing_house.market_params().tick_size(),
         );
         let (next_clearing_house, summary) = admin_cap.execute_order_with_cap(
-            account, clearing_house, base_oracle, collateral_oracle,
-            aftermath_order_side, order_base, limit_price, false, clock, ctx,
+            account,
+            clearing_house,
+            base_oracle,
+            collateral_oracle,
+            aftermath_order_side,
+            order_base,
+            limit_price,
+            false,
+            clock,
+            ctx,
         );
         clearing_house = next_clearing_house;
 
         assert_seed_fill(
-            is_long, order_base, lot_size,
-            summary.base_filled_bid(), summary.base_filled_ask(),
-            summary.posted_orders(), summary.liquidated_size(),
+            is_long,
+            order_base,
+            lot_size,
+            summary.base_filled_bid(),
+            summary.base_filled_ask(),
+            summary.posted_orders(),
+            summary.liquidated_size(),
             summary.liquidation_bad_debt(),
         );
         let executed = execution_price(summary.execution_price(aftermath_order_side), is_long);
         bound.assert_execution(reference_base_price, executed);
         let (_, filled_quote) = summary.filled_base_and_quote(aftermath_order_side);
-        issuance.assert_seed_order_notional_allowed(actual_fill_notional(filled_quote, collateral_price));
+        issuance.assert_seed_order_notional_allowed(
+            actual_fill_notional(filled_quote, collateral_price)
+        );
 
         events::order_filled<Product>(
-            object::id(account), aftermath_order_side, false, order_base, order_base, filled_quote,
-            reference_base_price, limit_price, executed,
+            object::id(account),
+            aftermath_order_side,
+            false,
+            order_base,
+            order_base,
+            filled_quote,
+            reference_base_price,
+            limit_price,
+            executed,
         );
     };
 
@@ -343,12 +456,24 @@ fun assert_seed_fill(
     liquidated_size: u64,
     bad_debt: u256,
 ) {
-    let filled = active_fill(is_bid, order_base, lot_size, filled_bid, filled_ask, posted_orders, liquidated_size, bad_debt);
+    let filled = active_fill(
+        is_bid,
+        order_base,
+        lot_size,
+        filled_bid,
+        filled_ask,
+        posted_orders,
+        liquidated_size,
+        bad_debt
+    );
     assert!(filled == order_base, blast_boosts_aftermath::errors::initialization_fill_mismatch!());
 }
 
 fun initialization_order_count(target_base: u64, max_order_base: u64): u64 {
-    assert!(max_order_base > 0, blast_boosts_aftermath::errors::invalid_initialization_order_size!());
+    assert!(
+        max_order_base > 0,
+        blast_boosts_aftermath::errors::invalid_initialization_order_size!()
+    );
 
     let count = target_base.div_ceil(max_order_base);
     assert!(
@@ -383,13 +508,21 @@ fun order_sizes(target_base: u64, max_order_base: u64): vector<u64> {
 
 /// Direction from policy, the live cap, and the plan's sealed prices; a
 /// reduction faces the side that increases.
-fun active_terms<Product, Collateral>(vault: &Vault<Product, Collateral>, reduce_only: bool, position: ActivePosition): OrderTerms {
+fun active_terms<Product, Collateral>(
+    vault: &Vault<Product, Collateral>,
+    reduce_only: bool,
+    position: ActivePosition
+): OrderTerms {
     let side = vault.state().side();
     let is_ask = if (reduce_only) { !opens_with_ask(side) } else { opens_with_ask(side) };
 
     OrderTerms {
-        is_ask, reduce_only, max_order_base: vault.state().max_order_base(&position, reduce_only),
-        lot_size: position.lot_size(), base_price: position.base_price(), collateral_price: position.collateral_price(),
+        is_ask,
+        reduce_only,
+        max_order_base: vault.state().max_order_base(&position, reduce_only),
+        lot_size: position.lot_size(),
+        base_price: position.base_price(),
+        collateral_price: position.collateral_price(),
         bound: vault.state().execution_bound(),
     }
 }
@@ -397,7 +530,10 @@ fun active_terms<Product, Collateral>(vault: &Vault<Product, Collateral>, reduce
 /// Rounds the taker fee up to whole basis points. Negative rebates are ignored
 /// conservatively; callers provide no fee input.
 fun venue_fee_bound(taker_fee: u256): u64 {
-    assert!(taker_fee <= constants::ifixed_one!(), blast_boosts_aftermath::errors::venue_fee_unusable!());
+    assert!(
+        taker_fee <= constants::ifixed_one!(),
+        blast_boosts_aftermath::errors::venue_fee_unusable!()
+    );
 
     taker_fee.div_ceil(constants::ifixed_per_basis_point!()) as u64
 }
@@ -409,7 +545,10 @@ fun opens_with_ask(position_side: PositionSide): bool {
 
 /// Bounds each next whole-lot request without re-rounding the sealed aggregate.
 fun active_order_size(remaining: u64, max_order_base: u64, lot_size: u64, index: u64): u64 {
-    assert!(index < constants::max_active_orders!(), blast_boosts_aftermath::errors::active_order_count_exceeded!());
+    assert!(
+        index < constants::max_active_orders!(),
+        blast_boosts_aftermath::errors::active_order_count_exceeded!()
+    );
     assert!(
         max_order_base > 0 && remaining > 0 && lot_size > 0 && remaining % lot_size == 0,
         blast_boosts_aftermath::errors::fill_mismatch!(),
@@ -452,13 +591,30 @@ fun fill_exact_order<Product, Collateral>(
     ctx: &TxContext,
 ): (ClearingHouse<Collateral>, Checkpoint) {
     assert!(base <= terms.max_order_base, blast_boosts_aftermath::errors::fill_mismatch!());
+
     let (clearing_house, receipt) = vault.place_order(
-        account, clearing_house, base_oracle, collateral_oracle, &terms, base, terms.bound, clock, ctx,
+        account,
+        clearing_house,
+        base_oracle,
+        collateral_oracle,
+        &terms,
+        base,
+        terms.bound,
+        clock,
+        ctx,
     );
     assert!(receipt.filled == base, blast_boosts_aftermath::errors::fill_mismatch!());
-    let after = vault.venue().binding().capture_checkpoint(
-        account, registry, &clearing_house, base_oracle, collateral_oracle,
-    );
+
+    let after = vault
+        .venue()
+        .binding()
+        .capture_checkpoint(
+            account,
+            registry,
+            &clearing_house,
+            base_oracle,
+            collateral_oracle,
+        );
     let (_, _) = receipt.proven_fill(&terms, before, &after);
 
     (clearing_house, after)
@@ -489,27 +645,59 @@ fun place_order<Product, Collateral>(
     ctx: &TxContext,
 ): (ClearingHouse<Collateral>, FillReceipt) {
     let OrderTerms { is_ask, reduce_only, lot_size, base_price, collateral_price, .. } = *terms;
-    let limit_price = bound.limit_price(base_price, is_ask, clearing_house.market_params().tick_size());
-
-    let (clearing_house, summary) = vault.venue().execute_order(
-        account, clearing_house, base_oracle, collateral_oracle, is_ask, requested, limit_price, reduce_only, clock, ctx,
+    let limit_price = bound.limit_price(
+        base_price,
+        is_ask,
+        clearing_house.market_params().tick_size()
     );
 
+    let (clearing_house, summary) = vault
+        .venue()
+        .execute_order(
+            account,
+            clearing_house,
+            base_oracle,
+            collateral_oracle,
+            is_ask,
+            requested,
+            limit_price,
+            reduce_only,
+            clock,
+            ctx,
+        );
+
     let filled = active_fill(
-        !is_ask, requested, lot_size,
-        summary.base_filled_bid(), summary.base_filled_ask(),
-        summary.posted_orders(), summary.liquidated_size(),
+        !is_ask,
+        requested,
+        lot_size,
+        summary.base_filled_bid(),
+        summary.base_filled_ask(),
+        summary.posted_orders(),
+        summary.liquidated_size(),
         summary.liquidation_bad_debt(),
     );
     let (_, filled_quote) = summary.filled_base_and_quote(is_ask);
     let executed = execution_price(summary.execution_price(is_ask), !is_ask);
-    vault.state().assert_order_notional_allowed(
-        actual_fill_notional(filled_quote, collateral_price), filled, lot_size, reduce_only,
-    );
+    vault
+        .state()
+        .assert_order_notional_allowed(
+            actual_fill_notional(filled_quote, collateral_price),
+            filled,
+            lot_size,
+            reduce_only,
+        );
     bound.assert_execution(base_price, executed);
 
     events::order_filled<Product>(
-        object::id(account), is_ask, reduce_only, requested, filled, filled_quote, base_price, limit_price, executed,
+        object::id(account),
+        is_ask,
+        reduce_only,
+        requested,
+        filled,
+        filled_quote,
+        base_price,
+        limit_price,
+        executed,
     );
 
     (clearing_house, FillReceipt { filled, filled_quote })
@@ -518,7 +706,12 @@ fun place_order<Product, Collateral>(
 /// Consumes the receipt and proves the checkpoint moved as this fill
 /// did: an opening trade proves base and quote, a reduction proves base.
 /// Returns the checked base atoms and raw quote for the caller's accounting.
-fun proven_fill(self: FillReceipt, terms: &OrderTerms, before: &Checkpoint, after: &Checkpoint): (u64, u256) {
+fun proven_fill(
+    self: FillReceipt,
+    terms: &OrderTerms,
+    before: &Checkpoint,
+    after: &Checkpoint
+): (u64, u256) {
     let FillReceipt { filled, filled_quote } = self;
     let filled_base = (filled as u256) * constants::base_atom_to_ifixed_scale!();
     let base = filled_after(terms.is_ask, before.signed_base(), filled_base);
@@ -554,7 +747,9 @@ fun active_fill(
     assert!(posted_orders == 0, blast_boosts_aftermath::errors::orders_posted!());
     assert!(liquidated_size == 0 && bad_debt == 0, blast_boosts_aftermath::errors::liquidation!());
 
-    let (filled, opposite) = if (is_bid) { (filled_bid, filled_ask) } else { (filled_ask, filled_bid) };
+    let (filled, opposite) = if (is_bid) { (filled_bid, filled_ask) } else {
+        (filled_ask, filled_bid)
+    };
     assert!(
         opposite == 0 && filled > 0 && filled <= (requested_base as u256) * constants::base_atom_to_ifixed_scale!()
             && lot_size > 0 && filled % ((lot_size as u256) * constants::base_atom_to_ifixed_scale!()) == 0,
@@ -575,7 +770,10 @@ fun actual_fill_notional(filled_quote: u256, collateral_price: u64): u64 {
         .checked_mul(constants::collateral_to_base_scale!())
         .destroy_or!(abort blast_boosts_aftermath::errors::normalization_overflow!());
     let notional = filled_quote.div_ceil(denominator);
-    assert!(notional <= std::u64::max_value!() as u256, blast_boosts_aftermath::errors::normalization_overflow!());
+    assert!(
+        notional <= std::u64::max_value!() as u256,
+        blast_boosts_aftermath::errors::normalization_overflow!()
+    );
 
     notional as u64
 }
@@ -611,8 +809,13 @@ public fun prove_fill_for_testing(
     after: &Checkpoint,
 ): (u64, u256) {
     let terms = OrderTerms {
-        is_ask, reduce_only, max_order_base: filled, lot_size: 1,
-        base_price: 1, collateral_price: 1, bound,
+        is_ask,
+        reduce_only,
+        max_order_base: filled,
+        lot_size: 1,
+        base_price: 1,
+        collateral_price: 1,
+        bound,
     };
     let receipt = FillReceipt { filled, filled_quote };
     receipt.proven_fill(&terms, before, after)
@@ -629,7 +832,16 @@ public fun assert_seed_fill_for_testing(
     liquidated_size: u64,
     bad_debt: u256,
 ) {
-    assert_seed_fill(is_bid, order_base, lot_size, filled_bid, filled_ask, posted_orders, liquidated_size, bad_debt);
+    assert_seed_fill(
+        is_bid,
+        order_base,
+        lot_size,
+        filled_bid,
+        filled_ask,
+        posted_orders,
+        liquidated_size,
+        bad_debt
+    );
 }
 
 #[test_only]
@@ -661,7 +873,12 @@ public fun order_sizes_for_testing(target_base: u64, max_order_base: u64): vecto
 }
 
 #[test_only]
-public fun active_order_size_for_testing(remaining: u64, max_order_base: u64, lot_size: u64, index: u64): u64 {
+public fun active_order_size_for_testing(
+    remaining: u64,
+    max_order_base: u64,
+    lot_size: u64,
+    index: u64
+): u64 {
     active_order_size(remaining, max_order_base, lot_size, index)
 }
 
@@ -676,7 +893,16 @@ public fun active_fill_for_testing(
     liquidated_size: u64,
     bad_debt: u256,
 ): u64 {
-    active_fill(is_bid, requested_base, lot_size, filled_bid, filled_ask, posted_orders, liquidated_size, bad_debt)
+    active_fill(
+        is_bid,
+        requested_base,
+        lot_size,
+        filled_bid,
+        filled_ask,
+        posted_orders,
+        liquidated_size,
+        bad_debt
+    )
 }
 
 #[test_only]
@@ -697,7 +923,12 @@ public fun execution_price_for_testing(
 }
 
 #[test_only]
-public fun unwind_base_for_testing(magnitude: u256, is_long: bool, lot_size: u64, side: PositionSide): u64 {
+public fun unwind_base_for_testing(
+    magnitude: u256,
+    is_long: bool,
+    lot_size: u64,
+    side: PositionSide
+): u64 {
     unwind_base_decoded(magnitude, is_long, lot_size, side)
 }
 
@@ -705,7 +936,12 @@ public fun unwind_base_for_testing(magnitude: u256, is_long: bool, lot_size: u64
 /// `(is_ask, reduce_only, max_order_base, lot_size, base_price, collateral_price, slippage_bps)`.
 public fun order_terms_fields(self: &OrderTerms): (bool, bool, u64, u64, u64, u64, u64) {
     (
-        self.is_ask, self.reduce_only, self.max_order_base, self.lot_size, self.base_price, self.collateral_price,
+        self.is_ask,
+        self.reduce_only,
+        self.max_order_base,
+        self.lot_size,
+        self.base_price,
+        self.collateral_price,
         self.bound.slippage_bps(),
     )
 }

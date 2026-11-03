@@ -37,10 +37,11 @@ fun a_policy_change_after_planning_blocks_publication_with_gas_reimbursement() {
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
+                f.scenario.ctx()
             );
     });
     fixture.publish(30);
@@ -61,10 +62,11 @@ fun a_policy_change_after_planning_blocks_publication_without_gas_reimbursement(
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
+                f.scenario.ctx()
             );
     });
     fixture.publish_budget(1_000, 0);
@@ -85,10 +87,11 @@ fun a_changed_treasury_is_rejected_before_an_overcommitted_budget() {
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
+                f.scenario.ctx()
             );
     });
     fixture.publish(31);
@@ -105,11 +108,11 @@ fun publication_accepts_a_new_plan_bound_to_the_changed_treasury() {
     fixture.next_tx!(OWNER, |f| {
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
-            );
+             f.scenario.ctx());
     });
     fixture.publish_budget_to(970, 30, @0xD);
     assert_eq!(fixture.vault_balances(), vector[0, 0]);
@@ -135,11 +138,11 @@ fun settlement_pays_measured_cost_returns_unused_reserve_and_preserves_holder_cu
         assert_eq!(reserve, option::some(30));
         f
             .policy
-            .set_destination(
+            .set_destination_for_testing(
                 &package_version,
                 &blast_acl::witness_for_testing<TreasuryAdmin>(),
                 @0xD,
-            );
+             f.scenario.ctx());
         f.settle(&mut round, 24);
         assert_eq!(f.vault_balances(), vector[0, 6]);
         let (_, quote, reserve) = round.reserve_balances_for_testing();
@@ -351,6 +354,97 @@ fun reserve_holder_payment_cannot_be_redirected() {
     })
 }
 
+#[test]
+#[expected_failure(abort_code = rewards::EInvalidCommitment, location = blast_presale::holder_rewards)]
+fun round_rejects_a_short_merkle_root() {
+    let mut f = start_reserve_rewards();
+    f.publish_commitment(vector[0u8], hash::blake2b256(&b"manifest"), 1, 1);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EInvalidCommitment, location = blast_presale::holder_rewards)]
+fun round_rejects_a_short_manifest_digest() {
+    let mut f = start_reserve_rewards();
+    f.publish_commitment(hash::blake2b256(&b"root"), vector[0u8], 1, 1);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EInvalidLeafCount, location = blast_presale::holder_rewards)]
+fun round_rejects_zero_leaves() {
+    let mut f = start_reserve_rewards();
+    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 0, 1);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EInvalidLeafCount, location = blast_presale::holder_rewards)]
+fun round_rejects_the_first_leaf_above_capacity() {
+    let mut f = start_reserve_rewards();
+    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 65_537, 1);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EEmptyBudget, location = blast_presale::holder_rewards)]
+fun round_rejects_an_empty_asset_budget() {
+    let mut f = start_reserve_rewards();
+    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 1, 0);
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EInvalidIndex, location = blast_presale::holder_rewards)]
+fun claim_rejects_the_first_index_outside_the_round() {
+    let mut fixture = start_reserve_rewards();
+    fixture.publish(0);
+    fixture.next_tx!(HOLDER, |f| {
+        let version = blast_presale::blast_presale_package::new_for_testing(f.ctx!());
+        let mut round = f.take_round();
+        rewards::claim(&mut round, &version, 1, HOLDER, 0, 970, vector[], f.ctx!());
+        abort
+    });
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EInvalidIndex, location = blast_presale::holder_rewards)]
+fun claim_rejects_the_largest_index_before_bitmap_access() {
+    let mut fixture = start_reserve_rewards();
+    fixture.publish(0);
+    fixture.next_tx!(HOLDER, |f| {
+        let version = blast_presale::blast_presale_package::new_for_testing(f.ctx!());
+        let mut round = f.take_round();
+        rewards::claim(
+            &mut round,
+            &version,
+            std::u64::max_value!(),
+            HOLDER,
+            0,
+            970,
+            vector[],
+            f.ctx!()
+        );
+        abort
+    });
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EInvalidBeneficiary, location = blast_presale::holder_rewards)]
+fun claim_rejects_a_zero_beneficiary_before_the_merkle_proof() {
+    let mut fixture = start_reserve_rewards();
+    fixture.publish(0);
+    fixture.next_tx!(HOLDER, |f| {
+        let version = blast_presale::blast_presale_package::new_for_testing(f.ctx!());
+        let mut round = f.take_round();
+        rewards::claim(&mut round, &version, 0, @0x0, 0, 970, vector[], f.ctx!());
+        abort
+    });
+    abort
+}
+
 // === Test Helpers ===
 
 fun start_reserve_rewards(): ReserveFixture {
@@ -366,10 +460,11 @@ fun start_reserve_rewards(): ReserveFixture {
             scenario.ctx(),
         );
         let mut policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
-        policy.set_destination(
+        policy.set_destination_for_testing(
             &package_version,
             &blast_acl::witness_for_testing<TreasuryAdmin>(),
             TREASURY,
+            scenario.ctx()
         );
         vault.credit_fees_for_testing(
             &policy,
@@ -398,6 +493,37 @@ macro fun reserve_next_tx(
 macro fun reserve_ctx($self: &mut ReserveFixture): &mut TxContext {
     let fixture = $self;
     fixture.scenario.ctx()
+}
+
+fun publish_commitment(
+    self: &mut ReserveFixture,
+    root: vector<u8>,
+    manifest: vector<u8>,
+    leaves: u64,
+    amount: u64
+) {
+    let version = blast_presale::blast_presale_package::new_for_testing(self.ctx!());
+    self
+        .vault
+        .publish_round(
+            &version,
+            &blast_acl::witness_for_testing<RewardsAdmin>(),
+            &self.policy,
+            TREASURY,
+            0,
+            0,
+            10,
+            root,
+            manifest,
+            leaves,
+            0,
+            amount,
+            0,
+            DEADLINE_AT_MS,
+            &self.clock,
+            self.scenario.ctx(),
+        );
+    std::unit_test::destroy(version);
 }
 
 fun publish(self: &mut ReserveFixture, reserve: u64) {
@@ -565,10 +691,14 @@ fun end(mut self: ReserveFixture) {
 }
 
 fun collect_holder_fees(self: &mut ReserveFixture) {
-    self.vault.credit_fees_for_testing(
-        &self.policy, balance::create_for_testing<MEME>(100),
-        balance::create_for_testing<QUOTE>(10), self.scenario.ctx(),
-    );
+    self
+        .vault
+        .credit_fees_for_testing(
+            &self.policy,
+            balance::create_for_testing<MEME>(100),
+            balance::create_for_testing<QUOTE>(10),
+            self.scenario.ctx(),
+        );
     let payload = only_event<HolderMemePaid<MEME, QUOTE>>();
     let treasury = TREASURY;
     let mut expected = bcs::to_bytes(&object::id(&self.vault));

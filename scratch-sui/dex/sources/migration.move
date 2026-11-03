@@ -4,23 +4,6 @@
 /// Native migration and sealed custody of its complete issued LP position.
 module blast_fun_dex::migration;
 
-// === Errors ===
-
-#[error(code = 0)]
-const EWrongPool: vector<u8> = b"Native fee collection requires the locked position's pool.";
-
-#[error(code = 1)]
-const ELpFeeCapNotLive: vector<u8> = b"LP-fee capability must be the one this vault currently honors.";
-
-#[error(code = 2)]
-const EInvalidLpFeeCapRecipient: vector<u8> = b"LP-fee capability recipient must be a nonzero address.";
-
-#[error(code = 3)]
-const ELpFeesLocked: vector<u8> = b"Creator LP fees are permanently bound to a custodian.";
-
-#[error(code = 4)]
-const ELpFeeCustodianMismatch: vector<u8> = b"Custodian must be the one creator LP fees are bound to.";
-
 // === Public Types ===
 
 /// Sealed launch-selected identity; only this module can redeem its migration payload.
@@ -328,6 +311,23 @@ public fun shares_for_testing<Meme, Quote>(self: &LockedLpVault<Meme, Quote>): u
         PositionKey(),
     ).shares_for_testing()
 }
+
+// === Errors ===
+
+#[error(code = 0)]
+const EWrongPool: vector<u8> = b"Native fee collection requires the locked position's pool.";
+
+#[error(code = 1)]
+const ELpFeeCapNotLive: vector<u8> = b"LP-fee capability must be the one this vault currently honors.";
+
+#[error(code = 2)]
+const EInvalidLpFeeCapRecipient: vector<u8> = b"LP-fee capability recipient must be a nonzero address.";
+
+#[error(code = 3)]
+const ELpFeesLocked: vector<u8> = b"Creator LP fees are permanently bound to a custodian.";
+
+#[error(code = 4)]
+const ELpFeeCustodianMismatch: vector<u8> = b"Custodian must be the one creator LP fees are bound to.";
 
 // === Imports ===
 

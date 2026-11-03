@@ -121,9 +121,20 @@ fun a_vendor_sale_can_change_its_blast_rates_before_its_share() {
     let clock = clock::create_for_testing(scenario.ctx());
 
     let (mut sale, _) = new_sale(&mut scenario, &creation_policy);
+    let mut ceiling = blast_presale::fee_policy::new_zero_fees_for_testing(scenario.ctx());
+    ceiling.set_fees_for_testing(
+        &package_version,
+        &fee_admin(),
+        bps::new(1_000),
+        bps::new(100),
+        bps::new(0),
+        bps::new(0),
+        scenario.ctx()
+    );
     sale.set_protocol_fees(
         &package_version,
         &fee_admin(),
+        &ceiling,
         bps::new(1_000),
         bps::new(100),
         bps::new(0),
@@ -131,6 +142,7 @@ fun a_vendor_sale_can_change_its_blast_rates_before_its_share() {
         &clock,
     );
 
+    ceiling.destroy_for_testing();
     let (presale_id, rates, protocol_quote, protocol_tokens, token_allocation) = last_event<
         ProtocolFeesChanged<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
     >().protocol_fees_changed_fields();
@@ -275,6 +287,48 @@ fun coin_order_is_the_byte_order_of_type_names() {
     assert!(!sorts_before_for_testing<AB, A>());
     assert!(sorts_before_for_testing<AB, QUOTE>());
     assert!(!sorts_before_for_testing<A, A>());
+}
+
+#[test]
+fun migration_postconditions_accept_exact_balances_fee_and_recipient() {
+    migrator::assert_pool_balances_for_testing(100, 100, 200, 200);
+    migrator::assert_dao_fee_terms_for_testing(200, 200, @0xA, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EPoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun migration_rejects_wrong_meme_balance() {
+    migrator::assert_pool_balances_for_testing(99, 100, 200, 200);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EPoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun migration_rejects_wrong_quote_balance() {
+    migrator::assert_pool_balances_for_testing(100, 100, 199, 200);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EDaoFeePoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun migration_rejects_wrong_dao_fee() {
+    migrator::assert_dao_fee_terms_for_testing(199, 200, @0xA, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EDaoFeePoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun migration_rejects_wrong_dao_fee_recipient() {
+    migrator::assert_dao_fee_terms_for_testing(200, 200, @0xB, @0xA);
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EPoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun meme_mismatch_rejects_before_reading_quote() {
+    migrator::assert_pool_short_circuit_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EDaoFeePoolMismatch, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+fun fee_mismatch_rejects_before_reading_recipient() {
+    migrator::assert_dao_fee_short_circuit_for_testing();
 }
 
 // === Test Helpers ===

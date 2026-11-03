@@ -52,7 +52,10 @@ public enum CheckpointChange has drop {
 // --- Read ---
 
 /// Reads every raw venue field the checkpoint authenticates, in one pass and without normalization.
-public(package) fun read_checkpoint<Collateral>(account: &Account<Collateral>, clearing_house: &ClearingHouse<Collateral>): Checkpoint {
+public(package) fun read_checkpoint<Collateral>(
+    account: &Account<Collateral>,
+    clearing_house: &ClearingHouse<Collateral>
+): Checkpoint {
     let params = clearing_house.market_params();
     let position = clearing_house.position(account.account_id());
     let (base, quote) = position.base_and_quote_amounts();
@@ -118,6 +121,7 @@ public(package) fun assert_forced_reduction(self: &Checkpoint, after: &Checkpoin
             },
         blast_boosts_aftermath::errors::invalid_rebaseline!(),
     );
+
     let mut expected = self.with_venue_policy_of(after);
     expected.signed_base = after.signed_base;
     expected.signed_quote_notional = after.signed_quote_notional;
@@ -133,10 +137,18 @@ public(package) fun assert_forced_reduction(self: &Checkpoint, after: &Checkpoin
 // --- Deposit ---
 
 /// A deposited-and-allocated input changes exactly allocated six-decimal collateral.
-public(package) fun assert_allocated_deposit_checkpoint(before: &Checkpoint, after: &Checkpoint, amount: u64) {
+public(package) fun assert_allocated_deposit_checkpoint(
+    before: &Checkpoint,
+    after: &Checkpoint,
+    amount: u64
+) {
     assert_signed_cash_change(
-        before.allocated_collateral.is_neg(), before.allocated_collateral.abs(),
-        after.allocated_collateral.is_neg(), after.allocated_collateral.abs(), amount, true,
+        before.allocated_collateral.is_neg(),
+        before.allocated_collateral.abs(),
+        after.allocated_collateral.is_neg(),
+        after.allocated_collateral.abs(),
+        amount,
+        true,
     );
     before.assert_cash_checkpoint(after, before.free_collateral);
 }
@@ -162,20 +174,31 @@ public(package) fun assert_trade_checkpoint(
 /// Isolates a reduce-only session's actual realized-PnL/entry-quote effects.
 /// The venue does not expose those deltas separately. Exact filled base, strict
 /// post-position validity and actual kept-NAV pricing complete the adapter proof.
-public(package) fun assert_reduction_checkpoint(before: &Checkpoint, after: &Checkpoint, expected_base: u256) {
+public(package) fun assert_reduction_checkpoint(
+    before: &Checkpoint,
+    after: &Checkpoint,
+    expected_base: u256
+) {
     before.assert_trade_checkpoint(after, expected_base, after.signed_quote_notional);
 }
 
 // --- Withdraw ---
 
 /// Payout spends free cash first, then exactly deallocates the remaining amount.
-public(package) fun assert_withdrawal_checkpoint(before: &Checkpoint, after: &Checkpoint, amount: u64) {
+public(package) fun assert_withdrawal_checkpoint(
+    before: &Checkpoint,
+    after: &Checkpoint,
+    amount: u64
+) {
     let from_free = before.free_collateral.min(amount);
 
     assert_signed_cash_change(
-        before.allocated_collateral.is_neg(), before.allocated_collateral.abs(),
-        after.allocated_collateral.is_neg(), after.allocated_collateral.abs(),
-        amount - from_free, false,
+        before.allocated_collateral.is_neg(),
+        before.allocated_collateral.abs(),
+        after.allocated_collateral.is_neg(),
+        after.allocated_collateral.abs(),
+        amount - from_free,
+        false,
     );
     before.assert_cash_checkpoint(after, before.free_collateral - from_free);
 }
@@ -185,7 +208,11 @@ public(package) fun assert_withdrawal_checkpoint(before: &Checkpoint, after: &Ch
 /// The expected allocated move is the venue's own settlement arithmetic
 /// replayed from this checkpoint at `collateral_price`, so a settlement the
 /// venue performed is recognized exactly and anything else is drift.
-public(package) fun classify_change(self: &Checkpoint, after: &Checkpoint, collateral_price: u256): CheckpointChange {
+public(package) fun classify_change(
+    self: &Checkpoint,
+    after: &Checkpoint,
+    collateral_price: u256
+): CheckpointChange {
     let base_negative = self.signed_base.is_neg();
     let (market_rate, snapshot_rate) = self.side_funding_rates(base_negative);
 
@@ -230,15 +257,23 @@ public(package) fun classify_sync_changes(
 
 /// Nets authenticated settlement edges before rounding or buffer allocation.
 /// No gross ordering inside one Blast checkpoint is an entitlement boundary.
-public(package) fun net_funding(preexisting: CheckpointChange, settled: CheckpointChange): CheckpointChange {
+public(package) fun net_funding(
+    preexisting: CheckpointChange,
+    settled: CheckpointChange
+): CheckpointChange {
     if (preexisting.is_unexpected() || settled.is_unexpected()) return CheckpointChange::Unexpected;
 
-    let (preexisting_is_cost, preexisting_amount) = (preexisting.is_cost(), preexisting.raw_amount());
+    let (preexisting_is_cost, preexisting_amount) = (
+        preexisting.is_cost(),
+        preexisting.raw_amount()
+    );
     let (settled_is_cost, settled_amount) = (settled.is_cost(), settled.raw_amount());
     let (is_cost, amount) = if (preexisting_is_cost == settled_is_cost) {
         (
             preexisting_is_cost,
-            preexisting_amount.checked_add(settled_amount).destroy_or!(return CheckpointChange::Unexpected),
+            preexisting_amount
+                .checked_add(settled_amount)
+                .destroy_or!(return CheckpointChange::Unexpected),
         )
     } else if (preexisting_amount >= settled_amount) {
         (preexisting_is_cost, preexisting_amount - settled_amount)
@@ -254,21 +289,39 @@ public(package) fun net_funding(preexisting: CheckpointChange, settled: Checkpoi
 /// Account facts are identical; venue-wide policy and cumulative funding may move.
 /// Funding already settled into the account is not unchanged and must be accounted first.
 public(package) fun is_unchanged(self: &CheckpointChange): bool {
-    match (self) { CheckpointChange::Unchanged => true, _ => false }
+    match (self) {
+        CheckpointChange::Unchanged => true,
+        _ => false
+    }
 }
 
 /// Returns whether the change is a representable funding credit or cost.
 public(package) fun has_funding(self: &CheckpointChange): bool {
     match (self) {
-        CheckpointChange::FundingCredit(raw) => { let (_, ok) = ifixed_math::fixed_to_u64_down(*raw, constants::collateral_decimals!() as u64); ok },
-        CheckpointChange::FundingCost(raw) => { let (_, ok) = ifixed_math::fixed_to_u64_up(*raw, constants::collateral_decimals!() as u64); ok },
+        CheckpointChange::FundingCredit(raw) => {
+            let (_, ok) = ifixed_math::fixed_to_u64_down(
+                *raw,
+                constants::collateral_decimals!() as u64
+            );
+            ok
+        },
+        CheckpointChange::FundingCost(raw) => {
+            let (_, ok) = ifixed_math::fixed_to_u64_up(
+                *raw,
+                constants::collateral_decimals!() as u64
+            );
+            ok
+        },
         _ => false,
     }
 }
 
 /// Returns whether the change is a funding cost.
 public(package) fun is_cost(self: &CheckpointChange): bool {
-    match (self) { CheckpointChange::FundingCost(_) => true, _ => false }
+    match (self) {
+        CheckpointChange::FundingCost(_) => true,
+        _ => false
+    }
 }
 
 /// Returns the raw IFixed funding magnitude; zero when there is no funding.
@@ -283,8 +336,20 @@ public(package) fun raw_amount(self: &CheckpointChange): u256 {
 /// Returns the six-decimal funding amount, credits down and costs up; zero when unrepresentable.
 public(package) fun amount(self: &CheckpointChange): u64 {
     match (self) {
-        CheckpointChange::FundingCredit(raw) => { let (amount, _) = ifixed_math::fixed_to_u64_down(*raw, constants::collateral_decimals!() as u64); amount },
-        CheckpointChange::FundingCost(raw) => { let (amount, _) = ifixed_math::fixed_to_u64_up(*raw, constants::collateral_decimals!() as u64); amount },
+        CheckpointChange::FundingCredit(raw) => {
+            let (amount, _) = ifixed_math::fixed_to_u64_down(
+                *raw,
+                constants::collateral_decimals!() as u64
+            );
+            amount
+        },
+        CheckpointChange::FundingCost(raw) => {
+            let (amount, _) = ifixed_math::fixed_to_u64_up(
+                *raw,
+                constants::collateral_decimals!() as u64
+            );
+            amount
+        },
         _ => 0,
     }
 }
@@ -301,7 +366,10 @@ public(package) fun is_clean(self: &CheckpointChange): bool {
 /// Whether historical movement could not be attributed, distinct from a raw
 /// funding amount that only becomes representable after netting.
 public(package) fun is_unexpected(self: &CheckpointChange): bool {
-    match (self) { CheckpointChange::Unexpected => true, _ => false }
+    match (self) {
+        CheckpointChange::Unexpected => true,
+        _ => false
+    }
 }
 
 // --- Shutdown ---
@@ -345,20 +413,32 @@ public(package) fun assert_direct_settlement_checkpoint(before: &Checkpoint, aft
 /// and collateral release. The price is the enabled settlement collateral price;
 /// neither the final cash delta nor a current oracle price identifies this amount.
 public(package) fun direct_settlement_funding(
-    before: &Checkpoint, after: &Checkpoint, collateral_price: u256,
+    before: &Checkpoint,
+    after: &Checkpoint,
+    collateral_price: u256,
 ): CheckpointChange {
     before.assert_direct_settlement_checkpoint(after);
     assert!(
         collateral_price != 0 && !collateral_price.is_neg(),
         blast_boosts_aftermath::errors::terminal_venue_unsettled!(),
     );
+
     let base_negative = before.signed_base.is_neg();
     let (market, snapshot) = before.side_funding_rates(base_negative);
     let (delta_negative, delta_magnitude) =
-        signed_difference(snapshot.is_neg(), snapshot.abs(), market.is_neg(), market.abs());
+        signed_difference(
+        snapshot.is_neg(),
+        snapshot.abs(),
+        market.is_neg(),
+        market.abs()
+    );
 
     settled_funding_change(
-        base_negative, before.signed_base.abs(), delta_negative, delta_magnitude, collateral_price,
+        base_negative,
+        before.signed_base.abs(),
+        delta_negative,
+        delta_magnitude,
+        collateral_price,
     )
 }
 
@@ -370,7 +450,11 @@ public(package) fun recoverable_terminal_cash(self: &Checkpoint): u64 {
 }
 
 /// Complete recovery changes only the two collateral locations, by exactly the coin returned.
-public(package) fun assert_terminal_withdrawal_checkpoint(before: &Checkpoint, after: &Checkpoint, amount: u64) {
+public(package) fun assert_terminal_withdrawal_checkpoint(
+    before: &Checkpoint,
+    after: &Checkpoint,
+    amount: u64
+) {
     let (negative, magnitude) = before.allocated_collateral_sign_and_magnitude();
     before.assert_terminal_withdrawal_checkpoint_decoded(after, amount, negative, magnitude);
 }
@@ -417,6 +501,7 @@ fun with_venue_policy_of(self: &Checkpoint, venue: &Checkpoint): Checkpoint {
     accepted.market_frozen = venue.market_frozen;
     accepted.market_initial_margin_ratio = venue.market_initial_margin_ratio;
     accepted.market_maintenance_margin_ratio = venue.market_maintenance_margin_ratio;
+
     accepted
 }
 
@@ -453,7 +538,8 @@ fun assert_signed_cash_change(
     let (actual, credit) = if (before_negative == after_negative) {
         (before.diff(after), if (before_negative) { before > after } else { after > before })
     } else {
-        let crossed = before.checked_add(after)
+        let crossed = before
+            .checked_add(after)
             .destroy_or!(abort blast_boosts_aftermath::errors::cash_checkpoint_mismatch!());
         (crossed, !after_negative)
     };
@@ -483,9 +569,11 @@ fun classify_preexisting_from_delta(
     // The position snapshots prove the completed external settlement. They may
     // trail the market again if another funding epoch advanced before Blast
     // synchronized, so equality with the current market rates is not required.
-    let snapshots_refreshed = stored.funding_snapshot_long != before.funding_snapshot_long
+    let snapshots_refreshed =
+        stored.funding_snapshot_long != before.funding_snapshot_long
         || stored.funding_snapshot_short != before.funding_snapshot_short;
-    if (!stored.non_funding_fields_equal(before) || !snapshots_refreshed) return CheckpointChange::Unexpected;
+    if (!stored.non_funding_fields_equal(before) || !snapshots_refreshed)
+        return CheckpointChange::Unexpected;
 
     allocated_change
 }
@@ -508,9 +596,18 @@ fun classify_change_decoded(
     };
 
     let (delta_negative, delta_magnitude) =
-        signed_difference(snapshot_negative, snapshot_magnitude, market_negative, market_magnitude);
+        signed_difference(
+        snapshot_negative,
+        snapshot_magnitude,
+        market_negative,
+        market_magnitude
+    );
     let expected = settled_funding_change(
-        base_negative, base_magnitude, delta_negative, delta_magnitude, collateral_price,
+        base_negative,
+        base_magnitude,
+        delta_negative,
+        delta_magnitude,
+        collateral_price,
     );
 
     if (&allocated_change == &expected) { allocated_change } else { CheckpointChange::Unexpected }
@@ -568,7 +665,12 @@ fun snapshots_refreshed_to_market(self: &Checkpoint, after: &Checkpoint): bool {
 fun allocated_delta(before: &Checkpoint, after: &Checkpoint): CheckpointChange {
     let (before_raw, after_raw) = (before.allocated_collateral, after.allocated_collateral);
     let (negative, magnitude) =
-        signed_difference(before_raw.is_neg(), before_raw.abs(), after_raw.is_neg(), after_raw.abs());
+        signed_difference(
+        before_raw.is_neg(),
+        before_raw.abs(),
+        after_raw.is_neg(),
+        after_raw.abs()
+    );
 
     funding_change(negative, magnitude)
 }
@@ -587,7 +689,9 @@ fun signed_difference(
     };
 
     // Same sign: the value grew when a positive got larger or a negative got smaller.
-    let grew = if (before_negative) { before_magnitude > after_magnitude } else { after_magnitude > before_magnitude };
+    let grew = if (before_negative) { before_magnitude > after_magnitude } else {
+        after_magnitude > before_magnitude
+    };
 
     (!grew, before_magnitude.diff(after_magnitude))
 }
@@ -624,7 +728,10 @@ fun recoverable_cash_decoded(self: &Checkpoint, is_negative: bool, magnitude: u2
     );
 
     let (atoms, representable) =
-        ifixed_math::fixed_to_u64_down(magnitude, constants::collateral_decimals!() as u64);
+        ifixed_math::fixed_to_u64_down(
+        magnitude,
+        constants::collateral_decimals!() as u64
+    );
     assert!(
         !is_negative && representable && atoms <= std::u64::max_value!() - self.free_collateral,
         blast_boosts_aftermath::errors::terminal_venue_unsettled!(),
@@ -698,21 +805,63 @@ public fun checkpoint_for_testing(
 
 #[test_only]
 /// Unpacks every checkpoint field, in declaration order, for test assertions.
-public fun unpack_for_testing(self: Checkpoint): (
-    u64, u256, u256, u256, u256, u256, u256, u256, u64, u256, u256, u64, u8, bool, u256, u256, u256,
+public fun unpack_for_testing(
+    self: Checkpoint
+): (
+    u64,
+    u256,
+    u256,
+    u256,
+    u256,
+    u256,
+    u256,
+    u256,
+    u64,
+    u256,
+    u256,
+    u64,
+    u8,
+    bool,
+    u256,
+    u256,
+    u256,
 ) {
     let Checkpoint {
-        free_collateral, allocated_collateral, signed_base, signed_quote_notional,
-        funding_snapshot_long, funding_snapshot_short, market_funding_long, market_funding_short,
-        lot_size, pending_ask_base, pending_bid_base, pending_order_count, market_pause_mode,
-        market_frozen, position_initial_margin_ratio, market_initial_margin_ratio,
+        free_collateral,
+        allocated_collateral,
+        signed_base,
+        signed_quote_notional,
+        funding_snapshot_long,
+        funding_snapshot_short,
+        market_funding_long,
+        market_funding_short,
+        lot_size,
+        pending_ask_base,
+        pending_bid_base,
+        pending_order_count,
+        market_pause_mode,
+        market_frozen,
+        position_initial_margin_ratio,
+        market_initial_margin_ratio,
         market_maintenance_margin_ratio,
     } = self;
     (
-        free_collateral, allocated_collateral, signed_base, signed_quote_notional,
-        funding_snapshot_long, funding_snapshot_short, market_funding_long, market_funding_short,
-        lot_size, pending_ask_base, pending_bid_base, pending_order_count, market_pause_mode,
-        market_frozen, position_initial_margin_ratio, market_initial_margin_ratio,
+        free_collateral,
+        allocated_collateral,
+        signed_base,
+        signed_quote_notional,
+        funding_snapshot_long,
+        funding_snapshot_short,
+        market_funding_long,
+        market_funding_short,
+        lot_size,
+        pending_ask_base,
+        pending_bid_base,
+        pending_order_count,
+        market_pause_mode,
+        market_frozen,
+        position_initial_margin_ratio,
+        market_initial_margin_ratio,
         market_maintenance_margin_ratio,
     )
 }
@@ -732,7 +881,11 @@ public fun assert_signed_cash_change_for_testing(
 /// Exercises the pure cash proof with explicitly nonnegative decoded fixture collateral.
 /// Decoded dependency-port values; the production wrapper always uses named IFixed decoding.
 #[test_only]
-public(package) fun recoverable_cash_for_testing(self: &Checkpoint, is_negative: bool, magnitude: u256): u64 {
+public(package) fun recoverable_cash_for_testing(
+    self: &Checkpoint,
+    is_negative: bool,
+    magnitude: u256
+): u64 {
     self.recoverable_cash_decoded(is_negative, magnitude)
 }
 
@@ -761,17 +914,26 @@ public fun unexpected_change(): CheckpointChange {
 
 #[test_only]
 public fun is_unchanged_for_testing(change: CheckpointChange): bool {
-    match (change) { CheckpointChange::Unchanged => true, _ => false }
+    match (change) {
+        CheckpointChange::Unchanged => true,
+        _ => false
+    }
 }
 
 #[test_only]
 public fun is_credit_for_testing(change: CheckpointChange): bool {
-    match (change) { CheckpointChange::FundingCredit(_) => true, _ => false }
+    match (change) {
+        CheckpointChange::FundingCredit(_) => true,
+        _ => false
+    }
 }
 
 #[test_only]
 public fun is_unexpected_for_testing(change: CheckpointChange): bool {
-    match (change) { CheckpointChange::Unexpected => true, _ => false }
+    match (change) {
+        CheckpointChange::Unexpected => true,
+        _ => false
+    }
 }
 
 // === Imports ===

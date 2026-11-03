@@ -10,7 +10,7 @@ import unittest
 
 
 class PublicationTests(unittest.TestCase):
-    def test_activation_passes_bootstrap_before_upgrade_cap(self):
+    def test_finalization_passes_publication_and_cap(self):
         script = Path(__file__).resolve().parent / 'wrap_package_admin.sh'
         with tempfile.TemporaryDirectory() as temp:
             fake_sui = Path(temp) / 'sui'

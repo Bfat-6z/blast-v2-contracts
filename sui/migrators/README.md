@@ -21,6 +21,14 @@ types from `blast_fun_domain` on the singleton Blast ACL and declares none of it
 own. It does own an independent operational generation and its own sealed
 `PackageAdmin`, so advancing this package leaves Launchpad on its generation.
 
+Publication transfers an owned Publication holding the Publisher and initial
+generation. `package_admin::wrap` consumes it with the matching fresh UpgradeCap
+and shares the version while publication-owned operations have zero notice.
+Configure the initial LP-fee destination and default shares through ordinary ACL schedule/apply calls
+with Clock. Settle all setup proposals, enable each operation’s intended
+self-timelocked notice, and verify it before releasing launchpad migration. Later policy changes use
+that operation's applied delay. Migrators has no separate pause switch (ADR 0134).
+
 Every protected mutation checks **this** package's generation. The Launchpad
 generation is no longer treated as this package's own: a composed call that
 migrates a launch supplies both version objects, because each package checks
@@ -47,14 +55,18 @@ burns it. The swap is not permissionless,
 because anyone could move the pool's price around it (ADR 0091).
 
 Cetus orders a pool's coins by type name, so its `migrate`, `collect_fees`,
-`settle_and_update_fee_split`, and `buyback_and_burn` take the pool's coins in
+`settle_and_apply_fee_split`, and `buyback_and_burn` take the pool's coins in
 that order as two extra type arguments, `<Meme, Quote, CoinA, CoinB>`, and
 reject any other pair (ADR 0100). Bluefin's routes take `<Meme, Quote>`.
 
 `FeesCollected`, `AutoLiquidityAdded`, and `BuybackBurned` break down every amount
 for indexers.
-The curve-fee cap holder changes the split with `settle_and_update_fee_split`,
-which settles the fees accrued under the current split first. An administrator
+The live curve-fee cap holder schedules or cancels a split with
+`vault::schedule_fee_split` / `vault::cancel_fee_split`. The initial notice is
+48 hours. Expiry leaves the old split active until anyone calls the venue's
+`settle_and_apply_fee_split`, settling accrued fees under the old split before
+activating the stored replacement and next notice. Delay reductions still wait
+the old notice; replacement restarts that wait. An administrator
 changes Blast's default or per-coin share in `LpFeePolicy`, from the next
 collection. Because auto-LP adds at the current price, a caller can move the
 price around a collection and skim part of that call's auto-LP amount; frequent
@@ -66,15 +78,20 @@ Blast's off-chain system turns checkpointed holder balances into a Merkle
 allocation. A Blast administrator publishes it with
 `blast_holder_rewards::publish_round`, which reserves the round's budget from
 the vault's rewards balance into a shared `Round`. Anyone can relay a proof, and
-each leaf pays its committed beneficiary once.
+each leaf pays its committed beneficiary once before the round's claim deadline.
+An optional Quote gas reserve is funded separately, with its treasury bound to
+the governed LP-fee destination at publication. `RewardsAdmin` may settle a capped
+reimbursement once; unused reserve returns to the vault. Anyone may close at the
+deadline to return unclaimed rewards and unsettled gas custody. Published
+checkpoint intervals may have gaps but must not overlap.
 
 **The administrator can assign unallocated rewards to any recipient in a new
 round.** Merkle proofs enforce the published allocation, not the truth of the
 off-chain holder accounting, so publish from a multisig with independent
 accounting review. Each round reserves its full declared budget and keeps a
-permanent claim bitmap. There is no expiry, cancellation, or recovery sweep, so an
-incorrect root or an over-reserved budget cannot be recovered through the
-current API. The leaf commits the vault ID, the round number, the index, the
+claim bitmap until closure. The administrator cannot rewrite a root or
+cancel its holder claims before the deadline; permissionless close recovers
+remaining custody at the deadline. The leaf commits the vault ID, the round number, the index, the
 beneficiary, and both amounts (`docs/vectors/holder-rewards.json` is the fixed
 Move/SDK commitment vector).
 

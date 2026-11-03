@@ -34,13 +34,33 @@ fun a_small_long_or_short_can_buy_one_lot_past_target_inside_the_band() {
 fun a_deposit_can_recover_a_position_too_small_for_any_standalone_buy() {
     vector[policy::long(), policy::short()].do!(|side| {
         let mut state = new_state(side);
-        assert!(!state.needs_rebalance(position(side, 600, LOT), observation::funding_credit(0), true, 10, NOW));
+        assert!(
+            !state.needs_rebalance(
+                position(side, 600, LOT),
+                observation::funding_credit(0),
+                true,
+                10,
+                NOW
+            )
+        );
         let plan = state.prepare_mint(position(side, 600, LOT), 5_400, 600, 5_380, 10, NOW);
         let base_after = LOT + plan.base_to_buy();
-        let (shares, contribution, _, _, _) = state.complete_mint(plan, position(side, 5_990, base_after), NOW);
+        let (shares, contribution, _, _, _) = state.complete_mint(
+            plan,
+            position(side, 5_990, base_after),
+            NOW
+        );
         assert_eq!(shares, 5_390);
         assert_eq!(contribution, 5_390);
-        assert!(!state.needs_rebalance(position(side, 5_990, base_after), observation::funding_credit(0), true, 10, NOW));
+        assert!(
+            !state.needs_rebalance(
+                position(side, 5_990, base_after),
+                observation::funding_credit(0),
+                true,
+                10,
+                NOW
+            )
+        );
         assert_eq!(state.maintenance_reserve(), 0);
         state.destroy_for_testing();
     });
@@ -185,7 +205,11 @@ fun recovery_keeps_the_nav_cap() {
 fun favorable_recovery_execution_does_not_credit_more_than_the_deposit() {
     let mut state = new_state(policy::long());
     let plan = state.prepare_mint(position(policy::long(), 600, LOT), 5_400, 600, 1, 10, NOW);
-    let (shares, contribution, _, _, _) = state.complete_mint(plan, position(policy::long(), 6_010, 11 * LOT), NOW);
+    let (shares, contribution, _, _, _) = state.complete_mint(
+        plan,
+        position(policy::long(), 6_010, 11 * LOT),
+        NOW
+    );
     assert_eq!(shares, 5_400);
     assert_eq!(contribution, 5_400);
     assert!(6_010u128 * 600 >= 600u128 * (600 + shares as u128));
@@ -197,7 +221,11 @@ fun recovery_uses_final_reserve_after_protocol_fees() {
     let mut state = new_state(policy::short());
     state.set_fees(100, 0, 0);
     let plan = state.prepare_mint(position(policy::short(), 600, LOT), 5_400, 600, 1, 10, NOW);
-    let (shares, contribution, fee, admin, reserve) = state.complete_mint(plan, position(policy::short(), 5_990, 11 * LOT), NOW);
+    let (shares, contribution, fee, admin, reserve) = state.complete_mint(
+        plan,
+        position(policy::short(), 5_990, 11 * LOT),
+        NOW
+    );
     assert_eq!(vector[shares, contribution, fee, admin, reserve], vector[5_336, 5_336, 54, 0, 54]);
     assert_eq!(state.maintenance_reserve(), 54);
     state.destroy_for_testing();
@@ -207,8 +235,19 @@ fun recovery_uses_final_reserve_after_protocol_fees() {
 fun the_next_deposit_returns_to_normal_proportional_sizing() {
     let mut state = new_state(policy::long());
     let plan = state.prepare_mint(position(policy::long(), 600, LOT), 5_400, 600, 1, 10, NOW);
-    let (shares, _, _, _, _) = state.complete_mint(plan, position(policy::long(), 5_990, 11 * LOT), NOW);
-    let next = state.prepare_mint(position(policy::long(), 5_990, 11 * LOT), 5_990, 600 + shares, 1, 10, NOW);
+    let (shares, _, _, _, _) = state.complete_mint(
+        plan,
+        position(policy::long(), 5_990, 11 * LOT),
+        NOW
+    );
+    let next = state.prepare_mint(
+        position(policy::long(), 5_990, 11 * LOT),
+        5_990,
+        600 + shares,
+        1,
+        10,
+        NOW
+    );
     assert_eq!(next.base_to_buy(), 11 * LOT);
     state.complete_mint(next, position(policy::long(), 11_980, 22 * LOT), NOW);
     state.destroy_for_testing();
@@ -227,20 +266,36 @@ fun readiness_and_execution_match_an_independent_small_position_sweep() {
                 16u64.do!(|step| {
                     let buy = (step + 1) * LOT;
                     let cost = reference_cost(buy);
-                    if (equity > cost && (base + buy) * 10_000 <= 20_000 * (equity - cost)) expected = buy;
+                    if (equity > cost && (base + buy) * 10_000 <= 20_000 * (equity - cost))
+                        expected = buy;
                 });
                 if (expected == 0 && equity > reference_cost(LOT)) {
                     let after_equity = equity - reference_cost(LOT);
-                    if ((base + LOT) * 10_000 >= 18_000 * after_equity
-                        && (base + LOT) * 10_000 <= 22_000 * after_equity) expected = LOT;
+                    if (
+                        (base + LOT) * 10_000 >= 18_000 * after_equity
+                        && (base + LOT) * 10_000 <= 22_000 * after_equity
+                    ) expected = LOT;
                 };
-                assert_eq!(state.needs_rebalance(position(side, equity, base), observation::funding_credit(0), true, 10, NOW), expected > 0);
+                assert_eq!(
+                    state.needs_rebalance(
+                        position(side, equity, base),
+                        observation::funding_credit(0),
+                        true,
+                        10,
+                        NOW
+                    ),
+                    expected > 0
+                );
                 if (expected > 0) {
                     let mut plan = state.prepare_rebalance(position(side, equity, base), 10, NOW);
                     let order = state.next_rebalance_order(&plan);
                     assert_eq!(order.order_base(), expected);
                     state.accept_rebalance_fill(
-                        &mut plan, order, position(side, equity - reference_cost(expected), base + expected), expected, NOW,
+                        &mut plan,
+                        order,
+                        position(side, equity - reference_cost(expected), base + expected),
+                        expected,
+                        NOW,
                     );
                     state.complete_rebalance(plan);
                 };
@@ -263,10 +318,22 @@ fun the_calibrated_65_lot_minimum_also_supports_recovery() {
     let mut state = new_state_with_minimum(policy::long(), 65);
     let plan = state.prepare_mint(position(policy::long(), 600, LOT), 40_000, 600, 39_900, 10, NOW);
     let base_after = LOT + plan.base_to_buy();
-    let (shares, contribution, _, _, _) = state.complete_mint(plan, position(policy::long(), 40_500, base_after), NOW);
+    let (shares, contribution, _, _, _) = state.complete_mint(
+        plan,
+        position(policy::long(), 40_500, base_after),
+        NOW
+    );
     assert_eq!(shares, 39_900);
     assert_eq!(contribution, 39_900);
-    assert!(!state.needs_rebalance(position(policy::long(), 40_500, base_after), observation::funding_credit(0), true, 10, NOW));
+    assert!(
+        !state.needs_rebalance(
+            position(policy::long(), 40_500, base_after),
+            observation::funding_credit(0),
+            true,
+            10,
+            NOW
+        )
+    );
     state.destroy_for_testing();
 }
 
@@ -288,14 +355,27 @@ fun finish_one_lot(side: PositionSide, final_equity: u64) {
 
 fun finish_recovery(final_equity: u64, filled: u64, minimum_shares: u64) {
     let mut state = new_state(policy::long());
-    let plan = state.prepare_mint(position(policy::long(), 600, LOT), 5_400, 600, minimum_shares, 10, NOW);
+    let plan = state.prepare_mint(
+        position(policy::long(), 600, LOT),
+        5_400,
+        600,
+        minimum_shares,
+        10,
+        NOW
+    );
     state.complete_mint(plan, position(policy::long(), final_equity, LOT + filled), NOW);
     state.destroy_for_testing();
 }
 
 fun small_cap_state(): State<Product> {
     let mut state = new_state(policy::long());
-    state.set_max_order_notional(2_500, observation::new_price(PRICE, 0, NOW), observation::new_price(PRICE, 0, NOW), LOT, NOW);
+    state.set_max_order_notional(
+        2_500,
+        observation::new_price(PRICE, 0, NOW),
+        observation::new_price(PRICE, 0, NOW),
+        LOT,
+        NOW
+    );
     state
 }
 
