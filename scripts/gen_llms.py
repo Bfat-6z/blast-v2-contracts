@@ -204,7 +204,7 @@ def build_summaries(out: Path) -> None:
         name = package_name(path)
         result = subprocess.run(
             [
-                "sui", "move", "summary",
+                "sui", "move", "summary", "--build-env", "mainnet",
                 "-p", str(ROOT / path),
                 "--output-directory", str(out / name),
                 "--install-dir", str(out / f"build_{name}"),

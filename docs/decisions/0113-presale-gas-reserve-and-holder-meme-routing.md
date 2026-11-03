@@ -19,6 +19,10 @@ before funding. A treasury change after planning or signing aborts the stale
 publication. It never rewrites the frozen round's recipient commitment. This
 binding also applies when reimbursement is disabled.
 
+For the fresh presale lineage, TreasuryAdmin publishes rounds. The treasury
+multisig reviews the root, manifest digest and amounts before signing. The
+automated RewardsAdmin holds settlement authority.
+
 RewardsAdmin settles an enabled reserve exactly once: reimburse a chosen amount
 no larger than reserve, then return the entire remainder. The contract bounds
 custody; trusted off-chain evidence determines eligible actual gas cost.

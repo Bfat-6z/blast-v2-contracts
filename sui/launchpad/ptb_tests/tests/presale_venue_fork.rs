@@ -25,7 +25,7 @@
 //!
 //! Run from `sui/launchpad/ptb_tests` with `cargo test --offline --test presale_venue_fork`.
 
-use std::{collections::{BTreeMap, BTreeSet}, path::Path, sync::OnceLock, time::Duration};
+use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
@@ -608,7 +608,7 @@ impl World {
         ensure!(fee_policy.len() == 1 && h.object(fee_policy[0]).is_shared());
         let creation_policy = published.created(&h, "creation_policy", "CreationPolicy");
         ensure!(creation_policy.len() == 1 && h.object(creation_policy[0]).is_shared());
-        let token = build(&Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture/presale_token"), &[], &work)?;
+        let token = build(&blast_launchpad_ptb_tests::crate_dir().join("fixture/presale_token"), &[], &work)?;
         let (quote_type, quote_currency) = if custom_quote {
             let (package, published) = h.publish(token.clone())?;
             let quote = tag(&format!("{package}::token::TOKEN"));

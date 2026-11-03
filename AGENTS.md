@@ -12,15 +12,18 @@ storage, ABI, upgrade, dependency, deployment, or cross-package decision.
 
 ## Greenfield development
 
-Treat first-party contracts as undeployed work in progress with no users, except
-`sui/otc`, `sui/vesting`, and `sui/timelock`: these are published immutable
-packages. Preserve their source, abort identities, and publication metadata;
-see [utility integration](docs/utilities.md) for provenance and verification.
-Change APIs and their callers together; delete obsolete paths and compatibility
-wrappers. Delete removed errors and renumber each error namespace sequentially
-from zero. Update exact-abort tests and source gates with the new codes; retain
-only current errors, without reserved gaps or retirement tombstones. External
-venue interfaces still follow their upstream ABI.
+For unpublished lineages, change APIs and their callers together, remove
+obsolete paths, and renumber each error namespace sequentially from zero.
+Update exact-abort tests and source gates with the new codes.
+
+Preserve published lineages, their type origins, and their upgrade rules.
+The [October 28 mainnet deployment](deployments/sui/mainnet/2026-10-28-canonical-mvr-launch-stack.json)
+records immutable ACL and partners and compatible-upgrade custody for launchpad,
+migrators, and presale. ADR 0134 targets a fresh lineage for that stack.
+Keep its publication metadata separate from the October deployment records.
+The published immutable OTC, vesting, and timelock packages retain their
+source, abort identities, and publication metadata. External venue interfaces
+follow their upstream ABI.
 
 ## Module layout
 

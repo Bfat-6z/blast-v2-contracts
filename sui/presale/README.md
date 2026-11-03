@@ -105,7 +105,7 @@ distinct allocations in that same transaction. Claims open only after success.
 Permissionless fee collection pays Blast its share of each asset at the vault's
 current rates, or holds it for a partnered sale's partner payout, then applies the explicitly active creator split to the rest: every fee recipient
 is paid in the same transaction, and the holder-reward share stays
-in the vault. Blast's `RewardsAdmin` publishes Merkle
+in the vault. Blast's `TreasuryAdmin` publishes Merkle
 rounds funded from that share, each with a claim deadline after which anyone can
 return its unclaimed rewards to the vault. The `PresaleCap` claims migration residuals and
 can be destroyed after cancellation. Anyone may relay participant or reward claims, but payment
@@ -127,9 +127,10 @@ capability: Blast administers it through the one shared Blast ACL
 (`blast_admin`, [ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)),
 which it already links through `blast_partners`. `blast_presale_domain` declares
 roles: `FeeAdmin` sets Blast's rates and the partners new sales may name,
-`TreasuryAdmin` their destination, `ListingAdmin` and `AdapterAdmin` the Quote
-types and migrators new sales may use, `RewardsAdmin` publishes holder-reward
-rounds, and `UpgradeAdmin` authorizes compatible upgrades and atomic version cutovers.
+`TreasuryAdmin` governs the fee destination and publishes holder-reward rounds,
+`ListingAdmin` and `AdapterAdmin` admit Quote types and migrators for new sales,
+and `RewardsAdmin` settles capped gas reserves. `UpgradeAdmin` authorizes
+compatible upgrades and atomic version cutovers.
 [DEPLOYING.md](DEPLOYING.md) gives the complete order: custody verification, ordinary ACL configuration at zero delay,
 enabling each operation’s intended notice, then immediate UnpauseAdmin release. No presale can exist
 under an unsealed cap or before unpause.

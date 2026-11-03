@@ -430,7 +430,7 @@ fun the_admin_publishes_holder_rounds_from_the_holder_share() {
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
     vault.publish_round(
         &package_version,
-        &rewards_admin(),
+        &treasury_admin(),
         &policy,
         policy.destination(),
         0,
@@ -771,7 +771,7 @@ fun a_round_needs_a_future_claim_deadline() {
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
     vault.publish_round(
         &package_version,
-        &rewards_admin(),
+        &treasury_admin(),
         &policy,
         policy.destination(),
         0,
@@ -996,7 +996,7 @@ fun publish_test_round(
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
     self.publish_round(
         &package_version,
-        &rewards_admin(),
+        &treasury_admin(),
         &policy,
         policy.destination(),
         number,
@@ -1069,10 +1069,6 @@ fun fee_admin(): AdminWitness<FeeAdmin> {
     blast_acl::witness_for_testing()
 }
 
-fun rewards_admin(): AdminWitness<RewardsAdmin> {
-    blast_acl::witness_for_testing()
-}
-
 fun treasury_admin(): AdminWitness<TreasuryAdmin> {
     blast_acl::witness_for_testing()
 }
@@ -1093,7 +1089,7 @@ use blast_partners::blast_partners::{Self as partners, Partner, PartnerPaid};
 
 use blast_presale::{
     blast_presale::{Self as presale, RecipientShare},
-    blast_presale_domain::{FeeAdmin, RewardsAdmin, TreasuryAdmin},
+    blast_presale_domain::{FeeAdmin, TreasuryAdmin},
     bps,
     creation_policy::{Self, CreationPolicy},
     fee_policy::{Self, FeePolicy, ProtocolFees},

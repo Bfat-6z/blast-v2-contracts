@@ -35,7 +35,11 @@ without advancing Clock. Later governed changes schedule, advance the simulator
 by the snapshotted delay, and apply through public entry points. Policy tests also
 prove old-delay updates, same-PTB ordering/rollback and unauthorized rejection.
 
-Run the pause matrices from `sui/launchpad/ptb_tests`, under the same memory guard:
+Cargo runs the native PTB tests from their crate root. The harness resolves
+fixtures from that directory at runtime, so checkouts can share a Cargo target.
+If running a test binary directly, first change to the intended checkout’s
+`sui/launchpad/ptb_tests` directory. Run the pause matrices there under the same
+memory guard:
 
 ```bash
 cargo test --locked --test atomic_migration pause_ -- --test-threads=1

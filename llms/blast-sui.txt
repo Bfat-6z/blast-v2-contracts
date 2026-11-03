@@ -21,7 +21,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
 | `blast_sui` | blastSUI and funSUI | not yet published | — | — |
-| `blast_admin` | Administration | live; source has changed since | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` | `0x4a27d816998b2ff015cf897a249c069c34859a09e789e56ad3a38992cf00d7ac` |
+| `blast_admin` | Administration | not yet published | — | — |
 
 ## Calling Blast contracts
 
@@ -38,7 +38,7 @@ product guide below assumes it.
 | Partner codes | earn a share of Blast's fee on the flow an app brings | `blast_partners` |
 | Boosts | hold a leveraged long or short coin backed by Aftermath perpetuals | `blast_boosts_core`, `blast_boosts_products`, `blast_boosts_aftermath` |
 | blastSUI | stake SUI with one validator through funSUI and blastSUI | `blast_sui` |
-| Administration | Blast's operators manage roles, fees, and upgrades | `blast_admin` (the presale has its own admin caps) |
+| Administration | Blast's operators manage roles, fees, and upgrades | `blast_admin` |
 
 Each package and what it depends on:
 
@@ -46,7 +46,7 @@ Each package and what it depends on:
 blast_fun_migrators          -> blast_fun, blast_admin, Cetus, Bluefin
 blast_fun                    -> blast_partners, blast_admin
 blast_partners               -> blast_admin, blast_fun_timelock
-blast_presale                -> blast_partners, blast_fun_vesting, Cetus, Bluefin
+blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
 blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
@@ -55,10 +55,9 @@ blast_admin                  -> blast_fun_timelock
 ```
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
-composes with it inside one PTB. The presale is a separate product: it shares
-no state or code with the launchpad or the migrators, keeps its own admin caps
-instead of `blast_admin`, and holds migrated liquidity in its own
-`presale_vault::Vault`. Answer presale questions from the presale guide alone.
+composes with it inside one PTB. Presale uses typed roles from the shared
+`blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
+Use the presale guide for presale calls.
 
 `blast_fun_timelock` and `blast_fun_vesting` live in this repository at
 `sui/timelock` and `sui/vesting`; both are immutable on mainnet. The standalone
@@ -123,13 +122,13 @@ names.
 
 ### Versions and upgrades
 
-Each package has one upgrade posture:
+Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
 | Immutable | `blast_admin`, `blast_partners`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
-| Dependency-only | `blast_presale` | Presale logic is sealed; Blast can only relink newer Cetus, Bluefin, and Aftermath versions, and every generation runs identical code with no version gate. Call the latest package ID, because a venue rejects calls linked to a version it retired. |
-| Version-gated | `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
+| Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events
@@ -1190,7 +1189,7 @@ public fun sync(
 
 ## API reference: `blast_admin` (Administration)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 

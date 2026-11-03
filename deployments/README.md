@@ -28,6 +28,11 @@ Blast SUI uses its [deployment](../sui/blast_sui/DEPLOYING.md) and
 same normalized evidence while following their accepted ADRs and verification
 scripts.
 
+ADR 0134 uses a fresh ACL, partners, launchpad, migrators, and presale stack.
+The October 28 package IDs and source revisions remain in the historical
+deployment records. The fresh stack receives compiler publication bindings
+after its own publication.
+
 Launchpad, presale and migrators require nonzero named-address payout defaults
 before publication. Their deployer-owned Publication retains provenance only;
 it authorizes no policy setters (ADR 0134). Wrap consumes it permanently, seals

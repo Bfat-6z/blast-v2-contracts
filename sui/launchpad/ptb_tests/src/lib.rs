@@ -50,7 +50,7 @@ pub const TEST_GENESIS_RECIPIENT: &str = "0xa";
 
 /// Keep fixture output with its checkout even when Cargo's compiler cache is shared.
 pub fn test_work_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("target/ptb-fixtures")
+    crate_dir().join("target/ptb-fixtures")
 }
 
 /// Compiled modules and the on-chain packages they link against.
@@ -86,9 +86,10 @@ pub fn build(package: &Path, published: &[(&Path, ObjectID)], work: &Path) -> Re
     let output = command.output().context("run the sui CLI")?;
     if !output.status.success() {
         bail!(
-            "building {} failed:\n{}",
+            "building {} failed:\n{}\n{}",
             package.display(),
-            String::from_utf8_lossy(&output.stderr)
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
         );
     }
     let dump: serde_json::Value = serde_json::from_slice(&output.stdout)?;
@@ -131,7 +132,12 @@ pub fn build_unlinked(package: &Path, local: &[&str], work: &Path) -> Result<Unl
     let mut command = sui_move_build(package, work)?;
     let output = command.args(["-e", "mainnet"]).output().context("run the sui CLI")?;
     if !output.status.success() {
-        bail!("building {} failed:\n{}", package.display(), String::from_utf8_lossy(&output.stderr));
+        bail!(
+            "building {} failed:\n{}\n{}",
+            package.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
     }
     let bytecode = package.join("build").join(name).join("bytecode_modules");
     let read = |directory: &Path| -> Result<Vec<CompiledModule>> {
@@ -773,9 +779,21 @@ pub fn call(
     )
 }
 
+/// Cargo runs integration tests from the crate root of the selected checkout.
+/// A cached binary can have been compiled in a different checkout.
+pub fn crate_dir() -> PathBuf {
+    let dir = std::env::current_dir().expect("native PTB test working directory");
+    assert!(
+        dir.join("Cargo.toml").is_file() && dir.ends_with("launchpad/ptb_tests"),
+        "run native PTB tests from the launchpad/ptb_tests crate: {}",
+        dir.display(),
+    );
+    dir
+}
+
 /// The repository's `sui/` directory.
 pub fn sui_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("sui directory")
+    crate_dir().join("../..").canonicalize().expect("sui directory")
 }
 
 /// The local immutable timelock package linked by `blast_admin`.

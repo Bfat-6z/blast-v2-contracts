@@ -13,7 +13,7 @@ module blast_presale::blast_presale_domain;
 /// Governs administrative delay and compatible upgrades with atomic version cutover.
 public struct UpgradeAdmin()
 
-/// Sets the address every protocol fee is paid to.
+/// Governs the protocol fee destination and publishes holder-reward rounds.
 public struct TreasuryAdmin()
 
 /// Sets Blast's rates for new sales, one sale before its start, and one migrated sale's vault, and
@@ -26,7 +26,7 @@ public struct ListingAdmin()
 /// Admits or removes the migrators that may create sales and vaults.
 public struct AdapterAdmin()
 
-/// Publishes holder-reward rounds and settles capped gas reserves.
+/// Settles capped gas reserves in published holder-reward rounds.
 public struct RewardsAdmin()
 
 /// May set emergency pause bits, never clear them.

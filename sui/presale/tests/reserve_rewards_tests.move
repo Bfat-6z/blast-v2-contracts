@@ -507,7 +507,7 @@ fun publish_commitment(
         .vault
         .publish_round(
             &version,
-            &blast_acl::witness_for_testing<RewardsAdmin>(),
+            &blast_acl::witness_for_testing<TreasuryAdmin>(),
             &self.policy,
             TREASURY,
             0,
@@ -546,7 +546,7 @@ fun publish_budget_to(
     let root = rewards::leaf_for_testing(object::id(&self.vault), 0, 0, HOLDER, 0, holder_quote);
     self.vault.publish_round(
         &package_version,
-        &blast_acl::witness_for_testing<RewardsAdmin>(),
+        &blast_acl::witness_for_testing<TreasuryAdmin>(),
         &self.policy,
         expected_treasury,
         0,
