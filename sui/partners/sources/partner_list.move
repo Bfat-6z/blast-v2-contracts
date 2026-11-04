@@ -53,11 +53,12 @@ public fun add(self: &mut PartnerList, partner: &Partner) {
 /// Stops accepting `partner_id` once the fixed notice, `blast_partners::delay_ms()`, has passed
 /// from now. Aborts unless the partner is accepted now with no removal pending.
 public fun remove(self: &mut PartnerList, partner_id: ID, clock: &Clock) {
-    self.assert_accepted(partner_id, clock);
+    let now_at_ms = clock.timestamp_ms();
+    self.assert_accepted_at(partner_id, now_at_ms);
     let stored_ends_at_ms = &mut self.acceptance_ends_at_ms[partner_id];
     assert!(*stored_ends_at_ms == std::u64::max_value!(), blast_partners::errors::unchanged!());
 
-    let acceptance_ends_at_ms = clock.timestamp_ms() + partners::delay_ms();
+    let acceptance_ends_at_ms = now_at_ms + partners::delay_ms();
     *stored_ends_at_ms = acceptance_ends_at_ms;
 
     event::emit(PartnerRemoved { owner: self.owner, partner_id, acceptance_ends_at_ms });
@@ -66,9 +67,16 @@ public fun remove(self: &mut PartnerList, partner_id: ID, clock: &Clock) {
 /// Aborts unless the list accepts `partner_id` now: it was added, and any removal's notice has
 /// not yet passed.
 public fun assert_accepted(self: &PartnerList, partner_id: ID, clock: &Clock) {
+    self.assert_accepted_at(partner_id, clock.timestamp_ms());
+}
+
+// === Private Functions ===
+
+/// Aborts unless the list accepts `partner_id` at `now_at_ms`.
+fun assert_accepted_at(self: &PartnerList, partner_id: ID, now_at_ms: u64) {
     assert!(
         self.acceptance_ends_at_ms.contains(partner_id)
-            && clock.timestamp_ms() < self.acceptance_ends_at_ms[partner_id],
+            && now_at_ms < self.acceptance_ends_at_ms[partner_id],
         blast_partners::errors::partner_not_accepted!(),
     );
 }

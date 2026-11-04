@@ -176,9 +176,11 @@ fun the_test_issuer_hands_off_to_the_test_venue() {
     let ticket = migration::issue_ticket<MEME, QUOTE, _>(migration::test_venue());
     assert_eq!(ticket.redeem_ticket(), type_name::with_original_ids<migration::TestVenue>());
 
-    let migration = migration::new_for_testing(
+    let migration = migration::new(
+        migration::test_issuer(),
         balance::create_for_testing<MEME>(7),
         balance::create_for_testing<QUOTE>(9),
+        type_name::with_original_ids<migration::TestVenue>(),
         terms,
     );
     let (meme, quote, redeemed) = migration.redeem(migration::test_venue());
@@ -187,43 +189,6 @@ fun the_test_issuer_hands_off_to_the_test_venue() {
     assert_eq!(redeemed.package_witness(), type_name::with_original_ids<migration::TestIssuer>());
     destroy(meme);
     destroy(quote);
-}
-
-#[test]
-#[expected_failure(abort_code = blast_core::errors::EWrongVenue, location = blast_core::migration)]
-fun only_the_test_venue_redeems_a_test_migration() {
-    let migration = migration::new_for_testing(
-        balance::create_for_testing<MEME>(1),
-        balance::create_for_testing<QUOTE>(1),
-        migration::vault_terms(
-            migration::test_issuer(),
-            sale_id(),
-            owner_split(),
-            bps::new(0),
-            bps::new(0),
-            option::none(),
-            migration::residuals_to_owner(),
-        ),
-    );
-    let (meme, quote, _) = migration.redeem(VenueWitness());
-
-    destroy(meme);
-    destroy(quote);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_core::errors::EWrongPackageWitness,
-    location = blast_core::migration,
-)]
-fun a_test_migration_needs_terms_the_test_issuer_sealed() {
-    destroy(
-        migration::new_for_testing(
-            balance::create_for_testing<MEME>(1),
-            balance::create_for_testing<QUOTE>(1),
-            sale_terms(),
-        ),
-    );
 }
 
 // Pool price
@@ -290,6 +255,18 @@ fun the_extreme_amounts_price_at_the_q64_range_ends() {
     assert!(!migration::is_seedable_price(1 << 32));
     assert!(!migration::is_seedable_price(79_228_162_514_264_337_591_396_466_687));
     assert_eq!(migration::sqrt_price_x64(0, 1, false), 0);
+}
+
+#[test]
+#[expected_failure(arithmetic_error, location = blast_core::migration)]
+fun the_seed_price_rejects_zero_meme_as_coin_a() {
+    migration::sqrt_price_x64(0, 1, true);
+}
+
+#[test]
+#[expected_failure(arithmetic_error, location = blast_core::migration)]
+fun the_seed_price_rejects_zero_quote_as_coin_a() {
+    migration::sqrt_price_x64(1, 0, false);
 }
 
 #[test]

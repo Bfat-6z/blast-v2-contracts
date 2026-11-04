@@ -1514,8 +1514,9 @@ the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 ### Lifecycle
 
 1. A venue creates the vault with `blast_vault::vault::new`, unshared, from terms the sale sealed.
-   It aborts unless the venue's witness and the terms' sealing witness are both admitted and
-   Blast's share is at most 3,000 basis points per asset.
+   It aborts unless the venue's witness and the terms' sealing witness are both admitted. Blast's
+   share is at most 3,000 basis points per asset because `migration::vault_terms` refuses to seal
+   more.
 2. The venue attaches its position and shares the vault with
    `blast_vault::vault::share_with_position`, which settles the migration residuals and emits
    `blast_vault_events::VaultCreated`.
@@ -1640,7 +1641,8 @@ pending admission or change to zero.
 
 ### Aborts
 
-- Vault creation: `unadmitted_venue`, then `unadmitted_issuer`, then `invalid_protocol_bps`.
+- Vault creation: `unadmitted_venue`, then `unadmitted_issuer`. Scheduling Blast's share above
+  3,000 basis points per asset aborts with `invalid_protocol_bps`.
 - A venue's buyback or auto-LP return: `wrong_vault` for another vault's receipt,
   `returned_exceeds_taken` when it returns more than it took.
 - Owner claim with nothing accrued: `nothing_to_claim`. A proof for another sale or package
@@ -4194,7 +4196,8 @@ public fun has_protocol_residuals(self: &VaultTerms): bool
 
 /// The pool's seed price from the migration's atomic amounts, `floor(sqrt(B / A) * 2^64)` in the
 /// Q64.64 form concentrated-liquidity venues take: B / A is Quote / Meme when Meme is coin A, and
-/// Meme / Quote otherwise. Display decimals never enter it. The divisor amount must be positive.
+/// Meme / Quote otherwise. Display decimals never enter it. A zero divisor amount (Meme when it
+/// is coin A, Quote otherwise) aborts with an arithmetic error.
 public fun sqrt_price_x64(meme_amount: u64, quote_amount: u64, meme_is_coin_a: bool): u128
 
 /// Whether Cetus and Bluefin can both seed a full-range pool at `sqrt_price_x64`. Both venues
@@ -4632,9 +4635,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/va
 - `witness_admission_delay_ms: u64 = 0`: Initial witness admission notice: zero, so Blast lists its products and venues at launch while publication keeps the package paused. `blast_vault_package::unpause` refuses until a nonzero notice applies.
 - `fee_change_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Fixed notice before a vault's fee split or Blast share changes; no call can change it.
 - `round_notice_ms: u64 = 2 * 60 * 60 * 1_000`: Initial notice before a scheduled holder-reward round may publish, or its next notice period may change: 2 hours, so a cancel administrator can stop a bad round while daily rounds fit.
-- `max_protocol_bps: u64 = 3_000`: Blast's largest share of each LP-fee collection, per asset.
 - `max_gas_reserve_bps: u64 = 1_000`: Largest holder-reward gas reserve, in basis points of the round's holder Quote.
-- `basis_points_denominator: u64 = 10_000`: Denominator for rates expressed in basis points.
 - `max_reward_leaves: u64 = 65_536`: The most leaves one holder-reward round may commit.
 - `digest_length: u64 = 32`: Byte length of a round's Merkle root and manifest digest.
 - `reward_leaf_domain: vector<u8> = b"blast-holder-rewards-v2"`: The domain every holder-reward leaf hashes under.
@@ -4870,9 +4871,10 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 ```move
 /// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
 /// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` and the terms' sealing
-/// witness are admitted and Blast's share is within the vault maximum. The vault's ID derives from
-/// the registry, the sealing witness, and the sale, so each sale has exactly one vault and a client
-/// computes its address from the sale alone. The vault has `key` without `store`, so it cannot
+/// witness are admitted; Blast's share needs no check, since `migration::vault_terms` capped it
+/// when the terms were sealed. The vault's ID derives from the registry, the sealing witness, and
+/// the sale, so each sale has exactly one vault and a client computes its address from the sale
+/// alone. The vault has `key` without `store`, so it cannot
 /// leave this transaction except through `share_with_position`.
 public fun new<Meme, Quote, Venue>(
     registry: &mut blast_vault_package::VaultRegistry,

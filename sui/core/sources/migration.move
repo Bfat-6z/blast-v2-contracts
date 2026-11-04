@@ -169,7 +169,8 @@ public fun has_protocol_residuals(self: &VaultTerms): bool {
 
 /// The pool's seed price from the migration's atomic amounts, `floor(sqrt(B / A) * 2^64)` in the
 /// Q64.64 form concentrated-liquidity venues take: B / A is Quote / Meme when Meme is coin A, and
-/// Meme / Quote otherwise. Display decimals never enter it. The divisor amount must be positive.
+/// Meme / Quote otherwise. Display decimals never enter it. A zero divisor amount (Meme when it
+/// is coin A, Quote otherwise) aborts with an arithmetic error.
 public fun sqrt_price_x64(meme_amount: u64, quote_amount: u64, meme_is_coin_a: bool): u128 {
     let (numerator, denominator) = if (meme_is_coin_a) (quote_amount, meme_amount)
     else (meme_amount, quote_amount);
@@ -212,17 +213,6 @@ public fun test_venue(): TestVenue { TestVenue() }
 
 #[test_only]
 public fun test_issuer(): TestIssuer { TestIssuer() }
-
-#[test_only]
-/// A migration of `meme` and `quote` created under `TestIssuer` for `TestVenue`, so venue and
-/// vault tests need no product. `TestIssuer` must have sealed `terms`.
-public fun new_for_testing<Meme, Quote>(
-    meme: Balance<Meme>,
-    quote: Balance<Quote>,
-    terms: VaultTerms,
-): Migration<Meme, Quote> {
-    new(TestIssuer(), meme, quote, type_name::with_original_ids<TestVenue>(), terms)
-}
 
 // === Imports ===
 

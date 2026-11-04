@@ -696,7 +696,8 @@ public fun has_protocol_residuals(self: &VaultTerms): bool
 
 /// The pool's seed price from the migration's atomic amounts, `floor(sqrt(B / A) * 2^64)` in the
 /// Q64.64 form concentrated-liquidity venues take: B / A is Quote / Meme when Meme is coin A, and
-/// Meme / Quote otherwise. Display decimals never enter it. The divisor amount must be positive.
+/// Meme / Quote otherwise. Display decimals never enter it. A zero divisor amount (Meme when it
+/// is coin A, Quote otherwise) aborts with an arithmetic error.
 public fun sqrt_price_x64(meme_amount: u64, quote_amount: u64, meme_is_coin_a: bool): u128
 
 /// Whether Cetus and Bluefin can both seed a full-range pool at `sqrt_price_x64`. Both venues

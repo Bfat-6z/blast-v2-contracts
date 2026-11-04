@@ -114,22 +114,6 @@ fun an_unadmitted_venue_cannot_create_a_vault() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_core::errors::EInvalidLpFeeBps,
-    location = blast_core::migration,
-)]
-/// Core refuses to seal such terms, so no vault can be created from them.
-fun terms_above_the_blast_share_maximum_cannot_create_a_vault() {
-    let mut scenario = vault_fixture::begin();
-    let mut f = vault_fixture::start(&mut scenario);
-    let terms = f.terms_for(owner_split(), 1_500, 3_001, false, false);
-
-    destroy(f.new_vault(terms));
-    f.end();
-    scenario.end();
-}
-
-#[test]
 fun terms_at_the_blast_share_maximum_create_a_vault() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
