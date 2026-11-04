@@ -104,7 +104,7 @@ for venue in cetus bluefin aftermath; do
   venue_production="$(production "$sources/$venue.move")"
   rg -q '^public struct Venue\(\) has drop;$' <<<"$venue_production" \
     && [ "$(rg -c '\.redeem\(Venue\(\)\)' <<<"$venue_production")" == 1 ] \
-    && [ "$(rg -c 'vault::new<Meme, Quote, _>\(registry, &Venue\(\), vault_version, terms, pool_id, ctx\)' <<<"$venue_production")" == 1 ] \
+    && [ "$(rg -c 'vault::new<Meme, Quote, _>\(registry, &Venue\(\), vault_version, terms, pool_id\)' <<<"$venue_production")" == 1 ] \
     && [ "$(rg -c 'migration::issue_ticket\(Venue\(\)\)' <<<"$venue_production")" == 1 ] \
     || fail "$venue must issue, redeem, and build its vault under its own Venue exactly once."
   prepare_signature="$(sed -n '/^public fun prepare</,/^): VenueTicket<Meme, Quote> {$/p' <<<"$venue_production")"

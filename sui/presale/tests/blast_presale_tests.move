@@ -184,7 +184,9 @@ fun security_presale_finalize_remains_available_as_specified() {
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         constants::create_pause_bit!()
     );
-    let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (sale, cap) = initializer.finalize(&version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
     destroy(sale);
     destroy(cap);
     destroy(currency);
@@ -211,7 +213,9 @@ fun security_pause_blocks_share() {
         &creation_policy,
         &fee_policy
     );
-    let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (sale, cap) = initializer.finalize(&version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         constants::create_pause_bit!()
@@ -244,7 +248,9 @@ fun security_partial_unpause_keeps_share_paused() {
         &creation_policy,
         &fee_policy
     );
-    let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (sale, cap) = initializer.finalize(&version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         constants::valid_pause_bits!()
@@ -1350,7 +1356,9 @@ fun a_sale_cannot_be_finalized_without_an_eligibility_policy() {
         creator_fee_split(),
     );
 
-    let (_sale, _cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (_sale, _cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
     std::unit_test::destroy(package_version);
     abort
 }
@@ -1374,7 +1382,9 @@ fun a_sale_cannot_be_finalized_without_an_lp_fee_split() {
     );
     initializer.set_eligibility(&package_version, single_wallet_eligibility());
 
-    let (_sale, _cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (_sale, _cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
     std::unit_test::destroy(package_version);
     abort
 }
@@ -1403,7 +1413,9 @@ fun a_sale_cannot_be_finalized_without_a_raise() {
         creator_fee_split(),
     );
 
-    let (_sale, _cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (_sale, _cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
     std::unit_test::destroy(package_version);
     abort
 }
@@ -1804,6 +1816,37 @@ fun regulated_sale_currency_without_global_pause_is_rejected() {
 }
 
 #[test]
+fun a_presale_id_derives_from_the_registry_and_its_sale_token() {
+    let mut ctx = tx_context::dummy();
+    let mut registry = presale::registry_for_testing(&mut ctx);
+
+    let (sale, cap) = finalize_valid_sale(&mut registry, &mut ctx);
+
+    let key = presale::presale_key_for_testing<BLAST_PRESALE_TESTS>();
+    let derived = derived_object::derive_address(object::id(&registry), key);
+    assert_eq!(object::id(&sale), object::id_from_address(derived));
+    destroy(sale);
+    destroy(cap);
+    destroy(registry);
+}
+
+#[test]
+#[expected_failure(abort_code = sui::derived_object::EObjectAlreadyExists, location = sui::derived_object)]
+fun a_second_presale_of_the_same_sale_token_is_rejected() {
+    let mut ctx = tx_context::dummy();
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (first, first_cap) = finalize_valid_sale(&mut registry, &mut ctx);
+
+    let (second, second_cap) = finalize_valid_sale(&mut registry, &mut ctx);
+
+    destroy(first);
+    destroy(first_cap);
+    destroy(second);
+    destroy(second_cap);
+    destroy(registry);
+}
+
+#[test]
 #[expected_failure(
     abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
     location = blast_presale::blast_presale,
@@ -1835,7 +1878,9 @@ fun regulated_sale_currency_is_rejected_before_missing_settings() {
         &fee_policy,
     );
 
-    let (sale, cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (sale, cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
 
     destroy(sale);
     destroy(cap);
@@ -3390,7 +3435,9 @@ fun future_version_cannot_finalize() {
     );
 
     package_version.set_for_testing(3);
-    let (_sale, _cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (_sale, _cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
     std::unit_test::destroy(package_version);
     abort
 }
@@ -3529,7 +3576,9 @@ fun stale_version_prevents_initializer_creation() {
         creator_fee_split(),
     );
 
-    let (_sale, _cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (_sale, _cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
     std::unit_test::destroy(package_version);
     abort
 }
@@ -4205,7 +4254,9 @@ fun share_partnered_sale(partner: &Partner, created_at_ms: u64, protocol_raise_b
         );
 
         initializer.set_partner(&package_version, &creation_policy, partner, &clock);
-        let (sale, cap) = initializer.finalize(&package_version, &mut currency, scenario.ctx());
+        let mut registry = presale::registry_for_testing(scenario.ctx());
+        let (sale, cap) = initializer.finalize(&package_version, &mut registry, &mut currency, scenario.ctx());
+        destroy(registry);
         let presale_id = object::id(&sale);
         sale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock);
 
@@ -4527,6 +4578,7 @@ fun new_presale<Quote>(
     ctx: &mut TxContext,
 ): (Presale<BLAST_PRESALE_TESTS, Quote>, PresaleCap) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    let mut registry = presale::registry_for_testing(ctx);
     let (result_0, result_1) = {
         new_initializer<Quote>(
             &package_version,
@@ -4534,9 +4586,10 @@ fun new_presale<Quote>(
             terms,
             creation_policy,
             fee_policy,
-        ).finalize(&package_version, currency, ctx)
+        ).finalize(&package_version, &mut registry, currency, ctx)
     };
     std::unit_test::destroy(package_version);
+    destroy(registry);
     (result_0, result_1)
 }
 
@@ -4606,6 +4659,32 @@ fun create_sale<Quote>(terms: SaleTerms) {
     create_sale_with_treasury<Quote>(treasury_cap, currency, terms, &mut ctx);
 
     destroy(ctx);
+}
+
+/// Finalizes a valid sale of a fresh `BLAST_PRESALE_TESTS` currency against `registry`.
+fun finalize_valid_sale(
+    registry: &mut PresaleRegistry,
+    ctx: &mut TxContext,
+): (Presale<BLAST_PRESALE_TESTS, QUOTE>, PresaleCap) {
+    let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    let (treasury_cap, mut currency) = new_currency(ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(ctx);
+    let initializer = new_initializer<QUOTE>(
+        &package_version,
+        treasury_cap,
+        valid_sale_terms(),
+        &creation_policy,
+        &fee_policy,
+    );
+
+    let (sale, cap) = initializer.finalize(&package_version, registry, &mut currency, ctx);
+    destroy(currency);
+    destroy(fee_policy);
+    destroy(creation_policy);
+    destroy(package_version);
+
+    (sale, cap)
 }
 
 /// Creates a sale raising `Quote` under `terms` from `treasury_cap`, then discards it.
@@ -4716,7 +4795,9 @@ fun create_bluefin_sale<AllowedQuote, AllowedVenue>(symbol: vector<u8>) {
         &package_version,
         creator_fee_split(),
     );
-    let (sale, cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
+    let mut registry = presale::registry_for_testing(&mut ctx);
+    let (sale, cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
+    destroy(registry);
 
     destroy(sale);
     destroy(cap);
@@ -5398,6 +5479,7 @@ use blast_presale::{
         PresaleCap,
         PresaleInitializer,
         PresaleCreated,
+        PresaleRegistry,
         PresaleFunded,
         PresaleMigrated,
         PresaleOpened,
@@ -5423,6 +5505,7 @@ use sui::{
     clock::{Self, Clock},
     coin::{Self, Coin, TreasuryCap},
     coin_registry::{Self, Currency},
+    derived_object,
     event,
     test_scenario::{Self, Scenario},
     test_utils

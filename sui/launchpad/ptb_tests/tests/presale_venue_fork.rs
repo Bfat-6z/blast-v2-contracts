@@ -368,7 +368,7 @@ fn run_aftermath(meme_first: bool) -> Result<()> {
         world.shared(&mut b, world.venue_config, true)?,
         world.shared(&mut b, registry, true)?,
         world.shared(&mut b, world.venue("aftermath_dao_fee_version"), false)?,
-        world.shared(&mut b, world.vault_stack.registry, false)?,
+        world.shared(&mut b, world.vault_stack.registry, true)?,
         world.shared(&mut b, world.vault_stack.version, false)?,
         world.shared(&mut b, world.treasury, false)?,
         world.clock(&mut b)?,
@@ -435,6 +435,7 @@ fn run_aftermath(meme_first: bool) -> Result<()> {
     ensure!(vaults.len() == 1);
     let created_vault = &vaults[0];
     ensure!((created_vault.vault_id, created_vault.terms.origin) == (vault, sale.presale));
+    ensure!(vault == world.vault_id(&sale)?, "the vault ID derives from the VaultRegistry, the presale's witness, and the sale");
     ensure!((created_vault.pool_id, created_vault.position_id) == (base_pool, owner_cap));
     ensure!((created_vault.residual_meme_amount, created_vault.residual_quote_amount) == (0, 0));
     ensure!(world.h.object(pool).is_shared() && world.h.object(vault).is_shared());
@@ -718,6 +719,8 @@ struct World {
     venue_config: ObjectID,
     creation_policy: ObjectID,
     fee_policy: ObjectID,
+    /// The shared `blast_presale::PresaleRegistry` every presale ID derives from.
+    presale_registry: ObjectID,
     token: CompiledPackage,
     quote_type: TypeTag,
     quote_currency: ObjectID,
@@ -771,6 +774,7 @@ impl World {
         ensure!(fee_policy.len() == 1 && h.object(fee_policy[0]).is_shared());
         let creation_policy = published.created(&h, "creation_policy", "CreationPolicy");
         ensure!(creation_policy.len() == 1 && h.object(creation_policy[0]).is_shared());
+        let presale_registry = h.derived_registry(&published, "blast_presale", "PresaleRegistry")?;
         let token = build(&blast_launchpad_ptb_tests::crate_dir().join("fixture/presale_token"), &[], &work)?;
         let (quote_type, quote_currency) = if custom_quote {
             let (package, published) = h.publish(token.clone())?;
@@ -844,6 +848,7 @@ impl World {
             checkpoint,
             venue,
             presale,
+            presale_registry,
             core,
             vault_stack,
             treasury: stack.treasury,
@@ -1033,6 +1038,12 @@ impl World {
             })
             .map(|event| bcs::from_bytes(&event.contents).expect("vault event payload"))
             .collect()
+    }
+
+    /// The ID `vault::new` claims for `sale`'s one vault, from the presale's package witness and
+    /// the sale.
+    fn vault_id(&self, sale: &Sale) -> Result<ObjectID> {
+        self.vault_stack.vault_id(&self.presale_tag("blast_presale", "PackageWitness"), sale.presale)
     }
 
     fn sale_state(&self, sale: &Sale) -> Result<PresaleState> {
@@ -1241,6 +1252,7 @@ impl World {
         let cap = b.obj(self.h.owned(treasury_cap))?;
         let venue_config = self.shared(&mut b, self.venue_config, true)?;
         let currency = self.shared(&mut b, currency, true)?;
+        let registry = self.shared(&mut b, self.presale_registry, true)?;
         let (tick_spacing, fee_rate) = self.route.tier();
         let venue_ticket = if self.route.is_cetus() {
             let args = vec![
@@ -1282,7 +1294,7 @@ impl World {
             call(&mut b, self.presale, "blast_presale", function, pair.clone(), arguments);
         }
         let Argument::Result(created) =
-            call(&mut b, self.presale, "blast_presale", "finalize", pair.clone(), vec![init, version, currency])
+            call(&mut b, self.presale, "blast_presale", "finalize", pair.clone(), vec![init, version, registry, currency])
         else {
             unreachable!()
         };
@@ -1307,6 +1319,10 @@ impl World {
         let presales = created.created(&self.h, "blast_presale", "Presale");
         let caps = self.h.owned_of_type(self.h.sender, "blast_presale", "PresaleCap");
         ensure!(presales.len() == 1 && self.h.object(presales[0]).is_shared() && caps.len() == 1);
+        ensure!(
+            presales[0] == blast_launchpad_ptb_tests::presale_id(self.presale, self.presale_registry, &meme)?,
+            "the presale ID derives from the PresaleRegistry and the sale token"
+        );
         let sale = Sale { meme, presale: presales[0], cap: caps[0], currency };
 
         let state = self.sale_state(&sale)?;
@@ -1392,7 +1408,7 @@ impl World {
         let version = self.shared(b, self.version, false)?;
         let fee_policy = self.shared(b, self.fee_policy, false)?;
         let venue_config = self.shared(b, self.venue_config, false)?;
-        let registry = self.shared(b, self.vault_stack.registry, false)?;
+        let registry = self.shared(b, self.vault_stack.registry, true)?;
         let vault_version = self.shared(b, self.vault_stack.version, false)?;
         let treasury = self.shared(b, self.treasury, false)?;
         let clock = self.clock(b)?;
@@ -1549,6 +1565,10 @@ impl World {
         ensure!(venue_marker == self.presale_tag(self.route.module(), "Venue"), "venue marker {venue_marker}");
         let terms_sealed = &created.terms;
         ensure!(terms_sealed.package_witness.ends_with("::blast_presale::PackageWitness"), "{}", terms_sealed.package_witness);
+        ensure!(
+            created.vault_id == self.vault_id(sale)?,
+            "the vault ID derives from the VaultRegistry, the presale's witness, and the sale"
+        );
         ensure!(
             terms_sealed.fee_split == initial_split()
                 && (terms_sealed.protocol_meme_bps, terms_sealed.protocol_quote_bps) == (0, 0)

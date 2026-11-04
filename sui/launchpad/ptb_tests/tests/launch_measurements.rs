@@ -176,6 +176,8 @@ struct World {
     version: ObjectID,
     runtime: ObjectID,
     config: ObjectID,
+    /// The shared `launch::LaunchRegistry` every launch ID derives from.
+    launch_registry: ObjectID,
     protocol: [u64; 2],
     templates: Vec<(u8, CompiledPackage)>,
     environment: Value,
@@ -202,6 +204,7 @@ impl World {
         let root = one(admin_published, "blast_acl", "SuperAdminCap");
         let config = one(published, "launch_config", "LaunchConfig");
         let runtime = one(published, "runtime_config", "RuntimeConfig");
+        let launch_registry = h.derived_registry(published, "launch", "LaunchRegistry")?;
         let (adapter, _) = stack.publish(&mut h, &fixture.join("adapter"), &work)?;
         let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
         h.unpause(blast, "blast_fun_domain", admin, admin_published, version, custody, [runtime, config], 7)?;
@@ -228,6 +231,7 @@ impl World {
             version,
             runtime,
             config,
+            launch_registry,
             protocol,
             templates,
             environment,
@@ -410,6 +414,11 @@ impl World {
         let launch = outcome.created(&self.h, "launch", "Launch");
         assert_eq!(launch.len(), 1);
         assert!(self.h.object(launch[0]).is_shared());
+        assert_eq!(
+            launch[0],
+            blast_launchpad_ptb_tests::launch_id(self.blast, self.launch_registry, &ticket.meme)?,
+            "{name}: the launch ID derives from the registry and the coin type",
+        );
         self.record(name, ticket.decimals, Some(shape), &outcome);
 
         Ok(Opened { meme: ticket.meme.clone(), launch: launch[0] })
@@ -497,6 +506,7 @@ impl World {
         }
         let currency = builder.obj(self.h.shared(ticket.currency, true))?;
         let creation_fee = call(&mut builder, SUI_FRAMEWORK_PACKAGE_ID, "coin", "zero", vec![sui()], vec![]);
+        let registry = builder.obj(self.h.shared(self.launch_registry, true))?;
         let launch =
             call(
                 &mut builder,
@@ -504,7 +514,7 @@ impl World {
                 "launch",
                 "finalize",
                 pair.clone(),
-                vec![initializer, version, currency, config, creation_fee],
+                vec![initializer, version, registry, currency, config, creation_fee],
             );
         let clock = builder.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
         if shape.creator_purchase && shape.opening_round_ms != NO_OPENING_ROUND {

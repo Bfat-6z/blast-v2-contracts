@@ -142,6 +142,15 @@ sealed by its witness, so the vault imports neither product.
   product admits it, and removing either from the vault's list strands the migrations of every
   sale that depends on it until it is listed again; Blast reserves that removal for a venue or
   issuer found unsafe.
+- Launches, presales and vaults have derived object IDs, so a client computes each from the coin
+  type or the sale without an indexer: a launch from an id-only `LaunchRegistry` and
+  `LaunchKey<Meme>`, a presale from `PresaleRegistry` and `PresaleKey<SaleToken>`, and a vault from
+  the `VaultRegistry` and `VaultKey { issuer, origin }`. Keying the vault by the sealing witness as
+  well as the sale keeps each issuer in its own namespace, so no venue can claim another issuer's
+  sale's vault address first. A second claim of a key aborts, which makes one launch or presale per
+  coin and one vault per sale structural; a presale that is cancelled keeps its coin's key, so that
+  coin can never be presold again. Holder-reward rounds keep ordinary IDs; their claimants
+  read the round from its publication event and its off-chain manifest.
 - Products start fully paused and use pause bits create 1, trade or commit 2, migrate 4. The vault
   pauses only administrator operations; collection, owner claims and reward claims never pause. The
   venues have no pause bits: the product's migration bit gates migration, and collection must never

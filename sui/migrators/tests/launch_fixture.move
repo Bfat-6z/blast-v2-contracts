@@ -17,6 +17,7 @@ public struct LaunchFixture {
     migrators_version: MigratorsVersion,
     config: LaunchConfig,
     runtime: RuntimeConfig,
+    launch_registry: LaunchRegistry,
     registry: VaultRegistry,
     vault_version: VaultVersion<BLAST_VAULT_PACKAGE>,
     treasury: Treasury,
@@ -40,6 +41,7 @@ public fun start<Quote, Venue: drop>(): LaunchFixture {
     let mut fixture = LaunchFixture {
         migrators_version: migrators_version::new_for_testing(ctx),
         runtime: runtime_config::new_zero_fee_share_for_testing(ctx),
+        launch_registry: launch::registry_for_testing(ctx),
         registry: blast_vault_package::registry_for_testing<Venue, launch::PackageWitness>(ctx),
         vault_version: blast_vault_package::version_for_testing(ctx),
         treasury: blast_treasury::new_for_testing(TREASURY, ctx),
@@ -139,10 +141,10 @@ public fun open_launch<Meme, Quote>(
     let creation_fee = coin::zero(self.scenario.ctx());
     let launch = initializer.finalize(
         &self.version,
+        &mut self.launch_registry,
         &mut currency,
         &self.config,
         creation_fee,
-        self.scenario.ctx(),
     );
     let launch_id = object::id(&launch);
     launch.share(&self.version, &self.clock);
@@ -222,7 +224,7 @@ public fun migration_inputs(
 ): (
     &PackageVersion,
     &LaunchConfig,
-    &VaultRegistry,
+    &mut VaultRegistry,
     &VaultVersion<BLAST_VAULT_PACKAGE>,
     &Treasury,
     &mut TxContext,
@@ -230,7 +232,7 @@ public fun migration_inputs(
     (
         &self.version,
         &self.config,
-        &self.registry,
+        &mut self.registry,
         &self.vault_version,
         &self.treasury,
         self.scenario.ctx(),
@@ -288,6 +290,7 @@ public fun end(self: LaunchFixture) {
         migrators_version,
         config,
         runtime,
+        launch_registry,
         registry,
         vault_version,
         treasury,
@@ -298,6 +301,7 @@ public fun end(self: LaunchFixture) {
     destroy(migrators_version);
     destroy(config);
     destroy(runtime);
+    destroy(launch_registry);
     destroy(registry);
     destroy(vault_version);
     destroy(treasury);
@@ -362,7 +366,7 @@ use blast_fun::{
     blast_fun::{Self as package_version, PackageVersion},
     blast_fun_domain::{AdapterAdmin, FeeAdmin, ListingAdmin},
     creator_authority::{Self, CurveFeeCap},
-    launch::{Self, Launch},
+    launch::{Self, Launch, LaunchRegistry},
     launch_config::{Self, LaunchConfig},
     launch_ticket::{Self, LaunchTicket},
     runtime_config::{Self, RuntimeConfig}

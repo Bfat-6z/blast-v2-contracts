@@ -172,6 +172,12 @@ public(package) fun assert_issuer(self: &VaultRegistry, issuer: TypeName) {
     assert!(self.witnesses.contains(&issuer), blast_vault::errors::unadmitted_issuer!());
 }
 
+/// The registry's UID, from which `vault::new` derives each vault's ID; nothing else in the
+/// package writes it.
+public(package) fun uid_mut(self: &mut VaultRegistry): &mut UID {
+    &mut self.id
+}
+
 // === Private Functions ===
 
 fun new_registry(ctx: &mut TxContext): VaultRegistry {

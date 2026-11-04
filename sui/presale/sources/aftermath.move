@@ -80,7 +80,7 @@ public fun migrate<Lp, Meme, Quote>(
     venue_config: &mut VenueConfig,
     pool_registry: &mut PoolRegistry,
     dao_fee_version: &Version,
-    registry: &VaultRegistry,
+    registry: &mut VaultRegistry,
     vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     clock: &Clock,
@@ -111,7 +111,7 @@ public fun migrate<Lp, Meme, Quote>(
     );
 
     let pool_id = object::id(&pool);
-    let vault = vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx);
+    let vault = vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id);
     let vault_address = object::id(&vault).to_address();
     let (dao_fee_pool, owner_cap) = dao_fee_pool::new(
         pool,
@@ -299,7 +299,7 @@ public fun migrate_for_testing<Meme, Quote, Position: key + store>(
     sale: &mut Presale<Meme, Quote>,
     package_version: &PackageVersion,
     fee_policy: &FeePolicy,
-    registry: &VaultRegistry,
+    registry: &mut VaultRegistry,
     vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     position: Position,
@@ -310,7 +310,7 @@ public fun migrate_for_testing<Meme, Quote, Position: key + store>(
     let (meme, quote, terms) = sale
         .migrate(package_version, fee_policy, clock, ctx)
         .redeem(Venue());
-    let vault = vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx);
+    let vault = vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id);
     let vault_id = object::id(&vault);
 
     vault.share_with_position(&Venue(), treasury, position, 1, meme, quote, ctx);

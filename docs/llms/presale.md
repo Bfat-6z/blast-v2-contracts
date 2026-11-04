@@ -298,7 +298,8 @@ Steps, type arguments `<Meme, Quote>` throughout:
      currently accepts. This is the only time a partner can be named.
 
    A setter called twice keeps its last value.
-5. `blast_presale::blast_presale::finalize(initializer, package_version, currency)` first requires
+5. `blast_presale::blast_presale::finalize(initializer, package_version, registry, currency)`,
+   with the shared `blast_presale::blast_presale::PresaleRegistry` mutable, first requires
    confirmed `Unregulated` currency status, then checks every setting together, mints the supply,
    consumes the `TreasuryCap`, and returns `(Presale<Meme, Quote>, PresaleCap)`. The Coin Registry
    supply becomes `Fixed`, or `BurnOnly` when `burnable` is true. Emits
@@ -920,6 +921,13 @@ All times are Unix milliseconds from `Clock`.
   cooldown (vault guide).
 
 ### Reading state
+
+- Find a coin's presale without an indexer: its object ID is derived from the shared
+  `blast_presale::blast_presale::PresaleRegistry` and the key
+  `blast_presale::blast_presale::PresaleKey<SaleToken>`, a field-less struct whose BCS is the single
+  byte `0x00` (Move gives it a `dummy_field: bool`): `0x2::dynamic_field::hash_type_and_key(registry_id,
+  0x2::derived_object::DerivedObjectKey<PresaleKey<SaleToken>>, [0])`, with types named by original
+  package IDs. A coin has at most one presale.
 
 The package exposes no public read functions on its shared objects (the initializer's
 `blast_presale::blast_presale::venue` is the only getter). Read object fields over RPC (object

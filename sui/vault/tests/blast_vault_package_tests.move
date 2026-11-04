@@ -43,12 +43,11 @@ fun products_and_venues_are_listed_at_launch_while_the_package_is_paused() {
     assert_eq!(f.version().paused_for_testing(), 0);
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
     let vault = vault::new<VAULT_FIXTURE, QUOTE, _>(
-        &registry,
+        &mut registry,
         &NewVenue(),
         f.version(),
         terms,
         vault_fixture::pool_id(),
-        scenario.ctx(),
     );
     destroy(vault);
     destroy(package_admin);
@@ -157,12 +156,11 @@ fun an_admitted_venue_creates_vaults_after_its_notice() {
 
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
     let vault = vault::new<VAULT_FIXTURE, QUOTE, _>(
-        &registry,
+        &mut registry,
         &NewVenue(),
         f.version(),
         terms,
         vault_fixture::pool_id(),
-        scenario.ctx(),
     );
     destroy(vault);
     destroy(registry);
@@ -213,12 +211,11 @@ fun a_removed_venue_cannot_create_vaults() {
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
     destroy(
         vault::new<VAULT_FIXTURE, QUOTE, _>(
-            &registry,
+            &mut registry,
             &NewVenue(),
             f.version(),
             terms,
             vault_fixture::pool_id(),
-            scenario.ctx(),
         ),
     );
 

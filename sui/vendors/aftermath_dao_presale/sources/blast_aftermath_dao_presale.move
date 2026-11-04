@@ -69,6 +69,7 @@ public fun finalize<Lp, SaleToken, Quote>(
     _: &AdminCap,
     package_version: &PackageVersion,
     mut initializer: PresaleInitializer<SaleToken, Quote>,
+    registry: &mut PresaleRegistry,
     currency: &mut Currency<SaleToken>,
     create_pool_cap: CreatePoolCapV2,
     ctx: &mut TxContext,
@@ -81,7 +82,7 @@ public fun finalize<Lp, SaleToken, Quote>(
             fee_split::route(fee_split::address_destination(TREASURY), bps::new(ALL_BPS)),
         ]),
     );
-    let (sale, cap) = initializer.finalize(package_version, currency, ctx);
+    let (sale, cap) = initializer.finalize(package_version, registry, currency, ctx);
 
     let pool_creation = PoolCreation<Lp> {
         id: object::new(ctx),
@@ -368,7 +369,7 @@ use amm::{pool::{CreatePoolCapV2, Pool}, pool_factory, pool_registry::PoolRegist
 use blast_core::{bps, fee_split, migration};
 
 use blast_presale::{
-    blast_presale::{Self as presale, Presale, PresaleInitializer},
+    blast_presale::{Self as presale, Presale, PresaleInitializer, PresaleRegistry},
     blast_presale_package::PackageVersion,
     creation_policy::CreationPolicy,
     fee_policy::FeePolicy

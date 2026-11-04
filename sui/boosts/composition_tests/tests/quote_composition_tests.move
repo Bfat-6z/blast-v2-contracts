@@ -81,13 +81,8 @@ fun quote_round_trip<Quote>(admit_exact: bool) {
     initializer.set_allocation_plan(&version, default_allocation_plan());
     initializer.set_lp_fee_split(&version, default_fee_split());
     let creation_fee = coin::zero(scenario.ctx());
-    let market = initializer.finalize(
-        &version,
-        &mut currency,
-        &config,
-        creation_fee,
-        scenario.ctx()
-    );
+    let mut registry = launch::registry_for_testing(scenario.ctx());
+    let market = initializer.finalize(&version, &mut registry, &mut currency, &config, creation_fee);
     market.share(&version, &clock);
     test_scenario::return_shared(config);
     test_scenario::return_to_address(@0xc, currency);
@@ -104,6 +99,7 @@ fun quote_round_trip<Quote>(admit_exact: bool) {
     test_scenario::return_shared(market);
     clock.destroy_for_testing();
     destroy(runtime);
+    destroy(registry);
     destroy(version);
     scenario.end();
 }

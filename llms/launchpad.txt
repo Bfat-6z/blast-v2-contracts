@@ -430,7 +430,8 @@ initializer, and the launch are values returned by earlier commands of the same 
 9. Pay the creation fee: `SplitCoins` from the gas coin for exactly the applied
    `LaunchConfig.creation_fee` in MIST (use `0x2::coin::zero<0x2::sui::SUI>` when it is zero).
 10. `launch::finalize` consumes the initializer and takes `PackageVersion`, the shared
-    `Currency<Meme>` (mutable), `LaunchConfig`, and the fee coin. It returns the `Launch<Meme,
+    `launch::LaunchRegistry` (mutable), the shared `Currency<Meme>` (mutable), `LaunchConfig`, and
+    the fee coin. It returns the `Launch<Meme,
     Quote>` value. It checks every setting (see Aborts), adds Blast's current one-time allocation to
     the plan and requires each asset to sum to 10,000, fixes the supply as burn-only or fixed in the
     Coin Registry (consuming the `TreasuryCap`), keeps the curve's Meme as `meme_reserve` and the
@@ -868,6 +869,14 @@ All times are `Clock` milliseconds.
   the claim signer keys are read live. Later config changes never reach a launch past its snapshot.
 
 ### Reading state
+
+- Find a coin's launch without an indexer: its object ID is derived from the shared
+  `launch::LaunchRegistry` and the key `launch::LaunchKey<Meme>`, a field-less struct whose BCS is
+  the single byte `0x00` (Move gives it a `dummy_field: bool`):
+  `0x2::dynamic_field::hash_type_and_key(registry_id,
+  0x2::derived_object::DerivedObjectKey<blast_fun::launch::LaunchKey<Meme>>, [0])`, with types named
+  by original package IDs. A coin has at most one launch; a second `launch::finalize` for the same
+  Meme aborts in `sui::derived_object`.
 
 The launchpad has no getters; read object fields through Sui RPC (object content, dynamic fields),
 or dev-inspect a call.
@@ -1624,6 +1633,16 @@ Unpausing with `blast_vault_package::unpause` requires a nonzero witness admissi
 pending admission or change to zero.
 
 ### Reading state
+
+- Find a sale's vault without an indexer: its object ID is derived from the shared
+  `blast_vault_package::VaultRegistry` and the key `blast_vault::vault::VaultKey { issuer, origin }`,
+  whose BCS is the sealing package witness's type name as a length-prefixed `String` (ULEB128
+  length, then the ASCII name, with the original package ID written without `0x`) followed by the
+  sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
+  0x2::derived_object::DerivedObjectKey<blast_vault::vault::VaultKey>, bcs(key))`. The launchpad's
+  issuer is `blast_fun::launch::PackageWitness` and the presale's
+  `blast_presale::blast_presale::PackageWitness`. Each sale has exactly one vault; a second
+  `blast_vault::vault::new` for the same terms aborts in `sui::derived_object`.
 
 - `blast_vault::vault::pool_id`: the pool the vault's position belongs to.
 - The venue's positions are dynamic object fields of the vault, under the venue's
@@ -2632,6 +2651,15 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 #### Types
 
 ```move
+/// Shared singleton every launch's object ID derives from, so a client finds a coin's one launch
+/// from the coin type alone.
+public struct LaunchRegistry has key {
+    id: UID,
+}
+
+/// Derives the one launch of `Meme` from the registry.
+public struct LaunchKey<phantom Meme>() has copy, drop, store;
+
 /// The launchpad's package witness: it seals each launch's migration, vault terms, and owner
 /// proofs, and only this module constructs it.
 public struct PackageWitness() has drop;
@@ -2770,14 +2798,15 @@ public fun set_partner<Meme, Quote>(
 /// Checks every setting, adds Blast's allocation to the plan, fixes the canonical supply in the
 /// Coin Registry, and splits the Meme into the curve reserve and the migration allocations.
 /// `creation_fee` must be exactly the configured fee; it joins Blast's fees on the launch. The
-/// version check also rejects stale finalization in a transaction that used current intake.
+/// version check also rejects stale finalization in a transaction that used current intake. The
+/// launch's ID derives from `registry` and the coin type.
 public fun finalize<Meme, Quote>(
     self: LaunchInitializer<Meme, Quote>,
     package_version: &blast_fun::PackageVersion,
+    registry: &mut LaunchRegistry,
     currency: &mut Currency<Meme>,
     config: &launch_config::LaunchConfig,
     creation_fee: Coin<sui::SUI>,
-    ctx: &mut TxContext,
 ): Launch<Meme, Quote>
 
 /// Shares the launch. Public time starts now: trading, or the opening round, which ends
@@ -3689,7 +3718,7 @@ public fun migrate<Meme, Quote>(
     quote_currency: &Currency<Quote>,
     venue_config: &venue_config::VenueConfig,
     bluefin_config: &mut config::GlobalConfig,
-    registry: &blast_vault::blast_vault_package::VaultRegistry,
+    registry: &mut blast_vault::blast_vault_package::VaultRegistry,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
     treasury: &blast_core::blast_treasury::Treasury,
     creation_fee: Coin<sui::SUI>,
@@ -3815,7 +3844,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     cetus_config: &config::GlobalConfig,
     pools: &mut factory::Pools,
     burn_manager: &mut lp_burn::BurnManager,
-    registry: &blast_vault::blast_vault_package::VaultRegistry,
+    registry: &mut blast_vault::blast_vault_package::VaultRegistry,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
     treasury: &blast_core::blast_treasury::Treasury,
     clock: &Clock,
@@ -4999,6 +5028,12 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/va
 #### Types
 
 ```move
+/// Derives a sale's one vault from the registry: the witness that sealed its terms and the sale.
+public struct VaultKey has copy, drop, store {
+    issuer: TypeName,
+    origin: ID,
+}
+
 /// The key under which the venue's migration position is held; only `Venue` can reach it.
 public struct PositionKey<phantom Venue>() has copy, drop, store;
 
@@ -5086,15 +5121,16 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 ```move
 /// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
 /// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` and the terms' sealing
-/// witness are admitted and Blast's share is within the vault maximum. The vault has `key` without
-/// `store`, so it cannot leave this transaction except through `share_with_position`.
+/// witness are admitted and Blast's share is within the vault maximum. The vault's ID derives from
+/// the registry, the sealing witness, and the sale, so each sale has exactly one vault and a client
+/// computes its address from the sale alone. The vault has `key` without `store`, so it cannot
+/// leave this transaction except through `share_with_position`.
 public fun new<Meme, Quote, Venue>(
-    registry: &blast_vault_package::VaultRegistry,
+    registry: &mut blast_vault_package::VaultRegistry,
     _: &Venue,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
     terms: blast_core::migration::VaultTerms,
     pool_id: ID,
-    ctx: &mut TxContext,
 ): Vault<Meme, Quote>
 
 /// Attaches `position`, holding `liquidity`, under the venue's sealed key with no removal path,

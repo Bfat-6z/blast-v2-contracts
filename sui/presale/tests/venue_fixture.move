@@ -45,6 +45,7 @@ public struct VenueFixture {
     venue_config: VenueConfig,
     vault_version: VaultVersion<BLAST_VAULT_PACKAGE>,
     treasury: Treasury,
+    presale_registry: PresaleRegistry,
 }
 
 // === Test Helpers ===
@@ -71,6 +72,7 @@ public fun start(): VenueFixture {
         venue_config: venue_config::new_for_testing(scenario.ctx()),
         vault_version: blast_vault_package::version_for_testing(scenario.ctx()),
         treasury: blast_treasury::new_for_testing(TREASURY, scenario.ctx()),
+        presale_registry: presale::registry_for_testing(scenario.ctx()),
         package_version,
         scenario,
     }
@@ -147,7 +149,7 @@ public fun fund_aftermath_sale<Lp, SaleToken>(
 /// Migrates the funded sale `sale_id` through `cetus` into a shared vault and returns its ID.
 public fun migrate_with_cetus<SaleToken>(self: &mut VenueFixture, sale_id: ID): ID {
     self.scenario.next_tx(KEEPER);
-    let registry = blast_vault_package::registry_for_testing<cetus::Venue, PackageWitness>(
+    let mut registry = blast_vault_package::registry_for_testing<cetus::Venue, PackageWitness>(
         self.scenario.ctx(),
     );
     let mut sale = self.scenario.take_shared_by_id<Presale<SaleToken, QUOTE>>(sale_id);
@@ -157,7 +159,7 @@ public fun migrate_with_cetus<SaleToken>(self: &mut VenueFixture, sale_id: ID): 
         &mut sale,
         &self.package_version,
         &self.fee_policy,
-        &registry,
+        &mut registry,
         &self.vault_version,
         &self.treasury,
         position,
@@ -175,7 +177,7 @@ public fun migrate_with_cetus<SaleToken>(self: &mut VenueFixture, sale_id: ID): 
 /// Migrates the funded sale `sale_id` through `bluefin` into a shared vault and returns its ID.
 public fun migrate_with_bluefin<SaleToken>(self: &mut VenueFixture, sale_id: ID): ID {
     self.scenario.next_tx(KEEPER);
-    let registry = blast_vault_package::registry_for_testing<bluefin::Venue, PackageWitness>(
+    let mut registry = blast_vault_package::registry_for_testing<bluefin::Venue, PackageWitness>(
         self.scenario.ctx(),
     );
     let mut sale = self.scenario.take_shared_by_id<Presale<SaleToken, QUOTE>>(sale_id);
@@ -185,7 +187,7 @@ public fun migrate_with_bluefin<SaleToken>(self: &mut VenueFixture, sale_id: ID)
         &mut sale,
         &self.package_version,
         &self.fee_policy,
-        &registry,
+        &mut registry,
         &self.vault_version,
         &self.treasury,
         position,
@@ -203,7 +205,7 @@ public fun migrate_with_bluefin<SaleToken>(self: &mut VenueFixture, sale_id: ID)
 /// Migrates the funded sale `sale_id` through `aftermath` into a shared vault and returns its ID.
 public fun migrate_with_aftermath<SaleToken>(self: &mut VenueFixture, sale_id: ID): ID {
     self.scenario.next_tx(KEEPER);
-    let registry = blast_vault_package::registry_for_testing<aftermath::Venue, PackageWitness>(
+    let mut registry = blast_vault_package::registry_for_testing<aftermath::Venue, PackageWitness>(
         self.scenario.ctx(),
     );
     let mut sale = self.scenario.take_shared_by_id<Presale<SaleToken, QUOTE>>(sale_id);
@@ -213,7 +215,7 @@ public fun migrate_with_aftermath<SaleToken>(self: &mut VenueFixture, sale_id: I
         &mut sale,
         &self.package_version,
         &self.fee_policy,
-        &registry,
+        &mut registry,
         &self.vault_version,
         &self.treasury,
         position,
@@ -233,7 +235,7 @@ public fun migrate_with_aftermath<SaleToken>(self: &mut VenueFixture, sale_id: I
 /// aborts there.
 public fun migrate_with_aftermath_pool<Lp, SaleToken>(self: &mut VenueFixture, sale_id: ID) {
     self.scenario.next_tx(KEEPER);
-    let registry = blast_vault_package::registry_for_testing<aftermath::Venue, PackageWitness>(
+    let mut registry = blast_vault_package::registry_for_testing<aftermath::Venue, PackageWitness>(
         self.scenario.ctx(),
     );
     let mut pool_registry = pool_registry::new_for_testing(self.scenario.ctx());
@@ -247,7 +249,7 @@ public fun migrate_with_aftermath_pool<Lp, SaleToken>(self: &mut VenueFixture, s
         &mut self.venue_config,
         &mut pool_registry,
         &dao_fee_version,
-        &registry,
+        &mut registry,
         &self.vault_version,
         &self.treasury,
         &self.clock,
@@ -408,6 +410,7 @@ public fun end(self: VenueFixture) {
         venue_config,
         vault_version,
         treasury,
+        presale_registry,
     } = self;
     clock.destroy_for_testing();
     destroy(package_version);
@@ -415,6 +418,7 @@ public fun end(self: VenueFixture) {
     destroy(venue_config);
     destroy(vault_version);
     destroy(treasury);
+    destroy(presale_registry);
     scenario.end();
 }
 
@@ -459,7 +463,7 @@ fun fund_sale<SaleToken, Venue>(
     initializer.set_windows(version, COMMITMENT_DURATION_MS, LIQUIDITY_WINDOW_DURATION_MS);
     initializer.set_eligibility(version, presale::open_eligibility(RAISE_TARGET, 1, RAISE_TARGET));
     initializer.set_fee_split(version, fee_split);
-    let (sale, cap) = initializer.finalize(version, currency, self.scenario.ctx());
+    let (sale, cap) = initializer.finalize(version, &mut self.presale_registry, currency, self.scenario.ctx());
     let sale_id = object::id(&sale);
     sale.share(version, starts_at_ms, &self.clock);
     destroy(creation_policy);
@@ -491,7 +495,7 @@ use blast_core::{blast_treasury::{Self, Treasury}, bps, fee_split::FeeSplit, mig
 
 use blast_presale::{
     aftermath,
-    blast_presale::{Self as presale, PackageWitness, Presale, PresaleCap},
+    blast_presale::{Self as presale, PackageWitness, Presale, PresaleCap, PresaleRegistry},
     blast_presale_domain::FeeAdmin,
     blast_presale_package::{Self, PackageVersion},
     bluefin,
