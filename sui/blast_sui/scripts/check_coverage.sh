@@ -13,8 +13,7 @@
 #     zero package id. The complete native authorize/commit/advance matrix is
 #     proved in `blast_admin::upgrade_custody_tests`, which owns a package
 #     marker at a nonzero address; the tests here prove this package's
-#     provenance rule, guard order, policy narrowing, and
-#     immutability.
+#     intake, notice enforcement, guard order, and immutability.
 set -euo pipefail
 
 package_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,7 +45,7 @@ for module in blast_events events blast_sui_package blast_sui \
   require_module "$module"
 done
 
-require_module_exact package_admin 88.06
+require_module_exact package_admin 88.72
 
 total="$(grep -oE '% Move Coverage: [0-9]+\.[0-9]+' <<<"$coverage_summary" | grep -oE '[0-9]+\.[0-9]+')"
 if ! awk -v t="$total" 'BEGIN { exit (t >= 97.00) ? 0 : 1 }'; then
