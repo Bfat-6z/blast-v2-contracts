@@ -1043,7 +1043,7 @@ if [[ ! -f sources/launch.move ]] \
   || [[ "$launch_finalize_body" != *'ticket.destroy(treasury_cap, currency, atomic_supply);'* ]] \
   || rg -q '\b(Witness|migration_witness|MigrationWitness|pool_tick_spacing|pool_fee_rate|pool_tier|treasury_cap_mut|invalid_migration_witness)\b' \
     <<<"$launch_source$(move_normalized_source <<<"$events_facts")" \
-  || [[ "$(move_production_function_contract finalize <<<"$launch_facts")" != 'public:0:0:fun finalize<Meme, Quote>( self: LaunchInitializer<Meme, Quote>, package_version: &PackageVersion, currency: &mut Currency<Meme>, config: &LaunchConfig, creation_fee: Coin<SUI>, ctx: &mut TxContext, ): Launch<Meme, Quote>' ]] \
+  || [[ "$(move_production_function_contract finalize <<<"$launch_facts")" != 'public:0:0:fun finalize<Meme, Quote>( self: LaunchInitializer<Meme, Quote>, package_version: &PackageVersion, registry: &mut LaunchRegistry, currency: &mut Currency<Meme>, config: &LaunchConfig, creation_fee: Coin<SUI>, ): Launch<Meme, Quote>' ]] \
   || [[ "$(move_production_function_contract set_partner <<<"$launch_facts")" != 'public:0:0:fun set_partner<Meme, Quote>( self: &mut LaunchInitializer<Meme, Quote>, package_version: &PackageVersion, config: &LaunchConfig, partner: &Partner, clock: &Clock, )' ]] \
   || ! in_order 'config.assert_partner(' 'self.partner_id = option::some(partner_id);' \
     <<<"$(move_production_body set_partner <<<"$launch_facts")" \
@@ -1063,7 +1063,7 @@ if [[ ! -f sources/launch.move ]] \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
   || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, metadata_cap_reassignment, curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
-  || [[ "$launch_finalize_body" != *'let id = object::new(ctx); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
+  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
   || [[ "$launch_finalize_body" != *'fee_ledger: fees::new(creation_fee),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \

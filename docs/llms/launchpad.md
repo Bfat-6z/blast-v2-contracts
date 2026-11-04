@@ -255,7 +255,8 @@ initializer, and the launch are values returned by earlier commands of the same 
 9. Pay the creation fee: `SplitCoins` from the gas coin for exactly the applied
    `LaunchConfig.creation_fee` in MIST (use `0x2::coin::zero<0x2::sui::SUI>` when it is zero).
 10. `launch::finalize` consumes the initializer and takes `PackageVersion`, the shared
-    `Currency<Meme>` (mutable), `LaunchConfig`, and the fee coin. It returns the `Launch<Meme,
+    `launch::LaunchRegistry` (mutable), the shared `Currency<Meme>` (mutable), `LaunchConfig`, and
+    the fee coin. It returns the `Launch<Meme,
     Quote>` value. It checks every setting (see Aborts), adds Blast's current one-time allocation to
     the plan and requires each asset to sum to 10,000, fixes the supply as burn-only or fixed in the
     Coin Registry (consuming the `TreasuryCap`), keeps the curve's Meme as `meme_reserve` and the
@@ -693,6 +694,13 @@ All times are `Clock` milliseconds.
   the claim signer keys are read live. Later config changes never reach a launch past its snapshot.
 
 ### Reading state
+
+- Find a coin's launch without an indexer: its object ID is derived from the shared
+  `launch::LaunchRegistry` and the key `launch::LaunchKey<Meme>`, a zero-field struct with empty
+  BCS: `0x2::dynamic_field::hash_type_and_key(registry_id,
+  0x2::derived_object::DerivedObjectKey<blast_fun::launch::LaunchKey<Meme>>, [])`, with types named
+  by original package IDs. A coin has at most one launch; a second `launch::finalize` for the same
+  Meme aborts in `sui::derived_object`.
 
 The launchpad has no getters; read object fields through Sui RPC (object content, dynamic fields),
 or dev-inspect a call.

@@ -130,6 +130,15 @@ pending admission or change to zero.
 
 ### Reading state
 
+- Find a sale's vault without an indexer: its object ID is derived from the shared
+  `blast_vault_package::VaultRegistry` and the key `blast_vault::vault::VaultKey { issuer, origin }`,
+  whose BCS is the sealing package witness's type name (an ASCII string, original package ID)
+  followed by the sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
+  0x2::derived_object::DerivedObjectKey<blast_vault::vault::VaultKey>, bcs(key))`. The launchpad's
+  issuer is `blast_fun::launch::PackageWitness` and the presale's
+  `blast_presale::blast_presale::PackageWitness`. Each sale has exactly one vault; a second
+  `blast_vault::vault::new` for the same terms aborts in `sui::derived_object`.
+
 - `blast_vault::vault::pool_id`: the pool the vault's position belongs to.
 - The venue's positions are dynamic object fields of the vault, under the venue's
   `PositionKey` and, once auto-LP has opened one, `AutoLpPositionKey`; only the venue's own code
