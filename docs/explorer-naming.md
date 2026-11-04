@@ -68,7 +68,7 @@ every package-administration object.
 | `blast_fun` | `creator_authority::BlastMetadataCap<Meme>` | unchanged | struct |
 | `blast_fun` | `package_admin::PackageAdmin` | unchanged | holds `UpgradeCustody<BLAST_FUN>` |
 | `blast_fun` | `package_version::PackageVersion` | `blast_fun::PackageVersion` | module; holds `OperationalVersion<BLAST_FUN>` |
-| `blast_fun` | `blast_fun::Bootstrap` | new (ADR 0114); deployer-owned until custody intake | module |
+| `blast_fun` | `blast_fun::Publication` | new (ADR 0114); deployer-owned until custody intake | module |
 | `blast_fun_migrators` | `venue_config::VenueConfig` | unchanged | *residual* |
 | `blast_fun_migrators` | `package_admin::PackageAdmin` | unchanged | holds `UpgradeCustody<BLAST_FUN_MIGRATORS>` |
 | `blast_fun_migrators` | `package_version::PackageVersion` | `blast_fun_migrators::PackageVersion` | module; holds `OperationalVersion<BLAST_FUN_MIGRATORS>` |
@@ -144,7 +144,7 @@ and gate. Their references to the launchpad domain follow the rename
 renamed when they return to `sui/`.
 
 Presale activation (ADR 0117) uses `blast_presale_package::BLAST_PRESALE_PACKAGE`,
-`blast_presale_package::Bootstrap`, and `blast_presale_package::PackageVersion`.
+`blast_presale_package::Publication`, and `blast_presale_package::PackageVersion`.
 `package_admin::PackageAdmin` holds `UpgradeCustody<BLAST_PRESALE_PACKAGE>`. The
 separate provenance module avoids cycles between the economic module and policy
 modules that must borrow PackageVersion.
