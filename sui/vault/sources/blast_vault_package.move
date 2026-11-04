@@ -6,10 +6,10 @@
 /// The vault package's publication, its venue admission, and its unpause.
 ///
 /// Only an admitted venue may create a vault. A venue is admitted by its witness type, the one its
-/// module alone can construct, so a vault's terms always come from the venue code that redeemed a
-/// sale's migration or sealed its own standalone terms. An `AdapterAdmin` schedules an admission,
-/// anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an
-/// `AdapterAdmin` removes a venue at once.
+/// module alone can construct. Gating venues rather than products covers standalone vaults with the
+/// same list, and binds every position key to venue code Blast reviewed. An `AdapterAdmin`
+/// schedules an admission, anyone applies it once its notice has passed, a `CancelAdmin` cancels
+/// it, and an `AdapterAdmin` removes a venue at once.
 ///
 /// The admission notice starts at zero and admissions ignore the pause, so Blast lists its venues
 /// and raises the notice while publication keeps the package paused; `unpause` refuses until that

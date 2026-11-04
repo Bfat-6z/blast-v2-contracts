@@ -5558,6 +5558,9 @@ pending change to zero.
   route order.
 - `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded`: auto-LP.
 - `blast_vault_events::BuybackBurned`: Quote spent and Meme burned.
+- Burned Meme leaves the supply when the Meme `Currency` is burn-only; when its supply is fixed
+  it is sent to `0x0` instead. Both supply states are final, so an indexer reads the
+  currency's supply state once to tell the two apart.
 - `blast_vault_events::OwnerBalancesClaimed`: the owner's payout.
 - `blast_vault_events::RoundPublished`, `blast_vault_events::RewardClaimed`,
   `blast_vault_events::GasReserveSettled`, `blast_vault_events::RoundClosed`: rounds.
@@ -14351,7 +14354,7 @@ public struct RoundClosed<phantom Meme, phantom Quote> has copy, drop {
 
 ### `blast_vault::blast_vault_package`
 
-The vault package's publication, its venue admission, and its unpause.  Only an admitted venue may create a vault. A venue is admitted by its witness type, the one its module alone can construct, so a vault's terms always come from the venue code that redeemed a sale's migration or sealed its own standalone terms. An `AdapterAdmin` schedules an admission, anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an `AdapterAdmin` removes a venue at once.  The admission notice starts at zero and admissions ignore the pause, so Blast lists its venues and raises the notice while publication keeps the package paused; `unpause` refuses until that notice is guarded.
+The vault package's publication, its venue admission, and its unpause.  Only an admitted venue may create a vault. A venue is admitted by its witness type, the one its module alone can construct. Gating venues rather than products covers standalone vaults with the same list, and binds every position key to venue code Blast reviewed. An `AdapterAdmin` schedules an admission, anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an `AdapterAdmin` removes a venue at once.  The admission notice starts at zero and admissions ignore the pause, so Blast lists its venues and raises the notice while publication keeps the package paused; `unpause` refuses until that notice is guarded.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/blast_vault_package.move
 
@@ -14450,7 +14453,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/va
 #### Constants
 
 - `generation: u64 = 1`: The package generation this bytecode serves.
-- `admin_pause_bit: u8 = 1`: Stops Blast's administrative operations: venue admission, protocol-share changes, holder-reward rounds, gas settlement, and buyback. Collection, owner actions, claims, closes, and cancels never pause.
+- `admin_pause_bit: u8 = 1`: Stops Blast's administrative operations: protocol-share changes, holder-reward rounds, gas settlement, and buyback. Venue admission, collection, owner actions, claims, closes, and cancels never pause.
 - `valid_pause_bits: u8 = blast_vault::constants::admin_pause_bit!()`: Every supported vault pause flag.
 - `venue_admission_delay_ms: u64 = 0`: Initial venue admission notice: zero, so Blast lists its venues at launch while publication keeps the package paused. `blast_vault_package::unpause` refuses until a nonzero notice applies.
 - `fee_change_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Initial notice before a vault's fee split or Blast share changes.
@@ -14673,7 +14676,7 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 /// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
 /// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` is admitted and Blast's
 /// share is within the vault maximum.
-public fun new<Meme, Quote, Venue: drop>(
+public fun new<Meme, Quote, Venue>(
     registry: &blast_vault_package::VaultRegistry,
     _: &Venue,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,

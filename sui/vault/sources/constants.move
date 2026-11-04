@@ -11,8 +11,8 @@ macro public(package) fun generation(): u64 {
     1
 }
 
-/// Stops Blast's administrative operations: venue admission, protocol-share changes, holder-reward
-/// rounds, gas settlement, and buyback. Collection, owner actions, claims, closes, and cancels
+/// Stops Blast's administrative operations: protocol-share changes, holder-reward rounds, gas
+/// settlement, and buyback. Venue admission, collection, owner actions, claims, closes, and cancels
 /// never pause.
 macro public(package) fun admin_pause_bit(): u8 {
     1

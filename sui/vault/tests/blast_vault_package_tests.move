@@ -100,6 +100,47 @@ fun unpause_waits_while_a_zero_admission_notice_is_pending() {
     abort
 }
 
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EUnguardedNotice,
+    location = blast_vault::blast_vault_package,
+)]
+/// An admission still pending when the notice is raised keeps the set unguarded until it is
+/// applied or cancelled.
+fun unpause_waits_while_an_admission_is_pending() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let mut registry = guarded_registry(&f, scenario.ctx());
+    let package_admin = new_package_admin(scenario.ctx());
+    registry.schedule_venue<NewVenue>(&adapter_admin(), f.version(), f.clock());
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
+
+    registry.unpause(
+        &unpause_admin(),
+        &package_admin,
+        f.version_mut(),
+        constants::admin_pause_bit!(),
+    );
+
+    abort
+}
+
+#[test]
+fun venues_are_admitted_while_paused_after_launch() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let mut registry = guarded_registry(&f, scenario.ctx());
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
+
+    registry.schedule_venue<NewVenue>(&adapter_admin(), f.version(), f.clock());
+    f.clock_mut().increment_for_testing(ADMISSION_NOTICE_MS);
+    registry.apply_venue<NewVenue>(f.version(), f.clock());
+
+    destroy(registry);
+    f.end();
+    scenario.end();
+}
+
 // Venue admission after launch
 
 #[test]

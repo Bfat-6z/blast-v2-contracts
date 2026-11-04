@@ -90,7 +90,7 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 /// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
 /// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` is admitted and Blast's
 /// share is within the vault maximum.
-public fun new<Meme, Quote, Venue: drop>(
+public fun new<Meme, Quote, Venue>(
     registry: &VaultRegistry,
     _: &Venue,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,

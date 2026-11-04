@@ -136,6 +136,9 @@ pending change to zero.
   route order.
 - `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded`: auto-LP.
 - `blast_vault_events::BuybackBurned`: Quote spent and Meme burned.
+- Burned Meme leaves the supply when the Meme `Currency` is burn-only; when its supply is fixed
+  it is sent to `0x0` instead. Both supply states are final, so an indexer reads the
+  currency's supply state once to tell the two apart.
 - `blast_vault_events::OwnerBalancesClaimed`: the owner's payout.
 - `blast_vault_events::RoundPublished`, `blast_vault_events::RewardClaimed`,
   `blast_vault_events::GasReserveSettled`, `blast_vault_events::RoundClosed`: rounds.

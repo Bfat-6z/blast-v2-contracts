@@ -579,6 +579,80 @@ fun a_round_without_a_claim_window_is_rejected() {
     abort_with_vault(scenario, f, vault)
 }
 
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
+fun the_admin_pause_stops_round_publication() {
+    let mut scenario = vault_fixture::begin();
+    let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
+    schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
+    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
+
+    holder_rewards::publish_round(&mut vault, f.version(), f.treasury(), f.clock(), scenario.ctx());
+
+    abort_with_vault(scenario, f, vault)
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
+fun the_admin_pause_stops_round_notice_changes() {
+    let mut scenario = vault_fixture::begin();
+    let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
+    holder_rewards::schedule_round_delay(&mut vault, &rewards_admin(), f.version(), 1, f.clock());
+    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
+
+    holder_rewards::apply_round_delay(&mut vault, f.version(), f.clock());
+
+    abort_with_vault(scenario, f, vault)
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
+fun the_admin_pause_stops_gas_settlement() {
+    let (mut scenario, mut f, mut vault, mut round, _) = two_leaf_round();
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
+
+    round.settle_gas_reserve(&rewards_admin(), f.version(), &mut vault, 1, scenario.ctx());
+
+    abort_with(scenario, f, vault, round)
+}
+
+#[test]
+fun the_admin_pause_never_stops_closing_a_round() {
+    let (scenario, mut f, mut vault, round, _) = two_leaf_round();
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
+    f.clock_mut().increment_for_testing(CLAIM_WINDOW_MS);
+
+    round.close_round(f.version(), &mut vault, f.clock());
+
+    assert_eq!(vault.next_round(), 1);
+    finish_vault(scenario, f, vault);
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
+fun cancelling_without_a_scheduled_round_is_rejected() {
+    let mut scenario = vault_fixture::begin();
+    let (f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
+
+    holder_rewards::cancel_round(&mut vault, &cancel_admin(), f.version());
+
+    abort_with_vault(scenario, f, vault)
+}
+
+#[test]
+#[expected_failure(abort_code = blast_vault::errors::EClaimsClosed, location = blast_vault::holder_rewards)]
+/// The deadline is checked before the index, so a late claim reports the closed window.
+fun a_late_claim_reports_the_deadline_before_the_index() {
+    let (mut scenario, mut f, vault, mut round, bob) = two_leaf_round();
+    f.clock_mut().increment_for_testing(CLAIM_WINDOW_MS);
+
+    round.claim(f.version(), 2, ALICE, 100, 10, vector[bob], f.clock(), scenario.ctx());
+
+    abort_with(scenario, f, vault, round)
+}
+
 // === Test Helpers ===
 
 /// A fixture with an owner-only vault holding `meme` and `quote` of unreserved holder rewards.
