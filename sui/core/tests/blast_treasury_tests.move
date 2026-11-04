@@ -19,7 +19,7 @@ fun a_new_destination_waits_the_applied_notice_and_anyone_applies_it() {
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
     assert!(treasury.is_guarded());
 
-    treasury.schedule_destination(&blast_acl::witness_for_testing<TreasuryAdmin>(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
     assert_eq!(treasury.destination(), GENESIS);
 
     clock.increment_for_testing(NOTICE_MS);
@@ -36,7 +36,7 @@ fun a_destination_cannot_apply_before_its_notice() {
     let ctx = &mut tx_context::dummy();
     let mut clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
-    treasury.schedule_destination(&blast_acl::witness_for_testing<TreasuryAdmin>(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
 
     clock.increment_for_testing(NOTICE_MS - 1);
     treasury.apply_destination(&clock);
@@ -50,7 +50,7 @@ fun a_cancelled_destination_cannot_apply() {
     let ctx = &mut tx_context::dummy();
     let mut clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
-    treasury.schedule_destination(&blast_acl::witness_for_testing<TreasuryAdmin>(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
     treasury.cancel_destination(&blast_acl::witness_for_testing<CancelAdmin>());
 
     clock.increment_for_testing(NOTICE_MS);
@@ -60,26 +60,32 @@ fun a_cancelled_destination_cannot_apply() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_core::errors::EInvalidTreasury, location = blast_core::blast_treasury)]
+#[expected_failure(
+    abort_code = blast_core::errors::EInvalidTreasury,
+    location = blast_core::blast_treasury,
+)]
 fun a_destination_must_be_a_nonzero_address() {
     let ctx = &mut tx_context::dummy();
     let clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
 
-    treasury.schedule_destination(&blast_acl::witness_for_testing<TreasuryAdmin>(), @0x0, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), @0x0, NOTICE_MS, &clock);
 
     abort
 }
 
 #[test]
-#[expected_failure(abort_code = blast_core::errors::EInvalidTreasury, location = blast_core::blast_treasury)]
+#[expected_failure(
+    abort_code = blast_core::errors::EInvalidTreasury,
+    location = blast_core::blast_treasury,
+)]
 /// The zero address is rejected before the delayed setting sees an unchanged proposal.
 fun a_zero_destination_is_rejected_before_an_unchanged_notice() {
     let ctx = &mut tx_context::dummy();
     let clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
 
-    treasury.schedule_destination(&blast_acl::witness_for_testing<TreasuryAdmin>(), @0x0, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), @0x0, NOTICE_MS, &clock);
 
     abort
 }
@@ -91,20 +97,27 @@ fun an_unchanged_destination_and_notice_is_rejected() {
     let clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
 
-    treasury.schedule_destination(&blast_acl::witness_for_testing<TreasuryAdmin>(), GENESIS, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), GENESIS, NOTICE_MS, &clock);
 
     abort
 }
 
 #[test]
-#[expected_failure(abort_code = blast_core::errors::EInvalidTreasury, location = blast_core::blast_treasury)]
+#[expected_failure(
+    abort_code = blast_core::errors::EInvalidTreasury,
+    location = blast_core::blast_treasury,
+)]
 fun the_genesis_destination_must_be_set() {
     blast_treasury::new_for_testing(@0x0, &mut tx_context::dummy()).share_for_testing();
 }
 
+// === Test Helpers ===
+
+fun treasury_admin(): AdminWitness<TreasuryAdmin> { blast_acl::witness_for_testing() }
+
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_admin::blast_acl::{Self, AdminWitness};
 
 use blast_core::{blast_domain::{CancelAdmin, TreasuryAdmin}, blast_treasury};
 

@@ -26,9 +26,9 @@ public struct Route has copy, drop, store {
     bps: Bps,
 }
 
-/// Validated routes: at most `max_routes`, each positive, no address twice, at most one of each
-/// special kind, summing to exactly 10,000. Only `new` builds one, so every split a vault holds
-/// assigns each collection in full.
+/// Validated routes: at most 20 (16 addresses and the four special kinds), each positive, no
+/// address twice, at most one of each special kind, summing to exactly 10,000. Only `new` builds
+/// one, so every split a vault holds assigns each collection in full.
 public struct FeeSplit has copy, drop, store {
     routes: vector<Route>,
 }
@@ -77,11 +77,6 @@ public fun apportion(self: &FeeSplit, total: u64): vector<u64> {
 }
 
 public fun routes(self: &FeeSplit): &vector<Route> { &self.routes }
-
-/// Whether the split sends anything to `destination`.
-public fun has(self: &FeeSplit, destination: Destination): bool {
-    self.routes.any!(|route| route.destination == destination)
-}
 
 public fun destination(self: &Route): Destination { self.destination }
 

@@ -6,8 +6,10 @@
 /// Blast's fees held by one launch, presale, or vault, and their one payout path: to the treasury,
 /// and, when the sale named a partner, the partner's cut of every asset first.
 ///
-/// The embedding object owns the ledger, so only its module can accrue into it or pay it out; each
-/// product wraps the payout in its own permissionless call.
+/// Only the module that defines the `PackageWitness` can create a ledger, and the payout event
+/// names that witness's original type, so a fee payment's origin is attributable to the product or
+/// vault that holds it. The embedding object owns the ledger, so only its module can accrue into
+/// it or pay it out; each product wraps the payout in its own permissionless call.
 module blast_core::protocol_fees;
 
 // === Public Types ===
@@ -15,6 +17,8 @@ module blast_core::protocol_fees;
 /// Blast's Meme, Quote, and SUI fees, held until paid. `partner_id` is fixed at creation: a ledger
 /// bound to a partner pays only with that partner, so Blast's fees never skip the partner's cut.
 public struct Ledger<phantom Meme, phantom Quote> has store {
+    /// The original type of the package witness that created the ledger.
+    package_witness: TypeName,
     origin: ID,
     partner_id: Option<ID>,
     meme: Balance<Meme>,
@@ -24,14 +28,20 @@ public struct Ledger<phantom Meme, phantom Quote> has store {
 
 // === Public Functions ===
 
-/// An empty ledger for the object `origin`, bound to `partner_id` if any.
-public fun new<Meme, Quote>(origin: ID, partner_id: Option<ID>): Ledger<Meme, Quote> {
+/// An empty ledger for the object `origin`, created under the embedding module's `PackageWitness`
+/// and bound to `partner_id` if any.
+public fun new<Meme, Quote, PackageWitness: drop>(
+    _: PackageWitness,
+    origin: ID,
+    partner_id: Option<ID>,
+): Ledger<Meme, Quote> {
     assert!(
         type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(),
         blast_core::errors::invalid_pair!(),
     );
 
     Ledger {
+        package_witness: type_name::with_original_ids<PackageWitness>(),
         origin,
         partner_id,
         meme: balance::zero(),
@@ -73,7 +83,8 @@ public fun take_share<Meme, Quote>(
     (meme_amount, quote_amount)
 }
 
-/// Pays everything held to the treasury. Aborts when the ledger is bound to a partner.
+/// Pays everything held to the treasury; an empty ledger sends and emits nothing. Aborts when the
+/// ledger is bound to a partner.
 public fun pay<Meme, Quote>(
     self: &mut Ledger<Meme, Quote>,
     treasury: &Treasury,
@@ -84,8 +95,8 @@ public fun pay<Meme, Quote>(
     self.pay_treasury(treasury, 0, 0, 0, ctx);
 }
 
-/// Pays the bound partner its cut of each asset, then the treasury the rest. Aborts unless
-/// `partner` is the ledger's partner.
+/// Pays the bound partner its cut of each asset, then the treasury the rest; an empty ledger sends
+/// and emits nothing. Aborts unless `partner` is the ledger's partner.
 public fun pay_with_partner<Meme, Quote>(
     self: &mut Ledger<Meme, Quote>,
     treasury: &Treasury,
@@ -104,10 +115,6 @@ public fun pay_with_partner<Meme, Quote>(
     self.pay_treasury(treasury, partner_meme, partner_quote, partner_sui, ctx);
 }
 
-public fun origin<Meme, Quote>(self: &Ledger<Meme, Quote>): ID { self.origin }
-
-public fun partner_id<Meme, Quote>(self: &Ledger<Meme, Quote>): Option<ID> { self.partner_id }
-
 /// The Meme, Quote, and SUI held.
 public fun balances<Meme, Quote>(self: &Ledger<Meme, Quote>): (u64, u64, u64) {
     (self.meme.value(), self.quote.value(), self.sui.value())
@@ -125,12 +132,14 @@ fun pay_treasury<Meme, Quote>(
 ) {
     let destination = treasury.destination();
     let (meme, quote, sui) = self.balances();
+    if (meme + partner_meme == 0 && quote + partner_quote == 0 && sui + partner_sui == 0) return;
 
-    recipient::pay(&mut self.meme, meme, destination, ctx);
-    recipient::pay(&mut self.quote, quote, destination, ctx);
-    recipient::pay(&mut self.sui, sui, destination, ctx);
+    payout::pay(&mut self.meme, meme, destination, ctx);
+    payout::pay(&mut self.quote, quote, destination, ctx);
+    payout::pay(&mut self.sui, sui, destination, ctx);
 
     event::emit(ProtocolFeesPaid<Meme, Quote> {
+        package_witness: self.package_witness,
         origin: self.origin,
         treasury: destination,
         meme,
@@ -156,8 +165,9 @@ public fun destroy_for_testing<Meme, Quote>(self: Ledger<Meme, Quote>) {
 #[test_only]
 public fun paid_fields<Meme, Quote>(
     event: &ProtocolFeesPaid<Meme, Quote>,
-): (ID, address, u64, u64, u64, Option<ID>, u64, u64, u64) {
+): (TypeName, ID, address, u64, u64, u64, Option<ID>, u64, u64, u64) {
     (
+        event.package_witness,
         event.origin,
         event.treasury,
         event.meme,
@@ -174,6 +184,7 @@ public fun paid_fields<Meme, Quote>(
 
 /// Blast's held fees were paid: the treasury's amounts, and the partner's cut when one is bound.
 public struct ProtocolFeesPaid<phantom Meme, phantom Quote> has copy, drop {
+    package_witness: TypeName,
     origin: ID,
     treasury: address,
     meme: u64,
@@ -187,10 +198,10 @@ public struct ProtocolFeesPaid<phantom Meme, phantom Quote> has copy, drop {
 
 // === Imports ===
 
-use blast_core::{blast_treasury::Treasury, bps::Bps, recipient};
+use blast_core::{blast_treasury::Treasury, bps::Bps, payout};
 
 use blast_partners::blast_partners::Partner;
 
-use std::type_name;
+use std::type_name::{Self, TypeName};
 
 use sui::{balance::{Self, Balance}, event, sui::SUI};

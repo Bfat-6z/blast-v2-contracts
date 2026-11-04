@@ -15,6 +15,8 @@ public struct MEME() has drop;
 
 public struct QUOTE() has drop;
 
+public struct LedgerPackageWitness() has drop;
+
 // === Tests ===
 
 #[test]
@@ -23,7 +25,12 @@ fun the_share_rounds_up_for_blast_and_leaves_the_rest_in_the_fee() {
     let mut meme_fee = balance::create_for_testing<MEME>(1_001);
     let mut quote_fee = balance::create_for_testing<QUOTE>(3);
 
-    let (meme, quote) = ledger.take_share(&mut meme_fee, &mut quote_fee, bps::new(3_000), bps::new(5_000));
+    let (meme, quote) = ledger.take_share(
+        &mut meme_fee,
+        &mut quote_fee,
+        bps::new(3_000),
+        bps::new(5_000),
+    );
 
     assert_eq!(meme, 301);
     assert_eq!(quote, 2);
@@ -49,9 +56,20 @@ fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
     assert_balances(&ledger, 0, 0, 0);
     let paid = event::events_by_type<ProtocolFeesPaid<MEME, QUOTE>>();
     assert_eq!(paid.length(), 1);
-    let (origin, destination, meme, quote, sui, partner_id, partner_meme, partner_quote, partner_sui) =
-        paid[0].paid_fields();
-    assert_eq!(origin, ledger.origin());
+    let (
+        package_witness,
+        origin,
+        destination,
+        meme,
+        quote,
+        sui,
+        partner_id,
+        partner_meme,
+        partner_quote,
+        partner_sui,
+    ) = paid[0].paid_fields();
+    assert_eq!(package_witness, type_name::with_original_ids<LedgerPackageWitness>());
+    assert_eq!(origin, sale_id());
     assert_eq!(destination, TREASURY);
     assert!(meme == 10 && quote == 20 && sui == 30);
     assert!(partner_id.is_none() && partner_meme == 0 && partner_quote == 0 && partner_sui == 0);
@@ -79,12 +97,22 @@ fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
 
     let paid = event::events_by_type<ProtocolFeesPaid<MEME, QUOTE>>();
     assert_eq!(paid.length(), 1);
-    let (origin, destination, meme, quote, sui, partner_id, partner_meme, partner_quote, partner_sui) =
-        paid[0].paid_fields();
-    assert_eq!(origin, ledger.origin());
+    let (
+        package_witness,
+        origin,
+        destination,
+        meme,
+        quote,
+        sui,
+        partner_id,
+        partner_meme,
+        partner_quote,
+        partner_sui,
+    ) = paid[0].paid_fields();
+    assert_eq!(package_witness, type_name::with_original_ids<LedgerPackageWitness>());
+    assert_eq!(origin, sale_id());
     assert_eq!(destination, TREASURY);
     assert_eq!(partner_id, option::some(object::id(&partner)));
-    assert_eq!(ledger.partner_id(), partner_id);
     // The partner's cut rounds down, so Blast keeps the remainder of each asset.
     assert!(partner_meme == 300 && partner_quote == 3 && partner_sui == 30);
     assert!(meme == 701 && quote == 7 && sui == 70);
@@ -97,7 +125,32 @@ fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_core::errors::EPartnerMismatch, location = blast_core::protocol_fees)]
+fun an_empty_ledger_sends_and_emits_nothing() {
+    let mut scenario = test_scenario::begin(@0x1);
+    let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
+    let partner = blast_partners::new_for_testing(PARTNER, 3_000, scenario.ctx());
+    let mut unbound = new_ledger(option::none());
+    let mut bound = new_ledger(option::some(object::id(&partner)));
+
+    unbound.pay(&treasury, scenario.ctx());
+    bound.pay_with_partner(&treasury, &partner, scenario.ctx());
+
+    assert_eq!(event::events_by_type<ProtocolFeesPaid<MEME, QUOTE>>().length(), 0);
+    scenario.next_tx(TREASURY);
+    assert!(!test_scenario::has_most_recent_for_address<Coin<SUI>>(TREASURY));
+
+    destroy(partner);
+    destroy(treasury);
+    unbound.destroy_for_testing();
+    bound.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_core::errors::EPartnerMismatch,
+    location = blast_core::protocol_fees,
+)]
 fun a_ledger_bound_to_a_partner_cannot_skip_its_cut() {
     let mut scenario = test_scenario::begin(@0x1);
     let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
@@ -110,7 +163,10 @@ fun a_ledger_bound_to_a_partner_cannot_skip_its_cut() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_core::errors::EPartnerMismatch, location = blast_core::protocol_fees)]
+#[expected_failure(
+    abort_code = blast_core::errors::EPartnerMismatch,
+    location = blast_core::protocol_fees,
+)]
 fun a_ledger_pays_only_with_its_own_partner() {
     let mut scenario = test_scenario::begin(@0x1);
     let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
@@ -124,9 +180,14 @@ fun a_ledger_pays_only_with_its_own_partner() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_core::errors::EInvalidPair, location = blast_core::protocol_fees)]
+#[expected_failure(
+    abort_code = blast_core::errors::EInvalidPair,
+    location = blast_core::protocol_fees,
+)]
 fun a_ledger_rejects_one_type_for_both_assets() {
-    protocol_fees::new<MEME, MEME>(object::id_from_address(@0x0), option::none()).destroy_for_testing();
+    let witness = LedgerPackageWitness();
+    let ledger = protocol_fees::new<MEME, MEME, _>(witness, sale_id(), option::none());
+    ledger.destroy_for_testing();
 }
 
 // === Test Helpers ===
@@ -136,8 +197,10 @@ fun assert_balances(ledger: &Ledger<MEME, QUOTE>, meme: u64, quote: u64, sui: u6
     assert!(held_meme == meme && held_quote == quote && held_sui == sui);
 }
 
+fun sale_id(): ID { object::id_from_address(@0x5A1E) }
+
 fun new_ledger(partner_id: Option<ID>): Ledger<MEME, QUOTE> {
-    protocol_fees::new(object::id_from_address(@0x5A1E), partner_id)
+    protocol_fees::new(LedgerPackageWitness(), sale_id(), partner_id)
 }
 
 // === Imports ===
@@ -146,6 +209,6 @@ use blast_core::{blast_treasury, bps, protocol_fees::{Self, Ledger, ProtocolFees
 
 use blast_partners::blast_partners;
 
-use std::unit_test::{assert_eq, destroy};
+use std::{type_name, unit_test::{assert_eq, destroy}};
 
 use sui::{balance, coin::Coin, event, sui::SUI, test_scenario};

@@ -30,10 +30,17 @@ fun the_sdk_three_holder_vector_verifies() {
         x"4fd4325f78a40a6972b998c35cf40ec26237d6ff9e5dc2934fb882b9aa18e08a",
     ];
     assert!(merkle::verify(root, alice, 0, 3, &alice_proof));
-    // Carol's leaf is the right child of the Carol/Carol pair, the second level's sibling.
-    let carol_pair = alice_proof[1];
+
+    // The leaf helper reproduces the SDK's leaves from their fields.
+    let vault = object::id_from_address(@0xD);
+    assert_eq!(rewards_leaf(vault, 0, @0xA, 10, 20), alice);
+    let bob = rewards_leaf(vault, 1, @0xB, 30, 40);
+    let carol = rewards_leaf(vault, 2, @0xC, 50, 60);
+    assert_eq!(bob, alice_proof[0]);
     let ab = x"ca047224c2edac2b2dcd7f28d0a6d6c7175a2f10beef5f440b0597d0e1c7a7f5";
-    assert_eq!(merkle::node(ab, carol_pair), root);
+    assert_eq!(merkle::node(alice, bob), ab);
+    assert_eq!(merkle::node(carol, carol), alice_proof[1]);
+    assert!(merkle::verify(root, carol, 2, 3, &vector[carol, ab]));
 }
 
 #[test]
@@ -69,6 +76,17 @@ fun an_internal_node_cannot_pass_as_a_leaf_of_a_deeper_tree() {
 
 // === Test Helpers ===
 
+fun rewards_leaf(vault: ID, index: u64, beneficiary: address, meme: u64, quote: u64): vector<u8> {
+    let mut payload = bcs::to_bytes(&vault);
+    payload.append(bcs::to_bytes(&0u64));
+    payload.append(bcs::to_bytes(&index));
+    payload.append(bcs::to_bytes(&beneficiary));
+    payload.append(bcs::to_bytes(&meme));
+    payload.append(bcs::to_bytes(&quote));
+
+    merkle::leaf(b"blast-holder-rewards-v1", payload)
+}
+
 fun leaf(value: u8): vector<u8> {
     sui::hash::blake2b256(&vector[0u8, value])
 }
@@ -77,4 +95,4 @@ fun leaf(value: u8): vector<u8> {
 
 use blast_core::merkle;
 
-use std::unit_test::assert_eq;
+use std::{bcs, unit_test::assert_eq};

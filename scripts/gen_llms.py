@@ -121,7 +121,7 @@ PRODUCTS = [
     Product(
         "core",
         "Shared core",
-        "Blast's shared money vocabulary on Sui: basis points and exact apportionment, recipients and "
+        "Blast's shared money vocabulary on Sui: basis points and exact apportionment, outright and "
         "vested payouts, LP-fee splits, the protocol-fee ledger with partner cuts, the treasury, Merkle "
         "proofs, and the sealed migration hand-off between a sale and its venue",
         ["core.md"],

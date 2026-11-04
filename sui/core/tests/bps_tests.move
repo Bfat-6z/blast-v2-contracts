@@ -19,9 +19,8 @@ fun constructor_rejects_the_first_value_above_one_hundred_percent() {
 }
 
 #[test]
-fun application_rounds_in_the_named_direction() {
+fun upward_application_assigns_the_remainder_to_the_rate() {
     assert_eq!(bps::new(2_500).apply_up(10_001), 2_501);
-    assert_eq!(bps::new(2_500).apply_down(10_001), 2_500);
     assert_eq!(bps::new(10_000).apply_up(std::u64::max_value!()), std::u64::max_value!());
     assert_eq!(bps::new(0).apply_up(10_001), 0);
 }

@@ -13,8 +13,6 @@ fun error_registry_is_stable() {
         errors::invalid_bps!(),
         errors::invalid_apportionment!(),
         errors::invalid_vesting_terms!(),
-        errors::invalid_recipient!(),
-        errors::invalid_recipients!(),
         errors::invalid_route!(),
         errors::invalid_fee_split!(),
         errors::invalid_treasury!(),
@@ -22,8 +20,9 @@ fun error_registry_is_stable() {
         errors::partner_mismatch!(),
         errors::wrong_venue!(),
         errors::wrong_owner!(),
+        errors::wrong_package_witness!(),
     ];
-    assert_eq!(codes.length(), 12);
+    assert_eq!(codes.length(), 11);
     codes.length().do!(|i| assert_eq!(codes[i], i));
 }
 

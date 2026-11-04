@@ -31,16 +31,6 @@ public fun apply_up(self: Bps, amount: u64): u64 {
     amount.mul_div_ceil(self.value(), constants::basis_points_denominator!())
 }
 
-/// Applies the rate to `amount`, rounding down.
-public fun apply_down(self: Bps, amount: u64): u64 {
-    amount.mul_div(self.value(), constants::basis_points_denominator!())
-}
-
-/// The sum of `rates`, which may exceed 10,000.
-public fun total(rates: &vector<Bps>): u64 {
-    (*rates).fold!(0, |sum, rate| sum + rate.value())
-}
-
 /// Largest-remainder apportionment of `total` over `rates`, which must sum to exactly 10,000: the
 /// `rounded_up` part takes its ceiling, every other part its floor, and the leftover units go one
 /// each to the largest remaining remainders, earlier parts first. The amounts sum to `total`.
@@ -69,6 +59,13 @@ public fun apportion(rates: vector<Bps>, total: u64, rounded_up: Option<u64>): v
     leftover.do!(|i| *&mut amounts[order[i]] = amounts[order[i]] + 1);
 
     amounts
+}
+
+// === Package Functions ===
+
+/// The sum of `rates`, which may exceed 10,000.
+public(package) fun total(rates: &vector<Bps>): u64 {
+    (*rates).fold!(0, |sum, rate| sum + rate.value())
 }
 
 // === Imports ===

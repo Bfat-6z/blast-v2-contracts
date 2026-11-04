@@ -8,19 +8,13 @@
 /// Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a
 /// `VenueBinding` sealed by its witness; the product admits and stores the binding's venue. At
 /// migration the product opens a `Migration` sealed by its own witness, carrying the pool's
-/// balances and the new vault's terms, and only the stored venue's witness can redeem it. Neither
+/// balances and the new vault's terms, and only the stored venue's witness can redeem it. A
+/// standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither
 /// value can be dropped, copied, or stored, so a transaction completes the migration whole or
 /// aborts.
 module blast_core::migration;
 
 // === Public Types ===
-
-/// The pool tier a venue reserved for the coin: Cetus and Bluefin take a tick spacing and fee
-/// rate; Aftermath takes no tick spacing and its DAO fee as the rate.
-public struct PoolTier has copy, drop, store {
-    tick_spacing: u32,
-    fee_rate: u64,
-}
 
 /// What happens to the migration residuals the pool does not take.
 public enum ResidualPolicy has copy, drop, store {
@@ -34,8 +28,8 @@ public enum ResidualPolicy has copy, drop, store {
 public struct VaultTerms has copy, drop, store {
     /// The launch or presale the vault belongs to; owner proofs name it.
     origin: ID,
-    /// The original type of the product witness that opened the hand-off.
-    product: TypeName,
+    /// The original type of the package witness that sealed the terms; owner proofs must name it.
+    package_witness: TypeName,
     fee_split: FeeSplit,
     /// Blast's share of each LP-fee collection, per asset.
     protocol_meme_bps: Bps,
@@ -44,10 +38,10 @@ public struct VaultTerms has copy, drop, store {
     residuals: ResidualPolicy,
 }
 
-/// A venue's sealed preparation of one coin, consumed by the product that admits it.
+/// A venue's sealed preparation of one coin, consumed by the product that admits it. The venue
+/// keeps the coin's pool tier itself (ADR 0111).
 public struct VenueBinding {
     venue: TypeName,
-    tier: PoolTier,
 }
 
 /// One sale's pool balances and vault terms, redeemable only by `venue`.
@@ -60,49 +54,58 @@ public struct Migration<phantom Meme, phantom Quote> {
 
 // === Public Functions ===
 
-public fun pool_tier(tick_spacing: u32, fee_rate: u64): PoolTier {
-    PoolTier { tick_spacing, fee_rate }
-}
-
 public fun protocol_residuals(): ResidualPolicy { ResidualPolicy::Protocol }
 
 public fun owner_residuals(): ResidualPolicy { ResidualPolicy::Owner }
 
 /// Seals a venue's preparation under its witness `Venue`.
-public fun bind<Venue: drop>(_: Venue, tier: PoolTier): VenueBinding {
-    VenueBinding { venue: type_name::with_original_ids<Venue>(), tier }
+public fun bind<Venue: drop>(_: Venue): VenueBinding {
+    VenueBinding { venue: type_name::with_original_ids<Venue>() }
 }
 
-/// Consumes a binding, returning the venue witness type to admit and store and its tier.
-public fun unbind(self: VenueBinding): (TypeName, PoolTier) {
-    let VenueBinding { venue, tier } = self;
+/// Consumes a binding, returning the venue witness type to admit and store.
+public fun unbind(self: VenueBinding): TypeName {
+    let VenueBinding { venue } = self;
 
-    (venue, tier)
+    venue
 }
 
-/// Opens a sale's migration under its product witness `Product`, for the stored `venue`. Each
-/// Blast share is at most 10,000; the product enforces its own policy maximum.
-public fun open<Meme, Quote, Product: drop>(
-    _: Product,
-    meme: Balance<Meme>,
-    quote: Balance<Quote>,
-    venue: TypeName,
+/// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
+/// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
+/// most 10,000; the issuer enforces its own policy maximum.
+public fun vault_terms<PackageWitness: drop>(
+    _: PackageWitness,
     origin: ID,
     fee_split: FeeSplit,
     protocol_meme_bps: Bps,
     protocol_quote_bps: Bps,
     partner_id: Option<ID>,
     residuals: ResidualPolicy,
-): Migration<Meme, Quote> {
-    let terms = VaultTerms {
+): VaultTerms {
+    VaultTerms {
         origin,
-        product: type_name::with_original_ids<Product>(),
+        package_witness: type_name::with_original_ids<PackageWitness>(),
         fee_split,
         protocol_meme_bps,
         protocol_quote_bps,
         partner_id,
         residuals,
-    };
+    }
+}
+
+/// Opens a sale's migration under its `PackageWitness`, for the stored `venue`, with terms the
+/// same package witness sealed.
+public fun open<Meme, Quote, PackageWitness: drop>(
+    _: PackageWitness,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+    venue: TypeName,
+    terms: VaultTerms,
+): Migration<Meme, Quote> {
+    assert!(
+        terms.package_witness == type_name::with_original_ids<PackageWitness>(),
+        blast_core::errors::wrong_package_witness!(),
+    );
 
     Migration { meme, quote, venue, terms }
 }
@@ -119,20 +122,9 @@ public fun redeem<Meme, Quote, Venue: drop>(
     (meme, quote, terms)
 }
 
-public fun venue<Meme, Quote>(self: &Migration<Meme, Quote>): TypeName { self.venue }
-
-/// The pool's Meme and Quote amounts.
-public fun amounts<Meme, Quote>(self: &Migration<Meme, Quote>): (u64, u64) {
-    (self.meme.value(), self.quote.value())
-}
-
-public fun tick_spacing(self: &PoolTier): u32 { self.tick_spacing }
-
-public fun fee_rate(self: &PoolTier): u64 { self.fee_rate }
-
 public fun origin(self: &VaultTerms): ID { self.origin }
 
-public fun product(self: &VaultTerms): TypeName { self.product }
+public fun package_witness(self: &VaultTerms): TypeName { self.package_witness }
 
 public fun fee_split(self: &VaultTerms): FeeSplit { self.fee_split }
 
