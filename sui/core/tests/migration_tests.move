@@ -29,7 +29,7 @@ fun a_ticket_names_its_venue() {
 
 #[test]
 fun the_stored_venue_redeems_the_balances_and_terms() {
-    let migration = open(type_name::with_original_ids<VenueWitness>());
+    let migration = new_migration(type_name::with_original_ids<VenueWitness>());
     let (meme, quote, terms) = migration.redeem(VenueWitness());
 
     assert_eq!(meme.value(), 100);
@@ -49,7 +49,7 @@ fun the_stored_venue_redeems_the_balances_and_terms() {
 #[test]
 #[expected_failure(abort_code = blast_core::errors::EWrongVenue, location = blast_core::migration)]
 fun another_venue_cannot_redeem_the_migration() {
-    let migration = open(type_name::with_original_ids<VenueWitness>());
+    let migration = new_migration(type_name::with_original_ids<VenueWitness>());
     let (meme, quote, _) = migration.redeem(OtherVenueWitness());
 
     destroy(meme);
@@ -61,8 +61,8 @@ fun another_venue_cannot_redeem_the_migration() {
     abort_code = blast_core::errors::EWrongPackageWitness,
     location = blast_core::migration,
 )]
-fun a_package_cannot_open_another_packages_terms() {
-    let migration = migration::open(
+fun a_package_cannot_migrate_with_another_packages_terms() {
+    let migration = migration::new(
         OtherPackageWitness(),
         balance::create_for_testing<MEME>(1),
         balance::create_for_testing<QUOTE>(1),
@@ -135,8 +135,8 @@ fun sale_terms(): VaultTerms {
     )
 }
 
-fun open(venue: std::type_name::TypeName): Migration<MEME, QUOTE> {
-    migration::open(
+fun new_migration(venue: std::type_name::TypeName): Migration<MEME, QUOTE> {
+    migration::new(
         TestPackageWitness(),
         balance::create_for_testing<MEME>(100),
         balance::create_for_testing<QUOTE>(200),
@@ -146,7 +146,7 @@ fun open(venue: std::type_name::TypeName): Migration<MEME, QUOTE> {
 }
 
 fun terms(): VaultTerms {
-    let (meme, quote, terms) = open(type_name::with_original_ids<VenueWitness>())
+    let (meme, quote, terms) = new_migration(type_name::with_original_ids<VenueWitness>())
         .redeem(VenueWitness());
     destroy(meme);
     destroy(quote);

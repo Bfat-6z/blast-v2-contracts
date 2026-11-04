@@ -58,7 +58,7 @@ address with `blast_treasury::destination`.
   split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
   `migration::vault_terms`, under the issuing package's witness, builds them; a standalone vault's issuer
   builds its own the same way.
-- At migration the product returns a `migration::Migration` sealed by its own witness, holding the
+- At migration the product creates a `migration::Migration` with `migration::new`, sealed by its own witness, holding the
   pool's Meme and Quote and terms the same package witness sealed. Only the stored venue can consume it,
   with `migration::redeem`; any other venue aborts.
 - `owner_proof::OwnerProof` is a product's sealed statement that the caller holds the sale's

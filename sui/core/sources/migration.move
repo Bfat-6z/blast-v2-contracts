@@ -7,7 +7,7 @@
 ///
 /// Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a
 /// `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At
-/// migration the product opens a `Migration` sealed by its own witness, carrying the pool's
+/// migration the product creates a `Migration` sealed by its own witness, carrying the pool's
 /// balances and the new vault's terms, and only the stored venue's witness can redeem it. A
 /// standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither
 /// value can be dropped, copied, or stored, so a transaction completes the migration whole or
@@ -24,7 +24,7 @@ public enum ResidualPolicy has copy, drop, store {
     Owner,
 }
 
-/// Everything a new vault snapshots from the sale that opened it.
+/// Everything a new vault snapshots from the sale or standalone issuer that sealed its terms.
 public struct VaultTerms has copy, drop, store {
     /// The launch or presale the vault belongs to; owner proofs name it.
     origin: ID,
@@ -93,9 +93,9 @@ public fun vault_terms<PackageWitness: drop>(
     }
 }
 
-/// Opens a sale's migration under its `PackageWitness`, for the stored `venue`, with terms the
+/// Creates a sale's migration under its `PackageWitness`, for the stored `venue`, with terms the
 /// same package witness sealed.
-public fun open<Meme, Quote, PackageWitness: drop>(
+public fun new<Meme, Quote, PackageWitness: drop>(
     _: PackageWitness,
     meme: Balance<Meme>,
     quote: Balance<Quote>,

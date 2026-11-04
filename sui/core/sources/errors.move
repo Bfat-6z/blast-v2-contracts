@@ -48,7 +48,7 @@ const EWrongVenue: u64 = 8;
 const EWrongOwner: u64 = 9;
 
 #[test_only]
-/// The vault terms must be sealed by the package witness opening the migration.
+/// The vault terms must be sealed by the package witness creating the migration.
 const EWrongPackageWitness: u64 = 10;
 
 macro public(package) fun invalid_bps(): u64 { 0 }
