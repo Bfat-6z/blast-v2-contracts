@@ -115,7 +115,7 @@ fun buy_input_cap_is_exact_and_minimal_for_every_admitted_fee() {
     let targets = vector[25_000_000u64, 2, 1_000, 25_000_000, 25_000_000, max, max];
     let supplies = vector[30_000_000u64, max, 1_001, 1, 100_000_000, max, max];
 
-    (blast_fun::constants::max_launch_fee_bps!() + 1).do!(|fee| {
+    (blast_fun::constants::max_trade_fee_bps!() + 1).do!(|fee| {
         let fee = bps::new(fee);
         reals.length().do!(|i| {
             let (real, target, supplied) = (reals[i], targets[i], supplies[i]);

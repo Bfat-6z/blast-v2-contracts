@@ -567,8 +567,8 @@ fun trade_fees_accept_zero_and_launch_ceiling_boundaries() {
             .set_trade_fees_for_testing(
                 &f.package_version,
                 &admin_witness,
-                bps::new(constants::max_launch_fee_bps!()),
-                bps::new(constants::max_launch_fee_bps!()),
+                bps::new(constants::max_trade_fee_bps!()),
+                bps::new(constants::max_trade_fee_bps!()),
              f.ctx!());
         f.config.set_trade_fees_for_testing(&f.package_version, &admin_witness, bps::new(0), bps::new(0), f.ctx!());
         f.config.set_trade_fees_for_testing(&f.package_version, &admin_witness, bps::new(0), bps::new(1), f.ctx!());
@@ -601,7 +601,7 @@ fun trade_fees_reject_quote_rate_above_ceiling() {
             .set_trade_fees_for_testing(
                 &f.package_version,
                 &admin_witness,
-                bps::new(constants::max_launch_fee_bps!() + 1),
+                bps::new(constants::max_trade_fee_bps!() + 1),
                 bps::new(0),
              f.ctx!());
     });
@@ -628,7 +628,7 @@ fun trade_fees_reject_meme_rate_above_ceiling() {
                 &f.package_version,
                 &admin_witness,
                 bps::new(0),
-                bps::new(constants::max_launch_fee_bps!() + 1),
+                bps::new(constants::max_trade_fee_bps!() + 1),
              f.ctx!());
     });
 
@@ -673,7 +673,7 @@ fun stale_package_version_rejects_trade_fees_before_their_bounds() {
             .set_trade_fees_for_testing(
                 &f.package_version,
                 &admin_witness,
-                bps::new(constants::max_launch_fee_bps!() + 1),
+                bps::new(constants::max_trade_fee_bps!() + 1),
                 bps::new(0),
              f.ctx!());
     });

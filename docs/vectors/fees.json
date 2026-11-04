@@ -9,7 +9,7 @@
     "rate": "basis points"
   },
   "parameters": {
-    "max_launch_fee_bps_per_asset": 1000,
+    "max_trade_fee_bps_per_asset": 1000,
     "minimum_protocol_fee_share_bps": 0,
     "maximum_protocol_fee_share_bps": 7000,
     "basis_points_denominator": 10000,

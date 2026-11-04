@@ -144,7 +144,7 @@ public fun schedule_trade_fees(
     package_version.assert_current();
 
     assert!(
-        quote_fee_bps.value() <= constants::max_launch_fee_bps!() && meme_fee_bps.value() <= constants::max_launch_fee_bps!(),
+        quote_fee_bps.value() <= constants::max_trade_fee_bps!() && meme_fee_bps.value() <= constants::max_trade_fee_bps!(),
         blast_fun::errors::invalid_trade_fee_bps!()
     );
 

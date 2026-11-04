@@ -843,9 +843,9 @@ constants_facts="$(move_facts sources/lib/constants.move)"
 
 if [[ "$(move_production_body max_recipients <<<"$constants_facts")" != '16' ]] \
   || [[ "$(rg -c 'recipients\.length\(\) <= constants::max_recipients!\(\)' sources/allocation.move)" != 2 ]] \
-  || [[ "$(move_production_body max_launch_fee_bps <<<"$constants_facts")" != '1_000' ]] \
-  || ! rg -Fq 'quote_fee_bps.value() <= constants::max_launch_fee_bps!()' sources/launch_config.move \
-  || ! rg -Fq 'meme_fee_bps.value() <= constants::max_launch_fee_bps!()' sources/launch_config.move \
+  || [[ "$(move_production_body max_trade_fee_bps <<<"$constants_facts")" != '1_000' ]] \
+  || ! rg -Fq 'quote_fee_bps.value() <= constants::max_trade_fee_bps!()' sources/launch_config.move \
+  || ! rg -Fq 'meme_fee_bps.value() <= constants::max_trade_fee_bps!()' sources/launch_config.move \
   || rg -n 'protocol_trade_fee_share_bps' sources \
   || ! rg -Fq 'type_name::with_original_ids<Quote>()' sources/launch_config.move \
   || ! rg -Fq 'type_name::with_original_ids<MigrationWitness>()' sources/launch_config.move \
@@ -1040,7 +1040,7 @@ if [[ ! -f sources/launch.move ]] \
   || rg -q 'bps::new\(' <<<"$launch_source" \
   || ! rg -Fq 'let burnable = currency.is_supply_burn_only();' sources/launch.move \
   || rg -q '\b(MigrationChannelCap|LaunchMigrationCap|MigrationChannelBalance|VenueSelection|venue_selection)\b' <<<"$launch_source" \
-  || rg -n 'max_launch_fee_bps|invalid_trade_fee_bps' sources/launch.move; then
+  || rg -n 'max_trade_fee_bps|invalid_trade_fee_bps' sources/launch.move; then
   echo 'Launch start must be version-gated and validate the pair and admissions; the ability-less initializer must be reachable only through its setters, the adapter loan, and finalize, which checks every setting before custody, keeps the native MetadataCap inline, and carries no venue selection.' >&2
   failures=$((failures + 1))
 fi

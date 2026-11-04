@@ -8159,7 +8159,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 - `valid_pause_bits: u8 = blast_fun::constants::create_pause_bit!() | blast_fun::constants::trading_pause_bit!() | blast_fun::constants::migration_pause_bit!()`: Every supported launchpad pause flag.
 - `basis_points_denominator: u64 = 10_000`: Denominator for protocol rates expressed in basis points.
 - `max_recipients: u64 = 16`: Maximum recipients in an allocation plan or an LP-fee split.
-- `max_launch_fee_bps: u64 = 1_000`: Maximum LaunchConfig trade-fee rate for either the meme or quote asset.
+- `max_trade_fee_bps: u64 = 1_000`: Maximum LaunchConfig trade-fee rate for either the meme or quote asset.
 - `max_protocol_allocation_bps: u64 = 1_000`: Maximum Blast allocation of a launch's Meme supply or final Quote reserve, each asset.
 - `max_protocol_fee_share_bps: u64 = 7_000`: Maximum Blast share of each launch trade fee; the creator receives the rest.
 - `max_creation_fee_mist: u64 = 10_000_000_000`: Maximum creation fee, in MIST (10 SUI).
