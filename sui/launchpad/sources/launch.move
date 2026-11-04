@@ -98,7 +98,7 @@ public fun new<Meme, Quote>(
     treasury_cap: TreasuryCap<Meme>,
     package_version: &PackageVersion,
     config: &LaunchConfig,
-    venue_ticket: VenueTicket,
+    venue_ticket: VenueTicket<Meme, Quote>,
 ): LaunchInitializer<Meme, Quote> {
     package_version.assert_current();
 

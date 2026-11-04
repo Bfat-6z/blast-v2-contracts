@@ -22,7 +22,7 @@ public struct OtherPackageWitness() has drop;
 
 #[test]
 fun a_ticket_names_its_venue() {
-    let venue = migration::issue_ticket(VenueWitness()).redeem_ticket();
+    let venue = migration::issue_ticket<MEME, QUOTE, _>(VenueWitness()).redeem_ticket();
 
     assert_eq!(venue, type_name::with_original_ids<VenueWitness>());
 }

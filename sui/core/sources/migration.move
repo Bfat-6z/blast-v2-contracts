@@ -44,9 +44,10 @@ public struct VaultTerms has copy, drop, store {
     residuals: ResidualPolicy,
 }
 
-/// A venue's sealed ticket for one prepared coin, redeemed by the product that admits it. The
-/// venue keeps the coin's pool tier itself (ADR 0111).
-public struct VenueTicket {
+/// A venue's sealed ticket for the `Meme` and `Quote` pair it prepared, redeemed by the product
+/// that admits it for a sale of exactly that pair. The venue keeps the pair's pool tier and any
+/// reserved pool-creation authority itself (ADR 0111).
+public struct VenueTicket<phantom Meme, phantom Quote> {
     venue: TypeName,
 }
 
@@ -66,13 +67,14 @@ public fun residuals_to_protocol(): ResidualPolicy { ResidualPolicy::Protocol }
 /// Residuals held in the vault for the sale's owner to claim.
 public fun residuals_to_owner(): ResidualPolicy { ResidualPolicy::Owner }
 
-/// Issues a ticket for a coin the venue has prepared, sealed under its witness `Venue`.
-public fun issue_ticket<Venue: drop>(_: Venue): VenueTicket {
+/// Issues a ticket for the `Meme` and `Quote` pair the venue has prepared, sealed under its
+/// witness `Venue`.
+public fun issue_ticket<Meme, Quote, Venue: drop>(_: Venue): VenueTicket<Meme, Quote> {
     VenueTicket { venue: type_name::with_original_ids<Venue>() }
 }
 
 /// Redeems a ticket, returning the venue witness type to admit and store.
-public fun redeem_ticket(self: VenueTicket): TypeName {
+public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName {
     let VenueTicket { venue } = self;
 
     venue
