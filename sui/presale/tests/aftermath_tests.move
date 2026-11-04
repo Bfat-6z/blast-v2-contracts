@@ -108,7 +108,11 @@ fun delayed_split_accounts_separate_fee_coins_when_received() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = aftermath::EWrongVault, location = blast_presale::aftermath)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::ENotAftermathVault,
+    location = blast_presale::aftermath,
+)]
 fun fee_split_apply_rejects_another_venue_before_missing_pending() {
     let mut ctx = sui::tx_context::dummy();
     let version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
@@ -191,13 +195,19 @@ fun new_records_the_witness_and_the_dao_fee_tier() {
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EInvalidDaoFee, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidDaoFee,
+    location = blast_presale::aftermath,
+)]
 fun new_rejects_a_zero_dao_fee() {
     start_rejected_fee(0)
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EInvalidDaoFee, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidDaoFee,
+    location = blast_presale::aftermath,
+)]
 fun new_rejects_a_dao_fee_above_the_whole_amount() {
     start_rejected_fee(10_001)
 }
@@ -239,7 +249,10 @@ fun finalize_binds_a_shared_reservation_to_its_sale() {
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EWrongPresale, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongPresale,
+    location = blast_presale::aftermath,
+)]
 /// A sale's migration cannot consume the reservation bound to another sale, and checks that
 /// before touching the sale.
 fun migrate_rejects_another_sales_reservation() {
@@ -296,7 +309,7 @@ fun migrate_rejects_another_sales_reservation() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// Blast must allow this migrator's witness before it can create a sale.
@@ -375,7 +388,10 @@ fun a_vault_built_before_its_position_shares_with_it_and_announces_the_custody()
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EZeroLiquidity, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EZeroLiquidity,
+    location = blast_presale::presale_vault,
+)]
 /// A position holding no liquidity cannot be attached, so no vault is shared around one.
 fun a_vault_cannot_share_with_an_empty_position() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -486,7 +502,10 @@ fun the_owner_cap_is_the_vaults_position_under_the_aftermath_venue() {
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EWrongVault, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ENotAftermathVault,
+    location = blast_presale::aftermath,
+)]
 /// Another venue's vault settles its fees only through that venue: Aftermath's collection rejects
 /// it before receiving anything.
 fun collect_fees_rejects_another_venues_vault() {
@@ -682,7 +701,7 @@ fun a_funded_sale_nobody_migrates_refunds_at_its_lp_deadline() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidLifecycle,
+    abort_code = blast_presale::errors::EInvalidLifecycle,
     location = blast_presale::blast_presale,
 )]
 /// Once a sale is cancelled its reservation serves nothing: the migration is refused in the core
@@ -732,37 +751,55 @@ fun migration_postconditions_accept_exact_balances_fee_and_recipient() {
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPoolMismatch,
+    location = blast_presale::aftermath,
+)]
 fun migration_rejects_wrong_meme_balance() {
     aftermath::assert_pool_balances_for_testing(99, 100, 200, 200);
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPoolMismatch,
+    location = blast_presale::aftermath,
+)]
 fun migration_rejects_wrong_quote_balance() {
     aftermath::assert_pool_balances_for_testing(100, 100, 199, 200);
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EDaoFeePoolMismatch,
+    location = blast_presale::aftermath,
+)]
 fun migration_rejects_wrong_dao_fee() {
     aftermath::assert_dao_fee_terms_for_testing(199, 200, @0xA, @0xA);
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EDaoFeePoolMismatch,
+    location = blast_presale::aftermath,
+)]
 fun migration_rejects_wrong_dao_fee_recipient() {
     aftermath::assert_dao_fee_terms_for_testing(200, 200, @0xB, @0xA);
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EPoolMismatch, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPoolMismatch,
+    location = blast_presale::aftermath,
+)]
 fun meme_mismatch_rejects_before_reading_quote() {
     aftermath::assert_pool_short_circuit_for_testing();
 }
 
 #[test]
-#[expected_failure(abort_code = aftermath::EDaoFeePoolMismatch, location = blast_presale::aftermath)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EDaoFeePoolMismatch,
+    location = blast_presale::aftermath,
+)]
 fun fee_mismatch_rejects_before_reading_recipient() {
     aftermath::assert_dao_fee_short_circuit_for_testing();
 }

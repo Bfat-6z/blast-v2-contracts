@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Permissionless Cetus migration and LP-fee collection for configured presales.
 module blast_presale::cetus;
 
@@ -69,7 +71,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
 ) {
     package_version.assert_current();
 
-    assert!(factory::is_right_order<CoinA, CoinB>(), EInvalidCoinOrder);
+    assert!(factory::is_right_order<CoinA, CoinB>(), blast_presale::errors::invalid_coin_order!());
     let meme_is_a = meme_is_coin_a<Meme, Quote, CoinA, CoinB>();
 
     let (tick_spacing, _) = venue_config.pool_tier<Meme>();
@@ -141,7 +143,10 @@ public fun new_vault<Meme, Quote, CoinA, CoinB>(
 
     creation_policy.assert_allowed<Quote, Witness>();
     assert_coin_pair<Meme, Quote, CoinA, CoinB>();
-    assert!(position.pool_id() == object::id(pool), EPositionPoolMismatch);
+    assert!(
+        position.pool_id() == object::id(pool),
+        blast_presale::errors::position_pool_mismatch!(),
+    );
 
     let liquidity = position.liquidity();
 
@@ -173,7 +178,7 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     package_version.assert_current();
 
     let meme_is_a = meme_is_coin_a<Meme, Quote, CoinA, CoinB>();
-    assert!(vault.pool_id() == object::id(pool), EPositionPoolMismatch);
+    assert!(vault.pool_id() == object::id(pool), blast_presale::errors::position_pool_mismatch!());
 
     let (fee_a, fee_b) = lp_burn::collect_fee(
         burn_manager,
@@ -231,7 +236,7 @@ fun assert_coin_pair<Meme, Quote, CoinA, CoinB>() {
     );
     assert!(
         (meme == coin_a && quote == coin_b) || (meme == coin_b && quote == coin_a),
-        EWrongCoinPair,
+        blast_presale::errors::wrong_coin_pair!(),
     );
 }
 
@@ -332,17 +337,6 @@ public fun assert_coin_pair_for_testing<Meme, Quote, CoinA, CoinB>() {
 public fun cast_for_testing<From: store, To: store>(scratch: &mut UID, value: From): To {
     scratch.cast(value)
 }
-
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidCoinOrder: vector<u8> = b"CoinA and CoinB must follow the Cetus coin order.";
-
-#[error(code = 1)]
-const EPositionPoolMismatch: vector<u8> = b"Pool must be the one holding the position.";
-
-#[error(code = 2)]
-const EWrongCoinPair: vector<u8> = b"CoinA and CoinB must be exactly the presale's Meme and Quote.";
 
 // === Imports ===
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Blast's allowlists for new presales and new vaults without a presale: the Quote coins a sale may
 /// raise or a vault may hold, the migrators, in this package or another, that may create a sale or,
 /// for this package's venues, such a vault, and the Blast partners a sale may name.
@@ -45,7 +47,10 @@ public fun set_quote_allowed<Quote>(
     package_version.assert_current();
 
     let quote = type_name::with_original_ids<Quote>();
-    assert!(self.allowed_quotes.contains(&quote) != allowed, EAllowanceUnchanged);
+    assert!(
+        self.allowed_quotes.contains(&quote) != allowed,
+        blast_presale::errors::allowance_unchanged!(),
+    );
 
     if (allowed) self.allowed_quotes.insert(quote) else self.allowed_quotes.remove(&quote);
 
@@ -69,10 +74,10 @@ public fun schedule_migration_witness<MigrationWitness: drop>(
     package_version.assert_current();
 
     let witness = type_name::with_original_ids<MigrationWitness>();
-    assert!(!witness.is_primitive(), EInvalidMigrationWitness);
+    assert!(!witness.is_primitive(), blast_presale::errors::invalid_migration_witness!());
 
     let origin = type_name::original_id<MigrationWitness>();
-    assert!(origin != @0x1 && origin != @0x2, EInvalidMigrationWitness);
+    assert!(origin != @0x1 && origin != @0x2, blast_presale::errors::invalid_migration_witness!());
 
     self.migration_witnesses.schedule_add(witness, clock);
 }
@@ -125,7 +130,10 @@ public fun add_partner(
 
     if (self.id.has_dynamic_field(key)) {
         let acceptance_ends_at_ms: &mut u64 = self.id.dynamic_field_mut(key);
-        assert!(*acceptance_ends_at_ms != std::u64::max_value!(), EAllowanceUnchanged);
+        assert!(
+            *acceptance_ends_at_ms != std::u64::max_value!(),
+            blast_presale::errors::allowance_unchanged!(),
+        );
         *acceptance_ends_at_ms = std::u64::max_value!();
     } else {
         self.id.add_dynamic_field(key, std::u64::max_value!());
@@ -151,7 +159,10 @@ public fun remove_partner(
     let notice_ends_at_ms = now_at_ms + partners::delay_ms();
 
     let acceptance_ends_at_ms: &mut u64 = self.id.dynamic_field_mut(PartnerKey(partner_id));
-    assert!(*acceptance_ends_at_ms == std::u64::max_value!(), EAllowanceUnchanged);
+    assert!(
+        *acceptance_ends_at_ms == std::u64::max_value!(),
+        blast_presale::errors::allowance_unchanged!(),
+    );
     *acceptance_ends_at_ms = notice_ends_at_ms;
 
     event::emit(PartnerRemoved { partner_id, accepted_until_ms: notice_ends_at_ms });
@@ -202,10 +213,13 @@ public(package) fun is_guarded(self: &CreationPolicy): bool {
 /// Aborts unless a new presale, or a new vault without a presale, may use `Quote` and be created
 /// by `MigrationWitness`'s migrator.
 public(package) fun assert_allowed<Quote, MigrationWitness>(self: &CreationPolicy) {
-    assert!(self.allowed_quotes.contains(&type_name::with_original_ids<Quote>()), EQuoteNotAllowed);
+    assert!(
+        self.allowed_quotes.contains(&type_name::with_original_ids<Quote>()),
+        blast_presale::errors::quote_not_allowed!(),
+    );
     assert!(
         self.migration_witnesses.contains(&type_name::with_original_ids<MigrationWitness>()),
-        EMigrationWitnessNotAllowed,
+        blast_presale::errors::migration_witness_not_allowed!(),
     );
 }
 
@@ -213,10 +227,10 @@ public(package) fun assert_allowed<Quote, MigrationWitness>(self: &CreationPolic
 public(package) fun assert_partner(self: &CreationPolicy, partner_id: ID, now_at_ms: u64) {
     let key = PartnerKey(partner_id);
 
-    assert!(self.id.has_dynamic_field(key), EPartnerNotAccepted);
+    assert!(self.id.has_dynamic_field(key), blast_presale::errors::partner_not_accepted!());
 
     let acceptance_ends_at_ms: u64 = *self.id.dynamic_field(key);
-    assert!(now_at_ms < acceptance_ends_at_ms, EPartnerNotAccepted);
+    assert!(now_at_ms < acceptance_ends_at_ms, blast_presale::errors::partner_not_accepted!());
 }
 
 // === Private Functions ===
@@ -336,23 +350,6 @@ public struct PartnerRemoved has copy, drop {
     partner_id: ID,
     accepted_until_ms: u64,
 }
-
-// === Errors ===
-
-#[error(code = 0)]
-const EAllowanceUnchanged: vector<u8> = b"An allowlist update must change whether the type or partner is allowed.";
-
-#[error(code = 1)]
-const EQuoteNotAllowed: vector<u8> = b"This Quote type is not allowed for new presales.";
-
-#[error(code = 2)]
-const EMigrationWitnessNotAllowed: vector<u8> = b"This migration witness is not allowed for new presales.";
-
-#[error(code = 3)]
-const EInvalidMigrationWitness: vector<u8> = b"A migration witness must be a non-framework struct, never a primitive, vector, or framework type any caller can construct.";
-
-#[error(code = 4)]
-const EPartnerNotAccepted: vector<u8> = b"New presales may not name this partner.";
 
 // === Imports ===
 

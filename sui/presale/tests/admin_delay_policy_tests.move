@@ -48,7 +48,11 @@ fun publication_setup_enables_different_notices_for_independent_operations() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun zero_next_delay_cannot_bypass_the_applied_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -83,7 +87,11 @@ fun delay_only_change_keeps_the_value_and_cancel_keeps_the_notice() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun replacing_a_ready_proposal_restarts_the_old_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -98,7 +106,11 @@ fun replacing_a_ready_proposal_restarts_the_old_notice() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun stale_delay_change_rejects_before_other_validation() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -108,7 +120,11 @@ fun stale_delay_change_rejects_before_other_validation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun an_upgrade_scheduled_at_publication_waits_the_48_hour_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -148,7 +164,11 @@ fun upgrade_policy_only_application_and_cancellation_preserve_custody() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed_action,
+)]
 fun upgrade_notice_cannot_be_applied_twice() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -162,7 +182,11 @@ fun upgrade_notice_cannot_be_applied_twice() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EWrongChange, location = blast_admin::delayed_action)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EWrongChange,
+    location = blast_admin::delayed_action,
+)]
 fun a_ready_immutability_action_cannot_be_applied_as_a_notice_update() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -175,7 +199,11 @@ fun a_ready_immutability_action_cannot_be_applied_as_a_notice_update() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun upgrade_policy_only_reduction_cannot_be_applied_early() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -188,7 +216,11 @@ fun upgrade_policy_only_reduction_cannot_be_applied_early() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed_set,
+)]
 fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -252,7 +284,11 @@ fun multiple_admissions_cannot_restore_a_superseded_notice() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed_set,
+)]
 fun applying_an_old_admission_cannot_shorten_a_new_admissions_wait() {
     let mut fixture = start();
     fixture.run!(|f| {

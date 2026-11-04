@@ -175,7 +175,10 @@ fun unregulated_metadata_length_16385_is_accepted() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun regulated_pause_false_long_metadata_field_0_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut metadata = default_metadata();
@@ -189,7 +192,10 @@ fun regulated_pause_false_long_metadata_field_0_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun regulated_pause_false_long_metadata_field_1_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut metadata = default_metadata();
@@ -203,7 +209,10 @@ fun regulated_pause_false_long_metadata_field_1_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun regulated_pause_false_long_metadata_field_2_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut metadata = default_metadata();
@@ -217,7 +226,10 @@ fun regulated_pause_false_long_metadata_field_2_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun regulated_pause_false_long_metadata_field_3_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut metadata = default_metadata();
@@ -231,7 +243,10 @@ fun regulated_pause_false_long_metadata_field_3_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun regulated_pause_true_long_metadata_field_0_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut metadata = default_metadata();
@@ -245,7 +260,10 @@ fun regulated_pause_true_long_metadata_field_0_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun regulated_pause_true_long_metadata_field_1_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut metadata = default_metadata();
@@ -259,7 +277,10 @@ fun regulated_pause_true_long_metadata_field_1_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun regulated_pause_true_long_metadata_field_2_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut metadata = default_metadata();
@@ -273,7 +294,10 @@ fun regulated_pause_true_long_metadata_field_2_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun regulated_pause_true_long_metadata_field_3_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut metadata = default_metadata();
@@ -287,7 +311,10 @@ fun regulated_pause_true_long_metadata_field_3_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun fixed_supply_0_is_rejected() {
     let mut ctx = tx_context::dummy();
     let (mut treasury, mut currency) = currency_with_metadata(
@@ -304,7 +331,10 @@ fun fixed_supply_0_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun fixed_supply_1_is_rejected() {
     let mut ctx = tx_context::dummy();
     let (mut treasury, mut currency) = currency_with_metadata(
@@ -321,7 +351,10 @@ fun fixed_supply_1_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun fixed_supply_257_is_rejected() {
     let mut ctx = tx_context::dummy();
     let (mut treasury, mut currency) = currency_with_metadata(
@@ -338,7 +371,10 @@ fun fixed_supply_257_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun fixed_supply_18446744073709551615_is_rejected() {
     let mut ctx = tx_context::dummy();
     let (mut treasury, mut currency) = currency_with_metadata(
@@ -355,7 +391,10 @@ fun fixed_supply_18446744073709551615_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun burn_only_supply_0_is_rejected() {
     let mut ctx = tx_context::dummy();
     let (mut treasury, mut currency) = currency_with_metadata(
@@ -372,7 +411,10 @@ fun burn_only_supply_0_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun burn_only_supply_1_is_rejected() {
     let mut ctx = tx_context::dummy();
     let (mut treasury, mut currency) = currency_with_metadata(
@@ -389,7 +431,10 @@ fun burn_only_supply_1_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun burn_only_supply_257_is_rejected() {
     let mut ctx = tx_context::dummy();
     let (mut treasury, mut currency) = currency_with_metadata(
@@ -406,7 +451,10 @@ fun burn_only_supply_257_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun burn_only_supply_18446744073709551615_is_rejected() {
     let mut ctx = tx_context::dummy();
     let (mut treasury, mut currency) = currency_with_metadata(
@@ -477,7 +525,10 @@ fun dynamic_currency_is_accepted() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun dynamic_regulated_currency_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut registry = coin_registry::create_coin_data_registry_for_testing(&mut ctx);
@@ -500,7 +551,10 @@ fun dynamic_regulated_currency_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 #[allow(deprecated_usage)]
 fun ordinary_legacy_unknown_currency_is_rejected_even_with_registered_treasury() {
     let mut ctx = tx_context::dummy();
@@ -529,7 +583,10 @@ fun ordinary_legacy_unknown_currency_is_rejected_even_with_registered_treasury()
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ESaleTokenNotUnregulated, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
+    location = blast_presale::blast_presale,
+)]
 fun serialized_currency_without_supply_is_rejected() {
     let mut bytes = std::bcs::to_bytes(&@0x0); // UID
     bytes.append(vector[9, 0, 0, 0, 0]); // Decimals and four empty metadata strings

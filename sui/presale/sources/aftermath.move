@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Permissionless Aftermath migration and LP-fee collection for configured presales.
 ///
 /// A funded sale migrates into a fresh 50/50 Aftermath weighted pool wrapped in Aftermath's
@@ -66,7 +68,7 @@ public fun new<Meme, Quote>(
 
     assert!(
         dao_fee_bps > 0 && dao_fee_bps <= constants::aftermath_max_dao_fee_bps!(),
-        EInvalidDaoFee,
+        blast_presale::errors::invalid_dao_fee!(),
     );
 
     venue_config.add_pool_tier<Meme, Quote, _>(&Venue(), 0, dao_fee_bps as u64);
@@ -141,7 +143,7 @@ public fun migrate<Lp, Meme, Quote>(
     package_version.assert_current();
 
     let PoolCreation { id, presale_id, create_pool_cap } = pool_creation;
-    assert!(presale_id == object::id(sale), EWrongPresale);
+    assert!(presale_id == object::id(sale), blast_presale::errors::wrong_presale!());
     id.delete();
 
     let (_, pool_fee_rate) = venue_config.pool_tier<Meme>();
@@ -207,7 +209,7 @@ public fun collect_fees<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    assert!(vault.has_position(&Venue()), EWrongVault);
+    assert!(vault.has_position(&Venue()), blast_presale::errors::not_aftermath_vault!());
 
     let meme = vault.receive_fees(meme_fees);
     let quote = vault.receive_fees(quote_fees);
@@ -223,7 +225,7 @@ public fun apply_fee_split<Meme, Quote>(
     clock: &Clock,
 ) {
     package_version.assert_current();
-    assert!(vault.has_position(&Venue()), EWrongVault);
+    assert!(vault.has_position(&Venue()), blast_presale::errors::not_aftermath_vault!());
     vault.assert_fee_split_ready(clock);
 
     vault.apply_fee_split(clock);
@@ -253,11 +255,11 @@ macro fun assert_dao_fee_terms(
 }
 
 fun assert_pool_balance(actual: u64, expected: u64) {
-    assert!(actual == expected, EPoolMismatch);
+    assert!(actual == expected, blast_presale::errors::pool_mismatch!());
 }
 
 fun assert_dao_fee_term<T: drop>(actual: T, expected: T) {
-    assert!(actual == expected, EDaoFeePoolMismatch);
+    assert!(actual == expected, blast_presale::errors::dao_fee_pool_mismatch!());
 }
 
 /// Creates the 50/50 pool from the sale's tokens and Quote, in Aftermath's coin order.
@@ -433,23 +435,6 @@ public struct DaoFeePoolCreated<phantom Lp, phantom Meme, phantom Quote> has cop
     owner_cap_id: ID,
     lp_coin_id: ID,
 }
-
-// === Errors ===
-
-#[error(code = 0)]
-const EPoolMismatch: vector<u8> = b"The Aftermath pool must hold every sale token and Quote unit the presale released.";
-
-#[error(code = 1)]
-const EDaoFeePoolMismatch: vector<u8> = b"The DAO-fee pool must charge this module's fee and pay the vault.";
-
-#[error(code = 2)]
-const EWrongPresale: vector<u8> = b"The pool creation is bound to a different presale.";
-
-#[error(code = 3)]
-const EInvalidDaoFee: vector<u8> = b"Aftermath DAO fee needs 1..=10,000 basis points.";
-
-#[error(code = 4)]
-const EWrongVault: vector<u8> = b"Only an Aftermath vault's fees are collected here.";
 
 // === Imports ===
 

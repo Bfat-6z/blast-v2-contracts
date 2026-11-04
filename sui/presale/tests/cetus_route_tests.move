@@ -20,20 +20,29 @@ fun the_route_locates_meme_in_either_coin_order() {
 }
 
 #[test]
-#[expected_failure(abort_code = cetus::EWrongCoinPair, location = blast_presale::cetus)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongCoinPair,
+    location = blast_presale::cetus,
+)]
 /// A pair that is not exactly the presale's Meme and Quote is rejected before any cast.
 fun the_route_rejects_a_foreign_coin_pair() {
     cetus::assert_coin_pair_for_testing<MEME, QUOTE, MEME, OTHER>();
 }
 
 #[test]
-#[expected_failure(abort_code = cetus::EWrongCoinPair, location = blast_presale::cetus)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongCoinPair,
+    location = blast_presale::cetus,
+)]
 fun the_route_rejects_the_same_coin_twice() {
     cetus::assert_coin_pair_for_testing<MEME, QUOTE, MEME, MEME>();
 }
 
 #[test]
-#[expected_failure(abort_code = cetus::EWrongCoinPair, location = blast_presale::cetus)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongCoinPair,
+    location = blast_presale::cetus,
+)]
 /// Locating the Meme proves the pair first, so a foreign pair never gets a side.
 fun locating_the_meme_rejects_a_foreign_coin_pair() {
     assert!(cetus::meme_is_coin_a_for_testing<MEME, QUOTE, OTHER, QUOTE>());
@@ -56,7 +65,10 @@ fun a_cast_to_the_same_type_returns_the_value() {
 }
 
 #[test]
-#[expected_failure(abort_code = sui::dynamic_field::EFieldTypeMismatch, location = sui::dynamic_field)]
+#[expected_failure(
+    abort_code = sui::dynamic_field::EFieldTypeMismatch,
+    location = sui::dynamic_field,
+)]
 /// The framework refuses to hand a stored balance back under any other type.
 fun a_cast_to_another_type_aborts_in_the_framework() {
     let mut ctx = tx_context::dummy();

@@ -219,7 +219,7 @@ fun commit_rejects_a_skipped_generation_before_the_native_cap_is_touched() {
 
 #[test]
 #[expected_failure(
-    abort_code = package_admin::EInvalidDigest,
+    abort_code = blast_presale::errors::EInvalidDigest,
     location = blast_presale::package_admin,
 )]
 fun authorization_rejects_non_digest_length() {

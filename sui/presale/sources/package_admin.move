@@ -42,7 +42,7 @@ public fun schedule_upgrade(
 ) {
     package_version.assert_current();
 
-    assert!(digest.length() == 32, EInvalidDigest);
+    assert!(digest.length() == 32, blast_presale::errors::invalid_digest!());
 
     self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock);
 }
@@ -100,7 +100,10 @@ public fun authorize_upgrade(
     let custodian_id = self.id.to_inner();
 
     let action = self.upgrade.take_action(clock);
-    assert!(action == UpgradeAction::Upgrade(digest), EWrongUpgradeAction);
+    assert!(
+        action == UpgradeAction::Upgrade(digest),
+        blast_presale::errors::wrong_upgrade_action!(),
+    );
 
     self.custody.authorize_upgrade(custodian_id, digest)
 }
@@ -130,7 +133,7 @@ public fun make_immutable(
     package_version.assert_current();
 
     let action = self.upgrade.take_action(clock);
-    assert!(action == UpgradeAction::MakeImmutable, EWrongUpgradeAction);
+    assert!(action == UpgradeAction::MakeImmutable, blast_presale::errors::wrong_upgrade_action!());
 
     self.custody.make_immutable(self.id.to_inner());
 }
@@ -151,7 +154,7 @@ public fun unpause(
 
     assert!(
         self.upgrade.is_guarded() && fee_policy.is_guarded() && creation_policy.is_guarded(),
-        EUnguardedNotice,
+        blast_presale::errors::unguarded_notice!(),
     );
 
     package_version.clear_pause_bits(bits);
@@ -280,16 +283,6 @@ public fun policy_for_testing(self: &PackageAdmin): u8 {
 public fun has_upgrade_cap_for_testing(self: &PackageAdmin): bool {
     self.custody.has_upgrade_cap()
 }
-
-// === Errors ===
-
-#[error(code = 0)]
-const EWrongUpgradeAction: vector<u8> = b"The ready action must match the requested upgrade digest or immutability.";
-#[error(code = 1)]
-const EInvalidDigest: vector<u8> = b"A package digest must contain 32 bytes.";
-#[error(code = 2)]
-const EUnguardedNotice: vector<u8> =
-    b"Unpausing needs every policy notice nonzero, with no pending zero notice or admission.";
 
 // === Imports ===
 

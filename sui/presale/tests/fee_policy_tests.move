@@ -68,28 +68,40 @@ fun the_admin_sets_maximum_and_zero_rates() {
 }
 
 #[test]
-#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFees,
+    location = blast_presale::fee_policy,
+)]
 /// Blast's raise share is at most 1,000 BPS.
 fun the_raise_share_is_capped() {
     set_fees_for_testing(1_001, 0, 0, 0);
 }
 
 #[test]
-#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFees,
+    location = blast_presale::fee_policy,
+)]
 /// Blast's token share is at most 1,000 BPS.
 fun the_token_share_is_capped() {
     set_fees_for_testing(0, 1_001, 0, 0);
 }
 
 #[test]
-#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFees,
+    location = blast_presale::fee_policy,
+)]
 /// Blast's Meme LP-fee share is at most 3,000 BPS.
 fun the_meme_lp_fee_share_is_capped() {
     set_fees_for_testing(0, 0, 3_001, 0);
 }
 
 #[test]
-#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFees,
+    location = blast_presale::fee_policy,
+)]
 /// Blast's Quote LP-fee share is at most 3,000 BPS.
 fun the_quote_lp_fee_share_is_capped() {
     set_fees_for_testing(0, 0, 0, 3_001);
@@ -114,7 +126,10 @@ fun lp_fee_rates_change_alone() {
 }
 
 #[test]
-#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFees,
+    location = blast_presale::fee_policy,
+)]
 /// A vault's LP-rate change is held to the same maximum as the policy.
 fun lp_fee_rate_changes_are_capped() {
     fee_policy::protocol_fees_for_testing(100, 200, 300, 400).with_lp_fees(
@@ -149,7 +164,7 @@ fun the_admin_sets_the_destination() {
 
 #[test]
 #[expected_failure(
-    abort_code = fee_policy::EInvalidDestination,
+    abort_code = blast_presale::errors::EInvalidDestination,
     location = blast_presale::fee_policy,
 )]
 fun the_destination_cannot_be_the_zero_address() {

@@ -36,7 +36,7 @@ public struct ReserveFixture {
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::ETreasuryChanged,
+    abort_code = blast_presale::errors::ETreasuryChanged,
     location = blast_presale::holder_rewards,
 )]
 fun a_policy_change_after_planning_blocks_publication_with_gas_reimbursement() {
@@ -61,7 +61,7 @@ fun a_policy_change_after_planning_blocks_publication_with_gas_reimbursement() {
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::ETreasuryChanged,
+    abort_code = blast_presale::errors::ETreasuryChanged,
     location = blast_presale::holder_rewards,
 )]
 fun a_policy_change_after_planning_blocks_publication_without_gas_reimbursement() {
@@ -86,7 +86,7 @@ fun a_policy_change_after_planning_blocks_publication_without_gas_reimbursement(
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::ETreasuryChanged,
+    abort_code = blast_presale::errors::ETreasuryChanged,
     location = blast_presale::holder_rewards,
 )]
 fun a_changed_treasury_is_rejected_before_an_overcommitted_budget() {
@@ -225,7 +225,10 @@ fun blast_can_cover_gas_and_fund_the_entire_holder_quote_budget() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EReserveSettled, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EReserveSettled,
+    location = blast_presale::holder_rewards,
+)]
 fun disabled_reimbursement_cannot_be_settled() {
     let mut fixture = start_reserve_rewards();
     fixture.publish(0);
@@ -237,7 +240,10 @@ fun disabled_reimbursement_cannot_be_settled() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EOverReserve, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EOverReserve,
+    location = blast_presale::holder_rewards,
+)]
 fun settlement_rejects_cost_above_the_reserve() {
     let mut fixture = start_reserve_rewards();
     fixture.publish(30);
@@ -249,7 +255,10 @@ fun settlement_rejects_cost_above_the_reserve() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EReserveSettled, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EReserveSettled,
+    location = blast_presale::holder_rewards,
+)]
 fun duplicate_settlement_cannot_pay_twice() {
     let mut fixture = start_reserve_rewards();
     fixture.publish(30);
@@ -263,7 +272,7 @@ fun duplicate_settlement_cannot_pay_twice() {
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::EInsufficientBudget,
+    abort_code = blast_presale::errors::EInsufficientBudget,
     location = blast_presale::holder_rewards,
 )]
 fun publication_cannot_overcommit_holder_and_reserve_quote() {
@@ -274,7 +283,7 @@ fun publication_cannot_overcommit_holder_and_reserve_quote() {
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::EInsufficientBudget,
+    abort_code = blast_presale::errors::EInsufficientBudget,
     location = blast_presale::holder_rewards,
 )]
 fun holder_quote_cannot_exceed_the_vault_before_reserve_is_checked() {
@@ -294,7 +303,10 @@ fun a_gas_reserve_of_a_tenth_of_the_holder_quote_is_accepted() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EGasReserveTooLarge, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EGasReserveTooLarge,
+    location = blast_presale::presale_vault,
+)]
 fun a_gas_reserve_one_unit_above_a_tenth_of_the_holder_quote_is_rejected() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_budget_to(900, 91, TREASURY);
@@ -302,7 +314,10 @@ fun a_gas_reserve_one_unit_above_a_tenth_of_the_holder_quote_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EMemeRewardsUnsupported, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EMemeRewardsUnsupported,
+    location = blast_presale::presale_vault,
+)]
 /// A round that promises Meme is rejected before its empty Quote budget or its gas reserve.
 fun a_meme_round_is_rejected_before_its_quote_budget_and_gas_reserve() {
     let mut fixture = start_reserve_rewards();
@@ -329,7 +344,7 @@ fun a_meme_round_is_rejected_before_its_quote_budget_and_gas_reserve() {
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::EClaimsStillOpen,
+    abort_code = blast_presale::errors::EClaimsStillOpen,
     location = blast_presale::holder_rewards,
 )]
 fun close_rejects_the_millisecond_before_the_deadline() {
@@ -347,7 +362,10 @@ fun close_rejects_the_millisecond_before_the_deadline() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EWrongVault, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongVault,
+    location = blast_presale::holder_rewards,
+)]
 fun settlement_rejects_another_vault_before_its_amount_check() {
     let mut fixture = start_reserve_rewards();
     let package_version = blast_presale::blast_presale_package::new_for_testing(fixture
@@ -397,7 +415,10 @@ fun a_cap_without_rewards_authority_cannot_settle() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EAlreadyClaimed, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EAlreadyClaimed,
+    location = blast_presale::holder_rewards,
+)]
 fun reserve_holder_leaf_cannot_pay_twice() {
     let mut fixture = start_reserve_rewards();
     fixture.publish(30);
@@ -407,7 +428,10 @@ fun reserve_holder_leaf_cannot_pay_twice() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidProof, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidProof,
+    location = blast_presale::holder_rewards,
+)]
 fun reserve_holder_payment_cannot_be_redirected() {
     let mut fixture = start_reserve_rewards();
     let package_version = blast_presale::blast_presale_package::new_for_testing(fixture
@@ -422,7 +446,10 @@ fun reserve_holder_payment_cannot_be_redirected() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidCommitment,
+    location = blast_presale::presale_vault,
+)]
 fun round_rejects_a_short_merkle_root() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(vector[0u8], hash::blake2b256(&b"manifest"), 1, 0, 1);
@@ -430,7 +457,10 @@ fun round_rejects_a_short_merkle_root() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidCommitment,
+    location = blast_presale::presale_vault,
+)]
 fun round_rejects_a_short_manifest_digest() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(hash::blake2b256(&b"root"), vector[0u8], 1, 0, 1);
@@ -438,7 +468,10 @@ fun round_rejects_a_short_manifest_digest() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EInvalidLeafCount, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidLeafCount,
+    location = blast_presale::presale_vault,
+)]
 fun round_rejects_zero_leaves() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 0, 0, 1);
@@ -446,7 +479,10 @@ fun round_rejects_zero_leaves() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EInvalidLeafCount, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidLeafCount,
+    location = blast_presale::presale_vault,
+)]
 fun round_rejects_the_first_leaf_above_capacity() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 65_537, 0, 1);
@@ -454,7 +490,10 @@ fun round_rejects_the_first_leaf_above_capacity() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EEmptyBudget, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EEmptyBudget,
+    location = blast_presale::presale_vault,
+)]
 fun round_rejects_an_empty_asset_budget() {
     let mut f = start_reserve_rewards();
     f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 1, 0, 0);
@@ -462,7 +501,10 @@ fun round_rejects_an_empty_asset_budget() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidIndex, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidIndex,
+    location = blast_presale::holder_rewards,
+)]
 fun claim_rejects_the_first_index_outside_the_round() {
     let mut fixture = start_reserve_rewards();
     fixture.publish(0);
@@ -476,7 +518,10 @@ fun claim_rejects_the_first_index_outside_the_round() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidIndex, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidIndex,
+    location = blast_presale::holder_rewards,
+)]
 fun claim_rejects_the_largest_index_before_bitmap_access() {
     let mut fixture = start_reserve_rewards();
     fixture.publish(0);
@@ -500,7 +545,10 @@ fun claim_rejects_the_largest_index_before_bitmap_access() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidBeneficiary, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidBeneficiary,
+    location = blast_presale::holder_rewards,
+)]
 fun claim_rejects_a_zero_beneficiary_before_the_merkle_proof() {
     let mut fixture = start_reserve_rewards();
     fixture.publish(0);
@@ -582,7 +630,10 @@ fun a_late_publication_still_opens_the_full_claim_window() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EClaimDeadlineOverflow, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EClaimDeadlineOverflow,
+    location = blast_presale::holder_rewards,
+)]
 fun a_claim_window_ending_beyond_u64_rejects_publication() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, 970, 0, std::u64::max_value!());
@@ -634,7 +685,10 @@ fun a_cancelled_round_reserves_nothing_and_leaves_the_cursor() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed_action,
+)]
 fun a_cancelled_round_cannot_be_published() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_budget_to(970, 0, TREASURY);
@@ -676,7 +730,10 @@ fun rescheduling_replaces_the_pending_round_and_announces_its_cancellation() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInsufficientBudget, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInsufficientBudget,
+    location = blast_presale::holder_rewards,
+)]
 fun publication_rechecks_the_budget_the_schedule_checked() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_budget_to(970, 30, TREASURY);
@@ -688,7 +745,10 @@ fun publication_rechecks_the_budget_the_schedule_checked() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EInvalidCommitment, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidCommitment,
+    location = blast_presale::presale_vault,
+)]
 fun scheduling_checks_the_terms_before_the_vault() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_round_with(9, 0, 10, vector[], 1, 2_000, 0, CLAIM_WINDOW_DURATION_MS);
@@ -696,7 +756,10 @@ fun scheduling_checks_the_terms_before_the_vault() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EBudgetOverflow, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EBudgetOverflow,
+    location = blast_presale::presale_vault,
+)]
 fun a_holder_quote_and_gas_reserve_beyond_u64_are_rejected() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, std::u64::max_value!(), 1, CLAIM_WINDOW_DURATION_MS);
@@ -704,7 +767,10 @@ fun a_holder_quote_and_gas_reserve_beyond_u64_are_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EZeroClaimWindow, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EZeroClaimWindow,
+    location = blast_presale::presale_vault,
+)]
 fun scheduling_requires_a_positive_claim_window() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_round_with(0, 0, 10, hash::blake2b256(&b"root"), 1, 970, 0, 0);
@@ -712,7 +778,10 @@ fun scheduling_requires_a_positive_claim_window() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EZeroTreasury, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EZeroTreasury,
+    location = blast_presale::presale_vault,
+)]
 fun scheduling_requires_a_nonzero_expected_treasury() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_budget_to(970, 0, @0x0);
@@ -720,7 +789,10 @@ fun scheduling_requires_a_nonzero_expected_treasury() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EWrongRound, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongRound,
+    location = blast_presale::holder_rewards,
+)]
 fun scheduling_rejects_a_number_other_than_the_next_round() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_round_with(1, 0, 10, hash::blake2b256(&b"root"), 1, 970, 0, CLAIM_WINDOW_DURATION_MS);
@@ -766,7 +838,10 @@ fun a_cancelled_notice_change_keeps_the_applied_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EWrongRoundProposal, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongRoundProposal,
+    location = blast_presale::presale_vault,
+)]
 fun a_round_cancellation_cannot_discard_a_notice_change() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_notice(NOTICE_MS);
@@ -777,7 +852,10 @@ fun a_round_cancellation_cannot_discard_a_notice_change() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EWrongRoundProposal, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongRoundProposal,
+    location = blast_presale::presale_vault,
+)]
 fun a_notice_cancellation_cannot_discard_a_scheduled_round() {
     let mut fixture = start_reserve_rewards();
     fixture.schedule_budget_to(970, 0, TREASURY);
@@ -816,7 +894,10 @@ fun signed_in_roles_schedule_cancel_and_change_the_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EAdminRoleNotGranted, location = blast_admin::blast_acl)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EAdminRoleNotGranted,
+    location = blast_admin::blast_acl,
+)]
 fun a_cancel_admin_cannot_sign_in_to_schedule_a_round() {
     let mut fixture = start_reserve_rewards();
     let version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -832,7 +913,10 @@ fun a_cancel_admin_cannot_sign_in_to_schedule_a_round() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EAdminRoleNotGranted, location = blast_admin::blast_acl)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EAdminRoleNotGranted,
+    location = blast_admin::blast_acl,
+)]
 fun a_rewards_admin_cannot_sign_in_to_cancel_a_round() {
     let mut fixture = start_reserve_rewards();
     let version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -849,7 +933,10 @@ fun a_rewards_admin_cannot_sign_in_to_cancel_a_round() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun a_stale_generation_rejects_scheduling_before_every_round_check() {
     let mut fixture = start_reserve_rewards();
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -866,7 +953,10 @@ fun a_stale_generation_rejects_scheduling_before_every_round_check() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun a_stale_generation_rejects_publication_before_taking_the_round() {
     let mut fixture = start_reserve_rewards();
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -878,7 +968,10 @@ fun a_stale_generation_rejects_publication_before_taking_the_round() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun a_stale_generation_rejects_round_cancellation_first() {
     let mut fixture = start_reserve_rewards();
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -890,7 +983,10 @@ fun a_stale_generation_rejects_round_cancellation_first() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun a_stale_generation_rejects_notice_scheduling_first() {
     let mut fixture = start_reserve_rewards();
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -902,7 +998,10 @@ fun a_stale_generation_rejects_notice_scheduling_first() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun a_stale_generation_rejects_notice_application_first() {
     let mut fixture = start_reserve_rewards();
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -914,7 +1013,10 @@ fun a_stale_generation_rejects_notice_application_first() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun a_stale_generation_rejects_notice_cancellation_first() {
     let mut fixture = start_reserve_rewards();
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());

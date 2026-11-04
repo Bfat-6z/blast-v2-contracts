@@ -105,7 +105,11 @@ public struct HardCapTerms has copy, drop {
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_pause_blocks_new() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
@@ -131,7 +135,11 @@ fun security_pause_blocks_new() {
     destroy(version);
 }
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_partial_unpause_keeps_new_paused() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
@@ -186,7 +194,11 @@ fun security_presale_finalize_remains_available_as_specified() {
     destroy(version);
 }
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_pause_blocks_share() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
@@ -215,7 +227,11 @@ fun security_pause_blocks_share() {
     destroy(version);
 }
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_partial_unpause_keeps_share_paused() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
@@ -245,7 +261,11 @@ fun security_partial_unpause_keeps_share_paused() {
     destroy(version);
 }
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_pause_blocks_commit_open() {
     let mut fixture = start_sale(single_wallet_eligibility());
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -267,7 +287,11 @@ fun security_pause_blocks_commit_open() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_pause_blocks_commit_allowlisted() {
     let mut fixture = start_sale(single_wallet_eligibility());
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -292,7 +316,11 @@ fun security_pause_blocks_commit_allowlisted() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_pause_blocks_commit_uncapped() {
     let mut fixture = start_sale(single_wallet_eligibility());
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -314,7 +342,11 @@ fun security_pause_blocks_commit_uncapped() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_pause_blocks_migrate() {
     let mut fixture = start_funded_sale();
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -339,7 +371,11 @@ fun security_pause_blocks_migrate() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_presale::blast_presale_package::EPaused, location = blast_presale::blast_presale_package)]
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun security_partial_unpause_keeps_migrate_paused() {
     let mut fixture = start_funded_sale();
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
@@ -460,7 +496,10 @@ fun pause_keeps_settlement_and_refunds_open() {
 
 
 #[test]
-#[expected_failure(abort_code = presale::EAboveFeePolicy, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EAboveFeePolicy,
+    location = blast_presale::blast_presale,
+)]
 /// The applied policy caps a sale's rates even in its creation transaction, where they may rise: a
 /// scheduled policy increase lifts that ceiling only once it applies.
 fun a_pending_policy_increase_does_not_raise_the_sales_immediate_fee_ceiling() {
@@ -598,7 +637,7 @@ fun commitments_lock_quote_in_presale_custody() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidLifecycle,
+    abort_code = blast_presale::errors::EInvalidLifecycle,
     location = blast_presale::blast_presale,
 )]
 fun participants_cannot_withdraw_open_commitments() {
@@ -612,7 +651,7 @@ fun participants_cannot_withdraw_open_commitments() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidLifecycle,
+    abort_code = blast_presale::errors::EInvalidLifecycle,
     location = blast_presale::blast_presale,
 )]
 fun participants_cannot_withdraw_funded_commitments() {
@@ -698,7 +737,7 @@ fun allowlist_proofs_enforce_distinct_wallet_caps() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityProof,
+    abort_code = blast_presale::errors::EInvalidEligibilityProof,
     location = blast_presale::blast_presale,
 )]
 fun an_allowlist_proof_cannot_change_its_wallet_cap() {
@@ -712,7 +751,7 @@ fun an_allowlist_proof_cannot_change_its_wallet_cap() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EWrongEligibilityPolicy,
+    abort_code = blast_presale::errors::EWrongEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun the_allowlisted_commit_function_rejects_an_open_policy() {
@@ -725,7 +764,7 @@ fun the_allowlisted_commit_function_rejects_an_open_policy() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityProof,
+    abort_code = blast_presale::errors::EInvalidEligibilityProof,
     location = blast_presale::blast_presale,
 )]
 fun a_valid_allowlist_proof_cannot_admit_a_zero_wallet_cap() {
@@ -739,7 +778,7 @@ fun a_valid_allowlist_proof_cannot_admit_a_zero_wallet_cap() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityProof,
+    abort_code = blast_presale::errors::EInvalidEligibilityProof,
     location = blast_presale::blast_presale,
 )]
 fun two_valid_leaves_cannot_change_an_existing_wallet_cap() {
@@ -756,7 +795,7 @@ fun two_valid_leaves_cannot_change_an_existing_wallet_cap() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EWalletCapExceeded,
+    abort_code = blast_presale::errors::EWalletCapExceeded,
     location = blast_presale::blast_presale,
 )]
 fun cumulative_commitments_cannot_exceed_the_wallet_cap() {
@@ -770,7 +809,7 @@ fun cumulative_commitments_cannot_exceed_the_wallet_cap() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EParticipantCapacityReached,
+    abort_code = blast_presale::errors::EParticipantCapacityReached,
     location = blast_presale::blast_presale,
 )]
 fun open_sales_bound_their_dynamic_commitment_records() {
@@ -784,7 +823,7 @@ fun open_sales_bound_their_dynamic_commitment_records() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EBelowMinimumCommitment,
+    abort_code = blast_presale::errors::EBelowMinimumCommitment,
     location = blast_presale::blast_presale,
 )]
 /// A dust commitment is rejected before it can occupy one of the sale's participant slots.
@@ -818,7 +857,7 @@ fun a_wallet_above_the_minimum_may_top_up_by_any_amount() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EUnreachableRaise,
+    abort_code = blast_presale::errors::EUnreachableRaise,
     location = blast_presale::blast_presale,
 )]
 /// Filling every open slot at the minimum must fund the raise, or dust could block the sale.
@@ -828,7 +867,7 @@ fun an_open_sale_whose_slots_cannot_reach_the_raise_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityPolicy,
+    abort_code = blast_presale::errors::EInvalidEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun finalize_rechecks_eligibility_built_without_the_current_rules() {
@@ -837,7 +876,7 @@ fun finalize_rechecks_eligibility_built_without_the_current_rules() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityPolicy,
+    abort_code = blast_presale::errors::EInvalidEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun open_eligibility_rejects_a_zero_minimum() {
@@ -846,7 +885,7 @@ fun open_eligibility_rejects_a_zero_minimum() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityPolicy,
+    abort_code = blast_presale::errors::EInvalidEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun open_eligibility_rejects_zero_slots() {
@@ -855,7 +894,7 @@ fun open_eligibility_rejects_zero_slots() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityPolicy,
+    abort_code = blast_presale::errors::EInvalidEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun open_eligibility_rejects_the_first_slot_count_over_the_limit() {
@@ -864,7 +903,7 @@ fun open_eligibility_rejects_the_first_slot_count_over_the_limit() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityPolicy,
+    abort_code = blast_presale::errors::EInvalidEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun allowlist_rejects_a_truncated_root() {
@@ -873,7 +912,7 @@ fun allowlist_rejects_a_truncated_root() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityPolicy,
+    abort_code = blast_presale::errors::EInvalidEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun allowlist_rejects_zero_leaves() {
@@ -882,7 +921,7 @@ fun allowlist_rejects_zero_leaves() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityPolicy,
+    abort_code = blast_presale::errors::EInvalidEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun allowlist_rejects_the_first_leaf_count_over_the_limit() {
@@ -891,7 +930,7 @@ fun allowlist_rejects_the_first_leaf_count_over_the_limit() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidUncappedPhase,
+    abort_code = blast_presale::errors::EInvalidUncappedPhase,
     location = blast_presale::blast_presale,
 )]
 fun uncapped_access_rejects_a_zero_minimum() {
@@ -900,7 +939,7 @@ fun uncapped_access_rejects_a_zero_minimum() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidUncappedPhase,
+    abort_code = blast_presale::errors::EInvalidUncappedPhase,
     location = blast_presale::blast_presale,
 )]
 fun uncapped_access_rejects_zero_slots() {
@@ -909,7 +948,7 @@ fun uncapped_access_rejects_zero_slots() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidUncappedPhase,
+    abort_code = blast_presale::errors::EInvalidUncappedPhase,
     location = blast_presale::blast_presale,
 )]
 fun uncapped_access_rejects_the_first_slot_count_over_the_limit() {
@@ -918,7 +957,7 @@ fun uncapped_access_rejects_the_first_slot_count_over_the_limit() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidEligibilityPolicy,
+    abort_code = blast_presale::errors::EInvalidEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun the_minimum_commitment_cannot_exceed_the_wallet_cap() {
@@ -927,7 +966,7 @@ fun the_minimum_commitment_cannot_exceed_the_wallet_cap() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EWalletCapExceeded,
+    abort_code = blast_presale::errors::EWalletCapExceeded,
     location = blast_presale::blast_presale,
 )]
 /// Before the uncapped phase starts, wallet caps still apply.
@@ -980,7 +1019,10 @@ fun a_hard_capped_uncapped_phase_fills_the_raise_and_returns_the_excess() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EPresaleFilled, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPresaleFilled,
+    location = blast_presale::blast_presale,
+)]
 fun a_full_hard_capped_sale_accepts_no_more_quote() {
     let mut fixture = start_with_hard_cap(
         presale::open_eligibility(500, 4, RAISE_TARGET / 4),
@@ -1031,7 +1073,7 @@ fun a_hard_cap_from_the_start_fills_first_come_within_wallet_caps() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EWalletCapExceeded,
+    abort_code = blast_presale::errors::EWalletCapExceeded,
     location = blast_presale::blast_presale,
 )]
 /// A hard cap does not lift wallet caps; only an uncapped phase does.
@@ -1125,7 +1167,7 @@ fun an_early_closed_sale_can_be_cancelled_one_lp_window_after_its_close() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::ELiquidityDeadlineNotReached,
+    abort_code = blast_presale::errors::ELiquidityDeadlineNotReached,
     location = blast_presale::blast_presale,
 )]
 fun an_early_closed_sale_cannot_be_cancelled_inside_its_lp_window() {
@@ -1146,7 +1188,10 @@ fun an_early_closed_sale_cannot_be_cancelled_inside_its_lp_window() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EPresaleNotEnded, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPresaleNotEnded,
+    location = blast_presale::blast_presale,
+)]
 /// A full sale whose hard cap does not close it when filled runs to its end.
 fun a_full_sale_that_does_not_close_when_filled_waits_for_its_end() {
     let mut fixture = start_with_hard_cap(
@@ -1163,7 +1208,10 @@ fun a_full_sale_that_does_not_close_when_filled_waits_for_its_end() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EPresaleNotEnded, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPresaleNotEnded,
+    location = blast_presale::blast_presale,
+)]
 /// A hard-capped sale whose raise is not full yet can still take Quote, so it cannot close.
 fun a_hard_capped_sale_short_of_its_raise_cannot_close_early() {
     let mut fixture = start_with_hard_cap(
@@ -1180,7 +1228,10 @@ fun a_hard_capped_sale_short_of_its_raise_cannot_close_early() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EPresaleNotEnded, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPresaleNotEnded,
+    location = blast_presale::blast_presale,
+)]
 /// A sale without a hard cap overflows for its whole window, so reaching the raise never closes
 /// it: later wallets may still join at the common fill rate.
 fun an_overflowing_sale_cannot_close_early() {
@@ -1221,7 +1272,10 @@ fun a_sale_overfilled_before_its_hard_cap_closes_when_the_hard_cap_starts() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EPresaleNotEnded, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPresaleNotEnded,
+    location = blast_presale::blast_presale,
+)]
 /// Before its hard cap starts, an overfilled sale still overflows, so it cannot close.
 fun a_sale_overfilled_before_its_hard_cap_cannot_close_before_the_hard_cap_starts() {
     let mut fixture = start_with_hard_cap(
@@ -1241,7 +1295,7 @@ fun a_sale_overfilled_before_its_hard_cap_cannot_close_before_the_hard_cap_start
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidLifecycle,
+    abort_code = blast_presale::errors::EInvalidLifecycle,
     location = blast_presale::blast_presale,
 )]
 /// An early close ends commitments.
@@ -1261,7 +1315,10 @@ fun a_sale_closed_early_takes_no_more_commitments() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidHardCap, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidHardCap,
+    location = blast_presale::blast_presale,
+)]
 fun a_hard_cap_must_start_inside_the_window() {
     start_with_hard_cap(
         single_wallet_eligibility(),
@@ -1271,7 +1328,10 @@ fun a_hard_cap_must_start_inside_the_window() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EMissingSetting, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EMissingSetting,
+    location = blast_presale::blast_presale,
+)]
 fun a_sale_cannot_be_finalized_without_an_eligibility_policy() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
@@ -1295,7 +1355,10 @@ fun a_sale_cannot_be_finalized_without_an_eligibility_policy() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EMissingSetting, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EMissingSetting,
+    location = blast_presale::blast_presale,
+)]
 fun a_sale_cannot_be_finalized_without_an_lp_fee_split() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
@@ -1317,7 +1380,7 @@ fun a_sale_cannot_be_finalized_without_an_lp_fee_split() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidRaiseTarget,
+    abort_code = blast_presale::errors::EInvalidRaiseTarget,
     location = blast_presale::blast_presale,
 )]
 /// A sale whose raise was never set has a zero raise target.
@@ -1364,7 +1427,7 @@ fun an_uncapped_phase_open_to_anyone_admits_wallets_outside_the_allowlist() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EUncappedPhaseNotOpen,
+    abort_code = blast_presale::errors::EUncappedPhaseNotOpen,
     location = blast_presale::blast_presale,
 )]
 fun the_open_uncapped_route_waits_for_its_phase() {
@@ -1381,7 +1444,7 @@ fun the_open_uncapped_route_waits_for_its_phase() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EUncappedPhaseNotOpen,
+    abort_code = blast_presale::errors::EUncappedPhaseNotOpen,
     location = blast_presale::blast_presale,
 )]
 /// A phase limited to eligible wallets never opens the anyone route.
@@ -1399,7 +1462,7 @@ fun an_eligible_only_phase_rejects_the_open_uncapped_route() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidUncappedPhase,
+    abort_code = blast_presale::errors::EInvalidUncappedPhase,
     location = blast_presale::blast_presale,
 )]
 fun an_uncapped_phase_must_start_inside_the_window() {
@@ -1411,7 +1474,7 @@ fun an_uncapped_phase_must_start_inside_the_window() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidUncappedPhase,
+    abort_code = blast_presale::errors::EInvalidUncappedPhase,
     location = blast_presale::blast_presale,
 )]
 /// Opening to anyone cannot shrink the participant bound eligible wallets already have.
@@ -1424,7 +1487,7 @@ fun an_open_uncapped_phase_cannot_admit_fewer_wallets_than_the_policy() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EUnreachableRaise,
+    abort_code = blast_presale::errors::EUnreachableRaise,
     location = blast_presale::blast_presale,
 )]
 /// Anyone-access slots must also fund the raise when filled at their minimum.
@@ -1437,7 +1500,7 @@ fun an_open_uncapped_phase_whose_slots_cannot_reach_the_raise_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EUnreachableRaise,
+    abort_code = blast_presale::errors::EUnreachableRaise,
     location = blast_presale::blast_presale,
 )]
 /// Allowlisted wallets may commit any positive amount, so only the phase slots beyond the
@@ -1452,13 +1515,19 @@ fun an_open_uncapped_phase_counts_only_the_slots_beyond_the_allowlist() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidWindow, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidWindow,
+    location = blast_presale::blast_presale,
+)]
 fun a_zero_commitment_window_is_rejected() {
     create_with_windows(0, LIQUIDITY_WINDOW_DURATION_MS);
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidWindow, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidWindow,
+    location = blast_presale::blast_presale,
+)]
 /// A shorter LP window would let one transaction settle and cancel a sale nobody settled in time.
 fun a_liquidity_window_below_seven_days_is_rejected() {
     create_with_windows(COMMITMENT_DURATION_MS, LIQUIDITY_WINDOW_DURATION_MS - 1);
@@ -1490,7 +1559,7 @@ fun raise_allocations_are_paid_at_migration_and_the_lp_takes_the_rest() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidRaiseAllocation,
+    abort_code = blast_presale::errors::EInvalidRaiseAllocation,
     location = blast_presale::blast_presale,
 )]
 /// The LP must always keep part of the raise.
@@ -1502,7 +1571,10 @@ fun raise_allocations_must_leave_the_lp_a_share() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidRaiseAllocation, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidRaiseAllocation,
+    location = blast_presale::blast_presale,
+)]
 fun a_positive_raise_share_cannot_round_to_zero_for_its_recipient() {
     start_with_raise_allocations(vector[
         presale::recipient_share(RAISE_RECIPIENT, bps::new(1)),
@@ -1510,7 +1582,10 @@ fun a_positive_raise_share_cannot_round_to_zero_for_its_recipient() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidRaiseAllocation, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidRaiseAllocation,
+    location = blast_presale::blast_presale,
+)]
 fun a_positive_liquidity_share_cannot_round_to_zero_quote() {
     start_with_raise_allocations(vector[
         presale::recipient_share(RAISE_RECIPIENT, bps::new(9_999)),
@@ -1519,7 +1594,7 @@ fun a_positive_liquidity_share_cannot_round_to_zero_quote() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidRaiseAllocation,
+    abort_code = blast_presale::errors::EInvalidRaiseAllocation,
     location = blast_presale::blast_presale,
 )]
 /// A zero share is a raise-allocation error, not a token-allocation one.
@@ -1531,7 +1606,7 @@ fun a_raise_allocation_must_take_a_positive_share() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidRaiseAllocation,
+    abort_code = blast_presale::errors::EInvalidRaiseAllocation,
     location = blast_presale::blast_presale,
 )]
 fun raise_allocation_recipients_must_be_distinct() {
@@ -1542,7 +1617,10 @@ fun raise_allocation_recipients_must_be_distinct() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EPresaleEnded, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPresaleEnded,
+    location = blast_presale::blast_presale,
+)]
 fun commitments_at_the_exact_end_are_rejected_before_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.set_time(COMMITMENT_ENDS_AT_MS);
@@ -1570,7 +1648,7 @@ fun a_late_settled_sale_can_still_migrate_after_the_liquidity_deadline() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidLifecycle,
+    abort_code = blast_presale::errors::EInvalidLifecycle,
     location = blast_presale::blast_presale,
 )]
 fun a_cancelled_unlaunched_sale_cannot_migrate() {
@@ -1585,7 +1663,7 @@ fun a_cancelled_unlaunched_sale_cannot_migrate() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::ELiquidityDeadlineNotReached,
+    abort_code = blast_presale::errors::ELiquidityDeadlineNotReached,
     location = blast_presale::blast_presale,
 )]
 fun a_funded_sale_cannot_be_cancelled_before_the_liquidity_deadline() {
@@ -1599,7 +1677,7 @@ fun a_funded_sale_cannot_be_cancelled_before_the_liquidity_deadline() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EWrongMigrationWitness,
+    abort_code = blast_presale::errors::EWrongMigrationWitness,
     location = blast_presale::blast_presale,
 )]
 fun another_migrator_cannot_release_escrow() {
@@ -1629,7 +1707,7 @@ fun another_migrator_cannot_release_escrow() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EWrongEligibilityPolicy,
+    abort_code = blast_presale::errors::EWrongEligibilityPolicy,
     location = blast_presale::blast_presale,
 )]
 fun the_open_commit_function_rejects_an_allowlist_policy() {
@@ -1643,7 +1721,7 @@ fun the_open_commit_function_rejects_an_allowlist_policy() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidAssetPair,
+    abort_code = blast_presale::errors::EInvalidAssetPair,
     location = blast_presale::blast_presale,
 )]
 /// The asset pair is checked before the raise and windows, so their one-unit values never matter.
@@ -1659,7 +1737,7 @@ fun sale_token_and_quote_types_must_differ() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInitialSupplyNotZero,
+    abort_code = blast_presale::errors::EInitialSupplyNotZero,
     location = blast_presale::blast_presale,
 )]
 fun treasury_cap_must_start_with_zero_supply() {
@@ -1675,7 +1753,7 @@ fun treasury_cap_must_start_with_zero_supply() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidTokenAllocation,
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
     location = blast_presale::blast_presale,
 )]
 fun configured_allocation_bps_cannot_exceed_full_supply() {
@@ -1688,7 +1766,7 @@ fun configured_allocation_bps_cannot_exceed_full_supply() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::ESaleTokenNotUnregulated,
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
     location = blast_presale::blast_presale,
 )]
 fun regulated_sale_currency_without_global_pause_is_rejected() {
@@ -1700,7 +1778,7 @@ fun regulated_sale_currency_without_global_pause_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::ESaleTokenNotUnregulated,
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
     location = blast_presale::blast_presale,
 )]
 fun regulated_burnable_sale_currency_with_global_pause_is_rejected() {
@@ -1714,7 +1792,7 @@ fun regulated_burnable_sale_currency_with_global_pause_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::ESaleTokenNotUnregulated,
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
     location = blast_presale::blast_presale,
 )]
 fun regulated_sale_currency_is_rejected_before_missing_settings() {
@@ -1743,7 +1821,7 @@ fun regulated_sale_currency_is_rejected_before_missing_settings() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::ESaleTokenNotUnregulated,
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
     location = blast_presale::blast_presale,
 )]
 fun legacy_regulated_sale_currency_with_unknown_status_is_rejected() {
@@ -1757,7 +1835,7 @@ fun legacy_regulated_sale_currency_with_unknown_status_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::ESaleTokenNotUnregulated,
+    abort_code = blast_presale::errors::ESaleTokenNotUnregulated,
     location = blast_presale::blast_presale,
 )]
 fun legacy_regulated_sale_currency_with_migrated_status_is_rejected() {
@@ -1781,7 +1859,7 @@ fun unregulated_sale_currency_with_long_metadata_is_accepted() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidTokenAllocation,
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
     location = blast_presale::blast_presale,
 )]
 fun configured_allocation_bps_must_produce_positive_atomic_amounts() {
@@ -1792,7 +1870,10 @@ fun configured_allocation_bps_must_produce_positive_atomic_amounts() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
+    location = blast_presale::blast_presale,
+)]
 fun token_supply_must_be_positive_even_with_a_complete_split() {
     let mut terms = valid_sale_terms();
     terms.token_supply = 0;
@@ -1801,7 +1882,10 @@ fun token_supply_must_be_positive_even_with_a_complete_split() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
+    location = blast_presale::blast_presale,
+)]
 fun the_buyers_must_have_a_positive_token_share() {
     let mut terms = valid_sale_terms();
     terms.token_allocation_bps = 0;
@@ -1811,7 +1895,10 @@ fun the_buyers_must_have_a_positive_token_share() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
+    location = blast_presale::blast_presale,
+)]
 fun the_lp_must_have_a_positive_token_share() {
     let mut terms = valid_sale_terms();
     terms.token_allocation_bps = 6_000;
@@ -1821,7 +1908,10 @@ fun the_lp_must_have_a_positive_token_share() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
+    location = blast_presale::blast_presale,
+)]
 fun a_positive_buyers_share_cannot_round_to_zero_tokens() {
     let mut terms = valid_sale_terms();
     terms.token_supply = 1;
@@ -1833,7 +1923,10 @@ fun a_positive_buyers_share_cannot_round_to_zero_tokens() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidTokenAllocation, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
+    location = blast_presale::blast_presale,
+)]
 fun a_positive_recipient_share_cannot_round_to_zero_tokens() {
     let mut terms = valid_sale_terms();
     terms.token_supply = 2;
@@ -1845,13 +1938,19 @@ fun a_positive_recipient_share_cannot_round_to_zero_tokens() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidFeeSplit, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFeeSplit,
+    location = blast_presale::blast_presale,
+)]
 fun fee_recipient_and_holder_shares_must_total_full_bps() {
     create_with_fee_split(fee_recipients(), HOLDER_REWARDS_BPS - 1);
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidFeeSplit, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFeeSplit,
+    location = blast_presale::blast_presale,
+)]
 fun fee_recipients_must_be_distinct() {
     create_with_fee_split(
         vector[
@@ -1869,7 +1968,7 @@ fun holders_may_receive_every_fee() {
 }
 
 #[test]
-#[expected_failure(abort_code = bps::EInvalidBps, location = blast_presale::bps)]
+#[expected_failure(abort_code = blast_presale::errors::EInvalidBps, location = blast_presale::bps)]
 /// An out-of-range LP share cannot be constructed, so the BPS sum cannot overflow.
 fun an_overflowing_liquidity_share_cannot_be_constructed() {
     let mut terms = valid_sale_terms();
@@ -1879,7 +1978,7 @@ fun an_overflowing_liquidity_share_cannot_be_constructed() {
 }
 
 #[test]
-#[expected_failure(abort_code = bps::EInvalidBps, location = blast_presale::bps)]
+#[expected_failure(abort_code = blast_presale::errors::EInvalidBps, location = blast_presale::bps)]
 /// An out-of-range holder share cannot be constructed, so the BPS sum cannot overflow.
 fun an_overflowing_holder_share_cannot_be_constructed() {
     create_with_fee_split(fee_recipients(), std::u64::max_value!());
@@ -1892,13 +1991,19 @@ fun sixteen_fee_recipients_are_accepted() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidFeeSplit, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFeeSplit,
+    location = blast_presale::blast_presale,
+)]
 fun a_seventeenth_fee_recipient_is_rejected() {
     create_with_fee_split(distinct_fee_recipients(17), 10_000 - 17 * 100);
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidFeeSplit, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFeeSplit,
+    location = blast_presale::blast_presale,
+)]
 fun a_fee_recipient_cannot_be_the_zero_address() {
     create_with_fee_split(
         vector[presale::recipient_share(@0x0, bps::new(CREATOR_FEE_BPS + FEE_PARTNER_BPS))],
@@ -1913,7 +2018,10 @@ fun bluefin_accepts_a_thirty_two_byte_meme_symbol() {
 }
 
 #[test]
-#[expected_failure(abort_code = bluefin::ESymbolTooLong, location = blast_presale::bluefin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ESymbolTooLong,
+    location = blast_presale::bluefin,
+)]
 /// A longer symbol would grow every Bluefin position past Sui's object size limit.
 fun bluefin_rejects_a_thirty_three_byte_meme_symbol() {
     create_bluefin_sale<QUOTE, bluefin::Witness>(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456");
@@ -1921,7 +2029,7 @@ fun bluefin_rejects_a_thirty_three_byte_meme_symbol() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EQuoteNotAllowed,
+    abort_code = blast_presale::errors::EQuoteNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// A venue cannot create a sale raising a Quote type Blast has not allowed.
@@ -1931,7 +2039,7 @@ fun a_sale_cannot_raise_a_quote_blast_has_not_allowed() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// A venue cannot create a sale while Blast has not allowed its migration witness.
@@ -1950,7 +2058,10 @@ fun seed_prices_must_sit_inside_the_venue_bounds() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EUnseedablePrice, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EUnseedablePrice,
+    location = blast_presale::blast_presale,
+)]
 /// A raise that dwarfs a one-token LP allocation would seed a price no venue can pool.
 fun a_sale_whose_seed_price_no_venue_can_pool_is_rejected() {
     let raise_target = std::u64::max_value!();
@@ -2069,7 +2180,7 @@ fun a_scheduled_sale_opens_at_its_start() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EPresaleNotStarted,
+    abort_code = blast_presale::errors::EPresaleNotStarted,
     location = blast_presale::blast_presale,
 )]
 fun commitments_before_the_start_are_rejected_before_amount_checks() {
@@ -2092,13 +2203,19 @@ fun a_start_that_has_passed_opens_the_window_at_the_share() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidWindow, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidWindow,
+    location = blast_presale::blast_presale,
+)]
 fun a_start_whose_commitment_deadline_overflows_is_rejected() {
     share_new_sale(std::u64::max_value!() - COMMITMENT_DURATION_MS + 1, COMMITMENT_STARTS_AT_MS);
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidWindow, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidWindow,
+    location = blast_presale::blast_presale,
+)]
 fun a_start_whose_windows_end_past_u64_milliseconds_is_rejected() {
     share_new_sale(std::u64::max_value!() - COMMITMENT_DURATION_MS, COMMITMENT_STARTS_AT_MS);
 }
@@ -2236,7 +2353,7 @@ fun lowering_every_rate_before_the_start_returns_blasts_share_to_the_buyers_and_
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EProtocolFeesIncreased,
+    abort_code = blast_presale::errors::EProtocolFeesIncreased,
     location = blast_presale::blast_presale,
 )]
 fun a_shared_sales_raise_rate_cannot_rise() {
@@ -2245,7 +2362,7 @@ fun a_shared_sales_raise_rate_cannot_rise() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EProtocolFeesIncreased,
+    abort_code = blast_presale::errors::EProtocolFeesIncreased,
     location = blast_presale::blast_presale,
 )]
 fun a_shared_sales_token_rate_cannot_rise() {
@@ -2254,7 +2371,7 @@ fun a_shared_sales_token_rate_cannot_rise() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EProtocolFeesIncreased,
+    abort_code = blast_presale::errors::EProtocolFeesIncreased,
     location = blast_presale::blast_presale,
 )]
 fun a_shared_sales_lp_fee_meme_rate_cannot_rise() {
@@ -2263,7 +2380,7 @@ fun a_shared_sales_lp_fee_meme_rate_cannot_rise() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EProtocolFeesIncreased,
+    abort_code = blast_presale::errors::EProtocolFeesIncreased,
     location = blast_presale::blast_presale,
 )]
 fun a_shared_sales_lp_fee_quote_rate_cannot_rise() {
@@ -2271,7 +2388,10 @@ fun a_shared_sales_lp_fee_quote_rate_cannot_rise() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EPresaleStarted, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPresaleStarted,
+    location = blast_presale::blast_presale,
+)]
 /// Once the window starts, no rate may change, not even downwards.
 fun a_sales_rates_cannot_change_once_its_window_starts() {
     let mut fixture = schedule_with_protocol_fees(
@@ -2288,7 +2408,10 @@ fun a_sales_rates_cannot_change_once_its_window_starts() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EPresaleStarted, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPresaleStarted,
+    location = blast_presale::blast_presale,
+)]
 /// A started sale reports its start before its rates are compared, so an increase is rejected as
 /// late, not as an increase.
 fun a_rate_increase_after_the_start_reports_the_started_sale() {
@@ -2379,7 +2502,7 @@ fun an_unshared_sales_rates_can_change_before_its_share() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidLifecycle,
+    abort_code = blast_presale::errors::EInvalidLifecycle,
     location = blast_presale::blast_presale,
 )]
 /// Past `Open`, the lifecycle alone fixes a sale's rates: a funded sale cannot be repriced.
@@ -2393,7 +2516,7 @@ fun a_funded_sales_rates_cannot_change() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EProtocolFeesUnchanged,
+    abort_code = blast_presale::errors::EProtocolFeesUnchanged,
     location = blast_presale::blast_presale,
 )]
 /// An override that keeps every rate of a shared sale passes the no-increase guard and is then
@@ -2413,7 +2536,7 @@ fun a_sale_fee_update_must_change_its_rates() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EProtocolFeesUnchanged,
+    abort_code = blast_presale::errors::EProtocolFeesUnchanged,
     location = blast_presale::blast_presale,
 )]
 /// In the creation transaction, too, an override must change a rate.
@@ -2428,7 +2551,10 @@ fun a_creation_fee_update_must_change_its_rates() {
 }
 
 #[test]
-#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFees,
+    location = blast_presale::fee_policy,
+)]
 /// A sale's rates keep the policy's bounds: Blast's raise share is at most 1,000 BPS.
 fun a_sale_fee_update_keeps_the_policy_bounds() {
     schedule_with_creation_rates(vector[], 0, 0, RECIPIENT_B_BPS, vector[1_001, 0, 0, 0]).end();
@@ -2436,7 +2562,7 @@ fun a_sale_fee_update_keeps_the_policy_bounds() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidRaiseAllocation,
+    abort_code = blast_presale::errors::EInvalidRaiseAllocation,
     location = blast_presale::blast_presale,
 )]
 /// Blast's new raise share must still leave the LP Quote after the raise recipients'.
@@ -2452,7 +2578,7 @@ fun a_raise_share_that_leaves_the_lp_nothing_is_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidTokenAllocation,
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
     location = blast_presale::blast_presale,
 )]
 /// Blast's new token share must leave buyers a token: a sale offering buyers 500 BPS (1,000 of
@@ -2484,7 +2610,10 @@ fun a_token_share_that_leaves_buyers_nothing_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EUnseedablePrice, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EUnseedablePrice,
+    location = blast_presale::blast_presale,
+)]
 /// Cutting Blast's raise share hands the LP more Quote, which must still seed a poolable price.
 fun a_raise_share_cut_that_seeds_an_unpoolable_price_is_rejected() {
     let raise_target = 5_000_000_000_000_000_000;
@@ -2583,7 +2712,7 @@ fun a_cancelled_sale_pays_blast_nothing() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidTokenAllocation,
+    abort_code = blast_presale::errors::EInvalidTokenAllocation,
     location = blast_presale::blast_presale,
 )]
 /// The creator's allocations must total 10,000 BPS together with Blast's token share.
@@ -2599,7 +2728,7 @@ fun allocations_must_leave_room_for_blasts_token_share() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidRaiseAllocation,
+    abort_code = blast_presale::errors::EInvalidRaiseAllocation,
     location = blast_presale::blast_presale,
 )]
 /// Blast's raise share and the raise recipients' together must leave the LP a share.
@@ -2886,7 +3015,10 @@ fun a_cancelled_vesting_sale_refunds_without_a_schedule() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidFeeSplit, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFeeSplit,
+    location = blast_presale::blast_presale,
+)]
 /// LP fees are paid as they are collected, so a fee share cannot vest.
 fun fee_recipients_cannot_vest() {
     create_with_fee_split(
@@ -2912,7 +3044,7 @@ fun vesting_terms_accept_the_technical_bound_with_a_full_cliff() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidVestingTerms,
+    abort_code = blast_presale::errors::EInvalidVestingTerms,
     location = blast_presale::blast_presale,
 )]
 fun vesting_terms_need_a_positive_period() {
@@ -2921,7 +3053,7 @@ fun vesting_terms_need_a_positive_period() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidVestingTerms,
+    abort_code = blast_presale::errors::EInvalidVestingTerms,
     location = blast_presale::blast_presale,
 )]
 fun vesting_terms_need_a_positive_period_count() {
@@ -2930,7 +3062,7 @@ fun vesting_terms_need_a_positive_period_count() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidVestingTerms,
+    abort_code = blast_presale::errors::EInvalidVestingTerms,
     location = blast_presale::blast_presale,
 )]
 fun vesting_terms_keep_the_cliff_within_the_duration() {
@@ -2939,7 +3071,7 @@ fun vesting_terms_keep_the_cliff_within_the_duration() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale::EInvalidVestingTerms,
+    abort_code = blast_presale::errors::EInvalidVestingTerms,
     location = blast_presale::blast_presale,
 )]
 fun vesting_terms_stay_within_the_technical_bound() {
@@ -3041,7 +3173,7 @@ fun a_zero_cut_partner_is_paid_nothing() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EPartnerNotAccepted,
+    abort_code = blast_presale::errors::EPartnerNotAccepted,
     location = blast_presale::creation_policy,
 )]
 /// A sale may name only a partner Blast accepts for new presales.
@@ -3067,7 +3199,10 @@ fun a_sale_cannot_name_a_partner_blast_has_not_accepted() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ENoPartnerPayout, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ENoPartnerPayout,
+    location = blast_presale::blast_presale,
+)]
 /// A funded sale that has not migrated owes its partner nothing: it may still be refunded.
 fun a_partner_cannot_be_paid_before_migration() {
     let mut ctx = tx_context::dummy();
@@ -3079,7 +3214,10 @@ fun a_partner_cannot_be_paid_before_migration() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ENoPartnerPayout, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ENoPartnerPayout,
+    location = blast_presale::blast_presale,
+)]
 /// A partnered sale pays Blast and its partner once.
 fun a_partner_is_paid_once() {
     let mut ctx = tx_context::dummy();
@@ -3093,7 +3231,10 @@ fun a_partner_is_paid_once() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EWrongPartner, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongPartner,
+    location = blast_presale::blast_presale,
+)]
 /// Only the partner the sale named is paid, checked before anything is owed.
 fun another_partner_cannot_be_paid() {
     let mut ctx = tx_context::dummy();
@@ -3106,7 +3247,10 @@ fun another_partner_cannot_be_paid() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EWrongPartner, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongPartner,
+    location = blast_presale::blast_presale,
+)]
 /// A sale without a partner pays Blast at migration and never pays a partner.
 fun an_unpartnered_sale_pays_no_partner() {
     let mut ctx = tx_context::dummy();
@@ -3119,7 +3263,10 @@ fun an_unpartnered_sale_pays_no_partner() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ENoPartnerPayout, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ENoPartnerPayout,
+    location = blast_presale::blast_presale,
+)]
 /// A partnered sale cancelled at its LP deadline holds nothing for its partner: the raise is
 /// refundable and Blast's tokens stay locked with the rest of the supply.
 fun a_cancelled_partnered_sale_pays_no_partner() {
@@ -3426,7 +3573,10 @@ fun stale_version_prevents_initializer_creation() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EZeroCommitment, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EZeroCommitment,
+    location = blast_presale::blast_presale,
+)]
 fun open_commitments_reject_zero_quote() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.commit_open(ALICE, 0);
@@ -3434,7 +3584,10 @@ fun open_commitments_reject_zero_quote() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EZeroCommitment, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EZeroCommitment,
+    location = blast_presale::blast_presale,
+)]
 fun allowlisted_commitments_reject_zero_quote() {
     let root = presale::allowlist_leaf_for_testing(0, ALICE, WALLET_CAP);
     let mut fixture = start_sale(presale::allowlisted_eligibility(root, 1));
@@ -3443,7 +3596,10 @@ fun allowlisted_commitments_reject_zero_quote() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EZeroCommitment, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EZeroCommitment,
+    location = blast_presale::blast_presale,
+)]
 fun uncapped_commitments_reject_zero_quote() {
     let mut fixture = start_with_uncapped_phase(
         single_wallet_eligibility(), presale::uncapped_for_anyone(UNCAPPED_DELAY_MS, 2, RAISE_TARGET),
@@ -3454,7 +3610,10 @@ fun uncapped_commitments_reject_zero_quote() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidLifecycle,
+    location = blast_presale::blast_presale,
+)]
 fun a_migrated_sales_rates_cannot_change() {
     let mut fixture = start_funded_sale();
     fixture.migrate();
@@ -3465,7 +3624,10 @@ fun a_migrated_sales_rates_cannot_change() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidLifecycle,
+    location = blast_presale::blast_presale,
+)]
 fun a_cancelled_sales_rates_cannot_change() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.set_time(COMMITMENT_ENDS_AT_MS);
@@ -3477,7 +3639,10 @@ fun a_cancelled_sales_rates_cannot_change() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidLifecycle,
+    location = blast_presale::blast_presale,
+)]
 fun an_open_sale_cannot_be_shared_again() {
     let mut fixture = start_sale(single_wallet_eligibility());
     let version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
@@ -3492,19 +3657,28 @@ fun an_open_sale_cannot_be_shared_again() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EAboveFeePolicy, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EAboveFeePolicy,
+    location = blast_presale::blast_presale,
+)]
 fun token_rate_cannot_exceed_its_policy_ceiling() {
     propose_rates_under_zero_fee_policy(1, 0);
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EAboveFeePolicy, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EAboveFeePolicy,
+    location = blast_presale::blast_presale,
+)]
 fun meme_lp_rate_cannot_exceed_its_policy_ceiling() {
     propose_rates_under_zero_fee_policy(0, 1);
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidLifecycle,
+    location = blast_presale::blast_presale,
+)]
 fun a_funded_presale_cannot_settle_twice() {
     let mut fixture = start_funded_sale();
 
@@ -3514,7 +3688,10 @@ fun a_funded_presale_cannot_settle_twice() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidLifecycle,
+    location = blast_presale::blast_presale,
+)]
 fun an_open_presale_cannot_be_cancelled_as_unlaunched() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.set_time(LIQUIDITY_DEADLINE_AT_MS);
@@ -3525,7 +3702,10 @@ fun an_open_presale_cannot_be_cancelled_as_unlaunched() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidLifecycle, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidLifecycle,
+    location = blast_presale::blast_presale,
+)]
 fun a_funded_presale_cannot_destroy_its_creator_cap() {
     let mut fixture = start_funded_sale();
 
@@ -3535,7 +3715,10 @@ fun a_funded_presale_cannot_destroy_its_creator_cap() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EWalletCapExceeded, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWalletCapExceeded,
+    location = blast_presale::blast_presale,
+)]
 fun one_wallet_cannot_overflow_its_commitment_before_the_aggregate_check() {
     let mut fixture = start_sale(presale::open_eligibility(std::u64::max_value!(), 2, RAISE_TARGET / 2));
     fixture.commit_open(ALICE, std::u64::max_value!());
@@ -3546,7 +3729,10 @@ fun one_wallet_cannot_overflow_its_commitment_before_the_aggregate_check() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ETotalCommitmentOverflow, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ETotalCommitmentOverflow,
+    location = blast_presale::blast_presale,
+)]
 fun aggregate_commitments_reject_u64_overflow_before_joining_quote() {
     let mut fixture = start_sale(presale::open_eligibility(std::u64::max_value!(), 2, RAISE_TARGET / 2));
     fixture.commit_open(ALICE, std::u64::max_value!());
@@ -3555,7 +3741,10 @@ fun aggregate_commitments_reject_u64_overflow_before_joining_quote() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ENoCommitment, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ENoCommitment,
+    location = blast_presale::blast_presale,
+)]
 fun a_wallet_without_a_commitment_cannot_claim_a_cancelled_sale() {
     let mut fixture = start_sale(presale::open_eligibility(WALLET_CAP, RAISE_TARGET, 1));
     fixture.commit_open(ALICE, 1);
@@ -3566,7 +3755,10 @@ fun a_wallet_without_a_commitment_cannot_claim_a_cancelled_sale() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::ENoCommitment, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ENoCommitment,
+    location = blast_presale::blast_presale,
+)]
 fun a_delivered_commitment_cannot_be_claimed_twice() {
     let mut fixture = start_sale(presale::open_eligibility(WALLET_CAP, RAISE_TARGET, 1));
     fixture.commit_open(ALICE, 1);
@@ -3578,7 +3770,10 @@ fun a_delivered_commitment_cannot_be_claimed_twice() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EWrongPresaleCap, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongPresaleCap,
+    location = blast_presale::blast_presale,
+)]
 fun a_fresh_cap_for_the_same_sale_is_not_the_accepted_creator_cap() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.next_tx!(CREATOR, |f| {
@@ -3591,25 +3786,37 @@ fun a_fresh_cap_for_the_same_sale_is_not_the_accepted_creator_cap() {
 }
 
 #[test]
-#[expected_failure(abort_code = bluefin::EInvalidTier, location = blast_presale::bluefin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTier,
+    location = blast_presale::bluefin,
+)]
 fun bluefin_rejects_zero_tick_spacing() {
     create_bluefin_tier(0, 1000);
 }
 
 #[test]
-#[expected_failure(abort_code = bluefin::EInvalidTier, location = blast_presale::bluefin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTier,
+    location = blast_presale::bluefin,
+)]
 fun bluefin_rejects_tick_spacing_above_max() {
     create_bluefin_tier(401, 1000);
 }
 
 #[test]
-#[expected_failure(abort_code = bluefin::EInvalidTier, location = blast_presale::bluefin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTier,
+    location = blast_presale::bluefin,
+)]
 fun bluefin_rejects_zero_fee() {
     create_bluefin_tier(10, 0);
 }
 
 #[test]
-#[expected_failure(abort_code = bluefin::EInvalidTier, location = blast_presale::bluefin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidTier,
+    location = blast_presale::bluefin,
+)]
 fun bluefin_rejects_fee_above_max() {
     create_bluefin_tier(10, 20001);
 }

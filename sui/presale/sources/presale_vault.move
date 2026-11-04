@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Custody for one LP position, migrated from a presale or provided directly, its residuals, and its
 /// holder-reward fee share.
 ///
@@ -119,7 +121,7 @@ public fun claim_migration_residuals<Meme, Quote>(
     assert!(
         self.migration_meme_residual.value() > 0
             || self.migration_quote_residual.value() > 0,
-        ENoMigrationResiduals,
+        blast_presale::errors::no_migration_residuals!(),
     );
 
     let meme = self.migration_meme_residual.withdraw_all().into_coin(ctx);
@@ -187,7 +189,10 @@ public fun pay_protocol_lp_fees_with_partner<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    assert!(self.partner_id.contains(&object::id(partner)), EWrongPartner);
+    assert!(
+        self.partner_id.contains(&object::id(partner)),
+        blast_presale::errors::wrong_partner!(),
+    );
     if (self.unpaid_protocol_meme.value() == 0 && self.unpaid_protocol_quote.value() == 0) return;
 
     let protocol_destination = fee_policy.destination();
@@ -389,7 +394,7 @@ public(package) fun split_fees<Meme, Quote>(
 }
 
 public(package) fun assert_cap<Meme, Quote>(self: &Vault<Meme, Quote>, cap: &PresaleCap) {
-    assert!(object::id(cap) == self.presale_cap_id, EWrongPresaleCap);
+    assert!(object::id(cap) == self.presale_cap_id, blast_presale::errors::wrong_presale_cap!());
 }
 
 /// Checks the stored threshold before a venue performs any collection or policy mutation.
@@ -452,20 +457,26 @@ public(package) fun new_round_terms(
     assert!(
         root.length() == constants::digest_length!()
             && manifest_digest.length() == constants::digest_length!(),
-        EInvalidCommitment,
+        blast_presale::errors::invalid_commitment!(),
     );
-    assert!(leaf_count > 0 && leaf_count <= constants::max_reward_leaves!(), EInvalidLeafCount);
-    assert!(meme_amount == 0, EMemeRewardsUnsupported);
-    assert!(quote_amount > 0, EEmptyBudget);
-    assert!(start_checkpoint < end_checkpoint, EEmptyInterval);
-    assert!(quote_amount.checked_add(gas_reserve_amount).is_some(), EBudgetOverflow);
+    assert!(
+        leaf_count > 0 && leaf_count <= constants::max_reward_leaves!(),
+        blast_presale::errors::invalid_leaf_count!(),
+    );
+    assert!(meme_amount == 0, blast_presale::errors::meme_rewards_unsupported!());
+    assert!(quote_amount > 0, blast_presale::errors::empty_budget!());
+    assert!(start_checkpoint < end_checkpoint, blast_presale::errors::empty_interval!());
+    assert!(
+        quote_amount.checked_add(gas_reserve_amount).is_some(),
+        blast_presale::errors::budget_overflow!(),
+    );
     assert!(
         (gas_reserve_amount as u128) * (constants::basis_points_denominator!() as u128)
             <= (quote_amount as u128) * (constants::max_gas_reserve_bps!() as u128),
-        EGasReserveTooLarge,
+        blast_presale::errors::gas_reserve_too_large!(),
     );
-    assert!(expected_treasury != @0x0, EZeroTreasury);
-    assert!(claim_window_duration_ms > 0, EZeroClaimWindow);
+    assert!(expected_treasury != @0x0, blast_presale::errors::zero_treasury!());
+    assert!(claim_window_duration_ms > 0, blast_presale::errors::zero_claim_window!());
 
     RoundTerms {
         number,
@@ -506,7 +517,7 @@ public(package) fun cancel_round_publication<Meme, Quote>(self: &mut Vault<Meme,
         self.round_publication.pending().is_none_or!(|proposal| {
             proposal.proposal_value().action().is_some()
         }),
-        EWrongRoundProposal,
+        blast_presale::errors::wrong_round_proposal!(),
     );
 
     self.round_publication.cancel();
@@ -535,7 +546,7 @@ public(package) fun cancel_round_publication_delay<Meme, Quote>(self: &mut Vault
         self.round_publication.pending().is_none_or!(|proposal| {
             proposal.proposal_value().action().is_none()
         }),
-        EWrongRoundProposal,
+        blast_presale::errors::wrong_round_proposal!(),
     );
 
     self.round_publication.cancel();
@@ -656,7 +667,7 @@ fun attach<Meme, Quote, Venue, Position: key + store>(
     position: Position,
     liquidity: u128,
 ) {
-    assert!(liquidity > 0, EZeroLiquidity);
+    assert!(liquidity > 0, blast_presale::errors::zero_liquidity!());
 
     let position_id = object::id(&position);
     self.id.add_dynamic_object_field(PositionKey<Venue>(), position);
@@ -994,52 +1005,6 @@ const DEFAULT_PROTOCOL_LP_FEE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 /// Initial notice before a scheduled holder-reward round may publish, or its next notice
 /// period may change: 2 hours, so CancelAdmin can stop a bad round while daily rounds still fit.
 const DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;
-
-// === Errors ===
-
-#[error(code = 0)]
-const ENoMigrationResiduals: vector<u8> = b"No migration residuals are available to claim.";
-
-#[error(code = 1)]
-const EZeroLiquidity: vector<u8> = b"The vault's position must hold liquidity.";
-
-#[error(code = 2)]
-const EWrongPresaleCap: vector<u8> = b"The creator capability belongs to a different presale vault.";
-
-#[error(code = 3)]
-const EWrongPartner: vector<u8> = b"The partner is not the one this vault's presale named at creation.";
-
-#[error(code = 4)]
-const EInvalidCommitment: vector<u8> = b"Root and manifest digest must contain 32 bytes.";
-
-#[error(code = 5)]
-const EInvalidLeafCount: vector<u8> = b"Round must contain between 1 and 65,536 leaves.";
-
-#[error(code = 6)]
-const EEmptyBudget: vector<u8> = b"A round must reserve a positive amount of holder Quote.";
-
-#[error(code = 7)]
-const EEmptyInterval: vector<u8> = b"Checkpoint interval must be nonempty.";
-
-#[error(code = 8)]
-const EBudgetOverflow: vector<u8> = b"Holder Quote and gas reserve must sum within u64.";
-
-#[error(code = 9)]
-const EZeroTreasury: vector<u8> = b"Expected treasury must not be the zero address.";
-
-#[error(code = 10)]
-const EZeroClaimWindow: vector<u8> = b"Claim window must be positive.";
-
-#[error(code = 11)]
-const EWrongRoundProposal: vector<u8> =
-    b"The pending round publication is the other kind: a round, or a notice change.";
-
-#[error(code = 12)]
-const EGasReserveTooLarge: vector<u8> = b"Gas reserve must be at most 10% of the round's holder Quote.";
-
-#[error(code = 13)]
-const EMemeRewardsUnsupported: vector<u8> =
-    b"Holder rounds pay only Quote: holder Meme fees go to the treasury.";
 
 // === Imports ===
 

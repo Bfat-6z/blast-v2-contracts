@@ -46,6 +46,15 @@
 - Amended: 2026-10-08 (owner decision): presale administration returns to the
   shared Blast ACL. `blast_presale_domain` declares six roles, and the
   package-local `AdminCap`, `SuperAdminCap`, and `AdminRegistry` are deleted
+- Amended: 2026-11-04 (owner decision): presale adopts ADR 0014's diagnostic
+  registry. `blast_presale::errors` holds one numeric namespace, renumbered from
+  zero for the ADR 0134 fresh lineage, and each check raises its macro at the
+  owning module, so the abort location is unchanged while the code is the
+  registry's; the module-local `#[error]` messages become the registry's
+  documentation. Same-meaning duplicates merge (`EPositionPoolMismatch`,
+  `EWrongPartner`, `EWrongPresaleCap`); Aftermath's `EWrongVault` becomes
+  `ENotAftermathVault`. `blast_presale::constants` names the pause bits
+  (create 1, commit 2, migration 8), protocol limits and venue facts
 
 Amended by [ADR 0117](0117-presale-versioning-and-activation.md): new publications
 use compatible upgrades and custody-gated operational versioning. The earlier

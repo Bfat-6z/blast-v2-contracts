@@ -65,10 +65,10 @@ NATIVE_TESTS = {
         'Expected::Abort { package: self.migrators, module: "cetus", code: INVALID_COIN_ORDER }',
         'const INVALID_COIN_ORDER: u64 = 0;', 0,
     ),
-    ('blast_presale::cetus', 'EInvalidCoinOrder'): (
+    ('blast_presale::errors', 'EInvalidCoinOrder'): (
         'presale_venue_fork.rs', 'migration_failures_commit_nothing',
         'Expected::Abort { package: self.presale, module: "cetus", code: INVALID_COIN_ORDER }',
-        'const INVALID_COIN_ORDER: u64 = 0;', 0,
+        'const INVALID_COIN_ORDER: u64 = 79;', 79,
     ),
     ('blast_fun_migrators::cetus', 'EPositionPoolMismatch'): (
         'venue_fork.rs', 'other_pool_is_refused',
@@ -80,15 +80,10 @@ NATIVE_TESTS = {
         'Expected::Abort { package: self.migrators, module, code }',
         'let code = if self.case.is_cetus() { 1 } else { 0 };', 0,
     ),
-    ('blast_presale::cetus', 'EPositionPoolMismatch'): (
+    ('blast_presale::errors', 'EPositionPoolMismatch'): (
         'presale_venue_fork.rs', 'other_pool_is_refused',
         'Expected::Abort { package: self.presale, module: self.route.module(), code }',
-        'const CETUS_POSITION_POOL_MISMATCH: u64 = 1;', 1,
-    ),
-    ('blast_presale::bluefin', 'EPositionPoolMismatch'): (
-        'presale_venue_fork.rs', 'other_pool_is_refused',
-        'Expected::Abort { package: self.presale, module: self.route.module(), code }',
-        'const BLUEFIN_POSITION_POOL_MISMATCH: u64 = 0;', 0,
+        'const POSITION_POOL_MISMATCH: u64 = 80;', 80,
     ),
 }
 

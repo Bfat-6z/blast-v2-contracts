@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Standalone presales with capped commitments, proportional fills or a first-come hard cap,
 /// migration-gated claims, and full refunds when a sale does not migrate.
 module blast_presale::blast_presale;
@@ -294,11 +296,11 @@ public fun new<SaleToken, Quote, MigrationWitness: drop>(
     creation_policy.assert_allowed<Quote, MigrationWitness>();
     assert!(
         type_name::with_original_ids<SaleToken>() != type_name::with_original_ids<Quote>(),
-        EInvalidAssetPair,
+        blast_presale::errors::invalid_asset_pair!(),
     );
     // `Currency<SaleToken>` and `TreasuryCap<SaleToken>` are each unique per type, and making the
     // supply fixed or burn-only consumes the cap, so holding it proves the supply is still unknown.
-    assert!(treasury_cap.total_supply() == 0, EInitialSupplyNotZero);
+    assert!(treasury_cap.total_supply() == 0, blast_presale::errors::initial_supply_not_zero!());
 
     PresaleInitializer {
         treasury_cap,
@@ -503,8 +505,8 @@ public fun finalize<SaleToken, Quote>(
         partner_id,
     } = self;
 
-    let eligibility = eligibility.destroy_or!(abort EMissingSetting);
-    let fee_split = fee_split.destroy_or!(abort EMissingSetting);
+    let eligibility = eligibility.destroy_or!(abort blast_presale::errors::missing_setting!());
+    let fee_split = fee_split.destroy_or!(abort blast_presale::errors::missing_setting!());
     // Values built by superseded bytecode meet this generation's rules too.
     eligibility.assert_valid_eligibility();
     uncapped.do_ref!(|phase| phase.assert_valid_uncapped_access());
@@ -512,7 +514,7 @@ public fun finalize<SaleToken, Quote>(
     recipient_allocations.do_ref!(|share| share.vesting.do_ref!(|terms| terms.assert_valid_vesting()));
     raise_allocations.do_ref!(|share| share.vesting.do_ref!(|terms| terms.assert_valid_vesting()));
     fee_split.assert_valid_fee_split();
-    assert!(raise_target > 0, EInvalidRaiseTarget);
+    assert!(raise_target > 0, blast_presale::errors::invalid_raise_target!());
     assert_raise_allocations(&raise_allocations, protocol_fees.raise_bps());
     assert_token_allocations(
         token_supply,
@@ -524,13 +526,16 @@ public fun finalize<SaleToken, Quote>(
     assert!(
         commitment_duration_ms > 0
             && liquidity_window_duration_ms >= constants::min_liquidity_window_duration_ms!(),
-        EInvalidWindow
+        blast_presale::errors::invalid_window!()
     );
-    assert!(eligibility.can_reach(raise_target), EUnreachableRaise);
+    assert!(eligibility.can_reach(raise_target), blast_presale::errors::unreachable_raise!());
     uncapped.do_ref!(
         |phase| phase.assert_uncapped_phase(commitment_duration_ms, eligibility, raise_target)
     );
-    hard_cap.do_ref!(|cap| assert!(cap.starts_after_ms < commitment_duration_ms, EInvalidHardCap));
+    hard_cap.do_ref!(|cap| assert!(
+        cap.starts_after_ms < commitment_duration_ms,
+        blast_presale::errors::invalid_hard_cap!(),
+    ));
 
     let (
         token_allocation,
@@ -648,17 +653,17 @@ public fun share<SaleToken, Quote>(
 
     package_version.assert_not_paused(constants::create_pause_bit!());
 
-    assert!(self.lifecycle == Lifecycle::Pending, EInvalidLifecycle);
+    assert!(self.lifecycle == Lifecycle::Pending, blast_presale::errors::invalid_lifecycle!());
 
     // Every deadline is derived from the start, so the share proves each one fits in u64. Closing
     // early only brings the end and the LP deadline forward.
     let commitment_starts_at_ms = commitment_starts_at_ms.max(clock.timestamp_ms());
     let commitment_ends_at_ms = commitment_starts_at_ms
         .checked_add(self.duration_ms)
-        .destroy_or!(abort EInvalidWindow);
+        .destroy_or!(abort blast_presale::errors::invalid_window!());
     let liquidity_deadline_at_ms = commitment_ends_at_ms
         .checked_add(self.liquidity_window_ms)
-        .destroy_or!(abort EInvalidWindow);
+        .destroy_or!(abort blast_presale::errors::invalid_window!());
 
     self.lifecycle = Lifecycle::Open;
     self.start_ms = commitment_starts_at_ms;
@@ -698,17 +703,20 @@ public fun set_protocol_fees<SaleToken, Quote>(
     match (self.lifecycle) {
         Lifecycle::Pending => (),
         Lifecycle::Open => {
-            assert!(clock.timestamp_ms() < self.start_ms, EPresaleStarted);
+            assert!(
+                clock.timestamp_ms() < self.start_ms,
+                blast_presale::errors::presale_started!(),
+            );
             let current = self.protocol_fees;
             assert!(
                 raise_bps.value() <= current.raise_bps().value()
                 && token_bps.value() <= current.token_bps().value()
                 && lp_fee_meme_bps.value() <= current.lp_fee_meme_bps().value()
                 && lp_fee_quote_bps.value() <= current.lp_fee_quote_bps().value(),
-                EProtocolFeesIncreased
+                blast_presale::errors::protocol_fees_increased!()
             );
         },
-        _ => abort EInvalidLifecycle,
+        _ => abort blast_presale::errors::invalid_lifecycle!(),
     };
     let protocol_fees = fee_policy::protocol_fees(
         raise_bps,
@@ -722,9 +730,9 @@ public fun set_protocol_fees<SaleToken, Quote>(
         && token_bps.value() <= ceiling.token_bps().value()
         && lp_fee_meme_bps.value() <= ceiling.lp_fee_meme_bps().value()
         && lp_fee_quote_bps.value() <= ceiling.lp_fee_quote_bps().value(),
-        EAboveFeePolicy
+        blast_presale::errors::above_fee_policy!()
     );
-    assert!(protocol_fees != self.protocol_fees, EProtocolFeesUnchanged);
+    assert!(protocol_fees != self.protocol_fees, blast_presale::errors::protocol_fees_unchanged!());
 
     // Blast's Quote comes out of the raise left after the recipients', whose rest the LP keeps;
     // its tokens come out of its own and the buyers' allocations, whose rest the buyers keep. A
@@ -733,8 +741,11 @@ public fun set_protocol_fees<SaleToken, Quote>(
     let unallocated_tokens = self.token_allocation + self.protocol_tokens.value();
     let protocol_quote = self.protocol_quote_at(raise_bps);
     let protocol_tokens = self.protocol_tokens_at(token_bps);
-    assert!(protocol_quote < unallocated_raise, EInvalidRaiseAllocation);
-    assert!(protocol_tokens < unallocated_tokens, EInvalidTokenAllocation);
+    assert!(protocol_quote < unallocated_raise, blast_presale::errors::invalid_raise_allocation!());
+    assert!(
+        protocol_tokens < unallocated_tokens,
+        blast_presale::errors::invalid_token_allocation!(),
+    );
     assert_seedable_price(self.liquidity_tokens.value(), unallocated_raise - protocol_quote);
 
     self.sale_tokens.join(self.protocol_tokens.withdraw_all());
@@ -770,7 +781,7 @@ public fun commit_open<SaleToken, Quote>(
     package_version.assert_not_paused(constants::commit_pause_bit!());
 
     self.assert_open(clock);
-    assert!(quote_in.value() > 0, EZeroCommitment);
+    assert!(quote_in.value() > 0, blast_presale::errors::zero_commitment!());
 
     let (wallet_cap, max_participants, min_commitment) = self.eligibility.open_limits();
 
@@ -794,7 +805,7 @@ public fun commit_allowlisted<SaleToken, Quote>(
     package_version.assert_not_paused(constants::commit_pause_bit!());
 
     self.assert_open(clock);
-    assert!(quote_in.value() > 0, EZeroCommitment);
+    assert!(quote_in.value() > 0, blast_presale::errors::zero_commitment!());
 
     let max_participants = self
         .eligibility
@@ -823,8 +834,11 @@ public fun commit_uncapped<SaleToken, Quote>(
     package_version.assert_not_paused(constants::commit_pause_bit!());
 
     self.assert_open(clock);
-    assert!(quote_in.value() > 0, EZeroCommitment);
-    assert!(clock.timestamp_ms() >= self.uncapped_starts_at_ms(), EUncappedPhaseNotOpen);
+    assert!(quote_in.value() > 0, blast_presale::errors::zero_commitment!());
+    assert!(
+        clock.timestamp_ms() >= self.uncapped_starts_at_ms(),
+        blast_presale::errors::uncapped_phase_not_open!(),
+    );
 
     let (max_participants, min_commitment) = self.uncapped.destroy_some().anyone_limits();
     let no_wallet_cap = std::u64::max_value!();
@@ -842,12 +856,12 @@ public fun settle<SaleToken, Quote>(
 ) {
     package_version.assert_current();
 
-    assert!(self.lifecycle == Lifecycle::Open, EInvalidLifecycle);
+    assert!(self.lifecycle == Lifecycle::Open, blast_presale::errors::invalid_lifecycle!());
 
     let now_at_ms = clock.timestamp_ms();
     assert!(
         now_at_ms >= self.commitment_ends_at_ms() || self.can_close_early(now_at_ms),
-        EPresaleNotEnded
+        blast_presale::errors::presale_not_ended!()
     );
 
     // A sale closing early ends now, so its LP deadline counts from now.
@@ -879,8 +893,11 @@ public fun cancel_unlaunched<SaleToken, Quote>(
 ) {
     package_version.assert_current();
 
-    assert!(self.lifecycle == Lifecycle::Funded, EInvalidLifecycle);
-    assert!(clock.timestamp_ms() >= self.liquidity_deadline_at_ms(), ELiquidityDeadlineNotReached);
+    assert!(self.lifecycle == Lifecycle::Funded, blast_presale::errors::invalid_lifecycle!());
+    assert!(
+        clock.timestamp_ms() >= self.liquidity_deadline_at_ms(),
+        blast_presale::errors::liquidity_deadline_not_reached!(),
+    );
 
     self.cancel();
 }
@@ -901,11 +918,11 @@ public fun claim<SaleToken, Quote>(
 
     assert!(
         self.lifecycle == Lifecycle::Migrated || self.lifecycle == Lifecycle::Cancelled,
-        EInvalidLifecycle,
+        blast_presale::errors::invalid_lifecycle!(),
     );
 
     let key = CommitmentKey(participant);
-    assert!(self.id.has_dynamic_field(key), ENoCommitment);
+    assert!(self.id.has_dynamic_field(key), blast_presale::errors::no_commitment!());
 
     let Commitment { quote: commitment, .. } = self.id.remove_dynamic_field<_, Commitment>(key);
     let tokens = self.claimable_tokens(commitment);
@@ -951,10 +968,10 @@ public fun migrate<SaleToken, Quote, MigrationWitness: drop>(
 
     package_version.assert_not_paused(constants::migration_pause_bit!());
 
-    assert!(self.lifecycle == Lifecycle::Funded, EInvalidLifecycle);
+    assert!(self.lifecycle == Lifecycle::Funded, blast_presale::errors::invalid_lifecycle!());
     assert!(
         self.migration_witness == type_name::with_original_ids<MigrationWitness>(),
-        EWrongMigrationWitness,
+        blast_presale::errors::wrong_migration_witness!(),
     );
 
     let mut quote = self.quote.split(self.raise_target);
@@ -991,8 +1008,11 @@ public fun pay_protocol_fees_with_partner<SaleToken, Quote>(
 ) {
     package_version.assert_current();
 
-    assert!(self.partner_id.contains(&object::id(partner)), EWrongPartner);
-    assert!(self.unpaid_protocol_quote.is_some(), ENoPartnerPayout);
+    assert!(
+        self.partner_id.contains(&object::id(partner)),
+        blast_presale::errors::wrong_partner!(),
+    );
+    assert!(self.unpaid_protocol_quote.is_some(), blast_presale::errors::no_partner_payout!());
 
     let mut protocol_quote = self.unpaid_protocol_quote.extract();
     let partner_quote = partner.pay(&mut protocol_quote, ctx);
@@ -1004,7 +1024,7 @@ public fun pay_protocol_fees_with_partner<SaleToken, Quote>(
 /// allocations remain permanently locked in the cancelled presale.
 public fun destroy_cap<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, cap: PresaleCap) {
     self.assert_cap(&cap);
-    assert!(self.lifecycle == Lifecycle::Cancelled, EInvalidLifecycle);
+    assert!(self.lifecycle == Lifecycle::Cancelled, blast_presale::errors::invalid_lifecycle!());
 
     let PresaleCap { id, presale_id: _ } = cap;
     id.delete();
@@ -1016,7 +1036,7 @@ public(package) fun assert_cap<SaleToken, Quote>(
     self: &Presale<SaleToken, Quote>,
     cap: &PresaleCap,
 ) {
-    assert!(object::id(cap) == self.presale_cap_id, EWrongPresaleCap);
+    assert!(object::id(cap) == self.presale_cap_id, blast_presale::errors::wrong_presale_cap!());
 }
 
 /// The presale and creator-capability IDs, the LP-fee split, Blast's rates, and the partner its
@@ -1052,7 +1072,7 @@ public(package) fun assert_valid_fee_split(self: &FeeSplit) {
             && self.fee_recipients.all!(|fee_recipient| fee_recipient.vesting.is_none())
             && total_bps(&self.fee_recipients) + self.holder_rewards_bps.value()
                 == constants::basis_points_denominator!(),
-        EInvalidFeeSplit,
+        blast_presale::errors::invalid_fee_split!(),
     );
 }
 
@@ -1084,9 +1104,12 @@ public(package) fun pay<Asset>(
 // === Private Functions ===
 
 fun assert_open<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, clock: &Clock) {
-    assert!(self.lifecycle == Lifecycle::Open, EInvalidLifecycle);
-    assert!(clock.timestamp_ms() >= self.start_ms, EPresaleNotStarted);
-    assert!(clock.timestamp_ms() < self.commitment_ends_at_ms(), EPresaleEnded);
+    assert!(self.lifecycle == Lifecycle::Open, blast_presale::errors::invalid_lifecycle!());
+    assert!(clock.timestamp_ms() >= self.start_ms, blast_presale::errors::presale_not_started!());
+    assert!(
+        clock.timestamp_ms() < self.commitment_ends_at_ms(),
+        blast_presale::errors::presale_ended!(),
+    );
 }
 
 // Windows, derived from the start `share` fixed: it proved both sums below fit in u64.
@@ -1159,7 +1182,7 @@ fun assert_raise_allocations(raise_allocations: &vector<RecipientShare>, protoco
         valid_shares(raise_allocations, constants::max_recipients!())
             && total_bps(raise_allocations) + protocol_raise_bps.value()
                 < constants::basis_points_denominator!(),
-        EInvalidRaiseAllocation,
+        blast_presale::errors::invalid_raise_allocation!(),
     );
 }
 
@@ -1177,14 +1200,14 @@ fun assert_token_allocations(
             && token_allocation_bps.value() > 0
             && liquidity_token_allocation_bps.value() > 0
             && valid_shares(recipient_allocations, constants::max_recipients!()),
-        EInvalidTokenAllocation,
+        blast_presale::errors::invalid_token_allocation!(),
     );
     assert!(
         total_bps(recipient_allocations)
             + token_allocation_bps.value()
             + liquidity_token_allocation_bps.value()
             + protocol_token_bps.value() == constants::basis_points_denominator!(),
-        EInvalidTokenAllocation,
+        blast_presale::errors::invalid_token_allocation!(),
     );
 }
 
@@ -1204,7 +1227,7 @@ fun assert_valid_eligibility(self: &EligibilityPolicy) {
                 && *leaf_count <= constants::max_participants!()
         },
     };
-    assert!(valid, EInvalidEligibilityPolicy);
+    assert!(valid, blast_presale::errors::invalid_eligibility_policy!());
 }
 
 fun assert_valid_uncapped_access(self: &UncappedPhase) {
@@ -1213,7 +1236,7 @@ fun assert_valid_uncapped_access(self: &UncappedPhase) {
             min_commitment > 0
                 && max_participants > 0
                 && max_participants <= constants::max_participants!(),
-            EInvalidUncappedPhase,
+            blast_presale::errors::invalid_uncapped_phase!(),
         ),
         UncappedAccess::Eligible => (),
     }
@@ -1225,7 +1248,7 @@ fun assert_valid_vesting(self: &VestingTerms) {
             && self.periods > 0
             && self.period_ms <= constants::max_vesting_duration_ms!() / self.periods
             && self.cliff_ms <= self.period_ms * self.periods,
-        EInvalidVestingTerms,
+        blast_presale::errors::invalid_vesting_terms!(),
     );
 }
 
@@ -1257,17 +1280,23 @@ fun assert_uncapped_phase(
     eligibility: EligibilityPolicy,
     raise_target: u64,
 ) {
-    assert!(phase.starts_after_ms < commitment_duration_ms, EInvalidUncappedPhase);
+    assert!(
+        phase.starts_after_ms < commitment_duration_ms,
+        blast_presale::errors::invalid_uncapped_phase!(),
+    );
     match (phase.access) {
         UncappedAccess::Anyone { max_participants, min_commitment } => {
-            assert!(max_participants >= eligibility.participant_bound(), EInvalidUncappedPhase);
+            assert!(
+                max_participants >= eligibility.participant_bound(),
+                blast_presale::errors::invalid_uncapped_phase!(),
+            );
             assert!(
                 reaches(
                     min_commitment,
                     eligibility.slots_at_minimum(max_participants),
                     raise_target,
                 ),
-                EUnreachableRaise,
+                blast_presale::errors::unreachable_raise!(),
             );
         },
         UncappedAccess::Eligible => (),
@@ -1315,7 +1344,7 @@ fun assert_seedable_price(liquidity_tokens: u64, liquidity_quote: u64) {
         migration_math::is_seedable(
             migration_math::sqrt_price_x64(liquidity_tokens, liquidity_quote, true),
         ),
-        EUnseedablePrice,
+        blast_presale::errors::unseedable_price!(),
     );
 }
 
@@ -1344,7 +1373,7 @@ fun apportion_supply(
         token_allocation > 0
             && liquidity_token_allocation > 0
             && recipient_payouts.all!(|payout| payout.amount > 0),
-        EInvalidTokenAllocation,
+        blast_presale::errors::invalid_token_allocation!(),
     );
 
     (token_allocation, liquidity_token_allocation, amounts[2], recipient_payouts)
@@ -1371,7 +1400,7 @@ fun apportion_raise(
     let liquidity_quote = amounts[raise_allocations.length() + 1];
     assert!(
         raise_payouts.all!(|payout| payout.amount > 0) && liquidity_quote > 0,
-        EInvalidRaiseAllocation,
+        blast_presale::errors::invalid_raise_allocation!(),
     );
 
     (raise_payouts, protocol_quote, liquidity_quote)
@@ -1419,7 +1448,7 @@ fun assert_unregulated_currency_bytes(serialized: vector<u8>) {
         bytes.peel_vec_length() == 1 // Some supply
             && bytes.peel_enum_tag() == 2 // SupplyState::Unknown
             && bytes.peel_enum_tag() == 1, // RegulatedState::Unregulated
-        ESaleTokenNotUnregulated,
+        blast_presale::errors::sale_token_not_unregulated!(),
     );
 }
 
@@ -1495,16 +1524,19 @@ fun record_commitment<SaleToken, Quote>(
         .add_within_cap(accepted_quote, wallet_cap, uncapped);
 
     // The commitment that exactly fills a hard cap may be smaller than the minimum.
-    assert!(wallet_commitment >= min_commitment || fills_raise, EBelowMinimumCommitment);
+    assert!(
+        wallet_commitment >= min_commitment || fills_raise,
+        blast_presale::errors::below_minimum_commitment!(),
+    );
     assert!(
         !is_new_participant || self.participants < max_participants,
-        EParticipantCapacityReached,
+        blast_presale::errors::participant_capacity_reached!(),
     );
 
     let total_commitments = self
         .total_commitments
         .checked_add(accepted_quote)
-        .destroy_or!(abort ETotalCommitmentOverflow);
+        .destroy_or!(abort blast_presale::errors::total_commitment_overflow!());
 
     self.store_commitment(key, wallet_commitment, wallet_cap);
     self.total_commitments = total_commitments;
@@ -1527,7 +1559,8 @@ fun open_limits(policy: EligibilityPolicy): (u64, u64, u64) {
         EligibilityPolicy::Open { wallet_cap, max_participants, min_commitment } => {
             (wallet_cap, max_participants, min_commitment)
         },
-        EligibilityPolicy::Allowlisted { .. } => abort EWrongEligibilityPolicy,
+        EligibilityPolicy::Allowlisted { .. } =>
+            abort blast_presale::errors::wrong_eligibility_policy!(),
     }
 }
 
@@ -1537,7 +1570,7 @@ fun anyone_limits(phase: UncappedPhase): (u64, u64) {
         UncappedAccess::Anyone { max_participants, min_commitment } => {
             (max_participants, min_commitment)
         },
-        UncappedAccess::Eligible => abort EUncappedPhaseNotOpen,
+        UncappedAccess::Eligible => abort blast_presale::errors::uncapped_phase_not_open!(),
     }
 }
 
@@ -1565,7 +1598,7 @@ fun acceptable_quote<SaleToken, Quote>(
 ): u64 {
     if (!hard_capped) return offered;
 
-    assert!(self.total_commitments < self.raise_target, EPresaleFilled);
+    assert!(self.total_commitments < self.raise_target, blast_presale::errors::presale_filled!());
     offered.min(self.raise_target - self.total_commitments)
 }
 
@@ -1582,10 +1615,22 @@ fun commitment_or_empty<SaleToken, Quote>(
 /// The wallet's total after adding `quote`, held to the caller's cap until the uncapped phase.
 fun add_within_cap(self: Commitment, quote: u64, wallet_cap: u64, uncapped: bool): u64 {
     // Caps no longer apply once uncapped, so a record's cap need not match the caller's.
-    assert!(uncapped || self.wallet_cap == wallet_cap, EInvalidEligibilityProof);
+    assert!(
+        uncapped || self.wallet_cap == wallet_cap,
+        blast_presale::errors::invalid_eligibility_proof!(),
+    );
 
-    let wallet_commitment = self.quote.checked_add(quote).destroy_or!(abort EWalletCapExceeded);
-    assert!(uncapped || wallet_commitment <= wallet_cap, EWalletCapExceeded);
+    let wallet_commitment = self
+
+        .quote
+
+        .checked_add(quote)
+
+        .destroy_or!(abort blast_presale::errors::wallet_cap_exceeded!());
+    assert!(
+        uncapped || wallet_commitment <= wallet_cap,
+        blast_presale::errors::wallet_cap_exceeded!(),
+    );
 
     wallet_commitment
 }
@@ -1614,14 +1659,14 @@ fun verify_allowlisted(
     proof: &vector<vector<u8>>,
 ): u64 {
     match (policy) {
-        EligibilityPolicy::Open { .. } => abort EWrongEligibilityPolicy,
+        EligibilityPolicy::Open { .. } => abort blast_presale::errors::wrong_eligibility_policy!(),
         EligibilityPolicy::Allowlisted { root, leaf_count } => {
-            assert!(wallet_cap > 0, EInvalidEligibilityProof);
+            assert!(wallet_cap > 0, blast_presale::errors::invalid_eligibility_proof!());
 
             let digest = allowlist_leaf(index, wallet, wallet_cap);
             assert!(
                 merkle_tree::verify(root, digest, index, leaf_count, proof),
-                EInvalidEligibilityProof,
+                blast_presale::errors::invalid_eligibility_proof!(),
             );
 
             leaf_count
@@ -2266,122 +2311,6 @@ public struct Claimed<phantom SaleToken, phantom Quote> has copy, drop {
     remaining_participants: u64,
     vesting_id: Option<ID>,
 }
-
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidAssetPair: vector<u8> = b"The sale token and Quote type must differ.";
-
-#[error(code = 1)]
-const EInvalidRaiseTarget: vector<u8> = b"The raise target must be positive.";
-
-#[error(code = 2)]
-const EInvalidTokenAllocation: vector<u8> = b"The supply must be positive, and token allocations unique, positive, bounded, totalling exactly 10,000 BPS with Blast's share, and apportioning to positive amounts.";
-
-#[error(code = 3)]
-const EInvalidWindow: vector<u8> = b"The commitment window must be positive, the liquidity window at least seven days, and both must end within u64 milliseconds.";
-
-#[error(code = 4)]
-const EInvalidEligibilityPolicy: vector<u8> = b"The eligibility policy has an invalid cap, participant bound, root, or leaf count.";
-
-#[error(code = 5)]
-const EInvalidLifecycle: vector<u8> = b"The presale is not in the lifecycle required by this operation.";
-
-#[error(code = 6)]
-const EPresaleEnded: vector<u8> = b"The presale commitment window has ended.";
-
-#[error(code = 7)]
-const EPresaleNotEnded: vector<u8> = b"The presale commitment window has not ended, and the sale cannot close early: its raise is not full under a hard cap that closes it when filled.";
-
-#[error(code = 8)]
-const EZeroCommitment: vector<u8> = b"A presale commitment must be positive.";
-
-#[error(code = 9)]
-const EWalletCapExceeded: vector<u8> = b"The wallet commitment exceeds its eligibility cap.";
-
-#[error(code = 10)]
-const EParticipantCapacityReached: vector<u8> = b"The presale already contains its maximum number of participants.";
-
-#[error(code = 11)]
-const EInvalidEligibilityProof: vector<u8> = b"The submitted wallet, cap, index, or proof does not match the allowlist.";
-
-#[error(code = 12)]
-const EWrongEligibilityPolicy: vector<u8> = b"The commit function does not match the presale eligibility policy.";
-
-#[error(code = 13)]
-const ETotalCommitmentOverflow: vector<u8> = b"Adding the commitment would overflow the presale total.";
-
-#[error(code = 14)]
-const ENoCommitment: vector<u8> = b"The wallet has no undelivered presale commitment.";
-
-#[error(code = 15)]
-const EWrongPresaleCap: vector<u8> = b"The creator capability belongs to a different presale.";
-
-#[error(code = 16)]
-const ELiquidityDeadlineNotReached: vector<u8> = b"The deadline to cancel an unlaunched funded presale has not arrived.";
-
-#[error(code = 17)]
-const EInitialSupplyNotZero: vector<u8> = b"The supplied SaleToken TreasuryCap must have zero total supply.";
-
-#[error(code = 18)]
-const EInvalidFeeSplit: vector<u8> = b"Fee recipients must be unique, positive, unvested, bounded, and total 10,000 BPS with the holder-reward share.";
-
-#[error(code = 19)]
-const EWrongMigrationWitness: vector<u8> = b"The migrator does not match the venue fixed at presale creation.";
-
-#[error(code = 20)]
-const EBelowMinimumCommitment: vector<u8> = b"The wallet's total commitment is below the sale's minimum commitment.";
-
-#[error(code = 21)]
-const EUnreachableRaise: vector<u8> = b"The minimum commitment times the slots held to it, the participant bound of an open policy or the open-to-anyone phase slots beyond any allowlist, must reach the raise target.";
-
-#[error(code = 22)]
-const EUnseedablePrice: vector<u8> = b"The raise and LP-token allocation give a seed price the venues cannot pool.";
-
-#[error(code = 23)]
-const EInvalidUncappedPhase: vector<u8> = b"An uncapped phase must start inside the window, and an open-to-anyone phase needs a positive minimum and a participant bound between the policy's and 65,536.";
-
-#[error(code = 24)]
-const EUncappedPhaseNotOpen: vector<u8> = b"The presale has no uncapped phase open to any wallet, or it has not started.";
-
-#[error(code = 25)]
-const EPresaleFilled: vector<u8> = b"The presale has already reached its raise under its hard cap.";
-
-#[error(code = 26)]
-const EInvalidRaiseAllocation: vector<u8> = b"Raise allocations must be unique, positive, bounded, leave the LP a share after Blast's, and apportion to positive amounts.";
-
-#[error(code = 27)]
-const EInvalidVestingTerms: vector<u8> = b"Vesting needs a positive period and period count, a cliff within its duration, and a duration of at most 2^63 milliseconds.";
-
-#[error(code = 28)]
-const EPresaleNotStarted: vector<u8> = b"The presale commitment window has not started.";
-
-#[error(code = 29)]
-const EPresaleStarted: vector<u8> = b"A presale's Blast rates can change only before its commitment window starts.";
-
-#[error(code = 30)]
-const EProtocolFeesUnchanged: vector<u8> = b"A presale fee update must change its stored rates.";
-
-#[error(code = 31)]
-const EWrongPartner: vector<u8> = b"The partner is not the one this presale named at creation.";
-
-#[error(code = 32)]
-const ENoPartnerPayout: vector<u8> = b"The presale holds no partner payout: it has not migrated, or its partner was already paid.";
-
-#[error(code = 33)]
-const EInvalidHardCap: vector<u8> = b"A hard cap must start inside the commitment window.";
-
-#[error(code = 34)]
-const EMissingSetting: vector<u8> = b"A presale needs its eligibility policy and LP-fee split set before it is finalized.";
-
-#[error(code = 35)]
-const ESaleTokenNotUnregulated: vector<u8> = b"The sale currency must be confirmed unregulated; regulated and unknown legacy currencies are not allowed.";
-
-#[error(code = 36)]
-const EAboveFeePolicy: vector<u8> = b"A sale fee override cannot exceed the currently applied fee policy.";
-
-#[error(code = 37)]
-const EProtocolFeesIncreased: vector<u8> = b"A shared sale's fee override may only keep or lower each of its rates.";
 
 // === Imports ===
 

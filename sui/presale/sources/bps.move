@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Validated basis-points values and explicit rounded application.
 module blast_presale::bps;
 
@@ -12,7 +14,7 @@ public struct Bps(u64) has copy, drop, store;
 // === Public Functions ===
 
 public fun new(value: u64): Bps {
-    assert!(value <= constants::basis_points_denominator!(), EInvalidBps);
+    assert!(value <= constants::basis_points_denominator!(), blast_presale::errors::invalid_bps!());
 
     Bps(value)
 }
@@ -27,11 +29,6 @@ public fun value(self: Bps): u64 {
 public fun apply_up(self: Bps, amount: u64): u64 {
     amount.mul_div_ceil(self.value(), constants::basis_points_denominator!())
 }
-
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidBps: vector<u8> = b"A basis-points rate must be at most 10,000.";
 
 // === Imports ===
 

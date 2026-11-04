@@ -27,7 +27,10 @@ fun pause_bit_layout_is_stable() {
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EInvalidPauseBits, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidPauseBits,
+    location = blast_presale::blast_presale_package,
+)]
 fun pausing_zero_bits_is_rejected() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 0);
@@ -35,7 +38,10 @@ fun pausing_zero_bits_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EInvalidPauseBits, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidPauseBits,
+    location = blast_presale::blast_presale_package,
+)]
 fun unpausing_zero_bits_is_rejected() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.clear_pause_bits(0);
@@ -43,7 +49,10 @@ fun unpausing_zero_bits_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EInvalidPauseBits, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidPauseBits,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_unpause_bits_are_rejected() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.clear_pause_bits(4);
@@ -51,7 +60,10 @@ fun unsupported_unpause_bits_are_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun stale_generation_is_rejected_before_the_notice_gate() {
     let mut f = release_fixture();
     f.version.set_for_testing(2);
@@ -68,7 +80,10 @@ fun unpause_releases_once_every_notice_is_guarded() {
 }
 
 #[test]
-#[expected_failure(abort_code = package_admin::EUnguardedNotice, location = blast_presale::package_admin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EUnguardedNotice,
+    location = blast_presale::package_admin,
+)]
 fun unpause_rejects_the_zero_publication_notice() {
     let mut f = release_fixture_with(
         creation_policy::new_publication_for_testing(&mut tx_context::dummy()),
@@ -78,7 +93,10 @@ fun unpause_rejects_the_zero_publication_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = package_admin::EUnguardedNotice, location = blast_presale::package_admin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EUnguardedNotice,
+    location = blast_presale::package_admin,
+)]
 fun unpause_rejects_a_pending_change_to_a_zero_notice() {
     let mut f = release_fixture().with_zero_notice_fees_proposal();
     f.unpause(1);
@@ -86,7 +104,10 @@ fun unpause_rejects_a_pending_change_to_a_zero_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = package_admin::EUnguardedNotice, location = blast_presale::package_admin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EUnguardedNotice,
+    location = blast_presale::package_admin,
+)]
 fun unpause_rejects_a_pending_migrator_admission() {
     let mut f = release_fixture().with_pending_migrator_admission();
     f.unpause(1);
@@ -94,7 +115,10 @@ fun unpause_rejects_a_pending_migrator_admission() {
 }
 
 #[test]
-#[expected_failure(abort_code = package_admin::EUnguardedNotice, location = blast_presale::package_admin)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EUnguardedNotice,
+    location = blast_presale::package_admin,
+)]
 fun unpause_rejects_a_pending_zero_upgrade_notice() {
     let mut f = release_fixture().with_zero_upgrade_notice_proposal();
     f.unpause(1);
@@ -116,7 +140,10 @@ fun pause_sets_only_requested_bits_and_unpause_clears_only_requested_bits() {
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun clearing_create_does_not_unpause_buy() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 3);
@@ -126,7 +153,10 @@ fun clearing_create_does_not_unpause_buy() {
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EInvalidPauseBits, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidPauseBits,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_pause_bits_are_rejected() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 16);
@@ -134,7 +164,10 @@ fun unsupported_pause_bits_are_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun stale_generation_is_rejected_before_invalid_pause_bits() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.set_for_testing(2);
@@ -143,7 +176,10 @@ fun stale_generation_is_rejected_before_invalid_pause_bits() {
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPauseUnchanged, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPauseUnchanged,
+    location = blast_presale::blast_presale_package,
+)]
 fun pausing_an_already_paused_bit_is_rejected() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 1);
@@ -152,7 +188,10 @@ fun pausing_an_already_paused_bit_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPauseUnchanged, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPauseUnchanged,
+    location = blast_presale::blast_presale_package,
+)]
 fun unpausing_an_already_clear_bit_is_rejected() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.clear_pause_bits(1);
@@ -177,265 +216,397 @@ fun every_disjoint_u8_query_is_allowed_in_every_reachable_state() {
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_1_rejects_overlapping_mask_1() {
     assert_guard_rejects_mask(1, 1);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_1_rejects_overlapping_mask_3() {
     assert_guard_rejects_mask(1, 3);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_1_rejects_overlapping_mask_9() {
     assert_guard_rejects_mask(1, 9);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_1_rejects_overlapping_mask_11() {
     assert_guard_rejects_mask(1, 11);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_2_rejects_overlapping_mask_2() {
     assert_guard_rejects_mask(2, 2);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_2_rejects_overlapping_mask_3() {
     assert_guard_rejects_mask(2, 3);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_2_rejects_overlapping_mask_10() {
     assert_guard_rejects_mask(2, 10);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_2_rejects_overlapping_mask_11() {
     assert_guard_rejects_mask(2, 11);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_3_rejects_overlapping_mask_1() {
     assert_guard_rejects_mask(3, 1);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_3_rejects_overlapping_mask_2() {
     assert_guard_rejects_mask(3, 2);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_3_rejects_overlapping_mask_3() {
     assert_guard_rejects_mask(3, 3);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_3_rejects_overlapping_mask_9() {
     assert_guard_rejects_mask(3, 9);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_3_rejects_overlapping_mask_10() {
     assert_guard_rejects_mask(3, 10);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_3_rejects_overlapping_mask_11() {
     assert_guard_rejects_mask(3, 11);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_8_rejects_overlapping_mask_8() {
     assert_guard_rejects_mask(8, 8);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_8_rejects_overlapping_mask_9() {
     assert_guard_rejects_mask(8, 9);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_8_rejects_overlapping_mask_10() {
     assert_guard_rejects_mask(8, 10);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_8_rejects_overlapping_mask_11() {
     assert_guard_rejects_mask(8, 11);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_9_rejects_overlapping_mask_1() {
     assert_guard_rejects_mask(9, 1);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_9_rejects_overlapping_mask_3() {
     assert_guard_rejects_mask(9, 3);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_9_rejects_overlapping_mask_8() {
     assert_guard_rejects_mask(9, 8);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_9_rejects_overlapping_mask_9() {
     assert_guard_rejects_mask(9, 9);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_9_rejects_overlapping_mask_10() {
     assert_guard_rejects_mask(9, 10);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_9_rejects_overlapping_mask_11() {
     assert_guard_rejects_mask(9, 11);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_10_rejects_overlapping_mask_2() {
     assert_guard_rejects_mask(10, 2);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_10_rejects_overlapping_mask_3() {
     assert_guard_rejects_mask(10, 3);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_10_rejects_overlapping_mask_8() {
     assert_guard_rejects_mask(10, 8);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_10_rejects_overlapping_mask_9() {
     assert_guard_rejects_mask(10, 9);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_10_rejects_overlapping_mask_10() {
     assert_guard_rejects_mask(10, 10);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_10_rejects_overlapping_mask_11() {
     assert_guard_rejects_mask(10, 11);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_11_rejects_overlapping_mask_1() {
     assert_guard_rejects_mask(11, 1);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_11_rejects_overlapping_mask_2() {
     assert_guard_rejects_mask(11, 2);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_11_rejects_overlapping_mask_3() {
     assert_guard_rejects_mask(11, 3);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_11_rejects_overlapping_mask_8() {
     assert_guard_rejects_mask(11, 8);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_11_rejects_overlapping_mask_9() {
     assert_guard_rejects_mask(11, 9);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_11_rejects_overlapping_mask_10() {
     assert_guard_rejects_mask(11, 10);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun paused_state_11_rejects_overlapping_mask_11() {
     assert_guard_rejects_mask(11, 11);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_query_bits_do_not_hide_paused_state_1() {
     assert_guard_rejects_mask(1, 255);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_query_bits_do_not_hide_paused_state_2() {
     assert_guard_rejects_mask(2, 255);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_query_bits_do_not_hide_paused_state_3() {
     assert_guard_rejects_mask(3, 255);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_query_bits_do_not_hide_paused_state_8() {
     assert_guard_rejects_mask(8, 255);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_query_bits_do_not_hide_paused_state_9() {
     assert_guard_rejects_mask(9, 255);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_query_bits_do_not_hide_paused_state_10() {
     assert_guard_rejects_mask(10, 255);
 }
 
 #[test]
-#[expected_failure(abort_code = marker::EPaused, location = blast_presale::blast_presale_package)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
 fun unsupported_query_bits_do_not_hide_paused_state_11() {
     assert_guard_rejects_mask(11, 255);
 }

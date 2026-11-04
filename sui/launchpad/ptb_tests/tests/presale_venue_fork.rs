@@ -85,14 +85,14 @@ const LARGE: u64 = SMALL + 1;
 const CETUS_NEAR_EQUAL_LIQUIDITY: u128 = 4_611_686_019_503_084_323;
 const BLUEFIN_NEAR_EQUAL_LIQUIDITY: u128 = 4_611_686_019_504_160_504;
 
-/// `blast_presale::blast_presale` code.
-const INVALID_LIFECYCLE: u64 = 5;
-/// `blast_presale::cetus` codes.
-const INVALID_COIN_ORDER: u64 = 0;
-const CETUS_POSITION_POOL_MISMATCH: u64 = 1;
-const WRONG_COIN_PAIR: u64 = 2;
-/// `blast_presale::bluefin` code.
-const BLUEFIN_POSITION_POOL_MISMATCH: u64 = 0;
+/// `blast_presale::errors` registry codes; each aborts at the module that raises it.
+const INVALID_PAUSE_BITS: u64 = 1;
+const PAUSE_UNCHANGED: u64 = 2;
+const INVALID_LIFECYCLE: u64 = 19;
+const INVALID_COIN_ORDER: u64 = 79;
+const POSITION_POOL_MISMATCH: u64 = 80;
+const WRONG_COIN_PAIR: u64 = 81;
+const NOT_AFTERMATH_VAULT: u64 = 88;
 /// Bluefin `pool` code for a creation fee other than the configured amount.
 const BLUEFIN_WRONG_CREATION_FEE: u64 = 1039;
 /// Cetus `factory::create_pool_v3_` code when the fixed coin B needs more coin A than supplied, and
@@ -155,10 +155,10 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
                         Some(Expected::Abort { package: w.admin, module: "operational_version", code: 9 })
                     } else if bits == 0 || requested.iter().sum::<u8>() != bits {
                         invalid += 1;
-                        Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: 0 })
+                        Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: INVALID_PAUSE_BITS })
                     } else if after == before {
                         unchanged += 1;
-                        Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: 1 })
+                        Some(Expected::Abort { package: w.presale, module: "blast_presale_package", code: PAUSE_UNCHANGED })
                     } else {
                         None
                     };
@@ -223,9 +223,9 @@ fn presale_pause_roles_revocation_and_failed_sequences_preserve_state_and_events
     w.change_role("PauseAdmin", true)?;
     w.change_role("UnpauseAdmin", true)?;
     for (sequence, code) in [
-        (vec![(true, 1), (true, 1)], 1),
-        (vec![(true, 1), (false, 1), (false, 1)], 1),
-        (vec![(true, 1), (true, 5)], 0),
+        (vec![(true, 1), (true, 1)], PAUSE_UNCHANGED),
+        (vec![(true, 1), (false, 1), (false, 1)], PAUSE_UNCHANGED),
+        (vec![(true, 1), (true, 5)], INVALID_PAUSE_BITS),
     ] {
         let mut b = ProgrammableTransactionBuilder::new();
         for (pausing, bits) in sequence {
@@ -1898,7 +1898,7 @@ impl World {
         let mut b = ProgrammableTransactionBuilder::new();
         let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?, self.clock(&mut b)?];
         call(&mut b, self.presale, "aftermath", "apply_fee_split", self.pair(sale), args);
-        self.h.assert_rolled_back(b.finish(), Expected::Abort {package: self.presale, module: "aftermath", code: 4}, &watched, &owners)?;
+        self.h.assert_rolled_back(b.finish(), Expected::Abort {package: self.presale, module: "aftermath", code: NOT_AFTERMATH_VAULT}, &watched, &owners)?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(old.delay_ms));
         self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
         self.swap(sale, m, Side::MemeIn, terms.lp_tokens() / 100)?;
@@ -1987,7 +1987,7 @@ impl World {
         ensure!(other.len() == 1 && other[0] != m.pool && self.h.object(other[0]).is_shared());
         let other = other[0];
 
-        let code = if self.route.is_cetus() { CETUS_POSITION_POOL_MISMATCH } else { BLUEFIN_POSITION_POOL_MISMATCH };
+        let code = POSITION_POOL_MISMATCH;
         let expected = Expected::Abort { package: self.presale, module: self.route.module(), code };
         let pt = self.collect_pt(sale, m, other)?;
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
