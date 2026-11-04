@@ -30,6 +30,24 @@ Administration comes from the singleton Blast ACL in the immutable `blast_admin`
 package through this package's own roles. No other package's role can authorize
 any step above.
 
+## Repairing a release that kept the old generation
+
+If a committed upgrade's bytecode kept `PACKAGE_VERSION` at the old value, every gated
+call (both redemptions included) aborts. Receipt `cancel` still works. Recover with a
+repair, which reads no package version and never advances the generation:
+
+1. Build bytecode whose `PACKAGE_VERSION` equals the stored generation (the value
+   `commit_upgrade_and_advance` advanced to), and audit it.
+2. Sign in as `UpgradeAdmin` and call `package_admin::schedule_repair` with its exact
+   digest and `Clock`. Announce it; it waits the applied upgrade notice, and
+   `CancelAdmin` can cancel it with `package_admin::cancel_upgrade_action`.
+3. After `ready_at_ms`, in one PTB, call `package_admin::authorize_repair` with the
+   digest and `Clock`, execute the native upgrade, and pass the receipt to
+   `package_admin::commit_repair`. The generation stays as it is and the repaired
+   bytecode becomes the only one that matches it.
+4. Verify gated calls succeed on the repaired bytecode, then continue with ordinary
+   upgrades from it.
+
 No call narrows the upgrade policy: under a narrowed policy the generation could
 never advance again. `package_admin::make_immutable` is the only irreversible
 step; it waits its own scheduled notice, destroys the native `UpgradeCap`, and

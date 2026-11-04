@@ -311,7 +311,7 @@ fun cancellation_discards_a_ready_action() {
         let admin_witness = upgrade_admin();
         f.package_admin.schedule_make_immutable(&f.package_version, &admin_witness, &f.clock);
         f.clock.set_for_testing(INITIAL_NOTICE_MS);
-        f.package_admin.cancel_upgrade_action(&f.package_version, &cancel_admin());
+        f.package_admin.cancel_upgrade_action(&cancel_admin());
         assert!(f.package_admin.upgrade_for_testing().pending().is_none());
         assert_eq!(f.package_admin.upgrade_delay_ms(), INITIAL_NOTICE_MS);
 
@@ -358,6 +358,138 @@ fun a_notice_change_cannot_authorize_an_action() {
         f.clock.set_for_testing(INITIAL_NOTICE_MS);
 
         f.package_admin.make_immutable(&f.package_version, &admin_witness, &f.clock);
+    });
+
+    fixture.end();
+}
+
+#[test]
+/// When no bytecode matches the stored generation, every gated call is closed, but a
+/// repair still schedules, waits its full notice, and stays cancellable.
+fun a_repair_stays_reachable_when_every_bytecode_is_stale() {
+    let mut fixture = start_upgrade();
+
+    fixture.next_tx!(ADMIN, |f| {
+        // A committed upgrade advanced the generation past this bytecode's constant.
+        f.package_version.set_for_testing(2);
+        let admin_witness = upgrade_admin();
+
+        f.package_admin.schedule_repair(&admin_witness, package_digest(), &f.clock);
+        let pending = f.package_admin.upgrade_for_testing().pending();
+        assert_eq!(pending.borrow().ready_at_ms(), INITIAL_NOTICE_MS);
+
+        f.package_admin.cancel_upgrade_action(&cancel_admin());
+        assert!(f.package_admin.upgrade_for_testing().pending().is_none());
+
+        f.package_admin.schedule_repair(&admin_witness, package_digest(), &f.clock);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun repair_authorization_waits_the_full_notice() {
+    let mut fixture = start_upgrade();
+
+    fixture.next_tx!(ADMIN, |f| {
+        f.package_version.set_for_testing(2);
+        let admin_witness = upgrade_admin();
+        f.package_admin.schedule_repair(&admin_witness, package_digest(), &f.clock);
+        f.clock.set_for_testing(INITIAL_NOTICE_MS - 1);
+
+        destroy(f.package_admin.authorize_repair(&admin_witness, package_digest(), &f.clock));
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EInvalidDigest, location = blast_sui::package_admin)]
+fun repair_scheduling_rejects_a_non_digest_length() {
+    let mut fixture = start_upgrade();
+
+    fixture.next_tx!(ADMIN, |f| {
+        f.package_admin.schedule_repair(&upgrade_admin(), vector[0], &f.clock);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongUpgradeAction, location = blast_sui::package_admin)]
+fun repair_authorization_cannot_consume_an_upgrade_action() {
+    let mut fixture = start_upgrade();
+
+    fixture.next_tx!(ADMIN, |f| {
+        let admin_witness = upgrade_admin();
+        f.package_admin.schedule_upgrade(
+            &f.package_version,
+            &admin_witness,
+            package_digest(),
+            &f.clock,
+        );
+        f.clock.set_for_testing(INITIAL_NOTICE_MS);
+
+        destroy(f.package_admin.authorize_repair(&admin_witness, package_digest(), &f.clock));
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongUpgradeAction, location = blast_sui::package_admin)]
+fun upgrade_authorization_cannot_consume_a_repair_action() {
+    let mut fixture = start_upgrade();
+
+    fixture.next_tx!(ADMIN, |f| {
+        let admin_witness = upgrade_admin();
+        f.package_admin.schedule_repair(&admin_witness, package_digest(), &f.clock);
+        f.clock.set_for_testing(INITIAL_NOTICE_MS);
+
+        destroy(f.package_admin.authorize_upgrade(
+            &f.package_version,
+            &admin_witness,
+            package_digest(),
+            &f.clock,
+        ));
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = package::EWrongUpgradeCap, location = sui::package)]
+/// Outside a repair, the advancing finalizer passes its generation and repair guards and
+/// reaches native custody, which rejects a receipt from another package's cap.
+fun the_advancing_finalizer_reaches_custody_only_outside_a_repair() {
+    let mut fixture = start_upgrade();
+
+    fixture.next_tx!(ADMIN, |f| {
+        let mut foreign_cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), f.scenario.ctx());
+        let ticket = foreign_cap.authorize_upgrade(package::compatible_policy(), package_digest());
+        let receipt = ticket.test_upgrade();
+
+        f.package_admin.commit_upgrade_and_advance(&mut f.package_version, &upgrade_admin(), receipt);
+        destroy(foreign_cap);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongUpgradeAction, location = blast_sui::package_admin)]
+/// A receipt that `authorize_repair` did not authorize cannot commit without advancing.
+fun repair_commit_rejects_a_receipt_without_repair_authorization() {
+    let mut fixture = start_upgrade();
+
+    fixture.next_tx!(ADMIN, |f| {
+        let mut foreign_cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), f.scenario.ctx());
+        let ticket = foreign_cap.authorize_upgrade(package::compatible_policy(), package_digest());
+        let receipt = ticket.test_upgrade();
+
+        f.package_admin.commit_repair(&upgrade_admin(), receipt);
+        destroy(foreign_cap);
     });
 
     fixture.end();

@@ -262,6 +262,13 @@ holders earned before your stake activated stay with them.
   `Clock`, the native `Upgrade` command, then
   `blast_sui::package_admin::commit_upgrade_and_advance` with the receipt. The
   generation advances in the same transaction.
+- Repair, only after a release left no bytecode matching the stored generation:
+  `blast_sui::package_admin::schedule_repair` with the digest and `Clock`, then
+  after the notice, in one PTB, `blast_sui::package_admin::authorize_repair`, the
+  native `Upgrade` command, and `blast_sui::package_admin::commit_repair`. These three
+  calls and `blast_sui::package_admin::cancel_upgrade_action` take no
+  `PackageVersion`, so they work while every gated call aborts. A repair never
+  advances the generation; an upgrade always does.
 - `blast_sui::package_admin::make_immutable` after its notice (irreversible;
   the capabilities stay sealed and every vault call keeps working). No call
   narrows the upgrade policy.
@@ -419,8 +426,8 @@ Codes are plain `u64` values, raised in the `blast_sui` module that detects them
 | 20 | `EInvalidPauseBits` | pause, unpause | pass a nonzero mask of bits 1, 2, and 4 |
 | 21 | `EPauseUnchanged` | pause, unpause | a requested flag is already in that state |
 | 22 | `EPaused` | mint funSUI, request, claim | that deposit path is paused; redeem or cancel instead, or retry after release |
-| 23 | `EWrongUpgradeAction` | `authorize_upgrade`, `make_immutable` | run the action that was scheduled, with its exact digest |
-| 24 | `EInvalidDigest` | `schedule_upgrade` | pass the 32-byte package digest |
+| 23 | `EWrongUpgradeAction` | `authorize_upgrade`, `authorize_repair`, `make_immutable`, either commit | run the action that was scheduled, with its exact digest, and finish it with its own commit |
+| 24 | `EInvalidDigest` | `schedule_upgrade`, `schedule_repair` | pass the 32-byte package digest |
 | 25 | `EUnguardedNotice` | `unpause` | make the upgrade and fee notices nonzero, with no pending change to zero |
 
 Calls into outdated bytecode after an upgrade abort with code 9 from

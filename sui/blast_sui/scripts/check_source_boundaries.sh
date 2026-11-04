@@ -74,8 +74,8 @@ rg -q 'custody: UpgradeCustody<BLAST_SUI_PACKAGE>,' <<<"$admin_production" \
   || fail "Package custody must hold the shared typed value."
 rg -q 'upgrade: DelayedAction<UpgradeKey, UpgradeAction>,' <<<"$admin_production" \
   || fail "Every upgrade action must wait the delayed slot's notice."
-rg -U -q 'public enum UpgradeAction has copy, drop, store \{\n    Upgrade\(vector<u8>\),\n    MakeImmutable,\n\}' \
-  <<<"$admin_production" || fail "Upgrade actions must be exactly Upgrade(digest) and MakeImmutable."
+rg -U -q 'public enum UpgradeAction has copy, drop, store \{\n    Upgrade\(vector<u8>\),\n    Repair\(vector<u8>\),\n    MakeImmutable,\n\}' \
+  <<<"$admin_production" || fail "Upgrade actions must be exactly Upgrade(digest), Repair(digest) and MakeImmutable."
 if rg -n '\brestrict_to_' <<<"$admin_production"; then
   fail "No path may narrow the upgrade policy: a narrowed cap could never cut over again."
 fi
@@ -90,8 +90,29 @@ fi
 if rg -n 'transfer::(public_)?transfer\(' <<<"$admin_production"; then
   fail "The framework UpgradeCap must never leave sealed custody."
 fi
-[ "$(rg -c '^    _: &AdminWitness<UpgradeAdmin>,$' <<<"$admin_production")" -eq 6 ] \
-  || fail "Every upgrade schedule, notice change, authorization, commit and immutability must require UpgradeAdmin."
+[ "$(rg -c '^    _: &AdminWitness<UpgradeAdmin>,$' <<<"$admin_production")" -eq 9 ] \
+  || fail "Every upgrade or repair schedule, notice change, authorization, commit and immutability must require UpgradeAdmin."
+# Only the repair path and cancellation skip the package version: they must stay reachable
+# when no bytecode matches the stored generation. Each repair authorization reaches only its
+# own finalizer, and only a repair finalizer skips the advance.
+versionless="$(awk '
+  /^public fun / { name = $3; sub(/\(.*/, "", name); in_sig = 1; mutable = 0; versioned = 0 }
+  in_sig && /self: &mut PackageAdmin/ { mutable = 1 }
+  in_sig && /package_version: &/ { versioned = 1 }
+  in_sig && /\{$/ { in_sig = 0; if (mutable && !versioned) print name }
+' <<<"$admin_production" | sort | tr '\n' ' ')"
+[ "$versionless" == 'authorize_repair cancel_upgrade_action commit_repair schedule_repair ' ] \
+  || fail "Only the repair path and cancellation may skip the package version, found: $versionless"
+[ "$(rg -c 'self\.repairing = true;' <<<"$admin_production")" -eq 1 ] \
+  && [ "$(rg -c 'self\.repairing = false;' <<<"$admin_production")" -eq 1 ] \
+  && sed -n '/^public fun authorize_repair(/,/^}/p' "$admin_source" | rg -q 'self\.repairing = true;' \
+  && sed -n '/^public fun commit_repair(/,/^}/p' "$admin_source" | rg -q 'self\.repairing = false;' \
+  && sed -n '/^public fun commit_upgrade_and_advance(/,/^}/p' "$admin_source" \
+    | rg -q 'assert!\(!self\.repairing, ' \
+  || fail "Only authorize_repair may open a repair, only commit_repair may close it, and the advancing finalizer must reject one."
+if sed -n '/^public fun commit_repair(/,/^}/p' "$admin_source" | rg -q 'advance\('; then
+  fail "A repair must never advance the operational generation."
+fi
 wrap_body="$(sed -n '/^public fun wrap(/,/^}/p' "$admin_source")"
 for required in 'id.add_capability(fun_metadata_cap);' 'id.add_capability(blast_metadata_cap);' \
   'id.add_capability(deposit_receipt::new_display(display_registry, ctx));' \

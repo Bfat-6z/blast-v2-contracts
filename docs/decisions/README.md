@@ -359,7 +359,8 @@ mint or burn authority outside vault transitions.
 ADR 0136 applies the launchpad audit's custody and delay findings to blastSUI
 before its first deployment. An owned `Publication` keeps the vault unusable
 until `wrap` seals custody. Upgrades and redemption-fee changes wait a 48-hour
-notice, and policy narrowing is removed because it would brick every gated call.
+notice, and policy narrowing is removed because it would brick every gated call. A
+delayed, versionless repair action recovers a release that kept the old generation.
 A deposit-only pause starts set and never stops exits, and a refresh-free fun
 reserve top-up recovers a vault frozen by a backing shortfall.
 

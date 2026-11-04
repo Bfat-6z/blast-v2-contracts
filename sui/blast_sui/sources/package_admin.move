@@ -9,12 +9,16 @@ module blast_sui::package_admin;
 
 // === Public Types ===
 
-/// A proposed upgrade or irreversible immutability.
+/// A proposed upgrade, repair upgrade, or irreversible immutability.
 ///
+/// `Upgrade` advances the operational generation; `Repair` installs code without
+/// advancing it, for the case where a committed upgrade's bytecode did not compile the
+/// generation its finalizer advanced to and so rejects every gated call.
 /// No policy narrowing exists: under a narrowed policy the compiled generation constants
 /// could never change again, so the only finalizer would stop every gated vault entry point.
 public enum UpgradeAction has copy, drop, store {
     Upgrade(vector<u8>),
+    Repair(vector<u8>),
     MakeImmutable,
 }
 
@@ -25,12 +29,15 @@ public struct UpgradeKey() has copy, drop, store;
 ///
 /// The reusable Publisher/UpgradeCap seal is the shared custody value; the
 /// package-specific metadata and display capabilities are dynamic object
-/// children sealed by `wrap`. Every upgrade and immutability action waits the
-/// applied notice of `upgrade`.
+/// children sealed by `wrap`. Every upgrade, repair and immutability action waits
+/// the applied notice of `upgrade`. `repairing` is true only between
+/// `authorize_repair` and `commit_repair` in one transaction, so each authorization
+/// can reach only its own finalizer.
 public struct PackageAdmin has key {
     id: UID,
     custody: UpgradeCustody<BLAST_SUI_PACKAGE>,
     upgrade: DelayedAction<UpgradeKey, UpgradeAction>,
+    repairing: bool,
 }
 
 /// Type-derived key for a capability owned as a dynamic object field.
@@ -61,7 +68,7 @@ public fun wrap(
     id.add_capability(blast_metadata_cap);
     id.add_capability(deposit_receipt::new_display(display_registry, ctx));
 
-    transfer::share_object(PackageAdmin { id, custody, upgrade });
+    transfer::share_object(PackageAdmin { id, custody, upgrade, repairing: false });
     generation.share_version(ctx);
 }
 
@@ -81,6 +88,26 @@ public fun schedule_upgrade(
     );
 
     self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock);
+}
+
+/// Schedules a repair upgrade to one exact digest under the applied notice.
+///
+/// A repair is the recovery path when no bytecode matches the stored generation, so it
+/// deliberately reads no package version: the repaired bytecode must compile
+/// `PACKAGE_VERSION` equal to the stored generation. It replaces any previous action,
+/// waits the same notice as an upgrade, and `CancelAdmin` can cancel it.
+public fun schedule_repair(
+    self: &mut PackageAdmin,
+    _: &AdminWitness<UpgradeAdmin>,
+    digest: vector<u8>,
+    clock: &Clock,
+) {
+    assert!(
+        digest.length() == constants::package_digest_length!(),
+        blast_sui::errors::invalid_digest!(),
+    );
+
+    self.upgrade.schedule(UpgradeAction::Repair(digest), clock);
 }
 
 /// Schedules the irreversible destruction of upgrade authority under the applied notice.
@@ -120,14 +147,10 @@ public fun apply_upgrade_delay(
     self.upgrade.apply_delay(clock);
 }
 
-/// Cancels any scheduled upgrade, immutability or notice change, even after its deadline.
-public fun cancel_upgrade_action(
-    self: &mut PackageAdmin,
-    package_version: &PackageVersion,
-    _: &AdminWitness<CancelAdmin>,
-) {
-    package_version.assert_current();
-
+/// Cancels any scheduled upgrade, repair, immutability or notice change, even after its
+/// deadline. Cancelling never applies anything, so it reads no package version and stays
+/// available while every bytecode is stale.
+public fun cancel_upgrade_action(self: &mut PackageAdmin, _: &AdminWitness<CancelAdmin>) {
     self.upgrade.cancel();
 }
 
@@ -154,8 +177,9 @@ public fun authorize_upgrade(
 
 /// Commits the native receipt and advances one operational generation at once.
 ///
-/// This is the only upgrade finalizer. Both mutations belong to the same
-/// transaction, so a failure at either step rolls back the whole upgrade.
+/// This is the only finalizer for an `Upgrade` action. Both mutations belong to the
+/// same transaction, so a failure at either step rolls back the whole upgrade. A
+/// repair's receipt cannot reach it.
 public fun commit_upgrade_and_advance(
     self: &mut PackageAdmin,
     package_version: &mut PackageVersion,
@@ -164,10 +188,50 @@ public fun commit_upgrade_and_advance(
 ) {
     package_version.assert_next();
 
+    assert!(!self.repairing, blast_sui::errors::wrong_upgrade_action!());
+
     let custodian_id = self.id.to_inner();
 
     self.custody.commit_upgrade(custodian_id, receipt);
     package_version.advance();
+}
+
+/// Consumes the ready repair action and authorizes exactly its digest.
+///
+/// Like `schedule_repair`, it reads no package version, so a repair stays reachable
+/// when every bytecode rejects the stored generation.
+public fun authorize_repair(
+    self: &mut PackageAdmin,
+    _: &AdminWitness<UpgradeAdmin>,
+    digest: vector<u8>,
+    clock: &Clock,
+): UpgradeTicket {
+    let custodian_id = self.id.to_inner();
+
+    let action = self.upgrade.take_action(clock);
+    assert!(
+        action == UpgradeAction::Repair(digest),
+        blast_sui::errors::wrong_upgrade_action!(),
+    );
+    self.repairing = true;
+
+    self.custody.authorize_upgrade(custodian_id, digest)
+}
+
+/// Commits a repair's native receipt without advancing the operational generation.
+///
+/// Only a receipt authorized by `authorize_repair` in the same transaction reaches it.
+public fun commit_repair(
+    self: &mut PackageAdmin,
+    _: &AdminWitness<UpgradeAdmin>,
+    receipt: UpgradeReceipt,
+) {
+    assert!(self.repairing, blast_sui::errors::wrong_upgrade_action!());
+    self.repairing = false;
+
+    let custodian_id = self.id.to_inner();
+
+    self.custody.commit_upgrade(custodian_id, receipt);
 }
 
 /// Consumes the ready immutability action and destroys native upgrade authority.
@@ -215,7 +279,7 @@ public fun has_upgrade_cap(self: &PackageAdmin): bool {
     self.custody.has_upgrade_cap()
 }
 
-/// The applied notice, in milliseconds, every upgrade or immutability action waits.
+/// The applied notice, in milliseconds, every upgrade, repair or immutability action waits.
 public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
     self.upgrade.delay_ms()
 }
@@ -251,7 +315,7 @@ public fun new_for_testing(
     id.add_capability(blast_metadata_cap);
     id.add_capability(display_cap);
 
-    PackageAdmin { id, custody, upgrade }
+    PackageAdmin { id, custody, upgrade, repairing: false }
 }
 
 #[test_only]
@@ -268,7 +332,7 @@ public fun new_bare_for_testing(ctx: &mut TxContext): PackageAdmin {
     );
     let upgrade = delayed_action::new(UpgradeKey(), &id, constants::initial_notice_ms!());
 
-    PackageAdmin { id, custody, upgrade }
+    PackageAdmin { id, custody, upgrade, repairing: false }
 }
 
 #[test_only]

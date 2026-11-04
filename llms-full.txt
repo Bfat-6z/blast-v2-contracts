@@ -5158,6 +5158,13 @@ holders earned before your stake activated stay with them.
   `Clock`, the native `Upgrade` command, then
   `blast_sui::package_admin::commit_upgrade_and_advance` with the receipt. The
   generation advances in the same transaction.
+- Repair, only after a release left no bytecode matching the stored generation:
+  `blast_sui::package_admin::schedule_repair` with the digest and `Clock`, then
+  after the notice, in one PTB, `blast_sui::package_admin::authorize_repair`, the
+  native `Upgrade` command, and `blast_sui::package_admin::commit_repair`. These three
+  calls and `blast_sui::package_admin::cancel_upgrade_action` take no
+  `PackageVersion`, so they work while every gated call aborts. A repair never
+  advances the generation; an upgrade always does.
 - `blast_sui::package_admin::make_immutable` after its notice (irreversible;
   the capabilities stay sealed and every vault call keeps working). No call
   narrows the upgrade policy.
@@ -5315,8 +5322,8 @@ Codes are plain `u64` values, raised in the `blast_sui` module that detects them
 | 20 | `EInvalidPauseBits` | pause, unpause | pass a nonzero mask of bits 1, 2, and 4 |
 | 21 | `EPauseUnchanged` | pause, unpause | a requested flag is already in that state |
 | 22 | `EPaused` | mint funSUI, request, claim | that deposit path is paused; redeem or cancel instead, or retry after release |
-| 23 | `EWrongUpgradeAction` | `authorize_upgrade`, `make_immutable` | run the action that was scheduled, with its exact digest |
-| 24 | `EInvalidDigest` | `schedule_upgrade` | pass the 32-byte package digest |
+| 23 | `EWrongUpgradeAction` | `authorize_upgrade`, `authorize_repair`, `make_immutable`, either commit | run the action that was scheduled, with its exact digest, and finish it with its own commit |
+| 24 | `EInvalidDigest` | `schedule_upgrade`, `schedule_repair` | pass the 32-byte package digest |
 | 25 | `EUnguardedNotice` | `unpause` | make the upgrade and fee notices nonzero, with no pending change to zero |
 
 Calls into outdated bytecode after an upgrade abort with code 9 from
@@ -5902,7 +5909,7 @@ stores its own notice in a delayed value; see "Delayed values, actions, sets and
 | --- | --- | --- |
 | `blast_fun` | `blast_fun::package_admin::PackageAdmin` | `blast_fun::package_admin::wrap`, `blast_fun::package_admin::authorize_upgrade`, `blast_fun::package_admin::commit_upgrade_and_advance`, `blast_fun::package_admin::make_immutable` |
 | `blast_fun_migrators` | `blast_fun_migrators::package_admin::PackageAdmin` | `blast_fun_migrators::package_admin::wrap`, `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance`, delayed `blast_fun_migrators::package_admin::make_immutable` |
-| `blast_sui` | `blast_sui::package_admin::PackageAdmin` | `blast_sui::package_admin::wrap`, `blast_sui::package_admin::authorize_upgrade`, `blast_sui::package_admin::commit_upgrade_and_advance`, delayed `blast_sui::package_admin::make_immutable`, `blast_sui::package_admin::unpause`, `blast_sui::package_admin::has_upgrade_cap` |
+| `blast_sui` | `blast_sui::package_admin::PackageAdmin` | `blast_sui::package_admin::wrap`, `blast_sui::package_admin::authorize_upgrade`, `blast_sui::package_admin::commit_upgrade_and_advance`, delayed `blast_sui::package_admin::authorize_repair` and `blast_sui::package_admin::commit_repair` (install code without advancing, no version check), delayed `blast_sui::package_admin::make_immutable`, `blast_sui::package_admin::unpause`, `blast_sui::package_admin::has_upgrade_cap` |
 | `blast_boosts_aftermath` | `blast_boosts_aftermath::package_admin::PackageAdmin` | `blast_boosts_aftermath::package_admin::wrap`, `blast_boosts_aftermath::package_admin::authorize_upgrade`, `blast_boosts_aftermath::package_admin::commit_upgrade`, `blast_boosts_aftermath::package_admin::activate_upgrade`, `blast_boosts_aftermath::package_admin::make_immutable` |
 
 The custody primitives: `upgrade_custody::authorize_upgrade` (exactly one
@@ -13529,12 +13536,16 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/bl
 #### Types
 
 ```move
-/// A proposed upgrade or irreversible immutability.
+/// A proposed upgrade, repair upgrade, or irreversible immutability.
 ///
+/// `Upgrade` advances the operational generation; `Repair` installs code without
+/// advancing it, for the case where a committed upgrade's bytecode did not compile the
+/// generation its finalizer advanced to and so rejects every gated call.
 /// No policy narrowing exists: under a narrowed policy the compiled generation constants
 /// could never change again, so the only finalizer would stop every gated vault entry point.
 public enum UpgradeAction has copy, drop, store {
     Upgrade(vector<u8>),
+    Repair(vector<u8>),
     MakeImmutable,
 }
 
@@ -13545,12 +13556,15 @@ public struct UpgradeKey() has copy, drop, store;
 ///
 /// The reusable Publisher/UpgradeCap seal is the shared custody value; the
 /// package-specific metadata and display capabilities are dynamic object
-/// children sealed by `wrap`. Every upgrade and immutability action waits the
-/// applied notice of `upgrade`.
+/// children sealed by `wrap`. Every upgrade, repair and immutability action waits
+/// the applied notice of `upgrade`. `repairing` is true only between
+/// `authorize_repair` and `commit_repair` in one transaction, so each authorization
+/// can reach only its own finalizer.
 public struct PackageAdmin has key {
     id: UID,
     custody: blast_admin::upgrade_custody::UpgradeCustody<blast_sui_package::BLAST_SUI_PACKAGE>,
     upgrade: blast_admin::delayed_action::DelayedAction<UpgradeKey, UpgradeAction>,
+    repairing: bool,
 }
 
 /// Type-derived key for a capability owned as a dynamic object field.
@@ -13584,6 +13598,19 @@ public fun schedule_upgrade(
     clock: &Clock,
 )
 
+/// Schedules a repair upgrade to one exact digest under the applied notice.
+///
+/// A repair is the recovery path when no bytecode matches the stored generation, so it
+/// deliberately reads no package version: the repaired bytecode must compile
+/// `PACKAGE_VERSION` equal to the stored generation. It replaces any previous action,
+/// waits the same notice as an upgrade, and `CancelAdmin` can cancel it.
+public fun schedule_repair(
+    self: &mut PackageAdmin,
+    _: &blast_admin::blast_acl::AdminWitness<blast_sui_domain::UpgradeAdmin>,
+    digest: vector<u8>,
+    clock: &Clock,
+)
+
 /// Schedules the irreversible destruction of upgrade authority under the applied notice.
 public fun schedule_make_immutable(
     self: &mut PackageAdmin,
@@ -13609,10 +13636,11 @@ public fun apply_upgrade_delay(
     clock: &Clock,
 )
 
-/// Cancels any scheduled upgrade, immutability or notice change, even after its deadline.
+/// Cancels any scheduled upgrade, repair, immutability or notice change, even after its
+/// deadline. Cancelling never applies anything, so it reads no package version and stays
+/// available while every bytecode is stale.
 public fun cancel_upgrade_action(
     self: &mut PackageAdmin,
-    package_version: &blast_sui_package::PackageVersion,
     _: &blast_admin::blast_acl::AdminWitness<blast_sui_domain::CancelAdmin>,
 )
 
@@ -13627,11 +13655,32 @@ public fun authorize_upgrade(
 
 /// Commits the native receipt and advances one operational generation at once.
 ///
-/// This is the only upgrade finalizer. Both mutations belong to the same
-/// transaction, so a failure at either step rolls back the whole upgrade.
+/// This is the only finalizer for an `Upgrade` action. Both mutations belong to the
+/// same transaction, so a failure at either step rolls back the whole upgrade. A
+/// repair's receipt cannot reach it.
 public fun commit_upgrade_and_advance(
     self: &mut PackageAdmin,
     package_version: &mut blast_sui_package::PackageVersion,
+    _: &blast_admin::blast_acl::AdminWitness<blast_sui_domain::UpgradeAdmin>,
+    receipt: UpgradeReceipt,
+)
+
+/// Consumes the ready repair action and authorizes exactly its digest.
+///
+/// Like `schedule_repair`, it reads no package version, so a repair stays reachable
+/// when every bytecode rejects the stored generation.
+public fun authorize_repair(
+    self: &mut PackageAdmin,
+    _: &blast_admin::blast_acl::AdminWitness<blast_sui_domain::UpgradeAdmin>,
+    digest: vector<u8>,
+    clock: &Clock,
+): UpgradeTicket
+
+/// Commits a repair's native receipt without advancing the operational generation.
+///
+/// Only a receipt authorized by `authorize_repair` in the same transaction reaches it.
+public fun commit_repair(
+    self: &mut PackageAdmin,
     _: &blast_admin::blast_acl::AdminWitness<blast_sui_domain::UpgradeAdmin>,
     receipt: UpgradeReceipt,
 )
@@ -13663,7 +13712,7 @@ public fun unpause(
 /// Reports whether native upgrade authority remains sealed in custody.
 public fun has_upgrade_cap(self: &PackageAdmin): bool
 
-/// The applied notice, in milliseconds, every upgrade or immutability action waits.
+/// The applied notice, in milliseconds, every upgrade, repair or immutability action waits.
 public fun upgrade_delay_ms(self: &PackageAdmin): u64
 ```
 

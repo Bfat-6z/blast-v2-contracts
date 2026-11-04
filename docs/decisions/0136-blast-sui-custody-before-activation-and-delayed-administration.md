@@ -36,8 +36,12 @@ A separate brick review of the vault against the pinned Sui framework found two
 recoverable freezes worth closing in source. First, `assert_fun_backed` closes every
 call, exits included, if fun custody ever falls below the funSUI supply, and every
 entry point (including `donate_sui`, which credits blast custody) refreshes, and so
-aborts, first. Second, an upgrade whose bytecode compiles a wrong `NEXT_PACKAGE_VERSION`
-can never be finalized again.
+aborts, first. Second, the upgrade finalizer runs the outgoing bytecode: a PTB cannot call
+the package its own `Upgrade` command creates. It therefore advances the generation to
+the old bytecode's compiled next value. Bytecode that forgot to raise `PACKAGE_VERSION`
+then rejects every gated call, and because authorization was itself gated, no bytecode
+could install a fix. Bytecode with a wrong `NEXT_PACKAGE_VERSION` can never be finalized
+again ([#169](https://github.com/interest-protocol/blast-v2-contracts/issues/169)).
 
 ## Decision
 
@@ -59,6 +63,19 @@ slot's own schedule/apply path and wait the old notice. `restrict_to_additive` i
 removed; no call narrows the policy. `NEXT_PACKAGE_VERSION` is derived as
 `PACKAGE_VERSION + 1`, so no bytecode can compile a cutover target other than the
 next generation.
+
+**Repair without the generation.** A third action, `Repair(digest)`, installs code
+without advancing the generation, so a release that kept `PACKAGE_VERSION` can be
+corrected by bytecode that compiles the stored generation. `schedule_repair`,
+`authorize_repair` and `commit_repair` read no package version, so they stay
+reachable when every bytecode is stale. Each still needs `UpgradeAdmin`, the full
+applied notice, the exact digest and sealed custody. `cancel_upgrade_action` also
+reads no version, so `CancelAdmin` can stop a repair at any time. `authorize_repair`
+sets a transient `repairing` flag that only `commit_repair` accepts and clears, and
+`commit_upgrade_and_advance` rejects it. So an `Upgrade` authorization always
+advances, and only a disclosed repair can install code without advancing. A repair
+does not retire the bytecode it replaces when that bytecode still matches the
+generation; it is meant for a package in which none does.
 
 **Delayed redemption fee.** `Vault.redeem_fee` is a
 `blast_admin::delayed::Delayed<RedeemFeeKey, u64>` created with the compiled
@@ -100,6 +117,10 @@ are renamed: `BlastSuiDepositClaimed.claimed_pool_tokens`,
   be able to leave.
 - **A zero initial fee notice with an unpause guard.** The genesis fee is compiled,
   so setup never needs a zero notice.
+- **Ungated `authorize_upgrade` with a commit that skips the advance when the
+  generation is already ahead.** `blast_admin` exposes no production read of the stored
+  generation, and any stale bytecode could then install code silently without retiring
+  the current one. A named, delayed `Repair` action discloses that intent.
 - **Detecting validator-address reuse on chain.** The pinned framework exposes an
   active validator's pool ID only to test code (`validator_staking_pool_id` and
   `active_validator_by_address` are `#[test_only]`), so ADR 0053's operational
@@ -117,10 +138,10 @@ belong with the independent multisig.
 
 Residual risks that this decision does not close:
 
-- An upgrade whose bytecode keeps `PACKAGE_VERSION` at the deployed generation
-  still bricks every gated call, because the finalizer runs the old bytecode and
-  advances to its compiled next generation. The upgrade runbook requires the bump;
-  the same mechanism affects every package that uses `operational_version`.
+- An upgrade whose bytecode keeps `PACKAGE_VERSION` at the deployed generation still
+  closes every gated call, user exits included, until a repair completes: at least the
+  applied upgrade notice. The upgrade runbook requires the bump, and the same mechanism
+  affects launchpad, presale and migrators, which have no repair path (#169).
 - Validator-address reuse before any vault transaction observes the departure
   closes deposits on the old pool's cached rate (ADR 0053).
 - Each refresh performs native work for both ledgers, so a native abort on one
@@ -130,7 +151,9 @@ Residual risks that this decision does not close:
 
 Move tests cover publication without a shared version, wrap sealing and pausing,
 foreign-cap rejection, notice enforcement for upgrade, immutability and fee
-changes, cancellation of ready actions, wrong-action rejection, notice changes,
+changes, cancellation of ready actions, wrong-action rejection, notice changes, repair
+scheduling, notice, cancellation and authorization with a stale generation, repair and
+upgrade action separation, a repair commit without repair authorization,
 pause scope, guarded release, exits while fully paused, and recovery of a frozen
 vault through `top_up_fun_reserve`. `scripts/check_source_boundaries.sh` and
 `scripts/test_error_registry.sh` run in `scripts/verify.sh`.

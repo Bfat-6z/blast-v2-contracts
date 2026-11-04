@@ -6,8 +6,9 @@
 #   * `deposit_receipt`, whose macro-expanded Display configuration reports
 #     96.67 even though the canonical Display creation and dynamic-object-field
 #     cap handoff execute in package-admin tests; and
-#   * `package_admin`, whose `authorize_upgrade` and `commit_upgrade_and_advance`
-#     bodies cannot execute under test compilation. Sealed custody binds the
+#   * `package_admin`, whose successful `authorize_upgrade`, `authorize_repair`,
+#     `commit_upgrade_and_advance` and `commit_repair` bodies cannot execute under
+#     test compilation. Sealed custody binds the
 #     UpgradeCap to `type_name::original_id<BLAST_SUI_PACKAGE>()`, which is `0x0` before
 #     publication, and the framework refuses to authorize an upgrade for the
 #     zero package id. The complete native authorize/commit/advance matrix is
@@ -45,7 +46,7 @@ for module in blast_events events blast_sui_package blast_sui \
   require_module "$module"
 done
 
-require_module_exact package_admin 88.72
+require_module_exact package_admin 84.78
 
 total="$(grep -oE '% Move Coverage: [0-9]+\.[0-9]+' <<<"$coverage_summary" | grep -oE '[0-9]+\.[0-9]+')"
 if ! awk -v t="$total" 'BEGIN { exit (t >= 97.00) ? 0 : 1 }'; then
