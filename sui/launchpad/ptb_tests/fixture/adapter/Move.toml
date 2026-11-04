@@ -4,6 +4,7 @@ edition = "2024"
 license = "BUSL-1.1"
 
 [dependencies]
+blast_core = { local = "../../../../core" }
 blast_fun = { local = "../../.." }
 
 [addresses]

@@ -5,12 +5,6 @@
 /// Consumer-only native Quote integration; neither production package depends on the other.
 module blast_boosts_composition_tests::quote_composition_tests;
 
-// === Constants ===
-
-const POOL_TICK_SPACING: u32 = 200;
-
-const POOL_FEE_RATE: u64 = 10_000;
-
 // === Test-Only Types ===
 
 /// This module's one-time witness stands in for a generated package's.
@@ -20,7 +14,7 @@ public struct Long2x() has drop;
 
 public struct Short2x() has drop;
 
-public struct Migration() has drop;
+public struct TestVenue() has drop;
 
 // === Tests ===
 
@@ -58,10 +52,10 @@ fun quote_round_trip<Quote>(admit_exact: bool) {
     } else {
         config.set_quote_allowed<BlastBoost<Long2x>>(&version, &listing_admin, true);
     };
-    config.schedule_migration_witness<Migration>(&version, &adapter_admin, &clock);
-    config.apply_migration_witness<Migration>(&version, &clock);
+    config.schedule_venue<TestVenue>(&version, &adapter_admin, &clock);
+    config.apply_venue<TestVenue>(&version, &clock);
     let runtime = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
-    let ticket = launch_ticket::new(
+    let (ticket, treasury_cap) = launch_ticket::new(
         test_utils::create_one_time_witness<QUOTE_COMPOSITION_TESTS>(),
         9,
         b"MEME".to_string(),
@@ -75,13 +69,12 @@ fun quote_round_trip<Quote>(admit_exact: bool) {
     );
     scenario.next_tx(@0xa);
     let mut currency = scenario.take_from_address<Currency<QUOTE_COMPOSITION_TESTS>>(@0xc);
-    let mut initializer = launch::new<_, Quote, _>(
+    let mut initializer = launch::new<_, Quote>(
         ticket,
+        treasury_cap,
         &version,
         &config,
-        Migration(),
-        POOL_TICK_SPACING,
-        POOL_FEE_RATE,
+        migration::issue_ticket(TestVenue()),
     );
     initializer.set_virtual_quote(&version, 5_000_000);
     initializer.set_graduation_target(&version, 25_000_000);
@@ -119,8 +112,8 @@ fun default_allocation_plan(): AllocationPlan {
     allocation::plan(bps::new(8_000), bps::new(2_000), bps::new(10_000), vector[])
 }
 
-fun default_fee_split(): allocation::FeeSplit {
-    allocation::fee_split(bps::new(10_000), bps::new(0), bps::new(0), bps::new(0), vector[])
+fun default_fee_split(): FeeSplit {
+    fee_split::new(vector[fee_split::route(fee_split::owner_destination(), bps::new(10_000))])
 }
 
 // Compile-Only Composition Contracts
@@ -249,9 +242,10 @@ public fun mint_and_redeem<Product, Collateral>(
 
 use blast_admin::blast_acl::{Self, AdminWitness};
 
+use blast_core::{bps, fee_split::{Self, FeeSplit}, migration};
+
 use blast_fun::{
     allocation::{Self, AllocationPlan},
-    bps,
     creator_authority,
     launch::{Self, Launch},
     launch_config::{Self, LaunchConfig},
