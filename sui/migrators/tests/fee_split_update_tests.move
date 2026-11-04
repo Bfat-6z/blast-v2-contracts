@@ -83,8 +83,8 @@ public struct ExpectedAutoLiquidityAdded has copy, drop {
     vault_id: ID,
     meme_amount: u64,
     quote_amount: u64,
-    meme_pending: u64,
-    quote_pending: u64,
+    auto_lp_meme_pending: u64,
+    auto_lp_quote_pending: u64,
 }
 
 /// Independently encoded `CreatorFeesClaimed` in ABI order.
@@ -245,6 +245,18 @@ fun the_live_cap_is_checked_before_the_proposal() {
 
     destroy(retired);
     f.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EWrongLaunch, location = blast_fun_migrators::vault)]
+fun another_launch_of_the_same_pair_cannot_govern_the_vault() {
+    let mut f = start(creator_and_a());
+    let cap = f.claim_curve_fee_cap();
+    let other = f.open_unshared_launch();
+
+    f.schedule_split_against(&other, &cap, rewards_and_b());
+
+    abort
 }
 
 #[test]
@@ -626,6 +638,25 @@ fun claim_curve_fee_cap(self: &mut FeeSplitFixture): CurveFeeCap<FEE_SPLIT_UPDAT
     curve_fee_cap
 }
 
+/// Opens a second launch of the fixture's Meme and Quote that no vault was created for.
+fun open_unshared_launch(self: &mut FeeSplitFixture): Launch<FEE_SPLIT_UPDATE_TESTS, QUOTE> {
+    self.scenario.next_tx(ADMIN);
+    let mut config = launch_config::new_zero_fees_for_testing(self.scenario.ctx());
+    config.admit<QUOTE, Venue>(&self.version, self.scenario.ctx());
+    let (launch, currency) = self.scenario.open_launch<_, QUOTE, _>(
+        test_utils::create_one_time_witness<FEE_SPLIT_UPDATE_TESTS>(),
+        &self.version,
+        &config,
+        Venue(),
+        creator_and_a(),
+        false,
+    );
+    destroy(config);
+    destroy(currency);
+
+    launch
+}
+
 /// Retires the live curve-fee cap and delivers a fresh one to the creator.
 fun apply_curve_fee_cap_update(self: &mut FeeSplitFixture) {
     self.scenario.next_tx(ADMIN);
@@ -704,6 +735,16 @@ fun schedule_split(
         .vault
         .schedule_fee_split(&self.migrators_version, &launch, cap, proposed, delay, &self.clock);
     test_scenario::return_shared(launch);
+}
+
+/// Schedules on the fixture's vault while presenting `launch`, which may be another launch.
+fun schedule_split_against(
+    self: &mut FeeSplitFixture,
+    launch: &Launch<FEE_SPLIT_UPDATE_TESTS, QUOTE>,
+    cap: &CurveFeeCap<FEE_SPLIT_UPDATE_TESTS>,
+    proposed: FeeSplit,
+) {
+    self.vault.schedule_fee_split(&self.migrators_version, launch, cap, proposed, 0, &self.clock);
 }
 
 fun cancel_split(self: &mut FeeSplitFixture, cap: &CurveFeeCap<FEE_SPLIT_UPDATE_TESTS>) {
@@ -829,8 +870,8 @@ fun assert_auto_liquidity_added(
                 vault_id: object::id(&self.vault),
                 meme_amount,
                 quote_amount,
-                meme_pending,
-                quote_pending,
+                auto_lp_meme_pending: meme_pending,
+                auto_lp_quote_pending: quote_pending,
             },
         ),
     );

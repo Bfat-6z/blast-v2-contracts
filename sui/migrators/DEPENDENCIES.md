@@ -227,12 +227,14 @@ here instead.
 ## Published venue packages
 
 Re-verified on mainnet on 2026-09-02; Cetus CLMM re-pinned to revision 15 and
-re-verified on 2026-09-22.
+re-verified on 2026-09-22. All rows, Cetus LP Burn included, passed
+`scripts/check_mainnet_abi.mjs` on 2026-11-04.
 
 | Venue | Named address | Original package id | Current package id | Version | Package digest | Previous transaction |
 | --- | --- | --- | --- | --- | --- | --- |
 | Bluefin Spot | `bluefin_spot` | `0x3492c874c1e3b3e2984e8c41b589e642d4d0a5d6459e5a9cfc2d52fd7c89c267` | `0xd075338d105482f1527cbfd363d6413558f184dec36d9138a70261e87f486e9c` | 17 | `4tyboYqrPbZzN6V5Lh2TccW8j9nbH65mJeQFynoQGxut` | `CShZDVqJQrXm4SYiCgDe49kKnFzadwhFV5viqHLgRfaX` |
 | Cetus CLMM | `cetus_clmm` | `0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb` | `0x260693ec785a6e6c9d81d58c7d2ff72f1288ae0fa6a9725abe05a6478b11f084` | 15 | `9rZP5D79m4Yfq9fvtPujtpvU5rhfiYm1JS6LaxcMZVSu` | `5sSoTfTiti8kXjJhZeYuFWFcxxvjbZpFQ96rZ3dzeQbC` |
+| Cetus LP Burn | `lp_burn` | `0x12d73de9a6bc3cb658ec9dc0fe7de2662be1cea5c76c092fcc3606048cdbac27` | `0xc4aabc874f5060d3147d8f74c14e3a8a1f9f8d92edea138a51635395ed167cd9` | 8 | `77pAM8TdzRbHqA4b5ccyLQHZzNNhj3k15cZMtD37qLHH` | `6m7WqScGvn4M6n5k9HE5241wGNW8izpdSCs69Smy3EKy` |
 
 ## Committed module fingerprints
 
@@ -244,22 +246,27 @@ Only modules that declare an adapter-consumed type or function are fingerprinted
 | `bluefin_spot` | `config` | `e896bcbdab23bf5c04eb38b12306f8d6ced8bb9194c789cd1f7f09c78e595cab` |
 | `bluefin_spot` | `pool` | `d1436b0837eab8912797b91ed68755ad6e4228243f188a43c42ea040e844e97c` |
 | `bluefin_spot` | `position` | `ea83d3b9a65c7f62579dd0a902ddad8ade46cec277e5781ab9e52783c48caaec` |
+| `bluefin_spot` | `tick` | `2ac4cbe4fa1270ac16e3ffa4716fd745fef0a480dd9685947e17539b269a10f8` |
+| `cetus_clmm` | `clmm_math` | `851de164740b305acc2422452e30b34fff80f366113a286719c4ee8f25d41e6f` |
 | `cetus_clmm` | `config` | `d0575fcd8fa5e6d63a779a19fbc1ee276459d151d8045bc7e7a9f5f380adfad5` |
 | `cetus_clmm` | `factory` | `4cd33aca821e17cccb0004e3c78ec6033b7fec0360fdf17c03393e976efa5e9b` |
 | `cetus_clmm` | `pool` | `059cbeeb4502c7e54b1a9ada73709505f9572f4c80c441c1c31fbee64c32c7a1` |
 | `cetus_clmm` | `pool_creator` | `23c78096ed45feda5349e098d9827f37cee0fce662544e98ea28de5f6e8c57b6` |
 | `cetus_clmm` | `position` | `78f71fd13a5ab6528509d1a2ceb279e4d6616cd8e6877baf4a5ee25627789cc3` |
+| `lp_burn` | `lp_burn` | `653b9673273bd5f5e237b3105959410e757abc11b08535481a40c6ae0d88930b` |
 
 ## Normalized ABI coverage
 
 | Venue | Modules | Functions | Structs | Type origins |
 | --- | --- | --- | --- | --- |
-| Bluefin Spot | 3 | 8 | 3 | 3 |
-| Cetus CLMM | 5 | 9 | 5 | 5 |
-| **Total** | **8** | **17** | **8** | **8** |
+| Bluefin Spot | 4 | 15 | 5 | 5 |
+| Cetus CLMM | 6 | 21 | 7 | 7 |
+| Cetus LP Burn | 1 | 2 | 2 | 2 |
+| **Total** | **11** | **38** | **14** | **14** |
 
-The list contains only Bluefin Spot and Cetus CLMM functions and structs the
-adapters actually reference.
+The list contains only the Bluefin Spot, Cetus CLMM and Cetus LP Burn functions
+and structs the adapters actually reference; `node scripts/check_mainnet_abi.mjs`
+prints these counts.
 
 ## Source pins
 

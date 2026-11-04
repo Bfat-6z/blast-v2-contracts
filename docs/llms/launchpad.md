@@ -324,13 +324,14 @@ Emits `blast_fun::events::CreatorCapsClaimed`.
   wallet. The attestation is the BCS encoding of `(expiry_ms: u64, signature: vector<u8>)`, 73 bytes
   for a 64-byte signature, with nothing after it. The call checks `Clock` time `<= expiry_ms` and
   verifies the Ed25519 signature against every admitted key in `RuntimeConfig.creator_claim_signers`
-  (any one may have signed; with none admitted, every account claim fails) over the raw
-  BCS bytes of `creator_authority::CreatorClaimMessage`, whose fields in order are `meme`,
+  (any one may have signed; with none admitted, every account claim fails) over the 28 ASCII
+  bytes of the domain tag `b"blast_fun::creator_claim::v1"` followed by the BCS bytes of
+  `creator_authority::CreatorClaimMessage`, whose fields in order are `meme`,
   `account_commitment`, `claimant`, and `expiry_ms`. Here `meme` is the Meme `TypeName` with
   original package IDs (64 hex characters, no `0x`, then `::module::NAME`) and `claimant` is the
-  sender. The signed bytes are: the type-name string's ULEB128 length and ASCII bytes, `0x20` and
-  the 32-byte commitment, the 32-byte claimant address, then `expiry_ms` as 8 little-endian bytes.
-  There is no intent prefix or extra hash.
+  sender. The signed bytes are: the tag (no length prefix), the type-name string's ULEB128 length
+  and ASCII bytes, `0x20` and the 32-byte commitment, the 32-byte claimant address, then
+  `expiry_ms` as 8 little-endian bytes. There is no Sui intent prefix or extra hash.
 
 #### Claim creator trade fees (CurveFeeCap holder)
 
@@ -797,9 +798,9 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::LaunchTicketCreated` | coin publish | `ticket_id`, `meme` type, `decimals`, `metadata_cap_id`, `creator`, `burnable`, `sell_burn_bps` |
 | `blast_fun::events::LaunchCreated` | `launch::finalize` | `launch_id`, `ticket_id` (join to the ticket for the Meme type), `quote` type, `migration_witness`, pool tier, `lp_fee_split`, `virtual_quote`, `graduation_target`, both fee rates, the full `allocation_plan` with Blast's shares, `opening_round_ms`, `creation_fee`, `partner_id` |
 | `blast_fun::events::LaunchShared` | `launch::share` | `public_start_ms`; round end is this plus `opening_round_ms` |
-| `blast_fun::events::OpeningRoundJoined` | join | `quote` added and `bids` (pot total); the bidder is the transaction sender |
-| `blast_fun::events::OpeningRoundSettled` | settle | `bids`, `meme` bought, `quote` held for refund |
-| `blast_fun::events::OpeningRoundDelivered` | deliver | `bidder`, `bid`, `meme`, `quote` paid |
+| `blast_fun::events::OpeningRoundJoined` | join | `quote_amount` added and `bids` (pot total); the bidder is the transaction sender |
+| `blast_fun::events::OpeningRoundSettled` | settle | `bids`, `meme_amount` bought, `quote_amount` held for refund |
+| `blast_fun::events::OpeningRoundDelivered` | deliver | `bidder`, `bid`, `meme_amount`, `quote_amount` paid |
 | `blast_fun::events::Bought` | buy, settlement | `quote_in` (gross used), `meme_out_gross`, `meme_out_net`, `quote_refund`, the four fee parts, reserves after; graduated when `real_quote_reserve >= graduation_target`. A `Bought` before `LaunchShared` in the creation transaction is the creator's buy; the one beside `OpeningRoundSettled` is the pot's |
 | `blast_fun::events::Sold` | sell | `meme_in_gross`, `pending_burn` added, `quote_out_gross`, the four fee parts, reserves after |
 | `blast_fun::events::CreatorCapsClaimed` | creator claim | `meme` type and both cap IDs (no launch ID: one launch per Meme type) |
@@ -807,9 +808,9 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::MemeMetadataUpdated` | metadata setters | `launch_id`, current `name`, `description`, `icon_url` |
 | `blast_fun::events::CreatorFeesClaimed` | creator fee claim | `launch_id`, `meme_amount`, `quote_amount` |
 | `blast_fun::events::ProtocolFeesClaimed` | Blast fee claims | `treasury` and its Meme, Quote, SUI amounts; partner amounts (0 without a partner) |
-| `blast_fun::events::MigrationAllocationPaid` | migration | one per recipient: `destination`, `meme`, `quote` |
+| `blast_fun::events::MigrationAllocationPaid` | migration | one per recipient: `destination`, `meme_amount`, `quote_amount` |
 | `blast_fun::events::ProtocolFeesAccrued` | migration | Blast's one-time Meme and Quote allocation |
-| `blast_fun::events::Migrated` | migration | `meme`, `quote` handed to the pool, `disposed_meme`, `total_supply_after` |
+| `blast_fun::events::Migrated` | migration | `meme_amount`, `quote_amount` handed to the pool, `disposed_meme`, `total_supply_after` |
 
 Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSet`,
 `blast_fun::events::PartnerAdded`, `blast_fun::events::PartnerRemoved`. Outside the envelope: every delayed schedule,

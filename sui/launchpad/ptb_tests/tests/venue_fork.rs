@@ -245,7 +245,7 @@ fn buybacks_burn_native_supply(case: Case, exhaust_liquidity: bool) -> Result<()
         ensure!(burn.quote_spent == amount_in, "the burn records actual venue spend");
         ensure!(burn.meme_burned == amount_out, "the entire venue output was burned");
         expected_vault.burn_quote -= amount_in;
-        ensure!(burn.quote_pending == expected_vault.burn_quote);
+        ensure!(burn.burn_quote_pending == expected_vault.burn_quote);
         ensure!(world.vault(&migration)? == expected_vault, "only the pending burn Quote changed");
         ensure!(supply_before.checked_sub(supply(&world)?) == Some(burn.meme_burned), "Meme was removed from native supply");
         ensure!(outcome.coins_created_for(&world.h, SuiAddress::ZERO).is_empty(), "no disposal transfer");
@@ -451,7 +451,7 @@ impl Collection {
             f.recipient_quote,
             match &self.added {
                 Some(a) =>
-                    format!("({}, {}) pending=({}, {})", a.meme_amount, a.quote_amount, a.meme_pending, a.quote_pending),
+                    format!("({}, {}) pending=({}, {})", a.meme_amount, a.quote_amount, a.auto_lp_meme_pending, a.auto_lp_quote_pending),
                 None => "none".into(),
             },
         )
@@ -1158,7 +1158,7 @@ impl World {
         );
 
         let created: Vec<VaultCreated> = self.events(&outcome, "VaultCreated");
-        ensure!(created.len() == 1 && created[0].fee_split == launch.split);
+        ensure!(created.len() == 1 && created[0].fee_split == launch.split && created[0].launch_id == launch.launch);
         let created = &created[0];
         ensure!(created.venue.ends_with(&format!("::{}::Venue", self.case.module())));
         let vault_id = created.vault_id;
@@ -1172,7 +1172,7 @@ impl World {
             liquidity: created.liquidity,
         };
         let vault = self.vault(&m)?;
-        ensure!(vault.pool_id == m.pool && vault.fee_split.value == launch.split);
+        ensure!(vault.pool_id == m.pool && vault.launch_id == launch.launch && vault.fee_split.value == launch.split);
         ensure!(
             (vault.protocol_meme_residual, vault.protocol_quote_residual)
                 == (created.residual_meme, created.residual_quote)
@@ -1507,7 +1507,7 @@ impl World {
         let opened: Vec<AutoLpPositionOpened> = self.events(&outcome, "AutoLpPositionOpened");
         let liquidity_after = self.position_liquidity(m.position)?;
         if let Some(added) = &added {
-            ensure!((added.meme_pending, added.quote_pending) == (after.auto_lp_meme, after.auto_lp_quote));
+            ensure!((added.auto_lp_meme_pending, added.auto_lp_quote_pending) == (after.auto_lp_meme, after.auto_lp_quote));
             ensure!(added.meme_amount > 0 || added.quote_amount > 0);
             let position = if self.case.is_cetus() {
                 // Cetus: the burned position cannot grow, so auto-LP opens its own position once.
@@ -1553,8 +1553,8 @@ impl World {
                 "auto-LP added ({}, {}) to {position}, pending ({}, {}), position liquidity {}",
                 added.meme_amount,
                 added.quote_amount,
-                added.meme_pending,
-                added.quote_pending,
+                added.auto_lp_meme_pending,
+                added.auto_lp_quote_pending,
                 self.position_liquidity(position)?,
             ));
         } else {
@@ -1791,7 +1791,7 @@ impl World {
         ensure!(burned.len() == 1 && burned[0].vault_id == m.vault, "one BuybackBurned");
         let burned = &burned[0];
         ensure!(
-            (burned.quote_spent, burned.quote_pending) == (before.burn_quote, 0),
+            (burned.quote_spent, burned.burn_quote_pending) == (before.burn_quote, 0),
             "the full-range pool takes every waiting Quote"
         );
         ensure!(burned.meme_burned > 0, "the swap returned Meme");
@@ -2332,6 +2332,7 @@ struct Recipient {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 struct Vault {
     id: ObjectID,
+    launch_id: ObjectID,
     pool_id: ObjectID,
     _partner_id: Option<ObjectID>,
     protocol_meme_residual: u64,
@@ -2410,6 +2411,7 @@ struct CetusPoolReserved {
 #[derive(Deserialize)]
 struct VaultCreated {
     vault_id: ObjectID,
+    launch_id: ObjectID,
     pool_id: ObjectID,
     position_id: ObjectID,
     venue: String,
@@ -2447,7 +2449,7 @@ struct BuybackBurned {
     vault_id: ObjectID,
     quote_spent: u64,
     meme_burned: u64,
-    quote_pending: u64,
+    burn_quote_pending: u64,
 }
 
 #[derive(Deserialize)]
@@ -2455,8 +2457,8 @@ struct AutoLiquidityAdded {
     _vault_id: ObjectID,
     meme_amount: u64,
     quote_amount: u64,
-    meme_pending: u64,
-    quote_pending: u64,
+    auto_lp_meme_pending: u64,
+    auto_lp_quote_pending: u64,
 }
 
 #[derive(Deserialize)]

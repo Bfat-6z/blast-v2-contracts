@@ -4139,7 +4139,7 @@ public struct SuperAdminCapDestroyed has copy, drop {
 /// the UID the advancing module held.
 public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, drop {
     container_id: ID,
-    package_id: address,
+    original_package_id: address,
     previous_generation: u64,
     new_generation: u64,
 }
@@ -4148,7 +4148,7 @@ public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop 
     custodian_id: ID,
     publisher_id: ID,
     upgrade_cap_id: ID,
-    package_id: ID,
+    original_package_id: ID,
     native_version: u64,
     policy: u8,
 }
@@ -4156,7 +4156,7 @@ public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop 
 public struct UpgradeAuthorized<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: ID,
+    current_package_id: ID,
     native_version: u64,
     policy: u8,
     digest: vector<u8>,
@@ -4174,7 +4174,7 @@ public struct UpgradeCommitted<phantom PackageMarker: drop> has copy, drop {
 public struct UpgradePolicyRestricted<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: address,
+    original_package_id: address,
     native_version: u64,
     previous_policy: u8,
     new_policy: u8,
@@ -4183,7 +4183,7 @@ public struct UpgradePolicyRestricted<phantom PackageMarker: drop> has copy, dro
 public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: address,
+    original_package_id: address,
     final_native_version: u64,
     final_policy: u8,
 }
@@ -4606,12 +4606,6 @@ public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy 
     self: &mut DelayedMap<K, E, V>,
 )
 
-/// Deletes a map with no pending change and records its end, which also ends every
-/// remaining entry.
-public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
-    self: DelayedMap<K, E, V>,
-)
-
 /// The proposed value, or none when the change clears the entry.
 public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>): Option<V>
 
@@ -4656,12 +4650,6 @@ public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
-}
-
-/// A map was deleted with nothing pending; its remaining entries end with it.
-public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
-    owner: ID,
-    key: K,
 }
 ```
 

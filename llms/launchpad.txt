@@ -498,13 +498,14 @@ Emits `blast_fun::events::CreatorCapsClaimed`.
   wallet. The attestation is the BCS encoding of `(expiry_ms: u64, signature: vector<u8>)`, 73 bytes
   for a 64-byte signature, with nothing after it. The call checks `Clock` time `<= expiry_ms` and
   verifies the Ed25519 signature against every admitted key in `RuntimeConfig.creator_claim_signers`
-  (any one may have signed; with none admitted, every account claim fails) over the raw
-  BCS bytes of `creator_authority::CreatorClaimMessage`, whose fields in order are `meme`,
+  (any one may have signed; with none admitted, every account claim fails) over the 28 ASCII
+  bytes of the domain tag `b"blast_fun::creator_claim::v1"` followed by the BCS bytes of
+  `creator_authority::CreatorClaimMessage`, whose fields in order are `meme`,
   `account_commitment`, `claimant`, and `expiry_ms`. Here `meme` is the Meme `TypeName` with
   original package IDs (64 hex characters, no `0x`, then `::module::NAME`) and `claimant` is the
-  sender. The signed bytes are: the type-name string's ULEB128 length and ASCII bytes, `0x20` and
-  the 32-byte commitment, the 32-byte claimant address, then `expiry_ms` as 8 little-endian bytes.
-  There is no intent prefix or extra hash.
+  sender. The signed bytes are: the tag (no length prefix), the type-name string's ULEB128 length
+  and ASCII bytes, `0x20` and the 32-byte commitment, the 32-byte claimant address, then
+  `expiry_ms` as 8 little-endian bytes. There is no Sui intent prefix or extra hash.
 
 #### Claim creator trade fees (CurveFeeCap holder)
 
@@ -971,9 +972,9 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::LaunchTicketCreated` | coin publish | `ticket_id`, `meme` type, `decimals`, `metadata_cap_id`, `creator`, `burnable`, `sell_burn_bps` |
 | `blast_fun::events::LaunchCreated` | `launch::finalize` | `launch_id`, `ticket_id` (join to the ticket for the Meme type), `quote` type, `migration_witness`, pool tier, `lp_fee_split`, `virtual_quote`, `graduation_target`, both fee rates, the full `allocation_plan` with Blast's shares, `opening_round_ms`, `creation_fee`, `partner_id` |
 | `blast_fun::events::LaunchShared` | `launch::share` | `public_start_ms`; round end is this plus `opening_round_ms` |
-| `blast_fun::events::OpeningRoundJoined` | join | `quote` added and `bids` (pot total); the bidder is the transaction sender |
-| `blast_fun::events::OpeningRoundSettled` | settle | `bids`, `meme` bought, `quote` held for refund |
-| `blast_fun::events::OpeningRoundDelivered` | deliver | `bidder`, `bid`, `meme`, `quote` paid |
+| `blast_fun::events::OpeningRoundJoined` | join | `quote_amount` added and `bids` (pot total); the bidder is the transaction sender |
+| `blast_fun::events::OpeningRoundSettled` | settle | `bids`, `meme_amount` bought, `quote_amount` held for refund |
+| `blast_fun::events::OpeningRoundDelivered` | deliver | `bidder`, `bid`, `meme_amount`, `quote_amount` paid |
 | `blast_fun::events::Bought` | buy, settlement | `quote_in` (gross used), `meme_out_gross`, `meme_out_net`, `quote_refund`, the four fee parts, reserves after; graduated when `real_quote_reserve >= graduation_target`. A `Bought` before `LaunchShared` in the creation transaction is the creator's buy; the one beside `OpeningRoundSettled` is the pot's |
 | `blast_fun::events::Sold` | sell | `meme_in_gross`, `pending_burn` added, `quote_out_gross`, the four fee parts, reserves after |
 | `blast_fun::events::CreatorCapsClaimed` | creator claim | `meme` type and both cap IDs (no launch ID: one launch per Meme type) |
@@ -981,9 +982,9 @@ the transaction sender; take it from the transaction.
 | `blast_fun::events::MemeMetadataUpdated` | metadata setters | `launch_id`, current `name`, `description`, `icon_url` |
 | `blast_fun::events::CreatorFeesClaimed` | creator fee claim | `launch_id`, `meme_amount`, `quote_amount` |
 | `blast_fun::events::ProtocolFeesClaimed` | Blast fee claims | `treasury` and its Meme, Quote, SUI amounts; partner amounts (0 without a partner) |
-| `blast_fun::events::MigrationAllocationPaid` | migration | one per recipient: `destination`, `meme`, `quote` |
+| `blast_fun::events::MigrationAllocationPaid` | migration | one per recipient: `destination`, `meme_amount`, `quote_amount` |
 | `blast_fun::events::ProtocolFeesAccrued` | migration | Blast's one-time Meme and Quote allocation |
-| `blast_fun::events::Migrated` | migration | `meme`, `quote` handed to the pool, `disposed_meme`, `total_supply_after` |
+| `blast_fun::events::Migrated` | migration | `meme_amount`, `quote_amount` handed to the pool, `disposed_meme`, `total_supply_after` |
 
 Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSet`,
 `blast_fun::events::PartnerAdded`, `blast_fun::events::PartnerRemoved`. Outside the envelope: every delayed schedule,
@@ -1202,6 +1203,8 @@ Calls also take objects from other packages:
 
 #### What an `LpVault` holds
 
+- `launch_id`: the launch whose migration created the vault. `claim_creator_fees`,
+  `schedule_fee_split` and `cancel_fee_split` abort with `EWrongLaunch` for any other launch.
 - The venue position, as a dynamic object field under `blast_fun_migrators::vault::PositionKey`
   (`PositionKey<Venue>`), where `Venue` is `blast_fun_migrators::cetus::Venue` or
   `blast_fun_migrators::bluefin::Venue`. On Cetus this is the `CetusLPBurnProof` of the burned
@@ -1503,7 +1506,7 @@ units), and `Clock`. It checks the pool is the vault's (`EPositionPoolMismatch`)
 `burn_quote` holds), swaps it for Meme in the vault's pool up to the widest price limit, aborts with
 `EBuybackBelowMinimum` if the Meme bought is below `min_meme_out`, burns that Meme (or sends it to
 `@0x0` when the supply is not burn-only, as collections do), returns any Quote the pool did not
-take to `burn_quote`, and emits `BuybackBurned`, whose `quote_pending` is the burn Quote still
+take to `burn_quote`, and emits `BuybackBurned`, whose `burn_quote_pending` is the burn Quote still
 waiting afterwards. The admin may spend `burn_quote` in several smaller buybacks. The admin sets
 `min_meme_out` from an off-chain price, because anyone can move the pool price inside a
 transaction.
@@ -1832,7 +1835,7 @@ economics: the proposal becomes applied only when its apply call succeeds.
   `burn_bps` (each a `Bps` wrapping one u64) and `recipients` (each with `destination` and `bps`).
   The position is a dynamic object field of the vault: list its dynamic fields, or read the child
   object by the ID in `VaultCreated.position_id`.
-- **Find a launch's vault:** scan `VaultCreated` events for its `meme` type name, or read the
+- **Find a launch's vault:** scan `VaultCreated` events for its `launch_id`, or read the
   objects the migrate transaction created. Each Meme type has exactly one launch, so `LpVault<Meme,
   Quote>` is unique per Meme.
 - **Blast's live share for a coin:** `LpFeePolicy.coins` is a
@@ -1886,18 +1889,18 @@ admin's delayed-module events instead; see "Delayed administration" for their ke
 | Event | Emitted by | Fields |
 | --- | --- | --- |
 | `CetusPoolReserved` | Cetus `new` | `meme`, `quote` (type names), `pool_creation_cap_id`, `tick_spacing` |
-| `VaultCreated` | `migrate` | `vault_id`, `pool_id`, `position_id`, `venue`, `meme`, `quote` (type names), `residual_meme`, `residual_quote`, `liquidity`, `fee_split` |
+| `VaultCreated` | `migrate` | `vault_id`, `launch_id`, `pool_id`, `position_id`, `venue`, `meme`, `quote` (type names), `residual_meme`, `residual_quote`, `liquidity`, `fee_split` |
 | `FeesCollected` | nonzero collection | `vault_id`, `gross_meme`, `gross_quote`, `protocol_destination` (none when held for a partner), `protocol_meme`, `protocol_quote`, `creator_*`, `auto_lp_*`, `rewards_*`, `burn_meme` (burned), `burn_quote` (waits), `recipient_meme`, `recipient_quote` (split order) |
 | `AutoLpPositionOpened` | first Cetus collection with both auto-LP balances nonzero | `vault_id`, `position_id` |
-| `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `meme_pending`, `quote_pending` |
+| `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `auto_lp_meme_pending`, `auto_lp_quote_pending` |
 | `CreatorFeesClaimed` | creator LP-fee claim | `vault_id`, `meme_amount`, `quote_amount` |
-| `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `quote_pending` |
+| `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `burn_quote_pending` |
 | `RoundPublished` | round publication (after `delayed_action::ActionApplied` for the round slot) | `vault_id`, `round_id`, `number`, `start_checkpoint`, `end_checkpoint`, `claim_deadline_at_ms`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`, `quote_amount`, `meme_unallocated`, `quote_unallocated`, `treasury`, `gas_reserve_amount` |
 | `GasReserveSettled` | gas settlement | `vault_id`, `round_id`, `number`, `treasury`, `reimbursement_amount`, `reserve_returned`, `quote_unallocated` |
 | `RoundClosed` | deadline recovery | `vault_id`, `round_id`, `number`, `meme_returned`, `quote_returned`, `gas_reserve_returned` |
 | `RewardPaid` | reward claim | `round_id`, `index`, `beneficiary`, `meme_amount`, `quote_amount`, `meme_remaining`, `quote_remaining` |
 | `ProtocolFeesClaimed` | residual claim | `vault_id`, `meme`, `quote` (type names), `claimant`, `meme_amount`, `quote_amount` |
-| `ProtocolLpFeesClaimed` | partner payout | `vault_id`, `protocol_destination`, `protocol_meme`, `protocol_quote`, `partner_meme`, `partner_quote` |
+| `ProtocolLpFeesClaimed` | partner payout | `vault_id`, `protocol_destination`, `blast_meme`, `blast_quote` (Blast's part, net of the partner's), `partner_meme`, `partner_quote` |
 
 Event order inside one call: a collection emits `FeesCollected`, then possibly
 `AutoLpPositionOpened`, then possibly `AutoLiquidityAdded`; a split update adds
@@ -1910,9 +1913,8 @@ is nonzero), and `blast_fun::events::Migrated` before `VaultCreated`.
 
 #### Replaying a vault from events
 
-Start a vault at `VaultCreated`: its `fee_split`, residuals, `pool_id`, `position_id`.
-`VaultCreated` has no launch ID; link it through `Migrated.launch_id` in the same transaction, or
-through the `meme` type. On Cetus, `position_id` is the `CetusLPBurnProof`, not the burned Cetus
+Start a vault at `VaultCreated`: its `launch_id`, `fee_split`, residuals, `pool_id`,
+`position_id`. On Cetus, `position_id` is the `CetusLPBurnProof`, not the burned Cetus
 position. Position principal is `Migrated.meme − residual_meme` and `Migrated.quote −
 residual_quote`. Then reduce:
 
@@ -1920,14 +1922,14 @@ residual_quote`. Then reduce:
   `burn_meme` left the supply (or went to `@0x0`); if `protocol_destination` is none, add
   `protocol_*` to the held partner balance; recipient `i` of the split in force received
   `recipient_meme[i]` and `recipient_quote[i]`.
-- `AutoLiquidityAdded`: auto-LP balances become `meme_pending`/`quote_pending`; principal rises by
+- `AutoLiquidityAdded`: auto-LP balances become `auto_lp_meme_pending`/`auto_lp_quote_pending`; principal rises by
   the added amounts. It can appear without `FeesCollected`, when only earlier leftovers were added.
 - `delayed::DelayedApplied` with key `blast_fun_migrators::vault::FeeSplitKey` and the vault's ID as
   `owner`: adopt its `value` as the split.
 - `CreatorFeesClaimed`, `ProtocolFeesClaimed`, `ProtocolLpFeesClaimed`: the matching balances become
   zero (each claim takes everything). `CreatorFeesClaimed` names no recipient; the coins go wherever
   the PTB sends them.
-- `BuybackBurned`: `burn_quote` becomes `quote_pending`; `meme_burned` left the supply (or went to
+- `BuybackBurned`: `burn_quote` becomes `burn_quote_pending`; `meme_burned` left the supply (or went to
   `@0x0`).
 - `delayed_action::ActionScheduled`, `ActionCancelled`, `ActionApplied` with key
   `blast_fun_migrators::vault::RoundPublicationKey`: track the vault's scheduled round or notice
@@ -1961,6 +1963,7 @@ Blast admin abort with plain numeric codes from the named module.
 | `migrate` | `EZeroLiquidity` (2, module `vault`) | The seed produced no liquidity; nothing to fix by retrying. |
 | creator claim, split update | code 22 from the launchpad's `launch` module | Use the launch's live `CurveFeeCap`. |
 | creator claim | `ENoCreatorFees` (1, module `vault`) | Collect first, or wait for fees. |
+| creator claim, split schedule or cancel | `EWrongLaunch` (15, module `vault`) | Pass the launch whose ID is the vault's `launch_id`. |
 | split update, policy | code 20 (`EUnchanged`) from Blast admin's `delayed` module (`delayed_map` for a coin override, clear or coin notice; `delayed_action` for the upgrade notice) | Change the value or the notice; clear only a coin that has a pair. |
 | apply, cancel (split, policy, upgrades) | codes 17 (`ENotReady`), 18 (`ENoPending`), 22 (`EWrongChange`) from Blast admin: 17 from `delayed`, or from `delayed_map` for an early coin override or clear; 18 from the type's own module (`delayed`, `delayed_map` or `delayed_action`); 22 from `delayed_action` | Wait for `ready_at_ms`; check a proposal is pending; use the call matching the pending action or notice change. |
 | split construction | codes 6, 7, 8, 24 from the launchpad's `allocation` module; 0 from its `bps` module | Nonzero destination, sum exactly 10,000, at most 16 recipients, no duplicates, each BPS ≤ 10,000. |
@@ -2021,7 +2024,7 @@ The Cetus migration liquidity is burned through Cetus LP Burn. The Bluefin posit
 auto-LP position have no removal path in the current code, which an upgrade of this package could
 change.
 
-**How do I find a launch's vault and pool?** Scan `VaultCreated` events for the `meme` type name;
+**How do I find a launch's vault and pool?** Scan `VaultCreated` events for the `launch_id`;
 the match gives `vault_id`, `pool_id`, and `position_id`. The vault's type is
 `LpVault<Meme, Quote>`, and its `pool_id` field also names the pool.
 
@@ -2705,7 +2708,7 @@ public struct BlastMetadataCap<phantom Meme> has key, store {
     id: UID,
 }
 
-/// The BCS message the Blast backend signs for an account claim.
+/// The BCS message the Blast backend signs for an account claim, after `CREATOR_CLAIM_DOMAIN`.
 public struct CreatorClaimMessage has drop {
     meme: TypeName,
     account_commitment: vector<u8>,
@@ -2729,6 +2732,10 @@ public fun destroy_curve_fee_cap<Meme>(self: CurveFeeCap<Meme>)
 /// reassigns the cap.
 public fun destroy_metadata_cap<Meme>(self: BlastMetadataCap<Meme>)
 ```
+
+#### Constants
+
+- `CREATOR_CLAIM_DOMAIN: vector<u8> = b"blast_fun::creator_claim::v1"`: Prefixes every signed account-claim message, so the backend key's signature over a claim cannot verify as another message of the same BCS shape.
 
 ### `blast_fun::events`
 
@@ -2825,20 +2832,21 @@ public struct LaunchShared has copy, drop {
     public_start_ms: u64,
 }
 
-/// Quote joined a launch's opening round from the sender; `bids` is the pot after it.
+/// `quote_amount` joined a launch's opening round from the sender; `bids` is the pot after it.
 public struct OpeningRoundJoined has copy, drop {
     launch_id: ID,
-    quote: u64,
+    quote_amount: u64,
     bids: u64,
 }
 
-/// The opening round closed: its `bids` bought `meme` from the curve, in the same transaction's
-/// `Bought` when there is one, and left `quote` to refund. Both are delivered pro rata.
+/// The opening round closed: its `bids` bought `meme_amount` from the curve, in the same
+/// transaction's `Bought` when there is one, and left `quote_amount` to refund. Both are delivered
+/// pro rata.
 public struct OpeningRoundSettled has copy, drop {
     launch_id: ID,
     bids: u64,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
 }
 
 /// `bidder`'s share of the opening round, for its `bid`, was sent to it.
@@ -2846,8 +2854,8 @@ public struct OpeningRoundDelivered has copy, drop {
     launch_id: ID,
     bidder: address,
     bid: u64,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
 }
 
 /// A curve purchase; reserves are after the purchase. Purchases before `LaunchShared` are the
@@ -2885,16 +2893,16 @@ public struct Sold has copy, drop {
 public struct MigrationAllocationPaid has copy, drop {
     launch_id: ID,
     destination: address,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
 }
 
-/// Migration committed: the adapter received `meme` and `quote` for the pool, and `disposed_meme`
-/// was burned (or sent to `@0x0` under a fixed supply).
+/// Migration committed: the adapter received `meme_amount` and `quote_amount` for the pool, and
+/// `disposed_meme` was burned (or sent to `@0x0` under a fixed supply).
 public struct Migrated has copy, drop {
     launch_id: ID,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
     disposed_meme: u64,
     total_supply_after: u64,
 }
@@ -3703,8 +3711,8 @@ public fun make_immutable(
 
 /// Clears the requested pause bits once every launchpad notice is guarded: nonzero, with no
 /// pending change that would set one to zero and no pending admission. A notice left at its
-/// zero publication value therefore blocks release instead of going live. Claims, delivery and
-/// settlement never require unpausing.
+/// zero publication value therefore blocks release instead of going live. Claims and opening-round
+/// delivery never require unpausing; settling an opening round needs the trading bit clear.
 public fun unpause(
     self: &PackageAdmin,
     package_version: &mut blast_fun::PackageVersion,
@@ -3895,6 +3903,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 /// it holds from migration.
 public struct VaultCreated has copy, drop {
     vault_id: ID,
+    launch_id: ID,
     pool_id: ID,
     position_id: ID,
     venue: TypeName,
@@ -3934,17 +3943,17 @@ public struct AutoLiquidityAdded has copy, drop {
     vault_id: ID,
     meme_amount: u64,
     quote_amount: u64,
-    meme_pending: u64,
-    quote_pending: u64,
+    auto_lp_meme_pending: u64,
+    auto_lp_quote_pending: u64,
 }
 
 /// A buyback admin swapped `quote_spent` of the burn Quote for `meme_burned` Meme and burned it;
-/// `quote_pending` still waits.
+/// `burn_quote_pending` still waits.
 public struct BuybackBurned has copy, drop {
     vault_id: ID,
     quote_spent: u64,
     meme_burned: u64,
-    quote_pending: u64,
+    burn_quote_pending: u64,
 }
 
 /// The vault opened the separate position auto-LP adds to.
@@ -4022,12 +4031,12 @@ public struct ProtocolFeesClaimed has copy, drop {
 }
 
 /// A partnered vault paid the Blast LP fees it held: `partner_meme` and `partner_quote` to the
-/// launch's partner, and the rest, `protocol_meme` and `protocol_quote`, to `protocol_destination`.
+/// launch's partner, and the rest, `blast_meme` and `blast_quote`, to `protocol_destination`.
 public struct ProtocolLpFeesClaimed has copy, drop {
     vault_id: ID,
     protocol_destination: address,
-    protocol_meme: u64,
-    protocol_quote: u64,
+    blast_meme: u64,
+    blast_quote: u64,
     partner_meme: u64,
     partner_quote: u64,
 }
@@ -4803,6 +4812,8 @@ public struct RoundTerms has copy, drop, store {
 /// publish it; at most one round is scheduled at a time.
 public struct LpVault<phantom Meme, phantom Quote> has key {
     id: UID,
+    /// The launch whose migration created the vault; every launch-gated call checks it.
+    launch_id: ID,
     pool_id: ID,
     /// The Blast partner the launch named, paid its cut of Blast's LP fees. It never changes.
     partner_id: Option<ID>,
@@ -4896,6 +4907,7 @@ public fun claim_creator_fees<Meme, Quote>(
 | `EZeroClaimWindow` | 12 | Claim window must be positive. |
 | `EWrongRoundProposal` | 13 | The pending round publication is the other kind: a round, or a notice change. |
 | `EGasReserveTooLarge` | 14 | Gas reserve must be at most 10% of the round's holder Quote. |
+| `EWrongLaunch` | 15 | The launch is not the one whose migration created this vault. |
 
 #### Constants
 
@@ -5230,7 +5242,7 @@ public struct SuperAdminCapDestroyed has copy, drop {
 /// the UID the advancing module held.
 public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, drop {
     container_id: ID,
-    package_id: address,
+    original_package_id: address,
     previous_generation: u64,
     new_generation: u64,
 }
@@ -5239,7 +5251,7 @@ public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop 
     custodian_id: ID,
     publisher_id: ID,
     upgrade_cap_id: ID,
-    package_id: ID,
+    original_package_id: ID,
     native_version: u64,
     policy: u8,
 }
@@ -5247,7 +5259,7 @@ public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop 
 public struct UpgradeAuthorized<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: ID,
+    current_package_id: ID,
     native_version: u64,
     policy: u8,
     digest: vector<u8>,
@@ -5265,7 +5277,7 @@ public struct UpgradeCommitted<phantom PackageMarker: drop> has copy, drop {
 public struct UpgradePolicyRestricted<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: address,
+    original_package_id: address,
     native_version: u64,
     previous_policy: u8,
     new_policy: u8,
@@ -5274,7 +5286,7 @@ public struct UpgradePolicyRestricted<phantom PackageMarker: drop> has copy, dro
 public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: address,
+    original_package_id: address,
     final_native_version: u64,
     final_policy: u8,
 }
@@ -5697,12 +5709,6 @@ public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy 
     self: &mut DelayedMap<K, E, V>,
 )
 
-/// Deletes a map with no pending change and records its end, which also ends every
-/// remaining entry.
-public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
-    self: DelayedMap<K, E, V>,
-)
-
 /// The proposed value, or none when the change clears the entry.
 public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>): Option<V>
 
@@ -5747,12 +5753,6 @@ public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
-}
-
-/// A map was deleted with nothing pending; its remaining entries end with it.
-public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
-    owner: ID,
-    key: K,
 }
 ```
 

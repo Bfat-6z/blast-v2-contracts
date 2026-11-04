@@ -127,9 +127,9 @@ fun publication_accepts_a_new_plan_bound_to_the_changed_treasury() {
              f.scenario.ctx());
     });
     fixture.publish_budget_to(970, 30, @0xD);
-    assert_eq!(fixture.vault_balances(), vector[0, 0]);
+    assert_eq!(fixture.holder_quote(), 0);
     fixture.next_tx!(HOLDER, |f| f.close());
-    assert_eq!(fixture.vault_balances(), vector[0, 1_000]);
+    assert_eq!(fixture.holder_quote(), 1_000);
     fixture.end();
 
     std::unit_test::destroy(package_version);
@@ -142,7 +142,7 @@ fun settlement_pays_measured_cost_returns_unused_reserve_and_preserves_holder_cu
         .scenario
         .ctx());
     fixture.publish(30);
-    assert_eq!(fixture.vault_balances(), vector[0, 0]);
+    assert_eq!(fixture.holder_quote(), 0);
     fixture.next_tx!(OWNER, |f| {
         let mut round = f.take_round();
         let (meme, quote, reserve) = round.reserve_balances_for_testing();
@@ -156,7 +156,7 @@ fun settlement_pays_measured_cost_returns_unused_reserve_and_preserves_holder_cu
                 @0xD,
              f.scenario.ctx());
         f.settle(&mut round, 24);
-        assert_eq!(f.vault_balances(), vector[0, 6]);
+        assert_eq!(f.holder_quote(), 6);
         let (_, quote, reserve) = round.reserve_balances_for_testing();
         assert_eq!(quote, 970);
         assert_eq!(reserve, option::none());
@@ -166,7 +166,7 @@ fun settlement_pays_measured_cost_returns_unused_reserve_and_preserves_holder_cu
     fixture.next_tx!(HOLDER, |f| f.claim());
     fixture.next_tx!(HOLDER, |f| f.assert_payment(970));
     fixture.next_tx!(OWNER, |f| f.close());
-    assert_eq!(fixture.vault_balances(), vector[0, 6]);
+    assert_eq!(fixture.holder_quote(), 6);
     fixture.end();
 
     std::unit_test::destroy(package_version);
@@ -177,7 +177,7 @@ fun close_returns_unsettled_reserve_and_unclaimed_holders_without_an_admin() {
     let mut fixture = start_reserve_rewards();
     fixture.publish(30);
     fixture.next_tx!(HOLDER, |f| f.close());
-    assert_eq!(fixture.vault_balances(), vector[0, 1_000]);
+    assert_eq!(fixture.holder_quote(), 1_000);
     fixture.end();
 }
 
@@ -194,9 +194,9 @@ fun zero_reserve_disables_reimbursement_and_allows_claim_and_close() {
     });
     fixture.next_tx!(HOLDER, |f| f.claim());
     fixture.next_tx!(HOLDER, |f| f.assert_payment(970));
-    assert_eq!(fixture.vault_balances(), vector[0, 30]);
+    assert_eq!(fixture.holder_quote(), 30);
     fixture.next_tx!(HOLDER, |f| f.close());
-    assert_eq!(fixture.vault_balances(), vector[0, 30]);
+    assert_eq!(fixture.holder_quote(), 30);
     fixture.end();
 }
 
@@ -207,10 +207,10 @@ fun blast_can_cover_gas_and_fund_the_entire_holder_quote_budget() {
         .scenario
         .ctx());
     fixture.publish_budget(1_000, 0);
-    assert_eq!(fixture.vault_balances(), vector[0, 0]);
+    assert_eq!(fixture.holder_quote(), 0);
     fixture.next_tx!(HOLDER, |f| {
         let mut round = f.take_round();
-        rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 1_000, vector[], f.ctx!());
+        rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 1_000, vector[], &f.clock, f.ctx!());
         let (_, quote, reserve) = round.reserve_balances_for_testing();
         assert_eq!(quote, 0);
         assert_eq!(reserve, option::none());
@@ -218,7 +218,7 @@ fun blast_can_cover_gas_and_fund_the_entire_holder_quote_budget() {
     });
     fixture.next_tx!(HOLDER, |f| f.assert_payment(1_000));
     fixture.next_tx!(HOLDER, |f| f.close());
-    assert_eq!(fixture.vault_balances(), vector[0, 0]);
+    assert_eq!(fixture.holder_quote(), 0);
     fixture.end();
 
     std::unit_test::destroy(package_version);
@@ -289,7 +289,7 @@ fun holder_quote_cannot_exceed_the_vault_before_reserve_is_checked() {
 fun a_gas_reserve_of_a_tenth_of_the_holder_quote_is_accepted() {
     let mut fixture = start_reserve_rewards();
     fixture.publish_budget(900, 90);
-    assert_eq!(fixture.vault_balances(), vector[0, 10]);
+    assert_eq!(fixture.holder_quote(), 10);
     fixture.end();
 }
 
@@ -302,8 +302,9 @@ fun a_gas_reserve_one_unit_above_a_tenth_of_the_holder_quote_is_rejected() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EGasReserveTooLarge, location = blast_presale::presale_vault)]
-fun a_meme_only_round_cannot_reserve_gas() {
+#[expected_failure(abort_code = vault::EMemeRewardsUnsupported, location = blast_presale::presale_vault)]
+/// A round that promises Meme is rejected before its empty Quote budget or its gas reserve.
+fun a_meme_round_is_rejected_before_its_quote_budget_and_gas_reserve() {
     let mut fixture = start_reserve_rewards();
     let version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     let clock = clock::create_for_testing(fixture.ctx!());
@@ -378,7 +379,7 @@ fun settlement_rejects_another_vault_before_its_amount_check() {
 fun collection_routes_holder_meme_and_preserves_holder_quote() {
     let mut fixture = start_reserve_rewards();
     fixture.collect_holder_fees();
-    assert_eq!(fixture.vault_balances(), vector[0, 1_010]);
+    assert_eq!(fixture.holder_quote(), 1_010);
     fixture.next_tx!(TREASURY, |f| f.assert_meme_payment(100));
     fixture.end();
 }
@@ -415,7 +416,7 @@ fun reserve_holder_payment_cannot_be_redirected() {
     fixture.publish(30);
     fixture.next_tx!(OWNER, |f| {
         let mut round = f.take_round();
-        rewards::claim(&mut round, &package_version, 0, OWNER, 0, 970, vector[], f.ctx!());
+        rewards::claim(&mut round, &package_version, 0, OWNER, 0, 970, vector[], &f.clock, f.ctx!());
         abort
     })
 }
@@ -461,14 +462,6 @@ fun round_rejects_an_empty_asset_budget() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInsufficientBudget, location = blast_presale::holder_rewards)]
-fun round_rejects_a_meme_budget_above_the_vault_balance() {
-    let mut f = start_reserve_rewards();
-    f.publish_commitment(hash::blake2b256(&b"root"), hash::blake2b256(&b"manifest"), 1, 1, 0);
-    abort
-}
-
-#[test]
 #[expected_failure(abort_code = rewards::EInvalidIndex, location = blast_presale::holder_rewards)]
 fun claim_rejects_the_first_index_outside_the_round() {
     let mut fixture = start_reserve_rewards();
@@ -476,7 +469,7 @@ fun claim_rejects_the_first_index_outside_the_round() {
     fixture.next_tx!(HOLDER, |f| {
         let version = blast_presale::blast_presale_package::new_for_testing(f.ctx!());
         let mut round = f.take_round();
-        rewards::claim(&mut round, &version, 1, HOLDER, 0, 970, vector[], f.ctx!());
+        rewards::claim(&mut round, &version, 1, HOLDER, 0, 970, vector[], &f.clock, f.ctx!());
         abort
     });
     abort
@@ -498,7 +491,8 @@ fun claim_rejects_the_largest_index_before_bitmap_access() {
             0,
             970,
             vector[],
-            f.ctx!()
+            &f.clock,
+            f.ctx!(),
         );
         abort
     });
@@ -513,7 +507,7 @@ fun claim_rejects_a_zero_beneficiary_before_the_merkle_proof() {
     fixture.next_tx!(HOLDER, |f| {
         let version = blast_presale::blast_presale_package::new_for_testing(f.ctx!());
         let mut round = f.take_round();
-        rewards::claim(&mut round, &version, 0, @0x0, 0, 970, vector[], f.ctx!());
+        rewards::claim(&mut round, &version, 0, @0x0, 0, 970, vector[], &f.clock, f.ctx!());
         abort
     });
     abort
@@ -533,7 +527,7 @@ fun a_round_publishes_exactly_when_the_default_notice_elapses() {
         assert_eq!(change.action(), option::some(f.terms(970, 30)));
         assert_eq!(delay_ms, ROUND_NOTICE_MS);
         assert_eq!(ready_at_ms, 1 + ROUND_NOTICE_MS);
-        assert_eq!(f.vault_balances(), vector[0, 1_000]);
+        assert_eq!(f.holder_quote(), 1_000);
         assert_eq!(f.vault.next_round(), 0);
     });
     fixture.next_tx!(HOLDER, |f| {
@@ -542,7 +536,7 @@ fun a_round_publishes_exactly_when_the_default_notice_elapses() {
 
         only_event<ActionApplied<RoundPublicationKey, RoundTerms>>();
         f.assert_published(970, 30, TREASURY, DEADLINE_AT_MS);
-        assert_eq!(f.vault_balances(), vector[0, 0]);
+        assert_eq!(f.holder_quote(), 0);
         assert!(f.vault.round_publication_for_testing().pending().is_none());
     });
     fixture.end();
@@ -632,7 +626,7 @@ fun a_cancelled_round_reserves_nothing_and_leaves_the_cursor() {
     let cancelled = only_event<ActionCancelled<RoundPublicationKey, RoundTerms>>();
     let (_, _, change, _, _) = cancelled.action_cancelled_fields();
     assert_eq!(change.action(), option::some(fixture.terms(970, 30)));
-    assert_eq!(fixture.vault_balances(), vector[0, 1_000]);
+    assert_eq!(fixture.holder_quote(), 1_000);
     assert_eq!(fixture.vault.next_round(), 0);
     assert_eq!(fixture.vault.last_checkpoint(), option::none());
     assert!(fixture.vault.round_publication_for_testing().pending().is_none());
@@ -675,7 +669,7 @@ fun rescheduling_replaces_the_pending_round_and_announces_its_cancellation() {
     );
     assert_eq!(change.action(), option::some(replaced));
     fixture.publish_after_notice();
-    assert_eq!(fixture.vault_balances(), vector[0, 30]);
+    assert_eq!(fixture.holder_quote(), 30);
     fixture.next_tx!(HOLDER, |f| f.claim());
     fixture.next_tx!(HOLDER, |f| f.assert_payment(970));
     fixture.end();
@@ -1041,7 +1035,7 @@ fun assert_published(
     let root = rewards::leaf_for_testing(object::id(&self.vault), 0, 0, HOLDER, 0, holder_quote);
     let payload = only_event<RoundPublished<MEME, QUOTE>>();
     let round_id = payload.reserve_published_id();
-    let (meme_unallocated, quote_unallocated) = self.vault.holder_rewards_balances();
+    let quote_unallocated = self.vault.holder_rewards_quote();
     let mut expected = vector[];
     expected.append(bcs::to_bytes(&(object::id(&self.vault))));
     expected.append(bcs::to_bytes(&(round_id)));
@@ -1054,7 +1048,6 @@ fun assert_published(
     expected.append(bcs::to_bytes(&(1u64)));
     expected.append(bcs::to_bytes(&(0u64)));
     expected.append(bcs::to_bytes(&(holder_quote)));
-    expected.append(bcs::to_bytes(&(meme_unallocated)));
     expected.append(bcs::to_bytes(&(quote_unallocated)));
     expected.append(bcs::to_bytes(&(treasury)));
     expected.append(bcs::to_bytes(&(reserve)));
@@ -1218,9 +1211,7 @@ fun raise_notice(self: &mut ReserveFixture, delay_ms: u64) {
 
 /// Burns unreserved holder Quote so the budget shrinks between scheduling and publication.
 fun drain_holder_rewards(self: &mut ReserveFixture, quote_amount: u64) {
-    let (meme, quote) = self.vault.withdraw_holder_rewards_for_testing(0, quote_amount);
-    meme.destroy_zero();
-    quote.destroy_for_testing();
+    self.vault.withdraw_holder_rewards_for_testing(quote_amount).destroy_for_testing();
 }
 
 /// The terms `schedule_budget_to` schedules for the fixture's treasury.
@@ -1262,7 +1253,7 @@ fun settle(self: &mut ReserveFixture, round: &mut Round<MEME, QUOTE>, amount: u6
         self.scenario.ctx(),
     );
     let payload = only_event<GasReserveSettled<MEME, QUOTE>>();
-    let (_, quote_unallocated) = self.vault.holder_rewards_balances();
+    let quote_unallocated = self.vault.holder_rewards_quote();
     let treasury = TREASURY;
     let mut expected = vector[];
     expected.append(bcs::to_bytes(&(object::id(&self.vault))));
@@ -1282,7 +1273,7 @@ fun claim(self: &mut ReserveFixture) {
         .scenario
         .ctx());
     let mut round = self.take_round();
-    rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 970, vector[], self.ctx!());
+    rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 970, vector[], &self.clock, self.ctx!());
     let payload = only_event<RewardClaimed<MEME, QUOTE>>();
     let holder = HOLDER;
     let mut expected = vector[];
@@ -1325,16 +1316,13 @@ fun assert_payment(self: &ReserveFixture, amount: u64) {
     assert_eq!(self.scenario.take_from_sender<Coin<QUOTE>>().burn_for_testing(), amount);
 }
 
-fun vault_balances(self: &ReserveFixture): vector<u64> {
-    let (meme, quote) = self.vault.holder_rewards_balances();
-    vector[meme, quote]
+fun holder_quote(self: &ReserveFixture): u64 {
+    self.vault.holder_rewards_quote()
 }
 
 fun end(mut self: ReserveFixture) {
-    let (_, remaining) = self.vault.holder_rewards_balances();
-    let (meme, quote) = self.vault.fund_round(0, 0, remaining);
-    meme.destroy_zero();
-    quote.destroy_for_testing();
+    let remaining = self.vault.holder_rewards_quote();
+    self.vault.fund_round(0, remaining).destroy_for_testing();
     let ReserveFixture { scenario, vault, policy, clock } = self;
     vault.destroy_for_testing();
     policy.destroy_for_testing();
@@ -1356,7 +1344,6 @@ fun collect_holder_fees(self: &mut ReserveFixture) {
     let mut expected = bcs::to_bytes(&object::id(&self.vault));
     expected.append(bcs::to_bytes(&treasury));
     expected.append(bcs::to_bytes(&100u64));
-    expected.append(bcs::to_bytes(&0u64));
     assert_eq!(payload.holder_meme_paid_bytes(), expected);
 }
 

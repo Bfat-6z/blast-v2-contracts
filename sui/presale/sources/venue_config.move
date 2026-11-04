@@ -85,7 +85,9 @@ public fun pool_tier_reserved_fields<Meme, Quote, Venue>(
 // === Events ===
 
 /// A venue reserved the `<Meme, Quote>` sale's pool at this tier, which its migration creates.
-/// `Venue` is the venue's marker, such as `cetus::Venue`.
+/// `Venue` is the venue's marker, such as `cetus::Venue`, and fixes the units: for Cetus and
+/// Bluefin `pool_fee_rate` is the pool's swap fee in millionths; for Aftermath it is the DAO fee
+/// in basis points and `tick_spacing` is zero.
 public struct PoolTierReserved<phantom Meme, phantom Quote, phantom Venue> has copy, drop {
     tick_spacing: u32,
     pool_fee_rate: u64,

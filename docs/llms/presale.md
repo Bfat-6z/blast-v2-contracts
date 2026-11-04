@@ -488,7 +488,7 @@ migration, so nobody can register the sale's pool first), checks it holds every 
 pool in a DAO-fee pool at the recorded `dao_fee_bps` whose fee recipient is the vault's ID
 (`blast_presale::aftermath::EDaoFeePoolMismatch` if Aftermath reports anything else), attaches
 the DAO-fee pool's `OwnerCap` as the vault's position with the LP coin's amount (the pool's whole
-liquidity) as its `liquidity`, shares the vault, shares the DAO-fee pool (the object traders
+liquidity) as its `position_liquidity`, shares the vault, shares the DAO-fee pool (the object traders
 use), and sends the LP coin to `0x0`, where nobody can ever use it. Emits
 `blast_presale::aftermath::DaoFeePoolCreated` with the vault, base pool, DAO-fee pool, owner cap,
 and LP coin IDs before `presale_vault::VaultCreated`, whose `pool_id` is the base pool and
@@ -601,7 +601,8 @@ and every fee recipient at once. It pays the holder Meme remainder to the govern
 
 Emits `presale_vault::FeesCollected`, followed by `presale_vault::HolderMemePaid`
 when the holder Meme remainder is positive. The former records allocation; the latter
-records payment and the remaining unallocated Meme. A collection of zero is valid and emits nothing. Neither
+records the payment to the treasury. The vault keeps no holder Meme, so rounds pay only
+Quote. A collection of zero is valid and emits nothing. Neither
 adapter collects venue incentive rewards.
 
 On a partnered vault, follow with `presale_vault::pay_protocol_lp_fees_with_partner(vault,
@@ -630,15 +631,18 @@ Quote gas reserve.
    manifest digest, leaf count, exact holder Meme/Quote amounts, an explicit gas
    reserve amount, the claim window in milliseconds, the expected treasury
    address and Clock. The terms' own checks run first: root and manifest digest
-   are 32 bytes, with 1..=65,536 leaves, a positive holder budget, a nonempty
+   are 32 bytes, with 1..=65,536 leaves, a zero Meme amount
+   (`presale_vault::EMemeRewardsUnsupported`: holder Meme fees go to the treasury,
+   and the field stays for parity with the migrators' leaf), a positive holder
+   Quote budget, a nonempty
    checkpoint interval, a holder Quote plus reserve that fits in a `u64`, a
    reserve of at most 10% of the holder Quote
    (`presale_vault::EGasReserveTooLarge`), a nonzero expected treasury and a
    positive claim window. Then, to fail fast,
    the number must be the vault's next round (starting at zero), the interval
    must start at or after the previous round ended (skipped periods need no
-   funded round or number), and holder funding plus reserve must fit the
-   available holder-reward balances. The round waits in the vault's
+   funded round or number), and holder Quote plus reserve must fit the
+   vault's unreserved holder Quote. The round waits in the vault's
    `round_publication` slot until the applied round notice elapses; nothing is
    reserved yet. Scheduling again replaces it (or a pending notice change) and
    restarts the notice. It emits `delayed_action::ActionScheduled` with key
@@ -673,9 +677,10 @@ Quote gas reserve.
    round is scheduled instead). A shorter notice, zero included, still waits the
    applied one. Every vault starts with a 7,200,000 ms (2-hour) notice; no notice
    exceeds `blast_admin::delayed::max_delay_ms` (30 days).
-5. `holder_rewards::claim`: *anyone* may relay. It takes the mutable shared
-   round and beneficiary/amount proof and pays that beneficiary only, once
-   per index. It emits `holder_rewards::RewardClaimed` and leaves gas custody
+5. `holder_rewards::claim`: *anyone* may relay, while `now < claim_deadline_ms`
+   (`holder_rewards::EClaimsClosed` from the deadline, so claims never race
+   `close_round`). It takes the mutable shared round, beneficiary/amount proof
+   and Clock, and pays that beneficiary only, once per index. It emits `holder_rewards::RewardClaimed` and leaves gas custody
    untouched. Leaf:
 
    ```
@@ -687,7 +692,7 @@ Quote gas reserve.
    ```
 
    The proof follows the allowlist rules above (same node hash, positional
-   order, exact depth). Claims have no deadline check: they last until close.
+   order, exact depth).
 6. `holder_rewards::settle_gas_reserve`: *Blast admin* (`RewardsAdmin`). It takes
    the mutable shared round and its mutable shared vault and an amount from
    zero through an enabled reserve. It pays the publication-time treasury,
@@ -975,8 +980,9 @@ All times are Unix milliseconds from `Clock`.
 - `blast_presale::blast_presale::set_partner` needs `now < accepted_until_ms` for that partner.
 - Hard cap: commitments are held to the raise from `now >= hard cap start`.
 - Holder rounds: a scheduled round publishes once `now >= ready_at_ms`, the vault's applied round
-  notice (zero at creation) after scheduling; publication sets `claim_deadline_ms` to now plus the
-  scheduled claim window; claims work until close; close needs `now >= claim_deadline_ms`.
+  notice (two hours at creation) after scheduling; publication sets `claim_deadline_ms` to now plus
+  the scheduled claim window; claims need `now < claim_deadline_ms`; close needs
+  `now >= claim_deadline_ms`.
 
 ### Reading state
 
@@ -1036,8 +1042,8 @@ positional struct wrapping one u64.
   `protocol_fees` (`Delayed<ProtocolLpFeesKey, ProtocolFees>`; read `protocol_fees.value.lp_fee_meme_bps` and
   `protocol_fees.value.lp_fee_quote_bps` for the applied LP rates), `partner_id`,
   `unpaid_protocol_meme`, `unpaid_protocol_quote`,
-  `migration_meme_residual`, `migration_quote_residual`, `holder_rewards_meme`,
-  `holder_rewards_quote` (unallocated holder share), `next_round`, `last_checkpoint`,
+  `migration_meme_residual`, `migration_quote_residual`,
+  `holder_rewards_quote` (unallocated holder Quote), `next_round`, `last_checkpoint`,
   `round_publication` (a `DelayedAction<RoundPublicationKey, RoundTerms>`: the applied round notice
   `delay_ms` and an optional `pending` scheduled round, whose `Action(terms)` holds `number`,
   `start_checkpoint`, `end_checkpoint`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`,
@@ -1063,7 +1069,7 @@ directly (no envelope).
 
 | Flow | Event | Indexer use |
 | --- | --- | --- |
-| Create | `blast_presale::venue_config::PoolTierReserved`, then `blast_presale::blast_presale::PresaleCreated`, then on Aftermath `blast_presale::aftermath::PoolCreationReserved` | The venue's pool tier (`tick_spacing`, `pool_fee_rate`; on Aftermath 0 and the DAO fee in BPS), typed `<Meme, Quote, Venue>` with the venue's marker; then all terms: supply split (BPS), recipients and vesting, raise split (BPS), window lengths, eligibility, uncapped phase, hard cap, `migration_witness`, fee split, Blast's snapshot rates and amounts, `treasury_cap_id`, `presale_cap_id`; then on Aftermath the reservation (`presale_id`, `pool_creation_id`, `create_pool_cap_id`), typed `<Lp, Meme, Quote>`. |
+| Create | `blast_presale::venue_config::PoolTierReserved`, then `blast_presale::blast_presale::PresaleCreated`, then on Aftermath `blast_presale::aftermath::PoolCreationReserved` | The venue's pool tier (`tick_spacing`, `pool_fee_rate`: on Cetus and Bluefin the swap fee in millionths, on Aftermath 0 and the DAO fee in BPS), typed `<Meme, Quote, Venue>` with the venue's marker; then all terms: supply split (BPS), recipients and vesting, raise split (BPS), window lengths, eligibility, uncapped phase, hard cap, `migration_witness`, fee split, Blast's snapshot rates and amounts, `treasury_cap_id`, `presale_cap_id`; then on Aftermath the reservation (`presale_id`, `pool_creation_id`, `create_pool_cap_id`), typed `<Lp, Meme, Quote>`. |
 | Share | `blast_presale::blast_presale::PresaleOpened` | `start_ms`, scheduled `end_ms` and `liquidity_deadline_ms`, `uncapped_from_ms`, `hard_cap_from_ms` (`none` without a hard cap), `partner_id`. |
 | Per-sale rates | `blast_presale::blast_presale::ProtocolFeesChanged` | New rates, Blast amounts, and new buyer `token_allocation`. |
 | Commit | `blast_presale::blast_presale::Committed` | `quote` accepted, `wallet_commitment` (new total), `total_commitments`, `participants`. It has no wallet field: the wallet is the transaction sender. |
@@ -1073,7 +1079,7 @@ directly (no envelope).
 | Claim | `blast_presale::blast_presale::Claimed` | `tokens`, `quote_refund`, `remaining_participants`, `vesting_id`. |
 | Collect | `presale_vault::FeesCollected`, `presale_vault::HolderMemePaid` | Gross, Blast's part, per-recipient amounts aligned with the vault's recipients, holder share. `protocol_destination` is `none` when held for a partner. |
 | Vault partner pay | `presale_vault::ProtocolLpFeesPaid` | Partner and Blast amounts per asset. |
-| Vault without a presale | `presale_vault::VaultCreated` | Zero `presale_id` and residuals; pool, position, liquidity, fee split, and Blast's rates. |
+| Vault without a presale | `presale_vault::VaultCreated` | Zero `presale_id` and residuals; pool, position, `position_liquidity` (venue units), fee split, and Blast's rates. |
 | Residuals | `presale_vault::MigrationResidualsClaimed` | Amounts claimed. |
 | Round scheduling | `delayed_action::ActionScheduled`, `delayed_action::ActionCancelled`, `delayed_action::ActionApplied` keyed by `presale_vault::RoundPublicationKey` | The scheduled terms or notice change; no balance moves until `holder_rewards::RoundPublished`. |
 | Rounds | `holder_rewards::RoundPublished`, `holder_rewards::RewardClaimed`, `holder_rewards::GasReserveSettled`, `holder_rewards::RoundClosed` | Holder funding separate from optional gas reserve, snapshotted treasury, exact reimbursement and returns; zero reserve disables reimbursement. |
@@ -1134,14 +1140,14 @@ it. Common ones by flow (module `blast_presale` unless named):
 - Rounds: `holder_rewards::EInvalidIndex`, `holder_rewards::EAlreadyClaimed`,
   `holder_rewards::EInvalidProof`, `holder_rewards::EEmptyClaim`,
   `holder_rewards::EInvalidBeneficiary`, `holder_rewards::EWrongVault`,
-  `holder_rewards::EClaimsStillOpen`. An overcommitted root aborts in the framework's balance
+  `holder_rewards::EClaimsClosed`, `holder_rewards::EClaimsStillOpen`. An overcommitted root aborts in the framework's balance
   split when the round runs out.
 - Admin-only: `blast_acl::sign_in` aborts for a revoked `AdminCap` or one without the role;
   then `EPresaleStarted`, `EProtocolFeesIncreased` (a shared sale's override raises a rate),
   `EAboveFeePolicy`, `EProtocolFeesUnchanged`, `fee_policy::EInvalidFees`, `fee_policy::EInvalidDestination`,
   `creation_policy::EAllowanceUnchanged`, `creation_policy::EInvalidMigrationWitness`, and the
   the round-terms checks in `presale_vault` (`EInvalidCommitment`, `EInvalidLeafCount`,
-  `EEmptyBudget`, `EEmptyInterval`, `EBudgetOverflow`, `EZeroTreasury`, `EZeroClaimWindow`,
+  `EMemeRewardsUnsupported`, `EEmptyBudget`, `EEmptyInterval`, `EBudgetOverflow`, `EZeroTreasury`, `EZeroClaimWindow`,
   `EGasReserveTooLarge`), the
   `holder_rewards` schedule and publish checks (`EWrongRound`, `EOverlappingInterval`,
   `EInsufficientBudget`, and at publication `ETreasuryChanged` and `EClaimDeadlineOverflow`), and

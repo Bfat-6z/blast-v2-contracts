@@ -41,7 +41,7 @@ fun an_entry_waits_the_applied_notice_and_reads_stay_applied_until_apply() {
     assert_eq!(applied_delay_ms, NOTICE_MS);
 
     clear(&mut map, @0xA, &mut clock);
-    map.destroy();
+    destroy(map);
     clock.destroy_for_testing();
 }
 
@@ -60,7 +60,7 @@ fun clearing_is_a_delayed_change_that_removes_the_entry() {
     map.apply(@0xA, &clock);
 
     assert!(map.value(&@0xA).is_none());
-    map.destroy();
+    destroy(map);
     clock.destroy_for_testing();
 }
 
@@ -79,7 +79,7 @@ fun zero_notice_entries_apply_at_once_and_raising_the_notice_covers_every_entry(
     map.cancel(@0xA);
     map.cancel(@0xB);
     clear(&mut map, @0xA, &mut clock);
-    map.destroy();
+    destroy(map);
     clock.destroy_for_testing();
 }
 
@@ -101,7 +101,7 @@ fun pending_entries_keep_their_deadlines_across_notice_changes() {
 
     map.cancel(@0xB);
     clear(&mut map, @0xA, &mut clock);
-    map.destroy();
+    destroy(map);
     clock.destroy_for_testing();
 }
 
@@ -121,7 +121,7 @@ fun a_replaced_entry_change_is_cancelled_first_and_restarts_the_notice() {
     assert_eq!(ready_at_ms, 100);
 
     map.cancel(@0xA);
-    map.destroy();
+    destroy(map);
     clock.destroy_for_testing();
 }
 
@@ -136,7 +136,7 @@ fun a_ready_entry_change_can_still_be_cancelled() {
 
     assert!(map.value(&@0xA).is_none());
     assert!(map.pending(&@0xA).is_none());
-    map.destroy();
+    destroy(map);
     clock.destroy_for_testing();
 }
 
@@ -153,21 +153,7 @@ fun an_applied_notice_change_records_the_new_notice() {
     assert!(change.entry_for_testing().is_none());
     assert_eq!(delay_ms, 20);
     assert_eq!(map.delay_ms(), 20);
-    map.destroy();
-    clock.destroy_for_testing();
-}
-
-#[test]
-fun destruction_records_the_end_of_the_map_and_its_entries() {
-    let clock = clock_at(0);
-    let mut map = new_map(0);
-    map.schedule(@0xA, option::some(1), &clock);
-    map.apply(@0xA, &clock);
-
-    map.destroy();
-
-    let (map_owner, _) = collect<MapDestroyed<Overrides, address, u64>>().map_destroyed_fields();
-    assert_eq!(map_owner, owner());
+    destroy(map);
     clock.destroy_for_testing();
 }
 
@@ -255,28 +241,6 @@ fun cancelling_a_missing_notice_change_rejects() {
     abort
 }
 
-#[test, expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed_map)]
-fun a_map_with_a_pending_entry_change_cannot_be_destroyed() {
-    let clock = clock_at(0);
-    let mut map = new_map(10);
-    map.schedule(@0xA, option::some(1), &clock);
-
-    map.destroy();
-
-    abort
-}
-
-#[test, expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed_map)]
-fun a_map_with_a_pending_notice_change_cannot_be_destroyed() {
-    let clock = clock_at(0);
-    let mut map = new_map(10);
-    map.schedule_delay(20, &clock);
-
-    map.destroy();
-
-    abort
-}
-
 #[test, expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
 fun scheduling_rejects_an_overflowing_deadline() {
     let clock = clock_at(std::u64::max_value!() - 1);
@@ -291,7 +255,7 @@ fun scheduling_rejects_an_overflowing_deadline() {
 fun creation_rejects_a_notice_above_the_ceiling() {
     let map = new_map(delayed::max_delay_ms() + 1);
 
-    map.destroy();
+    destroy(map);
 
     abort
 }
@@ -311,7 +275,7 @@ fun a_map_accepts_the_ceiling_notice() {
     let map = new_map(delayed::max_delay_ms());
 
     assert_eq!(map.delay_ms(), delayed::max_delay_ms());
-    map.destroy();
+    destroy(map);
 }
 
 // === Test Helpers ===
@@ -365,12 +329,11 @@ use blast_admin::{
         MapApplied,
         MapCancelled,
         MapCreated,
-        MapDestroyed,
         MapScheduled,
     },
     errors,
 };
 
-use std::unit_test::assert_eq;
+use std::unit_test::{assert_eq, destroy};
 
 use sui::clock::{Self, Clock};

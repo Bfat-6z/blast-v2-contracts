@@ -69,7 +69,6 @@ public struct Vault<phantom Meme, phantom Quote> has key {
     unpaid_protocol_quote: Balance<Quote>,
     migration_meme_residual: Balance<Meme>,
     migration_quote_residual: Balance<Quote>,
-    holder_rewards_meme: Balance<Meme>,
     holder_rewards_quote: Balance<Quote>,
     next_round: u64,
     last_checkpoint: Option<u64>,
@@ -385,7 +384,6 @@ public(package) fun split_fees<Meme, Quote>(
             vault_id: self.id.to_inner(),
             treasury,
             meme_amount: holder_rewards_meme,
-            unallocated_meme_remaining: self.holder_rewards_meme.value(),
         });
     };
 }
@@ -419,24 +417,25 @@ public(package) fun last_checkpoint<Meme, Quote>(self: &Vault<Meme, Quote>): Opt
     self.last_checkpoint
 }
 
-public(package) fun holder_rewards_balances<Meme, Quote>(self: &Vault<Meme, Quote>): (u64, u64) {
-    (self.holder_rewards_meme.value(), self.holder_rewards_quote.value())
+/// The holder Quote not yet reserved by a round; holder Meme goes to the treasury instead.
+public(package) fun holder_rewards_quote<Meme, Quote>(self: &Vault<Meme, Quote>): u64 {
+    self.holder_rewards_quote.value()
 }
 
 public(package) fun fund_round<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     end_checkpoint: u64,
-    meme_amount: u64,
     quote_amount: u64,
-): (Balance<Meme>, Balance<Quote>) {
+): Balance<Quote> {
     self.next_round = self.next_round + 1;
     self.last_checkpoint = option::some(end_checkpoint);
 
-    (self.holder_rewards_meme.split(meme_amount), self.holder_rewards_quote.split(quote_amount))
+    self.holder_rewards_quote.split(quote_amount)
 }
 
 /// Builds a round's terms after their static checks; `holder_rewards` checks them against the
-/// vault when scheduling and again when publishing.
+/// vault when scheduling and again when publishing. Rounds pay only Quote: `split_fees` sends
+/// holder Meme to the treasury, so the Meme amount must be zero.
 public(package) fun new_round_terms(
     number: u64,
     start_checkpoint: u64,
@@ -456,7 +455,8 @@ public(package) fun new_round_terms(
         EInvalidCommitment,
     );
     assert!(leaf_count > 0 && leaf_count <= MAX_REWARD_LEAVES, EInvalidLeafCount);
-    assert!(meme_amount > 0 || quote_amount > 0, EEmptyBudget);
+    assert!(meme_amount == 0, EMemeRewardsUnsupported);
+    assert!(quote_amount > 0, EEmptyBudget);
     assert!(start_checkpoint < end_checkpoint, EEmptyInterval);
     assert!(quote_amount.checked_add(gas_reserve_amount).is_some(), EBudgetOverflow);
     assert!(
@@ -595,13 +595,12 @@ public(package) fun expected_treasury(self: &RoundTerms): address {
     self.expected_treasury
 }
 
-/// Returns a closed round's unclaimed rewards to the holder-reward balances.
+/// Returns a closed round's unclaimed Quote, or an unspent gas reserve, to the holder-reward
+/// balance.
 public(package) fun restore_holder_rewards<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    meme: Balance<Meme>,
     quote: Balance<Quote>,
 ) {
-    self.holder_rewards_meme.join(meme);
     self.holder_rewards_quote.join(quote);
 }
 
@@ -640,7 +639,6 @@ fun build<Meme, Quote>(
         unpaid_protocol_quote: balance::zero(),
         migration_meme_residual,
         migration_quote_residual,
-        holder_rewards_meme: balance::zero(),
         holder_rewards_quote: balance::zero(),
         next_round: 0,
         last_checkpoint: option::none(),
@@ -667,7 +665,7 @@ fun attach<Meme, Quote, Venue, Position: key + store>(
         presale_id: self.presale_id,
         pool_id: self.pool_id,
         position_id,
-        liquidity,
+        position_liquidity: liquidity,
         fee_recipients: self.fee_split.value().fee_recipients().recipients(),
         fee_recipient_bps: self.fee_split.value().fee_recipients().bps(),
         holder_rewards_bps: self.fee_split.value().holder_rewards_bps().value(),
@@ -769,7 +767,6 @@ public fun new_for_testing<Meme, Quote>(
         unpaid_protocol_quote: balance::zero(),
         migration_meme_residual: balance::zero(),
         migration_quote_residual: balance::zero(),
-        holder_rewards_meme: balance::zero(),
         holder_rewards_quote: balance::zero(),
         next_round: 0,
         last_checkpoint: option::none(),
@@ -868,11 +865,11 @@ public fun position_id_for_testing<Meme, Quote, Venue>(self: &Vault<Meme, Quote>
 }
 
 #[test_only]
-/// The vault, presale, pool, and position IDs and the liquidity a `VaultCreated` names.
+/// The vault, presale, pool, and position IDs and the position liquidity a `VaultCreated` names.
 public fun vault_created_fields<Meme, Quote, Venue>(
     event: &VaultCreated<Meme, Quote, Venue>,
 ): (ID, ID, ID, ID, u128) {
-    (event.vault_id, event.presale_id, event.pool_id, event.position_id, event.liquidity)
+    (event.vault_id, event.presale_id, event.pool_id, event.position_id, event.position_liquidity)
 }
 
 #[test_only]
@@ -889,7 +886,6 @@ public fun destroy_for_testing<Meme, Quote>(self: Vault<Meme, Quote>) {
         unpaid_protocol_quote,
         migration_meme_residual,
         migration_quote_residual,
-        holder_rewards_meme,
         holder_rewards_quote,
         next_round: _,
         last_checkpoint: _,
@@ -903,18 +899,12 @@ public fun destroy_for_testing<Meme, Quote>(self: Vault<Meme, Quote>) {
     unpaid_protocol_quote.destroy_zero();
     migration_meme_residual.destroy_zero();
     migration_quote_residual.destroy_zero();
-    holder_rewards_meme.destroy_zero();
     holder_rewards_quote.destroy_zero();
 }
 
-/// Seeds holder balances directly to exercise Merkle custody in tests.
+/// Seeds the holder Quote balance directly to exercise Merkle custody in tests.
 #[test_only]
-public fun credit_holder_for_testing<Meme, Quote>(
-    self: &mut Vault<Meme, Quote>,
-    meme: Balance<Meme>,
-    quote: Balance<Quote>,
-) {
-    self.holder_rewards_meme.join(meme);
+public fun credit_holder_for_testing<Meme, Quote>(self: &mut Vault<Meme, Quote>, quote: Balance<Quote>) {
     self.holder_rewards_quote.join(quote);
 }
 
@@ -923,10 +913,9 @@ public fun credit_holder_for_testing<Meme, Quote>(
 /// the budget between scheduling and publication; no production path does.
 public fun withdraw_holder_rewards_for_testing<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    meme_amount: u64,
     quote_amount: u64,
-): (Balance<Meme>, Balance<Quote>) {
-    (self.holder_rewards_meme.split(meme_amount), self.holder_rewards_quote.split(quote_amount))
+): Balance<Quote> {
+    self.holder_rewards_quote.split(quote_amount)
 }
 
 #[test_only]
@@ -942,7 +931,8 @@ public struct VaultCreated<phantom Meme, phantom Quote, phantom Venue> has copy,
     presale_id: ID,
     pool_id: ID,
     position_id: ID,
-    liquidity: u128,
+    /// The position's liquidity in its venue's own units.
+    position_liquidity: u128,
     fee_recipients: vector<address>,
     fee_recipient_bps: vector<u64>,
     holder_rewards_bps: u64,
@@ -984,12 +974,12 @@ public struct ProtocolLpFeesPaid<phantom Meme, phantom Quote> has copy, drop {
     partner_quote: u64,
 }
 
-/// The holder Meme allocation in `FeesCollected` was paid rather than accrued.
+/// The holder Meme allocation in `FeesCollected` was paid to the treasury; only Quote accrues
+/// for holder rounds.
 public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
     vault_id: ID,
     treasury: address,
     meme_amount: u64,
-    unallocated_meme_remaining: u64,
 }
 
 // === Constants ===
@@ -1031,7 +1021,7 @@ const EInvalidCommitment: vector<u8> = b"Root and manifest digest must contain 3
 const EInvalidLeafCount: vector<u8> = b"Round must contain between 1 and 65,536 leaves.";
 
 #[error(code = 6)]
-const EEmptyBudget: vector<u8> = b"A round must reserve a positive amount of at least one asset.";
+const EEmptyBudget: vector<u8> = b"A round must reserve a positive amount of holder Quote.";
 
 #[error(code = 7)]
 const EEmptyInterval: vector<u8> = b"Checkpoint interval must be nonempty.";
@@ -1051,6 +1041,10 @@ const EWrongRoundProposal: vector<u8> =
 
 #[error(code = 12)]
 const EGasReserveTooLarge: vector<u8> = b"Gas reserve must be at most 10% of the round's holder Quote.";
+
+#[error(code = 13)]
+const EMemeRewardsUnsupported: vector<u8> =
+    b"Holder rounds pay only Quote: holder Meme fees go to the treasury.";
 
 // === Imports ===
 

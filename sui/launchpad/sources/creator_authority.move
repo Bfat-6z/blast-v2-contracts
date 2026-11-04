@@ -6,6 +6,12 @@
 /// Creator recipients, the one-time claim they authorize, and the revocable caps it issues.
 module blast_fun::creator_authority;
 
+// === Constants ===
+
+/// Prefixes every signed account-claim message, so the backend key's signature over a claim
+/// cannot verify as another message of the same BCS shape.
+const CREATOR_CLAIM_DOMAIN: vector<u8> = b"blast_fun::creator_claim::v1";
+
 // === Public Types ===
 
 /// Who may claim a launch's creator caps: an address, or a Blast account the backend attests.
@@ -24,7 +30,7 @@ public struct BlastMetadataCap<phantom Meme> has key, store {
     id: UID,
 }
 
-/// The BCS message the Blast backend signs for an account claim.
+/// The BCS message the Blast backend signs for an account claim, after `CREATOR_CLAIM_DOMAIN`.
 public struct CreatorClaimMessage has drop {
     meme: TypeName,
     account_commitment: vector<u8>,
@@ -70,7 +76,8 @@ public fun destroy_metadata_cap<Meme>(self: BlastMetadataCap<Meme>) {
 /// Authenticates the sender as `recipient` and issues both creator caps.
 ///
 /// An account claim carries `attestation`, the BCS `(expiry_ms, signature)` a backend key in
-/// `signer_public_keys` signed over `CreatorClaimMessage`; an address claim carries none.
+/// `signer_public_keys` signed over `CREATOR_CLAIM_DOMAIN` followed by the BCS
+/// `CreatorClaimMessage`; an address claim carries none.
 public(package) fun claim_creator_caps<Meme>(
     recipient: CreatorRecipient,
     signer_public_keys: &vector<vector<u8>>,
@@ -121,12 +128,15 @@ fun creator_claim_message_bytes<Meme>(
     claimant: address,
     expires_at_ms: u64,
 ): vector<u8> {
-    std::bcs::to_bytes(&CreatorClaimMessage {
+    let mut message = CREATOR_CLAIM_DOMAIN;
+    message.append(std::bcs::to_bytes(&CreatorClaimMessage {
         meme: type_name::with_original_ids<Meme>(),
         account_commitment,
         claimant,
         expiry_ms: expires_at_ms,
-    })
+    }));
+
+    message
 }
 
 // === Test-Only Functions ===

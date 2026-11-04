@@ -134,8 +134,8 @@ public fun make_immutable(
 
 /// Clears the requested pause bits once every launchpad notice is guarded: nonzero, with no
 /// pending change that would set one to zero and no pending admission. A notice left at its
-/// zero publication value therefore blocks release instead of going live. Claims, delivery and
-/// settlement never require unpausing.
+/// zero publication value therefore blocks release instead of going live. Claims and opening-round
+/// delivery never require unpausing; settling an opening round needs the trading bit clear.
 public fun unpause(
     self: &PackageAdmin,
     package_version: &mut PackageVersion,

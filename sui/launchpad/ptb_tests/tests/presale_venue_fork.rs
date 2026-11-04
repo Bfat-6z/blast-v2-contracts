@@ -1139,7 +1139,6 @@ impl World {
             "Aftermath holder Meme was paid to the treasury"
         );
         let after: VaultState = bcs::from_bytes(&self.h.contents(vault))?;
-        ensure!(after.holder_rewards_meme == before.holder_rewards_meme);
         ensure!(after.holder_rewards_quote == before.holder_rewards_quote + quote[2]);
         ensure!(self.h.owned_by(vault.into()).iter().all(|coin| coin.coin_type_maybe().is_none()));
         Ok(())
@@ -1529,7 +1528,7 @@ impl World {
             pool: created.pool_id,
             vault: created.vault_id,
             position: created.position_id,
-            liquidity: created.liquidity,
+            liquidity: created.position_liquidity,
             supplied: (lp - residual.0, raise - residual.1),
             residual,
         };
@@ -1550,7 +1549,7 @@ impl World {
         ensure!(
             (vault.presale_id, vault.presale_cap_id, vault.pool_id) == (sale.presale, sale.cap, m.pool)
                 && (vault.migration_meme_residual, vault.migration_quote_residual) == residual
-                && (vault.holder_rewards_meme, vault.holder_rewards_quote, vault.next_round) == (0, 0, 0)
+                && (vault.holder_rewards_quote, vault.next_round) == (0, 0)
         );
         let Owner::ObjectOwner(field) = self.h.object(m.position).owner().clone() else {
             bail!("position is not a child")
@@ -1837,8 +1836,7 @@ impl World {
         }
         let after = self.vault(m)?;
         ensure!(
-            (after.holder_rewards_meme, after.holder_rewards_quote)
-                == (before.holder_rewards_meme, before.holder_rewards_quote + fees.holder_rewards_quote),
+            after.holder_rewards_quote == before.holder_rewards_quote + fees.holder_rewards_quote,
             "holder Quote accrues in the vault; holder Meme is paid to the treasury"
         );
         ensure!(
@@ -2230,7 +2228,7 @@ impl World {
         let vaults: Vec<VaultCreated> = self.events(&outcome, "presale_vault", "VaultCreated");
         ensure!(vaults.len() == 1);
         let vault = &vaults[0];
-        ensure!(vault.presale_id == ObjectID::ZERO && vault.pool_id == pool && vault.liquidity > 0);
+        ensure!(vault.presale_id == ObjectID::ZERO && vault.pool_id == pool && vault.position_liquidity > 0);
         ensure!(self.h.object(vault.vault_id).is_shared());
         if self.route.is_cetus() {
             ensure!(outcome.effects.wrapped().iter().any(|object| object.0 == position));
@@ -2352,7 +2350,6 @@ struct VaultState {
     _unpaid_protocol_quote: u64,
     migration_meme_residual: u64,
     migration_quote_residual: u64,
-    holder_rewards_meme: u64,
     holder_rewards_quote: u64,
     next_round: u64,
     _last_checkpoint: Option<u64>,
@@ -2419,7 +2416,7 @@ struct VaultCreated {
     presale_id: ObjectID,
     pool_id: ObjectID,
     position_id: ObjectID,
-    liquidity: u128,
+    position_liquidity: u128,
     fee_recipients: Vec<SuiAddress>,
     fee_recipient_bps: Vec<u64>,
     holder_rewards_bps: u64,

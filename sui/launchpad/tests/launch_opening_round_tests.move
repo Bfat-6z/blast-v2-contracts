@@ -1033,7 +1033,7 @@ fun u64_payload(launch_id: ID, fields: vector<u64>): vector<u8> {
     expected
 }
 
-/// Expected `OpeningRoundDelivered` bytes: the launch ID, the bidder, then `bid`, `meme`, `quote`.
+/// Expected `OpeningRoundDelivered` bytes: the launch ID, the bidder, then `bid`, `meme_amount`, `quote_amount`.
 fun delivered_bytes(launch_id: ID, bidder: address, fields: vector<u64>): vector<u8> {
     let mut expected = bcs::to_bytes(&launch_id);
     expected.append(bcs::to_bytes(&bidder));

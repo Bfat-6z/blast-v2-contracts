@@ -36,6 +36,7 @@ public struct VaultFixture {
 /// Independently encoded `VaultCreated` in ABI order.
 public struct ExpectedVaultCreated has copy, drop {
     vault_id: ID,
+    launch_id: ID,
     pool_id: ID,
     position_id: ID,
     venue: TypeName,
@@ -71,8 +72,8 @@ public struct Collection has copy, drop {
 public struct ExpectedProtocolLpFeesClaimed has copy, drop {
     vault_id: ID,
     protocol_destination: address,
-    protocol_meme: u64,
-    protocol_quote: u64,
+    blast_meme: u64,
+    blast_quote: u64,
     partner_meme: u64,
     partner_quote: u64,
 }
@@ -88,8 +89,8 @@ public struct ExpectedAutoLiquidityAdded has copy, drop {
     vault_id: ID,
     meme_amount: u64,
     quote_amount: u64,
-    meme_pending: u64,
-    quote_pending: u64,
+    auto_lp_meme_pending: u64,
+    auto_lp_quote_pending: u64,
 }
 
 /// Independently encoded `BuybackBurned` in ABI order.
@@ -97,7 +98,7 @@ public struct ExpectedBuybackBurned has copy, drop {
     vault_id: ID,
     quote_spent: u64,
     meme_burned: u64,
-    quote_pending: u64,
+    burn_quote_pending: u64,
 }
 
 // === Tests ===
@@ -126,6 +127,7 @@ fun attaching_announces_the_residuals_liquidity_and_launch_fee_split() {
         bcs::to_bytes(
             &ExpectedVaultCreated {
                 vault_id: object::id(&vault),
+                launch_id: object::id(&f.launch),
                 pool_id: object::id_from_address(POOL),
                 position_id: vault.position_id_for_testing<_, _, TestVenue>().destroy_some(),
                 venue: type_name::with_original_ids<TestVenue>(),
@@ -169,6 +171,7 @@ fun create_shares_the_vault_it_announces_with_its_pool_and_position() {
         bcs::to_bytes(
             &ExpectedVaultCreated {
                 vault_id: object::id(&shared),
+                launch_id: object::id(&f.launch),
                 pool_id: object::id_from_address(POOL),
                 position_id,
                 venue: type_name::with_original_ids<TestVenue>(),
@@ -781,8 +784,8 @@ fun anyone_claims_the_partners_cut_of_held_lp_fees_and_pays_blast_the_rest() {
             &ExpectedProtocolLpFeesClaimed {
                 vault_id: object::id(&vault),
                 protocol_destination: PROTOCOL,
-                protocol_meme: 60,
-                protocol_quote: 19,
+                blast_meme: 60,
+                blast_quote: 19,
                 partner_meme: 40,
                 partner_quote: 12,
             },
@@ -935,8 +938,8 @@ fun kept_residuals_wait_for_the_next_collection_and_only_an_addition_is_announce
                 vault_id: object::id(&vault),
                 meme_amount: 4,
                 quote_amount: 0,
-                meme_pending: 1,
-                quote_pending: 7,
+                auto_lp_meme_pending: 1,
+                auto_lp_quote_pending: 7,
             },
         ),
     );
@@ -1026,7 +1029,7 @@ fun a_buyback_takes_only_the_requested_burn_quote_then_burns_the_meme_and_keeps_
                 vault_id: object::id(&vault),
                 quote_spent: 5,
                 meme_burned: 21,
-                quote_pending: 3,
+                burn_quote_pending: 3,
             },
         ),
     );
@@ -1080,7 +1083,7 @@ fun successive_partial_buybacks_spend_the_burn_quote_in_pieces() {
                 vault_id: object::id(&vault),
                 quote_spent: 3,
                 meme_burned: 9,
-                quote_pending: 5,
+                burn_quote_pending: 5,
             },
         ),
     );
@@ -1091,7 +1094,7 @@ fun successive_partial_buybacks_spend_the_burn_quote_in_pieces() {
                 vault_id: object::id(&vault),
                 quote_spent: 5,
                 meme_burned: 14,
-                quote_pending: 0,
+                burn_quote_pending: 0,
             },
         ),
     );
@@ -1130,7 +1133,7 @@ fun a_buyback_under_a_fixed_supply_sends_the_meme_to_the_zero_address() {
                 vault_id: object::id(&vault),
                 quote_spent: 5,
                 meme_burned: 13,
-                quote_pending: 0,
+                burn_quote_pending: 0,
             },
         ),
     );

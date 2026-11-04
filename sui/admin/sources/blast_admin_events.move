@@ -46,7 +46,7 @@ public struct SuperAdminCapDestroyed has copy, drop {
 /// the UID the advancing module held.
 public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, drop {
     container_id: ID,
-    package_id: address,
+    original_package_id: address,
     previous_generation: u64,
     new_generation: u64,
 }
@@ -55,7 +55,7 @@ public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop 
     custodian_id: ID,
     publisher_id: ID,
     upgrade_cap_id: ID,
-    package_id: ID,
+    original_package_id: ID,
     native_version: u64,
     policy: u8,
 }
@@ -63,7 +63,7 @@ public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop 
 public struct UpgradeAuthorized<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: ID,
+    current_package_id: ID,
     native_version: u64,
     policy: u8,
     digest: vector<u8>,
@@ -81,7 +81,7 @@ public struct UpgradeCommitted<phantom PackageMarker: drop> has copy, drop {
 public struct UpgradePolicyRestricted<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: address,
+    original_package_id: address,
     native_version: u64,
     previous_policy: u8,
     new_policy: u8,
@@ -90,7 +90,7 @@ public struct UpgradePolicyRestricted<phantom PackageMarker: drop> has copy, dro
 public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: address,
+    original_package_id: address,
     final_native_version: u64,
     final_policy: u8,
 }
@@ -135,13 +135,13 @@ public(package) fun super_admin_cap_destroyed(super_admin_cap_id: ID) {
 
 public(package) fun operational_version_advanced<PackageMarker: drop>(
     container_id: ID,
-    package_id: address,
+    original_package_id: address,
     previous_generation: u64,
     new_generation: u64,
 ) {
     sui::event::emit(OperationalVersionAdvanced<PackageMarker> {
         container_id,
-        package_id,
+        original_package_id,
         previous_generation,
         new_generation,
     });
@@ -151,7 +151,7 @@ public(package) fun upgrade_custody_created<PackageMarker: drop>(
     custodian_id: ID,
     publisher_id: ID,
     upgrade_cap_id: ID,
-    package_id: ID,
+    original_package_id: ID,
     native_version: u64,
     policy: u8,
 ) {
@@ -159,7 +159,7 @@ public(package) fun upgrade_custody_created<PackageMarker: drop>(
         custodian_id,
         publisher_id,
         upgrade_cap_id,
-        package_id,
+        original_package_id,
         native_version,
         policy,
     });
@@ -168,7 +168,7 @@ public(package) fun upgrade_custody_created<PackageMarker: drop>(
 public(package) fun upgrade_authorized<PackageMarker: drop>(
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: ID,
+    current_package_id: ID,
     native_version: u64,
     policy: u8,
     digest: vector<u8>,
@@ -176,7 +176,7 @@ public(package) fun upgrade_authorized<PackageMarker: drop>(
     sui::event::emit(UpgradeAuthorized<PackageMarker> {
         custodian_id,
         upgrade_cap_id,
-        package_id,
+        current_package_id,
         native_version,
         policy,
         digest,
@@ -204,7 +204,7 @@ public(package) fun upgrade_committed<PackageMarker: drop>(
 public(package) fun upgrade_policy_restricted<PackageMarker: drop>(
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: address,
+    original_package_id: address,
     native_version: u64,
     previous_policy: u8,
     new_policy: u8,
@@ -212,7 +212,7 @@ public(package) fun upgrade_policy_restricted<PackageMarker: drop>(
     sui::event::emit(UpgradePolicyRestricted<PackageMarker> {
         custodian_id,
         upgrade_cap_id,
-        package_id,
+        original_package_id,
         native_version,
         previous_policy,
         new_policy,
@@ -222,14 +222,14 @@ public(package) fun upgrade_policy_restricted<PackageMarker: drop>(
 public(package) fun upgrade_cap_destroyed<PackageMarker: drop>(
     custodian_id: ID,
     upgrade_cap_id: ID,
-    package_id: address,
+    original_package_id: address,
     final_native_version: u64,
     final_policy: u8,
 ) {
     sui::event::emit(UpgradeCapDestroyed<PackageMarker> {
         custodian_id,
         upgrade_cap_id,
-        package_id,
+        original_package_id,
         final_native_version,
         final_policy,
     });
@@ -285,7 +285,7 @@ public fun operational_version_advanced_fields<PackageMarker: drop>(
 ): (ID, address, u64, u64) {
     (
         self.container_id,
-        self.package_id,
+        self.original_package_id,
         self.previous_generation,
         self.new_generation,
     )
@@ -299,7 +299,7 @@ public fun upgrade_custody_created_fields<PackageMarker: drop>(
         self.custodian_id,
         self.publisher_id,
         self.upgrade_cap_id,
-        self.package_id,
+        self.original_package_id,
         self.native_version,
         self.policy,
     )
@@ -312,7 +312,7 @@ public fun upgrade_authorized_fields<PackageMarker: drop>(
     (
         self.custodian_id,
         self.upgrade_cap_id,
-        self.package_id,
+        self.current_package_id,
         self.native_version,
         self.policy,
         self.digest,
@@ -340,7 +340,7 @@ public fun upgrade_policy_restricted_fields<PackageMarker: drop>(
     (
         self.custodian_id,
         self.upgrade_cap_id,
-        self.package_id,
+        self.original_package_id,
         self.native_version,
         self.previous_policy,
         self.new_policy,
@@ -354,7 +354,7 @@ public fun upgrade_cap_destroyed_fields<PackageMarker: drop>(
     (
         self.custodian_id,
         self.upgrade_cap_id,
-        self.package_id,
+        self.original_package_id,
         self.final_native_version,
         self.final_policy,
     )

@@ -61,8 +61,8 @@ fun address_claim_rejects_an_attestation() {
 // --- Account claims ---
 
 #[test]
-/// The backend signs the BCS claim message binding the Meme type, the account, the claimant, and
-/// the expiry; the claimant presents it and receives both caps.
+/// The backend signs the domain tag followed by the BCS claim message binding the Meme type, the
+/// account, the claimant, and the expiry; the claimant presents it and receives both caps.
 fun account_claim_with_the_backend_signature_issues_both_caps() {
     let mut fixture = start();
 
@@ -73,7 +73,7 @@ fun account_claim_with_the_backend_signature_issues_both_caps() {
                 CREATOR,
                 EXPIRES_AT_MS,
             ),
-            x"64303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030633a3a63726561746f725f617574686f726974795f74657374733a3a544553545f4d454d452011223344556677889900aabbccddeeffffeeddccbbaa009988776655443322110000000000000000000000000000000000000000000000000000000000c0ffee80841e0000000000",
+            x"626c6173745f66756e3a3a63726561746f725f636c61696d3a3a763164303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030633a3a63726561746f725f617574686f726974795f74657374733a3a544553545f4d454d452011223344556677889900aabbccddeeffffeeddccbbaa009988776655443322110000000000000000000000000000000000000000000000000000000000c0ffee80841e0000000000",
         );
 
         let (curve_fee_cap, metadata_cap) = creator_authority::claim_creator_caps<TEST_MEME>(
@@ -193,6 +193,23 @@ fun account_claim_rejects_a_signature_for_another_account() {
         );
 
         f.claim<TEST_MEME>(other_account, option::some(attestation()));
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EInvalidCreatorClaimSignature, location = blast_fun::creator_authority)]
+/// A signature over the bare BCS claim, without the domain tag, does not authorize the claim.
+fun account_claim_rejects_a_signature_without_the_domain_tag() {
+    let mut fixture = start();
+
+    fixture.next_tx!(CREATOR, |f| {
+        let attestation = creator_authority::new_creator_claim_attestation_for_testing(
+            EXPIRES_AT_MS,
+            untagged_signature(),
+        );
+
+        f.claim<TEST_MEME>(account_recipient(), option::some(attestation));
     });
 
     fixture.end();
@@ -395,14 +412,14 @@ fun account_commitment(): vector<u8> {
     x"11223344556677889900aabbccddeeffffeeddccbbaa00998877665544332211"
 }
 
-// Public test fixture: Ed25519 seed [7; 32], signing the BCS message above for
+// Public test fixture: Ed25519 seed [7; 32], signing the tagged message above for
 // the harness's synthetic launchpad address 0xc. Never used outside tests.
 fun signer_public_key(): vector<u8> {
     x"ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
 }
 
 fun signature(): vector<u8> {
-    x"ff0ced0a7390306e2da4210845558a93f6594f4c30836e2499ad400e38a9fbadc4591d9188fa6aaaac9ff3575a7c212f62fc451d1266ea744b847b4c7afc6a04"
+    x"3fb85e420aec61b9cf441af24cbc48bf5cbc7ce7fb3b116327f04ac9a86c9cd6fa2598296fd39611234edbf61eeccc2993cb083a88c5d6de464920df06f82102"
 }
 
 /// The same claim signed by the second signer key.
@@ -410,14 +427,19 @@ fun second_attestation(): vector<u8> {
     creator_authority::new_creator_claim_attestation_for_testing(EXPIRES_AT_MS, second_signature())
 }
 
-// Public test fixture: Ed25519 seed [8; 32], signing the same BCS message. Never used outside
+// Public test fixture: Ed25519 seed [8; 32], signing the same tagged message. Never used outside
 // tests.
 fun second_signer_public_key(): vector<u8> {
     x"1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
 }
 
 fun second_signature(): vector<u8> {
-    x"220a5b969395bb435fb32259c4b93c83b510f30a88632c409fbce844a8dc528bd6a6d911c6b43d977c2f1b4426ff2395683a262f20c998339acd3dcb2bc50002"
+    x"5e17e9f22982da21fde818ea7118d21915cd41a54c5746443bc9a37d24832ec03f00253eb58b4c34a1acc1df837537247076102f271496e01e6819492da7b10e"
+}
+
+/// Seed [7; 32]'s signature over the same claim without the domain tag.
+fun untagged_signature(): vector<u8> {
+    x"ff0ced0a7390306e2da4210845558a93f6594f4c30836e2499ad400e38a9fbadc4591d9188fa6aaaac9ff3575a7c212f62fc451d1266ea744b847b4c7afc6a04"
 }
 
 // === Imports ===

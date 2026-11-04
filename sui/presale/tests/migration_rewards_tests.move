@@ -69,8 +69,7 @@ fun collected_fees_pay_recipients_and_route_only_holder_meme() {
     assert_eq!(fee_recipient_meme, vector[51, 20]);
     assert_eq!(fee_recipient_quote, vector[5, 2]);
     assert_eq!(vector[holder_rewards_meme, holder_rewards_quote], vector[30, 3]);
-    let (vault_meme, vault_quote) = vault.holder_rewards_balances();
-    assert_eq!(vector[vault_meme, vault_quote], vector[0, 3]);
+    assert_eq!(vault.holder_rewards_quote(), 3);
 
     scenario.next_tx(CREATOR);
     assert_eq!(scenario.take_from_sender<Coin<MEME>>().burn_for_testing(), 51);
@@ -80,7 +79,7 @@ fun collected_fees_pay_recipients_and_route_only_holder_meme() {
     assert_eq!(scenario.take_from_sender<Coin<MEME>>().burn_for_testing(), 20);
     assert_eq!(scenario.take_from_sender<Coin<QUOTE>>().burn_for_testing(), 2);
 
-    vault.destroy_holding(0, 3);
+    vault.destroy_holding(3);
     destroy(presale_cap);
     scenario.end();
 }
@@ -125,7 +124,7 @@ fun collected_fees_pay_blast_its_share_first() {
     assert_eq!(scenario.sender_total_meme(), 38);
     assert_eq!(scenario.take_from_sender<Coin<QUOTE>>().burn_for_testing(), 3);
 
-    vault.destroy_holding(0, 2);
+    vault.destroy_holding(2);
     policy.destroy_for_testing();
     scenario.end();
 
@@ -172,7 +171,7 @@ fun a_partnered_vault_holds_blasts_lp_fees_for_its_partner() {
     assert!(!scenario.has_most_recent_for_sender<Coin<QUOTE>>());
 
     vault.pay_held_lp_fees(&partner, TREASURY, &mut scenario);
-    vault.destroy_holding(0, 2);
+    vault.destroy_holding(2);
     destroy(partner);
     scenario.end();
 }
@@ -224,7 +223,7 @@ fun anyone_pays_the_partner_its_cut_of_blasts_lp_fees_and_blast_the_rest() {
     assert_eq!(scenario.sender_total_meme(), 68);
     assert_eq!(scenario.take_from_sender<Coin<QUOTE>>().burn_for_testing(), 4);
 
-    vault.destroy_holding(0, 4);
+    vault.destroy_holding(4);
     destroy(partner);
     scenario.end();
 }
@@ -256,7 +255,7 @@ fun held_lp_fees_go_to_the_destination_in_force_at_payout() {
     assert_eq!(scenario.sender_total_meme(), 27);
     assert!(!scenario.has_most_recent_for_sender<Coin<QUOTE>>());
 
-    vault.destroy_holding(0, 2);
+    vault.destroy_holding(2);
     policy.destroy_for_testing();
     destroy(partner);
     scenario.end();
@@ -289,7 +288,7 @@ fun a_zero_cut_partner_leaves_blast_every_held_lp_fee() {
     assert!(event::events_by_type<PartnerPaid<MEME>>().is_empty());
     assert!(event::events_by_type<PartnerPaid<QUOTE>>().is_empty());
 
-    vault.destroy_holding(0, 2);
+    vault.destroy_holding(2);
     destroy(partner);
     scenario.end();
 }
@@ -396,7 +395,7 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
     assert_eq!(fee_recipient_quote, vector[3, 1]);
     assert_eq!(vector[holder_rewards_meme, holder_rewards_quote], vector[30, 1]);
 
-    vault.destroy_holding(0, 1);
+    vault.destroy_holding(1);
     policy.destroy_for_testing();
     scenario.end();
 
@@ -427,10 +426,7 @@ fun the_admin_publishes_holder_rounds_from_the_holder_share() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut vault = new_vault(vector[], 10_000, &mut scenario);
-    vault.credit_holder_for_testing(
-        balance::create_for_testing<MEME>(40),
-        balance::create_for_testing<QUOTE>(5),
-    );
+    vault.credit_holder_for_testing(balance::create_for_testing<QUOTE>(5));
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
@@ -443,7 +439,7 @@ fun the_admin_publishes_holder_rounds_from_the_holder_share() {
         hash::blake2b256(&b"root"),
         hash::blake2b256(&b"manifest"),
         1,
-        40,
+        0,
         5,
         0,
         CLAIM_WINDOW_DURATION_MS,
@@ -454,13 +450,12 @@ fun the_admin_publishes_holder_rounds_from_the_holder_share() {
     vault.publish_round(&package_version, &policy, &clock, scenario.ctx());
     policy.destroy_for_testing();
 
-    let (vault_meme, vault_quote) = vault.holder_rewards_balances();
-    assert_eq!(vector[vault_meme, vault_quote], vector[0, 0]);
+    assert_eq!(vault.holder_rewards_quote(), 0);
 
     scenario.next_tx(CREATOR);
     let round = scenario.take_shared<Round<MEME, QUOTE>>();
     let (round_meme, round_quote) = round.balances_for_testing();
-    assert_eq!(vector[round_meme, round_quote], vector[40, 5]);
+    assert_eq!(vector[round_meme, round_quote], vector[0, 5]);
 
     test_scenario::return_shared(round);
     clock.destroy_for_testing();
@@ -495,7 +490,7 @@ fun a_remainder_tie_goes_to_the_fee_recipient_before_holders() {
     scenario.next_tx(CREATOR);
     assert_eq!(scenario.take_from_sender<Coin<MEME>>().burn_for_testing(), 2);
 
-    vault.destroy_holding(0, 0);
+    vault.destroy_holding(0);
     scenario.end();
 }
 
@@ -684,9 +679,10 @@ fun a_holder_reward_cannot_be_claimed_twice() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut round = round_owing_holder(20, 0, &mut scenario);
-    rewards::claim(&mut round, &package_version, 0, HOLDER, 20, 0, vector[], scenario.ctx());
+    let clock = clock::create_for_testing(scenario.ctx());
+    rewards::claim(&mut round, &package_version, 0, HOLDER, 20, 0, vector[], &clock, scenario.ctx());
 
-    rewards::claim(&mut round, &package_version, 0, HOLDER, 20, 0, vector[], scenario.ctx());
+    rewards::claim(&mut round, &package_version, 0, HOLDER, 20, 0, vector[], &clock, scenario.ctx());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -698,8 +694,9 @@ fun a_holder_reward_claim_must_pay_a_positive_amount() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut round = round_owing_holder(0, 0, &mut scenario);
+    let clock = clock::create_for_testing(scenario.ctx());
 
-    rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 0, vector[], scenario.ctx());
+    rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 0, vector[], &clock, scenario.ctx());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -711,9 +708,72 @@ fun a_holder_reward_cannot_be_redirected() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut round = round_owing_holder(40, 0, &mut scenario);
+    let clock = clock::create_for_testing(scenario.ctx());
 
-    rewards::claim(&mut round, &package_version, 0, FEE_RECIPIENT, 40, 0, vector[], scenario.ctx());
+    rewards::claim(&mut round, &package_version, 0, FEE_RECIPIENT, 40, 0, vector[], &clock, scenario.ctx());
     std::unit_test::destroy(package_version);
+    abort
+}
+
+#[test]
+/// A claim relayed one millisecond before the deadline still pays.
+fun a_holder_reward_can_be_claimed_until_the_deadline() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let mut round = round_owing_holder(0, 5, &mut scenario);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(CLAIM_DEADLINE_AT_MS - 1);
+
+    rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 5, vector[], &clock, scenario.ctx());
+
+    scenario.next_tx(HOLDER);
+    assert_eq!(scenario.take_from_sender<Coin<QUOTE>>().burn_for_testing(), 5);
+    round.destroy_for_testing();
+    clock.destroy_for_testing();
+    scenario.end();
+
+    std::unit_test::destroy(package_version);
+}
+
+#[test]
+#[expected_failure(abort_code = rewards::EClaimsClosed, location = blast_presale::holder_rewards)]
+/// From the deadline, claims stop so that closing the round cannot race them.
+fun a_holder_reward_cannot_be_claimed_at_the_deadline() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let mut round = round_owing_holder(0, 5, &mut scenario);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(CLAIM_DEADLINE_AT_MS);
+
+    rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 5, vector[], &clock, scenario.ctx());
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EMemeRewardsUnsupported, location = blast_presale::presale_vault)]
+/// Holder Meme fees go to the treasury, so a round cannot promise Meme.
+fun a_round_cannot_pay_meme() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let mut vault = scenario.funded_holder_vault();
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    vault.schedule_round(
+        &package_version,
+        &rewards_admin(),
+        0,
+        0,
+        10,
+        hash::blake2b256(&b"root"),
+        hash::blake2b256(&b"manifest"),
+        1,
+        1,
+        1,
+        0,
+        CLAIM_WINDOW_DURATION_MS,
+        CREATOR,
+        &clock,
+    );
     abort
 }
 
@@ -723,15 +783,13 @@ fun an_unclaimed_round_returns_to_the_vault_after_its_deadline() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut vault = scenario.funded_holder_vault();
     vault.publish_test_round(0, 0, 10, &mut scenario);
-    let (meme_after_publish, _) = vault.holder_rewards_balances();
-    assert_eq!(meme_after_publish, 39);
+    assert_eq!(vault.holder_rewards_quote(), 39);
 
     vault.close_round_at(CLAIM_DEADLINE_AT_MS, &mut scenario);
 
-    let (vault_meme, vault_quote) = vault.holder_rewards_balances();
-    assert_eq!(vector[vault_meme, vault_quote], vector[40, 0]);
+    assert_eq!(vault.holder_rewards_quote(), 40);
 
-    vault.destroy_holding(40, 0);
+    vault.destroy_holding(40);
     scenario.end();
 }
 
@@ -779,8 +837,8 @@ fun a_round_needs_a_positive_claim_window() {
         hash::blake2b256(&b"root"),
         hash::blake2b256(&b"manifest"),
         1,
-        1,
         0,
+        1,
         0,
         0,
         CREATOR,
@@ -794,14 +852,16 @@ fun anyone_can_relay_a_holder_reward_to_the_committed_holder() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut round = round_owing_holder(40, 5, &mut scenario);
+    let clock = clock::create_for_testing(scenario.ctx());
 
-    rewards::claim(&mut round, &package_version, 0, HOLDER, 40, 5, vector[], scenario.ctx());
+    rewards::claim(&mut round, &package_version, 0, HOLDER, 40, 5, vector[], &clock, scenario.ctx());
 
     scenario.next_tx(HOLDER);
     assert_eq!(scenario.take_from_sender<Coin<MEME>>().burn_for_testing(), 40);
     assert_eq!(scenario.take_from_sender<Coin<QUOTE>>().burn_for_testing(), 5);
 
     round.destroy_for_testing();
+    clock.destroy_for_testing();
     scenario.end();
 
     std::unit_test::destroy(package_version);
@@ -985,16 +1045,14 @@ fun policy_with_lp_fees(meme_bps: u64, quote_bps: u64, scenario: &mut Scenario):
     result
 }
 
-/// A vault whose holder share is 40 Meme and no Quote.
+/// A vault whose holder share is 40 Quote.
 fun funded_holder_vault(scenario: &mut Scenario): Vault<MEME, QUOTE> {
     let mut vault = new_vault(vector[], 10_000, scenario);
-    vault.credit_holder_for_testing(
-        balance::create_for_testing<MEME>(40), balance::zero<QUOTE>(),
-    );
+    vault.credit_holder_for_testing(balance::create_for_testing<QUOTE>(40));
     vault
 }
 
-/// Publishes a one-leaf round that pays 1 Meme from the holder share, scheduled at time zero and
+/// Publishes a one-leaf round that pays 1 Quote from the holder share, scheduled at time zero and
 /// published once the default notice elapses.
 fun publish_test_round(
     self: &mut Vault<MEME, QUOTE>,
@@ -1015,8 +1073,8 @@ fun publish_test_round(
         hash::blake2b256(&b"root"),
         hash::blake2b256(&b"manifest"),
         1,
-        1,
         0,
+        1,
         0,
         CLAIM_WINDOW_DURATION_MS,
         policy.destination(),
@@ -1044,7 +1102,7 @@ fun close_round_at(self: &mut Vault<MEME, QUOTE>, now_at_ms: u64, scenario: &mut
     std::unit_test::destroy(package_version);
 }
 
-/// A one-leaf round funded with 40 Meme and `quote` Quote, owing `HOLDER` the given amounts.
+/// A one-leaf round funded with exactly the `meme` and `quote` it owes `HOLDER`.
 /// With a single leaf, that leaf is the Merkle root.
 fun round_owing_holder(meme: u64, quote: u64, scenario: &mut Scenario): Round<MEME, QUOTE> {
     let vault_id = object::id_from_address(@0xBEEF);
@@ -1056,18 +1114,16 @@ fun round_owing_holder(meme: u64, quote: u64, scenario: &mut Scenario): Round<ME
         CLAIM_DEADLINE_AT_MS,
         root,
         1,
-        balance::create_for_testing<MEME>(40),
+        balance::create_for_testing<MEME>(meme),
         balance::create_for_testing<QUOTE>(quote),
         scenario.ctx(),
     )
 }
 
 /// Pays out the holder share as a round would, so destruction aborts unless the share is
-/// exactly `meme` and `quote`.
-fun destroy_holding(mut self: Vault<MEME, QUOTE>, meme: u64, quote: u64) {
-    let (round_meme, round_quote) = self.fund_round(0, meme, quote);
-    round_meme.destroy_for_testing();
-    round_quote.destroy_for_testing();
+/// exactly `quote`.
+fun destroy_holding(mut self: Vault<MEME, QUOTE>, quote: u64) {
+    self.fund_round(0, quote).destroy_for_testing();
     self.destroy_for_testing();
 }
 

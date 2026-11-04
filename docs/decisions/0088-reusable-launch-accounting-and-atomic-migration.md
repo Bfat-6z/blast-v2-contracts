@@ -97,7 +97,7 @@ package-specific and keeps the accepted authority boundaries:
 | Package | `Publisher` / `UpgradeCap` posture | Operational version gate |
 | --- | --- | --- |
 | launchpad | ADR 0032, amended: canonical `Publisher` and raw `UpgradeCap` are permanently wrapped in shared `PackageAdmin`, with no policy-narrowing path (owner, 2026-09-23), because a narrowed cap could never commit and advance again; `make_immutable` remains the deliberate end of upgrades | shared launchpad package version is checked first; the upgrade finalizer checks the next generation before the role |
-| migrators | canonical `Publisher` and raw `UpgradeCap` enter the migrators' shared `PackageAdmin` and stay there, with no policy-narrowing or immutability path: the package remains upgradeable so it can relink when a venue raises its version gate or a launchpad cutover advances its package version | migrators package version is checked before venue or core state; the upgrade finalizer checks the next generation before the role |
+| migrators | canonical `Publisher` and raw `UpgradeCap` enter the migrators' shared `PackageAdmin` and stay there, with no policy-narrowing path; a delayed `UpgradeAdmin` action can make it immutable, which ends relinking for good. Until then the package remains upgradeable so it can relink when a venue raises its version gate or a launchpad cutover advances its package version | migrators package version is checked before venue or core state; the upgrade finalizer checks the next generation before the role |
 | distributor | ADR 0075 unchanged: the owner retains the native `UpgradeCap`; singleton `AdminCap` controls pause and stored-version migration | every entry checks the distributor `Version` first, then pause |
 | each generated Meme package | no `Publisher` is claimed; the publisher keeps the `UpgradeCap`, so the package stays upgradeable unless the publishing transaction makes it immutable | one-time initializer; the Sui verifier forbids packing the one-time witness in any later version |
 
@@ -217,7 +217,9 @@ migrators upgrade always advances the migrators generation, so every migrators
 upgrade uses the compatible policy and bumps both compiled generation constants,
 the current and the next; a build that keeps them freezes the package, because
 its version check then rejects every later upgrade authorization. The migrators
-custody therefore has no policy-narrowing or immutability path.
+custody therefore has no policy-narrowing path. It can still be made immutable through
+`package_admin::schedule_make_immutable` and `make_immutable`, which wait the upgrade
+notice and end relinking for good (corrected 2026-11-04).
 
 Cetus and Bluefin are this lineage's only adapters, and their witnesses are the
 only ones the migrators package defines. No production witness is admitted until

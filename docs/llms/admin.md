@@ -190,7 +190,9 @@ equals the compiled one. The other consumers' upgrade finalizer runs
 `operational_version::assert_next` and then `operational_version::advance`,
 which increments the stored generation by exactly one and emits
 `OperationalVersionAdvanced` with `container_id` (the version object's ID),
-`package_id` (the package's original ID), and the old and new generations.
+`original_package_id`, and the old and new generations. Every upgrade event names the
+package's `original_package_id`, except `UpgradeAuthorized`, which names the
+`current_package_id` the digest upgrades from.
 Integrators pass the version object as a shared, immutable input to every call
 that takes it and must call the latest package version.
 
@@ -311,9 +313,9 @@ entry's applied value and `delayed_map::pending` its pending
 `delayed_map::MapChange` is `Entry { entry, value }` or `Delay`.
 
 The destroy calls (`delayed::destroy`, `delayed_action::destroy`,
-`delayed_set::destroy`, `delayed_map::destroy`) abort with code 21 while anything
-is pending, so every proposal ends in an event; each emits its module's
-`Destroyed` event.
+`delayed_set::destroy`) abort with code 21 while anything is pending, so every
+proposal ends in an event; each emits its module's `Destroyed` event. A
+`DelayedMap` has no destroy: its entries live in a `Table`, so its owner keeps it.
 
 The launchpad's account-claim signer keys are a `DelayedSet`: ClaimSignerAdmin's admissions wait
 the set's notice, so a compromised ClaimSignerAdmin cannot sign claims without warning, and its
@@ -323,7 +325,7 @@ revocations are immediate. ACL administrator and role grants remain immediate.
 
 - Root transfer delay: 604,800,000 ms (seven days), fixed in immutable code. The
   nominee may accept from the first transaction whose `Clock` reads
-  `execute_after_ms` or later.
+  `ready_at_ms` or later.
 - The root transfer is a `DelayedAction` with no notice-change path. Accepting
   consumes the nomination; cancelling or replacing it discards the old nominee,
   so a replaced, cancelled, or already accepted nominee can never accept.
@@ -387,7 +389,6 @@ and `key`. Each map event's `change` names its entry.
 | `delayed_map::MapCreated` | `delayed_map::new` | initial notice |
 | `delayed_map::MapScheduled` / `delayed_map::MapCancelled` | entry or notice proposals | `change` (entry and value, none to clear), the notice an entry change waits or the proposed notice, `ready_at_ms` |
 | `delayed_map::MapApplied` | `delayed_map::apply`, `delayed_map::apply_delay` | `change` and the notice it waited or now applied |
-| `delayed_map::MapDestroyed` | `delayed_map::destroy` | the map and its entries end |
 
 Replaying the ACL events in order reconstructs `ACL.admins` and every root
 transfer exactly. `ACL` creation emits only the root transfer's

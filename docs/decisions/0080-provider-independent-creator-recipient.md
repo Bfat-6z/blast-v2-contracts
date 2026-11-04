@@ -33,7 +33,9 @@ External login methods belong to that Blast account off chain. The backend
 authenticates a provider's immutable subject, resolves it through a securely
 linked Blast account, checks the stored commitment, and signs one
 `CreatorClaimMessage` containing the original Meme type, account commitment,
-claimant wallet, and expiry. The contract does not receive a provider id,
+claimant wallet, and expiry. The signed bytes are the constant domain tag
+`blast_fun::creator_claim::v1` followed by the message's BCS, so a signature cannot
+verify as another message of the same shape (amended 2026-11-04, pre-audit LP-I5). The contract does not receive a provider id,
 email, username, display name, or provider token.
 
 If the recipient has never used Blast, the backend may create an unclaimed

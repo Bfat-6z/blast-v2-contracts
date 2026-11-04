@@ -33,7 +33,7 @@ fun skipped_days_allow_a_new_daily_interval_with_an_independent_claim_window() {
         f.clock.set_for_testing(1_000_000 + ROUND_NOTICE_MS + CLAIM_WINDOW_DURATION_MS);
         f.close();
     });
-    assert_eq!(fixture.balances(), vector[0, 100]);
+    assert_eq!(fixture.holder_quote(), 100);
     fixture.publish(1, 21, 30);
     assert_eq!(fixture.vault.next_round(), 2);
     assert_eq!(fixture.vault.last_checkpoint(), option::some(30));
@@ -43,7 +43,7 @@ fun skipped_days_allow_a_new_daily_interval_with_an_independent_claim_window() {
         f.clock.set_for_testing(1_000_000 + 2 * (ROUND_NOTICE_MS + CLAIM_WINDOW_DURATION_MS));
         f.close();
     });
-    assert_eq!(fixture.balances(), vector[0, 90]);
+    assert_eq!(fixture.holder_quote(), 90);
     fixture.end();
 }
 
@@ -137,7 +137,7 @@ fun claim(self: &mut DailyRewardsFixture) {
         .scenario
         .ctx());
     let mut round = self.scenario.take_shared<Round<MEME, QUOTE>>();
-    rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 10, vector[], self.ctx!());
+    rewards::claim(&mut round, &package_version, 0, HOLDER, 0, 10, vector[], &self.clock, self.ctx!());
     test_scenario::return_shared(round);
 
     std::unit_test::destroy(package_version);
@@ -157,16 +157,13 @@ fun close(self: &mut DailyRewardsFixture) {
     std::unit_test::destroy(package_version);
 }
 
-fun balances(self: &DailyRewardsFixture): vector<u64> {
-    let (meme, quote) = self.vault.holder_rewards_balances();
-    vector[meme, quote]
+fun holder_quote(self: &DailyRewardsFixture): u64 {
+    self.vault.holder_rewards_quote()
 }
 
 fun end(mut self: DailyRewardsFixture) {
-    let (_, remaining) = self.vault.holder_rewards_balances();
-    let (meme, quote) = self.vault.fund_round(0, 0, remaining);
-    meme.destroy_zero();
-    quote.destroy_for_testing();
+    let remaining = self.vault.holder_rewards_quote();
+    self.vault.fund_round(0, remaining).destroy_for_testing();
     let DailyRewardsFixture { scenario, vault, clock } = self;
     vault.destroy_for_testing();
     clock.destroy_for_testing();
