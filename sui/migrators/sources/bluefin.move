@@ -186,7 +186,7 @@ public fun buyback_and_burn<Meme, Quote>(
     migrators_version.assert_current();
     assert!(self.pool_id() == object::id(pool), EPositionPoolMismatch);
 
-    let quote = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);
+    let (quote, receipt) = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);
     let (meme, quote) = pool::swap(
         clock,
         bluefin_config,
@@ -200,7 +200,7 @@ public fun buyback_and_burn<Meme, Quote>(
         constants::max_swap_sqrt_price!(),
     );
 
-    self.burn_buyback(&Venue(), vault_version, currency, meme, quote, quote_in, min_meme_out, ctx);
+    self.burn_buyback(&Venue(), vault_version, receipt, currency, meme, quote, min_meme_out, ctx);
 }
 
 // === Private Functions ===
@@ -326,11 +326,11 @@ fun compound<Meme, Quote>(
     pool: &mut Pool<Meme, Quote>,
     clock: &Clock,
 ) {
-    let (meme, quote) = self.take_auto_lp(&Venue(), vault_version);
+    let (meme, quote, receipt) = self.take_auto_lp(&Venue(), vault_version);
     let position = self.position_mut<_, _, _, Position>(&Venue(), vault_version);
     let (fix_meme, fixed_amount) = pool.fixed_side(position, meme.value(), quote.value());
 
-    let (added_meme, added_quote, meme, quote) = if (fixed_amount > 0) {
+    let (_, _, meme, quote) = if (fixed_amount > 0) {
         pool::add_liquidity_with_fixed_amount(
             clock,
             bluefin_config,
@@ -345,7 +345,7 @@ fun compound<Meme, Quote>(
         (0, 0, meme, quote)
     };
 
-    self.keep_auto_lp(&Venue(), vault_version, added_meme, added_quote, meme, quote);
+    self.keep_auto_lp(&Venue(), vault_version, receipt, meme, quote);
 }
 
 /// Chooses the side an auto-LP add fixes, and how much, from the pool's price and the position's

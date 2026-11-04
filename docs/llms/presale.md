@@ -168,8 +168,9 @@ or `Funded`. The vault never closes and its position is never removed.
    and reviewed venue admission through the ordinary schedule/apply operations
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
    ordinary ListingAdmin setter. No publication proof authorizes policy changes.
-   Each presale venue must also be admitted in the vault's `VaultRegistry`
-   (`blast_vault_package::schedule_venue`), or its migrations abort.
+   Each presale venue, and the presale's own `blast_presale::blast_presale::PackageWitness` as
+   the issuer of its vault terms, must also be listed in the vault's `VaultRegistry`
+   (`blast_vault_package::schedule_witness`), or its migrations abort.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
    role to schedule and apply its intended value and next notice. Upgrade custody
    already holds its 48-hour notice from publication.

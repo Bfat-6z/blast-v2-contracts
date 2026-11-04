@@ -137,10 +137,11 @@ sealed by its witness, so the vault imports neither product.
   `CancelAdmin`) are generic over the package marker in `blast_admin`, so each package's grants stay
   separate.
 - A venue needs two admissions: each product's own venue allowlist, which lets new sales name it,
-  and the vault's registry, which lets it create vaults. Both are checked on every migration, so
-  the registry admits a venue before any product does, and removing a venue from the registry
-  strands the migrations of every sale that names it until it is admitted again; Blast reserves
-  that removal for a venue found unsafe.
+  and the vault's witness list, which also lists each product's package witness as an issuer.
+  Every migration checks both lists, so the vault lists the products and a venue before any
+  product admits it, and removing either from the vault's list strands the migrations of every
+  sale that depends on it until it is listed again; Blast reserves that removal for a venue or
+  issuer found unsafe.
 - Products start fully paused and use pause bits create 1, trade or commit 2, migrate 4. The vault
   pauses only administrator operations; collection, owner claims and reward claims never pause. The
   venues have no pause bits: the product's migration bit gates migration, and collection must never

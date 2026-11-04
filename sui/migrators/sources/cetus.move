@@ -259,10 +259,10 @@ public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
     assert!(self.pool_id() == object::id(pool), EPositionPoolMismatch);
 
-    let quote = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);
+    let (quote, receipt) = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);
     let (meme, quote) = pool.swap_quote_for_meme(cetus_config, quote, meme_is_a, clock, ctx);
 
-    self.burn_buyback(&Venue(), vault_version, currency, meme, quote, quote_in, min_meme_out, ctx);
+    self.burn_buyback(&Venue(), vault_version, receipt, currency, meme, quote, min_meme_out, ctx);
 }
 
 // === Private Functions ===
@@ -369,9 +369,9 @@ fun compound<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let (meme, quote) = self.take_auto_lp(&Venue(), vault_version);
+    let (meme, quote, receipt) = self.take_auto_lp(&Venue(), vault_version);
     let (a, b) = reorder(meme, quote, meme_is_a, ctx);
-    let (a, b, added_a, added_b) = self.add_liquidity(
+    let (a, b) = self.add_liquidity(
         vault_version,
         cetus_config,
         pool,
@@ -382,13 +382,11 @@ fun compound<Meme, Quote, CoinA, CoinB>(
     );
 
     let (meme, quote) = reorder(a, b, meme_is_a, ctx);
-    let (added_meme, added_quote) = if (meme_is_a) (added_a, added_b) else (added_b, added_a);
-    self.keep_auto_lp(&Venue(), vault_version, added_meme, added_quote, meme, quote);
+    self.keep_auto_lp(&Venue(), vault_version, receipt, meme, quote);
 }
 
 /// Adds as much of `a` and `b` as the auto-LP position takes at the pool's current price, fixing
-/// the side Cetus's own liquidity math says the other side can cover, and returns the rest with
-/// the amounts added. The burned migration position cannot receive liquidity, so the first add
+/// the side Cetus's own liquidity math says the other side can cover, and returns the rest. The burned migration position cannot receive liquidity, so the first add
 /// opens a full-range auto-LP position the vault keeps with no removal path. Nothing is added while
 /// either side is empty or would give zero liquidity.
 fun add_liquidity<A, B, Meme, Quote>(
@@ -400,8 +398,8 @@ fun add_liquidity<A, B, Meme, Quote>(
     mut b: Balance<B>,
     clock: &Clock,
     ctx: &mut TxContext,
-): (Balance<A>, Balance<B>, u64, u64) {
-    if (a.value() == 0 || b.value() == 0) return (a, b, 0, 0);
+): (Balance<A>, Balance<B>) {
+    if (a.value() == 0 || b.value() == 0) return (a, b);
 
     if (!self.has_auto_lp_position(&Venue())) {
         let (tick_lower, tick_upper) = pool_creator::full_range_tick_range(pool.tick_spacing());
@@ -411,7 +409,7 @@ fun add_liquidity<A, B, Meme, Quote>(
 
     let position = self.auto_lp_position_mut<_, _, _, Position>(&Venue(), vault_version);
     let (fix_a, fixed_amount) = pool.fixed_side(position, a.value(), b.value());
-    if (fixed_amount == 0) return (a, b, 0, 0);
+    if (fixed_amount == 0) return (a, b);
 
     let receipt = pool::add_liquidity_fix_coin(
         cetus_config,
@@ -424,7 +422,7 @@ fun add_liquidity<A, B, Meme, Quote>(
     let (paid_a, paid_b) = receipt.add_liquidity_pay_amount();
     pool::repay_add_liquidity(cetus_config, pool, a.split(paid_a), b.split(paid_b), receipt);
 
-    (a, b, paid_a, paid_b)
+    (a, b)
 }
 
 /// Chooses the side an auto-LP add fixes, and how much: `a` when Cetus's own liquidity math says

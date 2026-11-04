@@ -45,7 +45,8 @@ Calls also take objects from other packages:
 sealed witnesses; only their own module constructs them. A venue's witness issues its tickets,
 redeems its launches' migrations, keys its position inside the vault, and authorizes its fee
 collections. Blast admits each witness type twice: in `LaunchConfig` (so launches may start on it)
-and in the vault's `VaultRegistry` (so it may create vaults).
+and in the vault's `VaultRegistry` (so it may create vaults), which must also list the launchpad's
+`blast_fun::launch::PackageWitness` as the issuer of every launch's vault terms.
 
 #### Who may call what
 
@@ -358,7 +359,7 @@ own pool, position, and swap events in the same transactions.
 | Cetus migrate, collect, buyback | `blast_fun_migrators::cetus::EInvalidCoinOrder` (migrate), `blast_fun_migrators::cetus::EWrongCoinPair` | pass the pool's coin order; `CoinA` and `CoinB` must be the launch's Meme and Quote |
 | migrate | `sui::dynamic_field` code 1 reading the tier; 8 `blast_core::errors::EWrongVenue` in `blast_core::migration` | call the migrate of the venue the launch stores |
 | migrate | 14 `blast_fun::errors::EInvalidLaunchLifecycle`, 37 `blast_fun::errors::EPaused` (launchpad) | wait for `MigrationReady`; wait for Migrate to be unpaused |
-| migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue must be admitted in `VaultRegistry`; the seed must give positive liquidity |
+| migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedIssuer`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the launchpad's `PackageWitness` must be listed in `VaultRegistry`; the seed must give positive liquidity |
 | migrate | Cetus aborts when the pair's pool already exists or the tick spacing is no longer registered; Bluefin aborts on a wrong creation fee | the launch stays `MigrationReady`; pass the exact Bluefin fee |
 | collect, settle, buyback | `blast_fun_migrators::cetus::EPositionPoolMismatch`, `blast_fun_migrators::bluefin::EPositionPoolMismatch` | pass the vault's own pool |
 | settle and apply | 18 `ENoPending` or 17 `ENotReady` from Blast admin's `delayed` module | wait until the scheduled split is ready |

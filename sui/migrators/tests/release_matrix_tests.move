@@ -41,7 +41,7 @@ fun the_vault_registry_admits_exactly_the_cetus_and_bluefin_venues() {
     f.admit_vault_venue<cetus::Venue>();
     f.admit_vault_venue<bluefin::Venue>();
 
-    let admitted = event::events_by_type<SetApplied<VenuesKey, TypeName>>().map!(|applied| {
+    let admitted = event::events_by_type<SetApplied<WitnessesKey, TypeName>>().map!(|applied| {
         let (_, _, change, _) = applied.set_applied_fields();
         change.member_for_testing().destroy_some()
     });
@@ -82,11 +82,11 @@ fun admit_launch_venue<Venue: drop>(self: &mut MatrixFixture) {
         );
 }
 
-/// Schedules and applies `Venue`'s admission at the registry's publication notice of zero.
-fun admit_vault_venue<Venue: drop>(self: &mut MatrixFixture) {
+/// Schedules and applies `Witness`'s admission at the registry's publication notice of zero.
+fun admit_vault_venue<Witness: drop>(self: &mut MatrixFixture) {
     let admin = blast_acl::witness_for_testing<VaultAdapterAdmin>();
-    self.registry.schedule_venue<Venue>(&admin, &self.vault_version, &self.clock);
-    self.registry.apply_venue<Venue>(&self.vault_version, &self.clock);
+    self.registry.schedule_witness<Witness>(&admin, &self.vault_version, &self.clock);
+    self.registry.apply_witness<Witness>(&self.vault_version, &self.clock);
 }
 
 fun end(self: MatrixFixture) {
@@ -121,7 +121,7 @@ use blast_fun::{
 
 use blast_fun_migrators::{bluefin, cetus};
 
-use blast_vault::blast_vault_package::{Self, BLAST_VAULT_PACKAGE, VaultRegistry, VenuesKey};
+use blast_vault::blast_vault_package::{Self, BLAST_VAULT_PACKAGE, VaultRegistry, WitnessesKey};
 
 use std::{type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 

@@ -64,16 +64,18 @@ The venue witnesses are `<migrators>::cetus::Venue` and
    release while an admission is pending, so admit before the launchpad's
    release ([launchpad DEPLOYING](../launchpad/DEPLOYING.md)).
 2. **Vault.** With the core `blast_domain::AdapterAdmin`, schedule
-   `blast_vault_package::schedule_venue<Venue>` on the `VaultRegistry` for each
-   witness and apply it with `blast_vault_package::apply_venue`; without it,
-   migration aborts in `blast_vault::vault::new`. Removing a venue from the
-   registry strands every graduated launch that names it until it is admitted
-   again; reserve that for a venue found unsafe. The vault publishes fully
+   `blast_vault_package::schedule_witness<Witness>` on the `VaultRegistry` for
+   each venue witness and for the launchpad's `blast_fun::launch::PackageWitness`
+   (the issuer of every launch's vault terms), and apply each with
+   `blast_vault_package::apply_witness`; without them, migration aborts in
+   `blast_vault::vault::new`. Removing a venue or the launchpad from the list
+   strands every graduated launch that depends on it until it is listed again;
+   reserve that for a witness found unsafe. The vault publishes fully
    paused with a zero admission notice and admissions ignore the pause, so admit
    every venue that should start admitted, the presale venues included
    ([presale DEPLOYING](../presale/DEPLOYING.md)), then schedule and apply a
-   172,800,000 ms (48-hour) notice with `schedule_venue_delay` and
-   `apply_venue_delay`. Only then does `blast_vault_package::unpause` (signed in
+   172,800,000 ms (48-hour) notice with `schedule_witness_delay` and
+   `apply_witness_delay`. Only then does `blast_vault_package::unpause` (signed in
    as `UnpauseAdmin<BLAST_VAULT_PACKAGE>`) release the vault: it refuses while
    the notice is zero, a pending change would set it to zero, or an admission is
    pending. A venue admitted later waits the 48-hour notice.

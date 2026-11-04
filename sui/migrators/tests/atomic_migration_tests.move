@@ -224,7 +224,7 @@ fun auto_lp_and_buyback_run_through_the_migrated_vault() {
     vault.assert_split_balances(500, 1_000, 1_000);
 
     // Auto-LP: the pool takes 400 Meme and 800 Quote into the position; the rest waits.
-    let (mut meme, mut quote) = vault.take_auto_lp(&Venue(), f.vault_version());
+    let (mut meme, mut quote, receipt) = vault.take_auto_lp(&Venue(), f.vault_version());
     assert_eq!(meme.value(), 500);
     assert_eq!(quote.value(), 1_000);
     let (added_meme, added_quote) = (meme.split(400), quote.split(800));
@@ -234,14 +234,14 @@ fun auto_lp_and_buyback_run_through_the_migrated_vault() {
     );
     position.meme.join(added_meme);
     position.quote.join(added_quote);
-    vault.keep_auto_lp(&Venue(), f.vault_version(), 400, 800, meme, quote);
+    vault.keep_auto_lp(&Venue(), f.vault_version(), receipt, meme, quote);
     assert_eq!(
         event::events_by_type<AutoLiquidityAdded<ATOMIC_MIGRATION_TESTS, QUOTE>>().length(),
         1,
     );
 
     // Buyback: 600 burn Quote buys 1,000 Meme, and the 100 Quote the pool leaves waits again.
-    let mut quote_in = vault.take_buyback_quote(
+    let (mut quote_in, receipt) = vault.take_buyback_quote(
         &Venue(),
         &blast_acl::witness_for_testing<BuybackAdmin>(),
         f.vault_version(),
@@ -251,7 +251,7 @@ fun auto_lp_and_buyback_run_through_the_migrated_vault() {
     assert_eq!(quote_in.destroy_for_testing(), 500);
     let meme_out = bought.split(1_000, f.ctx()).into_balance();
     let supply_before_buyback = currency.total_supply().destroy_some();
-    f.burn_buyback(&mut vault, &mut currency, meme_out, unspent_quote, 600, 1_000);
+    f.burn_buyback(&mut vault, receipt, &mut currency, meme_out, unspent_quote, 1_000);
     assert_eq!(currency.total_supply().destroy_some(), supply_before_buyback - 1_000);
     assert_eq!(event::events_by_type<BuybackBurned<ATOMIC_MIGRATION_TESTS, QUOTE>>().length(), 1);
     vault.assert_split_balances(100, 200, 500);
@@ -451,20 +451,20 @@ fun mock_collect(
 fun burn_buyback(
     f: &mut LaunchFixture,
     vault: &mut Vault<ATOMIC_MIGRATION_TESTS, QUOTE>,
+    receipt: BuybackReceipt,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
     meme: Balance<ATOMIC_MIGRATION_TESTS>,
     unspent_quote: Balance<QUOTE>,
-    quote_in: u64,
     min_meme_out: u64,
 ) {
     let (vault_version, _, ctx) = f.collection_inputs();
     vault.burn_buyback(
         &Venue(),
         vault_version,
+        receipt,
         currency,
         meme,
         unspent_quote,
-        quote_in,
         min_meme_out,
         ctx,
     );
@@ -597,7 +597,7 @@ use blast_fun_migrators::launch_fixture::{Self, LaunchFixture};
 use blast_vault::{
     blast_vault_events::{AutoLiquidityAdded, BuybackBurned, FeesCollected, VaultCreated},
     blast_vault_package::{BLAST_VAULT_PACKAGE, VaultRegistry},
-    vault::{Self, Vault}
+    vault::{Self, BuybackReceipt, Vault}
 };
 
 use std::{bcs, type_name, unit_test::{assert_eq, destroy}};

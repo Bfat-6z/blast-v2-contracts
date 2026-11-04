@@ -80,8 +80,10 @@ policy before the chosen delay and release.
    Each admitted venue must also be admitted in the vault's `VaultRegistry`, or
    its migrations abort, so admit it there first. Removing a venue from the
    registry strands every funded sale that names it until it is admitted again;
-   reserve that for a venue found unsafe. To admit it: with the core `blast_domain::AdapterAdmin`,
-   `blast_vault_package::schedule_venue<Venue>` then `apply_venue`. The vault
+   reserve that for a venue found unsafe. The vault must also list the presale's
+   `blast_presale::blast_presale::PackageWitness`, the issuer of every presale's
+   vault terms. To list each: with the core `blast_domain::AdapterAdmin`,
+   `blast_vault_package::schedule_witness<Witness>` then `apply_witness`. The vault
    publishes fully paused with a zero admission notice, so admit the presale and
    launchpad venues together, then raise the vault's notice to 48 hours and
    unpause it, as [migrators DEPLOYING](../migrators/DEPLOYING.md) step 4
