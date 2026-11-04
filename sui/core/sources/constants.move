@@ -11,7 +11,7 @@ macro public(package) fun basis_points_denominator(): u64 {
     10_000
 }
 
-/// Maximum routes in one fee split: 16 address routes plus one of each of the four special kinds.
+/// Maximum routes in one fee split, so 16 recipients still fit beside the four special kinds.
 /// Every collection pays them in the same transaction.
 macro public(package) fun max_routes(): u64 {
     20

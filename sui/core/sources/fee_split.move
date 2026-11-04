@@ -26,8 +26,8 @@ public struct Route has copy, drop, store {
     bps: Bps,
 }
 
-/// Validated routes: at most 20 (16 addresses and the four special kinds), each positive, no
-/// address twice, at most one of each special kind, summing to exactly 10,000. Only `new` builds
+/// Validated routes: at most 20, each positive, no address twice, at most one of each special
+/// kind, summing to exactly 10,000. Only `new` builds
 /// one, so every split a vault holds assigns each collection in full.
 public struct FeeSplit has copy, drop, store {
     routes: vector<Route>,

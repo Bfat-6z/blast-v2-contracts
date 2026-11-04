@@ -24,8 +24,7 @@ values between product and venue calls.
 
 ### Fee splits
 
-`fee_split::FeeSplit` is a list of up to 20 routes (16 addresses and one of each special kind)
-summing to 10,000. Each route has a positive
+`fee_split::FeeSplit` is a list of up to 20 routes summing to 10,000. Each route has a positive
 share and a `fee_split::Destination`: an address, the vault's owner, auto-LP, holder rewards, or
 burn. No address and no special kind appears twice. `fee_split::apportion` divides one collection
 across the routes in order.

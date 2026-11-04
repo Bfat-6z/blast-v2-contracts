@@ -24,7 +24,7 @@ const EInvalidVestingTerms: u64 = 2;
 const EInvalidRoute: u64 = 3;
 
 #[test_only]
-/// A fee split needs at most 16 distinct routes summing to 10,000.
+/// A fee split needs at most 20 distinct routes summing to 10,000.
 const EInvalidFeeSplit: u64 = 4;
 
 #[test_only]
