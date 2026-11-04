@@ -2,8 +2,12 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 #[test_only]
-/// T-010 conformance: a sealed mock adapter migrates in one transaction and locks the position and
-/// the residuals in a shared vault that later splits collections under the launch's fee split.
+/// T-010 conformance for the venue custody both release routes share: a sealed mock venue
+/// prepares the coin, redeems the launch's hand-off in one transaction, and builds and shares a
+/// `blast_vault` vault from the redeemed terms with its position attached, exactly as
+/// `cetus::migrate` and `bluefin::migrate` do once their pools exist. The venue interfaces are
+/// `abort 0` link stubs, so the routes themselves run against real venue bytecode in the
+/// launchpad venue-fork harness.
 module blast_fun_migrators::atomic_migration_tests;
 
 // === Test-Only Types ===
@@ -13,14 +17,16 @@ public struct ATOMIC_MIGRATION_TESTS has drop {}
 
 public struct QUOTE() has drop;
 
-/// The mock adapter's sealed witness, which is also its vault venue marker.
+/// The mock venue's sealed witness: it issues the ticket, redeems the hand-off, and keys the
+/// position in the vault.
 public struct Venue() has drop;
 
+/// A venue the launch policy may admit but the vault registry never does.
 public struct OtherVenue() has drop;
 
 public struct MockPool has key { id: UID }
 
-/// Venue position owns exactly the supplied principal; the vault separately owns residuals.
+/// The venue position owns exactly the supplied principal; the vault settles the residuals.
 public struct MockPosition<phantom Meme, phantom Quote> has key, store {
     id: UID,
     pool_id: ID,
@@ -29,211 +35,356 @@ public struct MockPosition<phantom Meme, phantom Quote> has key, store {
     liquidity: u128,
 }
 
-public struct Fixture {
-    scenario: Scenario,
-    version: PackageVersion,
-    migrators_version: MigratorsVersion,
-    runtime: RuntimeConfig,
-    clock: Clock,
-    launch_id: ID,
-}
-
 // === Tests ===
 
 #[test]
-fun single_ptb_sealed_mock_adapter_keeps_principal_and_residuals_in_vault_custody() {
-    let mut f = start();
-    f.reach_migration();
+fun a_migration_creates_a_vault_whose_event_carries_the_launch_terms() {
+    let mut f = launch_fixture::start<QUOTE, Venue>();
+    f.set_protocol_lp_fees(1_500, 1_500);
+    let launch_id = f.open(owner_split(), false);
+    destroy(f.graduate<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id));
 
-    f.scenario.next_tx(TESTER);
-    let mut launch = f.take_launch();
-    let mut currency = f.take_currency();
-    let (_, quote_before, _, allocated_before) = launch.balances_for_testing();
-    launch.mock_adapter(&f.version, &mut currency, f.scenario.ctx());
+    f.next_tx(TESTER);
+    let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    let (_, pooled_quote, _, pooled_meme) = launch.balances_for_testing();
+    f.mock_migrate(&mut launch, &mut currency);
 
-    assert!(!launch.is_live_for_testing() && !launch.is_migration_ready_for_testing());
     assert!(launch.is_migrated_for_testing());
-    let (_, quote_after, _, allocated_after) = launch.balances_for_testing();
-    assert_eq!(quote_after, 0);
-    assert_eq!(allocated_after, 0);
-    // Only project recipients are reported; Blast's zero fee remains internal to the launch.
-    assert_eq!(collect<events::MigrationAllocationPaid>().length(), 1);
-    assert_eq!(collect<events::Migrated>().length(), 1);
-    assert_eq!(event::events_by_type<blast_events::VaultCreated>().length(), 1);
-
-    let fee_split = launch.lp_fee_split();
+    let (_, quote_left, _, meme_left) = launch.balances_for_testing();
+    assert_eq!(quote_left, 0);
+    assert_eq!(meme_left, 0);
+    let created = event::events_by_type<VaultCreated<ATOMIC_MIGRATION_TESTS, QUOTE, Venue>>();
+    assert_eq!(created.length(), 1);
     test_scenario::return_shared(launch);
-    test_scenario::return_to_address(COIN_REGISTRY, currency);
+    launch_fixture::return_currency(currency);
 
-    f.scenario.next_tx(TESTER);
-    let mut vault = f.scenario.take_shared<LpVault<ATOMIC_MIGRATION_TESTS, QUOTE>>();
-    assert_eq!(vault.protocol_meme_residual_for_testing(), 1);
-    assert_eq!(vault.protocol_quote_residual_for_testing(), 1);
-    assert_eq!(vault.fee_split_for_testing(), fee_split);
-    assert_eq!(fee_split, creator_split());
+    f.next_tx(TESTER);
+    let mut vault = f.take_vault<ATOMIC_MIGRATION_TESTS, QUOTE>();
     let pool_id = vault.pool_id();
-    let position_id = vault.position_id_for_testing<_, _, Venue>().destroy_some();
-    let position = vault.position_mut<
-        ATOMIC_MIGRATION_TESTS,
-        QUOTE,
-        Venue,
-        MockPosition<ATOMIC_MIGRATION_TESTS, QUOTE>,
-    >(&Venue());
-    assert_eq!(object::id(position), position_id);
+    let position = vault.position_mut<_, _, _, MockPosition<ATOMIC_MIGRATION_TESTS, QUOTE>>(
+        &Venue(),
+        f.vault_version(),
+    );
     assert_eq!(position.pool_id, pool_id);
-    // Two thirds of the pooled Meme and nine tenths of the terminal Quote are the LP principal.
-    assert_eq!(position.meme.value() + 1, allocated_before * 2 / 3);
-    assert_eq!(position.quote.value() + 1, quote_before * 9 / 10);
-    assert_eq!(position.liquidity, 1);
+    assert_eq!(position.meme.value() + RESIDUAL, pooled_meme);
+    assert_eq!(position.quote.value() + RESIDUAL, pooled_quote);
+    assert_eq!(pooled_quote, launch_fixture::graduation_target());
+    let position_id = object::id(position);
+    assert_eq!(
+        bcs::to_bytes(&created[0]),
+        vault_created_bytes(object::id(&vault), pool_id, position_id, launch_id, 1_500, option::none()),
+    );
+    assert_eq!(vault.fee_split_for_testing(), owner_split());
+    let (meme_bps, quote_bps) = vault.protocol_bps_for_testing();
+    assert_eq!(meme_bps.value(), 1_500);
+    assert_eq!(quote_bps.value(), 1_500);
     test_scenario::return_shared(vault);
 
     f.end();
 }
 
 #[test]
-fun the_migrated_vault_splits_later_collections_and_updates_its_split_under_the_curve_fee_cap() {
-    let mut f = start();
-    f.reach_migration();
+fun protocol_residuals_are_paid_to_the_treasury_when_the_launch_names_no_partner() {
+    let mut f = launch_fixture::start<QUOTE, Venue>();
+    let launch_id = f.open(owner_split(), false);
+    f.migrate_launch(launch_id);
 
-    f.scenario.next_tx(TESTER);
-    let mut launch = f.take_launch();
-    let mut currency = f.take_currency();
-    launch.mock_adapter(&f.version, &mut currency, f.scenario.ctx());
+    f.next_tx(TESTER);
+    let vault = f.take_vault<ATOMIC_MIGRATION_TESTS, QUOTE>();
+    vault.assert_protocol_balances(0, 0);
+    assert_eq!(f.coin_total<ATOMIC_MIGRATION_TESTS>(launch_fixture::treasury_address()), RESIDUAL);
+    assert_eq!(f.coin_total<QUOTE>(launch_fixture::treasury_address()), RESIDUAL);
+    let (owner_meme, owner_quote, _, _, _, _, _) = vault.balances_for_testing();
+    assert_eq!(owner_meme, 0);
+    assert_eq!(owner_quote, 0);
+    test_scenario::return_shared(vault);
+
+    f.end();
+}
+
+#[test]
+fun protocol_residuals_wait_for_the_partner_the_launch_named() {
+    let mut f = launch_fixture::start<QUOTE, Venue>();
+    let launch_id = f.open(owner_split(), true);
+    destroy(f.graduate<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id));
+
+    f.next_tx(TESTER);
+    let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    f.mock_migrate(&mut launch, &mut currency);
+    let created = event::events_by_type<VaultCreated<ATOMIC_MIGRATION_TESTS, QUOTE, Venue>>();
     test_scenario::return_shared(launch);
-    test_scenario::return_to_address(COIN_REGISTRY, currency);
+    launch_fixture::return_currency(currency);
 
-    f.scenario.next_tx(CREATOR);
-    let mut launch = f.take_launch();
-    let (curve_fee_cap, metadata_cap) = launch.claim_creator_caps(
-        &f.version,
-        &f.runtime,
-        option::none(),
-        &f.clock,
-        f.scenario.ctx(),
+    f.next_tx(TESTER);
+    let mut vault = f.take_vault<ATOMIC_MIGRATION_TESTS, QUOTE>();
+    let partner_id = object::id(f.partner());
+    let position_id = object::id(
+        vault.position_mut<_, _, _, MockPosition<ATOMIC_MIGRATION_TESTS, QUOTE>>(
+            &Venue(),
+            f.vault_version(),
+        ),
     );
-    destroy(metadata_cap);
-    test_scenario::return_shared(launch);
+    assert_eq!(
+        bcs::to_bytes(&created[0]),
+        vault_created_bytes(
+            object::id(&vault),
+            vault.pool_id(),
+            position_id,
+            launch_id,
+            0,
+            option::some(partner_id),
+        ),
+    );
+    vault.assert_protocol_balances(RESIDUAL, RESIDUAL);
+    assert!(!launch_fixture::has_coin<ATOMIC_MIGRATION_TESTS>(launch_fixture::treasury_address()));
+    assert!(!launch_fixture::has_coin<QUOTE>(launch_fixture::treasury_address()));
+    f.pay_partnered_protocol_fees(&mut vault);
+    test_scenario::return_shared(vault);
 
-    // The vault splits under the fee split it copied from the launch, then commits the next one.
-    f.scenario.next_tx(TESTER);
-    let launch = f.take_launch();
-    let mut vault = f.scenario.take_shared<LpVault<ATOMIC_MIGRATION_TESTS, QUOTE>>();
-    let policy = f.scenario.take_shared<LpFeePolicy>();
-    let mut currency = f.take_currency();
-    vault.split_fees(
-        &policy,
-        &mut currency,
-        balance::create_for_testing(100),
-        balance::create_for_testing(200),
-        f.scenario.ctx(),
+    // The partner takes its share of each residual and the treasury the rest.
+    f.next_tx(TESTER);
+    let partner_cut = RESIDUAL * launch_fixture::partner_share_bps() / 10_000;
+    assert_eq!(f.coin_total<ATOMIC_MIGRATION_TESTS>(launch_fixture::partner_recipient()), partner_cut);
+    assert_eq!(f.coin_total<QUOTE>(launch_fixture::partner_recipient()), partner_cut);
+    assert_eq!(
+        f.coin_total<ATOMIC_MIGRATION_TESTS>(launch_fixture::treasury_address()),
+        RESIDUAL - partner_cut,
     );
-    let next_split = allocation::fee_split(
-        bps::new(0),
-        bps::new(0),
-        bps::new(0),
-        bps::new(0),
-        vector[allocation::route(ADMIN, bps::new(10_000))],
+    assert_eq!(f.coin_total<QUOTE>(launch_fixture::treasury_address()), RESIDUAL - partner_cut);
+
+    f.end();
+}
+
+#[test]
+fun collections_split_through_the_vault_and_the_owner_claims_with_the_launch_proof() {
+    let mut f = launch_fixture::start<QUOTE, Venue>();
+    f.set_protocol_lp_fees(1_500, 1_500);
+    let launch_id = f.open(owner_split(), false);
+    f.migrate_launch(launch_id);
+    let curve_fee_cap = f.claim_curve_fee_cap<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+
+    f.next_tx(TESTER);
+    let mut vault = f.take_vault<ATOMIC_MIGRATION_TESTS, QUOTE>();
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    f.mock_collect(&mut vault, &mut currency, 1_000, 2_000);
+
+    // Blast's 15% of each asset, rounded up, is paid at once; the owner route accrues the rest.
+    assert_eq!(event::events_by_type<FeesCollected<ATOMIC_MIGRATION_TESTS, QUOTE>>().length(), 1);
+    vault.assert_protocol_balances(0, 0);
+    let (owner_meme, owner_quote, _, _, _, _, _) = vault.balances_for_testing();
+    assert_eq!(owner_meme, 850);
+    assert_eq!(owner_quote, 1_700);
+    test_scenario::return_shared(vault);
+    launch_fixture::return_currency(currency);
+
+    f.next_tx(launch_fixture::creator());
+    assert_eq!(
+        f.coin_total<ATOMIC_MIGRATION_TESTS>(launch_fixture::treasury_address()),
+        RESIDUAL + 150,
     );
-    vault.schedule_fee_split(&f.migrators_version, &launch, &curve_fee_cap, next_split, 172_800_000, &f.clock);
-    let now = f.clock.timestamp_ms();
-    f.clock.set_for_testing(now + 172_800_000);
-    vault.assert_fee_split_ready(&f.clock);
-    vault.apply_fee_split(&f.clock);
-    vault.split_fees(
-        &policy,
-        &mut currency,
-        balance::create_for_testing(3),
-        balance::create_for_testing(4),
-        f.scenario.ctx(),
-    );
-    assert_eq!(vault.fee_split_for_testing(), next_split);
-    let (creator_meme, creator_quote) = vault.creator_balances_for_testing();
-    assert_eq!(creator_meme, 100);
-    assert_eq!(creator_quote, 200);
-    assert_eq!(event::events_by_type<blast_events::FeesCollected>().length(), 2);
-    assert_eq!(event::events_by_type<DelayedApplied<FeeSplitKey, FeeSplit>>().length(), 1);
-    let (meme, quote) = vault.claim_creator_fees(
-        &f.migrators_version,
-        &launch,
-        &curve_fee_cap,
-        f.scenario.ctx(),
-    );
-    assert_eq!(meme.burn_for_testing(), 100);
-    assert_eq!(quote.burn_for_testing(), 200);
+    assert_eq!(f.coin_total<QUOTE>(launch_fixture::treasury_address()), RESIDUAL + 300);
+    let launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+    let mut vault = f.take_vault<ATOMIC_MIGRATION_TESTS, QUOTE>();
+    let proof = launch.prove_owner(f.version(), &curve_fee_cap);
+    let (meme, quote) = f.claim_owner_balances(&mut vault, proof);
+    assert_eq!(meme.burn_for_testing(), 850);
+    assert_eq!(quote.burn_for_testing(), 1_700);
     destroy(curve_fee_cap);
     test_scenario::return_shared(launch);
     test_scenario::return_shared(vault);
-    test_scenario::return_shared(policy);
-    test_scenario::return_to_address(COIN_REGISTRY, currency);
 
-    f.scenario.next_tx(ADMIN);
-    assert_eq!(f.scenario.take_from_sender<Coin<ATOMIC_MIGRATION_TESTS>>().burn_for_testing(), 3);
-    assert_eq!(f.scenario.take_from_sender<Coin<QUOTE>>().burn_for_testing(), 4);
+    f.end();
+}
+
+#[test]
+fun auto_lp_and_buyback_run_through_the_migrated_vault() {
+    let mut f = launch_fixture::start<QUOTE, Venue>();
+    let split = fee_split::new(vector[
+        fee_split::route(fee_split::auto_lp_destination(), bps::new(5_000)),
+        fee_split::route(fee_split::burn_destination(), bps::new(5_000)),
+    ]);
+    let launch_id = f.open(split, false);
+    let mut bought = f.graduate<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+
+    f.next_tx(TESTER);
+    let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    f.mock_migrate(&mut launch, &mut currency);
+    test_scenario::return_shared(launch);
+    launch_fixture::return_currency(currency);
+
+    f.next_tx(TESTER);
+    let mut vault = f.take_vault<ATOMIC_MIGRATION_TESTS, QUOTE>();
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    let supply_before = currency.total_supply().destroy_some();
+    f.mock_collect(&mut vault, &mut currency, 1_000, 2_000);
+    assert_eq!(currency.total_supply().destroy_some(), supply_before - 500);
+    vault.assert_split_balances(500, 1_000, 1_000);
+
+    // Auto-LP: the pool takes 400 Meme and 800 Quote into the position; the rest waits.
+    let (mut meme, mut quote) = vault.take_auto_lp(&Venue(), f.vault_version());
+    assert_eq!(meme.value(), 500);
+    assert_eq!(quote.value(), 1_000);
+    let (added_meme, added_quote) = (meme.split(400), quote.split(800));
+    let position = vault.position_mut<_, _, _, MockPosition<ATOMIC_MIGRATION_TESTS, QUOTE>>(
+        &Venue(),
+        f.vault_version(),
+    );
+    position.meme.join(added_meme);
+    position.quote.join(added_quote);
+    vault.keep_auto_lp(&Venue(), f.vault_version(), 400, 800, meme, quote);
+    assert_eq!(
+        event::events_by_type<AutoLiquidityAdded<ATOMIC_MIGRATION_TESTS, QUOTE>>().length(),
+        1,
+    );
+
+    // Buyback: 600 burn Quote buys 1,000 Meme, and the 100 Quote the pool leaves waits again.
+    let mut quote_in = vault.take_buyback_quote(
+        &Venue(),
+        &blast_acl::witness_for_testing<BuybackAdmin>(),
+        f.vault_version(),
+        600,
+    );
+    let unspent_quote = quote_in.split(100);
+    assert_eq!(quote_in.destroy_for_testing(), 500);
+    let meme_out = bought.split(1_000, f.ctx()).into_balance();
+    let supply_before_buyback = currency.total_supply().destroy_some();
+    f.burn_buyback(&mut vault, &mut currency, meme_out, unspent_quote, 600, 1_000);
+    assert_eq!(currency.total_supply().destroy_some(), supply_before_buyback - 1_000);
+    assert_eq!(event::events_by_type<BuybackBurned<ATOMIC_MIGRATION_TESTS, QUOTE>>().length(), 1);
+    vault.assert_split_balances(100, 200, 500);
+    destroy(bought);
+    test_scenario::return_shared(vault);
+    launch_fixture::return_currency(currency);
 
     f.end();
 }
 
 #[test, expected_failure(
-    abort_code = blast_fun::errors::EInvalidMigrationWitness,
-    location = blast_fun::launch,
+    abort_code = blast_core::errors::EWrongVenue,
+    location = blast_core::migration,
 )]
-fun another_adapter_cannot_migrate() {
-    let mut f = start();
-    f.reach_migration();
+fun the_hand_off_redeems_only_under_the_venue_that_issued_the_ticket() {
+    let mut f = launch_fixture::start<QUOTE, Venue>();
+    let launch_id = f.open(owner_split(), false);
+    destroy(f.graduate<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id));
 
-    f.scenario.next_tx(TESTER);
-    let mut launch = f.take_launch();
-    let mut currency = f.take_currency();
-    let (_meme, _quote) = launch.migrate(&f.version, &mut currency, OtherVenue(), f.scenario.ctx());
+    f.next_tx(TESTER);
+    let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    let (version, config, _, _, _, ctx) = f.migration_inputs();
+    let (_meme, _quote, _terms) = launch
+        .migrate(version, config, &mut currency, ctx)
+        .redeem(OtherVenue());
+
     abort EUnexpectedSuccess
 }
 
 #[test, expected_failure(
-    abort_code = blast_fun_migrators::vault::EZeroLiquidity,
-    location = blast_fun_migrators::vault,
+    abort_code = blast_vault::errors::EUnadmittedVenue,
+    location = blast_vault::blast_vault_package,
+)]
+fun the_vault_registry_refuses_a_venue_the_launch_policy_admitted() {
+    let mut f = launch_fixture::start<QUOTE, Venue>();
+    f.admit_launch_venue<OtherVenue>();
+    let (ticket, treasury_cap) = f.new_ticket(
+        test_utils::create_one_time_witness<ATOMIC_MIGRATION_TESTS>(),
+        true,
+    );
+    let venue_ticket = migration::issue_ticket<_, QUOTE, _>(OtherVenue());
+    let launch_id = f.open_launch(ticket, treasury_cap, venue_ticket, owner_split(), false);
+    destroy(f.graduate<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id));
+
+    f.next_tx(TESTER);
+    let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    let (version, config, registry, vault_version, _, ctx) = f.migration_inputs();
+    let (meme, quote, terms) = launch
+        .migrate(version, config, &mut currency, ctx)
+        .redeem(OtherVenue());
+    let _vault = vault::new<ATOMIC_MIGRATION_TESTS, QUOTE, _>(
+        registry,
+        &OtherVenue(),
+        vault_version,
+        terms,
+        @0x9001.to_id(),
+        ctx,
+    );
+
+    destroy(meme);
+    destroy(quote);
+    abort EUnexpectedSuccess
+}
+
+#[test, expected_failure(
+    abort_code = blast_vault::errors::EZeroLiquidity,
+    location = blast_vault::vault,
 )]
 fun zero_liquidity_aborts_the_migration() {
-    let mut f = start();
-    f.reach_migration();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
+    let launch_id = f.open(owner_split(), false);
+    destroy(f.graduate<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id));
 
-    f.scenario.next_tx(TESTER);
-    let mut launch = f.take_launch();
-    let mut currency = f.take_currency();
-    launch.mock_adapter_with(&f.version, &mut currency, 0, f.scenario.ctx());
+    f.next_tx(TESTER);
+    let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    let (version, config, registry, vault_version, treasury, ctx) = f.migration_inputs();
+    launch.mock_adapter_with(
+        version,
+        config,
+        &mut currency,
+        registry,
+        vault_version,
+        treasury,
+        0,
+        ctx,
+    );
+
     abort EUnexpectedSuccess
 }
 
 // === Test Helpers ===
 
-/// The mock adapter constructs and consumes its sealed witness and returns no protected value.
+/// The mock venue redeems the hand-off with its sealed witness, seeds a position, and builds and
+/// shares the vault from the redeemed terms; it returns no protected value.
 public fun mock_adapter(
     launch: &mut Launch<ATOMIC_MIGRATION_TESTS, QUOTE>,
     version: &PackageVersion,
+    config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
+    registry: &VaultRegistry,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
     ctx: &mut TxContext,
 ) {
-    launch.mock_adapter_with(version, currency, 1, ctx)
+    launch.mock_adapter_with(version, config, currency, registry, vault_version, treasury, 1, ctx)
 }
 
-/// Migrate, seed a mock position holding `liquidity` with one residual unit per asset kept in the
-/// vault, attach it, then share the vault and pool.
+/// Migrates, keeps `RESIDUAL` atoms of each asset as the pool's residuals, seeds a mock position
+/// holding the rest at `liquidity`, builds the vault from the redeemed terms with the position
+/// attached, then shares the vault and the pool.
 fun mock_adapter_with(
     launch: &mut Launch<ATOMIC_MIGRATION_TESTS, QUOTE>,
     version: &PackageVersion,
+    config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
+    registry: &VaultRegistry,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
     liquidity: u128,
     ctx: &mut TxContext,
 ) {
-    let (mut meme, mut quote) = launch.migrate(version, currency, Venue(), ctx);
-    let residual_meme = meme.split(1);
-    let residual_quote = quote.split(1);
+    let (mut meme, mut quote, terms) = launch.migrate(version, config, currency, ctx).redeem(Venue());
+    let residual_meme = meme.split(RESIDUAL);
+    let residual_quote = quote.split(RESIDUAL);
     let pool = MockPool { id: object::new(ctx) };
     let pool_id = object::id(&pool);
     let position = MockPosition { id: object::new(ctx), pool_id, meme, quote, liquidity };
-    vault::create(
-        launch,
+    vault::new<_, _, _>(registry, &Venue(), vault_version, terms, pool_id, ctx).share_with_position(
         &Venue(),
-        pool_id,
+        treasury,
         position,
         liquidity,
         residual_meme,
@@ -243,154 +394,179 @@ fun mock_adapter_with(
     transfer::share_object(pool);
 }
 
-fun start(): Fixture {
-    let mut scenario = test_scenario::begin(@0x0);
-    let version = package_version::new_for_testing(scenario.ctx());
-    let migrators_version = migrators_version::new_for_testing(scenario.ctx());
-    launch_config::init_zero_fees_for_testing(scenario.ctx());
-    lp_fee_policy::init_zero_fees_for_testing(scenario.ctx());
-    let runtime = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
-    let clock = clock::create_for_testing(scenario.ctx());
-
-    scenario.next_tx(ADMIN);
-    let mut config = scenario.take_shared<LaunchConfig>();
-    config.set_quote_allowed<QUOTE>(&version, &blast_acl::witness_for_testing<ListingAdmin>(), true);
-    config.set_migration_witness_allowed_for_testing<Venue>(
-        &version,
-        &blast_acl::witness_for_testing<AdapterAdmin>(),
-        true,
-     scenario.ctx());
-    config.set_trade_fees_for_testing(
-        &version,
-        &blast_acl::witness_for_testing<FeeAdmin>(),
-        bps::new(100),
-        bps::new(100),
-     scenario.ctx());
-    let launch_id = scenario.share_launch(&version, &config, &clock);
-    test_scenario::return_shared(config);
-
-    Fixture {
-        scenario,
-        version,
-        migrators_version,
-        runtime,
-        clock,
-        launch_id,
-    }
-}
-
-/// Starts the launch for the mock adapter's witness, finalizes it once the Coin Registry holds
-/// the currency, and shares it.
-fun share_launch(
-    scenario: &mut Scenario,
-    version: &PackageVersion,
-    config: &LaunchConfig,
-    clock: &Clock,
-): ID {
-    let ticket = launch_ticket::new(
+/// Prepares a burn-only coin at the mock venue and opens its launch with `fee_split`.
+fun open(f: &mut LaunchFixture, fee_split: FeeSplit, names_partner: bool): ID {
+    let (ticket, treasury_cap) = f.new_ticket(
         test_utils::create_one_time_witness<ATOMIC_MIGRATION_TESTS>(),
-        9,
-        b"TEST".to_string(),
-        b"Atomic migration".to_string(),
-        b"".to_string(),
-        b"".to_string(),
-        creator_authority::new_address(CREATOR),
-        false,
-        0,
-        scenario.ctx(),
+        true,
     );
-    let sender = scenario.sender();
-    scenario.next_tx(sender);
-    let mut currency = scenario.take_from_address<Currency<_>>(COIN_REGISTRY);
-    let mut initializer = launch::new<_, QUOTE, _>(
-        ticket,
-        version,
-        config,
-        Venue(),
-        POOL_TICK_SPACING,
-        POOL_FEE_RATE,
-    );
-    initializer.set_virtual_quote(version, 5_000_000);
-    initializer.set_graduation_target(version, TARGET);
-    initializer.set_allocation_plan(
-        version,
-        allocation::plan(
-            bps::new(7_000),
-            bps::new(2_000),
-            bps::new(9_000),
-            vector[allocation::recipient(CREATOR, bps::new(1_000), bps::new(1_000))],
-        ),
-    );
-    initializer.set_lp_fee_split(version, creator_split());
-    let creation_fee = coin::zero(scenario.ctx());
-    let launch = initializer.finalize(version, &mut currency, config, creation_fee, scenario.ctx());
-    let launch_id = object::id(&launch);
-    launch.share(version, clock);
-    test_scenario::return_to_address(COIN_REGISTRY, currency);
+    let venue_ticket = migration::issue_ticket<_, QUOTE, _>(Venue());
 
-    launch_id
+    f.open_launch(ticket, treasury_cap, venue_ticket, fee_split, names_partner)
 }
 
-fun reach_migration(f: &mut Fixture) {
-    f.scenario.next_tx(TESTER);
-    let mut launch = f.take_launch();
-    let quote = coin::mint_for_testing<QUOTE>(30_000_000, f.scenario.ctx());
-    let (meme, refund) = launch.buy(&f.version, &f.runtime, quote, 1, f.scenario.ctx());
-    destroy(meme);
-    destroy(refund);
+/// Graduates the launch and migrates it through the mock venue in the next transaction.
+fun migrate_launch(f: &mut LaunchFixture, launch_id: ID) {
+    destroy(f.graduate<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id));
+
+    f.next_tx(TESTER);
+    let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
+    let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
+    f.mock_migrate(&mut launch, &mut currency);
     test_scenario::return_shared(launch);
+    launch_fixture::return_currency(currency);
 }
 
-fun take_launch(f: &Fixture): Launch<ATOMIC_MIGRATION_TESTS, QUOTE> {
-    f.scenario.take_shared_by_id(f.launch_id)
+/// Runs the mock venue's migration with the fixture's route inputs.
+fun mock_migrate(
+    f: &mut LaunchFixture,
+    launch: &mut Launch<ATOMIC_MIGRATION_TESTS, QUOTE>,
+    currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
+) {
+    let (version, config, registry, vault_version, treasury, ctx) = f.migration_inputs();
+    launch.mock_adapter(version, config, currency, registry, vault_version, treasury, ctx);
 }
 
-fun take_currency(f: &Fixture): Currency<ATOMIC_MIGRATION_TESTS> {
-    f.scenario.take_from_address(COIN_REGISTRY)
+/// Splits one collection of the mock position's fees through the vault, as a venue does.
+fun mock_collect(
+    f: &mut LaunchFixture,
+    vault: &mut Vault<ATOMIC_MIGRATION_TESTS, QUOTE>,
+    currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
+    meme: u64,
+    quote: u64,
+) {
+    let (vault_version, treasury, ctx) = f.collection_inputs();
+    vault.split_fees(
+        &Venue(),
+        vault_version,
+        treasury,
+        currency,
+        balance::create_for_testing(meme),
+        balance::create_for_testing(quote),
+        ctx,
+    );
 }
 
-/// Payloads of each `T` this transaction emitted inside the launchpad envelope.
-fun collect<T: copy + drop>(): vector<T> {
-    event::events_by_type<BlastEvent<T>>().map!(|envelope| envelope.unwrap())
+/// Burns the Meme a mock buyback swap returned, as a venue does.
+fun burn_buyback(
+    f: &mut LaunchFixture,
+    vault: &mut Vault<ATOMIC_MIGRATION_TESTS, QUOTE>,
+    currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
+    meme: Balance<ATOMIC_MIGRATION_TESTS>,
+    unspent_quote: Balance<QUOTE>,
+    quote_in: u64,
+    min_meme_out: u64,
+) {
+    let (vault_version, _, ctx) = f.collection_inputs();
+    vault.burn_buyback(
+        &Venue(),
+        vault_version,
+        currency,
+        meme,
+        unspent_quote,
+        quote_in,
+        min_meme_out,
+        ctx,
+    );
 }
 
-/// Everything after Blast's share goes to the creator.
-fun creator_split(): FeeSplit {
-    allocation::fee_split(bps::new(10_000), bps::new(0), bps::new(0), bps::new(0), vector[])
+/// Pays the protocol balances held for the launch's partner; anyone may.
+fun pay_partnered_protocol_fees(
+    f: &mut LaunchFixture,
+    vault: &mut Vault<ATOMIC_MIGRATION_TESTS, QUOTE>,
+) {
+    let (vault_version, treasury, partner, ctx) = f.partner_payment_inputs();
+
+    vault.pay_protocol_fees_with_partner(vault_version, treasury, partner, ctx);
 }
 
-fun end(f: Fixture) {
-    let Fixture {
-        scenario,
-        version,
-        migrators_version,
-        runtime,
-        clock,
-        launch_id: _,
-    } = f;
-    destroy(version);
-    destroy(migrators_version);
-    destroy(runtime);
-    clock.destroy_for_testing();
-    scenario.end();
+/// Claims the owner's balances with `proof`.
+fun claim_owner_balances(
+    f: &mut LaunchFixture,
+    vault: &mut Vault<ATOMIC_MIGRATION_TESTS, QUOTE>,
+    proof: OwnerProof,
+): (Coin<ATOMIC_MIGRATION_TESTS>, Coin<QUOTE>) {
+    let (vault_version, _, ctx) = f.collection_inputs();
+
+    vault.claim_owner_balances(proof, vault_version, ctx)
+}
+
+/// Asserts the protocol ledger holds `meme` and `quote` and no SUI.
+fun assert_protocol_balances(vault: &Vault<ATOMIC_MIGRATION_TESTS, QUOTE>, meme: u64, quote: u64) {
+    let (protocol_meme, protocol_quote, protocol_sui) = vault.protocol_balances_for_testing();
+    assert_eq!(protocol_meme, meme);
+    assert_eq!(protocol_quote, quote);
+    assert_eq!(protocol_sui, 0);
+}
+
+/// Asserts the auto-LP balances and the burn Quote, with nothing owed to the owner or rewards.
+fun assert_split_balances(
+    vault: &Vault<ATOMIC_MIGRATION_TESTS, QUOTE>,
+    auto_lp_meme: u64,
+    auto_lp_quote: u64,
+    burn_quote: u64,
+) {
+    let (owner_meme, owner_quote, lp_meme, lp_quote, rewards_meme, rewards_quote, burn) = vault
+        .balances_for_testing();
+    assert_eq!(owner_meme, 0);
+    assert_eq!(owner_quote, 0);
+    assert_eq!(lp_meme, auto_lp_meme);
+    assert_eq!(lp_quote, auto_lp_quote);
+    assert_eq!(rewards_meme, 0);
+    assert_eq!(rewards_quote, 0);
+    assert_eq!(burn, burn_quote);
+}
+
+/// The total value of every `Asset` coin `owner` received in earlier transactions.
+fun coin_total<Asset>(f: &LaunchFixture, owner: address): u64 {
+    test_scenario::ids_for_address<Coin<Asset>>(owner).fold!(0, |total, id| {
+        let coin = f.scenario().take_from_address_by_id<Coin<Asset>>(owner, id);
+        let value = coin.value();
+        test_scenario::return_to_address(owner, coin);
+        total + value
+    })
+}
+
+/// The BCS of the `VaultCreated` event the mock migration emits for the fixture launch: its
+/// identities, the mock liquidity, the terms the launch sealed (its ID and package witness, the
+/// owner split, Blast's LP-fee share, the partner, and protocol residuals), and the residuals.
+fun vault_created_bytes(
+    vault_id: ID,
+    pool_id: ID,
+    position_id: ID,
+    launch_id: ID,
+    protocol_bps: u64,
+    partner_id: Option<ID>,
+): vector<u8> {
+    let mut bytes = bcs::to_bytes(&vault_id);
+    bytes.append(bcs::to_bytes(&pool_id));
+    bytes.append(bcs::to_bytes(&position_id));
+    bytes.append(bcs::to_bytes(&1u128));
+    bytes.append(bcs::to_bytes(&launch_id));
+    bytes.append(bcs::to_bytes(&type_name::with_original_ids<launch::PackageWitness>()));
+    bytes.append(bcs::to_bytes(&owner_split()));
+    bytes.append(bcs::to_bytes(&bps::new(protocol_bps)));
+    bytes.append(bcs::to_bytes(&bps::new(protocol_bps)));
+    bytes.append(bcs::to_bytes(&partner_id));
+    bytes.append(bcs::to_bytes(&migration::residuals_to_protocol()));
+    let residual = RESIDUAL;
+    bytes.append(bcs::to_bytes(&residual));
+    bytes.append(bcs::to_bytes(&residual));
+
+    bytes
+}
+
+/// Everything after Blast's share accrues to the owner.
+fun owner_split(): FeeSplit {
+    fee_split::new(vector[fee_split::route(fee_split::owner_destination(), bps::new(10_000))])
 }
 
 // === Constants ===
 
-/// `sui::object::sui_coin_registry_address()`, where one-time-witness currencies are delivered.
-const COIN_REGISTRY: address = @0xc;
-
 const TESTER: address = @0xB1A57;
 
-const ADMIN: address = @0xAD;
-
-const CREATOR: address = @0xC0FFEE;
-
-const TARGET: u64 = 25_000_000;
-
-const POOL_TICK_SPACING: u32 = 60;
-
-const POOL_FEE_RATE: u64 = 2_500;
+/// Atoms of each asset the mock pool leaves as migration residuals.
+const RESIDUAL: u64 = 10;
 
 // === Errors ===
 
@@ -399,43 +575,53 @@ const EUnexpectedSuccess: vector<u8> = b"The guarded operation unexpectedly retu
 
 // === Imports ===
 
-use blast_admin::{blast_acl, delayed::DelayedApplied};
+use blast_admin::{blast_acl, package_version::PackageVersion as VaultVersion};
+
+use blast_core::{
+    blast_domain::BuybackAdmin,
+    blast_treasury::Treasury,
+    bps,
+    fee_split::{Self, FeeSplit},
+    migration,
+    owner_proof::OwnerProof
+};
 
 use blast_fun::{
-    allocation::{Self, FeeSplit},
-    blast_events::Event as BlastEvent,
-    blast_fun_domain::{AdapterAdmin, FeeAdmin, ListingAdmin},
-    bps,
-    creator_authority,
-    events,
+    blast_fun::PackageVersion,
     launch::{Self, Launch},
-    launch_config::{Self, LaunchConfig},
-    launch_ticket,
-    blast_fun::{Self as package_version, PackageVersion},
-    runtime_config::{Self, RuntimeConfig},
+    launch_config::LaunchConfig
 };
 
-use blast_fun_migrators::{
-    blast_events,
-    lp_fee_policy::{Self, LpFeePolicy},
-    blast_fun_migrators::{Self as migrators_version, PackageVersion as MigratorsVersion},
-    vault::{Self, FeeSplitKey, LpVault},
+use blast_fun_migrators::launch_fixture::{Self, LaunchFixture};
+
+use blast_vault::{
+    blast_vault_events::{AutoLiquidityAdded, BuybackBurned, FeesCollected, VaultCreated},
+    blast_vault_package::{BLAST_VAULT_PACKAGE, VaultRegistry},
+    vault::{Self, Vault}
 };
 
-use std::unit_test::{assert_eq, destroy};
+use std::{bcs, type_name, unit_test::{assert_eq, destroy}};
 
 use sui::{
     balance::{Self, Balance},
-    clock::{Self, Clock},
-    coin::{Self, Coin},
+    coin::Coin,
     coin_registry::Currency,
     event,
-    test_scenario::{Self, Scenario},
-    test_utils,
+    test_scenario,
+    test_utils
 };
 
 use fun mock_adapter as Launch.mock_adapter;
-
 use fun mock_adapter_with as Launch.mock_adapter_with;
 
-use fun share_launch as Scenario.share_launch;
+use fun assert_protocol_balances as Vault.assert_protocol_balances;
+use fun assert_split_balances as Vault.assert_split_balances;
+
+use fun burn_buyback as LaunchFixture.burn_buyback;
+use fun claim_owner_balances as LaunchFixture.claim_owner_balances;
+use fun coin_total as LaunchFixture.coin_total;
+use fun migrate_launch as LaunchFixture.migrate_launch;
+use fun mock_collect as LaunchFixture.mock_collect;
+use fun mock_migrate as LaunchFixture.mock_migrate;
+use fun open as LaunchFixture.open;
+use fun pay_partnered_protocol_fees as LaunchFixture.pay_partnered_protocol_fees;

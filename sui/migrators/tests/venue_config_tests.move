@@ -2,13 +2,23 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 #[test_only]
-/// Write-once venue entries: authority-bearing objects keyed by the venue module that adds them.
+/// Write-once venue entries keyed by the venue module that adds them: authority-bearing objects
+/// and plain records, such as a prepared coin's pool tier.
 module blast_fun_migrators::venue_config_tests;
 
 // === Test-Only Types ===
 
 /// A sealed key for an authority-bearing entry.
 public struct TestObjectKey() has copy, drop, store;
+
+/// A sealed key for a plain record.
+public struct TestValueKey() has copy, drop, store;
+
+/// A plain record a venue module stores as a write-once entry.
+public struct TestTier has copy, drop, store {
+    tick_spacing: u32,
+    fee_rate: u64,
+}
 
 /// An authority-bearing object a venue module stores as a write-once entry.
 public struct TestCap has key, store {
@@ -56,6 +66,61 @@ fun an_absent_entry_cannot_be_read() {
     let (scenario, config) = start();
 
     config.object<_, TestCap>(TestObjectKey());
+
+    test_scenario::return_shared(config);
+    scenario.end();
+}
+
+#[test]
+fun a_record_entry_is_readable_in_later_transactions_beside_an_object_entry() {
+    let (mut scenario, mut config) = start();
+    let cap = TestCap { id: object::new(scenario.ctx()) };
+    let cap_id = object::id(&cap);
+
+    config.add_value(TestValueKey(), TestTier { tick_spacing: 60, fee_rate: 2_500 });
+    config.add_object(TestObjectKey(), cap);
+
+    assert_eq!(*config.value<_, TestTier>(TestValueKey()), TestTier { tick_spacing: 60, fee_rate: 2_500 });
+    test_scenario::return_shared(config);
+
+    scenario.next_tx(PUBLISHER);
+    let config = scenario.take_shared<VenueConfig>();
+    assert_eq!(*config.value<_, TestTier>(TestValueKey()), TestTier { tick_spacing: 60, fee_rate: 2_500 });
+    assert_eq!(object::id(config.object<_, TestCap>(TestObjectKey())), cap_id);
+    test_scenario::return_shared(config);
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(abort_code = dynamic_field::EFieldAlreadyExists, location = sui::dynamic_field)]
+fun a_record_cannot_be_replaced() {
+    let (scenario, mut config) = start();
+
+    config.add_value(TestValueKey(), 60u32);
+    config.add_value(TestValueKey(), 200u32);
+
+    test_scenario::return_shared(config);
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(abort_code = dynamic_field::EFieldDoesNotExist, location = sui::dynamic_field)]
+fun an_absent_record_cannot_be_read() {
+    let (scenario, config) = start();
+
+    config.value<_, u32>(TestValueKey());
+
+    test_scenario::return_shared(config);
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(abort_code = dynamic_field::EFieldTypeMismatch, location = sui::dynamic_field)]
+fun a_record_cannot_be_read_under_another_type() {
+    let (scenario, mut config) = start();
+    config.add_value(TestValueKey(), 60u32);
+
+    config.value<_, u64>(TestValueKey());
 
     test_scenario::return_shared(config);
     scenario.end();

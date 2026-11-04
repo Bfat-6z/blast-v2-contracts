@@ -339,7 +339,9 @@ const MANIFESTS = [
         genesisDestinationAddress: 'blast_lp_fee_destination',
         dependencies: {
             blast_admin: { local: '../admin' },
+            blast_core: { local: '../core' },
             blast_fun: { local: '../launchpad' },
+            blast_vault: { local: '../vault' },
             BluefinSpot: { git: BLUEFIN_GIT, rev: REV.bluefin },
             CetusClmm: { local: 'interfaces/cetus' },
             CetusLpBurn: { local: 'interfaces/cetus_lp_burn' },
@@ -521,11 +523,31 @@ const LOCK_NODES = {
         source: { local: '../admin' },
         deps: { Sui: 'Sui_2' },
     },
+    // The shared core, the launchpad, and the vault are local, inward-only edges on the same
+    // framework revision; none adds a venue dependency.
+    blast_core: {
+        source: { local: '../core' },
+        deps: {
+            blast_admin: 'blast_admin',
+            blast_fun_vesting: 'blast_fun_vesting',
+            blast_partners: 'blast_partners',
+            std: 'MoveStdlib_2',
+            sui: 'Sui_2',
+        },
+    },
     blast_fun: {
         source: { local: '../launchpad' },
         deps: {
             blast_admin: 'blast_admin',
+            blast_core: 'blast_core',
             blast_partners: 'blast_partners',
+            std: 'MoveStdlib_2',
+            sui: 'Sui_2',
+        },
+    },
+    blast_fun_vesting: {
+        source: { local: '../vesting' },
+        deps: {
             std: 'MoveStdlib_2',
             sui: 'Sui_2',
         },
@@ -548,7 +570,19 @@ const LOCK_NODES = {
             IntegerMate: 'IntegerMate_1',
             Sui: 'Sui_2',
             blast_admin: 'blast_admin',
+            blast_core: 'blast_core',
             blast_fun: 'blast_fun',
+            blast_vault: 'blast_vault',
+        },
+    },
+    blast_vault: {
+        source: { local: '../vault' },
+        deps: {
+            blast_admin: 'blast_admin',
+            blast_core: 'blast_core',
+            blast_partners: 'blast_partners',
+            std: 'MoveStdlib_2',
+            sui: 'Sui_2',
         },
     },
 };

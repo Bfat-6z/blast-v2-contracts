@@ -36,7 +36,7 @@ REPO_URL = "https://github.com/interest-protocol/blast-v2-contracts/blob/main"
 PACKAGES = [
     ("sui/presale", "Presale"),
     ("sui/launchpad", "Launchpad"),
-    ("sui/migrators", "Migration and LP vaults"),
+    ("sui/migrators", "Cetus and Bluefin venues"),
     ("sui/partners", "Partner codes"),
     ("sui/boosts/core", "Boosts core"),
     ("sui/boosts/products", "Boost product tags"),
@@ -89,9 +89,9 @@ PRODUCTS = [
         "Launchpad",
         "bonding-curve coin launches on Sui: launch a coin, trade it on the curve, graduate it into a "
         "Cetus or Bluefin pool, and collect LP fees and holder rewards from the LP vault",
-        ["launchpad.md", "migrators.md", "partners.md"],
+        ["launchpad.md", "migrators.md", "vault.md", "core.md", "partners.md"],
         ["sui/launchpad", "sui/migrators"],
-        ["sui/partners", "sui/admin"],
+        ["sui/core", "sui/vault", "sui/partners", "sui/admin"],
     ),
     Product(
         "partners",

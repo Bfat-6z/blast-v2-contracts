@@ -12,12 +12,11 @@ module blast_fun_migrators::package_administration_tests;
 
 // === Test-Only Types ===
 
-/// This package's own generation, custody, and LP-fee policy.
+/// This package's own generation and custody.
 public struct AdminFixtureState {
     scenario: Scenario,
     package_version: PackageVersion,
     package_admin: PackageAdmin,
-    policy: LpFeePolicy,
 }
 
 // === Tests ===
@@ -43,33 +42,6 @@ fun advancing_this_package_leaves_its_own_container_at_the_next_generation() {
         f.package_version.advance_for_testing();
 
         assert_eq!(f.package_version.version_for_testing(), 2);
-    });
-
-    fixture.end();
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
-)]
-/// A Launchpad role witness cannot make a stale Migrators generation succeed.
-fun a_stale_generation_rejects_an_lp_fee_policy_change() {
-    let mut fixture = start();
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = blast_acl::witness_for_testing<FeeAdmin>();
-        f.package_version.set_for_testing(2);
-
-        f
-            .policy
-            .set_default_shares_for_testing(
-                &f.package_version,
-                &admin_witness,
-                bps::new(1),
-                bps::new(2),
-                f.scenario.ctx()
-            );
     });
 
     fixture.end();
@@ -198,9 +170,8 @@ fun start(): AdminFixtureState {
     let mut scenario = test_scenario::begin(PUBLISHER);
     let package_version = package_version::new_for_testing(scenario.ctx());
     let package_admin = package_admin::new_for_testing(scenario.ctx());
-    let policy = lp_fee_policy::new_zero_fees_for_testing(scenario.ctx());
 
-    AdminFixtureState { scenario, package_version, package_admin, policy }
+    AdminFixtureState { scenario, package_version, package_admin }
 }
 
 fun upgrade_admin(): AdminWitness<UpgradeAdmin> {
@@ -244,11 +215,10 @@ const DIGEST: vector<u8> = x"000000000000000000000000000000000000000000000000000
 
 use blast_admin::blast_acl::{Self, AdminWitness};
 
-use blast_fun::{blast_fun_domain::{FeeAdmin, UpgradeAdmin}, bps};
+use blast_fun::blast_fun_domain::UpgradeAdmin;
 
 use blast_fun_migrators::{
     blast_fun_migrators::{Self as package_version, PackageVersion},
-    lp_fee_policy::{Self, LpFeePolicy},
     package_admin::{Self, PackageAdmin},
 };
 
