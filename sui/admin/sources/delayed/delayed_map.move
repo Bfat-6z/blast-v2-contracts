@@ -203,6 +203,22 @@ public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy 
     self.cancel_delay_if_pending();
 }
 
+/// Deletes a map with no pending entry or notice change and records its end, which also
+/// ends every remaining entry.
+public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: DelayedMap<K, E, V>,
+) {
+    assert!(
+        self.pending.is_empty() && self.pending_delay.is_none(),
+        blast_admin::errors::proposal_pending!(),
+    );
+
+    let DelayedMap { owner, key, entries, delay_ms: _, pending: _, pending_delay: _ } = self;
+    entries.drop();
+
+    sui::event::emit(MapDestroyed<K, E, V> { owner, key });
+}
+
 /// The proposed value, or none when the change clears the entry.
 public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>): Option<V> {
     self.value
@@ -298,6 +314,13 @@ public fun map_applied_fields<K: copy + drop + store, E: copy + drop + store, V:
     (self.owner, self.key, self.change, self.delay_ms)
 }
 
+#[test_only]
+public fun map_destroyed_fields<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &MapDestroyed<K, E, V>,
+): (ID, K) {
+    (self.owner, self.key)
+}
+
 // === Events ===
 
 /// A map was created empty with its first applied notice.
@@ -338,6 +361,16 @@ public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
+}
+
+/// A map was deleted with nothing pending, ending every remaining entry.
+public struct MapDestroyed<
+    K: copy + drop + store,
+    phantom E: copy + drop + store,
+    phantom V: copy + drop + store,
+> has copy, drop {
+    owner: ID,
+    key: K,
 }
 
 // === Imports ===

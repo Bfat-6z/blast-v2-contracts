@@ -76,6 +76,27 @@ const EProposalPending: u64 = 21;
 #[test_only]
 const EWrongChange: u64 = 22;
 
+#[test_only]
+const EInvalidPauseBits: u64 = 23;
+
+#[test_only]
+const EPauseUnchanged: u64 = 24;
+
+#[test_only]
+const EPaused: u64 = 25;
+
+#[test_only]
+const EWrongUpgradeAction: u64 = 26;
+
+#[test_only]
+const EUnguardedUpgradeNotice: u64 = 27;
+
+#[test_only]
+const EInvalidPackageWitness: u64 = 28;
+
+#[test_only]
+const EWrongUnpauseWitness: u64 = 29;
+
 macro public(package) fun invalid_super_admin_cap(): u64 { 0 }
 
 macro public(package) fun invalid_admin_cap(): u64 { 1 }
@@ -121,3 +142,17 @@ macro public(package) fun unchanged(): u64 { 20 }
 macro public(package) fun proposal_pending(): u64 { 21 }
 
 macro public(package) fun wrong_change(): u64 { 22 }
+
+macro public(package) fun invalid_pause_bits(): u64 { 23 }
+
+macro public(package) fun pause_unchanged(): u64 { 24 }
+
+macro public(package) fun paused(): u64 { 25 }
+
+macro public(package) fun wrong_upgrade_action(): u64 { 26 }
+
+macro public(package) fun unguarded_upgrade_notice(): u64 { 27 }
+
+macro public(package) fun invalid_package_witness(): u64 { 28 }
+
+macro public(package) fun wrong_unpause_witness(): u64 { 29 }

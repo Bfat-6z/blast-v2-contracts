@@ -278,6 +278,44 @@ fun a_map_accepts_the_ceiling_notice() {
     destroy(map);
 }
 
+#[test]
+fun destroying_a_map_ends_its_remaining_entries_and_records_the_end() {
+    let clock = clock_at(0);
+    let mut map = new_map(0);
+    map.schedule(@0xA, option::some(7), &clock);
+    map.apply(@0xA, &clock);
+
+    map.destroy();
+
+    let (destroyed_owner, destroyed_key) = collect<MapDestroyed<Overrides, address, u64>>()
+        .map_destroyed_fields();
+    assert_eq!(destroyed_owner, owner());
+    assert_eq!(destroyed_key, Overrides());
+    clock.destroy_for_testing();
+}
+
+#[test, expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed_map)]
+fun a_map_with_a_pending_entry_change_cannot_be_destroyed() {
+    let clock = clock_at(0);
+    let mut map = new_map(NOTICE_MS);
+    map.schedule(@0xA, option::some(7), &clock);
+
+    map.destroy();
+
+    clock.destroy_for_testing();
+}
+
+#[test, expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed_map)]
+fun a_map_with_a_pending_notice_change_cannot_be_destroyed() {
+    let clock = clock_at(0);
+    let mut map = new_map(NOTICE_MS);
+    map.schedule_delay(1, &clock);
+
+    map.destroy();
+
+    clock.destroy_for_testing();
+}
+
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.
@@ -329,6 +367,7 @@ use blast_admin::{
         MapApplied,
         MapCancelled,
         MapCreated,
+        MapDestroyed,
         MapScheduled,
     },
     errors,

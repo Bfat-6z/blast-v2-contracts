@@ -71,16 +71,25 @@ public fun advance<PackageMarker: drop>(
     );
 }
 
+// === Package Functions ===
+
+/// The generation after this one; aborts at the end of the generation range.
+public(package) fun next_generation<PackageMarker: drop>(
+    self: &OperationalVersion<PackageMarker>,
+): u64 {
+    self
+        .generation
+        .checked_add(1)
+        .destroy_or!(abort blast_admin::errors::operational_version_overflow!())
+}
+
 // === Private Functions ===
 
 fun checked_next<PackageMarker: drop>(
     self: &OperationalVersion<PackageMarker>,
     compiled_generation: u64,
 ): u64 {
-    let new_generation = self
-        .generation
-        .checked_add(1)
-        .destroy_or!(abort blast_admin::errors::operational_version_overflow!());
+    let new_generation = self.next_generation();
     assert!(
         new_generation == compiled_generation,
         blast_admin::errors::operational_version_mismatch!(),
@@ -89,6 +98,12 @@ fun checked_next<PackageMarker: drop>(
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// Creates the initial generation without a one-time witness, for generic consumer tests.
+public fun new_for_testing<PackageMarker: drop>(): OperationalVersion<PackageMarker> {
+    OperationalVersion<PackageMarker> { generation: INITIAL_GENERATION }
+}
 
 #[test_only]
 public fun generation_for_testing<PackageMarker: drop>(

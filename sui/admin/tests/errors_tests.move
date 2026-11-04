@@ -32,6 +32,13 @@ fun shared_error_codes_are_stable() {
     assert_eq!(errors::unchanged!(), 20);
     assert_eq!(errors::proposal_pending!(), 21);
     assert_eq!(errors::wrong_change!(), 22);
+    assert_eq!(errors::invalid_pause_bits!(), 23);
+    assert_eq!(errors::pause_unchanged!(), 24);
+    assert_eq!(errors::paused!(), 25);
+    assert_eq!(errors::wrong_upgrade_action!(), 26);
+    assert_eq!(errors::unguarded_upgrade_notice!(), 27);
+    assert_eq!(errors::invalid_package_witness!(), 28);
+    assert_eq!(errors::wrong_unpause_witness!(), 29);
 }
 
 // === Imports ===
