@@ -58,19 +58,8 @@ def governed(package, module, fields, version='package_version', shared_notice=(
 
 
 governed('launchpad', 'runtime_config', {'treasury': 'TreasuryAdmin', 'protocol_fee_share': 'FeeAdmin'})
-governed('launchpad', 'launch_config', {'creation_fee': 'FeeAdmin', 'trade_fees': 'FeeAdmin', 'protocol_allocation': 'TreasuryAdmin'})
+governed('launchpad', 'launch_config', {'creation_fee': 'FeeAdmin', 'trade_fees': 'FeeAdmin', 'protocol_allocation': 'TreasuryAdmin', 'protocol_lp_fees': 'FeeAdmin'})
 governed('presale', 'fee_policy', {'destination': 'TreasuryAdmin', 'fees': 'FeeAdmin'})
-governed('presale', 'presale_vault', {'protocol_lp_fees': 'FeeAdmin'})
-governed('migrators', 'lp_fee_policy', {'protocol_destination': 'TreasuryAdmin', 'default_shares': 'FeeAdmin', 'coin_shares': 'FeeAdmin'}, 'migrators_version', shared_notice=('coin_shares',))
-coin_notice = functions('migrators', 'lp_fee_policy')
-require(coin_notice['schedule_coin_shares_delay'][0], '&AdminWitness<FeeAdmin>', 'delay_ms: u64', 'clock: &Clock')
-require(coin_notice['schedule_coin_shares_delay'][1], 'self.coins.schedule_delay(delay_ms, clock)')
-require(coin_notice['apply_coin_shares_delay'][1], 'self.coins.apply_delay(clock)')
-assert 'AdminWitness' not in coin_notice['apply_coin_shares_delay'][0]
-require(coin_notice['cancel_coin_shares_delay'][0], '&AdminWitness<CancelAdmin>')
-require(coin_notice['schedule_clear_coin_shares'][1], 'self.coins.schedule(type_name::with_original_ids<Meme>(), option::none(), clock)')
-require((ROOT / 'sui/migrators/sources/lp_fee_policy.move').read_text(), 'coins: DelayedMap<CoinSharesKey, TypeName, SharePair>,')
-
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
     source = (ROOT / 'sui' / package / 'sources' / 'package_admin.move').read_text()
@@ -102,25 +91,25 @@ for package in ('launchpad', 'presale', 'migrators'):
 for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_policy')]:
     fs = functions(package, module)
     source = (ROOT / 'sui' / package / 'sources' / f'{module}.move').read_text()
-    require(source, 'migration_witnesses: DelayedSet<MigrationWitnessKey, TypeName>,')
-    assert 'witness_delay_ms' not in source and 'pending_witness' not in source, package
-    require(fs['schedule_migration_witness'][0], '&AdminWitness<AdapterAdmin>', 'clock: &Clock')
-    assert 'delay_ms: u64' not in fs['schedule_migration_witness'][0], package
-    body = fs['schedule_migration_witness'][1]
-    require(body, 'witness.is_primitive()', 'origin != @0x1 && origin != @0x2', 'self.migration_witnesses.schedule_add(witness, clock)')
+    require(source, 'venues: DelayedSet<VenueKey, TypeName>,')
+    assert 'migration_witness' not in source and 'pending_venue' not in source, package
+    require(fs['schedule_venue'][0], '&AdminWitness<AdapterAdmin>', 'clock: &Clock')
+    assert 'delay_ms: u64' not in fs['schedule_venue'][0], package
+    body = fs['schedule_venue'][1]
+    require(body, 'venue.is_primitive()', 'origin != @0x1 && origin != @0x2', 'self.venues.schedule_add(venue, clock)')
     assert body.index('origin != @0x1') < body.index('schedule_add'), package
-    require(fs['apply_migration_witness'][1], 'self.migration_witnesses.apply_add(')
-    assert 'AdminWitness' not in fs['apply_migration_witness'][0]
-    require(fs['cancel_migration_witness'][0], '&AdminWitness<CancelAdmin>')
-    require(fs['cancel_migration_witness'][1], 'self.migration_witnesses.cancel_add(')
-    require(fs['remove_migration_witness'][0], '&AdminWitness<AdapterAdmin>')
-    require(fs['remove_migration_witness'][1], 'self.migration_witnesses.remove(')
-    require(fs['schedule_migration_delay'][0], '&AdminWitness<AdapterAdmin>', 'delay_ms: u64', 'clock: &Clock')
-    require(fs['schedule_migration_delay'][1], 'self.migration_witnesses.schedule_delay(delay_ms, clock)')
-    require(fs['apply_migration_delay'][1], 'self.migration_witnesses.apply_delay(clock)')
-    assert 'AdminWitness' not in fs['apply_migration_delay'][0]
-    require(fs['cancel_migration_delay'][0], '&AdminWitness<CancelAdmin>')
-    assert 'set_migration_witness_allowed' not in fs
+    require(fs['apply_venue'][1], 'self.venues.apply_add(')
+    assert 'AdminWitness' not in fs['apply_venue'][0]
+    require(fs['cancel_venue'][0], '&AdminWitness<CancelAdmin>')
+    require(fs['cancel_venue'][1], 'self.venues.cancel_add(')
+    require(fs['remove_venue'][0], '&AdminWitness<AdapterAdmin>')
+    require(fs['remove_venue'][1], 'self.venues.remove(')
+    require(fs['schedule_venue_delay'][0], '&AdminWitness<AdapterAdmin>', 'delay_ms: u64', 'clock: &Clock')
+    require(fs['schedule_venue_delay'][1], 'self.venues.schedule_delay(delay_ms, clock)')
+    require(fs['apply_venue_delay'][1], 'self.venues.apply_delay(clock)')
+    assert 'AdminWitness' not in fs['apply_venue_delay'][0]
+    require(fs['cancel_venue_delay'][0], '&AdminWitness<CancelAdmin>')
+    assert 'set_venue_allowed' not in fs
 
 fs = functions('launchpad', 'launch')
 source = (ROOT / 'sui/launchpad/sources/launch.move').read_text()
@@ -196,14 +185,11 @@ for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_p
             require(signature, 'clock: &Clock')
             action_only = (
                 path.stem == 'package_admin' and name in ('schedule_upgrade', 'schedule_make_immutable')
-                or path.stem in ('launch_config', 'creation_policy') and name == 'schedule_migration_witness'
+                or path.stem in ('launch_config', 'creation_policy') and name == 'schedule_venue'
                 or package == 'launchpad' and path.stem == 'runtime_config'
                 and name == 'schedule_creator_claim_signer'
                 or package == 'launchpad' and path.stem == 'launch'
                 and name in ('schedule_curve_fee_cap_reassignment', 'schedule_metadata_cap_reassignment')
-                or package == 'migrators' and path.stem == 'lp_fee_policy'
-                and name in ('schedule_coin_shares', 'schedule_clear_coin_shares')
-                or path.stem in ('vault', 'presale_vault') and name == 'schedule_round_publication'
             )
             if action_only:
                 assert 'delay_ms: u64' not in signature, (path, name)
@@ -231,47 +217,42 @@ for name in ('schedule_value', 'schedule_delay'):
 require(primitive['assert_ready'][0], 'self: &Delayed<K, T>', 'clock: &Clock')
 require(primitive['assert_ready'][1], 'self.pending.is_some()', 'errors::no_pending!()', 'assert_ready_at(')
 assert 'self.pending =' not in primitive['assert_ready'][1]
-for package, module, version, authority in (
-    ('migrators', 'vault', 'migrators_version', 'assert!(self.launch_id == object::id(launch), EWrongLaunch); launch.assert_curve_fee_cap(curve_fee_cap);'),
-    ('presale', 'presale_vault', 'package_version', 'self.assert_cap(cap);'),
+# The vault's fee split waits its fixed notice under an owner proof the sale's product issues; each
+# venue settles accrued fees under the current split before applying the next.
+fs = functions('vault', 'vault')
+require(module_path('vault', 'vault').read_text(), 'fee_split: Delayed<FeeSplitKey, FeeSplit>,')
+for name in ('schedule_fee_split', 'cancel_fee_split'):
+    signature, body = fs[name]
+    assert body.startswith('package_version.assert_current(constants::generation!()); proof.assert_terms(&self.terms);'), name
+    require(signature, 'proof: OwnerProof')
+    assert 'AdminWitness' not in signature and 'delay_ms' not in signature, name
+require(fs['schedule_fee_split'][1], 'self.fee_split.schedule_value(proposed, clock)')
+require(fs['cancel_fee_split'][1], 'self.fee_split.cancel()')
+require(fs['assert_fee_split_ready'][1], 'self.fee_split.assert_ready(clock)')
+require(fs['apply_fee_split'][0], '_: &Venue')
+require(fs['apply_fee_split'][1], 'self.assert_position<_, _, Venue>()', 'self.fee_split.apply(clock)')
+for package, venue, settlement in (
+    ('migrators', 'bluefin', 'self.settle_fees('), ('migrators', 'cetus', 'self.settle_fees('),
+    ('presale', 'bluefin', 'collect_fees('), ('presale', 'cetus', 'collect_fees('),
 ):
-    fs = functions(package, module)
-    source = (ROOT / 'sui' / package / 'sources' / f'{module}.move').read_text()
-    require(source, 'fee_split: Delayed<FeeSplitKey, FeeSplit>', 'DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000')
-    for name in ('schedule_fee_split', 'cancel_fee_split'):
-        signature, body = fs[name]
-        assert body.startswith(f'{version}.assert_current(); {authority}'), (package, name)
-        assert 'AdminWitness' not in signature
-    require(fs['schedule_fee_split'][1], 'self.fee_split.schedule(proposed, delay_ms, clock)')
-    require(fs['cancel_fee_split'][1], 'self.fee_split.cancel()')
-    require(fs['assert_fee_split_ready'][1], 'self.fee_split.assert_ready(clock)')
-    require(fs['apply_fee_split'][1], 'self.fee_split.apply(clock)')
-    visibility = {row[1]: row[2] for row in facts(package, module) if row[0] == 'FN'}
-    assert visibility['apply_fee_split'] == 'package'
-    assert visibility['assert_fee_split_ready'] == 'package'
-    for venue in ('bluefin', 'cetus'):
-        signature, body = functions(package, venue)['settle_and_apply_fee_split']
-        assert body.startswith(f'{version}.assert_current();')
-        assert 'FeeSplit' not in signature and 'Cap' not in signature
-        settlement = 'self.settle_fees(' if package == 'migrators' else 'collect_fees('
-        assert body.index('.assert_fee_split_ready(clock)') < body.index(settlement) < body.index('.apply_fee_split(clock)')
+    signature, body = functions(package, venue)['settle_and_apply_fee_split']
+    assert 'FeeSplit' not in signature and 'Cap' not in signature, (package, venue)
+    assert body.index('.assert_fee_split_ready(clock)') < body.index(settlement) < body.index(
+        '.apply_fee_split(&Venue(), vault_version, clock)'), (package, venue)
 aftermath = functions('presale', 'aftermath')['apply_fee_split'][1]
-assert aftermath.startswith('package_version.assert_current();')
-assert aftermath.index('vault.has_position(&Venue())') < aftermath.index('vault.assert_fee_split_ready(clock)') < aftermath.index('vault.apply_fee_split(clock)')
+assert aftermath.index('vault.assert_fee_split_ready(clock)') < aftermath.index(
+    'vault.apply_fee_split(&Venue(), vault_version, clock)')
 
 # Holder-reward rounds publish only from each vault's delayed action slot: RewardsAdmin schedules
 # checked terms and the notice, CancelAdmin cancels either kind, and anyone publishes a ready round
 # or applies a ready notice. The vault never lends the slot, and publication re-checks the terms.
-for package, module, rewards, version, treasury in (
-    ('migrators', 'vault', 'blast_holder_rewards', 'migrators_version', 'lp_fee_policy.protocol_destination()'),
-    ('presale', 'presale_vault', 'holder_rewards', 'package_version', 'fee_policy.destination()'),
-):
-    # Migrators raises module-local named errors; presale raises its numeric registry macros.
-    error = (lambda name: name) if package == 'migrators' else (
-        lambda name: 'errors::' + re.sub(r'(?<!^)(?=[A-Z])', '_', name[1:]).lower() + '!()')
+package, module, rewards, version = 'vault', 'vault', 'holder_rewards', 'package_version'
+error = lambda name: 'blast_vault::errors::' + re.sub(r'(?<!^)(?=[A-Z])', '_', name[1:]).lower() + '!()'
+current = 'package_version.assert_current(constants::generation!());'
+if True:
     source = module_path(package, module).read_text()
     require(source, 'round_publication: DelayedAction<RoundPublicationKey, RoundTerms>,',
-            'public struct RoundPublicationKey() has copy, drop, store;', 'DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;')
+            'public struct RoundPublicationKey() has copy, drop, store;', 'constants::round_notice_ms!(),')
     slot = functions(package, module)
     require(slot['schedule_round_publication'][1], 'self.round_publication.schedule(terms, clock)')
     require(slot['take_round_publication'][1], 'self.round_publication.take_action(clock)')
@@ -280,44 +261,44 @@ for package, module, rewards, version, treasury in (
     for name, kind in (('cancel_round_publication', 'is_some'), ('cancel_round_publication_delay', 'is_none')):
         body = slot[name][1]
         require(body, f'proposal.proposal_value().action().{kind}()', error('EWrongRoundProposal'), 'self.round_publication.cancel()')
-        assert body.index(error('EWrongRoundProposal')) < body.index('self.round_publication.cancel()'), (package, name)
+        assert body.index(error('EWrongRoundProposal')) < body.index('self.round_publication.cancel()'), name
     require(slot['new_round_terms'][1], error('EInvalidCommitment'), error('EInvalidLeafCount'), error('EEmptyBudget'),
             'start_checkpoint < end_checkpoint', 'quote_amount.checked_add(gas_reserve_amount).is_some()',
             'expected_treasury != @0x0', 'claim_window_duration_ms > 0')
     visibility = {row[1]: row[2] for row in facts(package, module) if row[0] == 'FN' and row[5] == '0'}
     for name in ('new_round_terms', 'schedule_round_publication', 'take_round_publication', 'cancel_round_publication',
                  'schedule_round_publication_delay', 'apply_round_publication_delay', 'cancel_round_publication_delay'):
-        assert visibility[name] == 'package', (package, name)
+        assert visibility[name] == 'package', name
     for name, (signature, body) in slot.items():
-        assert 'DelayedAction' not in signature and '&mut self.round_publication' not in body, (package, name)
+        assert 'DelayedAction' not in signature and '&mut self.round_publication' not in body, name
     flows = functions(package, rewards)
     roles = {'schedule_round': 'RewardsAdmin', 'schedule_round_delay': 'RewardsAdmin',
              'cancel_round': 'CancelAdmin', 'cancel_round_delay': 'CancelAdmin'}
     for name in ('schedule_round', 'publish_round', 'cancel_round', 'schedule_round_delay', 'apply_round_delay', 'cancel_round_delay'):
         signature, body = flows[name]
-        assert body.startswith(f'{version}.assert_current();'), (package, name)
+        assert body.startswith(current), name
         if name in roles:
             require(signature, f'&AdminWitness<{roles[name]}>')
         else:
-            assert 'AdminWitness' not in signature, (package, name)
+            assert 'AdminWitness' not in signature, name
     signature, body = flows['schedule_round']
     require(signature, 'claim_window_duration_ms: u64', 'expected_treasury: address', 'clock: &Clock')
-    assert 'delay_ms: u64,' not in signature.replace('claim_window_duration_ms: u64,', ''), package
+    assert 'delay_ms: u64,' not in signature.replace('claim_window_duration_ms: u64,', '')
     steps = [f'{module}::new_round_terms(', 'assert_fundable(vault, &terms);', 'vault.schedule_round_publication(terms, clock);']
     require(body, *steps)
-    assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps), package
+    assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps)
     signature, body = flows['publish_round']
-    assert not re.search(r'\b(u64|address|vector<u8>)\b', signature), (package, signature)
-    steps = ['vault.take_round_publication(clock);', treasury, f"== terms.expected_treasury(), {error('ETreasuryChanged')});",
-             'assert_fundable(vault, &terms);', '.checked_add(terms.claim_window_duration_ms())', 'vault.fund_round(']
+    assert not re.search(r'\b(u64|address|vector<u8>)\b', signature), signature
+    steps = ['vault.take_round_publication(clock);', 'treasury.destination();', '== terms.expected_treasury(),',
+             error('ETreasuryChanged'), 'assert_fundable(vault, &terms);', '.checked_add(terms.claim_window_duration_ms())',
+             'vault.fund_round(']
     require(body, *steps)
-    assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps), package
+    assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps)
     require(flows['cancel_round'][1], 'vault.cancel_round_publication()')
     require(flows['schedule_round_delay'][1], 'vault.schedule_round_publication_delay(delay_ms, clock)')
     require(flows['apply_round_delay'][1], 'vault.apply_round_publication_delay(clock)')
     require(flows['cancel_round_delay'][1], 'vault.cancel_round_publication_delay()')
-    fundable = functions(package, rewards)
-    assert not any('fund_round(' in body for name, (_, body) in fundable.items() if name != 'publish_round'), package
+    assert not any('fund_round(' in body for name, (_, body) in flows.items() if name != 'publish_round')
 
 # Signer admission waits the set's notice and is capped; revocation stays immediate.
 signer = functions('launchpad', 'runtime_config')
@@ -349,7 +330,6 @@ require(signer['cancel_creator_claim_signer_delay'][1], 'self.creator_claim_sign
 for name in ('apply_creator_claim_signer', 'apply_creator_claim_signer_delay'):
     assert 'AdminWitness' not in signer[name][0], name
 assert 'set_creator_claim_signer' not in signer
-require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'self.coins.schedule(meme, option::some(share_pair(meme_bps, quote_bps)), clock)')
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
     require(fs['schedule_upgrade_delay'][0], '&AdminWitness<UpgradeAdmin>', 'delay_ms: u64')
