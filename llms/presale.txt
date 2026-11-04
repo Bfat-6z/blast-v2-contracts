@@ -60,7 +60,8 @@ blast_admin                  -> Sui framework only
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
 composes with it inside one PTB. Presale uses typed roles from the shared
-`blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
+`blast_admin` ACL. Both products hand migrated liquidity to a venue, which locks
+it in a `blast_vault::vault::Vault`.
 Use the presale guide for presale calls.
 
 `blast_fun_vesting` (used by `blast_presale`) lives in this repository at
@@ -2897,10 +2898,10 @@ public struct TreasuryAdmin {}
 /// the partners new sales may name.
 public struct FeeAdmin {}
 
-/// Admits or removes the Quotes new sales and vaults may use.
+/// Admits or removes the Quotes new sales may use.
 public struct ListingAdmin {}
 
-/// Admits or removes the migrators that may create sales and vaults.
+/// Admits or removes the venues whose tickets may start sales.
 public struct AdapterAdmin {}
 
 /// May set emergency pause bits, never clear them.
@@ -2911,9 +2912,6 @@ public struct UnpauseAdmin {}
 
 /// May cancel any scheduled administrative action.
 public struct CancelAdmin {}
-
-/// Publishes holder-reward rounds and settles capped gas reserves.
-public struct RewardsAdmin {}
 ```
 
 ### `blast_presale::blast_presale_package`
