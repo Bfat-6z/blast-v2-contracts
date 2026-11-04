@@ -1364,7 +1364,7 @@ fun apportion_supply(
         liquidity_token_allocation_bps,
         protocol_token_bps,
     ];
-    recipient_allocations.do_ref!(|allocation| shares.push_back(allocation.bps));
+    shares.append(recipient_allocations.map_ref!(|allocation| allocation.bps));
     let amounts = apportion(shares, token_supply);
 
     let (token_allocation, liquidity_token_allocation) = (amounts[0], amounts[1]);

@@ -119,7 +119,7 @@ public fun destination(self: &Route): address { self.destination }
 /// Splits `total` into the creator, auto-LP, rewards, burn, and per-recipient amounts, exactly.
 public fun apportion_fee_split(self: &FeeSplit, total: u64): (u64, u64, u64, u64, vector<u64>) {
     let mut bps = vector[self.creator_bps, self.auto_lp_bps, self.rewards_bps, self.burn_bps];
-    self.recipients.do_ref!(|route| bps.push_back(route.bps));
+    bps.append(self.recipients.map_ref!(|route| route.bps));
     let amounts = apportion(bps, total, option::none());
     let recipients = vector::tabulate!(amounts.length() - 4, |i| amounts[i + 4]);
 
@@ -178,7 +178,7 @@ public(package) fun apportion_meme(
     supply: u64,
 ): (u64, u64, u64, vector<u64>) {
     let mut bps = vector[self.curve_meme_bps, self.lp_meme_bps, self.protocol_meme_bps];
-    self.recipients.do_ref!(|recipient| bps.push_back(recipient.meme_bps));
+    bps.append(self.recipients.map_ref!(|recipient| recipient.meme_bps));
     let amounts = apportion(bps, supply, option::some(2));
     let recipients = vector::tabulate!(amounts.length() - 3, |i| amounts[i + 3]);
 
@@ -192,7 +192,7 @@ public(package) fun apportion_quote(
     reserve: u64,
 ): (u64, u64, vector<u64>) {
     let mut bps = vector[self.lp_quote_bps, self.protocol_quote_bps];
-    self.recipients.do_ref!(|recipient| bps.push_back(recipient.quote_bps));
+    bps.append(self.recipients.map_ref!(|recipient| recipient.quote_bps));
     let amounts = apportion(bps, reserve, option::some(1));
     let recipients = vector::tabulate!(amounts.length() - 2, |i| amounts[i + 2]);
 
