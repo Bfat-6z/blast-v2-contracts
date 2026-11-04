@@ -132,8 +132,9 @@ pending admission or change to zero.
 
 - Find a sale's vault without an indexer: its object ID is derived from the shared
   `blast_vault_package::VaultRegistry` and the key `blast_vault::vault::VaultKey { issuer, origin }`,
-  whose BCS is the sealing package witness's type name (an ASCII string, original package ID)
-  followed by the sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
+  whose BCS is the sealing package witness's type name as a length-prefixed `String` (ULEB128
+  length, then the ASCII name, with the original package ID written without `0x`) followed by the
+  sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
   0x2::derived_object::DerivedObjectKey<blast_vault::vault::VaultKey>, bcs(key))`. The launchpad's
   issuer is `blast_fun::launch::PackageWitness` and the presale's
   `blast_presale::blast_presale::PackageWitness`. Each sale has exactly one vault; a second

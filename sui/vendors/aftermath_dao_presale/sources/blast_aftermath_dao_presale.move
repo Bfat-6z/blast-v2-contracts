@@ -68,8 +68,8 @@ public fun new<SaleToken, Quote>(
 public fun finalize<Lp, SaleToken, Quote>(
     _: &AdminCap,
     package_version: &PackageVersion,
-    registry: &mut PresaleRegistry,
     mut initializer: PresaleInitializer<SaleToken, Quote>,
+    registry: &mut PresaleRegistry,
     currency: &mut Currency<SaleToken>,
     create_pool_cap: CreatePoolCapV2,
     ctx: &mut TxContext,

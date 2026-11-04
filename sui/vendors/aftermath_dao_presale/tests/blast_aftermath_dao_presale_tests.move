@@ -290,8 +290,8 @@ fun finalize_rejects_another_venues_sale() {
 
     let _sale = admin_cap.finalize<LP, _, _>(
         &package_version,
-        &mut registry,
         initializer,
+        &mut registry,
         &mut currency,
         amm_pool::create_pool_cap_for_testing(scenario.ctx()),
         scenario.ctx(),
@@ -501,8 +501,8 @@ fun finalize_sale(
 
         let sale = admin_cap.finalize<LP, _, _>(
             &package_version,
-            &mut registry,
             initializer,
+            &mut registry,
             &mut currency,
             create_pool_cap,
             scenario.ctx(),

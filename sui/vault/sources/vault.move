@@ -112,8 +112,8 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 /// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` and the terms' sealing
 /// witness are admitted and Blast's share is within the vault maximum. The vault's ID derives from
 /// the registry, the sealing witness, and the sale, so each sale has exactly one vault and a client
-/// computes its address from the sale alone. The vault has `key` without
-/// `store`, so it cannot leave this transaction except through `share_with_position`.
+/// computes its address from the sale alone. The vault has `key` without `store`, so it cannot
+/// leave this transaction except through `share_with_position`.
 public fun new<Meme, Quote, Venue>(
     registry: &mut VaultRegistry,
     _: &Venue,
@@ -127,8 +127,10 @@ public fun new<Meme, Quote, Venue>(
     let (meme_bps, quote_bps) = terms.protocol_bps();
     let protocol_bps = new_protocol_bps(meme_bps, quote_bps);
 
-    let key = VaultKey { issuer: terms.package_witness(), origin: terms.origin() };
-    let id = derived_object::claim(registry.uid_mut(), key);
+    let id = derived_object::claim(
+        registry.uid_mut(),
+        VaultKey { issuer: terms.package_witness(), origin: terms.origin() },
+    );
     let fee_split = delayed::new(
         FeeSplitKey(),
         &id,

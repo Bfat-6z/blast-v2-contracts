@@ -4661,7 +4661,6 @@ fun create_sale<Quote>(terms: SaleTerms) {
     destroy(ctx);
 }
 
-/// Creates a sale raising `Quote` under `terms` from `treasury_cap`, then discards it.
 /// Finalizes a valid sale of a fresh `BLAST_PRESALE_TESTS` currency against `registry`.
 fun finalize_valid_sale(
     registry: &mut PresaleRegistry,
@@ -4688,6 +4687,7 @@ fun finalize_valid_sale(
     (sale, cap)
 }
 
+/// Creates a sale raising `Quote` under `terms` from `treasury_cap`, then discards it.
 fun create_sale_with_treasury<Quote>(
     treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
     mut currency: Currency<BLAST_PRESALE_TESTS>,
