@@ -2206,11 +2206,7 @@ impl World {
         position: ObjectID,
     ) -> Result<()> {
         let wrong = self.standalone_vault_pt(wrong_meme, wrong_pool, position)?;
-        let code = if self.route.is_cetus() {
-            CETUS_POSITION_POOL_MISMATCH
-        } else {
-            BLUEFIN_POSITION_POOL_MISMATCH
-        };
+        let code = POSITION_POOL_MISMATCH;
         let mut watched = vec![wrong_pool, pool, position];
         if self.route.is_cetus() {
             watched.push(self.venue("cetus_burn_manager"));
