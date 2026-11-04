@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Bluefin launch start, migration, fee collection with auto-LP, settled fee-split updates, and
-/// buybacks over custodied concentrated-liquidity principal.
+/// Bluefin coin preparation, migration into `blast_vault` custody, fee collection with auto-LP,
+/// settled fee-split updates, and buybacks over custodied concentrated-liquidity principal.
 ///
 /// Bluefin pools are keyed by their exact type-parameter order, so this module
 /// always creates and expects `Pool<Meme, Quote>` with Meme as coin A.
@@ -10,28 +10,34 @@ module blast_fun_migrators::bluefin;
 
 // === Public Types ===
 
-/// Sealed adapter identity selected by a Blast launch.
-public struct Witness() has drop;
-
-/// Sealed marker for the Bluefin position attached to the common vault.
+/// The Bluefin venue's sealed witness: it issues tickets, redeems migrations, and keys the position
+/// in the vault, so a launch and the vault registry admit this one type.
 public struct Venue() has drop;
+
+/// A prepared coin's Bluefin pool tier.
+public struct PoolTier has copy, drop, store {
+    tick_spacing: u32,
+    fee_rate: u64,
+}
+
+/// Sealed `VenueConfig` field name for the Meme type's Bluefin pool tier.
+public struct PoolTierKey<phantom Meme>() has copy, drop, store;
 
 // === Public Functions ===
 
-/// Starts a Bluefin launch in `Quote` at the creator's tier; the core aborts unless it admits
-/// Bluefin and the Quote.
+/// Prepares `Meme` for a Bluefin launch in `Quote` at the creator's tier, recording the tier, and
+/// returns the ticket `launch::new` redeems. `treasury_cap` proves the caller controls the coin,
+/// so no one else can record its tier first.
 ///
 /// Bluefin checks the tier only when migration creates the pool, and a launch cannot change its
-/// tier, so the same bounds apply here first. The creator completes the returned initializer with
-/// `launch::finalize`.
-public fun new<Meme, Quote>(
-    ticket: LaunchTicket<Meme>,
+/// tier, so the same bounds apply here first.
+public fun prepare<Meme, Quote>(
     migrators_version: &MigratorsVersion,
-    package_version: &PackageVersion,
-    config: &LaunchConfig,
+    venue_config: &mut VenueConfig,
+    _: &TreasuryCap<Meme>,
     tick_spacing: u32,
     fee_rate: u64,
-): LaunchInitializer<Meme, Quote> {
+): VenueTicket<Meme, Quote> {
     migrators_version.assert_current();
     assert!(
         tick_spacing > 0 && tick_spacing <= constants::bluefin_max_tick_spacing!() && fee_rate > 0
@@ -39,32 +45,43 @@ public fun new<Meme, Quote>(
         EInvalidTier,
     );
 
-    launch::new<Meme, Quote, _>(ticket, package_version, config, Witness(), tick_spacing, fee_rate)
+    venue_config.add_value(PoolTierKey<Meme>(), PoolTier { tick_spacing, fee_rate });
+
+    migration::issue_ticket(Venue())
 }
 
-/// Migrates a MigrationReady launch into a new full-range pool at the launch's tier.
+/// Migrates a MigrationReady launch into a new full-range pool at the recorded tier and a
+/// `blast_vault` vault.
 ///
-/// The opening price derives from the handed-off balances, which seed the position on the side
-/// `is_meme_seed_side` chooses. `creation_fee` is paid whole, and Bluefin aborts unless it is
-/// exactly the configured SUI fee. The position and the venue residuals stay in a shared vault
-/// with no withdrawal path. The caller receives no object; Bluefin records it as the new pool's
-/// manager, a role limited to the pool's reward emissions and to handing the role on (ADR 0088).
+/// Redeems the launch's hand-off. The opening price derives from the handed-off balances, which
+/// seed the position on the side `is_meme_seed_side` chooses. `creation_fee` is paid whole, and
+/// Bluefin aborts unless it is exactly the configured SUI fee. The position and the venue
+/// residuals go to the vault, which has no withdrawal path. The caller receives no object; Bluefin
+/// records it as the new pool's manager, a role limited to the pool's reward emissions and to
+/// handing the role on (ADR 0088).
 public fun migrate<Meme, Quote>(
     launch: &mut Launch<Meme, Quote>,
     migrators_version: &MigratorsVersion,
     package_version: &PackageVersion,
+    config: &LaunchConfig,
     currency: &mut Currency<Meme>,
     quote_currency: &Currency<Quote>,
+    venue_config: &VenueConfig,
     bluefin_config: &mut GlobalConfig,
+    registry: &VaultRegistry,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
     creation_fee: Coin<SUI>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     migrators_version.assert_current();
 
-    let (tick_spacing, fee_rate) = launch.pool_tier();
+    let PoolTier { tick_spacing, fee_rate } = *venue_config.value(PoolTierKey<Meme>());
     let (lower_tick, upper_tick) = bluefin_config.full_range_tick_range(tick_spacing);
-    let (meme, quote) = launch.migrate(package_version, currency, Witness(), ctx);
+    let (meme, quote, terms) = launch
+        .migrate(package_version, config, currency, ctx)
+        .redeem(Venue());
 
     let mut pool = pool::create_pool_and_get_object<Meme, Quote, SUI>(
         clock,
@@ -94,16 +111,28 @@ public fun migrate<Meme, Quote>(
         clock,
     );
 
-    launch.lock_into_vault(position, residual_meme, residual_quote, ctx);
+    let pool_id = position.pool_id();
+    let liquidity = position.liquidity();
+    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx)
+        .share_with_position(
+            &Venue(),
+            treasury,
+            position,
+            liquidity,
+            residual_meme,
+            residual_quote,
+            ctx,
+        );
     pool.share_pool_object();
 }
 
 /// Collects the custodied position's fees, splits them, burns the burn share's Meme, and adds the
 /// auto-LP share back to the position. Anyone may call it.
 public fun collect_fees<Meme, Quote>(
-    self: &mut LpVault<Meme, Quote>,
+    self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    policy: &LpFeePolicy,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
@@ -112,14 +141,15 @@ public fun collect_fees<Meme, Quote>(
 ) {
     migrators_version.assert_current();
 
-    self.settle_fees(policy, currency, bluefin_config, pool, clock, ctx);
+    self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
 }
 
 /// Anyone may settle accrued fees under the current split, then apply the stored ready proposal.
 public fun settle_and_apply_fee_split<Meme, Quote>(
-    self: &mut LpVault<Meme, Quote>,
+    self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    policy: &LpFeePolicy,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
@@ -129,9 +159,9 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
     migrators_version.assert_current();
     self.assert_fee_split_ready(clock);
 
-    self.settle_fees(policy, currency, bluefin_config, pool, clock, ctx);
+    self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
 
-    self.apply_fee_split(clock);
+    self.apply_fee_split(&Venue(), vault_version, clock);
 }
 
 /// Swaps `quote_in` of the vault's burn Quote for Meme in its pool and burns it, under a buyback
@@ -139,8 +169,9 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
 /// returns at least `min_meme_out`; the admin sets it from an off-chain price, since anyone can move
 /// the pool's price within a transaction. Quote the pool does not take stays for the next buyback.
 public fun buyback_and_burn<Meme, Quote>(
-    self: &mut LpVault<Meme, Quote>,
+    self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     admin_witness: &AdminWitness<BuybackAdmin>,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
@@ -153,7 +184,7 @@ public fun buyback_and_burn<Meme, Quote>(
     migrators_version.assert_current();
     assert!(self.pool_id() == object::id(pool), EPositionPoolMismatch);
 
-    let quote = self.take_buyback_quote(admin_witness, quote_in);
+    let quote = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);
     let (meme, quote) = pool::swap(
         clock,
         bluefin_config,
@@ -167,7 +198,7 @@ public fun buyback_and_burn<Meme, Quote>(
         constants::max_swap_sqrt_price!(),
     );
 
-    self.burn_buyback(currency, meme, quote, quote_in, min_meme_out, ctx);
+    self.burn_buyback(&Venue(), vault_version, currency, meme, quote, quote_in, min_meme_out, ctx);
 }
 
 // === Private Functions ===
@@ -251,51 +282,31 @@ fun is_meme_seed_side<Meme, Quote>(
     )
 }
 
-/// Locks the seeded position and the residuals in a new vault.
-fun lock_into_vault<Meme, Quote>(
-    launch: &Launch<Meme, Quote>,
-    position: Position,
-    residual_meme: Balance<Meme>,
-    residual_quote: Balance<Quote>,
-    ctx: &mut TxContext,
-) {
-    let liquidity = position.liquidity();
-
-    vault::create(
-        launch,
-        &Venue(),
-        position.pool_id(),
-        position,
-        liquidity,
-        residual_meme,
-        residual_quote,
-        ctx,
-    );
-}
-
 /// Collects the position's fees, splits them through the vault, and adds the auto-LP share back.
 fun settle_fees<Meme, Quote>(
-    self: &mut LpVault<Meme, Quote>,
-    policy: &LpFeePolicy,
+    self: &mut Vault<Meme, Quote>,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let (meme_fee, quote_fee) = self.collect_position_fees(bluefin_config, pool, clock);
-    self.split_fees(policy, currency, meme_fee, quote_fee, ctx);
-    self.compound(bluefin_config, pool, clock);
+    let (meme_fee, quote_fee) = self.collect_position_fees(vault_version, bluefin_config, pool, clock);
+    self.split_fees(&Venue(), vault_version, treasury, currency, meme_fee, quote_fee, ctx);
+    self.compound(vault_version, bluefin_config, pool, clock);
 }
 
 /// Collects the attached position's fees from `pool`, which must be the position's own pool.
 fun collect_position_fees<Meme, Quote>(
-    self: &mut LpVault<Meme, Quote>,
+    self: &mut Vault<Meme, Quote>,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
     clock: &Clock,
 ): (Balance<Meme>, Balance<Quote>) {
-    let position = self.position_mut<_, _, _, Position>(&Venue());
+    let position = self.position_mut<_, _, _, Position>(&Venue(), vault_version);
     assert!(position.pool_id() == object::id(pool), EPositionPoolMismatch);
 
     let (_, _, meme_fee, quote_fee) = pool::collect_fee(clock, bluefin_config, pool, position);
@@ -307,13 +318,14 @@ fun collect_position_fees<Meme, Quote>(
 /// fixing the side the other can cover from the pool's and the position's bound sqrt prices, and
 /// keeps the rest for the next call. `collect_position_fees` already matched the pool.
 fun compound<Meme, Quote>(
-    self: &mut LpVault<Meme, Quote>,
+    self: &mut Vault<Meme, Quote>,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
     clock: &Clock,
 ) {
-    let (meme, quote) = self.take_auto_lp();
-    let position = self.position_mut<_, _, _, Position>(&Venue());
+    let (meme, quote) = self.take_auto_lp(&Venue(), vault_version);
+    let position = self.position_mut<_, _, _, Position>(&Venue(), vault_version);
     let (fix_meme, fixed_amount) = pool.fixed_side(position, meme.value(), quote.value());
 
     let (added_meme, added_quote, meme, quote) = if (fixed_amount > 0) {
@@ -331,7 +343,7 @@ fun compound<Meme, Quote>(
         (0, 0, meme, quote)
     };
 
-    self.keep_auto_lp(added_meme, added_quote, meme, quote);
+    self.keep_auto_lp(&Venue(), vault_version, added_meme, added_quote, meme, quote);
 }
 
 /// Chooses the side an auto-LP add fixes, and how much, from the pool's price and the position's
@@ -365,41 +377,49 @@ const EInvalidTier: vector<u8> = b"Bluefin tier needs a tick spacing in 1..=400 
 
 // === Imports ===
 
-use blast_admin::blast_acl::AdminWitness;
+use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion as VaultVersion};
 
-use blast_fun::{
-    blast_fun_domain::BuybackAdmin,
-    launch::{Self, Launch, LaunchInitializer},
-    launch_config::LaunchConfig,
-    launch_ticket::LaunchTicket,
-    blast_fun::PackageVersion,
+use blast_core::{
+    blast_domain::BuybackAdmin,
+    blast_treasury::Treasury,
+    migration::{Self, VenueTicket}
 };
 
+use blast_fun::{blast_fun::PackageVersion, launch::Launch, launch_config::LaunchConfig};
+
 use blast_fun_migrators::{
-    constants,
-    lp_fee_policy::LpFeePolicy,
-    migration_math,
     blast_fun_migrators::PackageVersion as MigratorsVersion,
-    vault::{Self, LpVault},
+    constants,
+    migration_math,
+    venue_config::VenueConfig
+};
+
+use blast_vault::{
+    blast_vault_package::{BLAST_VAULT_PACKAGE, VaultRegistry},
+    vault::{Self, Vault}
 };
 
 use bluefin_spot::{config::GlobalConfig, pool::{Self, Pool}, position::Position};
 
 use integer_mate::i32;
 
-use sui::{balance::{Self, Balance}, clock::Clock, coin::Coin, coin_registry::Currency, sui::SUI};
+use sui::{
+    balance::{Self, Balance},
+    clock::Clock,
+    coin::{Coin, TreasuryCap},
+    coin_registry::Currency,
+    sui::SUI
+};
 
-use fun collect_position_fees as LpVault.collect_position_fees;
-use fun compound as LpVault.compound;
-use fun settle_fees as LpVault.settle_fees;
+use fun collect_position_fees as Vault.collect_position_fees;
+use fun compound as Vault.compound;
+use fun settle_fees as Vault.settle_fees;
 
 use fun fixed_side as Pool.fixed_side;
 
 use fun full_range_tick_range as GlobalConfig.full_range_tick_range;
 
 use fun is_meme_seed_side as Pool.is_meme_seed_side;
-
-use fun lock_into_vault as Launch.lock_into_vault;
 
 use fun pool_name as Currency.pool_name;
 
