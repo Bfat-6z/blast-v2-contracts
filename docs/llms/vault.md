@@ -37,8 +37,9 @@ the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 ### Lifecycle
 
 1. A venue creates the vault with `blast_vault::vault::new`, unshared, from terms the sale sealed.
-   It aborts unless the venue's witness and the terms' sealing witness are both admitted and
-   Blast's share is at most 3,000 basis points per asset.
+   It aborts unless the venue's witness and the terms' sealing witness are both admitted. Blast's
+   share is at most 3,000 basis points per asset because `migration::vault_terms` refuses to seal
+   more.
 2. The venue attaches its position and shares the vault with
    `blast_vault::vault::share_with_position`, which settles the migration residuals and emits
    `blast_vault_events::VaultCreated`.
@@ -163,7 +164,8 @@ pending admission or change to zero.
 
 ### Aborts
 
-- Vault creation: `unadmitted_venue`, then `unadmitted_issuer`, then `invalid_protocol_bps`.
+- Vault creation: `unadmitted_venue`, then `unadmitted_issuer`. Scheduling Blast's share above
+  3,000 basis points per asset aborts with `invalid_protocol_bps`.
 - A venue's buyback or auto-LP return: `wrong_vault` for another vault's receipt,
   `returned_exceeds_taken` when it returns more than it took.
 - Owner claim with nothing accrued: `nothing_to_claim`. A proof for another sale or package

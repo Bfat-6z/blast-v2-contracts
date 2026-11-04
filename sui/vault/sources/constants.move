@@ -41,19 +41,9 @@ macro public(package) fun round_notice_ms(): u64 {
     2 * 60 * 60 * 1_000
 }
 
-/// Blast's largest share of each LP-fee collection, per asset.
-macro public(package) fun max_protocol_bps(): u64 {
-    3_000
-}
-
 /// Largest holder-reward gas reserve, in basis points of the round's holder Quote.
 macro public(package) fun max_gas_reserve_bps(): u64 {
     1_000
-}
-
-/// Denominator for rates expressed in basis points.
-macro public(package) fun basis_points_denominator(): u64 {
-    10_000
 }
 
 /// The most leaves one holder-reward round may commit.

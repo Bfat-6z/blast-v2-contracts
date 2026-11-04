@@ -4,7 +4,8 @@
 // Package error macros preserve the payout's abort location.
 #[allow(lint(abort_without_constant))]
 /// The one way Blast sends coins to people: an amount paid outright, or locked in an irrevocable
-/// linear vesting schedule. Each product keeps its own recipient lists and shares.
+/// linear vesting schedule. A `Recipient` says which of the two a destination gets; each product
+/// keeps its own recipient lists and shares.
 module blast_core::payout;
 
 // === Public Types ===
@@ -15,6 +16,13 @@ public struct VestingTerms has copy, drop, store {
     cliff_delay_ms: u64,
     period_duration_ms: u64,
     periods: u64,
+}
+
+/// Where a payout goes and how: outright, or locked under `vesting_terms` from the moment it is
+/// paid.
+public struct Recipient has copy, drop, store {
+    destination: address,
+    vesting_terms: Option<VestingTerms>,
 }
 
 // === Public Functions ===
@@ -33,26 +41,36 @@ public fun vesting_terms(cliff_delay_ms: u64, period_duration_ms: u64, periods: 
     VestingTerms { cliff_delay_ms, period_duration_ms, periods }
 }
 
-/// Pays `amount` of `balance` to `destination`: outright, or locked in an irrevocable linear
-/// schedule starting now when `vesting` is set, returning the schedule's ID. A zero amount sends
-/// nothing.
+/// A recipient at the nonzero `destination`, paid outright without `vesting_terms` and locked
+/// under them otherwise.
+public fun recipient(destination: address, vesting_terms: Option<VestingTerms>): Recipient {
+    assert!(destination != @0x0, blast_core::errors::invalid_recipient!());
+
+    Recipient { destination, vesting_terms }
+}
+
+/// The address the recipient's payouts go to, or vest for.
+public fun destination(self: &Recipient): address { self.destination }
+
+/// Pays `amount` of `balance` to `recipient`: outright, or locked in an irrevocable linear
+/// schedule starting now when it vests, returning the schedule's ID. A zero amount sends and
+/// locks nothing.
 public fun pay_or_vest<Asset>(
     balance: &mut Balance<Asset>,
     amount: u64,
-    destination: address,
-    vesting: Option<VestingTerms>,
+    recipient: &Recipient,
     clock: &Clock,
     ctx: &mut TxContext,
 ): Option<ID> {
-    if (vesting.is_none() || amount == 0) {
-        pay(balance, amount, destination, ctx);
+    if (recipient.vesting_terms.is_none() || amount == 0) {
+        pay(balance, amount, recipient.destination, ctx);
         return option::none()
     };
 
-    let terms = vesting.destroy_some();
+    let terms = recipient.vesting_terms.destroy_some();
     let schedule = linear_vesting::new_irrevocable(
         balance.split(amount).into_coin(ctx),
-        destination,
+        recipient.destination,
         clock.timestamp_ms(),
         terms.cliff_delay_ms,
         terms.period_duration_ms,

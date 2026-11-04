@@ -51,6 +51,14 @@ const EWrongOwner: u64 = 9;
 /// The vault terms must be sealed by the package witness creating the migration.
 const EWrongPackageWitness: u64 = 10;
 
+#[test_only]
+/// Blast's LP-fee share of each asset must be at most 3,000 basis points.
+const EInvalidLpFeeBps: u64 = 11;
+
+#[test_only]
+/// A payout recipient must be a nonzero address.
+const EInvalidRecipient: u64 = 12;
+
 macro public(package) fun invalid_bps(): u64 { 0 }
 
 macro public(package) fun invalid_apportionment(): u64 { 1 }
@@ -72,3 +80,7 @@ macro public(package) fun wrong_venue(): u64 { 8 }
 macro public(package) fun wrong_owner(): u64 { 9 }
 
 macro public(package) fun wrong_package_witness(): u64 { 10 }
+
+macro public(package) fun invalid_lp_fee_bps(): u64 { 11 }
+
+macro public(package) fun invalid_recipient(): u64 { 12 }

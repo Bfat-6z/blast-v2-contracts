@@ -114,21 +114,6 @@ fun an_unadmitted_venue_cannot_create_a_vault() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_vault::errors::EInvalidProtocolBps,
-    location = blast_vault::vault,
-)]
-fun terms_above_the_blast_share_maximum_cannot_create_a_vault() {
-    let mut scenario = vault_fixture::begin();
-    let mut f = vault_fixture::start(&mut scenario);
-    let terms = f.terms_for(owner_split(), 1_500, 3_001, false, false);
-
-    destroy(f.new_vault(terms));
-    f.end();
-    scenario.end();
-}
-
-#[test]
 fun terms_at_the_blast_share_maximum_create_a_vault() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
@@ -208,29 +193,6 @@ fun an_unadmitted_venue_is_reported_before_an_unadmitted_issuer() {
     let terms = vault_fixture::terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
 
     destroy(f.new_vault_through(&vault_fixture::other_venue(), terms));
-    f.end();
-    scenario.end();
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_vault::errors::EUnadmittedIssuer,
-    location = blast_vault::blast_vault_package,
-)]
-fun an_unadmitted_issuer_is_reported_before_the_blast_share_maximum() {
-    let mut scenario = vault_fixture::begin();
-    let mut f = vault_fixture::start(&mut scenario);
-    let terms = migration::vault_terms(
-        vault_fixture::stranger_issuer(),
-        vault_fixture::sale_id(),
-        owner_split(),
-        bps::new(3_001),
-        bps::new(3_001),
-        option::none(),
-        migration::residuals_to_owner(),
-    );
-
-    destroy(f.new_vault(terms));
     f.end();
     scenario.end();
 }

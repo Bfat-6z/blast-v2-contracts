@@ -17,8 +17,10 @@ fun an_outright_payout_sends_the_exact_amount_and_keeps_the_rest() {
     let clock = clock::create_for_testing(scenario.ctx());
     let mut funds = balance::create_for_testing<SUI>(100);
 
-    let ctx = scenario.ctx();
-    let schedule = payout::pay_or_vest(&mut funds, 40, BOB, option::none(), &clock, ctx);
+    let recipient = payout::recipient(BOB, option::none());
+    assert_eq!(recipient.destination(), BOB);
+
+    let schedule = payout::pay_or_vest(&mut funds, 40, &recipient, &clock, scenario.ctx());
     assert!(schedule.is_none());
     assert_eq!(funds.value(), 60);
 
@@ -35,13 +37,34 @@ fun an_outright_payout_sends_the_exact_amount_and_keeps_the_rest() {
 #[test]
 fun a_vested_payout_locks_the_amount_in_a_shared_schedule() {
     let mut scenario = test_scenario::begin(ALICE);
-    let clock = clock::create_for_testing(scenario.ctx());
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000);
     let mut funds = balance::create_for_testing<SUI>(100);
-    let vesting = option::some(payout::vesting_terms(10, 100, 4));
+    let terms = payout::vesting_terms(10, 100, 4);
+    let recipient = payout::recipient(BOB, option::some(terms));
 
-    let schedule = payout::pay_or_vest(&mut funds, 40, BOB, vesting, &clock, scenario.ctx());
+    let schedule = payout::pay_or_vest(&mut funds, 40, &recipient, &clock, scenario.ctx());
     assert!(schedule.is_some());
     assert_eq!(funds.value(), 60);
+
+    let created = event::events_by_type<VestingCreated>();
+    assert_eq!(created.length(), 1);
+    let (
+        vesting_id,
+        _,
+        beneficiary,
+        refund_recipient,
+        cancel_cap_id,
+        total,
+        start_ms,
+        cliff_ms,
+        period_ms,
+        periods,
+    ) = created[0].vesting_created_fields();
+    assert_eq!(option::some(vesting_id), schedule);
+    assert_eq!(beneficiary, BOB);
+    assert!(refund_recipient.is_none() && cancel_cap_id.is_none());
+    assert_eq!(vector[total, start_ms, cliff_ms, period_ms, periods], vector[40, 1_000, 10, 100, 4]);
 
     scenario.next_tx(BOB);
     assert!(test_scenario::has_most_recent_shared<Vesting<SUI>>());
@@ -57,9 +80,9 @@ fun a_zero_payout_sends_and_locks_nothing() {
     let mut scenario = test_scenario::begin(ALICE);
     let clock = clock::create_for_testing(scenario.ctx());
     let mut funds = balance::create_for_testing<SUI>(5);
-    let vesting = option::some(payout::vesting_terms(0, 1, 1));
+    let recipient = payout::recipient(BOB, option::some(payout::vesting_terms(0, 1, 1)));
 
-    assert!(payout::pay_or_vest(&mut funds, 0, BOB, vesting, &clock, scenario.ctx()).is_none());
+    assert!(payout::pay_or_vest(&mut funds, 0, &recipient, &clock, scenario.ctx()).is_none());
     payout::pay_all(balance::zero<SUI>(), BOB, scenario.ctx());
     assert_eq!(funds.value(), 5);
 
@@ -82,8 +105,8 @@ fun a_payout_vests_at_the_technical_bound_with_a_full_cliff() {
     payout::vesting_terms(0, 1, max_duration_ms);
     let mut funds = balance::create_for_testing<SUI>(1);
 
-    let ctx = scenario.ctx();
-    let schedule = payout::pay_or_vest(&mut funds, 1, BOB, option::some(terms), &clock, ctx);
+    let recipient = payout::recipient(BOB, option::some(terms));
+    let schedule = payout::pay_or_vest(&mut funds, 1, &recipient, &clock, scenario.ctx());
 
     assert!(schedule.is_some());
     assert_eq!(funds.value(), 0);
@@ -128,12 +151,24 @@ fun vesting_rejects_a_schedule_beyond_the_technical_bound() {
     payout::vesting_terms(0, (1 << 62) + 1, 2);
 }
 
+#[test]
+#[expected_failure(abort_code = blast_core::errors::EInvalidRecipient, location = blast_core::payout)]
+fun an_outright_recipient_rejects_the_zero_address() {
+    payout::recipient(@0x0, option::none());
+}
+
+#[test]
+#[expected_failure(abort_code = blast_core::errors::EInvalidRecipient, location = blast_core::payout)]
+fun a_vested_recipient_rejects_the_zero_address() {
+    payout::recipient(@0x0, option::some(payout::vesting_terms(0, 1, 1)));
+}
+
 // === Imports ===
 
 use blast_core::payout;
 
-use blast_fun_vesting::blast_fun_linear_vesting::Vesting;
+use blast_fun_vesting::blast_fun_linear_vesting::{Vesting, VestingCreated};
 
 use std::unit_test::{assert_eq, destroy};
 
-use sui::{balance, clock, coin::Coin, sui::SUI, test_scenario};
+use sui::{balance, clock, coin::Coin, event, sui::SUI, test_scenario};

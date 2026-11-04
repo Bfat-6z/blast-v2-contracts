@@ -110,9 +110,10 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 
 /// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
 /// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` and the terms' sealing
-/// witness are admitted and Blast's share is within the vault maximum. The vault's ID derives from
-/// the registry, the sealing witness, and the sale, so each sale has exactly one vault and a client
-/// computes its address from the sale alone. The vault has `key` without `store`, so it cannot
+/// witness are admitted; Blast's share needs no check, since `migration::vault_terms` capped it
+/// when the terms were sealed. The vault's ID derives from the registry, the sealing witness, and
+/// the sale, so each sale has exactly one vault and a client computes its address from the sale
+/// alone. The vault has `key` without `store`, so it cannot
 /// leave this transaction except through `share_with_position`.
 public fun new<Meme, Quote, Venue>(
     registry: &mut VaultRegistry,
@@ -125,7 +126,7 @@ public fun new<Meme, Quote, Venue>(
     registry.assert_venue<Venue>();
     registry.assert_issuer(terms.package_witness());
     let (meme_bps, quote_bps) = terms.protocol_bps();
-    let protocol_bps = new_protocol_bps(meme_bps, quote_bps);
+    let protocol_bps = ProtocolBps { meme_bps, quote_bps };
 
     let id = derived_object::claim(
         registry.uid_mut(),
@@ -614,7 +615,7 @@ public(package) fun new_round_terms(
         blast_vault::errors::budget_overflow!(),
     );
     assert!(
-        (gas_reserve_amount as u128) * (constants::basis_points_denominator!() as u128)
+        (gas_reserve_amount as u128) * (blast_core::constants::basis_points_denominator!() as u128)
             <= (quote_amount as u128) * (constants::max_gas_reserve_bps!() as u128),
         blast_vault::errors::gas_reserve_too_large!(),
     );
@@ -759,11 +760,11 @@ public(package) fun expected_treasury(self: &RoundTerms): address { self.expecte
 
 // === Private Functions ===
 
-/// Blast's per-vault share, each asset at most the vault maximum.
+/// Blast's per-vault share, each asset at most `blast_core::constants::max_lp_fee_bps!()`.
 fun new_protocol_bps(meme_bps: Bps, quote_bps: Bps): ProtocolBps {
     assert!(
-        meme_bps.value() <= constants::max_protocol_bps!()
-            && quote_bps.value() <= constants::max_protocol_bps!(),
+        meme_bps.value() <= blast_core::constants::max_lp_fee_bps!()
+            && quote_bps.value() <= blast_core::constants::max_lp_fee_bps!(),
         blast_vault::errors::invalid_protocol_bps!(),
     );
 

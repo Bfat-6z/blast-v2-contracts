@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the partner's abort location.
+#[allow(lint(abort_without_constant))]
 /// Blast partner codes, shared by every Blast product.
 ///
 /// A partner is one deal: it is paid a share of the fee Blast charges on every
@@ -65,8 +67,8 @@ public fun register(
     share_bps: u64,
     ctx: &mut TxContext,
 ) {
-    assert!(recipient != @0x0, EInvalidRecipient);
-    assert!(share_bps <= MAX_SHARE_BPS, EShareAboveMax);
+    assert!(recipient != @0x0, blast_partners::errors::invalid_recipient!());
+    assert!(share_bps <= MAX_SHARE_BPS, blast_partners::errors::share_above_max!());
 
     let partner = new(recipient, share_bps, cap_id, ctx);
 
@@ -85,8 +87,11 @@ public fun schedule_share(
     share_bps: u64,
     clock: &Clock,
 ) {
-    assert!(share_bps <= MAX_SHARE_BPS, EShareAboveMax);
-    assert!(!self.share_bps.pending().is_some_and!(|proposal| proposal.value() == share_bps), EUnchanged);
+    assert!(share_bps <= MAX_SHARE_BPS, blast_partners::errors::share_above_max!());
+    assert!(
+        !self.share_bps.pending().is_some_and!(|proposal| proposal.value() == share_bps),
+        blast_partners::errors::unchanged!(),
+    );
 
     self.share_bps.schedule_value(share_bps, clock);
 }
@@ -112,7 +117,10 @@ public fun schedule_cap(
     cap_id: ID,
     clock: &Clock,
 ) {
-    assert!(!self.cap_id.pending().is_some_and!(|proposal| proposal.value() == cap_id), EUnchanged);
+    assert!(
+        !self.cap_id.pending().is_some_and!(|proposal| proposal.value() == cap_id),
+        blast_partners::errors::unchanged!(),
+    );
 
     self.cap_id.schedule_value(cap_id, clock);
 }
@@ -129,9 +137,9 @@ public fun cancel_cap(self: &mut Partner, _: &AdminWitness<PartnerAdmin>) {
 
 /// Sets where the partner is paid, at once. Only the applied cap may.
 public fun set_recipient(self: &mut Partner, cap: &PartnerCap, recipient: address) {
-    assert!(cap.id.to_inner() == self.cap_id.value(), ENotLiveCap);
-    assert!(recipient != @0x0, EInvalidRecipient);
-    assert!(recipient != self.recipient, EUnchanged);
+    assert!(cap.id.to_inner() == self.cap_id.value(), blast_partners::errors::not_live_cap!());
+    assert!(recipient != @0x0, blast_partners::errors::invalid_recipient!());
+    assert!(recipient != self.recipient, blast_partners::errors::unchanged!());
 
     self.recipient = recipient;
 
@@ -239,7 +247,8 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 // === Constants ===
 
-/// The fixed notice before a share or a cap Blast proposes can apply.
+/// The fixed notice before a share or a cap Blast proposes can apply, and how long a partner a
+/// `partner_list::PartnerList` removes stays accepted.
 const PARTNER_CHANGE_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 
 /// The largest share of Blast's fee one partner may earn: 80%.
@@ -247,20 +256,6 @@ const MAX_SHARE_BPS: u64 = 8_000;
 
 /// Basis points in one whole.
 const BASIS_POINTS: u64 = 10_000;
-
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidRecipient: vector<u8> = b"A partner's recipient must not be the zero address.";
-
-#[error(code = 1)]
-const EShareAboveMax: vector<u8> = b"A partner's share must be at most 80% of Blast's fee.";
-
-#[error(code = 2)]
-const EUnchanged: vector<u8> = b"An update must change the value it sets or proposes.";
-
-#[error(code = 3)]
-const ENotLiveCap: vector<u8> = b"Only the partner's applied cap may set its recipient.";
 
 // === Imports ===
 

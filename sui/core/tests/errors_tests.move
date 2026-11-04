@@ -21,8 +21,10 @@ fun error_registry_is_stable() {
         errors::wrong_venue!(),
         errors::wrong_owner!(),
         errors::wrong_package_witness!(),
+        errors::invalid_lp_fee_bps!(),
+        errors::invalid_recipient!(),
     ];
-    assert_eq!(codes.length(), 11);
+    assert_eq!(codes.length(), 13);
     codes.length().do!(|i| assert_eq!(codes[i], i));
 }
 
