@@ -1674,8 +1674,8 @@ public fun authorize_upgrade<PackageMarker: drop>(
 /// other fails every `assert_current`, while these calls stay available to schedule a repair.
 public fun commit_upgrade_and_advance<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
-    package_version: &mut package_version::PackageVersion<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    package_version: &mut package_version::PackageVersion<PackageMarker>,
     receipt: UpgradeReceipt,
 )
 
@@ -1714,9 +1714,9 @@ public fun pause<PackageMarker: drop>(
 /// package's unpause constructs that type, so a role alone cannot skip its checks.
 public fun clear_pause_bits<PackageMarker: drop, UnpauseWitness: drop>(
     self: &PackageAdmin<PackageMarker>,
-    package_version: &mut package_version::PackageVersion<PackageMarker>,
     _: &blast_acl::AdminWitness<UnpauseAdmin<PackageMarker>>,
     _: UnpauseWitness,
+    package_version: &mut package_version::PackageVersion<PackageMarker>,
     bits: u8,
 )
 ```
@@ -1780,7 +1780,8 @@ public fun assert_current<PackageMarker: drop>(
     compiled_generation: u64,
 )
 
-/// Rejects an operation whose pause bit is set, before its lifecycle or economic checks.
+/// Rejects an operation whose pause bit is set, before its lifecycle or economic checks. This is a
+/// mask check only: a bit the package never defined is never set, so it never aborts.
 public fun assert_not_paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>, bit: u8)
 ```
 

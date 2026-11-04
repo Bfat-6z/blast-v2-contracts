@@ -311,7 +311,7 @@ grep -Fqx 'public struct Publication<phantom PackageMarker: drop> has key {' "$p
   || fail "Publication must be key-only so only its own module can deliver it."
 [[ "$(grep -Fxc '    unpause_witness: TypeName,' "$package_version_file")" -eq 2 ]] \
   || fail "Publication and PackageVersion must pin the package's exact unpause witness type."
-grep -Fq 'type_name::with_defining_ids<PackageWitness>() == self.unpause_witness' "$package_version_file" \
+grep -Fq 'type_name::with_defining_ids<UnpauseWitness>() == self.unpause_witness' "$package_version_file" \
   || fail "Clearing pause bits must require the exact pinned unpause witness type."
 
 package_admin_file="$package_dir/sources/package_admin.move"
@@ -333,7 +333,7 @@ expected_package_admin_public="$(printf '%s\n' \
   || fail "The production package-administration surface changed without boundary review."
 grep -Fqx 'public struct PackageAdmin<phantom PackageMarker: drop> has key {' "$package_admin_file" \
   || fail "PackageAdmin must be a key-only shared object typed by its package marker."
-grep -Fq 'package_version.assert_unpause_witness<PackageMarker, UnpauseWitness>();' "$package_admin_file" \
+grep -Fq 'package_version.assert_unpause_witness<_, UnpauseWitness>();' "$package_admin_file" \
   || fail "clear_pause_bits must check the pinned unpause witness."
 for role in UpgradeAdmin PauseAdmin UnpauseAdmin CancelAdmin; do
   grep -Fqx "public struct $role<phantom PackageMarker>()" "$package_admin_file" \

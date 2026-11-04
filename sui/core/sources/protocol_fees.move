@@ -65,17 +65,17 @@ public fun accrue_sui<Meme, Quote>(self: &mut Ledger<Meme, Quote>, sui: Balance<
     self.sui.join(sui);
 }
 
-/// Takes Blast's share of one fee in each asset, rounded up, into the ledger and leaves the rest in
-/// `meme_fee` and `quote_fee`. Returns the Meme and Quote taken.
-public fun take_share<Meme, Quote>(
+/// Takes Blast's cut of one fee in each asset, `meme_bps` and `quote_bps` rounded up, into the
+/// ledger and leaves the rest in `meme_fee` and `quote_fee`. Returns the Meme and Quote taken.
+public fun take_cut<Meme, Quote>(
     self: &mut Ledger<Meme, Quote>,
     meme_fee: &mut Balance<Meme>,
     quote_fee: &mut Balance<Quote>,
-    meme_share: Bps,
-    quote_share: Bps,
+    meme_bps: Bps,
+    quote_bps: Bps,
 ): (u64, u64) {
-    let meme_amount = meme_share.apply_up(meme_fee.value());
-    let quote_amount = quote_share.apply_up(quote_fee.value());
+    let meme_amount = meme_bps.apply_up(meme_fee.value());
+    let quote_amount = quote_bps.apply_up(quote_fee.value());
 
     self.meme.join(meme_fee.split(meme_amount));
     self.quote.join(quote_fee.split(quote_amount));
@@ -108,11 +108,11 @@ public fun pay_with_partner<Meme, Quote>(
         blast_core::errors::partner_mismatch!(),
     );
 
-    let partner_meme = partner.pay(&mut self.meme, ctx);
-    let partner_quote = partner.pay(&mut self.quote, ctx);
-    let partner_sui = partner.pay(&mut self.sui, ctx);
+    let partner_meme_amount = partner.pay(&mut self.meme, ctx);
+    let partner_quote_amount = partner.pay(&mut self.quote, ctx);
+    let partner_sui_amount = partner.pay(&mut self.sui, ctx);
 
-    self.pay_treasury(treasury, partner_meme, partner_quote, partner_sui, ctx);
+    self.pay_treasury(treasury, partner_meme_amount, partner_quote_amount, partner_sui_amount, ctx);
 }
 
 /// The Meme, Quote, and SUI held.
@@ -122,34 +122,40 @@ public fun balances<Meme, Quote>(self: &Ledger<Meme, Quote>): (u64, u64, u64) {
 
 // === Private Functions ===
 
+/// Pays everything held to the treasury after the partner's cut was paid; sends and emits nothing
+/// when neither was paid anything.
 fun pay_treasury<Meme, Quote>(
     self: &mut Ledger<Meme, Quote>,
     treasury: &Treasury,
-    partner_meme: u64,
-    partner_quote: u64,
-    partner_sui: u64,
+    partner_meme_amount: u64,
+    partner_quote_amount: u64,
+    partner_sui_amount: u64,
     ctx: &mut TxContext,
 ) {
     let destination = treasury.destination();
-    let (meme, quote, sui) = self.balances();
-    if (meme + partner_meme == 0 && quote + partner_quote == 0 && sui + partner_sui == 0) return;
+    let (meme_amount, quote_amount, sui_amount) = self.balances();
+    if (
+        meme_amount + partner_meme_amount == 0
+            && quote_amount + partner_quote_amount == 0
+            && sui_amount + partner_sui_amount == 0
+    ) return;
 
-    payout::pay(&mut self.meme, meme, destination, ctx);
-    payout::pay(&mut self.quote, quote, destination, ctx);
-    payout::pay(&mut self.sui, sui, destination, ctx);
+    payout::pay(&mut self.meme, meme_amount, destination, ctx);
+    payout::pay(&mut self.quote, quote_amount, destination, ctx);
+    payout::pay(&mut self.sui, sui_amount, destination, ctx);
 
-    event::emit(ProtocolFeesPaid<Meme, Quote> {
-        package_witness: self.package_witness,
-        origin: self.origin,
-        treasury: destination,
-        meme,
-        quote,
-        sui,
-        partner_id: self.partner_id,
-        partner_meme,
-        partner_quote,
-        partner_sui,
-    });
+    blast_core_events::protocol_fees_paid<Meme, Quote>(
+        self.package_witness,
+        self.origin,
+        destination,
+        meme_amount,
+        quote_amount,
+        sui_amount,
+        self.partner_id,
+        partner_meme_amount,
+        partner_quote_amount,
+        partner_sui_amount,
+    );
 }
 
 // === Test-Only Functions ===
@@ -162,46 +168,12 @@ public fun destroy_for_testing<Meme, Quote>(self: Ledger<Meme, Quote>) {
     sui.destroy_for_testing();
 }
 
-#[test_only]
-public fun paid_fields<Meme, Quote>(
-    event: &ProtocolFeesPaid<Meme, Quote>,
-): (TypeName, ID, address, u64, u64, u64, Option<ID>, u64, u64, u64) {
-    (
-        event.package_witness,
-        event.origin,
-        event.treasury,
-        event.meme,
-        event.quote,
-        event.sui,
-        event.partner_id,
-        event.partner_meme,
-        event.partner_quote,
-        event.partner_sui,
-    )
-}
-
-// === Events ===
-
-/// Blast's held fees were paid: the treasury's amounts, and the partner's cut when one is bound.
-public struct ProtocolFeesPaid<phantom Meme, phantom Quote> has copy, drop {
-    package_witness: TypeName,
-    origin: ID,
-    treasury: address,
-    meme: u64,
-    quote: u64,
-    sui: u64,
-    partner_id: Option<ID>,
-    partner_meme: u64,
-    partner_quote: u64,
-    partner_sui: u64,
-}
-
 // === Imports ===
 
-use blast_core::{blast_treasury::Treasury, bps::Bps, payout};
+use blast_core::{blast_core_events, blast_treasury::Treasury, bps::Bps, payout};
 
 use blast_partners::blast_partners::Partner;
 
 use std::type_name::{Self, TypeName};
 
-use sui::{balance::{Self, Balance}, event, sui::SUI};
+use sui::{balance::{Self, Balance}, sui::SUI};

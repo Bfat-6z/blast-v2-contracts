@@ -207,11 +207,11 @@ across the routes in order.
 `protocol_fees::Ledger` holds Blast's Meme, Quote, and SUI fees for one launch, presale, or vault.
 Only the module that owns it can create it, under its package witness, and every payment event
 names that witness type, so a payment's origin is attributable.
-`protocol_fees::take_share` moves Blast's rounded-up share of a fee into it. A ledger is bound at
+`protocol_fees::take_cut` moves Blast's rounded-up cut of a fee into it. A ledger is bound at
 creation to the partner its sale named, or to none. `protocol_fees::pay` pays everything to the
 treasury and aborts when a partner is bound; `protocol_fees::pay_with_partner` first pays that
 partner its cut of each asset through `blast_partners::blast_partners::pay`, then the treasury the
-rest. Both emit `protocol_fees::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
+rest. Both emit `blast_core_events::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
 may make.
 
 `blast_treasury::Treasury` is a shared singleton holding the address Blast's fees go to. A Blast
@@ -224,17 +224,19 @@ address with `blast_treasury::destination`.
 ### Migration hand-off and owner proof
 
 - Before a sale's supply is minted, its venue prepares the coin and returns a
-  `migration::VenueBinding` sealed by the venue's witness. The venue keeps the coin's pool tier.
-  The product's creation call consumes the binding with `migration::unbind` and stores the venue.
+  `migration::VenueTicket` sealed by the venue's witness (`migration::issue_ticket`). The venue keeps
+  the coin's pool tier. The product's creation call redeems the ticket with `migration::redeem_ticket`
+  and stores the venue.
 - `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
   split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
   `migration::vault_terms`, under the issuing package's witness, builds them; a standalone vault's issuer
   builds its own the same way.
-- At migration the product returns a `migration::Migration` sealed by its own witness, holding the
+- At migration the product creates a `migration::Migration` with `migration::new`, sealed by its own witness, holding the
   pool's Meme and Quote and terms the same package witness sealed. Only the stored venue can consume it,
   with `migration::redeem`; any other venue aborts.
 - `owner_proof::OwnerProof` is a product's sealed statement that the caller holds the sale's
-  creator authority. A vault consumes it with `owner_proof::verify`, which aborts unless it names
+  creator authority, issued with `owner_proof::new`. A vault consumes it with
+  `owner_proof::assert_terms`, which aborts unless it names
   the vault's package witness and sale.
 
 None of these values can be dropped, copied, or stored, so the PTB that creates one must consume it.
@@ -278,7 +280,32 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 7 | `EPartnerMismatch` | Blast's fees pay with exactly the partner the sale named, or with none. |
 | 8 | `EWrongVenue` | Only the venue the sale stored can redeem its migration. |
 | 9 | `EWrongOwner` | The owner proof must name the vault's package witness and sale. |
-| 10 | `EWrongPackageWitness` | The vault terms must be sealed by the package witness opening the migration. |
+| 10 | `EWrongPackageWitness` | The vault terms must be sealed by the package witness creating the migration. |
+
+### `blast_core::blast_core_events`
+
+Event payloads and their package-only emitters for `blast_core`.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/blast_core_events.move
+
+#### Events
+
+```move
+/// Blast's held fees were paid from the ledger of `origin`, created under `package_witness`: the
+/// treasury's amounts, and the partner's cut when a partner is bound.
+public struct ProtocolFeesPaid<phantom Meme, phantom Quote> has copy, drop {
+    package_witness: TypeName,
+    origin: ID,
+    treasury: address,
+    meme_amount: u64,
+    quote_amount: u64,
+    sui_amount: u64,
+    partner_id: Option<ID>,
+    partner_meme_amount: u64,
+    partner_quote_amount: u64,
+    partner_sui_amount: u64,
+}
+```
 
 ### `blast_core::blast_domain`
 
@@ -380,8 +407,10 @@ public struct Bps(u64) has copy, drop, store;
 #### Functions
 
 ```move
+/// A rate of `value` basis points; aborts above 10,000.
 public fun new(value: u64): Bps
 
+/// The rate in basis points.
 public fun value(self: Bps): u64
 
 /// Applies the rate to `amount`, rounding up; the result is at most `amount`.
@@ -434,8 +463,8 @@ public struct Route has copy, drop, store {
 }
 
 /// Validated routes: at most 20, each positive, no address twice, at most one of each special
-/// kind, summing to exactly 10,000. Only `new` builds
-/// one, so every split a vault holds assigns each collection in full.
+/// kind, summing to exactly 10,000. Only `new` builds one, so every split a vault holds assigns
+/// each collection in full.
 public struct FeeSplit has copy, drop, store {
     routes: vector<Route>,
 }
@@ -444,38 +473,52 @@ public struct FeeSplit has copy, drop, store {
 #### Functions
 
 ```move
-public fun to_address(destination: address): Destination
+/// A route to `destination`; aborts for the zero address.
+public fun address_destination(destination: address): Destination
 
-public fun to_owner(): Destination
+/// A route to the vault's owner, who claims its part with an owner proof.
+public fun owner_destination(): Destination
 
-public fun to_auto_lp(): Destination
+/// A route the vault adds back into its position as liquidity.
+public fun auto_lp_destination(): Destination
 
-public fun to_holder_rewards(): Destination
+/// A route that funds the vault's holder-reward rounds.
+public fun holder_rewards_destination(): Destination
 
-public fun to_burn(): Destination
+/// A route whose Meme is burned and whose Quote buys Meme back to burn.
+public fun burn_destination(): Destination
 
+/// A route of `bps` to `destination`; aborts for a zero share.
 public fun route(destination: Destination, bps: bps::Bps): Route
 
+/// A fee split of `routes`; aborts unless they are at most 20, distinct, and sum to 10,000.
 public fun new(routes: vector<Route>): FeeSplit
 
 /// Splits `total` across the routes exactly, in route order.
 public fun apportion(self: &FeeSplit, total: u64): vector<u64>
 
+/// The routes, in the order `apportion` pays them.
 public fun routes(self: &FeeSplit): &vector<Route>
 
+/// Where the route pays.
 public fun destination(self: &Route): Destination
 
+/// The route's share.
 public fun bps(self: &Route): bps::Bps
 
 /// The route's address, or none for a special kind.
 public fun address_of(self: &Destination): Option<address>
 
+/// Whether the destination is the vault's owner.
 public fun is_owner(self: &Destination): bool
 
+/// Whether the destination is auto-LP.
 public fun is_auto_lp(self: &Destination): bool
 
+/// Whether the destination is holder rewards.
 public fun is_holder_rewards(self: &Destination): bool
 
+/// Whether the destination is burn.
 public fun is_burn(self: &Destination): bool
 ```
 
@@ -495,21 +538,21 @@ public fun leaf(domain: vector<u8>, payload: vector<u8>): vector<u8>
 /// Hashes one ordered pair as an internal node: `blake2b256(0x01 || left || right)`.
 public fun node(left: vector<u8>, right: vector<u8>): vector<u8>
 
-/// Verifies a positional proof of `digest` at `index` among `leaves` leaves under `root`.
+/// Verifies a positional proof of `digest` at `index` among `leaf_count` leaves under `root`.
 /// Returns false, before hashing, for a malformed root or digest, an empty tree, an index outside
 /// it, a proof of the wrong depth, or a malformed sibling.
 public fun verify(
     root: vector<u8>,
     digest: vector<u8>,
     index: u64,
-    leaves: u64,
+    leaf_count: u64,
     proof: &vector<vector<u8>>,
 ): bool
 ```
 
 ### `blast_core::migration`
 
-The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueBinding` sealed by its witness; the product admits and stores the binding's venue. At migration the product opens a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither value can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.
+The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration.move
 
@@ -524,7 +567,7 @@ public enum ResidualPolicy has copy, drop, store {
     Owner,
 }
 
-/// Everything a new vault snapshots from the sale that opened it.
+/// Everything a new vault snapshots from the sale or standalone issuer that sealed its terms.
 public struct VaultTerms has copy, drop, store {
     /// The launch or presale the vault belongs to; owner proofs name it.
     origin: ID,
@@ -538,9 +581,9 @@ public struct VaultTerms has copy, drop, store {
     residuals: ResidualPolicy,
 }
 
-/// A venue's sealed preparation of one coin, consumed by the product that admits it. The venue
-/// keeps the coin's pool tier itself (ADR 0111).
-public struct VenueBinding {
+/// A venue's sealed ticket for one prepared coin, redeemed by the product that admits it. The
+/// venue keeps the coin's pool tier itself (ADR 0111).
+public struct VenueTicket {
     venue: TypeName,
 }
 
@@ -556,15 +599,17 @@ public struct Migration<phantom Meme, phantom Quote> {
 #### Functions
 
 ```move
-public fun protocol_residuals(): ResidualPolicy
+/// Residuals paid to Blast through the vault's protocol ledger.
+public fun residuals_to_protocol(): ResidualPolicy
 
-public fun owner_residuals(): ResidualPolicy
+/// Residuals held in the vault for the sale's owner to claim.
+public fun residuals_to_owner(): ResidualPolicy
 
-/// Seals a venue's preparation under its witness `Venue`.
-public fun bind<Venue: drop>(_: Venue): VenueBinding
+/// Issues a ticket for a coin the venue has prepared, sealed under its witness `Venue`.
+public fun issue_ticket<Venue: drop>(_: Venue): VenueTicket
 
-/// Consumes a binding, returning the venue witness type to admit and store.
-public fun unbind(self: VenueBinding): TypeName
+/// Redeems a ticket, returning the venue witness type to admit and store.
+public fun redeem_ticket(self: VenueTicket): TypeName
 
 /// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
 /// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
@@ -579,9 +624,9 @@ public fun vault_terms<PackageWitness: drop>(
     residuals: ResidualPolicy,
 ): VaultTerms
 
-/// Opens a sale's migration under its `PackageWitness`, for the stored `venue`, with terms the
+/// Creates a sale's migration under its `PackageWitness`, for the stored `venue`, with terms the
 /// same package witness sealed.
-public fun open<Meme, Quote, PackageWitness: drop>(
+public fun new<Meme, Quote, PackageWitness: drop>(
     _: PackageWitness,
     meme: Balance<Meme>,
     quote: Balance<Quote>,
@@ -596,18 +641,23 @@ public fun redeem<Meme, Quote, Venue: drop>(
     _: Venue,
 ): (Balance<Meme>, Balance<Quote>, VaultTerms)
 
+/// The launch or presale the vault belongs to.
 public fun origin(self: &VaultTerms): ID
 
+/// The original type of the package witness that sealed the terms.
 public fun package_witness(self: &VaultTerms): TypeName
 
+/// The fee split the vault starts with.
 public fun fee_split(self: &VaultTerms): fee_split::FeeSplit
 
 /// Blast's share of each LP-fee collection, Meme then Quote.
-public fun protocol_shares(self: &VaultTerms): (bps::Bps, bps::Bps)
+public fun protocol_bps(self: &VaultTerms): (bps::Bps, bps::Bps)
 
+/// The partner the sale named, if any.
 public fun partner_id(self: &VaultTerms): Option<ID>
 
-public fun pays_residuals_to_protocol(self: &VaultTerms): bool
+/// Whether the migration residuals go to Blast rather than the owner.
+public fun has_protocol_residuals(self: &VaultTerms): bool
 ```
 
 ### `blast_core::owner_proof`
@@ -619,6 +669,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/co
 #### Types
 
 ```move
+/// The caller holds the creator authority of sale `origin`, as the witness's package attests.
 public struct OwnerProof {
     package_witness: TypeName,
     origin: ID,
@@ -629,10 +680,10 @@ public struct OwnerProof {
 
 ```move
 /// Issues a proof for the sale `origin` under the issuing package's witness `PackageWitness`.
-public fun prove<PackageWitness: drop>(_: PackageWitness, origin: ID): OwnerProof
+public fun new<PackageWitness: drop>(_: PackageWitness, origin: ID): OwnerProof
 
 /// Consumes the proof, aborting unless it names `terms`' package witness and sale.
-public fun verify(self: OwnerProof, terms: &migration::VaultTerms)
+public fun assert_terms(self: OwnerProof, terms: &migration::VaultTerms)
 ```
 
 ### `blast_core::payout`
@@ -663,8 +714,8 @@ public fun vesting_terms(cliff_delay_ms: u64, period_duration_ms: u64, periods: 
 /// Pays `amount` of `balance` to `destination`: outright, or locked in an irrevocable linear
 /// schedule starting now when `vesting` is set, returning the schedule's ID. A zero amount sends
 /// nothing.
-public fun pay_or_vest<T>(
-    balance: &mut Balance<T>,
+public fun pay_or_vest<Asset>(
+    balance: &mut Balance<Asset>,
     amount: u64,
     destination: address,
     vesting: Option<VestingTerms>,
@@ -674,10 +725,15 @@ public fun pay_or_vest<T>(
 
 /// Transfers `amount` split from `balance` to `destination` as a coin; a zero amount sends
 /// nothing.
-public fun pay<T>(balance: &mut Balance<T>, amount: u64, destination: address, ctx: &mut TxContext)
+public fun pay<Asset>(
+    balance: &mut Balance<Asset>,
+    amount: u64,
+    destination: address,
+    ctx: &mut TxContext,
+)
 
 /// Transfers all of `balance` to `destination`; an empty balance sends nothing.
-public fun pay_all<T>(balance: Balance<T>, destination: address, ctx: &mut TxContext)
+public fun pay_all<Asset>(balance: Balance<Asset>, destination: address, ctx: &mut TxContext)
 ```
 
 ### `blast_core::protocol_fees`
@@ -723,14 +779,14 @@ public fun accrue<Meme, Quote>(
 /// Adds SUI owned wholly by Blast, such as a creation fee.
 public fun accrue_sui<Meme, Quote>(self: &mut Ledger<Meme, Quote>, sui: Balance<sui::SUI>)
 
-/// Takes Blast's share of one fee in each asset, rounded up, into the ledger and leaves the rest in
-/// `meme_fee` and `quote_fee`. Returns the Meme and Quote taken.
-public fun take_share<Meme, Quote>(
+/// Takes Blast's cut of one fee in each asset, `meme_bps` and `quote_bps` rounded up, into the
+/// ledger and leaves the rest in `meme_fee` and `quote_fee`. Returns the Meme and Quote taken.
+public fun take_cut<Meme, Quote>(
     self: &mut Ledger<Meme, Quote>,
     meme_fee: &mut Balance<Meme>,
     quote_fee: &mut Balance<Quote>,
-    meme_share: bps::Bps,
-    quote_share: bps::Bps,
+    meme_bps: bps::Bps,
+    quote_bps: bps::Bps,
 ): (u64, u64)
 
 /// Pays everything held to the treasury; an empty ledger sends and emits nothing. Aborts when the
@@ -752,24 +808,6 @@ public fun pay_with_partner<Meme, Quote>(
 
 /// The Meme, Quote, and SUI held.
 public fun balances<Meme, Quote>(self: &Ledger<Meme, Quote>): (u64, u64, u64)
-```
-
-#### Events
-
-```move
-/// Blast's held fees were paid: the treasury's amounts, and the partner's cut when one is bound.
-public struct ProtocolFeesPaid<phantom Meme, phantom Quote> has copy, drop {
-    package_witness: TypeName,
-    origin: ID,
-    treasury: address,
-    meme: u64,
-    quote: u64,
-    sui: u64,
-    partner_id: Option<ID>,
-    partner_meme: u64,
-    partner_quote: u64,
-    partner_sui: u64,
-}
 ```
 
 ## API reference: `blast_partners` (Partner codes)
@@ -1944,8 +1982,8 @@ public fun authorize_upgrade<PackageMarker: drop>(
 /// other fails every `assert_current`, while these calls stay available to schedule a repair.
 public fun commit_upgrade_and_advance<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
-    package_version: &mut package_version::PackageVersion<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    package_version: &mut package_version::PackageVersion<PackageMarker>,
     receipt: UpgradeReceipt,
 )
 
@@ -1984,9 +2022,9 @@ public fun pause<PackageMarker: drop>(
 /// package's unpause constructs that type, so a role alone cannot skip its checks.
 public fun clear_pause_bits<PackageMarker: drop, UnpauseWitness: drop>(
     self: &PackageAdmin<PackageMarker>,
-    package_version: &mut package_version::PackageVersion<PackageMarker>,
     _: &blast_acl::AdminWitness<UnpauseAdmin<PackageMarker>>,
     _: UnpauseWitness,
+    package_version: &mut package_version::PackageVersion<PackageMarker>,
     bits: u8,
 )
 ```
@@ -2050,7 +2088,8 @@ public fun assert_current<PackageMarker: drop>(
     compiled_generation: u64,
 )
 
-/// Rejects an operation whose pause bit is set, before its lifecycle or economic checks.
+/// Rejects an operation whose pause bit is set, before its lifecycle or economic checks. This is a
+/// mask check only: a bit the package never defined is never set, so it never aborts.
 public fun assert_not_paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>, bit: u8)
 ```
 

@@ -77,7 +77,8 @@ public fun assert_current<PackageMarker: drop>(
     self.generation.assert_current(compiled_generation);
 }
 
-/// Rejects an operation whose pause bit is set, before its lifecycle or economic checks.
+/// Rejects an operation whose pause bit is set, before its lifecycle or economic checks. This is a
+/// mask check only: a bit the package never defined is never set, so it never aborts.
 public fun assert_not_paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>, bit: u8) {
     assert!((self.paused & bit) == 0, blast_admin::errors::paused!());
 }
@@ -110,11 +111,11 @@ public(package) fun share<PackageMarker: drop>(self: PackageVersion<PackageMarke
 }
 
 /// Rejects any witness other than the exact type the package pinned at publication.
-public(package) fun assert_unpause_witness<PackageMarker: drop, PackageWitness: drop>(
+public(package) fun assert_unpause_witness<PackageMarker: drop, UnpauseWitness: drop>(
     self: &PackageVersion<PackageMarker>,
 ) {
     assert!(
-        type_name::with_defining_ids<PackageWitness>() == self.unpause_witness,
+        type_name::with_defining_ids<UnpauseWitness>() == self.unpause_witness,
         blast_admin::errors::wrong_unpause_witness!(),
     );
 }

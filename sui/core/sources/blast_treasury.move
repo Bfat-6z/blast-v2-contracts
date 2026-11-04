@@ -65,14 +65,14 @@ public fun is_guarded(self: &Treasury): bool {
 fun new(destination: address, ctx: &mut TxContext): Treasury {
     assert!(destination != @0x0, blast_core::errors::invalid_treasury!());
     let id = object::new(ctx);
-    let destination = delayed::new(
+    let destination_setting = delayed::new(
         DestinationKey(),
         &id,
         destination,
         constants::initial_treasury_delay_ms!(),
     );
 
-    Treasury { id, destination }
+    Treasury { id, destination: destination_setting }
 }
 
 // === Test-Only Functions ===
@@ -80,11 +80,6 @@ fun new(destination: address, ctx: &mut TxContext): Treasury {
 #[test_only]
 public fun new_for_testing(destination: address, ctx: &mut TxContext): Treasury {
     new(destination, ctx)
-}
-
-#[test_only]
-public fun share_for_testing(self: Treasury) {
-    transfer::share_object(self);
 }
 
 // === Imports ===

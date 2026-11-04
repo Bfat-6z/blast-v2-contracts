@@ -213,7 +213,7 @@ public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + dro
         blast_admin::errors::proposal_pending!(),
     );
 
-    let DelayedMap { owner, key, entries, delay_ms: _, pending: _, pending_delay: _ } = self;
+    let DelayedMap { owner, key, entries, .. } = self;
     entries.drop();
 
     sui::event::emit(MapDestroyed<K, E, V> { owner, key });

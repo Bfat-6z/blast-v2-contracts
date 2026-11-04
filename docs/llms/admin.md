@@ -289,7 +289,7 @@ compiled the wrong generation can still schedule and install a repair.
    `Clock` consumes the ready action and returns an `UpgradeTicket`; the native
    `Upgrade` command returns an `UpgradeReceipt`;
    `blast_admin::package_admin::commit_upgrade_and_advance` takes the
-   `PackageAdmin<M>`, the `PackageVersion<M>` by mutable reference, the witness
+   `PackageAdmin<M>`, the witness, the `PackageVersion<M>` by mutable reference,
    and the receipt.
 
 `blast_admin::package_admin::schedule_make_immutable` and
@@ -303,11 +303,12 @@ discards whatever is pending, even when ready.
 **Pause bits.** Each package defines its own bits at publication.
 `blast_admin::package_admin::pause` (PauseAdmin) sets bits at once and emits
 `blast_admin_events::Paused`; `package_version::assert_not_paused` aborts with
-code 25 while an operation's bit is set. Clearing goes through the package's own
+code 25 while an operation's bit is set; it is a mask check only, so a bit the
+package never defined never aborts. Clearing goes through the package's own
 `unpause`, which checks the package's own configuration notices, then calls
 `blast_admin::package_admin::clear_pause_bits` with the `PackageAdmin<M>`, the
-`PackageVersion<M>`, the `UnpauseAdmin<M>` witness, a value of the unpause
-witness type pinned at publication, and the bits. Any other type aborts with code
+`UnpauseAdmin<M>` witness, a value of the unpause witness type pinned at
+publication, the `PackageVersion<M>`, and the bits. Any other type aborts with code
 29, including every other droppable type the package defines or returns, so an
 `UnpauseAdmin<M>` cannot skip the package's own checks by calling `blast_admin`
 directly. It then aborts with code 27 while any upgrade notice still to come

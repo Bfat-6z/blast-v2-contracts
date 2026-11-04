@@ -26,24 +26,24 @@ public fun node(left: vector<u8>, right: vector<u8>): vector<u8> {
     hash::blake2b256(&bytes)
 }
 
-/// Verifies a positional proof of `digest` at `index` among `leaves` leaves under `root`.
+/// Verifies a positional proof of `digest` at `index` among `leaf_count` leaves under `root`.
 /// Returns false, before hashing, for a malformed root or digest, an empty tree, an index outside
 /// it, a proof of the wrong depth, or a malformed sibling.
 public fun verify(
     root: vector<u8>,
     mut digest: vector<u8>,
     mut index: u64,
-    leaves: u64,
+    leaf_count: u64,
     proof: &vector<vector<u8>>,
 ): bool {
     if (
         root.length() != constants::digest_length!()
             || digest.length() != constants::digest_length!()
-            || leaves == 0
-            || index >= leaves
+            || leaf_count == 0
+            || index >= leaf_count
     ) return false;
     if (
-        proof.length() != proof_depth(leaves)
+        proof.length() != proof_depth(leaf_count)
             || !proof.all!(|sibling| sibling.length() == constants::digest_length!())
     ) return false;
 
@@ -57,10 +57,10 @@ public fun verify(
 
 // === Private Functions ===
 
-/// The number of tree levels above `leaves` leaves, one sibling each in a proof: an odd node at
+/// The number of tree levels above `leaf_count` leaves, one sibling each in a proof: an odd node at
 /// any level is its own sibling.
-fun proof_depth(leaves: u64): u64 {
-    let mut width = leaves;
+fun proof_depth(leaf_count: u64): u64 {
+    let mut width = leaf_count;
     let mut depth = 0;
     while (width > 1) {
         width = width.div_ceil(2);

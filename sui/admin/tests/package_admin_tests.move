@@ -46,7 +46,7 @@ fun a_publication_cannot_supply_the_version_operations_require() {
     assert!(!test_scenario::has_most_recent_shared<PackageVersion<PACKAGE_MARKER>>());
     assert!(fixture.scenario.has_most_recent_for_sender<Publication<PACKAGE_MARKER>>());
 
-    destroy(fixture);
+    fixture.end();
 }
 
 #[test]
@@ -57,7 +57,7 @@ fun the_publication_holds_the_marker_packages_publisher() {
     assert!(publication.publisher_for_testing().from_package<PACKAGE_MARKER>());
 
     destroy(publication);
-    destroy(fixture);
+    fixture.end();
 }
 
 #[test]
@@ -100,7 +100,7 @@ fun wrapping_shares_custody_and_a_fully_paused_version_and_consumes_the_publicat
 
     test_scenario::return_shared(package_admin);
     test_scenario::return_shared(package_version);
-    destroy(fixture);
+    fixture.end();
 }
 
 #[test]
@@ -114,7 +114,7 @@ fun a_consumed_publication_cannot_be_taken_for_another_wrap() {
     fixture.scenario.next_tx(PUBLISHER);
     destroy(fixture.take_publication());
 
-    destroy(fixture);
+    fixture.end();
 }
 
 #[test]
@@ -125,7 +125,7 @@ fun another_sender_cannot_take_the_publication() {
     fixture.scenario.next_tx(OTHER_SENDER);
     destroy(fixture.take_publication());
 
-    destroy(fixture);
+    fixture.end();
 }
 
 #[test]
@@ -136,8 +136,8 @@ fun another_sender_cannot_take_the_publication() {
 fun a_publication_requires_the_packages_one_time_witness() {
     let mut ctx = tx_context::dummy();
 
-    let publication = package_version::new_publication<PackageWitness, PackageWitness>(
-        package_marker::witness(),
+    let publication = package_version::new_publication<UnpauseWitness, UnpauseWitness>(
+        package_marker::unpause_witness(),
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -203,7 +203,7 @@ fun a_package_that_defines_no_bits_wraps_unpaused() {
     package_version.assert_not_paused(0xff);
 
     test_scenario::return_shared(package_version);
-    destroy(fixture);
+    fixture.end();
 }
 
 #[test]
@@ -215,7 +215,7 @@ fun wrap_rejects_an_upgrade_cap_for_another_package() {
 
     package_admin::wrap(publication, foreign_upgrade_cap, fixture.scenario.ctx());
 
-    destroy(fixture);
+    fixture.end();
 }
 
 #[test]
@@ -229,7 +229,7 @@ fun wrap_rejects_an_already_upgraded_cap() {
 
     package_admin::wrap(publication, upgrade_cap, fixture.scenario.ctx());
 
-    destroy(fixture);
+    fixture.end();
 }
 
 #[test]
@@ -244,7 +244,7 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
     >(0);
     fixture
         .package_admin
-        .commit_upgrade_and_advance(&mut fixture.package_version, &upgrade_admin(), ticket.test_upgrade());
+        .commit_upgrade_and_advance(&upgrade_admin(), &mut fixture.package_version, ticket.test_upgrade());
     let advanced = blast_admin_events::collect_one<
         blast_admin_events::OperationalVersionAdvanced<PACKAGE_MARKER>,
     >(0);
@@ -275,7 +275,7 @@ fun a_committed_upgrade_disables_the_old_bytecode() {
     let ticket = fixture.authorize(package_digest());
     fixture
         .package_admin
-        .commit_upgrade_and_advance(&mut fixture.package_version, &upgrade_admin(), ticket.test_upgrade());
+        .commit_upgrade_and_advance(&upgrade_admin(), &mut fixture.package_version, ticket.test_upgrade());
 
     fixture.package_version.assert_current(1);
 
@@ -295,7 +295,7 @@ fun commit_rejects_generation_overflow() {
 
     fixture
         .package_admin
-        .commit_upgrade_and_advance(&mut fixture.package_version, &upgrade_admin(), ticket.test_upgrade());
+        .commit_upgrade_and_advance(&upgrade_admin(), &mut fixture.package_version, ticket.test_upgrade());
 
     owned.end();
 }
@@ -312,7 +312,7 @@ fun commit_rejects_a_receipt_for_another_cap() {
 
     fixture
         .package_admin
-        .commit_upgrade_and_advance(&mut fixture.package_version, &upgrade_admin(), receipt);
+        .commit_upgrade_and_advance(&upgrade_admin(), &mut fixture.package_version, receipt);
 
     destroy(foreign_cap);
     owned.end();
@@ -427,6 +427,19 @@ fun scheduling_an_upgrade_is_rejected_after_immutability() {
     let ticket = fixture.authorize(package_digest());
 
     destroy(ticket);
+    owned.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EUpgradeCapUnavailable, location = blast_admin::package_admin)]
+/// After immutability the missing cap is reported before a malformed digest.
+fun immutability_is_reported_before_a_malformed_digest() {
+    let mut owned = start();
+    let fixture = &mut owned;
+    fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
+
+    fixture.package_admin.schedule_upgrade(&upgrade_admin(), vector[0u8], &fixture.clock);
+
     owned.end();
 }
 
@@ -585,7 +598,7 @@ fun pausing_rejects_a_bit_the_package_does_not_define() {
 #[expected_failure(abort_code = errors::EInvalidPauseBits, location = blast_admin::package_version)]
 fun a_package_that_defines_no_bits_cannot_pause() {
     let mut ctx = tx_context::dummy();
-    let mut package_version = package_version::new_for_testing<PACKAGE_MARKER, PackageWitness>(
+    let mut package_version = package_version::new_for_testing<PACKAGE_MARKER, UnpauseWitness>(
         0,
         &mut ctx,
     );
@@ -613,7 +626,7 @@ fun clearing_releases_only_the_requested_bits() {
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), VALID_PAUSE_BITS);
 
-    fixture.clear(package_marker::witness(), 2);
+    fixture.clear(package_marker::unpause_witness(), 2);
     let unpaused = blast_admin_events::collect_one<blast_admin_events::Unpaused<PACKAGE_MARKER>>(0);
 
     let (package_version_id, bits, mask) = unpaused.unpaused_fields();
@@ -683,7 +696,7 @@ fun clearing_rejects_a_pending_zero_upgrade_notice() {
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
 
-    fixture.clear(package_marker::witness(), 1);
+    fixture.clear(package_marker::unpause_witness(), 1);
 
     owned.end();
 }
@@ -698,7 +711,7 @@ fun clearing_rejects_an_applied_zero_upgrade_notice() {
     fixture.clock.set_for_testing(NOTICE_MS);
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
-    fixture.clear(package_marker::witness(), 1);
+    fixture.clear(package_marker::unpause_witness(), 1);
 
     owned.end();
 }
@@ -710,7 +723,7 @@ fun the_upgrade_notice_is_checked_before_the_bits() {
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
 
-    fixture.clear(package_marker::witness(), 0);
+    fixture.clear(package_marker::unpause_witness(), 0);
 
     owned.end();
 }
@@ -722,7 +735,7 @@ fun clearing_rejects_bits_that_are_not_set() {
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
 
-    fixture.clear(package_marker::witness(), 2);
+    fixture.clear(package_marker::unpause_witness(), 2);
 
     owned.end();
 }
@@ -734,7 +747,7 @@ fun clearing_rejects_a_bit_the_package_does_not_define() {
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
 
-    fixture.clear(package_marker::witness(), 9);
+    fixture.clear(package_marker::unpause_witness(), 9);
 
     owned.end();
 }
@@ -790,7 +803,7 @@ fun start_published(): WrapFixture {
 
 fun start_published_with(valid_pause_bits: u8): WrapFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    package_version::new_publication<PACKAGE_MARKER, PackageWitness>(
+    package_version::new_publication<PACKAGE_MARKER, UnpauseWitness>(
         package_marker::marker(),
         valid_pause_bits,
         scenario.ctx(),
@@ -812,7 +825,7 @@ fun start(): AdminFixture {
         package::test_publish(PACKAGE_ID.to_id(), &mut ctx),
         &mut ctx,
     );
-    let package_version = package_version::new_for_testing<PACKAGE_MARKER, PackageWitness>(
+    let package_version = package_version::new_for_testing<PACKAGE_MARKER, UnpauseWitness>(
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -828,7 +841,14 @@ fun authorize(self: &mut AdminFixture, digest: vector<u8>): UpgradeTicket {
 fun clear<Witness: drop>(self: &mut AdminFixture, witness: Witness, bits: u8) {
     self
         .package_admin
-        .clear_pause_bits(&mut self.package_version, &unpause_admin(), witness, bits);
+        .clear_pause_bits(&unpause_admin(), witness, &mut self.package_version, bits);
+}
+
+/// Ends the wrap flow's scenario, which runs its end-of-scenario checks.
+fun wrap_fixture_end(self: WrapFixture) {
+    let WrapFixture { scenario } = self;
+
+    scenario.end();
 }
 
 fun end(self: AdminFixture) {
@@ -867,7 +887,7 @@ fun other_package_digest(): vector<u8> {
 
 use 0xa::{
     other_package_marker::{Self, OTHER_PACKAGE_MARKER},
-    package_marker::{Self, PACKAGE_MARKER, PackageWitness}
+    package_marker::{Self, PACKAGE_MARKER, UnpauseWitness}
 };
 
 use 0xf::foreign_package_marker::{Self, ForeignWitness};
@@ -887,3 +907,5 @@ use sui::{
     package::{Self, UpgradeTicket},
     test_scenario::{Self, Scenario}
 };
+
+use fun wrap_fixture_end as WrapFixture.end;

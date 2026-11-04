@@ -126,10 +126,11 @@ public fun authorize_upgrade<PackageMarker: drop>(
 /// other fails every `assert_current`, while these calls stay available to schedule a repair.
 public fun commit_upgrade_and_advance<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
-    package_version: &mut PackageVersion<PackageMarker>,
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
+    package_version: &mut PackageVersion<PackageMarker>,
     receipt: UpgradeReceipt,
 ) {
+    // Computed first so a generation overflow aborts before the receipt is committed or emitted.
     let next_generation = package_version.next_generation();
 
     self.custody.commit_upgrade(self.id.to_inner(), receipt);
@@ -182,12 +183,12 @@ public fun pause<PackageMarker: drop>(
 /// package's unpause constructs that type, so a role alone cannot skip its checks.
 public fun clear_pause_bits<PackageMarker: drop, UnpauseWitness: drop>(
     self: &PackageAdmin<PackageMarker>,
-    package_version: &mut PackageVersion<PackageMarker>,
     _: &AdminWitness<UnpauseAdmin<PackageMarker>>,
     _: UnpauseWitness,
+    package_version: &mut PackageVersion<PackageMarker>,
     bits: u8,
 ) {
-    package_version.assert_unpause_witness<PackageMarker, UnpauseWitness>();
+    package_version.assert_unpause_witness<_, UnpauseWitness>();
     assert!(self.upgrade.is_guarded(), blast_admin::errors::unguarded_upgrade_notice!());
 
     package_version.clear_pause_bits(bits);
