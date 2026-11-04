@@ -782,11 +782,13 @@ impl World {
         } else {
             (route.quote(), *venue.get("sui_currency").context("SUI currency")?)
         };
-        // Both admissions name the route's one venue witness: the vault registry lists it while
-        // the vault package is paused, and the creation policy admits it.
+        // Both admissions name the route's one venue witness: the vault registry lists it, beside
+        // the presale's package witness as the issuer of the sale's vault terms, while the vault
+        // package is paused, and the creation policy admits it.
         let venue_type = tag(&format!("{presale}::{}::Venue", route.module()));
+        let issuer_type = tag(&format!("{presale}::blast_presale::PackageWitness"));
         let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
-        h.release_vault(admin, admin_published, core, &vault_stack, std::slice::from_ref(&venue_type))?;
+        h.release_vault(admin, admin_published, core, &vault_stack, &[venue_type.clone(), issuer_type])?;
         assert!(published.created(&h, "blast_presale_package", "PackageVersion").is_empty());
         let clock_before = h.contents(SUI_CLOCK_OBJECT_ID);
         let bootstrap_id = published.created(&h, "blast_presale_package", "Publication")[0];

@@ -388,7 +388,7 @@ pub type LaunchConfigContents = (
 );
 
 /// A `blast_vault::blast_vault_package::VaultRegistry` in BCS field order: its id and the
-/// admitted venues.
+/// listed venue and issuer witnesses.
 pub type VaultRegistryContents = (ObjectID, DelayedSet<String>);
 
 /// A `blast_admin::package_version::PackageVersion<M>` in BCS field order: id, defined pause
@@ -1074,7 +1074,7 @@ impl Harness {
     /// through its own unpause, through real ACL roles: `blast_core`'s `AdapterAdmin` and the
     /// vault package's `UnpauseAdmin`.
     pub fn release_vault(&mut self, admin: ObjectID, admin_publication: &Outcome, core: ObjectID, stack: &VaultStack,
-        venues: &[sui_types::TypeTag],
+        witnesses: &[sui_types::TypeTag],
     ) -> Result<()> {
         let adapter_role = sui_types::parse_sui_type_tag(&format!("{core}::blast_domain::AdapterAdmin"))?;
         let unpause_role = stack.unpause_role(admin)?;
@@ -1084,16 +1084,16 @@ impl Harness {
         let registry = b.obj(self.shared(stack.registry, true))?;
         let version = b.obj(self.shared(stack.version, false))?;
         let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        for venue in venues {
-            call(&mut b, stack.package, "blast_vault_package", "schedule_venue", vec![venue.clone()], vec![registry, adapter, version, clock]);
-            call(&mut b, stack.package, "blast_vault_package", "apply_venue", vec![venue.clone()], vec![registry, version, clock]);
+        for witness in witnesses {
+            call(&mut b, stack.package, "blast_vault_package", "schedule_witness", vec![witness.clone()], vec![registry, adapter, version, clock]);
+            call(&mut b, stack.package, "blast_vault_package", "apply_witness", vec![witness.clone()], vec![registry, version, clock]);
         }
         let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
-        call(&mut b, stack.package, "blast_vault_package", "schedule_venue_delay", vec![], vec![registry, adapter, version, delay, clock]);
-        call(&mut b, stack.package, "blast_vault_package", "apply_venue_delay", vec![], vec![registry, version, clock]);
+        call(&mut b, stack.package, "blast_vault_package", "schedule_witness_delay", vec![], vec![registry, adapter, version, delay, clock]);
+        call(&mut b, stack.package, "blast_vault_package", "apply_witness_delay", vec![], vec![registry, version, clock]);
         self.execute(b.finish())?.assert_success();
         let (_, listed): VaultRegistryContents = bcs::from_bytes(&self.contents(stack.registry))?;
-        ensure!(listed.members.len() == venues.len(), "every venue is listed");
+        ensure!(listed.members.len() == witnesses.len(), "every witness is listed");
         ensure!((listed.delay_ms, listed.admissions.len(), listed.pending_delay.is_some()) == (PUBLICATION_UPGRADE_NOTICE_MS, 0, false),
             "the registry waits 48 hours with nothing pending");
 

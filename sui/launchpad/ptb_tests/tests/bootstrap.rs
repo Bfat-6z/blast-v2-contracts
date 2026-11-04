@@ -144,14 +144,14 @@ fn assert_vault_admission_waits_the_raised_notice(h: &mut Harness, admin: Object
     let registry = b.obj(h.shared(vault.registry, true))?;
     let version = b.obj(h.shared(vault.version, false))?;
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut b, vault.package, "blast_vault_package", "schedule_venue", vec![venue.clone()], vec![registry, adapter, version, clock]);
+    call(&mut b, vault.package, "blast_vault_package", "schedule_witness", vec![venue.clone()], vec![registry, adapter, version, clock]);
     h.execute(b.finish())?.assert_success();
     let apply = |h: &Harness| -> Result<_> {
         let mut b = ProgrammableTransactionBuilder::new();
         let registry = b.obj(h.shared(vault.registry, true))?;
         let version = b.obj(h.shared(vault.version, false))?;
         let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, vault.package, "blast_vault_package", "apply_venue", vec![venue.clone()], vec![registry, version, clock]);
+        call(&mut b, vault.package, "blast_vault_package", "apply_witness", vec![venue.clone()], vec![registry, version, clock]);
         Ok(b.finish())
     };
     h.sim.advance_clock(std::time::Duration::from_millis(PUBLICATION_UPGRADE_NOTICE_MS - 1));

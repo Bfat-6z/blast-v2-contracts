@@ -585,11 +585,13 @@ impl World {
         let (migrators, migrators_publication) = h.publish(linked)?;
         let venue_config = one(&h, &migrators_publication, "venue_config", "VenueConfig");
         let migrators_version = h.wrap_migrators(migrators, &migrators_publication)?;
-        // Both admissions name the case's one venue witness: the vault registry lists it while the
+        // Both admissions name the case's one venue witness: the vault registry lists it, beside
+        // the launchpad's package witness as the issuer of the launch's vault terms, while the
         // vault package is paused, and the launch config admits it.
         let venue_type = tag(&format!("{migrators}::{}::Venue", case.module()));
+        let issuer_type = tag(&format!("{blast}::launch::PackageWitness"));
         let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
-        h.release_vault(admin, admin_published, core, &vault_stack, std::slice::from_ref(&venue_type))?;
+        h.release_vault(admin, admin_published, core, &vault_stack, &[venue_type.clone(), issuer_type])?;
         let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, case.quote(), venue_type)?;
         h.unpause(blast, "blast_fun_domain", admin, admin_published, version, custody, [runtime, config], 7)?;
         let (fixture, project_token) = if burnable {
