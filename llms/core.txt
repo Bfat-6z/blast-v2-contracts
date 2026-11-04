@@ -224,8 +224,9 @@ address with `blast_treasury::destination`.
 ### Migration hand-off and owner proof
 
 - Before a sale's supply is minted, its venue prepares the coin and returns a
-  `migration::VenueBinding` sealed by the venue's witness. The venue keeps the coin's pool tier.
-  The product's creation call consumes the binding with `migration::unbind` and stores the venue.
+  `migration::VenueTicket` sealed by the venue's witness (`migration::issue_ticket`). The venue keeps
+  the coin's pool tier. The product's creation call redeems the ticket with `migration::redeem_ticket`
+  and stores the venue.
 - `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
   split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
   `migration::vault_terms`, under the issuing package's witness, builds them; a standalone vault's issuer
@@ -509,7 +510,7 @@ public fun verify(
 
 ### `blast_core::migration`
 
-The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueBinding` sealed by its witness; the product admits and stores the binding's venue. At migration the product opens a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither value can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.
+The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product opens a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither value can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration.move
 
@@ -538,9 +539,9 @@ public struct VaultTerms has copy, drop, store {
     residuals: ResidualPolicy,
 }
 
-/// A venue's sealed preparation of one coin, consumed by the product that admits it. The venue
-/// keeps the coin's pool tier itself (ADR 0111).
-public struct VenueBinding {
+/// A venue's sealed ticket for one prepared coin, redeemed by the product that admits it. The
+/// venue keeps the coin's pool tier itself (ADR 0111).
+public struct VenueTicket {
     venue: TypeName,
 }
 
@@ -560,11 +561,11 @@ public fun protocol_residuals(): ResidualPolicy
 
 public fun owner_residuals(): ResidualPolicy
 
-/// Seals a venue's preparation under its witness `Venue`.
-public fun bind<Venue: drop>(_: Venue): VenueBinding
+/// Issues a ticket for a coin the venue has prepared, sealed under its witness `Venue`.
+public fun issue_ticket<Venue: drop>(_: Venue): VenueTicket
 
-/// Consumes a binding, returning the venue witness type to admit and store.
-public fun unbind(self: VenueBinding): TypeName
+/// Redeems a ticket, returning the venue witness type to admit and store.
+public fun redeem_ticket(self: VenueTicket): TypeName
 
 /// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
 /// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at

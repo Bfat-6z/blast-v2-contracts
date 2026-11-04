@@ -6,7 +6,7 @@
 /// The sealed contract between a sale and the venue that migrates it.
 ///
 /// Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a
-/// `VenueBinding` sealed by its witness; the product admits and stores the binding's venue. At
+/// `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At
 /// migration the product opens a `Migration` sealed by its own witness, carrying the pool's
 /// balances and the new vault's terms, and only the stored venue's witness can redeem it. A
 /// standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither
@@ -38,9 +38,9 @@ public struct VaultTerms has copy, drop, store {
     residuals: ResidualPolicy,
 }
 
-/// A venue's sealed preparation of one coin, consumed by the product that admits it. The venue
-/// keeps the coin's pool tier itself (ADR 0111).
-public struct VenueBinding {
+/// A venue's sealed ticket for one prepared coin, redeemed by the product that admits it. The
+/// venue keeps the coin's pool tier itself (ADR 0111).
+public struct VenueTicket {
     venue: TypeName,
 }
 
@@ -58,14 +58,14 @@ public fun protocol_residuals(): ResidualPolicy { ResidualPolicy::Protocol }
 
 public fun owner_residuals(): ResidualPolicy { ResidualPolicy::Owner }
 
-/// Seals a venue's preparation under its witness `Venue`.
-public fun bind<Venue: drop>(_: Venue): VenueBinding {
-    VenueBinding { venue: type_name::with_original_ids<Venue>() }
+/// Issues a ticket for a coin the venue has prepared, sealed under its witness `Venue`.
+public fun issue_ticket<Venue: drop>(_: Venue): VenueTicket {
+    VenueTicket { venue: type_name::with_original_ids<Venue>() }
 }
 
-/// Consumes a binding, returning the venue witness type to admit and store.
-public fun unbind(self: VenueBinding): TypeName {
-    let VenueBinding { venue } = self;
+/// Redeems a ticket, returning the venue witness type to admit and store.
+public fun redeem_ticket(self: VenueTicket): TypeName {
+    let VenueTicket { venue } = self;
 
     venue
 }

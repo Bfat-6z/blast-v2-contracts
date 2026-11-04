@@ -21,8 +21,8 @@ public struct OtherPackageWitness() has drop;
 // === Tests ===
 
 #[test]
-fun a_binding_names_its_venue() {
-    let venue = migration::bind(VenueWitness()).unbind();
+fun a_ticket_names_its_venue() {
+    let venue = migration::issue_ticket(VenueWitness()).redeem_ticket();
 
     assert_eq!(venue, type_name::with_original_ids<VenueWitness>());
 }

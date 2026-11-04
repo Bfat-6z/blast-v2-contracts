@@ -98,8 +98,8 @@ product imports the vault or a venue, and no venue imports a product.
 
 A venue first prepares the coin while its supply is still unminted: it reserves any venue
 pool-creation capability against the coin's `TreasuryCap`, records the pool tier, and returns a
-non-droppable venue binding sealed by its own witness. The product's `new` checks the binding's venue
-against its own delayed migrator allowlist and stores it. The ordering is the same for both products:
+non-droppable venue ticket sealed by its own witness. The product's `new` redeems the ticket, checks
+its venue against its own delayed migrator allowlist, and stores it. The ordering is the same for both products:
 the launch ticket lends its `TreasuryCap` for preparation, and its supply recheck at `destroy` still
 guarantees the exact supply.
 
@@ -214,7 +214,7 @@ Steps 1 and 2 are independent; 3 and 4 need 2; 5 needs 3 and 4; 6 needs 4; 7 nee
 
 ## Verification
 
-- Exact-abort tests for venue mismatch at redemption, an unadmitted binding at creation, and a
+- Exact-abort tests for venue mismatch at redemption, an unadmitted venue ticket at creation, and a
   hand-off or owner proof that is not consumed.
 - Apportionment properties (sums preserved, the rounded-up index never loses a unit) and the existing
   graduation vectors reproduced on the core primitive.

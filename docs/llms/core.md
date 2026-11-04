@@ -51,8 +51,9 @@ address with `blast_treasury::destination`.
 ### Migration hand-off and owner proof
 
 - Before a sale's supply is minted, its venue prepares the coin and returns a
-  `migration::VenueBinding` sealed by the venue's witness. The venue keeps the coin's pool tier.
-  The product's creation call consumes the binding with `migration::unbind` and stores the venue.
+  `migration::VenueTicket` sealed by the venue's witness (`migration::issue_ticket`). The venue keeps
+  the coin's pool tier. The product's creation call redeems the ticket with `migration::redeem_ticket`
+  and stores the venue.
 - `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
   split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
   `migration::vault_terms`, under the issuing package's witness, builds them; a standalone vault's issuer
