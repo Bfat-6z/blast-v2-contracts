@@ -34,11 +34,11 @@ across the routes in order.
 `protocol_fees::Ledger` holds Blast's Meme, Quote, and SUI fees for one launch, presale, or vault.
 Only the module that owns it can create it, under its package witness, and every payment event
 names that witness type, so a payment's origin is attributable.
-`protocol_fees::take_share` moves Blast's rounded-up share of a fee into it. A ledger is bound at
+`protocol_fees::take_cut` moves Blast's rounded-up cut of a fee into it. A ledger is bound at
 creation to the partner its sale named, or to none. `protocol_fees::pay` pays everything to the
 treasury and aborts when a partner is bound; `protocol_fees::pay_with_partner` first pays that
 partner its cut of each asset through `blast_partners::blast_partners::pay`, then the treasury the
-rest. Both emit `protocol_fees::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
+rest. Both emit `blast_core_events::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
 may make.
 
 `blast_treasury::Treasury` is a shared singleton holding the address Blast's fees go to. A Blast
@@ -62,7 +62,8 @@ address with `blast_treasury::destination`.
   pool's Meme and Quote and terms the same package witness sealed. Only the stored venue can consume it,
   with `migration::redeem`; any other venue aborts.
 - `owner_proof::OwnerProof` is a product's sealed statement that the caller holds the sale's
-  creator authority. A vault consumes it with `owner_proof::verify`, which aborts unless it names
+  creator authority, issued with `owner_proof::new`. A vault consumes it with
+  `owner_proof::assert_terms`, which aborts unless it names
   the vault's package witness and sale.
 
 None of these values can be dropped, copied, or stored, so the PTB that creates one must consume it.

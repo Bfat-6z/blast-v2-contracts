@@ -10,8 +10,12 @@
 /// migration the product creates a `Migration` sealed by its own witness, carrying the pool's
 /// balances and the new vault's terms, and only the stored venue's witness can redeem it. A
 /// standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither
-/// value can be dropped, copied, or stored, so a transaction completes the migration whole or
-/// aborts.
+/// the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the
+/// migration whole or aborts.
+///
+/// Every witness is identified by `type_name::with_original_ids`, which stays fixed across
+/// upgrades of the venue or product package; allowlists that admit these names must use the same
+/// form.
 module blast_core::migration;
 
 // === Public Types ===
@@ -54,9 +58,11 @@ public struct Migration<phantom Meme, phantom Quote> {
 
 // === Public Functions ===
 
-public fun protocol_residuals(): ResidualPolicy { ResidualPolicy::Protocol }
+/// Residuals paid to Blast through the vault's protocol ledger.
+public fun residuals_to_protocol(): ResidualPolicy { ResidualPolicy::Protocol }
 
-public fun owner_residuals(): ResidualPolicy { ResidualPolicy::Owner }
+/// Residuals held in the vault for the sale's owner to claim.
+public fun residuals_to_owner(): ResidualPolicy { ResidualPolicy::Owner }
 
 /// Issues a ticket for a coin the venue has prepared, sealed under its witness `Venue`.
 public fun issue_ticket<Venue: drop>(_: Venue): VenueTicket {
@@ -116,26 +122,33 @@ public fun redeem<Meme, Quote, Venue: drop>(
     self: Migration<Meme, Quote>,
     _: Venue,
 ): (Balance<Meme>, Balance<Quote>, VaultTerms) {
-    let Migration { meme, quote, venue, terms } = self;
-    assert!(venue == type_name::with_original_ids<Venue>(), blast_core::errors::wrong_venue!());
+    let redeeming_venue = type_name::with_original_ids<Venue>();
+    assert!(self.venue == redeeming_venue, blast_core::errors::wrong_venue!());
+
+    let Migration { meme, quote, venue: _, terms } = self;
 
     (meme, quote, terms)
 }
 
+/// The launch or presale the vault belongs to.
 public fun origin(self: &VaultTerms): ID { self.origin }
 
+/// The original type of the package witness that sealed the terms.
 public fun package_witness(self: &VaultTerms): TypeName { self.package_witness }
 
+/// The fee split the vault starts with.
 public fun fee_split(self: &VaultTerms): FeeSplit { self.fee_split }
 
 /// Blast's share of each LP-fee collection, Meme then Quote.
-public fun protocol_shares(self: &VaultTerms): (Bps, Bps) {
+public fun protocol_bps(self: &VaultTerms): (Bps, Bps) {
     (self.protocol_meme_bps, self.protocol_quote_bps)
 }
 
+/// The partner the sale named, if any.
 public fun partner_id(self: &VaultTerms): Option<ID> { self.partner_id }
 
-public fun pays_residuals_to_protocol(self: &VaultTerms): bool {
+/// Whether the migration residuals go to Blast rather than the owner.
+public fun has_protocol_residuals(self: &VaultTerms): bool {
     self.residuals == ResidualPolicy::Protocol
 }
 

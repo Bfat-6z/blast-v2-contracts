@@ -25,7 +25,8 @@ rg -q 'public struct Migration<phantom Meme, phantom Quote> \{' sources/migratio
   && rg -q 'public struct VenueTicket \{' sources/migration.move \
   && rg -q 'public struct OwnerProof \{' sources/owner_proof.move \
   || fail "hand-off, venue ticket, and owner proof must have no abilities"
-rg -q "assert!\(venue == type_name::with_original_ids<Venue>\(\), blast_core::errors::wrong_venue!\(\)\);" sources/migration.move \
+rg -q "let redeeming_venue = type_name::with_original_ids<Venue>\(\);" sources/migration.move \
+  && rg -q "assert!\(self.venue == redeeming_venue, blast_core::errors::wrong_venue!\(\)\);" sources/migration.move \
   || fail "redeem must check the stored venue's original witness type"
 
 echo "blast_core source boundaries hold."

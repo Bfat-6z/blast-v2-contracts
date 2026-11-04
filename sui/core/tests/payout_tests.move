@@ -76,8 +76,9 @@ fun a_zero_payout_sends_and_locks_nothing() {
 fun a_payout_vests_at_the_technical_bound_with_a_full_cliff() {
     let mut scenario = test_scenario::begin(ALICE);
     let clock = clock::create_for_testing(scenario.ctx());
-    let max_duration_ms = 1 << 63;
+    let max_duration_ms = blast_core::constants::max_vesting_duration_ms!();
     let terms = payout::vesting_terms(max_duration_ms, max_duration_ms, 1);
+    // The largest period count is accepted too.
     payout::vesting_terms(0, 1, max_duration_ms);
     let mut funds = balance::create_for_testing<SUI>(1);
 

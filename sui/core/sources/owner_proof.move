@@ -11,6 +11,7 @@ module blast_core::owner_proof;
 
 // === Public Types ===
 
+/// The caller holds the creator authority of sale `origin`, as the witness's package attests.
 public struct OwnerProof {
     package_witness: TypeName,
     origin: ID,
@@ -19,12 +20,12 @@ public struct OwnerProof {
 // === Public Functions ===
 
 /// Issues a proof for the sale `origin` under the issuing package's witness `PackageWitness`.
-public fun prove<PackageWitness: drop>(_: PackageWitness, origin: ID): OwnerProof {
+public fun new<PackageWitness: drop>(_: PackageWitness, origin: ID): OwnerProof {
     OwnerProof { package_witness: type_name::with_original_ids<PackageWitness>(), origin }
 }
 
 /// Consumes the proof, aborting unless it names `terms`' package witness and sale.
-public fun verify(self: OwnerProof, terms: &VaultTerms) {
+public fun assert_terms(self: OwnerProof, terms: &VaultTerms) {
     let OwnerProof { package_witness, origin } = self;
 
     assert!(

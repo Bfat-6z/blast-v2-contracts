@@ -36,8 +36,8 @@ public fun vesting_terms(cliff_delay_ms: u64, period_duration_ms: u64, periods: 
 /// Pays `amount` of `balance` to `destination`: outright, or locked in an irrevocable linear
 /// schedule starting now when `vesting` is set, returning the schedule's ID. A zero amount sends
 /// nothing.
-public fun pay_or_vest<T>(
-    balance: &mut Balance<T>,
+public fun pay_or_vest<Asset>(
+    balance: &mut Balance<Asset>,
     amount: u64,
     destination: address,
     vesting: Option<VestingTerms>,
@@ -69,8 +69,8 @@ public fun pay_or_vest<T>(
 
 /// Transfers `amount` split from `balance` to `destination` as a coin; a zero amount sends
 /// nothing.
-public fun pay<T>(
-    balance: &mut Balance<T>,
+public fun pay<Asset>(
+    balance: &mut Balance<Asset>,
     amount: u64,
     destination: address,
     ctx: &mut TxContext,
@@ -81,7 +81,7 @@ public fun pay<T>(
 }
 
 /// Transfers all of `balance` to `destination`; an empty balance sends nothing.
-public fun pay_all<T>(mut balance: Balance<T>, destination: address, ctx: &mut TxContext) {
+public fun pay_all<Asset>(mut balance: Balance<Asset>, destination: address, ctx: &mut TxContext) {
     let amount = balance.value();
     pay(&mut balance, amount, destination, ctx);
     balance.destroy_zero();

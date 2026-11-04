@@ -25,7 +25,7 @@ fun the_share_rounds_up_for_blast_and_leaves_the_rest_in_the_fee() {
     let mut meme_fee = balance::create_for_testing<MEME>(1_001);
     let mut quote_fee = balance::create_for_testing<QUOTE>(3);
 
-    let (meme, quote) = ledger.take_share(
+    let (meme, quote) = ledger.take_cut(
         &mut meme_fee,
         &mut quote_fee,
         bps::new(3_000),
@@ -67,7 +67,7 @@ fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
         partner_meme,
         partner_quote,
         partner_sui,
-    ) = paid[0].paid_fields();
+    ) = paid[0].protocol_fees_paid_fields();
     assert_eq!(package_witness, type_name::with_original_ids<LedgerPackageWitness>());
     assert_eq!(origin, sale_id());
     assert_eq!(destination, TREASURY);
@@ -75,9 +75,13 @@ fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
     assert!(partner_id.is_none() && partner_meme == 0 && partner_quote == 0 && partner_sui == 0);
 
     scenario.next_tx(TREASURY);
+    let meme_coin = scenario.take_from_address<Coin<MEME>>(TREASURY);
+    let quote_coin = scenario.take_from_address<Coin<QUOTE>>(TREASURY);
     let sui_coin = scenario.take_from_address<Coin<SUI>>(TREASURY);
-    assert_eq!(sui_coin.value(), 30);
+    assert!(meme_coin.value() == 10 && quote_coin.value() == 20 && sui_coin.value() == 30);
 
+    destroy(meme_coin);
+    destroy(quote_coin);
     destroy(sui_coin);
     destroy(treasury);
     ledger.destroy_for_testing();
@@ -108,7 +112,7 @@ fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
         partner_meme,
         partner_quote,
         partner_sui,
-    ) = paid[0].paid_fields();
+    ) = paid[0].protocol_fees_paid_fields();
     assert_eq!(package_witness, type_name::with_original_ids<LedgerPackageWitness>());
     assert_eq!(origin, sale_id());
     assert_eq!(destination, TREASURY);
@@ -205,7 +209,12 @@ fun new_ledger(partner_id: Option<ID>): Ledger<MEME, QUOTE> {
 
 // === Imports ===
 
-use blast_core::{blast_treasury, bps, protocol_fees::{Self, Ledger, ProtocolFeesPaid}};
+use blast_core::{
+    blast_core_events::ProtocolFeesPaid,
+    blast_treasury,
+    bps,
+    protocol_fees::{Self, Ledger},
+};
 
 use blast_partners::blast_partners;
 

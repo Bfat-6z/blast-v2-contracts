@@ -15,7 +15,7 @@ public struct Receipt has key {
 }
 
 /// A witness only this marker's package can construct, for package-gated calls.
-public struct PackageWitness() has drop;
+public struct UnpauseWitness() has drop;
 
 // === Test Helpers ===
 
@@ -23,6 +23,6 @@ public fun marker(): PACKAGE_MARKER {
     PACKAGE_MARKER {}
 }
 
-public fun witness(): PackageWitness {
-    PackageWitness()
+public fun unpause_witness(): UnpauseWitness {
+    UnpauseWitness()
 }

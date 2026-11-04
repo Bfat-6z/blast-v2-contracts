@@ -28,11 +28,11 @@ fun upward_application_assigns_the_remainder_to_the_rate() {
 #[test]
 fun apportionment_assigns_every_unit_and_leftovers_to_the_largest_remainders() {
     // 1/3 each of 10 units: floors 3/3/3, one leftover to the earliest of the equal remainders.
-    assert_eq!(apportion(vector[3_334, 3_333, 3_333], 10, option::none()), vector[4, 3, 3]);
+    assert_eq!(apportion_rates(vector[3_334, 3_333, 3_333], 10, option::none()), vector[4, 3, 3]);
     // The rounded-up part takes its ceiling; the others share what is left.
-    assert_eq!(apportion(vector[3_333, 3_333, 3_334], 10, option::some(0)), vector[4, 3, 3]);
-    assert_eq!(apportion(vector[10_000], 7, option::some(0)), vector[7]);
-    assert_eq!(apportion(vector[5_000, 5_000], 0, option::none()), vector[0, 0]);
+    assert_eq!(apportion_rates(vector[3_333, 3_333, 3_334], 10, option::some(0)), vector[4, 3, 3]);
+    assert_eq!(apportion_rates(vector[10_000], 7, option::some(0)), vector[7]);
+    assert_eq!(apportion_rates(vector[5_000, 5_000], 0, option::none()), vector[0, 0]);
 }
 
 #[test]
@@ -42,7 +42,7 @@ fun apportionment_preserves_the_total_for_every_rounded_up_choice() {
         let mut choice = 0;
         while (choice <= rates.length()) {
             let rounded_up = if (choice == rates.length()) option::none() else option::some(choice);
-            let amounts = apportion(rates, total, rounded_up);
+            let amounts = apportion_rates(rates, total, rounded_up);
             assert_eq!(amounts.fold!(0u128, |sum, amount| sum + (amount as u128)), total as u128);
             rounded_up.do!(|index| {
                 assert_eq!(amounts[index], bps::new(rates[index]).apply_up(total));
@@ -58,7 +58,7 @@ fun apportionment_preserves_the_total_for_every_rounded_up_choice() {
     location = blast_core::bps,
 )]
 fun apportionment_rejects_rates_below_the_whole() {
-    apportion(vector[5_000, 4_999], 10, option::none());
+    apportion_rates(vector[5_000, 4_999], 10, option::none());
 }
 
 #[test]
@@ -67,12 +67,12 @@ fun apportionment_rejects_rates_below_the_whole() {
     location = blast_core::bps,
 )]
 fun apportionment_rejects_a_rounded_up_index_outside_the_rates() {
-    apportion(vector[10_000], 10, option::some(1));
+    apportion_rates(vector[10_000], 10, option::some(1));
 }
 
 // === Test Helpers ===
 
-fun apportion(rates: vector<u64>, total: u64, rounded_up: Option<u64>): vector<u64> {
+fun apportion_rates(rates: vector<u64>, total: u64, rounded_up: Option<u64>): vector<u64> {
     bps::apportion(rates.map!(|rate| bps::new(rate)), total, rounded_up)
 }
 

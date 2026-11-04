@@ -222,7 +222,7 @@ edit '/^    unpause_witness: TypeName,$/d' "$case_dir/sources/package_version.mo
 expect_rejected "$case_dir"
 
 case_dir="$(new_case unchecked_unpause_witness)"
-edit '/package_version.assert_unpause_witness<PackageMarker, UnpauseWitness>();/d' \
+edit '/package_version.assert_unpause_witness<_, UnpauseWitness>();/d' \
   "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 

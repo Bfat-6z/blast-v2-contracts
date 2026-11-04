@@ -36,10 +36,10 @@ fun the_stored_venue_redeems_the_balances_and_terms() {
     assert_eq!(quote.value(), 200);
     assert_eq!(terms.origin(), sale_id());
     assert_eq!(terms.package_witness(), type_name::with_original_ids<TestPackageWitness>());
-    let (meme_share, quote_share) = terms.protocol_shares();
+    let (meme_share, quote_share) = terms.protocol_bps();
     assert!(meme_share == bps::new(1_500) && quote_share == bps::new(1_000));
     assert_eq!(terms.partner_id(), option::none());
-    assert!(terms.pays_residuals_to_protocol());
+    assert!(terms.has_protocol_residuals());
     assert!(terms.fee_split().routes()[0].destination().is_owner());
 
     destroy(meme);
@@ -83,18 +83,18 @@ fun standalone_terms_verify_owner_proofs_from_their_issuer() {
         bps::new(0),
         bps::new(0),
         option::none(),
-        migration::owner_residuals(),
+        migration::residuals_to_owner(),
     );
-    assert!(!terms.pays_residuals_to_protocol());
+    assert!(!terms.has_protocol_residuals());
 
-    owner_proof::prove(OtherPackageWitness(), sale_id()).verify(&terms);
+    owner_proof::new(OtherPackageWitness(), sale_id()).assert_terms(&terms);
 }
 
 #[test]
 fun the_sale_owner_proof_verifies_against_its_vault_terms() {
-    let terms = terms();
+    let terms = sale_terms();
 
-    owner_proof::prove(TestPackageWitness(), sale_id()).verify(&terms);
+    owner_proof::new(TestPackageWitness(), sale_id()).assert_terms(&terms);
 }
 
 #[test]
@@ -103,7 +103,7 @@ fun the_sale_owner_proof_verifies_against_its_vault_terms() {
     location = blast_core::owner_proof,
 )]
 fun another_package_cannot_prove_ownership() {
-    owner_proof::prove(OtherPackageWitness(), sale_id()).verify(&terms());
+    owner_proof::new(OtherPackageWitness(), sale_id()).assert_terms(&sale_terms());
 }
 
 #[test]
@@ -112,7 +112,8 @@ fun another_package_cannot_prove_ownership() {
     location = blast_core::owner_proof,
 )]
 fun another_sale_cannot_prove_ownership() {
-    owner_proof::prove(TestPackageWitness(), object::id_from_address(@0xB0B)).verify(&terms());
+    let other_sale = object::id_from_address(@0xB0B);
+    owner_proof::new(TestPackageWitness(), other_sale).assert_terms(&sale_terms());
 }
 
 // === Test Helpers ===
@@ -120,7 +121,7 @@ fun another_sale_cannot_prove_ownership() {
 fun sale_id(): ID { object::id_from_address(@0x5A1E) }
 
 fun owner_split(): fee_split::FeeSplit {
-    fee_split::new(vector[fee_split::route(fee_split::to_owner(), bps::new(10_000))])
+    fee_split::new(vector[fee_split::route(fee_split::owner_destination(), bps::new(10_000))])
 }
 
 fun sale_terms(): VaultTerms {
@@ -131,11 +132,11 @@ fun sale_terms(): VaultTerms {
         bps::new(1_500),
         bps::new(1_000),
         option::none(),
-        migration::protocol_residuals(),
+        migration::residuals_to_protocol(),
     )
 }
 
-fun new_migration(venue: std::type_name::TypeName): Migration<MEME, QUOTE> {
+fun new_migration(venue: type_name::TypeName): Migration<MEME, QUOTE> {
     migration::new(
         TestPackageWitness(),
         balance::create_for_testing<MEME>(100),
@@ -143,15 +144,6 @@ fun new_migration(venue: std::type_name::TypeName): Migration<MEME, QUOTE> {
         venue,
         sale_terms(),
     )
-}
-
-fun terms(): VaultTerms {
-    let (meme, quote, terms) = new_migration(type_name::with_original_ids<VenueWitness>())
-        .redeem(VenueWitness());
-    destroy(meme);
-    destroy(quote);
-
-    terms
 }
 
 // === Imports ===
