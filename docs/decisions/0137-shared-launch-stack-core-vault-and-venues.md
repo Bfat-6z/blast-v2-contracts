@@ -136,6 +136,11 @@ sealed by its witness, so the vault imports neither product.
   once in `blast_core`. Package roles (`UpgradeAdmin`, `PauseAdmin`, `UnpauseAdmin` and the package's
   `CancelAdmin`) are generic over the package marker in `blast_admin`, so each package's grants stay
   separate.
+- A venue needs two admissions: each product's own venue allowlist, which lets new sales name it,
+  and the vault's registry, which lets it create vaults. Both are checked on every migration, so
+  the registry admits a venue before any product does, and removing a venue from the registry
+  strands the migrations of every sale that names it until it is admitted again; Blast reserves
+  that removal for a venue found unsafe.
 - Products start fully paused and use pause bits create 1, trade or commit 2, migrate 4. The vault
   pauses only administrator operations; collection, owner claims and reward claims never pause. The
   venues have no pause bits: the product's migration bit gates migration, and collection must never

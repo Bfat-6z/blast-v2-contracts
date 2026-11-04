@@ -855,6 +855,7 @@ public fun migrate<Meme, Quote>(
         blast_fun::errors::invalid_launch_lifecycle!(),
     );
 
+    let (protocol_meme_bps, protocol_quote_bps) = config.protocol_lp_fees();
     let plan = self.allocation_plan;
     let (
         _,
@@ -909,7 +910,6 @@ public fun migrate<Meme, Quote>(
         currency.total_supply().destroy_some(),
     );
 
-    let (protocol_meme_bps, protocol_quote_bps) = config.protocol_lp_fees();
     let terms = migration::vault_terms(
         PackageWitness(),
         self.id.to_inner(),

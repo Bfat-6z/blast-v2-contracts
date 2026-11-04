@@ -78,7 +78,9 @@ policy before the chosen delay and release.
    themselves wait the old delay. Pausing never resets it.
 
    Each admitted venue must also be admitted in the vault's `VaultRegistry`, or
-   its migrations abort: with the core `blast_domain::AdapterAdmin`,
+   its migrations abort, so admit it there first. Removing a venue from the
+   registry strands every funded sale that names it until it is admitted again;
+   reserve that for a venue found unsafe. To admit it: with the core `blast_domain::AdapterAdmin`,
    `blast_vault_package::schedule_venue<Venue>` then `apply_venue`. The vault
    publishes fully paused with a zero admission notice, so admit the presale and
    launchpad venues together, then raise the vault's notice to 48 hours and

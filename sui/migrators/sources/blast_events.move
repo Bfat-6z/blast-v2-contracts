@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Typed replay facts for Cetus pool reservations. Vault custody, LP-fee collection, auto-LP,
+/// Typed replay facts for Cetus pool reservations and Bluefin pool tiers. Vault custody, LP-fee collection, auto-LP,
 /// buybacks, and holder rewards are recorded by `blast_vault`'s events.
 module blast_fun_migrators::blast_events;
 
@@ -15,6 +15,14 @@ public struct CetusPoolReserved has copy, drop {
     tick_spacing: u32,
 }
 
+/// Records the Bluefin pool tier a prepared pair's migration uses.
+public struct BluefinPoolTierRecorded has copy, drop {
+    meme: TypeName,
+    quote: TypeName,
+    tick_spacing: u32,
+    fee_rate: u64,
+}
+
 // === Package Functions ===
 
 /// Emits the Cetus pair reservation made while preparing a coin.
@@ -24,6 +32,16 @@ public(package) fun cetus_pool_reserved<Meme, Quote>(pool_creation_cap_id: ID, t
         quote: type_name::with_original_ids<Quote>(),
         pool_creation_cap_id,
         tick_spacing,
+    });
+}
+
+/// Emits the Bluefin pool tier recorded while preparing a coin.
+public(package) fun bluefin_pool_tier_recorded<Meme, Quote>(tick_spacing: u32, fee_rate: u64) {
+    sui::event::emit(BluefinPoolTierRecorded {
+        meme: type_name::with_original_ids<Meme>(),
+        quote: type_name::with_original_ids<Quote>(),
+        tick_spacing,
+        fee_rate,
     });
 }
 

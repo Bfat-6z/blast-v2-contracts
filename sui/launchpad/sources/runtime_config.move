@@ -355,8 +355,6 @@ use blast_admin::{
     blast_acl::AdminWitness,
 };
 
-use sui::clock::Clock;
-
 use blast_core::bps::{Self, Bps};
 
 use blast_fun::{
@@ -364,3 +362,5 @@ use blast_fun::{
     constants,
     blast_fun::{PackageVersion},
 };
+
+use sui::clock::Clock;

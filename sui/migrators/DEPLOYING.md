@@ -66,7 +66,9 @@ The venue witnesses are `<migrators>::cetus::Venue` and
 2. **Vault.** With the core `blast_domain::AdapterAdmin`, schedule
    `blast_vault_package::schedule_venue<Venue>` on the `VaultRegistry` for each
    witness and apply it with `blast_vault_package::apply_venue`; without it,
-   migration aborts in `blast_vault::vault::new`. The vault publishes fully
+   migration aborts in `blast_vault::vault::new`. Removing a venue from the
+   registry strands every graduated launch that names it until it is admitted
+   again; reserve that for a venue found unsafe. The vault publishes fully
    paused with a zero admission notice and admissions ignore the pause, so admit
    every venue that should start admitted, the presale venues included
    ([presale DEPLOYING](../presale/DEPLOYING.md)), then schedule and apply a

@@ -48,6 +48,25 @@ fun prepare_accepts_the_largest_bluefin_tier() {
     f.end();
 }
 
+#[test]
+fun prepare_records_the_pairs_tier_in_one_event() {
+    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let treasury_cap = coin::create_treasury_cap_for_testing<BLUEFIN_TESTS>(f.ctx());
+
+    let venue = f.prepare<QUOTE>(&treasury_cap, 60, 2_500).redeem_ticket();
+
+    let recorded = event::events_by_type<BluefinPoolTierRecorded>();
+    assert_eq!(recorded.length(), 1);
+    let mut expected = bcs::to_bytes(&type_name::with_original_ids<BLUEFIN_TESTS>());
+    expected.append(bcs::to_bytes(&type_name::with_original_ids<QUOTE>()));
+    expected.append(bcs::to_bytes(&60u32));
+    expected.append(bcs::to_bytes(&2_500u64));
+    assert_eq!(bcs::to_bytes(&recorded[0]), expected);
+    assert_eq!(venue, type_name::with_original_ids<bluefin::Venue>());
+    destroy(treasury_cap);
+    f.end();
+}
+
 #[test, expected_failure(
     abort_code = sui::dynamic_field::EFieldAlreadyExists,
     location = sui::dynamic_field,
@@ -214,11 +233,15 @@ const EUnexpectedSuccess: vector<u8> = b"The guarded operation unexpectedly retu
 
 use blast_core::{bps, fee_split::{Self, FeeSplit}, migration::VenueTicket};
 
-use blast_fun_migrators::{bluefin, launch_fixture::{Self, LaunchFixture}};
+use blast_fun_migrators::{
+    blast_events::BluefinPoolTierRecorded,
+    bluefin,
+    launch_fixture::{Self, LaunchFixture}
+};
 
 use std::{type_name, unit_test::{assert_eq, destroy}};
 
-use sui::{coin::{Self, TreasuryCap}, test_scenario, test_utils};
+use sui::{bcs, coin::{Self, TreasuryCap}, event, test_scenario, test_utils};
 
 use fun open_bluefin_launch as LaunchFixture.open_bluefin_launch;
 use fun prepare as LaunchFixture.prepare;

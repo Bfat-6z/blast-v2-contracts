@@ -47,6 +47,8 @@ public fun prepare<Meme, Quote>(
 
     venue_config.add_value(PoolTierKey<Meme>(), PoolTier { tick_spacing, fee_rate });
 
+    blast_events::bluefin_pool_tier_recorded<Meme, Quote>(tick_spacing, fee_rate);
+
     migration::issue_ticket(Venue())
 }
 
@@ -388,6 +390,7 @@ use blast_core::{
 use blast_fun::{blast_fun::PackageVersion, launch::Launch, launch_config::LaunchConfig};
 
 use blast_fun_migrators::{
+    blast_events,
     blast_fun_migrators::PackageVersion as MigratorsVersion,
     constants,
     migration_math,
