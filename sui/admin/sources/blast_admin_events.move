@@ -95,7 +95,29 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     final_policy: u8,
 }
 
+/// Pause bits were set on a package version; `paused` is the resulting mask.
+public struct Paused<phantom PackageMarker: drop> has copy, drop {
+    package_version_id: ID,
+    bits: u8,
+    paused: u8,
+}
+
+/// Pause bits were cleared on a package version; `paused` is the resulting mask.
+public struct Unpaused<phantom PackageMarker: drop> has copy, drop {
+    package_version_id: ID,
+    bits: u8,
+    paused: u8,
+}
+
 // === Package Functions ===
+
+public(package) fun paused<PackageMarker: drop>(package_version_id: ID, bits: u8, paused: u8) {
+    sui::event::emit(Paused<PackageMarker> { package_version_id, bits, paused });
+}
+
+public(package) fun unpaused<PackageMarker: drop>(package_version_id: ID, bits: u8, paused: u8) {
+    sui::event::emit(Unpaused<PackageMarker> { package_version_id, bits, paused });
+}
 
 public(package) fun admin_granted(admin_cap_id: ID, recipient: address) {
     sui::event::emit(AdminGranted { admin_cap_id, recipient });
@@ -358,6 +380,16 @@ public fun upgrade_cap_destroyed_fields<PackageMarker: drop>(
         self.final_native_version,
         self.final_policy,
     )
+}
+
+#[test_only]
+public fun paused_fields<PackageMarker: drop>(self: &Paused<PackageMarker>): (ID, u8, u8) {
+    (self.package_version_id, self.bits, self.paused)
+}
+
+#[test_only]
+public fun unpaused_fields<PackageMarker: drop>(self: &Unpaused<PackageMarker>): (ID, u8, u8) {
+    (self.package_version_id, self.bits, self.paused)
 }
 
 // === Imports ===

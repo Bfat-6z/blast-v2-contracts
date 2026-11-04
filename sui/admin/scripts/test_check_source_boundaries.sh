@@ -197,4 +197,24 @@ printf '\npublic fun new<Domain: drop>(otw: Domain, ctx: &mut TxContext) { abort
   >> "$case_dir/sources/blast_acl.move"
 expect_rejected "$case_dir"
 
+case_dir="$(new_case package_admin_entry_path)"
+printf '\npublic fun rogue<PackageMarker: drop>(self: &mut PackageAdmin<PackageMarker>) {}\n' \
+  >> "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case package_version_setter)"
+printf '\npublic fun rogue<PackageMarker: drop>(self: &mut PackageVersion<PackageMarker>) {}\n' \
+  >> "$case_dir/sources/package_version.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case storable_package_admin)"
+edit 's/^public struct PackageAdmin<phantom PackageMarker: drop> has key {$/public struct PackageAdmin<phantom PackageMarker: drop> has key, store {/' \
+  "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case untyped_package_role)"
+edit 's/^public struct UnpauseAdmin<phantom PackageMarker>()$/public struct UnpauseAdmin()/' \
+  "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
 printf 'blast_admin boundary checker self-tests passed\n'

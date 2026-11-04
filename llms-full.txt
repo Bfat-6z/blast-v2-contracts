@@ -5355,6 +5355,9 @@ migrators (`blast_fun_migrators`), Blast SUI (`blast_sui`), Boosts
 | `blast_acl::AdminWitness<Role>` | transaction-local value, `drop` only | the PTB that signed in | the one role `Role` in every consumer call that takes `&AdminWitness<Role>` |
 | `operational_version::OperationalVersion<M>` | `store` value inside a consumer's shared version object | the consumer package | the generation check behind every protected call |
 | `upgrade_custody::UpgradeCustody<M>` | `store` value inside a consumer's shared `PackageAdmin` | the consumer package | holds the `Publisher` and `UpgradeCap`; acts only through named transitions |
+| `package_version::Publication<M>` | owned, `key` only | the publisher, from the package's `init` until wrap | nothing but the one wrap of package `M` |
+| `package_version::PackageVersion<M>` | shared, `key` only, created at wrap | nobody | the generation and pause bits package `M`'s operations check |
+| `blast_admin::package_admin::PackageAdmin<M>` | shared, `key` only, created at wrap | nobody | package `M`'s sealed custody and its 48-hour upgrade decisions |
 
 `ACL` fields: `super_admin_cap_id` (the one root cap that works), `admins` (a
 map from `AdminCap` ID to a set of role type names), and `super_admin_transfer`
@@ -5561,6 +5564,79 @@ The packages
 `blast_admin`, `blast_partners`, and `blast_boosts_core` are published immutable
 and have no custody at all.
 
+### Generic package administration
+
+`package_version` and `blast_admin::package_admin` implement, once, the
+publication, operational generation, pause bits and 48-hour upgrade custody that
+an upgradeable package needs, typed by the package's one-time witness `M`. No
+package uses them yet; the launchpad, presale and migrators still carry their own
+copies (see "Upgrade custody").
+
+**Roles.** `blast_admin::package_admin` declares four ability-free roles generic
+over the package marker: `blast_admin::package_admin::UpgradeAdmin<M>` (schedule,
+authorize and commit upgrades, schedule and execute immutability, change the
+upgrade notice), `blast_admin::package_admin::PauseAdmin<M>` (set pause bits),
+`blast_admin::package_admin::UnpauseAdmin<M>` (clear pause bits through the
+package's own unpause) and `blast_admin::package_admin::CancelAdmin<M>` (cancel
+the pending upgrade action or notice change). The ACL stores a role's type name
+with its type arguments, so `UpgradeAdmin<A>` and `UpgradeAdmin<B>` are separate
+grants and one package's administrator cannot sign in for another package.
+
+**Publication and wrap.** The package's `init` calls
+`package_version::new_publication` with its one-time witness by value and the
+bits it defines (`valid_pause_bits`; zero defines none). It claims the
+`Publisher`, seeds generation 1 and returns a `Publication<M>`, which
+`package_version::keep` transfers to the publisher. In the publication PTB the
+publisher calls `blast_admin::package_admin::wrap` with that `Publication` and
+the fresh `UpgradeCap`. Wrap seals both capabilities in `upgrade_custody`, starts
+the upgrade notice at 48 hours, and shares the `PackageAdmin<M>` and the
+`PackageVersion<M>` with every defined bit paused.
+
+**Generation.** The package compiles its own generation and passes it to
+`package_version::assert_current` in every protected call, which aborts with code
+9 unless it equals the stored one. `package_version::assert_next` checks a
+compiled generation is exactly the next one.
+`blast_admin::package_admin::commit_upgrade_and_advance` commits the native receipt
+into the sealed cap and advances the stored generation by one in the same call
+(emits `UpgradeCommitted` and `OperationalVersionAdvanced`), so the new bytecode
+must compile the next generation. Because `blast_admin` is immutable, these
+administration calls check no consumer generation: a package whose new bytecode
+compiled the wrong generation can still schedule and install a repair.
+
+**Upgrade flow (Blast admin).**
+
+1. Sign in with `UpgradeAdmin<M>` and call
+   `blast_admin::package_admin::schedule_upgrade` with the shared
+   `PackageAdmin<M>`, the witness, the 32-byte digest and `Clock`. It replaces
+   any pending action or notice change and is ready after the applied notice.
+2. After the notice, in one PTB: sign in again;
+   `blast_admin::package_admin::authorize_upgrade` with the same digest and
+   `Clock` consumes the ready action and returns an `UpgradeTicket`; the native
+   `Upgrade` command returns an `UpgradeReceipt`;
+   `blast_admin::package_admin::commit_upgrade_and_advance` takes the
+   `PackageAdmin<M>`, the `PackageVersion<M>` by mutable reference, the witness
+   and the receipt.
+
+`blast_admin::package_admin::schedule_make_immutable` and
+`blast_admin::package_admin::make_immutable` destroy the `UpgradeCap` the same
+way. `blast_admin::package_admin::schedule_upgrade_delay` proposes only a new
+notice, which anyone applies with `blast_admin::package_admin::apply_upgrade_delay`
+once ready; `blast_admin::package_admin::cancel_upgrade_action` (CancelAdmin)
+discards whatever is pending, even when ready.
+
+**Pause bits.** Each package defines its own bits at publication.
+`blast_admin::package_admin::pause` (PauseAdmin) sets bits at once and emits
+`blast_admin_events::Paused`; `package_version::assert_not_paused` aborts with
+code 25 while an operation's bit is set. Clearing goes through the package's own
+`unpause`, which checks the package's own configuration notices, then calls
+`blast_admin::package_admin::clear_pause_bits` with the `PackageAdmin<M>`, the
+`PackageVersion<M>`, the `UnpauseAdmin<M>` witness, a witness value whose type the
+package itself defines, and the bits. It aborts with code 28 for a witness type
+from another package or a primitive, with code 27 while any upgrade notice still
+to come could be zero, and emits `blast_admin_events::Unpaused`. Pause and unpause
+requests must name nonzero bits the package defines (code 23) and must change at
+least one bit (code 24).
+
 ### Delayed values, actions, sets and maps
 
 The delayed modules are a timelock in the Compound/OpenZeppelin sense: schedule,
@@ -5642,9 +5718,10 @@ entry's applied value and `delayed_map::pending` its pending
 `delayed_map::MapChange` is `Entry { entry, value }` or `Delay`.
 
 The destroy calls (`delayed::destroy`, `delayed_action::destroy`,
-`delayed_set::destroy`) abort with code 21 while anything is pending, so every
-proposal ends in an event; each emits its module's `Destroyed` event. A
-`DelayedMap` has no destroy: its entries live in a `Table`, so its owner keeps it.
+`delayed_set::destroy`, `delayed_map::destroy`) abort with code 21 while anything
+is pending, so every proposal ends in an event; each emits its module's
+`Destroyed` event. Destroying a set or map also ends its remaining members or
+entries.
 
 The launchpad's account-claim signer keys are a `DelayedSet`: ClaimSignerAdmin's admissions wait
 the set's notice, so a compromised ClaimSignerAdmin cannot sign claims without warning, and its
@@ -5702,6 +5779,8 @@ and `key`. Each map event's `change` names its entry.
 | `blast_admin_events::UpgradeCommitted` | `upgrade_custody::commit_upgrade` | new package ID and native version |
 | `blast_admin_events::UpgradePolicyRestricted` | the restrict calls | old and new policy |
 | `blast_admin_events::UpgradeCapDestroyed` | `upgrade_custody::make_immutable` | final version and policy |
+| `blast_admin_events::Paused` | `blast_admin::package_admin::pause` | bits set on package `M`'s version and the resulting mask |
+| `blast_admin_events::Unpaused` | `blast_admin::package_admin::clear_pause_bits` | bits cleared and the resulting mask |
 | `delayed::DelayedCreated` | `delayed::new` | initial value and notice |
 | `delayed::DelayedScheduled` / `delayed::DelayedCancelled` | schedule, replace, cancel | proposed value, next notice, `ready_at_ms` |
 | `delayed::DelayedApplied` | `delayed::apply` | previous and new value, applied notice |
@@ -5718,6 +5797,7 @@ and `key`. Each map event's `change` names its entry.
 | `delayed_map::MapCreated` | `delayed_map::new` | initial notice |
 | `delayed_map::MapScheduled` / `delayed_map::MapCancelled` | entry or notice proposals | `change` (entry and value, none to clear), the notice an entry change waits or the proposed notice, `ready_at_ms` |
 | `delayed_map::MapApplied` | `delayed_map::apply`, `delayed_map::apply_delay` | `change` and the notice it waited or now applied |
+| `delayed_map::MapDestroyed` | `delayed_map::destroy` | the map and its entries end |
 
 Replaying the ACL events in order reconstructs `ACL.admins` and every root
 transfer exactly. `ACL` creation emits only the root transfer's
@@ -5747,16 +5827,22 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 10 | `EOperationalVersionOverflow` | `operational_version` | generation at `u64` max |
 | 11 | `EInvalidPackagePublisher` | `upgrade_custody` | the `Publisher` is not from the package |
 | 12 | `EInvalidUpgradeCap` | `upgrade_custody` | the cap is for another package or already upgraded |
-| 13 | `EInvalidPackageDigest` | `upgrade_custody` | digest is not 32 bytes |
+| 13 | `EInvalidPackageDigest` | `upgrade_custody`; `blast_admin::package_admin` when scheduling | digest is not 32 bytes |
 | 14 | `EUpgradeCapUnavailable` | `upgrade_custody` | the package was made immutable |
 | 15 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
-| 16 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `new` is not a one-time witness |
+| 16 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `operational_version::new` or `package_version::new_publication` is not a one-time witness |
 | 17 | `ENotReady` | `delayed`; `delayed_set` for `delayed_set::apply_add`, `delayed_map` for `delayed_map::apply` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
 | 18 | `ENoPending` | the type's module | applying or cancelling when nothing is pending |
 | 19 | `EInvalidDelay` | `delayed` | a notice above `delayed::max_delay_ms` (30 days), or a deadline or next notice that would overflow a Unix millisecond timestamp; choose a notice of at most 30 days |
 | 20 | `EUnchanged` | the type's module | the proposal changes nothing, the member is already admitted, `remove` names an unknown member, or a map change repeats the entry's applied value (clearing an absent entry included) |
 | 21 | `EProposalPending` | the type's module | destroying a delayed value, action slot, set or map while a proposal is pending; cancel it first |
 | 22 | `EWrongChange` | `delayed_action` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
+| 23 | `EInvalidPauseBits` | `package_version` | pause or unpause names zero bits or a bit the package does not define |
+| 24 | `EPauseUnchanged` | `package_version` | pausing only bits already set, or clearing only bits already clear |
+| 25 | `EPaused` | `package_version` | the operation's pause bit is set; wait for Blast to unpause it |
+| 26 | `EWrongUpgradeAction` | `blast_admin::package_admin` | the ready action is not the upgrade of this digest (authorize) or not immutability (make immutable) |
+| 27 | `EUnguardedUpgradeNotice` | `blast_admin::package_admin` | clearing pause bits while the upgrade notice is zero or a pending change would make it zero |
+| 28 | `EInvalidPackageWitness` | `blast_admin::package_admin` | the witness passed to `clear_pause_bits` is a primitive or comes from another package |
 
 The one an integrator most often meets is code 9 from `operational_version`: a
 PTB built against an old package ID after an upgrade.
@@ -13308,6 +13394,12 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 20 | `EUnchanged` |  |
 | 21 | `EProposalPending` |  |
 | 22 | `EWrongChange` |  |
+| 23 | `EInvalidPauseBits` |  |
+| 24 | `EPauseUnchanged` |  |
+| 25 | `EPaused` |  |
+| 26 | `EWrongUpgradeAction` |  |
+| 27 | `EUnguardedUpgradeNotice` |  |
+| 28 | `EInvalidPackageWitness` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -13491,6 +13583,20 @@ public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
     original_package_id: address,
     final_native_version: u64,
     final_policy: u8,
+}
+
+/// Pause bits were set on a package version; `paused` is the resulting mask.
+public struct Paused<phantom PackageMarker: drop> has copy, drop {
+    package_version_id: ID,
+    bits: u8,
+    paused: u8,
+}
+
+/// Pause bits were cleared on a package version; `paused` is the resulting mask.
+public struct Unpaused<phantom PackageMarker: drop> has copy, drop {
+    package_version_id: ID,
+    bits: u8,
+    paused: u8,
 }
 ```
 
@@ -13911,6 +14017,12 @@ public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy 
     self: &mut DelayedMap<K, E, V>,
 )
 
+/// Deletes a map with no pending entry or notice change and records its end, which also
+/// ends every remaining entry.
+public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: DelayedMap<K, E, V>,
+)
+
 /// The proposed value, or none when the change clears the entry.
 public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>): Option<V>
 
@@ -13955,6 +14067,12 @@ public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
+}
+
+/// A map was deleted with nothing pending, ending every remaining entry.
+public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
 }
 ```
 
@@ -14182,6 +14300,204 @@ public fun advance<PackageMarker: drop>(
 #### Constants
 
 - `INITIAL_GENERATION: u64 = 1`
+
+### `blast_admin::package_admin`
+
+One package's sealed Publisher and UpgradeCap, its delayed upgrade decisions, and the role-gated pause controls of its `PackageVersion`, typed by the package's one-time witness.  Each role is generic over the package marker, so the ACL stores `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator never reaches another's custody. This package is immutable: no consumer bytecode generation gates these calls, and a consumer whose new bytecode compiles the wrong generation can still schedule a repair.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package_admin.move
+
+#### Types
+
+```move
+/// The exact code digest or irreversible end of upgrades approved for execution.
+public enum UpgradeAction has copy, drop, store {
+    Upgrade(vector<u8>),
+    MakeImmutable,
+}
+
+/// Keys the delayed lifecycle of one package's upgrade actions and their notice.
+public struct UpgradeKey<phantom PackageMarker: drop>() has copy, drop, store;
+
+/// Shared custody for one package's framework Publisher and UpgradeCap.
+public struct PackageAdmin<phantom PackageMarker: drop> has key {
+    id: UID,
+    custody: upgrade_custody::UpgradeCustody<PackageMarker>,
+    upgrade: delayed_action::DelayedAction<UpgradeKey<PackageMarker>, UpgradeAction>,
+}
+
+/// Schedules and executes the package's upgrades and immutability, and changes their notice.
+public struct UpgradeAdmin<phantom PackageMarker> {}
+
+/// May set the package's pause bits immediately, never clear them.
+public struct PauseAdmin<phantom PackageMarker> {}
+
+/// May clear the package's pause bits through the package's own unpause guard.
+public struct UnpauseAdmin<phantom PackageMarker> {}
+
+/// May cancel the package's scheduled upgrade action or notice change.
+public struct CancelAdmin<phantom PackageMarker> {}
+```
+
+#### Functions
+
+```move
+/// Consumes the unique publication proof, seals the native capabilities and shares both the
+/// administration and the package version. The version starts with every defined bit paused;
+/// an `UnpauseAdmin` releases it through the package's own unpause.
+public fun wrap<PackageMarker: drop>(
+    publication: package_version::Publication<PackageMarker>,
+    upgrade_cap: UpgradeCap,
+    ctx: &mut TxContext,
+)
+
+/// Schedules one exact code digest under the applied notice, replacing any previous action.
+/// Changing the notice requires a separate notice-only proposal.
+public fun schedule_upgrade<PackageMarker: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    digest: vector<u8>,
+    clock: &Clock,
+)
+
+/// Schedules the irreversible destruction of upgrade authority under the applied notice.
+public fun schedule_make_immutable<PackageMarker: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    clock: &Clock,
+)
+
+/// Cancels the scheduled action or notice change, even after its execution threshold.
+public fun cancel_upgrade_action<PackageMarker: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    _: &blast_acl::AdminWitness<CancelAdmin<PackageMarker>>,
+)
+
+/// Consumes the ready upgrade action for exactly `digest` and authorizes it under the sealed
+/// cap's current policy.
+public fun authorize_upgrade<PackageMarker: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    digest: vector<u8>,
+    clock: &Clock,
+): UpgradeTicket
+
+/// Commits the native receipt into the sealed cap and advances the package version by one
+/// generation, together. The new bytecode must compile that generation; bytecode compiling any
+/// other fails every `assert_current`, while these calls stay available to schedule a repair.
+public fun commit_upgrade_and_advance<PackageMarker: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    package_version: &mut package_version::PackageVersion<PackageMarker>,
+    _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    receipt: UpgradeReceipt,
+)
+
+/// Consumes the ready immutability action and irreversibly destroys native upgrade authority.
+public fun make_immutable<PackageMarker: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    clock: &Clock,
+)
+
+/// Proposes only a new upgrade notice, ready after the applied one; replaces any pending
+/// upgrade or immutability action.
+public fun schedule_upgrade_delay<PackageMarker: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Applies a ready notice-only proposal; anyone may call it, and it cannot consume an action.
+public fun apply_upgrade_delay<PackageMarker: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    clock: &Clock,
+)
+
+/// Sets the requested pause bits immediately.
+public fun pause<PackageMarker: drop>(
+    package_version: &mut package_version::PackageVersion<PackageMarker>,
+    _: &blast_acl::AdminWitness<PauseAdmin<PackageMarker>>,
+    bits: u8,
+)
+
+/// Clears the requested pause bits for the package's own unpause, which first checks its own
+/// configuration notices and then passes a witness its package defines. Aborts while any
+/// upgrade notice still to come could be zero. The witness proves the call came from the
+/// package's bytecode, so a role alone cannot skip that package's checks; the package must
+/// never hand its witness type to callers.
+public fun clear_pause_bits<PackageMarker: drop, PackageWitness: drop>(
+    self: &PackageAdmin<PackageMarker>,
+    package_version: &mut package_version::PackageVersion<PackageMarker>,
+    _: &blast_acl::AdminWitness<UnpauseAdmin<PackageMarker>>,
+    _: PackageWitness,
+    bits: u8,
+)
+```
+
+#### Constants
+
+- `INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: The notice every upgrade or immutability action waits from publication until changed.
+- `PACKAGE_DIGEST_LENGTH: u64 = 32`
+
+### `blast_admin::package_version`
+
+One package's publication proof, operational generation and pause bits, typed by its one-time witness.  The consumer's initializer turns its one-time witness into an owned `Publication`, which `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused. The consumer compiles its own generation constant and checks it with `assert_current`; it also chooses which pause bits exist. Setting and clearing bits and advancing the generation are sealed here and reached only through `package_admin`'s role-gated calls.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package_version.move
+
+#### Types
+
+```move
+/// Owned publication custody; it cannot supply the `PackageVersion` that operations require.
+public struct Publication<phantom PackageMarker: drop> has key {
+    id: UID,
+    publisher: Publisher,
+    valid_pause_bits: u8,
+    generation: operational_version::OperationalVersion<PackageMarker>,
+}
+
+/// The package's shared operational generation and pause bits.
+public struct PackageVersion<phantom PackageMarker: drop> has key {
+    id: UID,
+    /// The bits this package defines; every pause or unpause request must fall within them.
+    valid_pause_bits: u8,
+    paused: u8,
+    generation: operational_version::OperationalVersion<PackageMarker>,
+}
+```
+
+#### Functions
+
+```move
+/// Claims the Publisher and seeds the first generation from the package's one-time witness,
+/// so a publication can only come into existence inside that package's initializer.
+/// `valid_pause_bits` fixes the bits the package defines, and zero defines none.
+public fun new_publication<PackageMarker: drop>(
+    otw: PackageMarker,
+    valid_pause_bits: u8,
+    ctx: &mut TxContext,
+): Publication<PackageMarker>
+
+/// Transfers the publication to the transaction sender, who later wraps it with the
+/// package's `UpgradeCap`.
+public fun keep<PackageMarker: drop>(self: Publication<PackageMarker>, ctx: &mut TxContext)
+
+/// Rejects callable bytecode whose compiled generation is not the active one.
+public fun assert_current<PackageMarker: drop>(
+    self: &PackageVersion<PackageMarker>,
+    compiled_generation: u64,
+)
+
+/// Proves `compiled_generation` is exactly the generation after the active one.
+public fun assert_next<PackageMarker: drop>(
+    self: &PackageVersion<PackageMarker>,
+    compiled_generation: u64,
+)
+
+/// Rejects an operation whose pause bit is set, before its lifecycle or economic checks.
+public fun assert_not_paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>, bit: u8)
+```
 
 ### `blast_admin::upgrade_custody`
 

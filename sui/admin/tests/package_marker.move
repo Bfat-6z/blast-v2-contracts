@@ -14,8 +14,15 @@ public struct Receipt has key {
     id: UID,
 }
 
+/// A witness only this marker's package can construct, for package-gated calls.
+public struct PackageWitness() has drop;
+
 // === Test Helpers ===
 
 public fun marker(): PACKAGE_MARKER {
     PACKAGE_MARKER {}
+}
+
+public fun witness(): PackageWitness {
+    PackageWitness()
 }

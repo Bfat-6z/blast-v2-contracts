@@ -131,7 +131,8 @@ module_file() {
   esac
 }
 
-for module in blast_acl delayed delayed_action delayed_set delayed_map operational_version upgrade_custody errors blast_admin_events; do
+for module in blast_acl delayed delayed_action delayed_set delayed_map operational_version upgrade_custody \
+  package_version package_admin errors blast_admin_events; do
   [[ -f "$(module_file "$module")" ]] \
     || fail "Missing required blast_admin module: $module.move"
 done
@@ -170,7 +171,8 @@ immutable_line="$(grep -n -- '--move-call 0x2::package::make_immutable admin_upg
 [[ "$publish_line" -lt "$assign_line" && "$assign_line" -lt "$immutable_line" ]] \
   || fail "Publication must publish, bind, then consume the UpgradeCap in that order."
 
-if grep -rniE '\b(fee|pause|migration|creator|pool|venue)\b' "$package_dir/sources"; then
+# Pause bits are generic package infrastructure (ADR 0137); which bits exist stays consumer policy.
+if grep -rniE '\b(fee|migration|creator|pool|venue)\b' "$package_dir/sources"; then
   fail "Consumer product policy must not enter blast_admin production source."
 fi
 if grep -rn 'sui::event::emit' "$package_dir/sources" \
@@ -260,7 +262,7 @@ expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy
   schedule_delay take_action
 expect_delayed_surface delayed_set admission_ready_at_ms apply_add apply_delay cancel_add cancel_delay \
   contains delay_ms destroy is_guarded members new pending_count pending_delay remove schedule_add schedule_delay
-expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay delay_ms \
+expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay delay_ms destroy \
   entry_proposal_notice entry_proposal_value new pending pending_delay schedule schedule_delay value
 
 version_file="$package_dir/sources/operational_version.move"
@@ -292,5 +294,45 @@ expected_custody_public="$(printf '%s\n' \
   | sort)"
 [[ "$actual_custody_public" == "$expected_custody_public" ]] \
   || fail "The production UpgradeCustody surface changed without boundary review."
+
+package_version_file="$package_dir/sources/package_version.move"
+actual_package_version_public="$(externally_callable_function_names "$package_version_file" | sort)"
+expected_package_version_public="$(printf '%s\n' \
+  assert_current \
+  assert_next \
+  assert_not_paused \
+  keep \
+  new_publication \
+  | sort)"
+[[ "$actual_package_version_public" == "$expected_package_version_public" ]] \
+  || fail "The production package-version surface changed without boundary review."
+grep -Fqx 'public struct PackageVersion<phantom PackageMarker: drop> has key {' "$package_version_file" \
+  || fail "PackageVersion must be a key-only shared object typed by its package marker."
+grep -Fqx 'public struct Publication<phantom PackageMarker: drop> has key {' "$package_version_file" \
+  || fail "Publication must be key-only so only its own module can deliver it."
+
+package_admin_file="$package_dir/sources/package_admin.move"
+actual_package_admin_public="$(externally_callable_function_names "$package_admin_file" | sort)"
+expected_package_admin_public="$(printf '%s\n' \
+  apply_upgrade_delay \
+  authorize_upgrade \
+  cancel_upgrade_action \
+  clear_pause_bits \
+  commit_upgrade_and_advance \
+  make_immutable \
+  pause \
+  schedule_make_immutable \
+  schedule_upgrade \
+  schedule_upgrade_delay \
+  wrap \
+  | sort)"
+[[ "$actual_package_admin_public" == "$expected_package_admin_public" ]] \
+  || fail "The production package-administration surface changed without boundary review."
+grep -Fqx 'public struct PackageAdmin<phantom PackageMarker: drop> has key {' "$package_admin_file" \
+  || fail "PackageAdmin must be a key-only shared object typed by its package marker."
+for role in UpgradeAdmin PauseAdmin UnpauseAdmin CancelAdmin; do
+  grep -Fqx "public struct $role<phantom PackageMarker>()" "$package_admin_file" \
+    || fail "$role must be an ability-free role typed by its package marker."
+done
 
 printf 'blast_admin source boundaries passed\n'
