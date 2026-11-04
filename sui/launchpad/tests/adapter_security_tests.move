@@ -10,8 +10,8 @@ const DELAY: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
-public struct AdapterA() has drop;
-public struct AdapterB() has drop;
+public struct VenueA() has drop;
+public struct VenueB() has drop;
 public struct Quote() has drop;
 public enum Case has copy, drop {
     Early,
@@ -29,34 +29,34 @@ public enum Case has copy, drop {
 // === Tests ===
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
-fun adapter_early() { exercise(Case::Early); }
+fun venue_early() { exercise(Case::Early); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
-fun adapter_replacement() { exercise(Case::Replacement); }
+fun venue_replacement() { exercise(Case::Replacement); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_set)]
-fun adapter_cancelled() { exercise(Case::Cancelled); }
+fun venue_cancelled() { exercise(Case::Cancelled); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_set)]
-fun adapter_removed() { exercise(Case::Removed); }
+fun venue_removed() { exercise(Case::Removed); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_set)]
-fun adapter_replay() { exercise(Case::Replay); }
+fun venue_replay() { exercise(Case::Replay); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun adapter_stale_schedule() { exercise(Case::StaleSchedule); }
+fun venue_stale_schedule() { exercise(Case::StaleSchedule); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun adapter_stale_apply() { exercise(Case::StaleApply); }
+fun venue_stale_apply() { exercise(Case::StaleApply); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun adapter_stale_cancel() { exercise(Case::StaleCancel); }
+fun venue_stale_cancel() { exercise(Case::StaleCancel); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun adapter_stale_remove() { exercise(Case::StaleRemove); }
+fun venue_stale_remove() { exercise(Case::StaleRemove); }
 
 #[test]
-fun adapter_boundaries_and_isolation() { exercise(Case::Success); }
+fun venue_boundaries_and_isolation() { exercise(Case::Success); }
 
 // === Test Helpers ===
 
@@ -74,25 +74,25 @@ fun exercise(case: Case) {
         true
     );
     if (case == Case::StaleSchedule) version.set_for_testing(2);
-    config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
+    config.schedule_venue<VenueA>(&version, &admin, &clock);
     if (case == Case::StaleSchedule) {
         destroy(config);
         destroy(version);
         destroy(clock);
         return
     };
-    config.schedule_migration_witness<AdapterB>(&version, &admin, &clock);
+    config.schedule_venue<VenueB>(&version, &admin, &clock);
     clock.set_for_testing(1234 + DELAY - if (case == Case::Early) 1 else 0);
     if (case == Case::Replacement) {
-        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
+        config.schedule_venue<VenueA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 2 * DELAY - 1);
     };
     if (case == Case::StaleCancel || case == Case::StaleRemove || case == Case::StaleApply)
         version.set_for_testing(2);
     if (case == Case::Cancelled || case == Case::StaleCancel || case == Case::Success)
-        config.cancel_migration_witness<AdapterA>(&version, &cancel);
+        config.cancel_venue<VenueA>(&version, &cancel);
     if (case == Case::Removed || case == Case::StaleRemove)
-        config.remove_migration_witness<AdapterA>(&version, &admin);
+        config.remove_venue<VenueA>(&version, &admin);
     if (case == Case::StaleCancel || case == Case::StaleRemove) {
         destroy(config);
         destroy(version);
@@ -101,19 +101,19 @@ fun exercise(case: Case) {
     };
     if (case == Case::Success) {
         // Cancelling A must not cancel B. Re-admission after removal gets a new full notice.
-        config.apply_migration_witness<AdapterB>(&version, &clock);
-        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
+        config.apply_venue<VenueB>(&version, &clock);
+        config.schedule_venue<VenueA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 2 * DELAY);
-        config.apply_migration_witness<AdapterA>(&version, &clock);
-        config.remove_migration_witness<AdapterA>(&version, &admin);
-        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
+        config.apply_venue<VenueA>(&version, &clock);
+        config.remove_venue<VenueA>(&version, &admin);
+        config.schedule_venue<VenueA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 3 * DELAY + 1);
-        config.apply_migration_witness<AdapterA>(&version, &clock);
-        config.snapshot_for_launch<Quote>(std::type_name::with_original_ids<AdapterA>(), 9);
-        config.snapshot_for_launch<Quote>(std::type_name::with_original_ids<AdapterB>(), 9);
+        config.apply_venue<VenueA>(&version, &clock);
+        config.snapshot_for_launch<Quote>(std::type_name::with_original_ids<VenueA>(), 9);
+        config.snapshot_for_launch<Quote>(std::type_name::with_original_ids<VenueB>(), 9);
     } else {
-        config.apply_migration_witness<AdapterA>(&version, &clock);
-        if (case == Case::Replay) config.apply_migration_witness<AdapterA>(&version, &clock);
+        config.apply_venue<VenueA>(&version, &clock);
+        if (case == Case::Replay) config.apply_venue<VenueA>(&version, &clock);
     };
     destroy(config);
     destroy(version);
@@ -123,8 +123,9 @@ fun exercise(case: Case) {
 // === Imports ===
 
 use blast_fun::{
-    blast_fun::{Self as package_version}, launch_config,
-    blast_fun_domain::{AdapterAdmin, CancelAdmin, ListingAdmin}
+    blast_fun::{Self as package_version},
+    launch_config,
+    blast_fun_domain::{AdapterAdmin, CancelAdmin, ListingAdmin},
 };
 use blast_admin::blast_acl;
 use std::unit_test::destroy;

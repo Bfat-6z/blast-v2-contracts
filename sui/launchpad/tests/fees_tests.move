@@ -422,9 +422,10 @@ fun end(self: FeesFixture) {
 
 use blast_admin::blast_acl;
 
+use blast_core::bps;
+
 use blast_fun::{
     blast_fun_domain::FeeAdmin,
-    bps,
     fees::{Self, FeeLedger},
     blast_fun::{Self as package_version, PackageVersion},
     runtime_config::{Self, RuntimeConfig},

@@ -44,7 +44,7 @@ fun address_ticket_mints_supply_and_fixes_it_at_intake() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let creator_recipient = creator_authority::new_address(CREATOR);
-        let ticket = f.new_ticket(
+        let (ticket, treasury_cap) = f.new_ticket(
             MEME_DECIMALS,
             creator_recipient,
             false,
@@ -65,6 +65,7 @@ fun address_ticket_mints_supply_and_fixes_it_at_intake() {
         );
 
         transfer::public_transfer(ticket, LAUNCHER);
+        transfer::public_transfer(treasury_cap, LAUNCHER);
     });
 
     fixture.next_tx_expecting_events!(LAUNCHER, 1, |f| {
@@ -74,6 +75,7 @@ fun address_ticket_mints_supply_and_fixes_it_at_intake() {
         assert!(currency.total_supply().is_none());
 
         let (meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(
+            f.take_treasury_cap(),
             &mut currency,
             MEME_TOTAL_SUPPLY,
         );
@@ -103,7 +105,7 @@ fun account_ticket_is_composable_and_records_burn_only_selection() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let creator_recipient = creator_authority::new_account(account_commitment);
-        let ticket = f.new_ticket(
+        let (ticket, treasury_cap) = f.new_ticket(
             MEME_DECIMALS,
             creator_recipient,
             true,
@@ -129,6 +131,7 @@ fun account_ticket_is_composable_and_records_burn_only_selection() {
         expected_metadata_cap_id = metadata_cap_id;
 
         transfer::public_transfer(ticket, CREATOR);
+        transfer::public_transfer(treasury_cap, CREATOR);
     });
 
     fixture.next_tx_expecting_events!(CREATOR, 1, |f| {
@@ -137,6 +140,7 @@ fun account_ticket_is_composable_and_records_burn_only_selection() {
         assert_eq!(object::id(&ticket), expected_ticket_id);
 
         let (meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(
+            f.take_treasury_cap(),
             &mut currency,
             MEME_TOTAL_SUPPLY,
         );
@@ -164,7 +168,7 @@ fun ticket_accepts_fifty_percent_sell_burn() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let creator_recipient = creator_authority::new_address(CREATOR);
-        let ticket = f.new_ticket(
+        let (ticket, treasury_cap) = f.new_ticket(
             MEME_DECIMALS,
             creator_recipient,
             false,
@@ -184,6 +188,7 @@ fun ticket_accepts_fifty_percent_sell_burn() {
             ),
         );
         destroy(ticket);
+        destroy(treasury_cap);
     });
 
     fixture.end();
@@ -199,7 +204,7 @@ fun address_ticket_rejects_zero_creator_before_currency_creation() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let creator_recipient = creator_authority::new_address(@0x0);
-        let ticket = f.new_ticket(
+        let (ticket, treasury_cap) = f.new_ticket(
             MEME_DECIMALS,
             creator_recipient,
             false,
@@ -207,6 +212,7 @@ fun address_ticket_rejects_zero_creator_before_currency_creation() {
         );
 
         destroy(ticket);
+        destroy(treasury_cap);
     });
 
     fixture.end();
@@ -222,7 +228,7 @@ fun account_ticket_rejects_invalid_commitment_before_currency_creation() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let creator_recipient = creator_authority::new_account(x"1122");
-        let ticket = f.new_ticket(
+        let (ticket, treasury_cap) = f.new_ticket(
             MEME_DECIMALS,
             creator_recipient,
             true,
@@ -230,6 +236,7 @@ fun account_ticket_rejects_invalid_commitment_before_currency_creation() {
         );
 
         destroy(ticket);
+        destroy(treasury_cap);
     });
 
     fixture.end();
@@ -245,7 +252,7 @@ fun ticket_rejects_the_first_sell_burn_above_fifty_percent() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let creator_recipient = creator_authority::new_address(CREATOR);
-        let ticket = f.new_ticket(
+        let (ticket, treasury_cap) = f.new_ticket(
             MEME_DECIMALS,
             creator_recipient,
             false,
@@ -253,6 +260,7 @@ fun ticket_rejects_the_first_sell_burn_above_fifty_percent() {
         );
 
         destroy(ticket);
+        destroy(treasury_cap);
     });
 
     fixture.end();
@@ -263,7 +271,7 @@ fun six_decimal_ticket_mints_exactly_one_billion_whole_tokens() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket(
+        let (ticket, treasury_cap) = f.new_ticket(
             SIX_DECIMALS,
             creator_authority::new_address(CREATOR),
             false,
@@ -273,13 +281,14 @@ fun six_decimal_ticket_mints_exactly_one_billion_whole_tokens() {
         assert_eq!(ticket.decimals(), SIX_DECIMALS);
 
         transfer::public_transfer(ticket, LAUNCHER);
+        transfer::public_transfer(treasury_cap, LAUNCHER);
     });
 
     fixture.next_tx_expecting_events!(LAUNCHER, 1, |f| {
         let mut currency = f.take_currency();
         let (meme, metadata_cap, _, _) = f
             .take_ticket()
-            .destroy(&mut currency, SIX_DECIMAL_SUPPLY);
+            .destroy(f.take_treasury_cap(), &mut currency, SIX_DECIMAL_SUPPLY);
 
         assert_eq!(currency.decimals(), SIX_DECIMALS);
         assert_eq!(currency.total_supply().destroy_some(), SIX_DECIMAL_SUPPLY);
@@ -310,7 +319,7 @@ fun ticket_rejects_a_type_that_is_not_a_one_time_witness() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = launch_ticket::new(
+        let (ticket, treasury_cap) = launch_ticket::new(
             NotAWitness(),
             MEME_DECIMALS,
             b"TICKET".to_string(),
@@ -324,6 +333,7 @@ fun ticket_rejects_a_type_that_is_not_a_one_time_witness() {
         );
 
         destroy(ticket);
+        destroy(treasury_cap);
     });
 
     fixture.end();
@@ -395,7 +405,7 @@ fun new_ticket(
     creator_recipient: CreatorRecipient,
     burnable: bool,
     sell_burn_bps: u64,
-): LaunchTicket<LAUNCH_TICKET_TESTS> {
+): (LaunchTicket<LAUNCH_TICKET_TESTS>, TreasuryCap<LAUNCH_TICKET_TESTS>) {
     launch_ticket::new(
         test_utils::create_one_time_witness<LAUNCH_TICKET_TESTS>(),
         decimals,
@@ -411,6 +421,10 @@ fun new_ticket(
 }
 
 fun take_ticket(self: &TicketFixture): LaunchTicket<LAUNCH_TICKET_TESTS> {
+    self.scenario.take_from_sender()
+}
+
+fun take_treasury_cap(self: &TicketFixture): TreasuryCap<LAUNCH_TICKET_TESTS> {
     self.scenario.take_from_sender()
 }
 
@@ -434,4 +448,10 @@ use blast_fun::{
 
 use std::{bcs, type_name, unit_test::{assert_eq, destroy}};
 
-use sui::{coin_registry::Currency, event, test_scenario::{Self, Scenario}, test_utils};
+use sui::{
+    coin::TreasuryCap,
+    coin_registry::Currency,
+    event,
+    test_scenario::{Self, Scenario},
+    test_utils,
+};

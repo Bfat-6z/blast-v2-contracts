@@ -681,9 +681,10 @@ use blast_admin::{
     delayed_set::{MemberRemoved, SetApplied, SetCancelled, SetScheduled},
 };
 
+use blast_core::bps::{Self, Bps};
+
 use blast_fun::{
     blast_fun_domain::{CancelAdmin, ClaimSignerAdmin, FeeAdmin, TreasuryAdmin},
-    bps::{Self, Bps},
     blast_fun::{Self as package_version, PackageVersion},
     runtime_config::{Self, ClaimSignerKey, ProtocolFeeShareKey, RuntimeConfig, TreasuryKey},
 };

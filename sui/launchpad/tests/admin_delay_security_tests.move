@@ -16,6 +16,7 @@ public enum Setting has copy, drop, store {
     Treasury,
     TradeFees,
     Allocation,
+    LpFees,
     CreationFee,
 }
 
@@ -137,6 +138,30 @@ fun allocation_stale_cancel() { exercise(Setting::Allocation, Case::StaleCancel)
 
 #[test]
 fun allocation_boundaries_and_cancel_reschedule() { exercise(Setting::Allocation, Case::Success); }
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun lp_fees_early() { exercise(Setting::LpFees, Case::Early); }
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+fun lp_fees_replacement_restarts_notice() { exercise(Setting::LpFees, Case::Replacement); }
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun lp_fees_cancelled() { exercise(Setting::LpFees, Case::Cancelled); }
+
+#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+fun lp_fees_replay() { exercise(Setting::LpFees, Case::Replay); }
+
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun lp_fees_stale_schedule() { exercise(Setting::LpFees, Case::StaleSchedule); }
+
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun lp_fees_stale_apply() { exercise(Setting::LpFees, Case::StaleApply); }
+
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+fun lp_fees_stale_cancel() { exercise(Setting::LpFees, Case::StaleCancel); }
+
+#[test]
+fun lp_fees_boundaries_and_cancel_reschedule() { exercise(Setting::LpFees, Case::Success); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun creation_fee_early() { exercise(Setting::CreationFee, Case::Early); }
@@ -306,6 +331,18 @@ fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
                     &f.clock
                 );
         },
+        Setting::LpFees => {
+            f
+                .config
+                .schedule_protocol_lp_fees(
+                    &f.version,
+                    &blast_acl::witness_for_testing<FeeAdmin>(),
+                    bps::new(n),
+                    bps::new(n + 1),
+                    172_800_000,
+                    &f.clock
+                );
+        },
         Setting::CreationFee => {
             f
                 .config
@@ -327,6 +364,7 @@ fun apply(f: &mut Fixture, setting: Setting) {
         Setting::Treasury => { f.runtime.apply_treasury(&f.version, &f.clock); },
         Setting::TradeFees => { f.config.apply_trade_fees(&f.version, &f.clock); },
         Setting::Allocation => { f.config.apply_protocol_allocation(&f.version, &f.clock); },
+        Setting::LpFees => { f.config.apply_protocol_lp_fees(&f.version, &f.clock); },
         Setting::CreationFee => { f.config.apply_creation_fee(&f.version, &f.clock); },
     }
 }
@@ -355,6 +393,11 @@ fun cancel(f: &mut Fixture, setting: Setting) {
                     &blast_acl::witness_for_testing<CancelAdmin>()
                 );
         },
+        Setting::LpFees => {
+            f
+                .config
+                .cancel_protocol_lp_fees(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        },
         Setting::CreationFee => {
             f
                 .config
@@ -375,6 +418,10 @@ fun snapshot(f: &Fixture, setting: Setting): vector<u8> {
             let a = f.config.protocol_allocation();
             bcs::to_bytes(&vector[a.meme_bps().value(), a.quote_bps().value()])
         },
+        Setting::LpFees => {
+            let (meme_bps, quote_bps) = f.config.protocol_lp_fees();
+            bcs::to_bytes(&vector[meme_bps.value(), quote_bps.value()])
+        },
         Setting::CreationFee => { bcs::to_bytes(&f.config.creation_fee()) },
     }
 }
@@ -386,6 +433,7 @@ fun expected(setting: Setting, n: u64): vector<u8> {
         Setting::Treasury => { bcs::to_bytes(&(if (n == 100) @0x100 else if (n == 200) @0x200 else @0x300)) },
         Setting::TradeFees => { bcs::to_bytes(&vector[n, n + 1]) },
         Setting::Allocation => { bcs::to_bytes(&vector[n, n + 1]) },
+        Setting::LpFees => { bcs::to_bytes(&vector[n, n + 1]) },
         Setting::CreationFee => { bcs::to_bytes(&n) },
     }
 }
@@ -398,6 +446,7 @@ fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
         Setting::Treasury => { expected(setting, n) },
         Setting::TradeFees => { u64_fields_bytes(vector[n, n + 1]) },
         Setting::Allocation => { u64_fields_bytes(vector[n, n + 1]) },
+        Setting::LpFees => { u64_fields_bytes(vector[n, n + 1]) },
         Setting::CreationFee => { expected(setting, n) },
     };
     if (scheduled) {
@@ -414,6 +463,8 @@ fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
         else last_cancelled<TradeFeesKey, TradeFees>(),
         Setting::Allocation => if (scheduled) last_scheduled<ProtocolAllocationKey, ProtocolAllocation>()
         else last_cancelled<ProtocolAllocationKey, ProtocolAllocation>(),
+        Setting::LpFees => if (scheduled) last_scheduled<ProtocolLpFeesKey, ProtocolLpFees>()
+        else last_cancelled<ProtocolLpFeesKey, ProtocolLpFees>(),
         Setting::CreationFee => if (scheduled) last_scheduled<CreationFeeKey, u64>()
         else last_cancelled<CreationFeeKey, u64>(),
     };
@@ -444,16 +495,19 @@ fun last_cancelled<K: copy + drop + store, T: copy + drop + store>(): vector<u8>
 
 // === Imports ===
 
+use blast_core::bps::{Self, Bps};
+
 use blast_fun::{
     allocation::ProtocolAllocation,
     blast_fun::{Self as package_version, PackageVersion},
     blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin},
-    bps::{Self, Bps},
     launch_config::{
         Self,
         CreationFeeKey,
         LaunchConfig,
         ProtocolAllocationKey,
+        ProtocolLpFees,
+        ProtocolLpFeesKey,
         TradeFees,
         TradeFeesKey,
     },
