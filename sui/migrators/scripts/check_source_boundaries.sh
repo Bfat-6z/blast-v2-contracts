@@ -162,6 +162,7 @@ package_surface="$(for source in "$SOURCE_DIR"/*.move; do
 done | LC_ALL=C sort)"
 require_text "$package_surface" \
     "the package's public and package functions must have exactly the pinned signatures" <<'EOF'
+blast_events:package:fun bluefin_pool_tier_recorded<Meme, Quote>(tick_spacing: u32, fee_rate: u64)
 blast_events:package:fun cetus_pool_reserved<Meme, Quote>(pool_creation_cap_id: ID, tick_spacing: u32)
 blast_fun_migrators:package:fun advance(self: &mut PackageVersion)
 blast_fun_migrators:package:fun assert_current(self: &PackageVersion)
@@ -181,8 +182,6 @@ cetus:public:fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>( self: &m
 constants:package:fun auto_lp_margin(): u256
 constants:package:fun bluefin_max_fee_rate(): u64
 constants:package:fun bluefin_max_tick_spacing(): u32
-constants:package:fun digest_length(): u64
-constants:package:fun max_reward_leaves(): u64
 constants:package:fun max_swap_sqrt_price(): u128
 constants:package:fun min_swap_sqrt_price(): u128
 constants:package:fun q128_shift(): u8
@@ -389,20 +388,29 @@ fi
 
 # === Events ===
 #
-# The package's one replay fact is the Cetus pool reservation, a direct, strongly typed payload
-# with exactly one emitter, written only by `cetus::prepare`. Vault creation, LP-fee collection,
+# The package's two replay facts are the pool tier each venue records while preparing a pair: the
+# Cetus pool reservation, written only by `cetus::prepare`, and the Bluefin pool tier, written only
+# by `bluefin::prepare` after it stores the tier and before it issues the ticket. Each is a direct,
+# strongly typed payload with exactly one emitting helper. Vault creation, LP-fee collection,
 # auto-LP, buybacks, owner claims, and holder rewards are `blast_vault` events, and delayed
 # settings and upgrade custody record their lifecycle through `blast_admin`, so no migrator event
 # may restate them.
 [[ "$(move_facts "$EVENTS_SOURCE" | awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' \
-    | LC_ALL=C sort | tr '\n' ' ')" == 'CetusPoolReserved ' ]] || \
-    fail "blast_events.move must declare exactly the Cetus pool reservation payload"
+    | LC_ALL=C sort | tr '\n' ' ')" == 'BluefinPoolTierRecorded CetusPoolReserved ' ]] || \
+    fail "blast_events.move must declare exactly the Cetus pool reservation and Bluefin pool tier payloads"
 [[ "$(move_production_type CetusPoolReserved <<<"$(move_facts "$EVENTS_SOURCE")")" \
     == 'struct CetusPoolReserved has copy, drop { meme: TypeName, quote: TypeName, pool_creation_cap_id: ID, tick_spacing: u32, }' ]] || \
     fail "CetusPoolReserved must record the pair, the reserved capability, and the tick spacing"
+[[ "$(move_production_type BluefinPoolTierRecorded <<<"$(move_facts "$EVENTS_SOURCE")")" \
+    == 'struct BluefinPoolTierRecorded has copy, drop { meme: TypeName, quote: TypeName, tick_spacing: u32, fee_rate: u64, }' ]] || \
+    fail "BluefinPoolTierRecorded must record the pair, the tick spacing, and the fee rate"
 [[ "$(rg -c 'sui::event::emit\(CetusPoolReserved \{' "$EVENTS_SOURCE" || true)" -eq 1 \
-    && "$(rg -o 'sui::event::emit' "$EVENTS_SOURCE" | wc -l)" -eq 1 ]] || \
-    fail "CetusPoolReserved must be the one payload, emitted directly by exactly one helper"
+    && "$(rg -c 'sui::event::emit\(BluefinPoolTierRecorded \{' "$EVENTS_SOURCE" || true)" -eq 1 \
+    && "$(rg -o 'sui::event::emit' "$EVENTS_SOURCE" | wc -l)" -eq 2 ]] || \
+    fail "CetusPoolReserved and BluefinPoolTierRecorded must be the only payloads, each emitted directly by exactly one helper"
+[[ "$(move_facts "$EVENTS_SOURCE" | awk -F'\t' '$1 == "FN" && $6 == 0 && index($10, "sui::event::emit(CetusPoolReserved {") > 0 { print $2 }')" == 'cetus_pool_reserved' \
+    && "$(move_facts "$EVENTS_SOURCE" | awk -F'\t' '$1 == "FN" && $6 == 0 && index($10, "sui::event::emit(BluefinPoolTierRecorded {") > 0 { print $2 }')" == 'bluefin_pool_tier_recorded' ]] || \
+    fail "each migrator event must be emitted only by its own typed helper"
 if rg -q 'sui::event::emit' "$SOURCE_DIR" --glob '*.move' --glob '!blast_events.move'; then
     fail "state modules must emit only through typed events helpers"
 fi
@@ -421,6 +429,13 @@ reservation_writers="$(for source in "$SOURCE_DIR"/*.move; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 [[ "$reservation_writers" == 'cetus:prepare ' ]] || \
     fail "CetusPoolReserved must be emitted only by cetus:prepare (found: ${reservation_writers:-none})"
+tier_writers="$(for source in "$SOURCE_DIR"/*.move; do
+    [[ "$source" == "$EVENTS_SOURCE" ]] && continue
+    move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
+        '$1 == "FN" && $6 == 0 && index($10, "blast_events::bluefin_pool_tier_recorded<") > 0 { print module ":" $2 }'
+done | LC_ALL=C sort | tr '\n' ' ')"
+[[ "$tier_writers" == 'bluefin:prepare ' ]] || \
+    fail "BluefinPoolTierRecorded must be emitted only by bluefin:prepare (found: ${tier_writers:-none})"
 
 # === Vault custody ===
 #
@@ -482,12 +497,12 @@ done | LC_ALL=C sort | tr '\n' ' ')"
 require_pattern "$BLUEFIN_SOURCE" 'public struct Venue\(\) has drop;' 'sealed Bluefin venue witness'
 # Bluefin has exactly one preparation, one atomic migrate route, one collection entry, one settled
 # update entry, and one buyback entry. Preparation checks the creator's tier against Bluefin's
-# bounds, records it, and issues the ticket; migration reads that tier, redeems the hand-off,
-# creates and funds the pool, creates and shares the vault holding the venue position, then shares
-# the pool; and every fee exit splits the collected position's fees through the vault and adds the
-# auto-LP share back to the same position. The buyback swaps the admin's `quote_in` of the vault's
-# burn Quote for Meme in the vault's own pool and hands the result to the vault, which checks the
-# admin's minimum and burns it.
+# bounds, records it, emits the tier, and issues the ticket; migration reads that tier, redeems
+# the hand-off, creates and funds the pool, creates and shares the vault holding the venue
+# position, then shares the pool; and every fee exit splits the collected position's fees
+# through the vault and adds the auto-LP share back to the same position. The buyback swaps the
+# admin's `quote_in` of the vault's burn Quote for Meme in the vault's own pool and hands the
+# result to the vault, which checks the admin's minimum and burns it.
 bluefin_facts="$(move_facts "$BLUEFIN_SOURCE")"
 [[ "$bluefin_facts" != *MALFORMED* ]] || fail "the Move reader rejected bluefin.move"
 bluefin_public="$(awk -F'\t' '$1 == "FN" && $3 == "public" && $6 == 0 { print $2 }' <<<"$bluefin_facts" \
@@ -498,11 +513,11 @@ bluefin_body() {
     awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name { print $10 }' <<<"$bluefin_facts" \
         | tr -d '[:space:]' | sed 's/,)/)/g'
 }
-[[ "$(bluefin_body prepare)" == 'migrators_version.assert_current();assert!(tick_spacing>0&&tick_spacing<=constants::bluefin_max_tick_spacing!()&&fee_rate>0&&fee_rate<=constants::bluefin_max_fee_rate!(),EInvalidTier);venue_config.add_value(PoolTierKey<Meme>(),PoolTier{tick_spacing,fee_rate});migration::issue_ticket(Venue())' ]] \
+[[ "$(bluefin_body prepare)" == 'migrators_version.assert_current();assert!(tick_spacing>0&&tick_spacing<=constants::bluefin_max_tick_spacing!()&&fee_rate>0&&fee_rate<=constants::bluefin_max_fee_rate!(),EInvalidTier);venue_config.add_value(PoolTierKey<Meme>(),PoolTier{tick_spacing,fee_rate});blast_events::bluefin_pool_tier_recorded<Meme,Quote>(tick_spacing,fee_rate);migration::issue_ticket(Venue())' ]] \
     && [[ "$(move_production_type PoolTier <<<"$bluefin_facts")" == 'struct PoolTier has copy, drop, store { tick_spacing: u32, fee_rate: u64, }' ]] \
     && [[ "$(constant_body bluefin_max_tick_spacing)" == '400' ]] \
     && [[ "$(constant_body bluefin_max_fee_rate)" == '20_000' ]] || \
-    fail "bluefin::prepare must bound the tier to Bluefin's 1..=400 tick spacing and 1..=20,000 fee rate, record it, then issue the ticket"
+    fail "bluefin::prepare must bound the tier to Bluefin's 1..=400 tick spacing and 1..=20,000 fee rate, record it, emit its tier event, then issue the ticket"
 bluefin_migrate_body="$(bluefin_body migrate)"
 # Migration reads the recorded tier and the full-range bounds from Bluefin's config, redeems the
 # hand-off, creates the named pool priced from the handed-off balances with the caller's whole
