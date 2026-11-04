@@ -64,7 +64,10 @@ public fun new<Meme, Quote>(
 ): (PresaleInitializer<Meme, Quote>, FinalizeTicket<Meme, Quote>) {
     package_version.assert_current();
 
-    assert!(dao_fee_bps > 0 && dao_fee_bps <= MAX_DAO_FEE_BPS, EInvalidDaoFee);
+    assert!(
+        dao_fee_bps > 0 && dao_fee_bps <= constants::aftermath_max_dao_fee_bps!(),
+        EInvalidDaoFee,
+    );
 
     venue_config.add_pool_tier<Meme, Quote, _>(&Venue(), 0, dao_fee_bps as u64);
 
@@ -283,10 +286,10 @@ fun create_pool_2_coins<Lp, Coin1, Coin2>(
     pool_factory::create_pool_2_coins_v2(
         create_pool_cap,
         pool_registry,
-        POOL_NAME,
-        vector[HALF_WEIGHT, HALF_WEIGHT],
-        FLATNESS,
-        vector[BASE_SWAP_FEE, BASE_SWAP_FEE],
+        constants::aftermath_pool_name!(),
+        vector[constants::aftermath_half_weight!(), constants::aftermath_half_weight!()],
+        constants::aftermath_flatness!(),
+        vector[constants::aftermath_base_swap_fee!(), constants::aftermath_base_swap_fee!()],
         vector[0, 0],
         vector[0, 0],
         vector[0, 0],
@@ -431,24 +434,6 @@ public struct DaoFeePoolCreated<phantom Lp, phantom Meme, phantom Quote> has cop
     lp_coin_id: ID,
 }
 
-// === Constants ===
-
-/// Aftermath's own bound on a DAO fee, the whole amount, which its DAO-fee pool creation asserts
-/// as `fee_bps <= 10_000`.
-const MAX_DAO_FEE_BPS: u16 = 10_000;
-
-/// Each coin's weight: half of Aftermath's `1e18` fixed-point one.
-const HALF_WEIGHT: u64 = 500_000_000_000_000_000;
-
-/// Selects Aftermath's uncorrelated weighted-product curve.
-const FLATNESS: u64 = 0;
-
-/// Aftermath's minimum base swap-in fee, 0.01% in its `1e18` unit; it rejects zero. This part
-/// compounds into the locked LP.
-const BASE_SWAP_FEE: u64 = 100_000_000_000_000;
-
-const POOL_NAME: vector<u8> = b"Blast Presale Pool";
-
 // === Errors ===
 
 #[error(code = 0)]
@@ -473,6 +458,7 @@ use amm::{pool::{CreatePoolCapV2, Pool}, pool_factory, pool_registry::PoolRegist
 use blast_presale::{
     blast_presale::{Self as presale, Presale, PresaleCap, PresaleInitializer},
     blast_presale_package::PackageVersion,
+    constants,
     creation_policy::CreationPolicy,
     fee_policy::FeePolicy,
     presale_vault::{Self as vault, Vault},

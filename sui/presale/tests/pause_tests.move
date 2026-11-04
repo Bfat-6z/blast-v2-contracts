@@ -18,6 +18,15 @@ public struct MIGRATOR() has drop;
 // === Tests ===
 
 #[test]
+/// Pins the on-chain pause layout that operators and the admin console address by number.
+fun pause_bit_layout_is_stable() {
+    assert_eq!(constants::create_pause_bit!(), 1);
+    assert_eq!(constants::commit_pause_bit!(), 2);
+    assert_eq!(constants::migration_pause_bit!(), 8);
+    assert_eq!(constants::valid_pause_bits!(), 11);
+}
+
+#[test]
 #[expected_failure(abort_code = marker::EInvalidPauseBits, location = blast_presale::blast_presale_package)]
 fun pausing_zero_bits_is_rejected() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
@@ -532,6 +541,7 @@ use blast_presale::{
     blast_presale_domain::{AdapterAdmin, FeeAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin},
     blast_presale_package as marker,
     bps,
+    constants,
     creation_policy::{Self, CreationPolicy},
     fee_policy::{Self, FeePolicy},
     package_admin::{Self, PackageAdmin},

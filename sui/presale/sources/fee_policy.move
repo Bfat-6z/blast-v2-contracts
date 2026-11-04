@@ -139,9 +139,10 @@ public(package) fun protocol_fees(
     lp_fee_quote_bps: Bps,
 ): ProtocolFees {
     assert!(
-        raise_bps.value() <= MAX_RAISE_BPS && token_bps.value() <= MAX_TOKEN_BPS
-            && lp_fee_meme_bps.value() <= MAX_LP_FEE_BPS
-            && lp_fee_quote_bps.value() <= MAX_LP_FEE_BPS,
+        raise_bps.value() <= constants::max_raise_bps!()
+            && token_bps.value() <= constants::max_token_bps!()
+            && lp_fee_meme_bps.value() <= constants::max_lp_fee_bps!()
+            && lp_fee_quote_bps.value() <= constants::max_lp_fee_bps!(),
         EInvalidFees,
     );
 
@@ -291,17 +292,6 @@ public fun destroy_for_testing(self: FeePolicy) {
     id.delete();
 }
 
-// === Constants ===
-
-/// Blast's largest share of a sale's raise.
-const MAX_RAISE_BPS: u64 = 1_000;
-
-/// Blast's largest share of a sale's tokens.
-const MAX_TOKEN_BPS: u64 = 1_000;
-
-/// Blast's largest share of each LP fee, Meme and Quote.
-const MAX_LP_FEE_BPS: u64 = 3_000;
-
 // === Errors ===
 
 #[error(code = 0)]
@@ -323,5 +313,6 @@ use sui::clock::Clock;
 use blast_presale::{
     blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin},
     blast_presale_package::{PackageVersion},
-    bps::{Self, Bps}
+    bps::{Self, Bps},
+    constants
 };

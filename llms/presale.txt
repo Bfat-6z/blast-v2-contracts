@@ -2003,14 +2003,6 @@ public struct DaoFeePoolCreated<phantom Lp, phantom Meme, phantom Quote> has cop
 | `EInvalidDaoFee` | 3 | Aftermath DAO fee needs 1..=10,000 basis points. |
 | `EWrongVault` | 4 | Only an Aftermath vault's fees are collected here. |
 
-#### Constants
-
-- `MAX_DAO_FEE_BPS: u16 = 10_000`: Aftermath's own bound on a DAO fee, the whole amount, which its DAO-fee pool creation asserts as `fee_bps <= 10_000`.
-- `HALF_WEIGHT: u64 = 500_000_000_000_000_000`: Each coin's weight: half of Aftermath's `1e18` fixed-point one.
-- `FLATNESS: u64 = 0`: Selects Aftermath's uncorrelated weighted-product curve.
-- `BASE_SWAP_FEE: u64 = 100_000_000_000_000`: Aftermath's minimum base swap-in fee, 0.01% in its `1e18` unit; it rejects zero. This part compounds into the locked LP.
-- `POOL_NAME: vector<u8> = b"Blast Presale Pool"`
-
 ### `blast_presale::blast_presale`
 
 Standalone presales with capped commitments, proportional fills or a first-come hard cap, migration-gated claims, and full refunds when a sale does not migrate.
@@ -2245,17 +2237,18 @@ public fun vested_recipient_share(
     vesting: VestingTerms,
 ): RecipientShare
 
-/// Linear vesting terms. The steps and cliff must fit in `MAX_VESTING_DURATION_MS`, so migration and
-/// claims can always create the schedule. Product limits on the duration belong to creation tooling.
+/// Linear vesting terms. The steps and cliff must fit in `constants::max_vesting_duration_ms!()`,
+/// so migration and claims can always create the schedule. Product limits on the duration belong
+/// to creation tooling.
 public fun vesting_terms(
     vesting_cliff_delay_ms: u64,
     vesting_period_duration_ms: u64,
     periods: u64,
 ): VestingTerms
 
-/// The LP-fee split a sale and its vault pay collected fees under: at most `MAX_FEE_RECIPIENTS`
-/// distinct unvested recipients whose shares total exactly 10,000 BPS with the holder-reward
-/// share. The creator takes its LP fees as one of the recipients.
+/// The LP-fee split a sale and its vault pay collected fees under: at most
+/// `constants::max_fee_recipients!()` distinct unvested recipients whose shares total exactly
+/// 10,000 BPS with the holder-reward share. The creator takes its LP fees as one of the recipients.
 public fun fee_split(fee_recipients: vector<RecipientShare>, holder_rewards_bps: bps::Bps): FeeSplit
 
 /// Starts a presale of `SaleToken` raising `Quote` for the migrator that constructs
@@ -2697,14 +2690,6 @@ public struct Claimed<phantom SaleToken, phantom Quote> has copy, drop {
 | `EAboveFeePolicy` | 36 | A sale fee override cannot exceed the currently applied fee policy. |
 | `EProtocolFeesIncreased` | 37 | A shared sale's fee override may only keep or lower each of its rates. |
 
-#### Constants
-
-- `MAX_PARTICIPANTS: u64 = 65_536`: Technical bound on the dynamic commitment records one presale may hold.
-- `MAX_RECIPIENTS: u64 = 64`: Bounds the token and raise recipient lists, both paid in the one migration transaction.
-- `MAX_FEE_RECIPIENTS: u64 = 16`: Bounds the transfers one fee collection makes.
-- `MIN_LIQUIDITY_WINDOW_DURATION_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The shortest LP-migration window. Migration is permissionless, so a funded sale reaches its refund exit only after a week in which nobody migrated it, and a sale that nobody settled by its end cannot be settled and cancelled in one transaction inside that week.
-- `MAX_VESTING_DURATION_MS: u64 = 1 << 63`: A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292 million years, the schedule's end still fits in u64, so migration cannot overflow creating it.
-
 ### `blast_presale::blast_presale_domain`
 
 Blast presale's administration roles in the shared Blast ACL.  A role is a type. An `AdminCap` holding `Role` signs in to `AdminWitness<Role>`, and a function's witness parameter names the one role it accepts, so no role authorizes another's actions and a role from any other package cannot reach these operations.
@@ -2809,7 +2794,6 @@ public struct Unpaused has copy, drop {
 
 - `PACKAGE_VERSION: u64 = 1`: Current package generation accepted by every protected mutation.
 - `NEXT_PACKAGE_VERSION: u64 = 2`: The generation this bytecode hands over to in a governed upgrade.
-- `VALID_PAUSE_BITS: u8 = 11`
 
 ### `blast_presale::bluefin`
 
@@ -2906,12 +2890,6 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
 | `EInvalidTier` | 1 | Bluefin tier needs tick spacing 1..=400 and fee rate 1..=20,000. |
 | `ESymbolTooLong` | 2 | The Meme symbol must be at most 32 bytes for Bluefin migration. |
 
-#### Constants
-
-- `MAX_TICK_SPACING: u32 = 400`
-- `MAX_POOL_FEE_RATE: u64 = 20_000`
-- `MAX_MEME_SYMBOL_LENGTH: u64 = 32`: Bluefin stores the pool name, built from this symbol, twice in every `Position`; the bound keeps a migrated position inside Sui's object size limit (ADR 0088).
-
 ### `blast_presale::bps`
 
 Validated basis-points values and explicit rounded application.
@@ -2941,10 +2919,6 @@ public fun apply_up(self: Bps, amount: u64): u64
 | Constant | Code | Message |
 | --- | --- | --- |
 | `EInvalidBps` | 0 | A basis-points rate must be at most 10,000. |
-
-#### Constants
-
-- `DENOMINATOR: u64 = 10_000`
 
 ### `blast_presale::cetus`
 
@@ -3050,6 +3024,39 @@ public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
 | `EInvalidCoinOrder` | 0 | CoinA and CoinB must follow the Cetus coin order. |
 | `EPositionPoolMismatch` | 1 | Pool must be the one holding the position. |
 | `EWrongCoinPair` | 2 | CoinA and CoinB must be exactly the presale's Meme and Quote. |
+
+### `blast_presale::constants`
+
+Package-wide presale constants exposed as zero-cost macros.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/constants.move
+
+#### Constants
+
+- `create_pause_bit: u8 = 1`: Stops presale creation and sharing.
+- `commit_pause_bit: u8 = 2`: Stops open, allowlisted, and uncapped commitments.
+- `migration_pause_bit: u8 = 8`: Stops LP migration. Bit 4 is unassigned.
+- `valid_pause_bits: u8 = blast_presale::constants::create_pause_bit!() | blast_presale::constants::commit_pause_bit!() | blast_presale::constants::migration_pause_bit!()`: Every supported presale pause flag.
+- `basis_points_denominator: u64 = 10_000`: Denominator for rates expressed in basis points.
+- `max_participants: u64 = 65_536`: Technical bound on the dynamic commitment records one presale may hold.
+- `max_recipients: u64 = 64`: Bounds the token and raise recipient lists, both paid in the one migration transaction.
+- `max_fee_recipients: u64 = 16`: Bounds the transfers one fee collection makes.
+- `min_liquidity_window_duration_ms: u64 = 7 * 24 * 60 * 60 * 1_000`: The shortest LP-migration window. Migration is permissionless, so a funded sale reaches its refund exit only after a week in which nobody migrated it, and a sale that nobody settled by its end cannot be settled and cancelled in one transaction inside that week.
+- `max_vesting_duration_ms: u64 = 1 << 63`: A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292 million years, the schedule's end still fits in u64, so migration cannot overflow creating it.
+- `max_raise_bps: u64 = 1_000`: Blast's largest share of a sale's raise.
+- `max_token_bps: u64 = 1_000`: Blast's largest share of a sale's tokens.
+- `max_lp_fee_bps: u64 = 3_000`: Blast's largest share of each LP fee, Meme and Quote.
+- `max_reward_leaves: u64 = 65_536`: The most leaves one holder-reward round may commit.
+- `max_gas_reserve_bps: u64 = 1_000`: Largest holder-reward gas reserve, in basis points of the round's holder Quote.
+- `digest_length: u64 = 32`: Byte length of a Blake2b-256 digest: Merkle roots and nodes.
+- `max_meme_symbol_length: u64 = 32`: Bluefin stores the pool name, built from this symbol, twice in every `Position`; the bound keeps a migrated position inside Sui's object size limit (ADR 0088).
+- `bluefin_max_tick_spacing: u32 = 400`: Bluefin pool creation's own tick-spacing bound.
+- `bluefin_max_fee_rate: u64 = 20_000`: Bluefin pool creation's own fee-rate bound.
+- `aftermath_max_dao_fee_bps: u16 = 10_000`: Aftermath's own bound on a DAO fee, the whole amount, which its DAO-fee pool creation asserts as `fee_bps <= 10_000`.
+- `aftermath_half_weight: u64 = 500_000_000_000_000_000`: Each coin's Aftermath weight: half of Aftermath's `1e18` fixed-point one.
+- `aftermath_flatness: u64 = 0`: Selects Aftermath's uncorrelated weighted-product curve.
+- `aftermath_base_swap_fee: u64 = 100_000_000_000_000`: Aftermath's minimum base swap-in fee, 0.01% in its `1e18` unit; it rejects zero. This part compounds into the locked LP.
+- `aftermath_pool_name: vector<u8> = b"Blast Presale Pool"`: Name of every Aftermath pool a presale creates.
 
 ### `blast_presale::creation_policy`
 
@@ -3294,12 +3301,6 @@ public fun cancel_destination(
 | `EInvalidFees` | 0 | Blast's raise and token shares must be at most 1,000 BPS and each LP fee at most 3,000. |
 | `EInvalidDestination` | 1 | The protocol destination must be a nonzero address. |
 
-#### Constants
-
-- `MAX_RAISE_BPS: u64 = 1_000`: Blast's largest share of a sale's raise.
-- `MAX_TOKEN_BPS: u64 = 1_000`: Blast's largest share of a sale's tokens.
-- `MAX_LP_FEE_BPS: u64 = 3_000`: Blast's largest share of each LP fee, Meme and Quote.
-
 ### `blast_presale::holder_rewards`
 
 Merkle rounds Blast's rewards administrator schedules on a migrated presale vault and anyone publishes once the vault's round notice has elapsed, funding them from its holder-reward fee share.
@@ -3500,16 +3501,6 @@ public struct RoundClosed<phantom Meme, phantom Quote> has copy, drop {
 | `ETreasuryChanged` | 12 | The governed treasury must match the publication commitment. |
 | `EClaimDeadlineOverflow` | 13 | The claim window must end within u64 milliseconds. |
 | `EClaimsClosed` | 14 | The round's claim deadline has been reached. |
-
-### `blast_presale::merkle_tree`
-
-Positional Blake2b-256 proofs independent of the leaf's application domain.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/merkle_tree.move
-
-#### Constants
-
-- `DIGEST_LENGTH: u64 = 32`
 
 ### `blast_presale::migration_math`
 
@@ -3878,8 +3869,6 @@ public struct HolderMemePaid<phantom Meme, phantom Quote> has copy, drop {
 - `DEFAULT_FEE_SPLIT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice before a creator split or its next notice period may change.
 - `DEFAULT_PROTOCOL_LP_FEE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: Initial notice for protocol LP-fee changes: 48 hours in milliseconds.
 - `DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000`: Initial notice before a scheduled holder-reward round may publish, or its next notice period may change: 2 hours, so CancelAdmin can stop a bad round while daily rounds still fit.
-- `MAX_REWARD_LEAVES: u64 = 65_536`: The most leaves one holder-reward round may commit.
-- `MAX_GAS_RESERVE_BPS: u64 = 1_000`: Largest holder-reward gas reserve, in basis points of the round's holder Quote.
 
 ### `blast_presale::venue_config`
 

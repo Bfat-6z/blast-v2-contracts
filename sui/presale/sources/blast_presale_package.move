@@ -15,8 +15,6 @@ const PACKAGE_VERSION: u64 = 1;
 /// The generation this bytecode hands over to in a governed upgrade.
 const NEXT_PACKAGE_VERSION: u64 = 2;
 
-const VALID_PAUSE_BITS: u8 = 11;
-
 // === Public Types ===
 
 /// The requested bits and resulting pause mask.
@@ -62,7 +60,7 @@ fun init(otw: BLAST_PRESALE_PACKAGE, ctx: &mut TxContext) {
 public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8) {
     self.assert_current();
 
-    assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
+    assert!(bits != 0 && (bits & constants::valid_pause_bits!()) == bits, EInvalidPauseBits);
     assert!((self.paused | bits) != self.paused, EPauseUnchanged);
     self.paused = self.paused | bits;
 
@@ -73,7 +71,7 @@ public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: 
 
 /// Clears only the requested bits once `package_admin::unpause` has checked every notice.
 public(package) fun clear_pause_bits(self: &mut PackageVersion, bits: u8) {
-    assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
+    assert!(bits != 0 && (bits & constants::valid_pause_bits!()) == bits, EInvalidPauseBits);
     assert!((self.paused & bits) != 0, EPauseUnchanged);
     self.paused = self.paused ^ (self.paused & bits);
 
@@ -101,7 +99,7 @@ public(package) fun share_version(
     ctx: &mut TxContext,
 ) {
     transfer::share_object(PackageVersion {
-        paused: VALID_PAUSE_BITS,
+        paused: constants::valid_pause_bits!(),
         id: object::new(ctx),
         generation
     });
@@ -181,6 +179,6 @@ const EPaused: vector<u8> = b"This operation is paused.";
 
 use blast_admin::{blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
 
-use blast_presale::blast_presale_domain::PauseAdmin;
+use blast_presale::{blast_presale_domain::PauseAdmin, constants};
 
 use sui::package::Publisher;

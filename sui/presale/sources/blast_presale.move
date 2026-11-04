@@ -244,8 +244,9 @@ public fun vested_recipient_share(
     RecipientShare { recipient, bps, vesting: option::some(vesting) }
 }
 
-/// Linear vesting terms. The steps and cliff must fit in `MAX_VESTING_DURATION_MS`, so migration and
-/// claims can always create the schedule. Product limits on the duration belong to creation tooling.
+/// Linear vesting terms. The steps and cliff must fit in `constants::max_vesting_duration_ms!()`,
+/// so migration and claims can always create the schedule. Product limits on the duration belong
+/// to creation tooling.
 public fun vesting_terms(
     vesting_cliff_delay_ms: u64,
     vesting_period_duration_ms: u64,
@@ -261,9 +262,9 @@ public fun vesting_terms(
     terms
 }
 
-/// The LP-fee split a sale and its vault pay collected fees under: at most `MAX_FEE_RECIPIENTS`
-/// distinct unvested recipients whose shares total exactly 10,000 BPS with the holder-reward
-/// share. The creator takes its LP fees as one of the recipients.
+/// The LP-fee split a sale and its vault pay collected fees under: at most
+/// `constants::max_fee_recipients!()` distinct unvested recipients whose shares total exactly
+/// 10,000 BPS with the holder-reward share. The creator takes its LP fees as one of the recipients.
 public fun fee_split(fee_recipients: vector<RecipientShare>, holder_rewards_bps: Bps): FeeSplit {
     let split = FeeSplit { fee_recipients, holder_rewards_bps };
     split.assert_valid_fee_split();
@@ -288,7 +289,7 @@ public fun new<SaleToken, Quote, MigrationWitness: drop>(
 ): PresaleInitializer<SaleToken, Quote> {
     package_version.assert_current();
 
-    package_version.assert_not_paused(1);
+    package_version.assert_not_paused(constants::create_pause_bit!());
 
     creation_policy.assert_allowed<Quote, MigrationWitness>();
     assert!(
@@ -521,7 +522,8 @@ public fun finalize<SaleToken, Quote>(
         &recipient_allocations,
     );
     assert!(
-        commitment_duration_ms > 0 && liquidity_window_duration_ms >= MIN_LIQUIDITY_WINDOW_DURATION_MS,
+        commitment_duration_ms > 0
+            && liquidity_window_duration_ms >= constants::min_liquidity_window_duration_ms!(),
         EInvalidWindow
     );
     assert!(eligibility.can_reach(raise_target), EUnreachableRaise);
@@ -644,7 +646,7 @@ public fun share<SaleToken, Quote>(
 ) {
     package_version.assert_current();
 
-    package_version.assert_not_paused(1);
+    package_version.assert_not_paused(constants::create_pause_bit!());
 
     assert!(self.lifecycle == Lifecycle::Pending, EInvalidLifecycle);
 
@@ -765,7 +767,7 @@ public fun commit_open<SaleToken, Quote>(
 ): Coin<Quote> {
     package_version.assert_current();
 
-    package_version.assert_not_paused(2);
+    package_version.assert_not_paused(constants::commit_pause_bit!());
 
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
@@ -789,7 +791,7 @@ public fun commit_allowlisted<SaleToken, Quote>(
 ): Coin<Quote> {
     package_version.assert_current();
 
-    package_version.assert_not_paused(2);
+    package_version.assert_not_paused(constants::commit_pause_bit!());
 
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
@@ -818,7 +820,7 @@ public fun commit_uncapped<SaleToken, Quote>(
 ): Coin<Quote> {
     package_version.assert_current();
 
-    package_version.assert_not_paused(2);
+    package_version.assert_not_paused(constants::commit_pause_bit!());
 
     self.assert_open(clock);
     assert!(quote_in.value() > 0, EZeroCommitment);
@@ -947,7 +949,7 @@ public fun migrate<SaleToken, Quote, MigrationWitness: drop>(
 ): (Balance<SaleToken>, Balance<Quote>) {
     package_version.assert_current();
 
-    package_version.assert_not_paused(8);
+    package_version.assert_not_paused(constants::migration_pause_bit!());
 
     assert!(self.lifecycle == Lifecycle::Funded, EInvalidLifecycle);
     assert!(
@@ -1046,9 +1048,10 @@ public(package) fun fee_recipients(self: &FeeSplit): &vector<RecipientShare> {
 /// meets this generation's rules.
 public(package) fun assert_valid_fee_split(self: &FeeSplit) {
     assert!(
-        valid_shares(&self.fee_recipients, MAX_FEE_RECIPIENTS)
+        valid_shares(&self.fee_recipients, constants::max_fee_recipients!())
             && self.fee_recipients.all!(|fee_recipient| fee_recipient.vesting.is_none())
-            && total_bps(&self.fee_recipients) + self.holder_rewards_bps.value() == bps::denominator(),
+            && total_bps(&self.fee_recipients) + self.holder_rewards_bps.value()
+                == constants::basis_points_denominator!(),
         EInvalidFeeSplit,
     );
 }
@@ -1129,7 +1132,7 @@ fun can_close_early<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, now_at_m
 
 /// Largest-remainder apportionment. Shares must sum to 10,000 BPS.
 fun apportion(shares: vector<Bps>, total: u64): vector<u64> {
-    let denominator = bps::denominator() as u128;
+    let denominator = constants::basis_points_denominator!() as u128;
     let scaled_shares = shares.map!(|share| (total as u128) * (share.value() as u128));
     let mut amounts = scaled_shares.map_ref!(|scaled| (*scaled / denominator) as u64);
     let remainders = scaled_shares.map!(|scaled| scaled % denominator);
@@ -1153,8 +1156,9 @@ fun apportion(shares: vector<Bps>, total: u64): vector<u64> {
 /// Raise allocations: distinct recipients that, with Blast's share, leave the LP part of the raise.
 fun assert_raise_allocations(raise_allocations: &vector<RecipientShare>, protocol_raise_bps: Bps) {
     assert!(
-        valid_shares(raise_allocations, MAX_RECIPIENTS)
-            && total_bps(raise_allocations) + protocol_raise_bps.value() < bps::denominator(),
+        valid_shares(raise_allocations, constants::max_recipients!())
+            && total_bps(raise_allocations) + protocol_raise_bps.value()
+                < constants::basis_points_denominator!(),
         EInvalidRaiseAllocation,
     );
 }
@@ -1172,14 +1176,14 @@ fun assert_token_allocations(
         token_supply > 0
             && token_allocation_bps.value() > 0
             && liquidity_token_allocation_bps.value() > 0
-            && valid_shares(recipient_allocations, MAX_RECIPIENTS),
+            && valid_shares(recipient_allocations, constants::max_recipients!()),
         EInvalidTokenAllocation,
     );
     assert!(
         total_bps(recipient_allocations)
             + token_allocation_bps.value()
             + liquidity_token_allocation_bps.value()
-            + protocol_token_bps.value() == bps::denominator(),
+            + protocol_token_bps.value() == constants::basis_points_denominator!(),
         EInvalidTokenAllocation,
     );
 }
@@ -1192,12 +1196,12 @@ fun assert_valid_eligibility(self: &EligibilityPolicy) {
             *min_commitment > 0
                 && *min_commitment <= *wallet_cap
                 && *max_participants > 0
-                && *max_participants <= MAX_PARTICIPANTS
+                && *max_participants <= constants::max_participants!()
         },
         EligibilityPolicy::Allowlisted { root, leaf_count } => {
-            root.length() == merkle_tree::digest_length()
+            root.length() == constants::digest_length!()
                 && *leaf_count > 0
-                && *leaf_count <= MAX_PARTICIPANTS
+                && *leaf_count <= constants::max_participants!()
         },
     };
     assert!(valid, EInvalidEligibilityPolicy);
@@ -1206,7 +1210,9 @@ fun assert_valid_eligibility(self: &EligibilityPolicy) {
 fun assert_valid_uncapped_access(self: &UncappedPhase) {
     match (self.access) {
         UncappedAccess::Anyone { max_participants, min_commitment } => assert!(
-            min_commitment > 0 && max_participants > 0 && max_participants <= MAX_PARTICIPANTS,
+            min_commitment > 0
+                && max_participants > 0
+                && max_participants <= constants::max_participants!(),
             EInvalidUncappedPhase,
         ),
         UncappedAccess::Eligible => (),
@@ -1217,7 +1223,7 @@ fun assert_valid_vesting(self: &VestingTerms) {
     assert!(
         self.period_ms > 0
             && self.periods > 0
-            && self.period_ms <= MAX_VESTING_DURATION_MS / self.periods
+            && self.period_ms <= constants::max_vesting_duration_ms!() / self.periods
             && self.cliff_ms <= self.period_ms * self.periods,
         EInvalidVestingTerms,
     );
@@ -1357,7 +1363,7 @@ fun apportion_raise(
     let mut shares = raise_allocations.map_ref!(|allocation| allocation.bps);
 
     shares.push_back(protocol_raise_bps);
-    shares.push_back(bps::new(bps::denominator() - allocated_bps));
+    shares.push_back(bps::new(constants::basis_points_denominator!() - allocated_bps));
     let amounts = apportion(shares, raise_target);
 
     let raise_payouts = payouts(raise_allocations, &amounts, 0);
@@ -1446,7 +1452,7 @@ fun mint_and_seal_supply<SaleToken>(
 fun protocol_quote_at<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, raise_bps: Bps): u64 {
     if (raise_bps == self.protocol_fees.raise_bps()) return self.protocol_quote;
 
-    self.raise_target.mul_div(raise_bps.value(), bps::denominator())
+    self.raise_target.mul_div(raise_bps.value(), constants::basis_points_denominator!())
 }
 
 /// Blast's tokens under the token rate `token_bps`: the amount creation apportioned while the
@@ -1454,7 +1460,7 @@ fun protocol_quote_at<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, raise_
 fun protocol_tokens_at<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, token_bps: Bps): u64 {
     if (token_bps == self.protocol_fees.token_bps()) return self.protocol_tokens.value();
 
-    self.token_supply().mul_div(token_bps.value(), bps::denominator())
+    self.token_supply().mul_div(token_bps.value(), constants::basis_points_denominator!())
 }
 
 /// The complete supply, all of it still escrowed before the window starts.
@@ -2261,26 +2267,6 @@ public struct Claimed<phantom SaleToken, phantom Quote> has copy, drop {
     vesting_id: Option<ID>,
 }
 
-// === Constants ===
-
-/// Technical bound on the dynamic commitment records one presale may hold.
-const MAX_PARTICIPANTS: u64 = 65_536;
-
-/// Bounds the token and raise recipient lists, both paid in the one migration transaction.
-const MAX_RECIPIENTS: u64 = 64;
-
-/// Bounds the transfers one fee collection makes.
-const MAX_FEE_RECIPIENTS: u64 = 16;
-
-/// The shortest LP-migration window. Migration is permissionless, so a funded sale reaches its
-/// refund exit only after a week in which nobody migrated it, and a sale that nobody settled by
-/// its end cannot be settled and cancelled in one transaction inside that week.
-const MIN_LIQUIDITY_WINDOW_DURATION_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
-
-/// A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292
-/// million years, the schedule's end still fits in u64, so migration cannot overflow creating it.
-const MAX_VESTING_DURATION_MS: u64 = 1 << 63;
-
 // === Errors ===
 
 #[error(code = 0)]
@@ -2409,6 +2395,7 @@ use blast_presale::{
     blast_presale_domain::FeeAdmin,
     blast_presale_package::PackageVersion,
     bps::{Self, Bps},
+    constants,
     creation_policy::CreationPolicy,
     fee_policy::{Self, FeePolicy, ProtocolFees},
     merkle_tree,

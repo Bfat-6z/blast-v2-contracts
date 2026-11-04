@@ -450,17 +450,18 @@ public(package) fun new_round_terms(
     expected_treasury: address,
 ): RoundTerms {
     assert!(
-        root.length() == merkle_tree::digest_length()
-            && manifest_digest.length() == merkle_tree::digest_length(),
+        root.length() == constants::digest_length!()
+            && manifest_digest.length() == constants::digest_length!(),
         EInvalidCommitment,
     );
-    assert!(leaf_count > 0 && leaf_count <= MAX_REWARD_LEAVES, EInvalidLeafCount);
+    assert!(leaf_count > 0 && leaf_count <= constants::max_reward_leaves!(), EInvalidLeafCount);
     assert!(meme_amount == 0, EMemeRewardsUnsupported);
     assert!(quote_amount > 0, EEmptyBudget);
     assert!(start_checkpoint < end_checkpoint, EEmptyInterval);
     assert!(quote_amount.checked_add(gas_reserve_amount).is_some(), EBudgetOverflow);
     assert!(
-        (gas_reserve_amount as u128) * 10_000 <= (quote_amount as u128) * (MAX_GAS_RESERVE_BPS as u128),
+        (gas_reserve_amount as u128) * (constants::basis_points_denominator!() as u128)
+            <= (quote_amount as u128) * (constants::max_gas_reserve_bps!() as u128),
         EGasReserveTooLarge,
     );
     assert!(expected_treasury != @0x0, EZeroTreasury);
@@ -994,12 +995,6 @@ const DEFAULT_PROTOCOL_LP_FEE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 /// period may change: 2 hours, so CancelAdmin can stop a bad round while daily rounds still fit.
 const DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;
 
-/// The most leaves one holder-reward round may commit.
-const MAX_REWARD_LEAVES: u64 = 65_536;
-
-/// Largest holder-reward gas reserve, in basis points of the round's holder Quote.
-const MAX_GAS_RESERVE_BPS: u64 = 1_000;
-
 // === Errors ===
 
 #[error(code = 0)]
@@ -1061,9 +1056,9 @@ use blast_presale::{
     blast_presale_domain::{CancelAdmin, FeeAdmin},
     blast_presale_package::PackageVersion,
     bps::Bps,
+    constants,
     creation_policy::CreationPolicy,
-    fee_policy::{FeePolicy, ProtocolFees},
-    merkle_tree
+    fee_policy::{FeePolicy, ProtocolFees}
 };
 
 use sui::{

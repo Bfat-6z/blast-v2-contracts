@@ -12,7 +12,7 @@ public struct Bps(u64) has copy, drop, store;
 // === Public Functions ===
 
 public fun new(value: u64): Bps {
-    assert!(value <= DENOMINATOR, EInvalidBps);
+    assert!(value <= constants::basis_points_denominator!(), EInvalidBps);
 
     Bps(value)
 }
@@ -25,21 +25,14 @@ public fun value(self: Bps): u64 {
 
 /// Applies the rate to `amount`, rounding up; the result is at most `amount`.
 public fun apply_up(self: Bps, amount: u64): u64 {
-    amount.mul_div_ceil(self.value(), DENOMINATOR)
+    amount.mul_div_ceil(self.value(), constants::basis_points_denominator!())
 }
-
-// === Package Functions ===
-
-/// The whole: 10,000 basis points.
-public(package) fun denominator(): u64 {
-    DENOMINATOR
-}
-
-// === Constants ===
-
-const DENOMINATOR: u64 = 10_000;
 
 // === Errors ===
 
 #[error(code = 0)]
 const EInvalidBps: vector<u8> = b"A basis-points rate must be at most 10,000.";
+
+// === Imports ===
+
+use blast_presale::constants;

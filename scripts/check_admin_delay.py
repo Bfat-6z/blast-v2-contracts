@@ -149,7 +149,14 @@ for package, module, actions in [
         'sell': 'constants::trading_pause_bit!()',
         'migrate': 'constants::migration_pause_bit!()',
     }),
-    ('presale', 'blast_presale', {'new': 1, 'share': 1, 'commit_open': 2, 'commit_allowlisted': 2, 'commit_uncapped': 2, 'migrate': 8}),
+    ('presale', 'blast_presale', {
+        'new': 'constants::create_pause_bit!()',
+        'share': 'constants::create_pause_bit!()',
+        'commit_open': 'constants::commit_pause_bit!()',
+        'commit_allowlisted': 'constants::commit_pause_bit!()',
+        'commit_uncapped': 'constants::commit_pause_bit!()',
+        'migrate': 'constants::migration_pause_bit!()',
+    }),
 ]:
     fs = functions(package, module)
     for name, bit in actions.items():

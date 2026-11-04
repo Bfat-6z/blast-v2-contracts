@@ -30,12 +30,12 @@ public fun new<Meme, Quote>(
 
     assert!(
         tick_spacing > 0
-            && tick_spacing <= MAX_TICK_SPACING
+            && tick_spacing <= constants::bluefin_max_tick_spacing!()
             && pool_fee_rate > 0
-            && pool_fee_rate <= MAX_POOL_FEE_RATE,
+            && pool_fee_rate <= constants::bluefin_max_fee_rate!(),
         EInvalidTier,
     );
-    assert!(currency.symbol().length() <= MAX_MEME_SYMBOL_LENGTH, ESymbolTooLong);
+    assert!(currency.symbol().length() <= constants::max_meme_symbol_length!(), ESymbolTooLong);
 
     venue_config.add_pool_tier<Meme, Quote, _>(&Venue(), tick_spacing, pool_fee_rate);
 
@@ -242,15 +242,6 @@ fun fixes_meme<Meme, Quote>(
     if (needed_meme <= source_meme && needed_quote <= source_quote) prefer_meme else !prefer_meme
 }
 
-// === Constants ===
-
-const MAX_TICK_SPACING: u32 = 400;
-const MAX_POOL_FEE_RATE: u64 = 20_000;
-
-/// Bluefin stores the pool name, built from this symbol, twice in every `Position`; the
-/// bound keeps a migrated position inside Sui's object size limit (ADR 0088).
-const MAX_MEME_SYMBOL_LENGTH: u64 = 32;
-
 // === Errors ===
 
 #[error(code = 0)]
@@ -267,6 +258,7 @@ const ESymbolTooLong: vector<u8> = b"The Meme symbol must be at most 32 bytes fo
 use blast_presale::{
     blast_presale::{Self as presale, FeeSplit, Presale, PresaleInitializer},
     blast_presale_package::PackageVersion,
+    constants,
     creation_policy::CreationPolicy,
     fee_policy::FeePolicy,
     migration_math,

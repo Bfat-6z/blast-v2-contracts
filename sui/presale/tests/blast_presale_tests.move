@@ -58,7 +58,6 @@ const VESTING_CLIFF_DELAY_MS: u64 = 100;
 const VESTING_PERIOD_DURATION_MS: u64 = 50;
 const VESTING_PERIODS: u64 = 4;
 const VESTING_DURATION_MS: u64 = VESTING_PERIOD_DURATION_MS * VESTING_PERIODS;
-const MAX_VESTING_DURATION_MS: u64 = 1 << 63;
 
 /// Where the Blast partner is paid, and its cut of Blast's raise fee: 40%.
 const PARTNER_RECIPIENT: address = @0x9A27;
@@ -115,7 +114,7 @@ fun security_pause_blocks_new() {
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        1
+        constants::create_pause_bit!()
     );
     destroy(
         presale::new<BLAST_PRESALE_TESTS, QUOTE, TEST_MIGRATOR>(
@@ -141,9 +140,9 @@ fun security_partial_unpause_keeps_new_paused() {
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        11
+        constants::valid_pause_bits!()
     );
-    version.clear_pause_bits(2);
+    version.clear_pause_bits(constants::commit_pause_bit!());
     destroy(
         presale::new<BLAST_PRESALE_TESTS, QUOTE, TEST_MIGRATOR>(
             treasury,
@@ -176,7 +175,7 @@ fun security_presale_finalize_remains_available_as_specified() {
     );
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        1
+        constants::create_pause_bit!()
     );
     let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
     destroy(sale);
@@ -204,7 +203,7 @@ fun security_pause_blocks_share() {
     let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        1
+        constants::create_pause_bit!()
     );
     let clock = clock::create_for_testing(&mut ctx);
     sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
@@ -233,9 +232,9 @@ fun security_partial_unpause_keeps_share_paused() {
     let (sale, cap) = initializer.finalize(&version, &mut currency, &mut ctx);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        11
+        constants::valid_pause_bits!()
     );
-    version.clear_pause_bits(2);
+    version.clear_pause_bits(constants::commit_pause_bit!());
     let clock = clock::create_for_testing(&mut ctx);
     sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
     destroy(cap);
@@ -252,7 +251,7 @@ fun security_pause_blocks_commit_open() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        2
+        constants::commit_pause_bit!()
     );
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
@@ -274,7 +273,7 @@ fun security_pause_blocks_commit_allowlisted() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        2
+        constants::commit_pause_bit!()
     );
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
@@ -299,7 +298,7 @@ fun security_pause_blocks_commit_uncapped() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        2
+        constants::commit_pause_bit!()
     );
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
@@ -321,7 +320,7 @@ fun security_pause_blocks_migrate() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        8
+        constants::migration_pause_bit!()
     );
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
@@ -346,9 +345,9 @@ fun security_partial_unpause_keeps_migrate_paused() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        11
+        constants::valid_pause_bits!()
     );
-    version.clear_pause_bits(2);
+    version.clear_pause_bits(constants::commit_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         let (meme, quote) = sale.migrate(
@@ -372,9 +371,9 @@ fun security_partial_unpause_restores_commitments() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        11
+        constants::valid_pause_bits!()
     );
-    version.clear_pause_bits(2);
+    version.clear_pause_bits(constants::commit_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         sale
@@ -400,7 +399,7 @@ fun security_fully_paused_funded_claim_pays_all_tokens() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        11
+        constants::valid_pause_bits!()
     );
     fixture.next_tx!(KEEPER, |f| {
         let mut sale = f.take_presale();
@@ -421,7 +420,7 @@ fun security_fully_paused_unlaunched_cancellation_preserves_refund() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        11
+        constants::valid_pause_bits!()
     );
     fixture.next_tx!(KEEPER, |f| {
         let mut sale = f.take_presale();
@@ -445,7 +444,7 @@ fun pause_keeps_settlement_and_refunds_open() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        11
+        constants::valid_pause_bits!()
     );
     fixture.next_tx!(KEEPER, |f| {
         let mut sale = f.take_presale();
@@ -2906,8 +2905,9 @@ fun fee_recipients_cannot_vest() {
 #[test]
 /// The longest schedule is the technical bound, with the cliff at most its whole duration.
 fun vesting_terms_accept_the_technical_bound_with_a_full_cliff() {
-    presale::vesting_terms(MAX_VESTING_DURATION_MS, MAX_VESTING_DURATION_MS, 1);
-    presale::vesting_terms(0, 1, MAX_VESTING_DURATION_MS);
+    let max_duration_ms = constants::max_vesting_duration_ms!();
+    presale::vesting_terms(max_duration_ms, max_duration_ms, 1);
+    presale::vesting_terms(0, 1, max_duration_ms);
 }
 
 #[test]
@@ -2943,7 +2943,7 @@ fun vesting_terms_keep_the_cliff_within_the_duration() {
     location = blast_presale::blast_presale,
 )]
 fun vesting_terms_stay_within_the_technical_bound() {
-    presale::vesting_terms(0, MAX_VESTING_DURATION_MS / 2 + 1, 2);
+    presale::vesting_terms(0, constants::max_vesting_duration_ms!() / 2 + 1, 2);
 }
 
 #[test]
@@ -5225,6 +5225,7 @@ use blast_presale::{
     bluefin,
     bps,
     cetus,
+    constants,
     creation_policy::{Self, CreationPolicy},
     fee_policy::{Self, FeePolicy},
     migration_math,
