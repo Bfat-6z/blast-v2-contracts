@@ -1231,8 +1231,8 @@ public fun virtual_quote_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): u
 }
 
 #[test_only]
-public fun migration_witness_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): TypeName {
-    self.migration_witness
+public fun venue_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): TypeName {
+    self.venue
 }
 
 // === Imports ===
