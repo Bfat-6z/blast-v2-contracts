@@ -28,7 +28,7 @@ const EMigrationWitnessNotAllowed: u64 = 3;
 const EInvalidMigrationWitnessType: u64 = 4;
 
 #[test_only]
-/// Blast's allocation leaves no room for the curve or pool.
+/// Blast's allocation exceeds its 1,000 bps maximum for either asset.
 const EInvalidProtocolAllocation: u64 = 5;
 
 #[test_only]
@@ -148,7 +148,7 @@ const EInvalidVirtualQuote: u64 = 33;
 const EZeroOpeningRoundBid: u64 = 34;
 
 #[test_only]
-/// The creation fee paid is not exactly the configured one.
+/// The creation fee paid is not exactly the configured one, or a configured fee exceeds 10 SUI.
 const EInvalidCreationFee: u64 = 35;
 
 #[test_only]
@@ -186,6 +186,10 @@ const ETooManyClaimSigners: u64 = 43;
 #[test_only]
 /// Unpausing needs every policy notice nonzero, with no pending zero notice or admission.
 const EUnguardedNotice: u64 = 44;
+
+#[test_only]
+/// Blast's share of the trade fee exceeds its 7,000 bps maximum.
+const EInvalidProtocolFeeShare: u64 = 45;
 
 macro public(package) fun invalid_bps(): u64 { 0 }
 
@@ -276,3 +280,5 @@ macro public(package) fun invalid_digest(): u64 { 42 }
 macro public(package) fun too_many_claim_signers(): u64 { 43 }
 
 macro public(package) fun unguarded_notice(): u64 { 44 }
+
+macro public(package) fun invalid_protocol_fee_share(): u64 { 45 }

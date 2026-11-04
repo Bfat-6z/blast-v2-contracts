@@ -2114,20 +2114,20 @@ fun the_admin_can_replace_a_sales_rates_before_it_starts() {
         PROTOCOL_RAISE_BPS,
         PROTOCOL_TOKEN_BPS,
         FEE_PAYING_RECIPIENT_B_BPS,
-        vector[2_000, PROTOCOL_TOKEN_BPS, 200, 300],
+        vector[1_000, PROTOCOL_TOKEN_BPS, 200, 300],
     );
 
-    fixture.set_protocol_fees(vector[1_000, 250, 100, 200]);
+    fixture.set_protocol_fees(vector[500, 250, 100, 200]);
 
     let (presale_id, rates, protocol_quote, protocol_tokens, token_allocation) = only_event<
         ProtocolFeesChanged<BLAST_PRESALE_TESTS, QUOTE>,
     >().protocol_fees_changed_fields();
     assert_eq!(presale_id, fixture.presale_id);
-    assert_eq!(rates, vector[1_000, 250, 100, 200]);
-    // 1,000 * 1,000 / 10,000 = 100 Quote and 20,001 * 250 / 10,000 = 500.025 tokens, rounded
+    assert_eq!(rates, vector[500, 250, 100, 200]);
+    // 1,000 * 500 / 10,000 = 50 Quote and 20,001 * 250 / 10,000 = 500.025 tokens, rounded
     // down; the 500 tokens Blast gives up join the sale allocation of 10,001.
-    assert_eq!(vector[protocol_quote, protocol_tokens, token_allocation], vector[100, 500, 10_501]);
-    assert_eq!(fixture.protocol_rates(), vector[1_000, 250, 100, 200]);
+    assert_eq!(vector[protocol_quote, protocol_tokens, token_allocation], vector[50, 500, 10_501]);
+    assert_eq!(fixture.protocol_rates(), vector[500, 250, 100, 200]);
     assert_eq!(fixture.vault_partner_id(), option::none());
 
     fixture.set_time(COMMITMENT_STARTS_AT_MS);
@@ -2136,9 +2136,9 @@ fun the_admin_can_replace_a_sales_rates_before_it_starts() {
     fixture.set_time(COMMITMENT_ENDS_AT_MS);
     fixture.settle(KEEPER);
 
-    // The LP keeps the raise after the recipient's 200 and Blast's 100.
-    assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 700]);
-    fixture.take_payout(TREASURY, 500, 100);
+    // The LP keeps the raise after the recipient's 200 and Blast's 50.
+    assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 750]);
+    fixture.take_payout(TREASURY, 500, 50);
     fixture.take_quote(RAISE_RECIPIENT, 200);
 
     // Alice gets 10,501 * 1,000 / 4,000 = 2,625.25, rounded down; Bob's last claim takes the rest.
@@ -2430,9 +2430,9 @@ fun a_creation_fee_update_must_change_its_rates() {
 
 #[test]
 #[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
-/// A sale's rates keep the policy's bounds: Blast's raise share stays below 10,000 BPS.
+/// A sale's rates keep the policy's bounds: Blast's raise share is at most 1,000 BPS.
 fun a_sale_fee_update_keeps_the_policy_bounds() {
-    schedule_with_creation_rates(vector[], 0, 0, RECIPIENT_B_BPS, vector[10_000, 0, 0, 0]).end();
+    schedule_with_creation_rates(vector[], 0, 0, RECIPIENT_B_BPS, vector[1_001, 0, 0, 0]).end();
 }
 
 #[test]
@@ -2443,11 +2443,11 @@ fun a_sale_fee_update_keeps_the_policy_bounds() {
 /// Blast's new raise share must still leave the LP Quote after the raise recipients'.
 fun a_raise_share_that_leaves_the_lp_nothing_is_rejected() {
     schedule_with_creation_rates(
-        vector[presale::recipient_share(RAISE_RECIPIENT, bps::new(2_000))],
+        vector[presale::recipient_share(RAISE_RECIPIENT, bps::new(9_000))],
         0,
         0,
         RECIPIENT_B_BPS,
-        vector[8_000, 0, 0, 0],
+        vector[1_000, 0, 0, 0],
     ).end();
 }
 
@@ -2456,29 +2456,45 @@ fun a_raise_share_that_leaves_the_lp_nothing_is_rejected() {
     abort_code = presale::EInvalidTokenAllocation,
     location = blast_presale::blast_presale,
 )]
-/// Blast's new token share must leave buyers a token: 20,001 * 5,501 / 10,000 rounds down to
-/// 11,002, more than the 10,001 sale tokens and Blast's 1,000 together.
+/// Blast's new token share must leave buyers a token: a sale offering buyers 500 BPS (1,000 of
+/// 20,001 tokens) cannot give Blast 1,000 BPS (2,000 tokens).
 fun a_token_share_that_leaves_buyers_nothing_is_rejected() {
-    schedule_with_creation_rates(
-        vector[],
-        0,
-        PROTOCOL_TOKEN_BPS,
-        FEE_PAYING_RECIPIENT_B_BPS,
-        vector[0, 5_501, 0, 0],
-    ).end();
+    let mut ctx = tx_context::dummy();
+    let mut fee_policy = treasury_fee_policy(0, 0, &mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let mut terms = valid_sale_terms();
+    terms.token_allocation_bps = 500;
+    terms.recipient_allocations = vector[
+        presale::recipient_share(RECIPIENT_A, bps::new(RECIPIENT_A_BPS)),
+        presale::recipient_share(RECIPIENT_B, bps::new(6_000)),
+    ];
+    let (treasury_cap, mut currency) = new_currency(&mut ctx);
+    let (mut sale, _cap) = new_presale<QUOTE>(
+        treasury_cap,
+        &mut currency,
+        terms,
+        &creation_policy,
+        &fee_policy,
+        &mut ctx,
+    );
+    let clock = clock::create_for_testing(&mut ctx);
+
+    sale.override_protocol_fees(&mut fee_policy, vector[0, 1_000, 0, 0], &clock, &mut ctx);
+
+    abort
 }
 
 #[test]
 #[expected_failure(abort_code = presale::EUnseedablePrice, location = blast_presale::blast_presale)]
 /// Cutting Blast's raise share hands the LP more Quote, which must still seed a poolable price.
 fun a_raise_share_cut_that_seeds_an_unpoolable_price_is_rejected() {
-    let raise_target = 1 << 63;
+    let raise_target = 5_000_000_000_000_000_000;
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(SCHEDULED_AT_MS);
-    // With one LP token, 40% of 2^63 Quote seeds a poolable price and all of it does not.
-    let fee_policy = treasury_fee_policy(6_000, 0, scenario.ctx());
+    // With one LP token, 90% of 5 * 10^18 Quote seeds a poolable price and all of it does not.
+    let fee_policy = treasury_fee_policy(1_000, 0, scenario.ctx());
     let creation_policy = creation_policy::allowing_for_testing<
         QUOTE,
         TEST_MIGRATOR,
@@ -3151,22 +3167,22 @@ fun a_zero_raise_rate_partnered_sale_pays_blast_its_tokens() {
 fun a_partnered_sale_holds_the_rates_set_before_its_start() {
     let mut ctx = tx_context::dummy();
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
-    let mut fixture = partner.share_partnered_sale(SCHEDULED_AT_MS, 2_000);
-    fixture.set_protocol_fees(vector[1_000, 250, 0, 0]);
+    let mut fixture = partner.share_partnered_sale(SCHEDULED_AT_MS, 1_000);
+    fixture.set_protocol_fees(vector[500, 250, 0, 0]);
     fixture.fund_partnered_sale();
 
-    // 1,000 * 1,000 / 10,000 = 100 Quote for Blast: the LP keeps 1,000 - 200 - 100.
-    assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 700]);
-    assert_eq!(fixture.unpaid_protocol_quote(), option::some(100));
+    // 1,000 * 500 / 10,000 = 50 Quote for Blast: the LP keeps 1,000 - 200 - 50.
+    assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 750]);
+    assert_eq!(fixture.unpaid_protocol_quote(), option::some(50));
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
 
-    // 40% of 100 is 40; Blast keeps 60 and its 500 tokens.
+    // 40% of 50 is 20; Blast keeps 30 and its 500 tokens.
     let paid = only_event<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>();
     let (_, _, paid_quote, paid_tokens) = paid.protocol_fees_paid_fields();
-    assert_eq!(vector[paid_quote, paid_tokens], vector[60, 500]);
-    assert_eq!(paid.protocol_fees_paid_partner_quote(), 40);
-    fixture.take_payout(TREASURY, 500, 60);
+    assert_eq!(vector[paid_quote, paid_tokens], vector[30, 500]);
+    assert_eq!(paid.protocol_fees_paid_partner_quote(), 20);
+    fixture.take_payout(TREASURY, 500, 30);
 
     destroy(partner);
     fixture.end();
@@ -4830,14 +4846,14 @@ fun override_protocol_fees(
     ctx: &mut TxContext,
 ) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
-    if (fee_policy.fees() != fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000))
+    if (fee_policy.fees() != fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000))
         fee_policy.set_fees_for_testing(
             &package_version,
             &fee_admin(),
-            bps::new(9_999),
-            bps::new(9_998),
-            bps::new(10_000),
-            bps::new(10_000),
+            bps::new(1_000),
+            bps::new(1_000),
+            bps::new(3_000),
+            bps::new(3_000),
             ctx,
         );
     sale.set_protocol_fees(

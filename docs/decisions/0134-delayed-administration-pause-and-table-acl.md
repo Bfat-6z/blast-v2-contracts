@@ -11,6 +11,7 @@
   on `unpause`, a 2-hour default round notice with a capped gas reserve, a 48-hour start for the
   migrators LP-fee policy, and consumption-time validation of presale terms
 - Amended: 2026-11-04 — accepted trust boundaries from the pre-audit's informational findings
+- Amended: 2026-11-04 — compiled maximums for every admin-set fee
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
   [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
   [0007](0007-acl-pause-and-versioning.md) (pause),
@@ -470,7 +471,8 @@ The owner accepts these boundaries without a code change:
   PauseAdmin and UnpauseAdmin acting in good faith.
 - **Presale PauseAdmin and FeeAdmin (PS-I2).** PauseAdmin can hold the presale migration bit
   until a sale's liquidity deadline, which turns a funded sale into refunds. FeeAdmin can raise
-  one vault's Blast LP rate up to 10,000 bps after its 48-hour notice; no cap below 100% exists.
+  one vault's Blast LP rate after its 48-hour notice, up to the 3,000 bps maximum (see the fee
+  maximums amendment).
 - **Deny-listed fee recipients (PS-I3).** Cetus and Bluefin vaults collect under the old split
   before applying a new one, so a Quote whose issuer deny-lists a fee recipient blocks that
   vault's collection and its re-split repair. Aftermath does not collect first and stays
@@ -481,10 +483,42 @@ The owner accepts these boundaries without a code change:
   Recovery needs a migrators upgrade, which waits its notice.
 - **LP-share changes reach accrued fees (MG-I2).** A FeeAdmin change to Blast's default or
   per-coin LP share applies to fees accrued but not yet collected. The 48-hour notice lets
-  anyone call `collect_fees` first; no cap below 100% exists.
+  anyone call `collect_fees` first; the share is at most 3,000 bps.
 
 ### Consequences
 
 The runbooks and integrator guides point here instead of restating each boundary. Any
 future cap or exit path is a new decision.
+
+## Amendment 2026-11-04: fee maximums
+
+### Context
+
+The accepted trust boundaries above left several admin-set fees able to reach 100%, and the
+launch creation fee had no bound. A delayed notice makes a change visible; it does not stop an
+absurd value.
+
+### Decision
+
+The owner set compiled maximums, enforced in the constructor of each stored value, so genesis,
+scheduling and fixtures take the same path:
+
+| Fee | Maximum | Publication value |
+| --- | --- | --- |
+| Blast's LP-fee share: migrators default and per-coin shares, presale default LP rates, each presale vault's rate | 3,000 bps | 1,500 |
+| Launchpad protocol share of each trade fee | 7,000 bps | 5,000 |
+| Presale raise fee, presale token fee | 1,000 bps each | 200 / 100 |
+| Launchpad protocol allocation, Meme and Quote | 1,000 bps each | 250 / 150 |
+| Launchpad creation fee | 10 SUI | 0 |
+
+Per-sale presale rates were already at most the policy rates and inherit the caps. Launch trade
+fees keep their existing 1,000 bps maximum and the partner share its 8,000 bps maximum. Raising a
+maximum needs a package upgrade, which waits the upgrade notice.
+
+### Consequences
+
+PS-I2 and MG-I2 above now reach at most 30%, not 100%. Launchpad adds error 45
+`invalid_protocol_fee_share`; migrators adds `lp_fee_policy::EInvalidShares`; the other caps reuse
+`invalid_protocol_allocation`, `invalid_creation_fee` and presale `fee_policy::EInvalidFees`.
+`docs/vectors/fees.json` and `graduation.json` follow the new maxima.
 

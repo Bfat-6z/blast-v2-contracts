@@ -139,15 +139,15 @@ fun protocol_allocation_accepts_zero_shares() {
 }
 
 #[test]
-fun protocol_allocation_maxima_leave_one_unit_for_the_curve_and_the_pool() {
+fun protocol_allocation_accepts_its_maximum_for_each_asset() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_allocation_for_testing(9_998, 9_999);
+        f.set_protocol_allocation_for_testing(1_000, 1_000);
 
         assert_eq!(
             f.config.protocol_allocation(),
-            allocation::protocol_allocation(bps::new(9_998), bps::new(9_999)),
+            allocation::protocol_allocation(bps::new(1_000), bps::new(1_000)),
         );
     });
 
@@ -185,13 +185,13 @@ fun protocol_allocation_rejects_an_unchanged_value() {
 #[
     expected_failure(
         abort_code = blast_fun::errors::EInvalidProtocolAllocation,
-        location = blast_fun::launch_config,
+        location = blast_fun::allocation,
     ),
 ]
-fun protocol_allocation_rejects_meme_9999() {
+fun protocol_allocation_rejects_meme_one_above_the_maximum() {
     let mut fixture = start();
 
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(9_999, 0));
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(1_001, 0));
 
     fixture.end();
 }
@@ -200,29 +200,13 @@ fun protocol_allocation_rejects_meme_9999() {
 #[
     expected_failure(
         abort_code = blast_fun::errors::EInvalidProtocolAllocation,
-        location = blast_fun::launch_config,
+        location = blast_fun::allocation,
     ),
 ]
-fun protocol_allocation_rejects_meme_10000_at_policy_surface() {
+fun protocol_allocation_rejects_quote_one_above_the_maximum() {
     let mut fixture = start();
 
-    // Bps admits 10,000 inclusively; the stricter allocation policy owns this abort.
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(10_000, 0));
-
-    fixture.end();
-}
-
-#[test]
-#[
-    expected_failure(
-        abort_code = blast_fun::errors::EInvalidProtocolAllocation,
-        location = blast_fun::launch_config,
-    ),
-]
-fun protocol_allocation_cannot_leave_no_pool_quote() {
-    let mut fixture = start();
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(0, 10_000));
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| f.set_protocol_allocation_for_testing(0, 1_001));
 
     fixture.end();
 }
@@ -962,6 +946,30 @@ fun admin_sets_the_creation_fee_and_it_emits_the_new_value() {
             bcs::to_bytes(&applied_one<CreationFeeKey, u64>()),
             bcs::to_bytes(&2_000_000_000u64),
         );
+    });
+
+    fixture.end();
+}
+
+#[test]
+fun creation_fee_accepts_its_ten_sui_maximum() {
+    let mut fixture = start();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        f.set_creation_fee_for_testing(10_000_000_000);
+
+        assert_eq!(f.config.creation_fee(), 10_000_000_000);
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EInvalidCreationFee, location = blast_fun::launch_config)]
+fun creation_fee_rejects_one_mist_above_the_maximum() {
+    let mut fixture = start();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        f.set_creation_fee_for_testing(10_000_000_001);
     });
 
     fixture.end();

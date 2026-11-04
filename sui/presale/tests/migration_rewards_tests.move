@@ -359,7 +359,7 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
         &package_version,
         &fee_admin(),
         bps::new(0),
-        bps::new(5_000),
+        bps::new(3_000),
         scenario.ctx()
     );
 
@@ -369,7 +369,7 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
     assert_eq!(vault_id, object::id(&vault));
     assert_eq!(
         vector[rates.lp_fee_meme_bps().value(), rates.lp_fee_quote_bps().value()],
-        vector[0, 5_000],
+        vector[0, 3_000],
     );
 
     vault.credit_fees_for_testing(
@@ -381,8 +381,8 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
 
     let event = only_event<FeesCollected<MEME, QUOTE>>();
     let (_, protocol_meme, protocol_quote) = event.fees_collected_protocol_fields();
-    // Nothing of 101 Meme and ceil(10 * 50%) = 5 Quote; the creator's split apportions 101 and 5.
-    assert_eq!(vector[protocol_meme, protocol_quote], vector[0, 5]);
+    // Nothing of 101 Meme and ceil(10 * 30%) = 3 Quote; the creator's split apportions 101 and 7.
+    assert_eq!(vector[protocol_meme, protocol_quote], vector[0, 3]);
     let (
         _,
         _,
@@ -392,14 +392,33 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
         holder_rewards_quote,
     ) = event.fees_collected_fields();
     assert_eq!(fee_recipient_meme, vector[51, 20]);
-    assert_eq!(fee_recipient_quote, vector[3, 1]);
-    assert_eq!(vector[holder_rewards_meme, holder_rewards_quote], vector[30, 1]);
+    assert_eq!(fee_recipient_quote, vector[4, 1]);
+    assert_eq!(vector[holder_rewards_meme, holder_rewards_quote], vector[30, 2]);
 
-    vault.destroy_holding(1);
+    vault.destroy_holding(2);
     policy.destroy_for_testing();
     scenario.end();
 
     std::unit_test::destroy(package_version);
+}
+
+#[test]
+#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+/// A vault's LP rates keep the policy's 3,000 BPS maximum.
+fun a_vaults_lp_fee_rate_above_the_maximum_is_rejected() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let mut vault = vault_paying_blast(option::none(), &mut scenario);
+
+    vault.set_protocol_lp_fees_for_testing(
+        &package_version,
+        &fee_admin(),
+        bps::new(0),
+        bps::new(3_001),
+        scenario.ctx()
+    );
+
+    abort
 }
 
 #[test]

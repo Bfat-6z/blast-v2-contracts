@@ -467,16 +467,16 @@ fun blast_share_is_the_coins_own_pair_or_the_defaults_read_at_each_collection() 
 
     f.scenario.next_tx(ADMIN);
     f.administer!(|policy, version, admin, ctx| {
-        policy.set_coin_shares_for_testing<VAULT_TESTS>(version, admin, bps::new(10_000), bps::new(0), ctx);
+        policy.set_coin_shares_for_testing<VAULT_TESTS>(version, admin, bps::new(3_000), bps::new(0), ctx);
     });
     f.split(&mut vault, 100, 100);
-    f.assert_protocol_amounts(100, 0);
+    f.assert_protocol_amounts(30, 0);
 
     // A default change does not reach a coin with its own pair.
     f.scenario.next_tx(ADMIN);
-    f.set_defaults(5_000, 5_000);
+    f.set_defaults(2_000, 2_000);
     f.split(&mut vault, 100, 100);
-    f.assert_protocol_amounts(100, 0);
+    f.assert_protocol_amounts(30, 0);
 
     // Clearing the pair falls back to the defaults current now.
     f.scenario.next_tx(ADMIN);
@@ -484,13 +484,13 @@ fun blast_share_is_the_coins_own_pair_or_the_defaults_read_at_each_collection() 
         policy.clear_coin_shares_for_testing<VAULT_TESTS>(version, admin, ctx);
     });
     f.split(&mut vault, 100, 100);
-    f.assert_protocol_amounts(50, 50);
+    f.assert_protocol_amounts(20, 20);
 
     // Without its own pair, the coin pays every default change from the next collection.
     f.scenario.next_tx(ADMIN);
-    f.set_defaults(0, 10_000);
+    f.set_defaults(0, 3_000);
     f.split(&mut vault, 100, 100);
-    f.assert_protocol_amounts(0, 100);
+    f.assert_protocol_amounts(0, 30);
 
     destroy(vault);
     f.end();
@@ -499,20 +499,20 @@ fun blast_share_is_the_coins_own_pair_or_the_defaults_read_at_each_collection() 
 #[test]
 fun protocol_destination_is_read_live_at_each_collection() {
     let mut f = start(mixed_split());
-    f.set_defaults(10_000, 10_000);
+    f.set_defaults(3_000, 3_000);
     let mut vault = f.new_vault(0, 0);
 
     f.scenario.next_tx(ADMIN);
-    f.split(&mut vault, 3, 5);
+    f.split(&mut vault, 10, 20);
     f.administer!(|policy, version, admin, ctx| {
         policy.set_protocol_destination_for_testing(version, admin, @0xCAFE, ctx);
     });
-    f.split(&mut vault, 7, 11);
+    f.split(&mut vault, 30, 40);
 
     assert_eq!(collection(0).protocol_destination, option::some(PROTOCOL));
     assert_eq!(collection(1).protocol_destination, option::some(@0xCAFE));
-    f.assert_received(PROTOCOL, 3, 5);
-    f.assert_received(@0xCAFE, 7, 11);
+    f.assert_received(PROTOCOL, 3, 6);
+    f.assert_received(@0xCAFE, 9, 12);
 
     destroy(vault);
     f.end();
@@ -561,35 +561,28 @@ fun zero_collection_is_eventless_and_one_sided_collections_pay_only_the_nonzero_
 }
 
 #[test]
-fun full_blast_share_pays_only_the_protocol_destination() {
+fun the_maximum_blast_share_takes_thirty_percent_and_the_split_shares_the_rest() {
     let mut f = start(mixed_split());
-    f.set_defaults(10_000, 10_000);
+    f.set_defaults(3_000, 3_000);
     let mut vault = f.new_vault(0, 0);
 
     f.scenario.next_tx(ADMIN);
-    f.split(&mut vault, 17, 19);
+    f.split(&mut vault, 100, 200);
 
     let paid = collection(0);
-    assert_eq!(paid.protocol_meme, 17);
-    assert_eq!(paid.protocol_quote, 19);
+    assert_eq!(paid.protocol_meme, 30);
+    assert_eq!(paid.protocol_quote, 60);
     assert_eq!(
-        vector[paid.creator_meme, paid.auto_lp_meme, paid.rewards_meme, paid.burn_meme],
-        vector[0, 0, 0, 0],
+        paid.creator_meme + paid.auto_lp_meme + paid.rewards_meme + paid.burn_meme
+            + paid.recipient_meme[0] + paid.recipient_meme[1],
+        70,
     );
     assert_eq!(
-        vector[paid.creator_quote, paid.auto_lp_quote, paid.rewards_quote, paid.burn_quote],
-        vector[0, 0, 0, 0],
+        paid.creator_quote + paid.auto_lp_quote + paid.rewards_quote + paid.burn_quote
+            + paid.recipient_quote[0] + paid.recipient_quote[1],
+        140,
     );
-    assert_eq!(paid.recipient_meme, vector[0, 0]);
-    assert_eq!(paid.recipient_quote, vector[0, 0]);
-    assert_balances!(|| vault.creator_balances_for_testing(), 0, 0);
-    assert_balances!(|| vault.auto_lp_balances_for_testing(), 0, 0);
-    assert_balances!(|| vault.rewards_balances(), 0, 0);
-    assert_eq!(vault.burn_quote_for_testing(), 0);
-    f.assert_received(PROTOCOL, 17, 19);
-    f.assert_received(DESTINATION_A, 0, 0);
-    f.assert_received(DESTINATION_B, 0, 0);
-    f.assert_received(@0x0, 0, 0);
+    f.assert_received(PROTOCOL, 30, 60);
 
     destroy(vault);
     f.end();
@@ -611,19 +604,19 @@ fun dense_small_totals_match_an_independent_oracle_at_the_minimum_share() {
 }
 
 #[test]
-fun dense_small_totals_match_an_independent_oracle_at_the_maximum_partial_share() {
-    dense_totals(9_999);
+fun dense_small_totals_match_an_independent_oracle_one_below_the_maximum_share() {
+    dense_totals(2_999);
 }
 
 #[test]
-fun dense_small_totals_match_an_independent_oracle_at_the_full_share() {
-    dense_totals(10_000);
+fun dense_small_totals_match_an_independent_oracle_at_the_maximum_share() {
+    dense_totals(3_000);
 }
 
 #[test]
 fun u64_max_collection_uses_wide_products_and_conserves_every_unit() {
     let mut f = start(mixed_split());
-    f.set_defaults(1_000, 9_999);
+    f.set_defaults(1_000, 2_999);
     let mut vault = f.new_vault(0, 0);
     let max = std::u64::max_value!();
 
@@ -632,7 +625,7 @@ fun u64_max_collection_uses_wide_products_and_conserves_every_unit() {
 
     let paid = collection(0);
     assert_eq!(paid.protocol_meme, 1_844_674_407_370_955_162);
-    assert_eq!(paid.protocol_quote, 18_444_899_399_302_180_660);
+    assert_eq!(paid.protocol_quote, 5_532_178_547_705_494_530);
     let project_meme = max - paid.protocol_meme;
     let project_quote = max - paid.protocol_quote;
     assert_eq!(
@@ -764,18 +757,18 @@ fun a_partnered_collection_holds_blasts_share_and_splits_the_rest_as_before() {
 #[test]
 fun anyone_claims_the_partners_cut_of_held_lp_fees_and_pays_blast_the_rest() {
     let mut f = start_partnered(mixed_split(), PARTNER_CUT_BPS);
-    f.set_defaults(5_000, 5_000);
+    f.set_defaults(3_000, 3_000);
     let mut vault = f.new_vault(0, 0);
     f.scenario.next_tx(ADMIN);
-    f.split(&mut vault, 100, 30);
-    f.split(&mut vault, 100, 31);
-    // 50 Meme twice, and ceil(15) + ceil(15.5) = 31 Quote.
-    assert_balances!(|| vault.unpaid_protocol_lp_fees_for_testing(), 100, 31);
+    f.split(&mut vault, 200, 100);
+    f.split(&mut vault, 200, 103);
+    // 60 Meme twice, and ceil(30) + ceil(30.9) = 61 Quote.
+    assert_balances!(|| vault.unpaid_protocol_lp_fees_for_testing(), 120, 61);
 
     f.scenario.next_tx(KEEPER);
     f.claim_lp_fees_with_partner(&mut vault);
 
-    // 40% of 100 Meme and 31 Quote is 40 and 12.4: the partner takes 40 and 12, Blast 60 and 19.
+    // 40% of 120 Meme and 61 Quote is 48 and 24.4: the partner takes 48 and 24, Blast 72 and 37.
     let events = event::events_by_type<blast_events::ProtocolLpFeesClaimed>();
     assert_eq!(events.length(), 1);
     assert_eq!(
@@ -784,17 +777,17 @@ fun anyone_claims_the_partners_cut_of_held_lp_fees_and_pays_blast_the_rest() {
             &ExpectedProtocolLpFeesClaimed {
                 vault_id: object::id(&vault),
                 protocol_destination: PROTOCOL,
-                blast_meme: 60,
-                blast_quote: 19,
-                partner_meme: 40,
-                partner_quote: 12,
+                blast_meme: 72,
+                blast_quote: 37,
+                partner_meme: 48,
+                partner_quote: 24,
             },
         ),
     );
-    assert_eq!(f.partner_paid<VAULT_TESTS>(), 40);
-    assert_eq!(f.partner_paid<QUOTE>(), 12);
+    assert_eq!(f.partner_paid<VAULT_TESTS>(), 48);
+    assert_eq!(f.partner_paid<QUOTE>(), 24);
     assert_balances!(|| vault.unpaid_protocol_lp_fees_for_testing(), 0, 0);
-    f.assert_received(PROTOCOL, 60, 19);
+    f.assert_received(PROTOCOL, 72, 37);
     f.assert_received(KEEPER, 0, 0);
 
     destroy(vault);
@@ -804,19 +797,19 @@ fun anyone_claims_the_partners_cut_of_held_lp_fees_and_pays_blast_the_rest() {
 #[test]
 fun held_lp_fees_go_to_the_destination_in_force_at_the_claim() {
     let mut f = start_partnered(mixed_split(), PARTNER_CUT_BPS);
-    f.set_defaults(5_000, 5_000);
+    f.set_defaults(3_000, 3_000);
     let mut vault = f.new_vault(0, 0);
     f.scenario.next_tx(ADMIN);
-    f.split(&mut vault, 10, 0);
+    f.split(&mut vault, 20, 0);
 
     f.administer!(|policy, version, admin, ctx| {
         policy.set_protocol_destination_for_testing(version, admin, @0xCAFE, ctx);
     });
     f.claim_lp_fees_with_partner(&mut vault);
 
-    // 40% of the 5 Meme held is 2: the new destination gets 3, the old one nothing.
+    // 40% of the 6 Meme held rounds down to 2: the new destination gets 4, the old one nothing.
     assert_eq!(f.partner_paid<VAULT_TESTS>(), 2);
-    f.assert_received(@0xCAFE, 3, 0);
+    f.assert_received(@0xCAFE, 4, 0);
     f.assert_received(PROTOCOL, 0, 0);
 
     destroy(vault);
@@ -826,7 +819,7 @@ fun held_lp_fees_go_to_the_destination_in_force_at_the_claim() {
 #[test]
 fun a_zero_cut_partner_is_paid_nothing_and_blast_every_held_fee() {
     let mut f = start_partnered(mixed_split(), 0);
-    f.set_defaults(5_000, 5_000);
+    f.set_defaults(3_000, 3_000);
     let mut vault = f.new_vault(0, 0);
     f.scenario.next_tx(ADMIN);
     f.split(&mut vault, 10, 10);
@@ -835,7 +828,7 @@ fun a_zero_cut_partner_is_paid_nothing_and_blast_every_held_fee() {
 
     assert!(event::events_by_type<PartnerPaid<VAULT_TESTS>>().is_empty());
     assert!(event::events_by_type<PartnerPaid<QUOTE>>().is_empty());
-    f.assert_received(PROTOCOL, 5, 5);
+    f.assert_received(PROTOCOL, 3, 3);
 
     destroy(vault);
     f.end();

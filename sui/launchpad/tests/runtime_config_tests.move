@@ -61,20 +61,31 @@ fun admin_sets_the_protocol_fee_share_and_it_emits_the_new_value() {
 }
 
 #[test]
-fun protocol_fee_share_accepts_both_percentage_boundaries() {
+fun protocol_fee_share_accepts_zero_and_its_maximum() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_protocol_fee_share_for_testing(bps::new(10_000));
-        assert_eq!(f.config.protocol_fee_share().value(), 10_000);
+        f.set_protocol_fee_share_for_testing(bps::new(7_000));
+        assert_eq!(f.config.protocol_fee_share().value(), 7_000);
 
         f.set_protocol_fee_share_for_testing(bps::new(0));
         assert_eq!(f.config.protocol_fee_share().value(), 0);
 
         let changes = applied<ProtocolFeeShareKey, Bps>();
         assert_eq!(changes.length(), 2);
-        assert_eq!(bcs::to_bytes(&changes[0]), bcs::to_bytes(&10_000u64));
+        assert_eq!(bcs::to_bytes(&changes[0]), bcs::to_bytes(&7_000u64));
         assert_eq!(bcs::to_bytes(&changes[1]), bcs::to_bytes(&0u64));
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EInvalidProtocolFeeShare, location = blast_fun::runtime_config)]
+fun protocol_fee_share_rejects_one_above_the_maximum() {
+    let mut fixture = start();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        f.set_protocol_fee_share_for_testing(bps::new(7_001));
     });
 
     fixture.end();

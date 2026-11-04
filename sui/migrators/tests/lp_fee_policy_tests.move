@@ -156,13 +156,13 @@ fun active_admin_changes_independent_defaults_and_all_event_fields() {
                 &f.migrators_version,
                 &admin,
                 bps::new(2_000),
-                bps::new(7_000),
+                bps::new(2_700),
                 f.scenario.ctx()
             );
 
-        f.assert_shares<MemeA>(2_000, 7_000);
-        f.assert_shares<MemeB>(2_000, 7_000);
-        assert_eq!(f.default_changes(), vector[default_change(pair(0, 0), pair(2_000, 7_000))]);
+        f.assert_shares<MemeA>(2_000, 2_700);
+        f.assert_shares<MemeB>(2_000, 2_700);
+        assert_eq!(f.default_changes(), vector[default_change(pair(0, 0), pair(2_000, 2_700))]);
         assert!(f.coin_changes().is_empty());
     });
 
@@ -260,10 +260,10 @@ fun a_coin_pair_equal_to_the_defaults_is_real_and_skips_later_default_changes() 
         let admin = fee_admin();
         let version = &f.migrators_version;
         f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(0), bps::new(0), f.scenario.ctx());
-        f.policy.set_default_shares_for_testing(version, &admin, bps::new(1_234), bps::new(9_876), f.scenario.ctx());
+        f.policy.set_default_shares_for_testing(version, &admin, bps::new(1_234), bps::new(2_876), f.scenario.ctx());
 
         f.assert_shares<MemeA>(0, 0);
-        f.assert_shares<MemeB>(1_234, 9_876);
+        f.assert_shares<MemeB>(1_234, 2_876);
         assert_eq!(f.coin_changes(), vector[coin_change<MemeA>(option::some(pair(0, 0)))]);
         assert_eq!(f.default_changes().length(), 1);
     });
@@ -285,7 +285,7 @@ fun default_shares_read_the_default_pair_whatever_coin_pairs_are_set() {
                 &f.migrators_version,
                 &admin,
                 bps::new(1_234),
-                bps::new(9_876),
+                bps::new(2_876),
                 f.scenario.ctx()
             );
         let version = &f.migrators_version;
@@ -298,7 +298,7 @@ fun default_shares_read_the_default_pair_whatever_coin_pairs_are_set() {
                 bps::new(22),
                 f.scenario.ctx()
             );
-        f.assert_default_shares(1_234, 9_876);
+        f.assert_default_shares(1_234, 2_876);
         f.assert_shares<MemeA>(11, 22);
 
         f
@@ -327,13 +327,13 @@ fun a_coin_pair_and_every_default_change_apply_to_the_very_next_read() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin = fee_admin();
         let version = &f.migrators_version;
-        f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(10_000), bps::new(1), f.scenario.ctx());
-        f.assert_shares<MemeA>(10_000, 1);
+        f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(3_000), bps::new(1), f.scenario.ctx());
+        f.assert_shares<MemeA>(3_000, 1);
         f.assert_shares<MemeB>(0, 0);
 
         // A default change reaches every coin without its own pair at once, and no other.
         f.policy.set_default_shares_for_testing(version, &admin, bps::new(2), bps::new(3), f.scenario.ctx());
-        f.assert_shares<MemeA>(10_000, 1);
+        f.assert_shares<MemeA>(3_000, 1);
         f.assert_shares<MemeB>(2, 3);
 
         f.policy.set_coin_shares_for_testing<MemeA>(version, &admin, bps::new(4), bps::new(5), f.scenario.ctx());
@@ -352,7 +352,7 @@ fun a_coin_pair_and_every_default_change_apply_to_the_very_next_read() {
 }
 
 #[test]
-fun both_assets_accept_zero_and_full_share_independently() {
+fun both_assets_accept_zero_and_the_maximum_share_independently() {
     let mut fixture = start_policy();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
@@ -363,31 +363,31 @@ fun both_assets_accept_zero_and_full_share_independently() {
             .set_default_shares_for_testing(
                 version,
                 &admin,
-                bps::new(10_000),
+                bps::new(3_000),
                 bps::new(0),
                 f.scenario.ctx()
             );
-        f.assert_shares<MemeA>(10_000, 0);
+        f.assert_shares<MemeA>(3_000, 0);
         f
             .policy
             .set_default_shares_for_testing(
                 version,
                 &admin,
                 bps::new(0),
-                bps::new(10_000),
+                bps::new(3_000),
                 f.scenario.ctx()
             );
-        f.assert_shares<MemeA>(0, 10_000);
+        f.assert_shares<MemeA>(0, 3_000);
         f
             .policy
             .set_default_shares_for_testing(
                 version,
                 &admin,
-                bps::new(10_000),
-                bps::new(10_000),
+                bps::new(3_000),
+                bps::new(3_000),
                 f.scenario.ctx()
             );
-        f.assert_shares<MemeA>(10_000, 10_000);
+        f.assert_shares<MemeA>(3_000, 3_000);
         f
             .policy
             .set_default_shares_for_testing(
@@ -404,31 +404,31 @@ fun both_assets_accept_zero_and_full_share_independently() {
             .set_coin_shares_for_testing<MemeA>(
                 version,
                 &admin,
-                bps::new(10_000),
+                bps::new(3_000),
                 bps::new(0),
                 f.scenario.ctx()
             );
-        f.assert_shares<MemeA>(10_000, 0);
+        f.assert_shares<MemeA>(3_000, 0);
         f
             .policy
             .set_coin_shares_for_testing<MemeA>(
                 version,
                 &admin,
                 bps::new(0),
-                bps::new(10_000),
+                bps::new(3_000),
                 f.scenario.ctx()
             );
-        f.assert_shares<MemeA>(0, 10_000);
+        f.assert_shares<MemeA>(0, 3_000);
         f
             .policy
             .set_coin_shares_for_testing<MemeA>(
                 version,
                 &admin,
-                bps::new(10_000),
-                bps::new(10_000),
+                bps::new(3_000),
+                bps::new(3_000),
                 f.scenario.ctx()
             );
-        f.assert_shares<MemeA>(10_000, 10_000);
+        f.assert_shares<MemeA>(3_000, 3_000);
         f
             .policy
             .set_coin_shares_for_testing<MemeA>(
@@ -439,6 +439,78 @@ fun both_assets_accept_zero_and_full_share_independently() {
                 f.scenario.ctx()
             );
         f.assert_shares<MemeA>(0, 0);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = lp_fee_policy::EInvalidShares, location = blast_fun_migrators::lp_fee_policy)]
+fun a_default_meme_share_above_the_cap_is_rejected() {
+    let mut fixture = start_policy();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        f.policy.set_default_shares_for_testing(
+            &f.migrators_version,
+            &fee_admin(),
+            bps::new(3_001),
+            bps::new(0),
+            f.scenario.ctx(),
+        );
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = lp_fee_policy::EInvalidShares, location = blast_fun_migrators::lp_fee_policy)]
+fun a_default_quote_share_above_the_cap_is_rejected() {
+    let mut fixture = start_policy();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        f.policy.set_default_shares_for_testing(
+            &f.migrators_version,
+            &fee_admin(),
+            bps::new(0),
+            bps::new(3_001),
+            f.scenario.ctx(),
+        );
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = lp_fee_policy::EInvalidShares, location = blast_fun_migrators::lp_fee_policy)]
+fun a_coin_meme_share_above_the_cap_is_rejected() {
+    let mut fixture = start_policy();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        f.policy.set_coin_shares_for_testing<MemeA>(
+            &f.migrators_version,
+            &fee_admin(),
+            bps::new(3_001),
+            bps::new(0),
+            f.scenario.ctx(),
+        );
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = lp_fee_policy::EInvalidShares, location = blast_fun_migrators::lp_fee_policy)]
+fun a_coin_quote_share_above_the_cap_is_rejected() {
+    let mut fixture = start_policy();
+
+    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
+        f.policy.set_coin_shares_for_testing<MemeA>(
+            &f.migrators_version,
+            &fee_admin(),
+            bps::new(0),
+            bps::new(3_001),
+            f.scenario.ctx(),
+        );
     });
 
     fixture.end();

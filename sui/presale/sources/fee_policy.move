@@ -130,8 +130,8 @@ public fun cancel_destination(
 
 // === Package Functions ===
 
-/// Blast's rates, within the bounds every presale can apportion: a raise share below 10,000 BPS
-/// and a token share of at most 9,998.
+/// Blast's rates, within the compiled maximums: at most 1,000 BPS of the raise and of the
+/// tokens, and at most 3,000 BPS of each LP fee.
 public(package) fun protocol_fees(
     raise_bps: Bps,
     token_bps: Bps,
@@ -139,7 +139,9 @@ public(package) fun protocol_fees(
     lp_fee_quote_bps: Bps,
 ): ProtocolFees {
     assert!(
-        raise_bps.value() < bps::denominator() && token_bps.value() <= MAX_TOKEN_BPS,
+        raise_bps.value() <= MAX_RAISE_BPS && token_bps.value() <= MAX_TOKEN_BPS
+            && lp_fee_meme_bps.value() <= MAX_LP_FEE_BPS
+            && lp_fee_quote_bps.value() <= MAX_LP_FEE_BPS,
         EInvalidFees,
     );
 
@@ -175,15 +177,13 @@ public(package) fun lp_fee_quote_bps(self: &ProtocolFees): Bps {
     self.lp_fee_quote_bps
 }
 
-/// Returns these rates with both LP-fee rates replaced.
+/// Returns these rates with both LP-fee rates replaced, under the same maximums.
 public(package) fun with_lp_fees(
-    mut self: ProtocolFees,
+    self: ProtocolFees,
     lp_fee_meme_bps: Bps,
     lp_fee_quote_bps: Bps,
 ): ProtocolFees {
-    self.lp_fee_meme_bps = lp_fee_meme_bps;
-    self.lp_fee_quote_bps = lp_fee_quote_bps;
-    self
+    protocol_fees(self.raise_bps, self.token_bps, lp_fee_meme_bps, lp_fee_quote_bps)
 }
 
 // === Private Functions ===
@@ -275,12 +275,12 @@ public fun protocol_fees_for_testing(
     lp_fee_meme_bps: u64,
     lp_fee_quote_bps: u64,
 ): ProtocolFees {
-    ProtocolFees {
-        raise_bps: bps::new(raise_bps),
-        token_bps: bps::new(token_bps),
-        lp_fee_meme_bps: bps::new(lp_fee_meme_bps),
-        lp_fee_quote_bps: bps::new(lp_fee_quote_bps),
-    }
+    protocol_fees(
+        bps::new(raise_bps),
+        bps::new(token_bps),
+        bps::new(lp_fee_meme_bps),
+        bps::new(lp_fee_quote_bps),
+    )
 }
 
 #[test_only]
@@ -293,13 +293,20 @@ public fun destroy_for_testing(self: FeePolicy) {
 
 // === Constants ===
 
-/// The sale and LP allocations each keep at least one BPS of the supply.
-const MAX_TOKEN_BPS: u64 = 9_998;
+/// Blast's largest share of a sale's raise.
+const MAX_RAISE_BPS: u64 = 1_000;
+
+/// Blast's largest share of a sale's tokens.
+const MAX_TOKEN_BPS: u64 = 1_000;
+
+/// Blast's largest share of each LP fee, Meme and Quote.
+const MAX_LP_FEE_BPS: u64 = 3_000;
 
 // === Errors ===
 
 #[error(code = 0)]
-const EInvalidFees: vector<u8> = b"Blast's raise share must be below 10,000 BPS and its token share at most 9,998.";
+const EInvalidFees: vector<u8> =
+    b"Blast's raise and token shares must be at most 1,000 BPS and each LP fee at most 3,000.";
 
 #[error(code = 1)]
 const EInvalidDestination: vector<u8> = b"The protocol destination must be a nonzero address.";

@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 
 const BASIS_POINTS_DENOMINATOR = 10_000n;
 const MAX_MIGRATION_CHANNELS = 16;
-const MAX_PROTOCOL_MEME_BPS = 9_998n;
-const MAX_PROTOCOL_QUOTE_BPS = 9_999n;
+const MAX_PROTOCOL_MEME_BPS = 1_000n;
+const MAX_PROTOCOL_QUOTE_BPS = 1_000n;
 const MAX_U64 = (1n << 64n) - 1n;
 const vectorUrl = new URL("./graduation.json", import.meta.url);
 const source = readFileSync(vectorUrl, "utf8");

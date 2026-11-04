@@ -66,7 +66,7 @@ The live curve-fee cap holder schedules or cancels a split with
 activating the stored replacement and next notice. Delay reductions still wait
 the old notice; replacement restarts that wait. An administrator
 changes Blast's default or per-coin share in `LpFeePolicy`, from the next
-collection. Because auto-LP adds at the current price, a caller can move the
+collection; each share is capped at 30% in code. Because auto-LP adds at the current price, a caller can move the
 price around a collection and skim part of that call's auto-LP amount; frequent
 collection keeps each slice small (ADR 0089).
 

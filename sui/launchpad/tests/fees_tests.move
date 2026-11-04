@@ -277,7 +277,7 @@ fun changed_protocol_fee_share_applies_to_the_next_accrual() {
             balance::create_for_testing<TEST_QUOTE>(4),
             f.runtime_config.protocol_fee_share(),
         );
-        f.set_protocol_fee_share_for_testing(8_000);
+        f.set_protocol_fee_share_for_testing(7_000);
         let (
             protocol_meme_delta,
             creator_meme_delta,

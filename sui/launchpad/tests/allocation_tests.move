@@ -210,7 +210,7 @@ fun shaped(meme: vector<u64>, quote: vector<u64>): AllocationPlan {
     );
 
     allocation::plan(bps::new(meme[0]), bps::new(meme[1]), bps::new(quote[0]), recipients)
-        .add_protocol(allocation::protocol_allocation(bps::new(meme[2]), bps::new(quote[1])))
+        .add_protocol(allocation::protocol_allocation_unchecked_for_testing(bps::new(meme[2]), bps::new(quote[1])))
 }
 
 fun fee_split(parts: vector<u64>, routes: vector<Route>): FeeSplit {

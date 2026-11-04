@@ -132,7 +132,14 @@ public(package) fun meme_bps(self: &ProtocolAllocation): Bps { self.meme_bps }
 
 public(package) fun quote_bps(self: &ProtocolAllocation): Bps { self.quote_bps }
 
+/// Builds Blast's allocation; each asset's share is at most `max_protocol_allocation_bps`.
 public(package) fun protocol_allocation(meme_bps: Bps, quote_bps: Bps): ProtocolAllocation {
+    assert!(
+        meme_bps.value() <= constants::max_protocol_allocation_bps!()
+            && quote_bps.value() <= constants::max_protocol_allocation_bps!(),
+        blast_fun::errors::invalid_protocol_allocation!(),
+    );
+
     ProtocolAllocation { meme_bps, quote_bps }
 }
 
@@ -223,6 +230,15 @@ fun apportion(bps: vector<Bps>, total: u64, rounded_up: Option<u64>): vector<u64
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// Builds an allocation above the policy maximum, for apportionment math tests.
+public fun protocol_allocation_unchecked_for_testing(
+    meme_bps: Bps,
+    quote_bps: Bps,
+): ProtocolAllocation {
+    ProtocolAllocation { meme_bps, quote_bps }
+}
 
 #[test_only]
 public fun add_protocol_for_testing(

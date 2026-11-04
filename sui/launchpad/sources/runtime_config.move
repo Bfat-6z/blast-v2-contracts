@@ -120,7 +120,7 @@ public fun cancel_creator_claim_signer_delay(
     self.creator_claim_signers.cancel_delay();
 }
 
-/// Schedules protocol fee share after the full administrative delay.
+/// Schedules protocol fee share, at most 7,000 bps, after the full administrative delay.
 public fun schedule_protocol_fee_share(
     self: &mut RuntimeConfig,
     package_version: &PackageVersion,
@@ -131,7 +131,9 @@ public fun schedule_protocol_fee_share(
 ) {
     package_version.assert_current();
 
-    self.protocol_fee_share_bps.schedule(protocol_fee_share_bps, delay_ms, clock);
+    self
+        .protocol_fee_share_bps
+        .schedule(checked_protocol_fee_share(protocol_fee_share_bps), delay_ms, clock);
 }
 
 /// Applies the scheduled protocol fee share permissionlessly once ready.
@@ -239,10 +241,25 @@ fun new(ctx: &mut TxContext): RuntimeConfig {
 
     RuntimeConfig {
         creator_claim_signers: delayed_set::new(ClaimSignerKey(), &id, 0),
-        protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), &id, bps::new(5_000), 0),
+        protocol_fee_share_bps: delayed::new(
+            ProtocolFeeShareKey(),
+            &id,
+            checked_protocol_fee_share(bps::new(5_000)),
+            0,
+        ),
         treasury: delayed::new(TreasuryKey(), &id, @blast_treasury, 0),
         id,
     }
+}
+
+/// Returns the share once it is at most `max_protocol_fee_share_bps`.
+fun checked_protocol_fee_share(protocol_fee_share_bps: Bps): Bps {
+    assert!(
+        protocol_fee_share_bps.value() <= constants::max_protocol_fee_share_bps!(),
+        blast_fun::errors::invalid_protocol_fee_share!(),
+    );
+
+    protocol_fee_share_bps
 }
 
 // === Test-Only Functions ===

@@ -1,6 +1,6 @@
 # 0022: Dual-asset fee ledger and capability claims
 
-- Status: accepted; amended by [0088](0088-reusable-launch-accounting-and-atomic-migration.md), [0098](0098-launch-creation-fee-and-partners.md), and [0105](0105-permissionless-launch-fee-claims.md)
+- Status: accepted; amended by [0088](0088-reusable-launch-accounting-and-atomic-migration.md), [0098](0098-launch-creation-fee-and-partners.md), [0105](0105-permissionless-launch-fee-claims.md), and [0134](0134-delayed-administration-pause-and-table-acl.md) (fee maximums, 2026-11-04)
 - Date: 2026-08-23
 - Partially accepts: [0006](0006-fees-and-launch-paths.md), [0007](0007-acl-pause-and-versioning.md), [0011](0011-event-schema-and-replay.md)
 - Amended by: [0028](0028-hot-cold-runtime-configuration.md), [0030](0030-singleton-event-identity.md), [0041](0041-launch-config-owned-trade-fees.md), [0058](0058-eventless-package-initialization.md), [0079](0079-compact-launch-state-and-events.md), [0081](0081-separate-lp-fee-share-policy.md), [0098](0098-launch-creation-fee-and-partners.md), and [0105](0105-permissionless-launch-fee-claims.md)
@@ -43,7 +43,8 @@ active pair; `fees.move` receives already-calculated `Balance` values and does
 not recompute curve fees or accept rates.
 
 The protocol/creator split is different: it is one live, global `protocol_fee_share_bps` value in the
-shared `RuntimeConfig`, bounded from zero through 10,000 basis points. Every trade on every launch
+shared `RuntimeConfig`, bounded from zero through 7,000 basis points (10,000 until the ADR 0134
+fee-maximum amendment of 2026-11-04). Every trade on every launch
 reads the current configuration. An update therefore applies to the next fee accrual of all existing
 and future launches; neither `Launch` nor `FeeLedger` snapshots the split.
 There is no independently stored `creator_fee_share_bps`: it is always the
