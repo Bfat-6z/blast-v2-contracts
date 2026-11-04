@@ -5478,8 +5478,8 @@ A vault never closes; its position cannot be removed.
 #### Change the fee split (owner)
 
 1. Get an `OwnerProof`, then call `blast_vault::vault::schedule_fee_split` with the proposed
-   `blast_core::fee_split::FeeSplit`, the next notice, and the `Clock` (`0x6`). It is ready after the
-   applied notice (48 hours at creation).
+   `blast_core::fee_split::FeeSplit` and the `Clock` (`0x6`). It is ready after a fixed 48-hour
+   notice.
 2. Once ready, the venue settles fees under the current split and applies the new one with
    `blast_vault::vault::apply_fee_split`, so every fee follows the split it accrued under. Integrators
    check readiness with `blast_vault::vault::assert_fee_split_ready`.
@@ -5532,7 +5532,7 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 - Venue admissions start at zero notice, so Blast lists its venues at launch while the package is
   still paused; Blast then raises the notice before unpausing. Afterwards each admission and
   notice change waits the applied notice.
-- Fee-split and Blast-share changes wait the vault's applied notice, 48 hours at creation.
+- Fee-split and Blast-share changes always wait 48 hours; no call changes that notice.
 - A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
 - Claims are open while the clock is before the deadline; a round closes at or after it.
 
@@ -5597,8 +5597,8 @@ collection, and round closing never pause.
 **What happens to unclaimed rewards?** At the deadline anyone closes the round and they return to
 the vault's holder rewards for later rounds.
 
-**Can Blast change its share?** Yes, up to 3,000 basis points per asset, after the vault's notice
-and only for fees collected afterwards.
+**Can Blast change its share?** Yes, up to 3,000 basis points per asset, after a fixed 48-hour
+notice and only for fees collected afterwards.
 
 ## Administration
 
@@ -14456,7 +14456,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/va
 - `admin_pause_bit: u8 = 1`: Stops Blast's administrative operations: protocol-share changes, holder-reward rounds, gas settlement, and buyback. Venue admission, collection, owner actions, claims, closes, and cancels never pause.
 - `valid_pause_bits: u8 = blast_vault::constants::admin_pause_bit!()`: Every supported vault pause flag.
 - `venue_admission_delay_ms: u64 = 0`: Initial venue admission notice: zero, so Blast lists its venues at launch while publication keeps the package paused. `blast_vault_package::unpause` refuses until a nonzero notice applies.
-- `fee_change_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Initial notice before a vault's fee split or Blast share changes.
+- `fee_change_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Fixed notice before a vault's fee split or Blast share changes; no call can change it.
 - `round_notice_ms: u64 = 2 * 60 * 60 * 1_000`: Initial notice before a scheduled holder-reward round may publish, or its next notice period may change: 2 hours, so a cancel administrator can stop a bad round while daily rounds fit.
 - `max_protocol_bps: u64 = 3_000`: Blast's largest share of each LP-fee collection, per asset.
 - `max_gas_reserve_bps: u64 = 1_000`: Largest holder-reward gas reserve, in basis points of the round's holder Quote.
@@ -14820,13 +14820,12 @@ public fun claim_owner_balances<Meme, Quote>(
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>)
 
-/// Proposes a new fee split and next notice with an owner proof, ready after the applied notice.
+/// Proposes a new fee split with an owner proof, ready after the fixed 48-hour notice.
 public fun schedule_fee_split<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     proof: blast_core::owner_proof::OwnerProof,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
     proposed: blast_core::fee_split::FeeSplit,
-    delay_ms: u64,
     clock: &Clock,
 )
 
@@ -14837,15 +14836,14 @@ public fun cancel_fee_split<Meme, Quote>(
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
 )
 
-/// Proposes Blast's per-vault share and next notice, each at most 3,000 basis points, ready after
-/// the applied notice; it applies to fees collected after it is applied.
+/// Proposes Blast's per-vault share, each asset at most 3,000 basis points, ready after the fixed
+/// 48-hour notice; it applies to fees collected after it is applied.
 public fun schedule_protocol_bps<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::FeeAdmin>,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
     meme_bps: blast_core::bps::Bps,
     quote_bps: blast_core::bps::Bps,
-    delay_ms: u64,
     clock: &Clock,
 )
 

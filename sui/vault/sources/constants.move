@@ -29,7 +29,7 @@ macro public(package) fun venue_admission_delay_ms(): u64 {
     0
 }
 
-/// Initial notice before a vault's fee split or Blast share changes.
+/// Fixed notice before a vault's fee split or Blast share changes; no call can change it.
 macro public(package) fun fee_change_delay_ms(): u64 {
     48 * 60 * 60 * 1_000
 }

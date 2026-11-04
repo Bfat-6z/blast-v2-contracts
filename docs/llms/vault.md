@@ -56,8 +56,8 @@ A vault never closes; its position cannot be removed.
 #### Change the fee split (owner)
 
 1. Get an `OwnerProof`, then call `blast_vault::vault::schedule_fee_split` with the proposed
-   `blast_core::fee_split::FeeSplit`, the next notice, and the `Clock` (`0x6`). It is ready after the
-   applied notice (48 hours at creation).
+   `blast_core::fee_split::FeeSplit` and the `Clock` (`0x6`). It is ready after a fixed 48-hour
+   notice.
 2. Once ready, the venue settles fees under the current split and applies the new one with
    `blast_vault::vault::apply_fee_split`, so every fee follows the split it accrued under. Integrators
    check readiness with `blast_vault::vault::assert_fee_split_ready`.
@@ -110,7 +110,7 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 - Venue admissions start at zero notice, so Blast lists its venues at launch while the package is
   still paused; Blast then raises the notice before unpausing. Afterwards each admission and
   notice change waits the applied notice.
-- Fee-split and Blast-share changes wait the vault's applied notice, 48 hours at creation.
+- Fee-split and Blast-share changes always wait 48 hours; no call changes that notice.
 - A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
 - Claims are open while the clock is before the deadline; a round closes at or after it.
 
@@ -175,5 +175,5 @@ collection, and round closing never pause.
 **What happens to unclaimed rewards?** At the deadline anyone closes the round and they return to
 the vault's holder rewards for later rounds.
 
-**Can Blast change its share?** Yes, up to 3,000 basis points per asset, after the vault's notice
-and only for fees collected afterwards.
+**Can Blast change its share?** Yes, up to 3,000 basis points per asset, after a fixed 48-hour
+notice and only for fees collected afterwards.
