@@ -1,0 +1,16 @@
+[package]
+name = "blast_core"
+edition = "2024"
+license = "BUSL-1.1"
+authors = ["Jose Cerqueira (jose@interestprotocol.com)"]
+
+[dependencies]
+blast_admin = { local = "../admin" }
+blast_partners = { local = "../partners" }
+blast_fun_vesting = { local = "../vesting" }
+
+[addresses]
+blast_core = "0x0"
+
+# Must be set to the intended treasury before fresh publication.
+blast_treasury = "0x0"

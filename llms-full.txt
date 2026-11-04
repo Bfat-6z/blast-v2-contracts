@@ -2,7 +2,7 @@
 
 > Everything an integrator needs to understand and call Blast's Sui Move contracts: a bonding-curve launchpad whose graduated coins migrate into Cetus or Bluefin pools, standalone overflow presales, partner fee codes, Boost leverage coins on Aftermath perpetuals, and the funSUI/blastSUI staking vault. Sui mainnet only.
 
-This file is self-contained. Give it to an AI agent and ask it anything about Blast's contracts. An agent that needs one product can take that product's smaller file instead: [Presale](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/presale.txt), [Launchpad](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/launchpad.txt), [Partner codes](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/partners.txt), [Boosts](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/boosts.txt), [blastSUI and funSUI](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/blast-sui.txt), [Administration](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/admin.txt).
+This file is self-contained. Give it to an AI agent and ask it anything about Blast's contracts. An agent that needs one product can take that product's smaller file instead: [Presale](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/presale.txt), [Launchpad](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/launchpad.txt), [Partner codes](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/partners.txt), [Boosts](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/boosts.txt), [blastSUI and funSUI](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/blast-sui.txt), [Shared core](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/core.txt), [Administration](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/admin.txt).
 
 How it is organized:
 
@@ -28,6 +28,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | `blast_boosts_products` | Boost product tags | live; source has changed since | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` |
 | `blast_boosts_aftermath` | Boosts Aftermath adapter | not yet published | — | — |
 | `blast_sui` | blastSUI and funSUI | not yet published | — | — |
+| `blast_core` | Shared core | not yet published | — | — |
 | `blast_admin` | Administration | not yet published | — | — |
 | `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | live; source has changed since | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` |
 
@@ -5324,6 +5325,95 @@ event snapshot or a dev-inspected `sync`.
 **Why can't blastSUI supply reach zero?** Creation sends the bootstrap shares to
 `0x0`, where no one can redeem them. This removes every empty-vault edge case,
 and those shares keep their pro-rata part of the vault forever.
+
+## Shared core
+
+> **Deployment status:** `blast_core` is not yet published on mainnet; its interface may change before publication.
+
+### What it is
+
+Package `blast_core` holds the money building blocks every Blast launch product shares, each
+defined once: a basis-points unit and its exact apportionment, outright or vested payouts, the LP-fee split, the ledger that holds Blast's fees and pays the partner's cut,
+the one treasury address, Merkle proofs, and the sealed values that carry a sale's liquidity to its
+venue and prove a sale's ownership to its vault. It holds no user funds of its own. Products and
+vaults embed its values and call it; integrators read its events and build PTBs that pass its
+values between product and venue calls.
+
+### Units and payouts
+
+- `blast_core::bps::Bps` is a rate from 0 to 10,000 basis points; `blast_core::bps::new` aborts
+  above 10,000. `blast_core::bps::apply_up` applies it rounding up.
+- `blast_core::bps::apportion` splits an amount over rates that sum to exactly 10,000 by largest
+  remainder: every part takes its floor, an optional named part takes its ceiling, and the
+  leftover units go one each to the largest remaining remainders, earlier parts first. The parts
+  always sum to the amount.
+- `payout::pay_or_vest` pays an amount to a destination as a coin, or, given
+  `payout::VestingTerms`, locks it in an irrevocable, shared `blast_fun_linear_vesting::Vesting`
+  schedule that starts at the payout and returns its ID. A zero amount sends nothing. Each product
+  keeps its own recipient lists and shares.
+
+### Fee splits
+
+`fee_split::FeeSplit` is a list of up to 20 routes summing to 10,000. Each route has a positive
+share and a `fee_split::Destination`: an address, the vault's owner, auto-LP, holder rewards, or
+burn. No address and no special kind appears twice. `fee_split::apportion` divides one collection
+across the routes in order.
+
+### Protocol fees, partners, and the treasury
+
+`protocol_fees::Ledger` holds Blast's Meme, Quote, and SUI fees for one launch, presale, or vault.
+Only the module that owns it can create it, under its package witness, and every payment event
+names that witness type, so a payment's origin is attributable.
+`protocol_fees::take_share` moves Blast's rounded-up share of a fee into it. A ledger is bound at
+creation to the partner its sale named, or to none. `protocol_fees::pay` pays everything to the
+treasury and aborts when a partner is bound; `protocol_fees::pay_with_partner` first pays that
+partner its cut of each asset through `blast_partners::blast_partners::pay`, then the treasury the
+rest. Both emit `protocol_fees::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
+may make.
+
+`blast_treasury::Treasury` is a shared singleton holding the address Blast's fees go to. A Blast
+admin with `blast_domain::TreasuryAdmin` schedules a new address with
+`blast_treasury::schedule_destination`; anyone applies it with `blast_treasury::apply_destination`
+once its notice has passed (48 hours from publication); a Blast admin with
+`blast_domain::CancelAdmin` cancels it with `blast_treasury::cancel_destination`. Read the current
+address with `blast_treasury::destination`.
+
+### Migration hand-off and owner proof
+
+- Before a sale's supply is minted, its venue prepares the coin and returns a
+  `migration::VenueBinding` sealed by the venue's witness. The venue keeps the coin's pool tier.
+  The product's creation call consumes the binding with `migration::unbind` and stores the venue.
+- `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
+  split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
+  `migration::vault_terms`, under the issuing package's witness, builds them; a standalone vault's issuer
+  builds its own the same way.
+- At migration the product returns a `migration::Migration` sealed by its own witness, holding the
+  pool's Meme and Quote and terms the same package witness sealed. Only the stored venue can consume it,
+  with `migration::redeem`; any other venue aborts.
+- `owner_proof::OwnerProof` is a product's sealed statement that the caller holds the sale's
+  creator authority. A vault consumes it with `owner_proof::verify`, which aborts unless it names
+  the vault's package witness and sale.
+
+None of these values can be dropped, copied, or stored, so the PTB that creates one must consume it.
+
+### Merkle proofs
+
+`blast_core::merkle::verify` checks a positional Blake2b-256 proof of a leaf digest at an index. Leaves hash
+as `blake2b256(0x00 || domain || payload)` with `blast_core::merkle::leaf`, where each tree's
+purpose names its own domain string; internal nodes hash as `blake2b256(0x01 || left || right)`;
+an odd node at any level is its own sibling. Malformed roots, digests, or siblings,
+an empty tree, an index outside it, or a proof of the wrong depth return false instead of aborting.
+
+### Roles
+
+`blast_domain` declares Blast's product roles for the shared ACL: `TreasuryAdmin`, `FeeAdmin`,
+`ListingAdmin`, `AdapterAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`,
+`ClaimSignerAdmin`, and `CancelAdmin`. Only Blast admins hold them.
+
+### Errors
+
+Every abort is a small integer from the package's numeric registry; the reference lists each code.
+The abort names the module that raised it.
 
 ## Administration
 
@@ -13367,6 +13457,520 @@ public fun sync(
     system_state: &mut sui_system::SuiSystemState,
     ctx: &mut TxContext,
 )
+```
+
+## API reference: `blast_core` (Shared core)
+
+Not yet published on mainnet. Its interface may change before publication.
+
+Events: payload structs are emitted directly, each under its own type.
+
+Abort codes: this package aborts with the numeric codes below from whichever module detects the failure; the abort location names that module.
+
+| Code | Constant | Meaning |
+| --- | --- | --- |
+| 0 | `EInvalidBps` | A basis-points rate must be at most 10,000. |
+| 1 | `EInvalidApportionment` | Apportioned rates must sum to 10,000 and name a rounded-up part inside them. |
+| 2 | `EInvalidVestingTerms` | Vesting needs positive steps whose total and cliff fit the technical bound. |
+| 3 | `EInvalidRoute` | A route needs a positive share and a nonzero address. |
+| 4 | `EInvalidFeeSplit` | A fee split needs at most 20 distinct routes summing to 10,000. |
+| 5 | `EInvalidTreasury` | The treasury must be a nonzero address. |
+| 6 | `EInvalidPair` | The Meme and Quote types must differ. |
+| 7 | `EPartnerMismatch` | Blast's fees pay with exactly the partner the sale named, or with none. |
+| 8 | `EWrongVenue` | Only the venue the sale stored can redeem its migration. |
+| 9 | `EWrongOwner` | The owner proof must name the vault's package witness and sale. |
+| 10 | `EWrongPackageWitness` | The vault terms must be sealed by the package witness opening the migration. |
+
+### `blast_core::blast_domain`
+
+Blast's product administration roles in the shared Blast ACL, one set for the launchpad, the presale, the vault, and the venues (ADR 0137). Package-infrastructure roles (upgrade, pause, unpause) are generic over each package's marker in `blast_admin`.  A role is a type. An `AdminCap` holding `Role` signs in to `AdminWitness<Role>`, and a function's witness parameter names the one role it accepts, so no role authorizes another's actions.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/blast_domain.move
+
+#### Types
+
+```move
+/// Chooses where Blast is paid.
+public struct TreasuryAdmin {}
+
+/// Sets Blast's fees and shares and the partners new sales may name.
+public struct FeeAdmin {}
+
+/// Admits or removes the Quotes and Meme decimals new sales may use.
+public struct ListingAdmin {}
+
+/// Admits or removes migration adapters.
+public struct AdapterAdmin {}
+
+/// Schedules holder-reward rounds and settles their gas reserves.
+public struct RewardsAdmin {}
+
+/// Swaps a vault's burn Quote for Meme to burn.
+public struct BuybackAdmin {}
+
+/// Revokes and reissues a launch's creator capabilities.
+public struct CreatorAdmin {}
+
+/// Proposes and revokes the keys that may sign account claims.
+public struct ClaimSignerAdmin {}
+
+/// May cancel any scheduled product administrative action.
+public struct CancelAdmin {}
+```
+
+### `blast_core::blast_treasury`
+
+The one address every Blast fee is paid to, for every product and vault. A `TreasuryAdmin` schedules a change behind the applied notice, a `CancelAdmin` cancels it, and anyone applies a ready one.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/blast_treasury.move
+
+#### Types
+
+```move
+/// Shared singleton holding the protocol destination.
+public struct Treasury has key {
+    id: UID,
+    destination: blast_admin::delayed::Delayed<DestinationKey, address>,
+}
+
+/// Keys the destination's delayed lifecycle.
+public struct DestinationKey() has copy, drop, store;
+```
+
+#### Functions
+
+```move
+/// Schedules a new nonzero destination and next notice, ready after the applied notice.
+public fun schedule_destination(
+    self: &mut Treasury,
+    _: &blast_admin::blast_acl::AdminWitness<blast_domain::TreasuryAdmin>,
+    destination: address,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Applies the scheduled destination once ready.
+public fun apply_destination(self: &mut Treasury, clock: &Clock)
+
+/// Cancels the pending change, even a ready one.
+public fun cancel_destination(
+    self: &mut Treasury,
+    _: &blast_admin::blast_acl::AdminWitness<blast_domain::CancelAdmin>,
+)
+
+/// The address Blast's fees are paid to now.
+public fun destination(self: &Treasury): address
+
+/// Whether every change waits a nonzero notice.
+public fun is_guarded(self: &Treasury): bool
+```
+
+### `blast_core::bps`
+
+Validated basis-points rates, their rounded application, and the one exact apportionment every Blast split uses.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/bps.move
+
+#### Types
+
+```move
+/// A rate from zero through 10,000 basis points; `new` is the only way to build one.
+public struct Bps(u64) has copy, drop, store;
+```
+
+#### Functions
+
+```move
+public fun new(value: u64): Bps
+
+public fun value(self: Bps): u64
+
+/// Applies the rate to `amount`, rounding up; the result is at most `amount`.
+public fun apply_up(self: Bps, amount: u64): u64
+
+/// Largest-remainder apportionment of `total` over `rates`, which must sum to exactly 10,000: the
+/// `rounded_up` part takes its ceiling, every other part its floor, and the leftover units go one
+/// each to the largest remaining remainders, earlier parts first. The amounts sum to `total`.
+public fun apportion(rates: vector<Bps>, total: u64, rounded_up: Option<u64>): vector<u64>
+```
+
+### `blast_core::constants`
+
+Package-wide core constants exposed as zero-cost macros.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/constants.move
+
+#### Constants
+
+- `basis_points_denominator: u64 = 10_000`: Denominator for rates expressed in basis points.
+- `max_routes: u64 = 20`: Maximum routes in one fee split, so 16 recipients still fit beside the four special kinds. Every collection pays them in the same transaction.
+- `max_vesting_duration_ms: u64 = 1 << 63`: A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292 million years, the schedule's end still fits in u64, so payout cannot overflow creating it.
+- `digest_length: u64 = 32`: Byte length of a Blake2b-256 digest: Merkle roots, leaves, and proof siblings.
+- `initial_treasury_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Notice every treasury change waits from publication: the genesis destination is compiled, so no setup needs a zero notice.
+
+### `blast_core::fee_split`
+
+How every LP-fee collection is divided after Blast's share: typed routes to addresses, the vault's owner, auto-LP, holder rewards, and burn, summing to exactly 10,000 basis points.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/fee_split.move
+
+#### Types
+
+```move
+/// Where one route's part of each collection goes. The vault decides what each special kind does
+/// with it: the owner claims its part, auto-LP adds liquidity, holder rewards fund rounds, and burn
+/// burns Meme and buys Meme back with Quote to burn.
+public enum Destination has copy, drop, store {
+    Address(address),
+    Owner,
+    AutoLp,
+    HolderRewards,
+    Burn,
+}
+
+/// One route's destination and positive share.
+public struct Route has copy, drop, store {
+    destination: Destination,
+    bps: bps::Bps,
+}
+
+/// Validated routes: at most 20, each positive, no address twice, at most one of each special
+/// kind, summing to exactly 10,000. Only `new` builds
+/// one, so every split a vault holds assigns each collection in full.
+public struct FeeSplit has copy, drop, store {
+    routes: vector<Route>,
+}
+```
+
+#### Functions
+
+```move
+public fun to_address(destination: address): Destination
+
+public fun to_owner(): Destination
+
+public fun to_auto_lp(): Destination
+
+public fun to_holder_rewards(): Destination
+
+public fun to_burn(): Destination
+
+public fun route(destination: Destination, bps: bps::Bps): Route
+
+public fun new(routes: vector<Route>): FeeSplit
+
+/// Splits `total` across the routes exactly, in route order.
+public fun apportion(self: &FeeSplit, total: u64): vector<u64>
+
+public fun routes(self: &FeeSplit): &vector<Route>
+
+public fun destination(self: &Route): Destination
+
+public fun bps(self: &Route): bps::Bps
+
+/// The route's address, or none for a special kind.
+public fun address_of(self: &Destination): Option<address>
+
+public fun is_owner(self: &Destination): bool
+
+public fun is_auto_lp(self: &Destination): bool
+
+public fun is_holder_rewards(self: &Destination): bool
+
+public fun is_burn(self: &Destination): bool
+```
+
+### `blast_core::merkle`
+
+Positional Blake2b-256 proofs. Leaves hash under a `0x00` prefix and a consumer's domain string, internal nodes under `0x01`, so no internal node can pass as a leaf.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/merkle.move
+
+#### Functions
+
+```move
+/// Hashes one leaf: `blake2b256(0x00 || domain || payload)`. `domain` names the tree's purpose,
+/// such as `b"blast-holder-rewards-v1"`; `payload` is the leaf's BCS-encoded fields.
+public fun leaf(domain: vector<u8>, payload: vector<u8>): vector<u8>
+
+/// Hashes one ordered pair as an internal node: `blake2b256(0x01 || left || right)`.
+public fun node(left: vector<u8>, right: vector<u8>): vector<u8>
+
+/// Verifies a positional proof of `digest` at `index` among `leaves` leaves under `root`.
+/// Returns false, before hashing, for a malformed root or digest, an empty tree, an index outside
+/// it, a proof of the wrong depth, or a malformed sibling.
+public fun verify(
+    root: vector<u8>,
+    digest: vector<u8>,
+    index: u64,
+    leaves: u64,
+    proof: &vector<vector<u8>>,
+): bool
+```
+
+### `blast_core::migration`
+
+The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueBinding` sealed by its witness; the product admits and stores the binding's venue. At migration the product opens a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither value can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration.move
+
+#### Types
+
+```move
+/// What happens to the migration residuals the pool does not take.
+public enum ResidualPolicy has copy, drop, store {
+    /// Paid to Blast through the vault's protocol ledger.
+    Protocol,
+    /// Held in the vault for the sale's owner to claim.
+    Owner,
+}
+
+/// Everything a new vault snapshots from the sale that opened it.
+public struct VaultTerms has copy, drop, store {
+    /// The launch or presale the vault belongs to; owner proofs name it.
+    origin: ID,
+    /// The original type of the package witness that sealed the terms; owner proofs must name it.
+    package_witness: TypeName,
+    fee_split: fee_split::FeeSplit,
+    /// Blast's share of each LP-fee collection, per asset.
+    protocol_meme_bps: bps::Bps,
+    protocol_quote_bps: bps::Bps,
+    partner_id: Option<ID>,
+    residuals: ResidualPolicy,
+}
+
+/// A venue's sealed preparation of one coin, consumed by the product that admits it. The venue
+/// keeps the coin's pool tier itself (ADR 0111).
+public struct VenueBinding {
+    venue: TypeName,
+}
+
+/// One sale's pool balances and vault terms, redeemable only by `venue`.
+public struct Migration<phantom Meme, phantom Quote> {
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+    venue: TypeName,
+    terms: VaultTerms,
+}
+```
+
+#### Functions
+
+```move
+public fun protocol_residuals(): ResidualPolicy
+
+public fun owner_residuals(): ResidualPolicy
+
+/// Seals a venue's preparation under its witness `Venue`.
+public fun bind<Venue: drop>(_: Venue): VenueBinding
+
+/// Consumes a binding, returning the venue witness type to admit and store.
+public fun unbind(self: VenueBinding): TypeName
+
+/// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
+/// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
+/// most 10,000; the issuer enforces its own policy maximum.
+public fun vault_terms<PackageWitness: drop>(
+    _: PackageWitness,
+    origin: ID,
+    fee_split: fee_split::FeeSplit,
+    protocol_meme_bps: bps::Bps,
+    protocol_quote_bps: bps::Bps,
+    partner_id: Option<ID>,
+    residuals: ResidualPolicy,
+): VaultTerms
+
+/// Opens a sale's migration under its `PackageWitness`, for the stored `venue`, with terms the
+/// same package witness sealed.
+public fun open<Meme, Quote, PackageWitness: drop>(
+    _: PackageWitness,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+    venue: TypeName,
+    terms: VaultTerms,
+): Migration<Meme, Quote>
+
+/// Redeems the migration under the stored venue's witness `Venue`, returning the pool's balances
+/// and the vault's terms. Aborts for any other venue.
+public fun redeem<Meme, Quote, Venue: drop>(
+    self: Migration<Meme, Quote>,
+    _: Venue,
+): (Balance<Meme>, Balance<Quote>, VaultTerms)
+
+public fun origin(self: &VaultTerms): ID
+
+public fun package_witness(self: &VaultTerms): TypeName
+
+public fun fee_split(self: &VaultTerms): fee_split::FeeSplit
+
+/// Blast's share of each LP-fee collection, Meme then Quote.
+public fun protocol_shares(self: &VaultTerms): (bps::Bps, bps::Bps)
+
+public fun partner_id(self: &VaultTerms): Option<ID>
+
+public fun pays_residuals_to_protocol(self: &VaultTerms): bool
+```
+
+### `blast_core::owner_proof`
+
+A package's sealed statement that the caller holds its creator authority over one sale, so a vault can serve the sale's owner without importing either product. Each product keeps its own authority (a curve-fee cap, a presale cap) and issues the proof after checking it; the proof cannot be dropped, copied, or stored, so it authorizes exactly the one call that consumes it.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/owner_proof.move
+
+#### Types
+
+```move
+public struct OwnerProof {
+    package_witness: TypeName,
+    origin: ID,
+}
+```
+
+#### Functions
+
+```move
+/// Issues a proof for the sale `origin` under the issuing package's witness `PackageWitness`.
+public fun prove<PackageWitness: drop>(_: PackageWitness, origin: ID): OwnerProof
+
+/// Consumes the proof, aborting unless it names `terms`' package witness and sale.
+public fun verify(self: OwnerProof, terms: &migration::VaultTerms)
+```
+
+### `blast_core::payout`
+
+The one way Blast sends coins to people: an amount paid outright, or locked in an irrevocable linear vesting schedule. Each product keeps its own recipient lists and shares.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/payout.move
+
+#### Types
+
+```move
+/// Linear vesting terms: `periods` equal steps of `period_duration_ms` each, the first available
+/// `cliff_delay_ms` after the payout. The whole schedule fits in `max_vesting_duration_ms`.
+public struct VestingTerms has copy, drop, store {
+    cliff_delay_ms: u64,
+    period_duration_ms: u64,
+    periods: u64,
+}
+```
+
+#### Functions
+
+```move
+/// Linear vesting terms whose steps and cliff fit in the technical bound, so a payout can always
+/// create the schedule. Product limits on the duration belong to creation tooling.
+public fun vesting_terms(cliff_delay_ms: u64, period_duration_ms: u64, periods: u64): VestingTerms
+
+/// Pays `amount` of `balance` to `destination`: outright, or locked in an irrevocable linear
+/// schedule starting now when `vesting` is set, returning the schedule's ID. A zero amount sends
+/// nothing.
+public fun pay_or_vest<T>(
+    balance: &mut Balance<T>,
+    amount: u64,
+    destination: address,
+    vesting: Option<VestingTerms>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): Option<ID>
+
+/// Transfers `amount` split from `balance` to `destination` as a coin; a zero amount sends
+/// nothing.
+public fun pay<T>(balance: &mut Balance<T>, amount: u64, destination: address, ctx: &mut TxContext)
+
+/// Transfers all of `balance` to `destination`; an empty balance sends nothing.
+public fun pay_all<T>(balance: Balance<T>, destination: address, ctx: &mut TxContext)
+```
+
+### `blast_core::protocol_fees`
+
+Blast's fees held by one launch, presale, or vault, and their one payout path: to the treasury, and, when the sale named a partner, the partner's cut of every asset first.  Only the module that defines the `PackageWitness` can create a ledger, and the payout event names that witness's original type, so a fee payment's origin is attributable to the product or vault that holds it. The embedding object owns the ledger, so only its module can accrue into it or pay it out; each product wraps the payout in its own permissionless call.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/protocol_fees.move
+
+#### Types
+
+```move
+/// Blast's Meme, Quote, and SUI fees, held until paid. `partner_id` is fixed at creation: a ledger
+/// bound to a partner pays only with that partner, so Blast's fees never skip the partner's cut.
+public struct Ledger<phantom Meme, phantom Quote> has store {
+    /// The original type of the package witness that created the ledger.
+    package_witness: TypeName,
+    origin: ID,
+    partner_id: Option<ID>,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+    sui: Balance<sui::SUI>,
+}
+```
+
+#### Functions
+
+```move
+/// An empty ledger for the object `origin`, created under the embedding module's `PackageWitness`
+/// and bound to `partner_id` if any.
+public fun new<Meme, Quote, PackageWitness: drop>(
+    _: PackageWitness,
+    origin: ID,
+    partner_id: Option<ID>,
+): Ledger<Meme, Quote>
+
+/// Adds Meme and Quote owned wholly by Blast.
+public fun accrue<Meme, Quote>(
+    self: &mut Ledger<Meme, Quote>,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+)
+
+/// Adds SUI owned wholly by Blast, such as a creation fee.
+public fun accrue_sui<Meme, Quote>(self: &mut Ledger<Meme, Quote>, sui: Balance<sui::SUI>)
+
+/// Takes Blast's share of one fee in each asset, rounded up, into the ledger and leaves the rest in
+/// `meme_fee` and `quote_fee`. Returns the Meme and Quote taken.
+public fun take_share<Meme, Quote>(
+    self: &mut Ledger<Meme, Quote>,
+    meme_fee: &mut Balance<Meme>,
+    quote_fee: &mut Balance<Quote>,
+    meme_share: bps::Bps,
+    quote_share: bps::Bps,
+): (u64, u64)
+
+/// Pays everything held to the treasury; an empty ledger sends and emits nothing. Aborts when the
+/// ledger is bound to a partner.
+public fun pay<Meme, Quote>(
+    self: &mut Ledger<Meme, Quote>,
+    treasury: &blast_treasury::Treasury,
+    ctx: &mut TxContext,
+)
+
+/// Pays the bound partner its cut of each asset, then the treasury the rest; an empty ledger sends
+/// and emits nothing. Aborts unless `partner` is the ledger's partner.
+public fun pay_with_partner<Meme, Quote>(
+    self: &mut Ledger<Meme, Quote>,
+    treasury: &blast_treasury::Treasury,
+    partner: &blast_partners::blast_partners::Partner,
+    ctx: &mut TxContext,
+)
+
+/// The Meme, Quote, and SUI held.
+public fun balances<Meme, Quote>(self: &Ledger<Meme, Quote>): (u64, u64, u64)
+```
+
+#### Events
+
+```move
+/// Blast's held fees were paid: the treasury's amounts, and the partner's cut when one is bound.
+public struct ProtocolFeesPaid<phantom Meme, phantom Quote> has copy, drop {
+    package_witness: TypeName,
+    origin: ID,
+    treasury: address,
+    meme: u64,
+    quote: u64,
+    sui: u64,
+    partner_id: Option<ID>,
+    partner_meme: u64,
+    partner_quote: u64,
+    partner_sui: u64,
+}
 ```
 
 ## API reference: `blast_admin` (Administration)

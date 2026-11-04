@@ -42,6 +42,7 @@ PACKAGES = [
     ("sui/boosts/products", "Boost product tags"),
     ("sui/boosts/aftermath_adapter", "Boosts Aftermath adapter"),
     ("sui/blast_sui", "blastSUI and funSUI"),
+    ("sui/core", "Shared core"),
     ("sui/admin", "Administration"),
     ("sui/vendors/aftermath_dao_presale", "Aftermath DAO-pool presale migrator"),
 ]
@@ -54,6 +55,7 @@ GUIDES = [
     ("partners.md", ["sui/partners"]),
     ("boosts.md", ["sui/boosts/core", "sui/boosts/products", "sui/boosts/aftermath_adapter"]),
     ("blast-sui.md", ["sui/blast_sui"]),
+    ("core.md", ["sui/core"]),
     ("admin.md", ["sui/admin"]),
 ]
 
@@ -115,6 +117,16 @@ PRODUCTS = [
         ["blast-sui.md"],
         ["sui/blast_sui"],
         ["sui/admin"],
+    ),
+    Product(
+        "core",
+        "Shared core",
+        "Blast's shared money vocabulary on Sui: basis points and exact apportionment, outright and "
+        "vested payouts, LP-fee splits, the protocol-fee ledger with partner cuts, the treasury, Merkle "
+        "proofs, and the sealed migration hand-off between a sale and its venue",
+        ["core.md"],
+        ["sui/core"],
+        ["sui/partners", "sui/admin"],
     ),
     Product(
         "admin",
