@@ -27,7 +27,7 @@ public struct QUOTE() has drop;
 /// The fresh Aftermath LP coin a sale's pool creation is reserved for.
 public struct LP() has drop;
 
-public struct OTHER_MIGRATOR() has drop;
+public struct OTHER_VENUE() has drop;
 
 public struct A() has drop;
 
@@ -48,21 +48,19 @@ fun publication_sends_the_admin_cap_to_the_publisher() {
 }
 
 #[test]
-/// A sale created here names this migrator, pays its whole LP-fee split to the treasury, and sends
+/// A sale created here names this venue, pays its whole LP-fee split to the treasury, and sends
 /// the treasury its PresaleCap.
 fun finalize_creates_a_sale_for_the_treasury() {
     let mut scenario = publish();
-    let creation_policy = allowing<Witness>(scenario.ctx());
+    let creation_policy = allowing<Venue>(scenario.ctx());
 
     create_sale(&mut scenario, creation_policy);
 
-    let (witness, fee_recipients, fee_recipient_bps, holder_rewards_bps) = last_event<
+    let (venue, fee_split) = last_event<
         PresaleCreated<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
     >().created_migration_fields();
-    assert_eq!(witness, type_name::with_original_ids<Witness>());
-    assert_eq!(fee_recipients, vector[TREASURY]);
-    assert_eq!(fee_recipient_bps, vector[10_000]);
-    assert_eq!(holder_rewards_bps, 0);
+    assert_eq!(venue, type_name::with_original_ids<Venue>());
+    assert_eq!(fee_split, split_to(TREASURY));
 
     scenario.next_tx(KEEPER);
     assert!(test_scenario::has_most_recent_for_address<PresaleCap>(TREASURY));
@@ -73,7 +71,7 @@ fun finalize_creates_a_sale_for_the_treasury() {
 /// `finalize` shares one pool creation for the LP coin, bound to the sale it created.
 fun finalize_binds_a_shared_pool_creation_to_its_sale() {
     let mut scenario = publish();
-    let creation_policy = allowing<Witness>(scenario.ctx());
+    let creation_policy = allowing<Venue>(scenario.ctx());
 
     let (presale_id, pool_creation_id) = create_sale(&mut scenario, creation_policy);
 
@@ -90,7 +88,7 @@ fun a_vendor_sale_can_name_a_partner_before_it_is_finalized() {
     let mut scenario = publish();
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
     let partner = partners::new_for_testing(PARTNER_RECIPIENT, 4_000, scenario.ctx());
-    let mut creation_policy = allowing<Witness>(scenario.ctx());
+    let mut creation_policy = allowing<Venue>(scenario.ctx());
     creation_policy.add_partner(&package_version, &fee_admin(), &partner);
     let clock = clock::create_for_testing(scenario.ctx());
 
@@ -117,7 +115,7 @@ fun a_vendor_sale_can_name_a_partner_before_it_is_finalized() {
 fun a_vendor_sale_can_change_its_blast_rates_before_its_share() {
     let mut scenario = publish();
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<Witness>(scenario.ctx());
+    let creation_policy = allowing<Venue>(scenario.ctx());
     let clock = clock::create_for_testing(scenario.ctx());
 
     let (mut sale, _) = new_sale(&mut scenario, &creation_policy);
@@ -172,10 +170,10 @@ fun a_vendor_sale_can_change_its_blast_rates_before_its_share() {
 fun migrate_rejects_another_sales_pool_creation() {
     let mut scenario = publish();
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<Witness>(scenario.ctx());
+    let creation_policy = allowing<Venue>(scenario.ctx());
     let (_, first_pool_creation_id) = create_sale(&mut scenario, creation_policy);
     scenario.next_tx(PUBLISHER);
-    let creation_policy = allowing<Witness>(scenario.ctx());
+    let creation_policy = allowing<Venue>(scenario.ctx());
     let (second_presale_id, _) = create_sale(&mut scenario, creation_policy);
 
     scenario.next_tx(KEEPER);
@@ -202,25 +200,63 @@ fun migrate_rejects_another_sales_pool_creation() {
 }
 
 #[test]
+#[expected_failure(abort_code = 0, location = amm::pool_factory)]
+/// A funded sale's migration consumes its pool creation and redeems the sale's hand-off under this
+/// package's venue, reaching Aftermath's pool creation, where the link stub aborts.
+fun migrate_redeems_the_hand_off_before_pool_creation() {
+    let mut scenario = publish();
+    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let creation_policy = allowing<Venue>(scenario.ctx());
+    let (presale_id, pool_creation_id) = create_sale(&mut scenario, creation_policy);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    scenario.next_tx(KEEPER);
+    let mut sale = scenario.take_shared_by_id<Presale<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>>(
+        presale_id,
+    );
+    sale
+        .commit_open(
+            &package_version,
+            sui::coin::mint_for_testing<QUOTE>(RAISE_TARGET, scenario.ctx()),
+            &clock,
+            scenario.ctx(),
+        )
+        .destroy_zero();
+    clock.set_for_testing(COMMITMENT_DURATION_MS);
+    sale.settle(&package_version, &clock);
+    let pool_creation = scenario.take_shared_by_id<PoolCreation<LP>>(pool_creation_id);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
+    let mut pool_registry = pool_registry::new_for_testing(scenario.ctx());
+    let dao_fee_version = version::new_for_testing(scenario.ctx());
+
+    sale.migrate(
+        &package_version,
+        pool_creation,
+        &fee_policy,
+        &mut pool_registry,
+        &dao_fee_version,
+        &clock,
+        scenario.ctx(),
+    );
+    abort
+}
+
+#[test]
 /// The vendor's `finalize` pays the whole LP-fee split to the treasury, whatever split was set.
 fun finalize_overrides_any_lp_fee_split() {
     let mut scenario = publish();
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<Witness>(scenario.ctx());
+    let creation_policy = allowing<Venue>(scenario.ctx());
 
     let admin_cap = scenario.take_from_sender<AdminCap>();
     let (mut initializer, currency) = scenario.start_sale(&admin_cap, &creation_policy);
-    initializer.set_fee_split(
-        &package_version,
-        presale::fee_split(vector[presale::recipient_share(KEEPER, bps::new(10_000))], bps::new(0)),
-    );
+    initializer.set_fee_split(&package_version, split_to(KEEPER));
     let (sale, _) = scenario.finalize_sale(&admin_cap, initializer, currency);
 
-    let (_, fee_recipients, fee_recipient_bps, _) = last_event<
+    let (_, fee_split) = last_event<
         PresaleCreated<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
     >().created_migration_fields();
-    assert_eq!(fee_recipients, vector[TREASURY]);
-    assert_eq!(fee_recipient_bps, vector[10_000]);
+    assert_eq!(fee_split, split_to(TREASURY));
     scenario.return_to_sender(admin_cap);
     destroy(sale);
     destroy(creation_policy);
@@ -231,22 +267,22 @@ fun finalize_overrides_any_lp_fee_split() {
 
 #[test]
 #[expected_failure(
-    abort_code = migrator::EWrongMigrator,
+    abort_code = migrator::EWrongVenue,
     location = blast_aftermath_dao_presale::blast_aftermath_dao_presale,
 )]
-/// The vendor finalizes only sales its own `new` started: another migrator's sale could never
+/// The vendor finalizes only sales its own `new` started: another venue's sale could never
 /// consume the pool creation.
-fun finalize_rejects_another_migrators_sale() {
+fun finalize_rejects_another_venues_sale() {
     let mut scenario = publish();
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<OTHER_MIGRATOR>(scenario.ctx());
+    let creation_policy = allowing<OTHER_VENUE>(scenario.ctx());
     let fee_policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
     let admin_cap = scenario.take_from_sender<AdminCap>();
     let (treasury_cap, mut currency) = new_currency(&mut scenario);
-    let initializer = presale::new<_, QUOTE, _>(
+    let initializer = presale::new<_, QUOTE>(
         treasury_cap,
         &package_version,
-        OTHER_MIGRATOR(),
+        migration::issue_ticket(OTHER_VENUE()),
         &creation_policy,
         &fee_policy,
     );
@@ -264,13 +300,13 @@ fun finalize_rejects_another_migrators_sale() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EVenueNotAllowed,
     location = blast_presale::creation_policy,
 )]
-/// Blast must allow this migrator's witness before it can create a sale.
-fun new_needs_blast_to_allow_the_witness() {
+/// Blast must admit this package's venue before its tickets can start a sale.
+fun new_needs_blast_to_admit_the_venue() {
     let mut scenario = publish();
-    let creation_policy = allowing<OTHER_MIGRATOR>(scenario.ctx());
+    let creation_policy = allowing<OTHER_VENUE>(scenario.ctx());
 
     create_sale(&mut scenario, creation_policy);
     abort
@@ -342,9 +378,16 @@ fun publish(): Scenario {
     scenario
 }
 
-/// A creation policy that allows `QUOTE` and `MigrationWitness`.
-fun allowing<MigrationWitness>(ctx: &mut TxContext): CreationPolicy {
-    creation_policy::allowing_for_testing<QUOTE, MigrationWitness>(ctx)
+/// A creation policy that allows `QUOTE` and `AdmittedVenue`.
+fun allowing<AdmittedVenue>(ctx: &mut TxContext): CreationPolicy {
+    creation_policy::allowing_for_testing<QUOTE, AdmittedVenue>(ctx)
+}
+
+/// The whole LP-fee split to `recipient`'s address.
+fun split_to(recipient: address): FeeSplit {
+    fee_split::new(vector[
+        fee_split::route(fee_split::address_destination(recipient), bps::new(10_000)),
+    ])
 }
 
 /// The publisher's AdminCap creates and shares a sale whose pool creation is reserved for `LP`,
@@ -494,9 +537,11 @@ use blast_aftermath_dao_presale::blast_aftermath_dao_presale::{
     AdminCap,
     PoolCreation,
     PoolCreationReserved,
-    Witness,
+    Venue,
     sorts_before_for_testing,
 };
+
+use blast_core::{bps, fee_split::{Self, FeeSplit}, migration};
 
 use blast_partners::blast_partners as partners;
 
@@ -511,7 +556,6 @@ use blast_presale::{
         ProtocolFeesChanged,
     },
     blast_presale_domain::FeeAdmin,
-    bps,
     creation_policy::{Self, CreationPolicy},
     fee_policy
 };

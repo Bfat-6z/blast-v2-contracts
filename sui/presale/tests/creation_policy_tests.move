@@ -21,7 +21,7 @@ public struct QUOTE() has drop;
 
 public struct OTHER_QUOTE() has drop;
 
-public struct MIGRATOR() has drop;
+public struct VENUE() has drop;
 
 // === Tests ===
 
@@ -30,7 +30,7 @@ public struct MIGRATOR() has drop;
     abort_code = blast_presale::errors::EQuoteNotAllowed,
     location = blast_presale::creation_policy,
 )]
-/// Publication shares one policy that allows no Quote type and no migrator.
+/// Publication shares one policy that allows no Quote type and no venue.
 fun publication_shares_a_policy_that_allows_nothing() {
     let mut scenario = test_scenario::begin(PUBLISHER);
     creation_policy::init_for_testing(scenario.ctx());
@@ -38,35 +38,35 @@ fun publication_shares_a_policy_that_allows_nothing() {
     scenario.next_tx(PUBLISHER);
     let policy = scenario.take_shared<CreationPolicy>();
 
-    policy.assert_allowed<QUOTE, MIGRATOR>();
+    policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     abort
 }
 
 #[test]
-/// The administrator allows a Quote type and a migrator, and each change emits its type.
-fun the_admin_allows_a_quote_and_a_migrator() {
+/// The administrator allows a Quote type and a venue, and each change emits its type.
+fun the_admin_allows_a_quote_and_a_venue() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
 
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
-    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(
+    policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
         &adapter_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
 
-    policy.assert_allowed<QUOTE, MIGRATOR>();
+    policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
     assert_eq!(quote, type_name<QUOTE>());
     assert_eq!(allowed, true);
     let (owner, _, admission, _) = last_event<
-        SetApplied<MigrationWitnessKey, TypeName>,
+        SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
     assert_eq!(owner, object::id(&policy));
-    assert_eq!(admission.member_for_testing(), option::some(type_name<MIGRATOR>()));
+    assert_eq!(admission.member_for_testing(), option::some(type_name<VENUE>()));
 
     policy.destroy_for_testing();
 
@@ -80,26 +80,26 @@ fun the_admin_allows_a_quote_and_a_migrator() {
 )]
 /// Allowing one Quote type allows no other.
 fun allowing_one_quote_allows_no_other() {
-    let policy = allowing<QUOTE, MIGRATOR>();
+    let policy = allowing<QUOTE, VENUE>();
 
-    policy.assert_allowed<OTHER_QUOTE, MIGRATOR>();
+    policy.assert_allowed<OTHER_QUOTE>(type_name::with_original_ids<VENUE>());
     abort
 }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EVenueNotAllowed,
     location = blast_presale::creation_policy,
 )]
-/// An allowed Quote type is not enough without an allowed migrator.
-fun an_allowed_quote_still_needs_an_allowed_migrator() {
+/// An allowed Quote type is not enough without an allowed venue.
+fun an_allowed_quote_still_needs_an_allowed_venue() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
 
-    policy.assert_allowed<QUOTE, MIGRATOR>();
+    policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -114,31 +114,31 @@ fun disallowing_a_quote_stops_later_creations() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
-    let mut policy = allowing<QUOTE, MIGRATOR>();
+    let mut policy = allowing<QUOTE, VENUE>();
 
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), false);
 
     let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
     assert_eq!(quote, type_name<QUOTE>());
     assert_eq!(allowed, false);
-    policy.assert_allowed<QUOTE, MIGRATOR>();
+    policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     std::unit_test::destroy(package_version);
     abort
 }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EVenueNotAllowed,
     location = blast_presale::creation_policy,
 )]
-/// Disallowing a migrator emits it and stops later creations through it.
-fun disallowing_a_migrator_stops_later_creations() {
+/// Disallowing a venue emits it and stops later creations through it.
+fun disallowing_a_venue_stops_later_creations() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
-    let mut policy = allowing<QUOTE, MIGRATOR>();
+    let mut policy = allowing<QUOTE, VENUE>();
 
-    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(
+    policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
         &adapter_admin(),
         false,
@@ -146,11 +146,11 @@ fun disallowing_a_migrator_stops_later_creations() {
     );
 
     let (owner, _, member) = last_event<
-        MemberRemoved<MigrationWitnessKey, TypeName>,
+        MemberRemoved<VenueKey, TypeName>,
     >().member_removed_fields();
     assert_eq!(owner, object::id(&policy));
-    assert_eq!(member, type_name<MIGRATOR>());
-    policy.assert_allowed<QUOTE, MIGRATOR>();
+    assert_eq!(member, type_name<VENUE>());
+    policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     std::unit_test::destroy(package_version);
     abort
 }
@@ -164,7 +164,7 @@ fun an_allowed_quote_cannot_be_allowed_again() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
-    let mut policy = allowing<QUOTE, MIGRATOR>();
+    let mut policy = allowing<QUOTE, VENUE>();
 
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
     std::unit_test::destroy(package_version);
@@ -180,7 +180,7 @@ fun an_unlisted_quote_cannot_be_disallowed() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
-    let mut policy = allowing<QUOTE, MIGRATOR>();
+    let mut policy = allowing<QUOTE, VENUE>();
 
     policy.set_quote_allowed<OTHER_QUOTE>(&package_version, &listing_admin(), false);
     std::unit_test::destroy(package_version);
@@ -192,13 +192,13 @@ fun an_unlisted_quote_cannot_be_disallowed() {
     abort_code = blast_admin::errors::EUnchanged,
     location = blast_admin::delayed_set,
 )]
-fun an_allowed_migrator_cannot_be_allowed_again() {
+fun an_allowed_venue_cannot_be_allowed_again() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
-    let mut policy = allowing<QUOTE, MIGRATOR>();
+    let mut policy = allowing<QUOTE, VENUE>();
 
-    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(
+    policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
         &adapter_admin(),
         true,
@@ -213,13 +213,13 @@ fun an_allowed_migrator_cannot_be_allowed_again() {
     abort_code = blast_admin::errors::EUnchanged,
     location = blast_admin::delayed_set,
 )]
-fun an_unlisted_migrator_cannot_be_disallowed() {
+fun an_unlisted_venue_cannot_be_disallowed() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(
+    policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
         &adapter_admin(),
         false,
@@ -231,17 +231,17 @@ fun an_unlisted_migrator_cannot_be_disallowed() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidVenue,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make a primitive, so allowing one would let anyone create and migrate sales.
-fun a_primitive_cannot_be_allowed_as_a_migrator() {
+fun a_primitive_cannot_be_allowed_as_a_venue() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed_for_testing<u64>(
+    policy.set_venue_allowed_for_testing<u64>(
         &package_version,
         &adapter_admin(),
         true,
@@ -253,17 +253,17 @@ fun a_primitive_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidVenue,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make a vector of droppable values, so it is rejected like a primitive.
-fun a_vector_cannot_be_allowed_as_a_migrator() {
+fun a_vector_cannot_be_allowed_as_a_venue() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed_for_testing<vector<MIGRATOR>>(
+    policy.set_venue_allowed_for_testing<vector<VENUE>>(
         &package_version,
         &adapter_admin(),
         true,
@@ -274,17 +274,17 @@ fun a_vector_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidVenue,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make `TypeName` with `type_name::with_original_ids`, so a stdlib type is rejected.
-fun a_stdlib_type_cannot_be_allowed_as_a_migrator() {
+fun a_stdlib_type_cannot_be_allowed_as_a_venue() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed_for_testing<TypeName>(
+    policy.set_venue_allowed_for_testing<TypeName>(
         &package_version,
         &adapter_admin(),
         true,
@@ -296,18 +296,18 @@ fun a_stdlib_type_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidVenue,
     location = blast_presale::creation_policy,
 )]
-/// Any caller can make an `Option<MIGRATOR>` with `option::none`, so a generic stdlib type wrapping
+/// Any caller can make an `Option<VENUE>` with `option::none`, so a generic stdlib type wrapping
 /// a reviewed witness is rejected too.
-fun an_option_of_a_witness_cannot_be_allowed_as_a_migrator() {
+fun an_option_of_a_witness_cannot_be_allowed_as_a_venue() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed_for_testing<Option<MIGRATOR>>(
+    policy.set_venue_allowed_for_testing<Option<VENUE>>(
         &package_version,
         &adapter_admin(),
         true,
@@ -318,17 +318,17 @@ fun an_option_of_a_witness_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidVenue,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make an `ID` with `object::id_from_address`, so a Sui framework type is rejected.
-fun a_sui_framework_type_cannot_be_allowed_as_a_migrator() {
+fun a_sui_framework_type_cannot_be_allowed_as_a_venue() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed_for_testing<ID>(
+    policy.set_venue_allowed_for_testing<ID>(
         &package_version,
         &adapter_admin(),
         true,
@@ -350,7 +350,7 @@ fun disallowing_a_primitive_is_an_unchanged_allowance() {
     );
     let mut policy = allowing_nothing();
 
-    policy.set_migration_witness_allowed_for_testing<u64>(
+    policy.set_venue_allowed_for_testing<u64>(
         &package_version,
         &adapter_admin(),
         false,
@@ -526,22 +526,22 @@ fun stale_version_cannot_allow_quotes() {
 
     package_version.set_for_testing(2);
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
-    policy.set_migration_witness_allowed_for_testing<MIGRATOR>(
+    policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
         &adapter_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
 
-    policy.assert_allowed<QUOTE, MIGRATOR>();
+    policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
     assert_eq!(quote, type_name<QUOTE>());
     assert_eq!(allowed, true);
     let (owner, _, admission, _) = last_event<
-        SetApplied<MigrationWitnessKey, TypeName>,
+        SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
     assert_eq!(owner, object::id(&policy));
-    assert_eq!(admission.member_for_testing(), option::some(type_name<MIGRATOR>()));
+    assert_eq!(admission.member_for_testing(), option::some(type_name<VENUE>()));
 
     policy.destroy_for_testing();
 
@@ -654,7 +654,7 @@ use blast_presale::{
     creation_policy::{
         Self,
         CreationPolicy,
-        MigrationWitnessKey,
+        VenueKey,
         PartnerAdded,
         PartnerRemoved,
         QuoteSet,

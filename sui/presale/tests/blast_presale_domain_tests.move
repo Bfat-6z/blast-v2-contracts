@@ -20,7 +20,7 @@ const DIGEST: vector<u8> = x"000000000000000000000000000000000000000000000000000
 
 public struct QUOTE() has drop;
 
-public struct MIGRATOR() has drop;
+public struct VENUE() has drop;
 
 public struct Fixture {
     scenario: Scenario,
@@ -65,7 +65,7 @@ fun each_presale_role_signs_in_to_its_own_operations() {
         &fixture.acl.sign_in<ListingAdmin>(&fixture.admin_cap),
         true,
     );
-    creation_policy.set_migration_witness_allowed_for_testing<MIGRATOR>(
+    creation_policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
         &fixture.acl.sign_in<AdapterAdmin>(&fixture.admin_cap),
         true,
@@ -78,7 +78,7 @@ fun each_presale_role_signs_in_to_its_own_operations() {
 
     assert_eq!(fee_policy.fees(), fee_policy::protocol_fees_for_testing(100, 200, 300, 400));
     assert_eq!(fee_policy.destination(), TREASURY);
-    creation_policy.assert_allowed<QUOTE, MIGRATOR>();
+    creation_policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     assert_eq!(*ticket.ticket_digest(), DIGEST);
 
     destroy(ticket);
@@ -102,7 +102,6 @@ fun an_admin_without_the_presale_role_cannot_sign_in_to_it() {
     fixture.grant<TreasuryAdmin>();
     fixture.grant<ListingAdmin>();
     fixture.grant<AdapterAdmin>();
-    fixture.grant<RewardsAdmin>();
     fixture.grant<UpgradeAdmin>();
     fixture.grant<PartnerAdmin>();
 
@@ -116,10 +115,10 @@ fun an_admin_without_the_presale_role_cannot_sign_in_to_it() {
     abort_code = blast_admin::errors::EAdminRoleNotGranted,
     location = blast_admin::blast_acl,
 )]
-fun a_rewards_operator_cannot_authorize_treasury_governance() {
+fun a_listing_operator_cannot_authorize_treasury_governance() {
     let mut fixture = start();
-    fixture.grant<RewardsAdmin>();
-    let _: AdminWitness<RewardsAdmin> = fixture.acl.sign_in(&fixture.admin_cap);
+    fixture.grant<ListingAdmin>();
+    let _: AdminWitness<ListingAdmin> = fixture.acl.sign_in(&fixture.admin_cap);
 
     let _: AdminWitness<TreasuryAdmin> = fixture.acl.sign_in(&fixture.admin_cap);
 
@@ -180,21 +179,21 @@ use blast_admin::blast_acl::{Self, ACL, AdminCap, AdminWitness, SuperAdminCap};
 
 use blast_partners::blast_partners::PartnerAdmin;
 
+use blast_core::bps;
+
 use blast_presale::{
     blast_presale_domain::{
         AdapterAdmin,
         FeeAdmin,
         ListingAdmin,
-        RewardsAdmin,
         TreasuryAdmin,
         UpgradeAdmin,
     },
-    bps,
     creation_policy,
     fee_policy,
     package_admin
 };
 
-use std::unit_test::{assert_eq, destroy};
+use std::{type_name, unit_test::{assert_eq, destroy}};
 
 use sui::test_scenario::{Self, Scenario};

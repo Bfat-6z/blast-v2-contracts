@@ -114,33 +114,6 @@ fun a_fee_update_must_change_the_rates() {
 }
 
 #[test]
-/// A vault's LP-rate change keeps the raise and token rates it was snapshotted with.
-fun lp_fee_rates_change_alone() {
-    assert_eq!(
-        fee_policy::protocol_fees_for_testing(100, 200, 300, 400).with_lp_fees(
-            bps::new(0),
-            bps::new(3_000),
-        ),
-        fee_policy::protocol_fees_for_testing(100, 200, 0, 3_000),
-    );
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidFees,
-    location = blast_presale::fee_policy,
-)]
-/// A vault's LP-rate change is held to the same maximum as the policy.
-fun lp_fee_rate_changes_are_capped() {
-    fee_policy::protocol_fees_for_testing(100, 200, 300, 400).with_lp_fees(
-        bps::new(3_001),
-        bps::new(0),
-    );
-
-    abort
-}
-
-#[test]
 /// The administrator redirects every later payout.
 fun the_admin_sets_the_destination() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(
@@ -365,9 +338,10 @@ fun last_event<Event: copy + drop>(): Event {
 
 use blast_admin::{blast_acl::{Self, AdminWitness}, delayed::DelayedApplied};
 
+use blast_core::bps;
+
 use blast_presale::{
     blast_presale_domain::{FeeAdmin, TreasuryAdmin},
-    bps,
     fee_policy::{Self, DestinationKey, FeePolicy, FeesKey, ProtocolFees}
 };
 

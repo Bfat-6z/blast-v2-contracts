@@ -23,18 +23,18 @@ Publication sends the package's only `AdminCap` to the publisher, and
 `scripts/publish_immutable.sh` makes the package immutable in the same
 transaction, so no one can change how a funded sale migrates. The `AdminCap`'s one power is creating sales: `new` takes it and returns the
 sale's `PresaleInitializer`, whose terms are set as for any presale; `finalize`
-takes it again, names the treasury as the sale's only LP-fee recipient, which is
+takes it again, names the treasury as the sale's only LP-fee route, which is
 where its fees go, binds the sale's `PoolCreation`, and sends the treasury the
-sale's `PresaleCap`. It refuses an initializer another migrator started. A sale
+sale's `PresaleCap`. It refuses an initializer another venue started. A sale
 `new` started but finalized directly in
 `blast_presale` has no `PoolCreation`, so it cannot migrate and refunds after its
 LP deadline. The `PresaleCap` can only destroy
-itself after a cancellation, since these sales have no `presale_vault::Vault` residuals
-to claim.
+itself after a cancellation: these sales have no `blast_vault::vault::Vault`, so the owner
+proofs it backs match no vault and no residuals wait to be claimed.
 
 Every migration sends the treasury that pool's DAO-fee `OwnerCap`. With it the
 treasury can change its pool's DAO fee, anywhere Aftermath allows from 0% to
-100%, or the fee recipient, directly through Aftermath. No `presale_vault::Vault` exists
+100%, or the fee recipient, directly through Aftermath. No `blast_vault::vault::Vault` exists
 for these pools, so Blast's LP-fee rates and holder-reward rounds do not apply;
 Blast still takes its raise and token shares when `blast_presale::migrate` runs.
 The `AdminCap` holder may name a Blast partner on the initializer `new` returns,
@@ -57,8 +57,8 @@ published LP coin. The treasury publishes one per sale (Aftermath's
 caller choose the LP coin. `migrate` takes the sale and its `PoolCreation`, and:
 
 1. checks the `PoolCreation` is bound to this sale, then consumes it;
-2. takes the sale's LP tokens and Quote from `blast_presale::migrate` with this
-   package's `Witness`;
+2. takes the sale's LP tokens and Quote by redeeming `blast_presale::migrate`'s
+   hand-off with this package's `Venue`, dropping its vault terms;
 3. creates the pool in Aftermath's coin order and checks it holds every unit;
 4. wraps it in a DAO-fee pool paying the treasury 2% and checks both values;
 5. shares the DAO-fee pool, the object traders use; and
@@ -83,9 +83,9 @@ coin minted; a sale that cannot migrate becomes refundable at its LP deadline.
 2. Run `scripts/verify.sh` and `node scripts/check_mainnet_abi.mjs`. The ABI
    gate fails on any newer Aftermath revision until it is reviewed.
 3. Run `scripts/publish_immutable.sh --preview`, then `--execute`.
-4. As Blast's presale `AdapterAdmin`, call `creation_policy::set_migration_witness_allowed`
-   for `<package>::blast_aftermath_dao_presale::Witness`, and as `ListingAdmin`
-   allow the sale's Quote type.
+4. As Blast's presale `AdapterAdmin`, schedule `creation_policy::schedule_venue`
+   for `<package>::blast_aftermath_dao_presale::Venue` and apply it once its notice
+   ends, and as `ListingAdmin` allow the sale's Quote type.
 5. Before the first sale migrates, prove a mainnet dev-inspect of `migrate` with a
    fresh LP coin for both coin orders: the local stubs prove types, not behavior.
 

@@ -119,7 +119,7 @@ public fun totals_for_testing<Meme, Quote>(self: &FeeLedger<Meme, Quote>): (u64,
 
 // === Imports ===
 
-use blast_fun::bps::Bps;
+use blast_core::bps::Bps;
 
 use std::type_name;
 

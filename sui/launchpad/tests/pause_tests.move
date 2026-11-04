@@ -76,6 +76,14 @@ fun unpause_rejects_a_pending_change_to_a_zero_notice() {
 
 #[test]
 #[expected_failure(abort_code = blast_fun::errors::EUnguardedNotice, location = blast_fun::package_admin)]
+fun unpause_rejects_a_pending_lp_fee_change_to_a_zero_notice() {
+    let mut f = release_fixture().with_zero_notice_lp_fee_proposal();
+    f.unpause(constants::create_pause_bit!());
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_fun::errors::EUnguardedNotice, location = blast_fun::package_admin)]
 fun unpause_rejects_a_pending_signer_admission() {
     let mut f = release_fixture().with_pending_signer_admission();
     f.unpause(constants::create_pause_bit!());
@@ -484,6 +492,22 @@ fun with_zero_notice_fee_share_proposal(self: ReleaseFixture): ReleaseFixture {
     ReleaseFixture { version, package_admin, runtime_config, launch_config }
 }
 
+fun with_zero_notice_lp_fee_proposal(self: ReleaseFixture): ReleaseFixture {
+    let ReleaseFixture { version, package_admin, runtime_config, mut launch_config } = self;
+    let clock = sui::clock::create_for_testing(&mut tx_context::dummy());
+    launch_config.schedule_protocol_lp_fees(
+        &version,
+        &blast_acl::witness_for_testing<FeeAdmin>(),
+        bps::new(1_500),
+        bps::new(1_500),
+        0,
+        &clock,
+    );
+    destroy(clock);
+
+    ReleaseFixture { version, package_admin, runtime_config, launch_config }
+}
+
 fun with_pending_signer_admission(self: ReleaseFixture): ReleaseFixture {
     let ReleaseFixture { version, package_admin, mut runtime_config, launch_config } =
         self;
@@ -545,10 +569,11 @@ fun assert_guard_rejects_mask(initial: u8, query: u8) {
 // === Imports ===
 
 use blast_admin::blast_acl;
+use blast_core::bps;
+
 use blast_fun::{
     blast_fun as marker,
     blast_fun_domain::{ClaimSignerAdmin, FeeAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin},
-    bps,
     constants,
     launch_config::{Self, LaunchConfig},
     package_admin::{Self, PackageAdmin},

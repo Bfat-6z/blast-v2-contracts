@@ -1,27 +1,31 @@
 //! Programmable-transaction integration tests for launch creation, the atomic migration seam, and
 //! the opening round.
 //!
-//! Every launch is opened by one PTB composed from public calls: the mock adapter starts it under
-//! its own witness and pool tier, the launchpad setters configure the initializer, and `finalize`
-//! and `share` consume it, so the ability-less initializer crosses commands of one transaction.
+//! Every launch is opened by one PTB composed from public calls: the mock venue's `prepare` issues
+//! the venue ticket, `launch::new` takes it with the launch ticket and the coin's `TreasuryCap`, the
+//! launchpad setters configure the initializer, and `finalize` and `share` consume it, so the
+//! ability-less venue ticket and initializer cross commands of one transaction.
 //!
 //! Two independent one-time-witness launches reach MigrationReady through public PTBs. Every
 //! failing migration PTB must commit nothing (see `Harness::assert_rolled_back`): no allocation
 //! reaches the launch ledger or the creator's recipient, and launch A stays migratable through the
-//! whole failure matrix before completing in one successful PTB. Every event travels in the
-//! launchpad envelope.
+//! whole failure matrix before completing in one successful PTB. The hand-off `launch::migrate`
+//! returns and the owner proof `launch::prove_owner` returns have no abilities: a PTB that leaves
+//! either unconsumed fails with `UnusedValueWithoutDrop` and commits nothing. Every event travels
+//! in the launchpad envelope.
 //!
 //! A launch with an opening round shows the launch-owned bidder record the first bid creates, that
 //! nothing trades or pays out before settlement, that every failing round call commits nothing,
 //! the pot's one purchase at settlement, and the delivery that retires the record; each step's
 //! storage cost is printed.
 //!
-//! LP-fee splits that sum to zero or name seventeen recipients abort in the fee-split constructor
-//! before the launch exists, while sixteen recipients commit unchanged into the launch. A split
-//! with every part and sixteen distinct recipient weights is measured at creation and migration;
+//! LP-fee splits that sum to zero or name twenty-one routes abort in `blast_core`'s fee-split
+//! constructor before the launch exists, while twenty routes commit unchanged into the launch. A
+//! split with every destination kind and sixteen distinct address weights is measured at creation
+//! and migration;
 //! each record prints as one `LAUNCH_FEE_SPLIT_CAPACITY` JSON line with its margins to the
 //! simulator's protocol limits. Recurring LP-fee collection and split updates belong to the
-//! migrators package.
+//! migrators and `blast_vault` packages.
 //!
 //! Run from `sui/launchpad/ptb_tests` with `cargo test` (needs the pinned `sui` on PATH).
 
@@ -29,11 +33,11 @@ use std::{collections::BTreeSet, time::Duration};
 
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
-    ActionApplied, ActionScheduled, Change, CompiledPackage, Expected, Harness, Outcome, RuntimeConfigContents, SetApplied,
-    SetChange, SetScheduled, append_unpause, build, call, sui_dir,
+    ActionApplied, ActionScheduled, Change, CompiledPackage, Destination, Expected, FeeSplit, Harness, Outcome,
+    RuntimeConfigContents, SetApplied, SetChange, SetScheduled, append_unpause, build, call, publish_stack,
 };
 use move_binary_format::{CompiledModule, file_format::SignatureToken};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use sui_types::{
     SUI_CLOCK_OBJECT_ID, SUI_COIN_REGISTRY_OBJECT_ID, SUI_FRAMEWORK_PACKAGE_ID, TypeTag,
@@ -49,10 +53,6 @@ use sui_types::{
 const TARGET: u64 = 25_000_000;
 const BUY: u64 = 30_000_000;
 
-/// The pool tier every launch starts at, in the mock venue's native units.
-const POOL_TICK_SPACING: u32 = 60;
-const POOL_FEE_RATE: u64 = 2_500;
-
 /// `launch::set_opening_round` argument; zero leaves the launch without one and skips the call.
 const NO_OPENING_ROUND: u64 = 0;
 const OPENING_ROUND_MS: u64 = 60_000;
@@ -60,15 +60,18 @@ const OPENING_ROUND_MS: u64 = 60_000;
 const BID: u64 = 1_000_000;
 
 /// `blast_fun::errors` codes.
-const INVALID_SHARES: u64 = 7;
-const RECIPIENT_CAPACITY_REACHED: u64 = 8;
-const INVALID_LAUNCH_LIFECYCLE: u64 = 15;
-const OPENING_ROUND_ENDED: u64 = 18;
-const OPENING_ROUND_NOT_ENDED: u64 = 19;
-const INVALID_CREATOR_RECIPIENT: u64 = 25;
-const ZERO_OPENING_ROUND_BID: u64 = 34;
-const INVALID_PAUSE_BITS: u64 = 38;
-const PAUSE_UNCHANGED: u64 = 39;
+const INVALID_LAUNCH_LIFECYCLE: u64 = 14;
+const OPENING_ROUND_ENDED: u64 = 17;
+const OPENING_ROUND_NOT_ENDED: u64 = 18;
+const INVALID_CREATOR_RECIPIENT: u64 = 22;
+const ZERO_OPENING_ROUND_BID: u64 = 31;
+const INVALID_PAUSE_BITS: u64 = 35;
+const PAUSE_UNCHANGED: u64 = 36;
+const PAUSED: u64 = 37;
+/// `blast_core::errors::invalid_fee_split`.
+const INVALID_FEE_SPLIT: u64 = 4;
+/// The most routes one `blast_core` fee split holds.
+const MAX_ROUTES: usize = 20;
 
 const DESTINATION: ObjectID = address(&[0xD5]);
 /// Blast's one-time share of both the Meme supply and the final Quote reserve.
@@ -90,15 +93,25 @@ struct Launch {
     currency: ObjectID,
 }
 
+/// A generated coin before its launch: the ticket and `TreasuryCap` the sender holds, and its
+/// shared Currency.
+struct Ticket {
+    meme: TypeTag,
+    ticket: ObjectID,
+    treasury_cap: ObjectID,
+    currency: ObjectID,
+}
+
 struct World {
     h: Harness,
+    core: ObjectID,
     blast: ObjectID,
     adapter: ObjectID,
     version: ObjectID,
     runtime: ObjectID,
     config: ObjectID,
     project: CompiledPackage,
-    core_code: CompiledPackage,
+    launchpad_code: CompiledPackage,
     adapter_code: CompiledPackage,
     admin: ObjectID,
     acl: ObjectID,
@@ -166,8 +179,8 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
 }
 
 #[test]
-fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> {
-    let mut w = world("adapter-policy-order")?;
+fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> {
+    let mut w = world("venue-policy-order")?;
     for (policy_first, old_delay, next_delay) in [
         (true, ADMIN_DELAY_MS, 100u64),
         (false, 100u64, 25u64),
@@ -183,11 +196,11 @@ fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()
         let version = b.obj(w.h.shared(w.version, false))?;
         let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
         for adapter in &adapters {
-            call(&mut b, w.blast, "launch_config", "schedule_migration_witness",
+            call(&mut b, w.blast, "launch_config", "schedule_venue",
                 vec![adapter.clone()], vec![config, version, admin, clock]);
         }
         let delay = b.pure(next_delay)?;
-        call(&mut b, w.blast, "launch_config", "schedule_migration_delay",
+        call(&mut b, w.blast, "launch_config", "schedule_venue_delay",
             vec![], vec![config, version, admin, delay, clock]);
         w.h.execute(b.finish())?.assert_success();
 
@@ -196,15 +209,15 @@ fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()
         let version = apply.obj(w.h.shared(w.version, false))?;
         let clock = apply.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
         if policy_first {
-            call(&mut apply, w.blast, "launch_config", "apply_migration_delay",
+            call(&mut apply, w.blast, "launch_config", "apply_venue_delay",
                 vec![], vec![config, version, clock]);
         }
         for adapter in adapters.iter().rev() {
-            call(&mut apply, w.blast, "launch_config", "apply_migration_witness",
+            call(&mut apply, w.blast, "launch_config", "apply_venue",
                 vec![adapter.clone()], vec![config, version, clock]);
         }
         if !policy_first {
-            call(&mut apply, w.blast, "launch_config", "apply_migration_delay",
+            call(&mut apply, w.blast, "launch_config", "apply_venue_delay",
                 vec![], vec![config, version, clock]);
         }
         let apply = apply.finish();
@@ -222,7 +235,7 @@ fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()
         // The primitive records the notice change and each admission, in application order.
         assert!(applied.wrapped_payloads(w.blast).is_empty());
         let changes: Vec<SetApplied<String>> =
-            applied.delayed("SetApplied", "launch_config", "MigrationWitnessKey")?;
+            applied.delayed("SetApplied", "launch_config", "VenueKey")?;
         let admitted: Vec<_> = adapters.iter().rev()
             .map(|adapter| SetChange::Admission(adapter.to_canonical_string(false))).collect();
         let expected: Vec<_> = if policy_first {
@@ -244,12 +257,12 @@ fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()
         let config = b.obj(w.h.shared(w.config, true))?;
         let version = b.obj(w.h.shared(w.version, false))?;
         let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, w.blast, "launch_config", "schedule_migration_witness",
+        call(&mut b, w.blast, "launch_config", "schedule_venue",
             vec![later.clone()], vec![config, version, admin, clock]);
         let scheduled = w.h.execute(b.finish())?;
         scheduled.assert_success();
         let admissions: Vec<SetScheduled<String>> =
-            scheduled.delayed("SetScheduled", "launch_config", "MigrationWitnessKey")?;
+            scheduled.delayed("SetScheduled", "launch_config", "VenueKey")?;
         assert_eq!(admissions.len(), 1);
         assert_eq!(admissions[0].change, SetChange::Admission(later.to_canonical_string(false)));
         assert_eq!((admissions[0].ready_at_ms, admissions[0].delay_ms), (now + next_delay, next_delay));
@@ -258,7 +271,7 @@ fn adapter_admission_order_preserves_policy_and_pending_deadlines() -> Result<()
         let config = b.obj(w.h.shared(w.config, true))?;
         let version = b.obj(w.h.shared(w.version, false))?;
         let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut b, w.blast, "launch_config", "apply_migration_witness",
+        call(&mut b, w.blast, "launch_config", "apply_venue",
             vec![later], vec![config, version, clock]);
         let apply = b.finish();
         w.h.sim.advance_clock(Duration::from_millis(next_delay - 1));
@@ -280,11 +293,11 @@ fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Resu
     w.h.execute(w.join(&round, BID)?)?.assert_success();
     let ready = w.open_launch(NO_OPENING_ROUND)?;
     w.buy_to_migration(&ready)?;
-    let (ticket, currency, meme) = w.publish_ticket()?;
+    let ticket = w.publish_ticket()?;
     w.set_pause(true, 7)?;
-    let watched = [round.launch, ready.launch, ready.currency, ticket, currency, w.version];
-    let abort = || Expected::Abort { package: w.blast, module: "blast_fun", code: 40 };
-    w.h.assert_rolled_back(w.create_launch(ticket, currency, &meme, &FeeSplit::single(DESTINATION), NO_OPENING_ROUND)?, abort(), &watched, &[w.h.sender])?;
+    let watched = [round.launch, ready.launch, ready.currency, ticket.ticket, ticket.treasury_cap, ticket.currency, w.version];
+    let abort = || Expected::Abort { package: w.blast, module: "blast_fun", code: PAUSED };
+    w.h.assert_rolled_back(w.create_launch(&ticket, &FeeSplit::single(DESTINATION.into()), NO_OPENING_ROUND)?, abort(), &watched, &[w.h.sender])?;
     w.h.assert_rolled_back(w.join(&round, BID)?, abort(), &watched, &[w.h.sender])?;
     w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, abort(), &watched, &[w.h.sender])?;
     w.h.sim.advance_clock(Duration::from_millis(OPENING_ROUND_MS));
@@ -292,7 +305,7 @@ fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Resu
     w.set_pause(false, 2)?;
     w.h.execute(w.settle(&round)?)?.assert_success();
     // Releasing trading must not release migration or creation.
-    w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, Expected::Abort { package: w.blast, module: "blast_fun", code: 40 }, &watched, &[w.h.sender])?;
+    w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, Expected::Abort { package: w.blast, module: "blast_fun", code: PAUSED }, &watched, &[w.h.sender])?;
     w.set_pause(true, 2)?;
     let delivered = w.h.execute(w.deliver(&round, w.h.sender)?)?;
     delivered.assert_success();
@@ -536,9 +549,9 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
 #[test]
 fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> Result<()> {
     let mut w = world("mixed-generation-creation")?;
-    let (ticket, currency, meme) = w.publish_ticket()?;
+    let ticket = w.publish_ticket()?;
     let original = w.blast;
-    let mut code = w.core_code.clone();
+    let mut code = w.launchpad_code.clone();
     for bytes in &mut code.modules {
         let mut module = CompiledModule::deserialize_with_defaults(bytes)?;
         if module.self_id().name().as_str() == "blast_fun" {
@@ -663,12 +676,13 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let version = b.obj(w.h.shared(w.version, false))?;
 
     let admin_clock = b.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut b, w.blast, "launch_config", "schedule_migration_witness", vec![w.adapter_type("Venue")?], vec![config, version, witness, admin_clock]);
+    call(&mut b, w.blast, "launch_config", "schedule_venue", vec![w.adapter_type("Venue")?], vec![config, version, witness, admin_clock]);
     w.h.execute(b.finish())?.assert_success();
-    blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![(w.blast, "launch_config", "apply_migration_witness", vec![parse_sui_type_tag(&format!("{}::mock_adapter::Venue", w.adapter))?], w.config, w.version)])?;
+    let venue = w.adapter_type("Venue")?;
+    blast_launchpad_ptb_tests::apply_admin_changes(&mut w.h, vec![(w.blast, "launch_config", "apply_venue", vec![venue], w.config, w.version)])?;
 
-    let current = w.create_launch(ticket, currency, &meme, &FeeSplit::single(DESTINATION), OPENING_ROUND_MS)?;
-    for name in ["set_virtual_quote", "set_graduation_target", "set_allocation_plan", "set_lp_fee_split", "set_opening_round", "finalize", "share"] {
+    let current = w.create_launch(&ticket, &FeeSplit::single(DESTINATION.into()), OPENING_ROUND_MS)?;
+    for name in ["new", "set_virtual_quote", "set_graduation_target", "set_allocation_plan", "set_lp_fee_split", "set_opening_round", "finalize", "share"] {
         let mut mixed = current.clone();
         let stale = mixed.commands.iter_mut().find_map(|command| match command {
             Command::MoveCall(call) if call.module.as_str() == "launch" && call.function.as_str() == name => Some(call),
@@ -678,7 +692,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
         // This pinned runtime rejects conflicting linkage before entering Move. Unit tests
         // separately pin the version-first abort for each creation function.
         println!("mixed-generation step: {name}");
-        w.h.assert_rolled_back(mixed, Expected::Error("InvalidLinkage"), &[ticket, currency, w.version, w.config], &[w.h.sender])?;
+        w.h.assert_rolled_back(mixed, Expected::Error("InvalidLinkage"), &[ticket.ticket, ticket.treasury_cap, ticket.currency, w.version, w.config], &[w.h.sender])?;
     }
     w.h.execute(current)?.assert_success();
     Ok(())
@@ -706,34 +720,35 @@ fn failed_migration_ptbs_commit_nothing_and_one_ptb_completes_atomically() -> Re
         &owners,
     )?;
 
-    // VM type-rule evidence, not a launch check: a PTB cannot pass pure bytes as the adapter
-    // witness that opens migration.
+    // VM type-rule evidence, not a launch check: a PTB cannot pass pure bytes as the venue
+    // witness that redeems the hand-off.
     let pt = {
         let mut builder = ProgrammableTransactionBuilder::new();
-        let launch = builder.obj(w.h.shared(a.launch, true))?;
-        let version = builder.obj(w.h.shared(w.version, false))?;
-        let currency = builder.obj(w.h.shared(a.currency, true))?;
+        let handoff = w.launch_migrate(&mut builder, &a)?;
         let forged = builder.pure_bytes(vec![], true);
-        let handoff = call(
+        let redeemed = call(
             &mut builder,
-            w.blast,
-            "launch",
-            "migrate",
+            w.core,
+            "migration",
+            "redeem",
             vec![a.meme.clone(), sui(), w.adapter_type("Venue")?],
-            vec![launch, version, currency, forged],
+            vec![handoff, forged],
         );
-        let Argument::Result(handoff) = handoff else { unreachable!() };
-        // Taking the Meme principal is the only other command, so a forged witness surfaces
-        // as its own error rather than behind a static transfer check.
-        let coin = call(
-            &mut builder,
-            SUI_FRAMEWORK_PACKAGE_ID,
-            "coin",
-            "from_balance",
-            vec![a.meme.clone()],
-            vec![Argument::NestedResult(handoff, 0)],
-        );
-        builder.transfer_args(w.h.sender, vec![coin]);
+        let Argument::Result(redeemed) = redeemed else { unreachable!() };
+        // Taking both principals is the only other work, so a forged witness surfaces as its own
+        // error rather than behind an unconsumed balance.
+        let mut coins = Vec::new();
+        for (index, coin_type) in [a.meme.clone(), sui()].into_iter().enumerate() {
+            coins.push(call(
+                &mut builder,
+                SUI_FRAMEWORK_PACKAGE_ID,
+                "coin",
+                "from_balance",
+                vec![coin_type],
+                vec![Argument::NestedResult(redeemed, index as u16)],
+            ));
+        }
+        builder.transfer_args(w.h.sender, coins);
         builder.finish()
     };
     w.h.assert_rolled_back(pt, Expected::Error("InvalidUsageOfPureArg"), &watched, &owners)?;
@@ -786,27 +801,60 @@ fn failed_migration_ptbs_commit_nothing_and_one_ptb_completes_atomically() -> Re
     Ok(())
 }
 
+/// ADR 0137 verification: the hand-off and the owner proof have no abilities, so a PTB that
+/// leaves either unconsumed fails at the end of execution and commits nothing.
 #[test]
-fn zero_sum_and_seventeen_recipient_fee_splits_abort_before_the_launch_exists() -> Result<()> {
+fn unredeemed_migration_and_unconsumed_owner_proof_fail_without_drop() -> Result<()> {
+    let mut w = world("hot_potatoes")?;
+    let launch = w.open_launch(NO_OPENING_ROUND)?;
+    w.buy_to_migration(&launch)?;
+    let owners = [w.h.sender, DESTINATION.into()];
+
+    // `launch::migrate` runs, pays nothing that survives, and its unredeemed `Migration` aborts the
+    // whole PTB; the launch stays MigrationReady.
+    let mut builder = ProgrammableTransactionBuilder::new();
+    w.launch_migrate(&mut builder, &launch)?;
+    w.h.assert_rolled_back(builder.finish(), Expected::Error("UnusedValueWithoutDrop"),
+        &[launch.launch, launch.currency], &owners)?;
+    assert_eq!(w.launch_lifecycle(&launch)?, LaunchLifecycle::MigrationReady);
+
+    // The creator claims the live curve-fee cap; a proof made from it and left unconsumed aborts.
+    let cap = w.claim_curve_fee_cap(&launch)?;
+    let mut builder = ProgrammableTransactionBuilder::new();
+    let launch_arg = builder.obj(w.h.shared(launch.launch, false))?;
+    let version = builder.obj(w.h.shared(w.version, false))?;
+    let cap_arg = builder.obj(w.h.owned(cap))?;
+    call(&mut builder, w.blast, "launch", "prove_owner", vec![launch.meme.clone(), sui()], vec![launch_arg, version, cap_arg]);
+    w.h.assert_rolled_back(builder.finish(), Expected::Error("UnusedValueWithoutDrop"),
+        &[launch.launch, cap], &[w.h.sender])?;
+
+    // The launch still migrates in one PTB that redeems its hand-off.
+    w.h.execute(w.migrate(&launch, &launch, false)?)?.assert_success();
+    assert_eq!(w.launch_lifecycle(&launch)?, LaunchLifecycle::Migrated);
+    Ok(())
+}
+
+#[test]
+fn empty_and_twenty_one_route_fee_splits_abort_before_the_launch_exists() -> Result<()> {
     let mut w = world("fee_split_boundaries")?;
-    let sixteen = FeeSplit::sixteen(0xA0, 10);
-    // An empty split fails the 10,000 sum (`invalid_shares`); a seventeenth distinct recipient
-    // fails capacity (`recipient_capacity_reached`) while the sum stays whole.
-    let rejected =
-        [(FeeSplit::default(), INVALID_SHARES), (sixteen.clone().with_seventeenth(), RECIPIENT_CAPACITY_REACHED)];
-    let blast = w.blast;
-    let abort = |code| Expected::Abort { package: blast, module: "allocation", code };
+    let maximum = maximum_fee_split(0xA0, 10);
+    assert_eq!(maximum.routes.len(), MAX_ROUTES);
+    // An empty split fails the 10,000 sum and a twenty-first distinct route fails capacity, while
+    // the sum stays whole; both are `invalid_fee_split`.
+    let rejected = [FeeSplit::default(), with_twenty_first(maximum.clone())];
+    let core = w.core;
+    let abort = || Expected::Abort { package: core, module: "fee_split", code: INVALID_FEE_SPLIT };
     let owners = [w.h.sender, DESTINATION.into()];
 
     // Each rejected split aborts before the ticket is consumed; the same ticket then opens with
-    // sixteen recipients, which the launch records unchanged.
-    let (ticket, currency, meme) = w.publish_ticket()?;
-    for (fee_split, code) in &rejected {
-        let pt = w.create_launch(ticket, currency, &meme, fee_split, NO_OPENING_ROUND)?;
-        w.h.assert_rolled_back(pt, abort(*code), &[ticket, currency], &owners)?;
+    // twenty routes, which the launch records unchanged.
+    let ticket = w.publish_ticket()?;
+    for fee_split in &rejected {
+        let pt = w.create_launch(&ticket, fee_split, NO_OPENING_ROUND)?;
+        w.h.assert_rolled_back(pt, abort(), &[ticket.ticket, ticket.treasury_cap, ticket.currency], &owners)?;
     }
-    let (_, created) = w.open_split_launch(ticket, currency, meme, &sixteen)?;
-    assert_eq!(w.launch_created(&created)?.lp_fee_split, sixteen);
+    let (_, created) = w.open_split_launch(ticket, &maximum)?;
+    assert_eq!(w.launch_created(&created)?.lp_fee_split, maximum);
 
     Ok(())
 }
@@ -814,18 +862,15 @@ fn zero_sum_and_seventeen_recipient_fee_splits_abort_before_the_launch_exists() 
 #[test]
 fn maximum_fee_split_fits_protocol_limits_at_creation_and_migration() -> Result<()> {
     let mut w = world("fee_split_capacity")?;
-    let fee_split = FeeSplit::sixteen(0xA0, 10);
+    let fee_split = maximum_fee_split(0xA0, 10);
     let mut records = Vec::new();
 
-    let (ticket, currency, meme) = w.publish_ticket()?;
-    let (a, created) = w.open_split_launch(ticket, currency, meme, &fee_split)?;
+    let ticket = w.publish_ticket()?;
+    let (a, created) = w.open_split_launch(ticket, &fee_split)?;
     let launch_created = w.launch_created(&created)?;
     assert_eq!(launch_created.lp_fee_split, fee_split);
     assert_eq!(launch_created.opening_round_ms, NO_OPENING_ROUND);
-    assert_eq!(
-        (launch_created.pool_tick_spacing, launch_created.pool_fee_rate),
-        (POOL_TICK_SPACING, POOL_FEE_RATE),
-    );
+    assert!(launch_created.venue.ends_with("::mock_adapter::Venue"), "the launch records its venue");
     assert_eq!(
         (
             launch_created.allocation_plan.protocol_meme_bps,
@@ -834,7 +879,7 @@ fn maximum_fee_split_fits_protocol_limits_at_creation_and_migration() -> Result<
         (BLAST_BPS, BLAST_BPS),
     );
     assert_eq!(launch_created.allocation_plan.recipients, [(DESTINATION.into(), 500, 500)]);
-    records.push(w.record(&a, "create_launch", "3 parts + 16 recipients", &created));
+    records.push(w.record(&a, "create_launch", "4 parts + 16 address routes", &created));
 
     // The launch carries the split unchanged to migration, which neither reads nor pays it.
     w.buy_to_migration(&a)?;
@@ -844,7 +889,7 @@ fn maximum_fee_split_fits_protocol_limits_at_creation_and_migration() -> Result<
         migrated.wrapped_payloads(w.blast),
         ["MigrationAllocationPaid", "ProtocolFeesAccrued", "Migrated"]
     );
-    records.push(w.record(&a, "migrate", "3 parts + 16 recipients", &migrated));
+    records.push(w.record(&a, "migrate", "4 parts + 16 address routes", &migrated));
 
     println!(
         "LAUNCH_FEE_SPLIT_CAPACITY {}",
@@ -977,9 +1022,7 @@ struct LaunchCreated {
     _launch_id: ObjectID,
     _ticket_id: ObjectID,
     _quote: String,
-    _migration_witness: String,
-    pool_tick_spacing: u32,
-    pool_fee_rate: u64,
+    venue: String,
     lp_fee_split: FeeSplit,
     _virtual_quote: u64,
     _graduation_target: u64,
@@ -1022,49 +1065,29 @@ enum LaunchLifecycle {
     Migrated,
 }
 
-/// Mirrors `blast_fun::allocation::FeeSplit`; each `Bps` is one `u64` in BCS.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-struct FeeSplit {
-    creator_bps: u64,
-    auto_lp_bps: u64,
-    rewards_bps: u64,
-    burn_bps: u64,
-    recipients: Vec<Route>,
+/// Every destination kind, then sixteen address routes whose weights fall by `step`, so they are
+/// distinct: twenty routes, the most one split holds, summing to 10,000.
+fn maximum_fee_split(tag: u8, step: u64) -> FeeSplit {
+    let parts = [(Destination::Owner, 1_000), (Destination::AutoLp, 600), (Destination::HolderRewards, 400),
+        (Destination::Burn, 400)];
+    let shared = 10_000 - parts.iter().map(|(_, bps)| bps).sum::<u64>();
+    assert_eq!((shared - 120 * step) % 16, 0);
+    let lowest = (shared - 120 * step) / 16;
+    let addresses = (0..16u8)
+        .map(|i| (Destination::Address(address(&[tag, i]).into()), lowest + step * u64::from(15 - i)));
+
+    FeeSplit::new(parts.into_iter().chain(addresses))
 }
 
-impl FeeSplit {
-    /// Every collection wholly to one recipient.
-    fn single(destination: ObjectID) -> Self {
-        let recipients = vec![Route { destination: destination.into(), bps: 10_000 }];
-        Self { recipients, ..Self::default() }
-    }
-
-    /// Every part set, and sixteen recipients whose weights fall by `step`, so they are distinct;
-    /// the whole split sums to 10,000.
-    fn sixteen(tag: u8, step: u64) -> Self {
-        let (creator_bps, auto_lp_bps, rewards_bps, burn_bps) = (1_000, 600, 400, 400);
-        let shared = 10_000 - creator_bps - auto_lp_bps - rewards_bps - burn_bps;
-        assert_eq!((shared - 120 * step) % 16, 0);
-        let lowest = (shared - 120 * step) / 16;
-        let recipients = (0..16u8)
-            .map(|i| Route { destination: address(&[tag, i]).into(), bps: lowest + step * u64::from(15 - i) })
-            .collect();
-
-        Self { creator_bps, auto_lp_bps, rewards_bps, burn_bps, recipients }
-    }
-
-    /// Moves the rewards share to a seventeenth distinct recipient; the sum stays whole.
-    fn with_seventeenth(mut self) -> Self {
-        let bps = std::mem::take(&mut self.rewards_bps);
-        self.recipients.push(Route { destination: address(&[0x17, 0x17]).into(), bps });
-        self
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-struct Route {
-    destination: SuiAddress,
-    bps: u64,
+/// Moves one basis point of the owner route to a twenty-first distinct address route; the sum
+/// stays whole.
+fn with_twenty_first(mut split: FeeSplit) -> FeeSplit {
+    split.routes[0].bps -= 1;
+    split.routes.push(blast_launchpad_ptb_tests::Route {
+        destination: Destination::Address(address(&[0x21, 0x21]).into()),
+        bps: 1,
+    });
+    split
 }
 
 /// Mirrors `blast_fun::events::MigrationAllocationPaid`.
@@ -1103,36 +1126,30 @@ fn setup() -> Result<(World, Launch, Launch)> {
 /// Publishes the packages and admits SUI and the adapter under the production admin path. Each
 /// test passes its own `work` directory for build configuration.
 fn world(work: &str) -> Result<World> {
-    let sui_dir = sui_dir();
     let fixture = blast_launchpad_ptb_tests::crate_dir().join("fixture");
     let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(work);
     let mut h = Harness::new()?;
 
-    let admin_dir = sui_dir.join("admin");
-    let launchpad_dir = sui_dir.join("launchpad");
-    let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
-    let partners_dir = sui_dir.join("partners");
-    let (partners, _) = h.publish(build(&partners_dir, &[(&admin_dir, admin)], &work)?)?;
-    let core = [(admin_dir.as_path(), admin), (partners_dir.as_path(), partners)];
-    let core_code = build(&launchpad_dir, &core, &work)?;
-    let (blast, published) = h.publish(core_code.clone())?;
+    let stack = publish_stack(&mut h, &work)?;
+    let (admin, core, blast) = (stack.admin, stack.core, stack.launchpad);
+    let admin_published = &stack.admin_publication;
+    let published = &stack.launchpad_publication;
     let one = |outcome: &Outcome, module: &str, name: &str| {
         let ids = outcome.created(&h, module, name);
         assert_eq!(ids.len(), 1, "{module}::{name}");
         ids[0]
     };
-    let acl = one(&admin_published, "blast_acl", "ACL");
-    let root = one(&admin_published, "blast_acl", "SuperAdminCap");
-    let config = one(&published, "launch_config", "LaunchConfig");
-    let runtime = one(&published, "runtime_config", "RuntimeConfig");
-    let linked = [core[0], core[1], (launchpad_dir.as_path(), blast)];
-    let adapter_code = build(&fixture.join("adapter"), &linked, &work)?;
+    let acl = one(admin_published, "blast_acl", "ACL");
+    let root = one(admin_published, "blast_acl", "SuperAdminCap");
+    let config = one(published, "launch_config", "LaunchConfig");
+    let runtime = one(published, "runtime_config", "RuntimeConfig");
+    let adapter_code = build(&fixture.join("adapter"), &stack.linked(), &work)?;
     let (adapter, _) = h.publish(adapter_code.clone())?;
-    let (version, custody) = h.wrap_launchpad(blast, &published, admin, &admin_published, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
-    let project = build(&fixture.join("project"), &linked, &work)?;
-    let mut w = World { h, blast, adapter, version, runtime, config, project, core_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody };
-
-    w.h.unpause(blast, "blast_fun_domain", admin, &admin_published, version, custody, [runtime, config], 7)?;
+    let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
+    let project = build(&fixture.join("project"), &stack.linked(), &work)?;
+    h.unpause(blast, "blast_fun_domain", admin, admin_published, version, custody, [runtime, config], 7)?;
+    let launchpad_code = stack.launchpad_code.clone();
+    let mut w = World { h, core, blast, adapter, version, runtime, config, project, launchpad_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody };
 
     // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap and each role the
     // setters below take; the cap then signs in once per role.
@@ -1170,8 +1187,7 @@ fn world(work: &str) -> Result<World> {
         witnesses.try_into().expect("one witness per role");
     let config_arg = builder.obj(w.h.shared(config, true))?;
     let version_arg = builder.obj(w.h.shared(version, false))?;
-    let hundred = builder.pure(100u64)?;
-    let fee = call(&mut builder, blast, "bps", "new", vec![], vec![hundred]);
+    let fee = w.bps(&mut builder, 100)?;
     let admin_clock = builder.obj(w.h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     let next_delay = builder.pure(172_800_000u64)?;
     call(&mut builder, blast, "launch_config", "schedule_trade_fees", vec![], vec![config_arg,
@@ -1310,53 +1326,46 @@ impl World {
     /// Publishes one generated project and opens its SUI-quoted launch with `opening_round_ms`,
     /// with the LP-fee split paying `DESTINATION` wholly.
     fn open_launch(&mut self, opening_round_ms: u64) -> Result<Launch> {
-        let (ticket, currency, meme) = self.publish_ticket()?;
-        let pt = self.create_launch(ticket, currency, &meme, &FeeSplit::single(DESTINATION), opening_round_ms)?;
+        let ticket = self.publish_ticket()?;
+        let pt = self.create_launch(&ticket, &FeeSplit::single(DESTINATION.into()), opening_round_ms)?;
         let created = self.h.execute(pt)?;
 
-        Ok(self.created_launch(&created, meme, currency))
+        Ok(self.created_launch(&created, ticket))
     }
 
     /// Opens `ticket`'s launch without an opening round with `fee_split` and returns it with the
     /// creation outcome.
-    fn open_split_launch(
-        &mut self,
-        ticket: ObjectID,
-        currency: ObjectID,
-        meme: TypeTag,
-        fee_split: &FeeSplit,
-    ) -> Result<(Launch, Outcome)> {
-        let created = self.h.execute(self.create_launch(ticket, currency, &meme, fee_split, NO_OPENING_ROUND)?)?;
+    fn open_split_launch(&mut self, ticket: Ticket, fee_split: &FeeSplit) -> Result<(Launch, Outcome)> {
+        let created = self.h.execute(self.create_launch(&ticket, fee_split, NO_OPENING_ROUND)?)?;
 
-        Ok((self.created_launch(&created, meme, currency), created))
+        Ok((self.created_launch(&created, ticket), created))
     }
 
-    /// One PTB that starts `ticket`'s launch through the adapter, sets the graduation target, the
-    /// allocation plan, `fee_split`, and any opening round, then finalizes and shares it.
+    /// One PTB that has the mock venue prepare `ticket`'s coin, starts its launch with the venue
+    /// ticket and the coin's `TreasuryCap`, sets the graduation target, the allocation plan,
+    /// `fee_split`, and any opening round, then finalizes and shares it.
     fn create_launch(
         &self,
-        ticket: ObjectID,
-        currency: ObjectID,
-        meme: &TypeTag,
+        ticket: &Ticket,
         fee_split: &FeeSplit,
         opening_round_ms: u64,
     ) -> Result<ProgrammableTransaction> {
         let mut builder = ProgrammableTransactionBuilder::new();
-        let fee_split = self.fee_split_arg(&mut builder, fee_split)?;
+        let fee_split = fee_split.arg(&mut builder, self.core)?;
         let plan = self.plan_arg(&mut builder)?;
-        let ticket = builder.obj(self.h.owned(ticket))?;
+        let launch_ticket = builder.obj(self.h.owned(ticket.ticket))?;
+        let treasury_cap = builder.obj(self.h.owned(ticket.treasury_cap))?;
         let version = builder.obj(self.h.shared(self.version, false))?;
         let config = builder.obj(self.h.shared(self.config, false))?;
-        let tick_spacing = builder.pure(POOL_TICK_SPACING)?;
-        let fee_rate = builder.pure(POOL_FEE_RATE)?;
-        let initializer = call(&mut builder, self.adapter, "mock_adapter", "new", vec![meme.clone()], vec![
-            ticket,
+        let venue_ticket = call(&mut builder, self.adapter, "mock_adapter", "prepare", vec![ticket.meme.clone()], vec![]);
+        let pair = vec![ticket.meme.clone(), sui()];
+        let initializer = call(&mut builder, self.blast, "launch", "new", pair.clone(), vec![
+            launch_ticket,
+            treasury_cap,
             version,
             config,
-            tick_spacing,
-            fee_rate,
+            venue_ticket,
         ]);
-        let pair = vec![meme.clone(), sui()];
         let virtual_quote = builder.pure(5_000_000u64)?;
         call(&mut builder, self.blast, "launch", "set_virtual_quote", pair.clone(), vec![initializer, version, virtual_quote]);
         let target = builder.pure(TARGET)?;
@@ -1370,7 +1379,7 @@ impl World {
                 opening_round_ms,
             ]);
         }
-        let currency = builder.obj(self.h.shared(currency, true))?;
+        let currency = builder.obj(self.h.shared(ticket.currency, true))?;
         let creation_fee = call(&mut builder, SUI_FRAMEWORK_PACKAGE_ID, "coin", "zero", vec![sui()], vec![]);
         let launch = call(&mut builder, self.blast, "launch", "finalize", pair.clone(), vec![
             initializer, version,
@@ -1384,13 +1393,16 @@ impl World {
         Ok(builder.finish())
     }
 
-    /// Publishes one generated project, which runs its OTW init: the ticket goes to the publisher
-    /// and the Currency to the registry, which must finalize it into its shared form. Returns the
-    /// ticket, the shared currency, and the Meme type.
-    fn publish_ticket(&mut self) -> Result<(ObjectID, ObjectID, TypeTag)> {
+    /// Publishes one generated project, which runs its OTW init: the ticket and the coin's
+    /// `TreasuryCap` go to the publisher and the Currency to the registry, which must finalize it
+    /// into its shared form.
+    fn publish_ticket(&mut self) -> Result<Ticket> {
         let (project_id, published) = self.h.publish(self.project.clone())?;
         assert_eq!(published.wrapped_payloads(self.blast), ["LaunchTicketCreated"]);
         let ticket = published.created(&self.h, "launch_ticket", "LaunchTicket")[0];
+        let treasury_cap = published.created(&self.h, "coin", "TreasuryCap");
+        assert_eq!(treasury_cap.len(), 1, "the publisher receives the coin's TreasuryCap");
+        assert_eq!(self.h.object(treasury_cap[0]).owner().get_address_owner_address()?, self.h.sender);
         let pending_currency = published.created(&self.h, "coin_registry", "Currency")[0];
         let meme = parse_sui_type_tag(&format!("{project_id}::token::TOKEN"))?;
 
@@ -1406,12 +1418,14 @@ impl World {
         finalized.assert_success();
         let currency = finalized.created(&self.h, "coin_registry", "Currency")[0];
 
-        Ok((ticket, currency, meme))
+        Ok(Ticket { meme, ticket, treasury_cap: treasury_cap[0], currency })
     }
 
-    /// The launch a successful creation shared.
-    fn created_launch(&self, created: &Outcome, meme: TypeTag, currency: ObjectID) -> Launch {
+    /// The launch a successful creation shared. Finalization consumes the coin's `TreasuryCap`,
+    /// fixing the supply.
+    fn created_launch(&self, created: &Outcome, ticket: Ticket) -> Launch {
         created.assert_success();
+        assert!(created.consumed(ticket.treasury_cap), "finalize consumes the TreasuryCap");
         assert_eq!(
             created.wrapped_payloads(self.blast),
             ["LaunchCreated", "LaunchShared"],
@@ -1420,7 +1434,7 @@ impl World {
         assert_eq!(launch.len(), 1, "launch::Launch");
         assert!(self.h.object(launch[0]).is_shared());
 
-        Launch { meme, launch: launch[0], currency }
+        Launch { meme: ticket.meme, launch: launch[0], currency: ticket.currency }
     }
 
     /// Decodes the one `LaunchCreated` of a creation.
@@ -1549,16 +1563,61 @@ impl World {
         let mut builder = ProgrammableTransactionBuilder::new();
         let launch_arg = builder.obj(self.h.shared(launch.launch, true))?;
         let version = builder.obj(self.h.shared(self.version, false))?;
+        let config = builder.obj(self.h.shared(self.config, false))?;
         let currency = builder.obj(self.h.shared(currency_owner.currency, true))?;
         let fail = builder.pure(fail)?;
         call(&mut builder, self.adapter, "mock_adapter", "migrate", vec![launch.meme.clone()], vec![
             launch_arg,
             version,
+            config,
             currency,
             fail,
         ]);
 
         Ok(builder.finish())
+    }
+
+    /// Appends `launch::migrate` directly, returning its `Migration` hand-off.
+    fn launch_migrate(&self, builder: &mut ProgrammableTransactionBuilder, launch: &Launch) -> Result<Argument> {
+        let launch_arg = builder.obj(self.h.shared(launch.launch, true))?;
+        let version = builder.obj(self.h.shared(self.version, false))?;
+        let config = builder.obj(self.h.shared(self.config, false))?;
+        let currency = builder.obj(self.h.shared(launch.currency, true))?;
+
+        Ok(call(builder, self.blast, "launch", "migrate", vec![launch.meme.clone(), sui()], vec![
+            launch_arg,
+            version,
+            config,
+            currency,
+        ]))
+    }
+
+    /// The creator, the sender, claims both creator capabilities and keeps them; returns the
+    /// curve-fee cap.
+    fn claim_curve_fee_cap(&mut self, launch: &Launch) -> Result<ObjectID> {
+        let mut builder = ProgrammableTransactionBuilder::new();
+        let launch_arg = builder.obj(self.h.shared(launch.launch, true))?;
+        let version = builder.obj(self.h.shared(self.version, false))?;
+        let runtime = builder.obj(self.h.shared(self.runtime, false))?;
+        let none = builder.pure(Option::<Vec<u8>>::None)?;
+        let clock = builder.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
+        let Argument::Result(caps) = call(
+            &mut builder,
+            self.blast,
+            "launch",
+            "claim_creator_caps",
+            vec![launch.meme.clone(), sui()],
+            vec![launch_arg, version, runtime, none, clock],
+        ) else {
+            unreachable!()
+        };
+        builder.transfer_args(self.h.sender, vec![Argument::NestedResult(caps, 0), Argument::NestedResult(caps, 1)]);
+        let claimed = self.h.execute(builder.finish())?;
+        claimed.assert_success();
+        let cap = claimed.created(&self.h, "creator_authority", "CurveFeeCap");
+        assert_eq!(cap.len(), 1);
+
+        Ok(cap[0])
     }
 }
 
@@ -1567,7 +1626,7 @@ impl World {
     fn bps(&self, builder: &mut ProgrammableTransactionBuilder, value: u64) -> Result<Argument> {
         let value = builder.pure(value)?;
 
-        Ok(call(builder, self.blast, "bps", "new", vec![], vec![value]))
+        Ok(call(builder, self.core, "bps", "new", vec![], vec![value]))
     }
 
     /// The fixture plan: 70% of the Meme on the curve, 20% of the Meme and 90% of the Quote to
@@ -1584,38 +1643,6 @@ impl World {
         let lp_quote = self.bps(builder, 9_000)?;
 
         Ok(call(builder, self.blast, "allocation", "plan", vec![], vec![curve_meme, lp_meme, lp_quote, recipients]))
-    }
-
-    /// Builds `fee_split` through the public constructors, as a client would, with every value its
-    /// own pure input.
-    fn fee_split_arg(&self, builder: &mut ProgrammableTransactionBuilder, fee_split: &FeeSplit) -> Result<Argument> {
-        let mut recipients = Vec::new();
-        for route in &fee_split.recipients {
-            let bps = self.unique_bps(builder, route.bps)?;
-            let destination = builder.pure_bytes(bcs::to_bytes(&route.destination)?, true);
-            recipients.push(call(builder, self.blast, "allocation", "route", vec![], vec![destination, bps]));
-        }
-        let route = parse_sui_type_tag(&format!("{}::allocation::Route", self.blast))?;
-        let recipients = builder.command(Command::make_move_vec(Some(route), recipients));
-        let creator_bps = self.unique_bps(builder, fee_split.creator_bps)?;
-        let auto_lp_bps = self.unique_bps(builder, fee_split.auto_lp_bps)?;
-        let rewards_bps = self.unique_bps(builder, fee_split.rewards_bps)?;
-        let burn_bps = self.unique_bps(builder, fee_split.burn_bps)?;
-
-        Ok(call(builder, self.blast, "allocation", "fee_split", vec![], vec![
-            creator_bps,
-            auto_lp_bps,
-            rewards_bps,
-            burn_bps,
-            recipients,
-        ]))
-    }
-
-    /// A `Bps` from its own pure input, never shared with an equal value.
-    fn unique_bps(&self, builder: &mut ProgrammableTransactionBuilder, value: u64) -> Result<Argument> {
-        let value = builder.pure_bytes(bcs::to_bytes(&value)?, true);
-
-        Ok(call(builder, self.blast, "bps", "new", vec![], vec![value]))
     }
 
     /// One measurement: the operation and fixture, the launch object's size afterwards, and the

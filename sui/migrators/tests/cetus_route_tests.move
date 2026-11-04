@@ -2,8 +2,9 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 #[test_only]
-/// The single Cetus routes' pair proof and checked retype (ADR 0100). The routes themselves run
-/// against real Cetus bytecode in the launchpad venue-fork tests.
+/// The single Cetus routes' pair proof and checked retype (ADR 0100), and the pool-reservation fact
+/// `cetus::prepare` emits. The routes themselves run against real Cetus bytecode in the launchpad
+/// venue-fork tests, since the Cetus interfaces are `abort 0` link stubs.
 module blast_fun_migrators::cetus_route_tests;
 
 // === Test-Only Types ===
@@ -86,10 +87,27 @@ fun a_reorder_to_another_type_aborts_in_the_framework() {
     abort
 }
 
+#[test]
+/// The reservation names the pair by original type, the reserved capability, and the tick spacing
+/// the migration will use, in that order.
+fun the_pool_reservation_records_the_pair_the_capability_and_the_tick_spacing() {
+    let pool_creation_cap_id = @0xCA9.to_id();
+
+    blast_events::cetus_pool_reserved<MEME, QUOTE>(pool_creation_cap_id, 60);
+
+    let reserved = event::events_by_type<CetusPoolReserved>();
+    assert_eq!(reserved.length(), 1);
+    let mut expected = bcs::to_bytes(&type_name::with_original_ids<MEME>());
+    expected.append(bcs::to_bytes(&type_name::with_original_ids<QUOTE>()));
+    expected.append(bcs::to_bytes(&pool_creation_cap_id));
+    expected.append(bcs::to_bytes(&60u32));
+    assert_eq!(bcs::to_bytes(&reserved[0]), expected);
+}
+
 // === Imports ===
 
-use blast_fun_migrators::cetus;
+use blast_fun_migrators::{blast_events::{Self, CetusPoolReserved}, cetus};
 
-use std::unit_test::{assert_eq, destroy};
+use std::{bcs, type_name, unit_test::{assert_eq, destroy}};
 
-use sui::balance::{Self, Balance};
+use sui::{balance::{Self, Balance}, event};

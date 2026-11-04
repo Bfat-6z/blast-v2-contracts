@@ -6,7 +6,9 @@ authors = ["Jose Cerqueira (jose@interestprotocol.com)"]
 
 [dependencies]
 blast_admin = { local = "../admin" }
+blast_core = { local = "../core" }
 blast_fun = { local = "../launchpad" }
+blast_vault = { local = "../vault" }
 BluefinSpot = { git = "https://github.com/fireflyprotocol/bluefin-spot-contract-interface.git", rev = "91ce930575b2aa3decab9b7e129b8002deba80c1" }
 CetusClmm = { local = "interfaces/cetus" }
 CetusLpBurn = { local = "interfaces/cetus_lp_burn" }
@@ -16,6 +18,3 @@ IntegerLibrary = { git = "https://github.com/fireflyprotocol/integer-library.git
 
 [addresses]
 blast_fun_migrators = "0x0"
-
-# Must be set to the intended treasury before fresh publication.
-blast_lp_fee_destination = "0x0"

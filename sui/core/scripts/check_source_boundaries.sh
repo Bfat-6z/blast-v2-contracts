@@ -22,7 +22,7 @@ fi
 [[ "$(rg -l '^fun init\(' sources | tr '\n' ' ')" == "sources/blast_treasury.move " ]] \
   || fail "only blast_treasury may initialize state"
 rg -q 'public struct Migration<phantom Meme, phantom Quote> \{' sources/migration.move \
-  && rg -q 'public struct VenueTicket \{' sources/migration.move \
+  && rg -q 'public struct VenueTicket<phantom Meme, phantom Quote> \{' sources/migration.move \
   && rg -q 'public struct OwnerProof \{' sources/owner_proof.move \
   || fail "hand-off, venue ticket, and owner proof must have no abilities"
 rg -q "let redeeming_venue = type_name::with_original_ids<Venue>\(\);" sources/migration.move \

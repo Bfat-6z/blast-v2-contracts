@@ -17,7 +17,6 @@ use crate::{Harness, Outcome};
 enum Layout {
     Bool,
     U8,
-    U32,
     U64,
     Address,
     Vector(Box<Layout>),
@@ -32,7 +31,6 @@ impl Layout {
     fn abstract_size(&self, bytes: &mut &[u8]) -> u64 {
         match self {
             Layout::Bool | Layout::U8 => advance(bytes, 1, 8),
-            Layout::U32 => advance(bytes, 4, 8),
             Layout::U64 => advance(bytes, 8, 8),
             Layout::Address => advance(bytes, 32, 32),
             Layout::Struct(fields) => 2 + fields.iter().map(|field| field.abstract_size(bytes)).sum::<u64>(),
@@ -44,7 +42,6 @@ impl Layout {
                 let length = uleb128(bytes);
                 let width = match **element {
                     Layout::Bool | Layout::U8 => 1,
-                    Layout::U32 => 4,
                     Layout::U64 => 8,
                     Layout::Address => 32,
                     _ => return 2 + (0..length).map(|_| element.abstract_size(bytes)).sum::<u64>(),
@@ -75,11 +72,14 @@ fn uleb128(bytes: &mut &[u8]) -> u64 {
 
 /// Layout of every event payload the measured transactions emit.
 fn payload_layout(payload: &StructTag) -> Layout {
-    use Layout::{Address, Bool, Enum, Struct, U8, U32, U64, Vector};
+    use Layout::{Address, Bool, Enum, Struct, U8, U64, Vector};
     let id = || Struct(vec![Address]);
     let bps = || Struct(vec![U64]);
     let type_name = || Struct(vec![Struct(vec![Vector(Box::new(U8))])]);
-    let fee_split = || Struct(vec![bps(), bps(), bps(), bps(), Vector(Box::new(Struct(vec![Address, bps()])))]);
+    // `blast_core::fee_split::FeeSplit`: routes of a `Destination` (an address, or one of four
+    // fieldless variants) and a `Bps`.
+    let destination = || Enum(vec![vec![Address], vec![], vec![], vec![], vec![]]);
+    let fee_split = || Struct(vec![Vector(Box::new(Struct(vec![destination(), bps()])))]);
     let plan = || {
         Struct(vec![
             bps(),
@@ -96,8 +96,6 @@ fn payload_layout(payload: &StructTag) -> Layout {
             id(),
             type_name(),
             type_name(),
-            U32,
-            U64,
             fee_split(),
             U64,
             U64,

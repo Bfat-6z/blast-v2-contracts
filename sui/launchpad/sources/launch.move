@@ -3,7 +3,7 @@
 
 // Package error macros preserve the launch's abort location.
 #[allow(lint(abort_without_constant))]
-/// Launch construction, the bonding curve, and the migration handoff.
+/// Launch construction, the bonding curve, the migration hand-off, and the owner proof.
 module blast_fun::launch;
 
 // === Constants ===
@@ -12,6 +12,10 @@ module blast_fun::launch;
 const DEFAULT_CAP_REASSIGNMENT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Public Types ===
+
+/// The launchpad's package witness: it seals each launch's migration, vault terms, and owner
+/// proofs, and only this module constructs it.
+public struct PackageWitness() has drop;
 
 public enum Lifecycle has copy, drop, store {
     OpeningRound,
@@ -43,9 +47,8 @@ public struct Launch<phantom Meme, phantom Quote> has key {
     graduation_target: u64,
     quote_fee_bps: Bps,
     meme_fee_bps: Bps,
-    migration_witness: TypeName,
-    pool_tick_spacing: u32,
-    pool_fee_rate: u64,
+    /// The venue witness type the launch's liquidity migrates to.
+    venue: TypeName,
     lp_fee_split: FeeSplit,
     atomic_supply: u64,
     meme_reserve: Balance<Meme>,
@@ -74,9 +77,8 @@ public struct MetadataCapReassignment() has copy, drop, store;
 /// Hot potato from `new` to `finalize`, collecting the creator's settings.
 public struct LaunchInitializer<phantom Meme, phantom Quote> {
     ticket: LaunchTicket<Meme>,
-    migration_witness: TypeName,
-    pool_tick_spacing: u32,
-    pool_fee_rate: u64,
+    treasury_cap: TreasuryCap<Meme>,
+    venue: TypeName,
     quote_fee_bps: Bps,
     meme_fee_bps: Bps,
     virtual_quote: Option<u64>,
@@ -89,15 +91,14 @@ public struct LaunchInitializer<phantom Meme, phantom Quote> {
 
 // === Public Functions ===
 
-/// Starts a launch for the adapter that constructs `Witness`, at the creator's pool tier in that
-/// venue's units. The Quote, the adapter, and the decimals must be admitted.
-public fun new<Meme, Quote, Witness: drop>(
+/// Starts a launch whose liquidity migrates to the venue that issued `venue_ticket` after
+/// preparing the coin with `treasury_cap`. The Quote, the venue, and the decimals must be admitted.
+public fun new<Meme, Quote>(
     ticket: LaunchTicket<Meme>,
+    treasury_cap: TreasuryCap<Meme>,
     package_version: &PackageVersion,
     config: &LaunchConfig,
-    _: Witness,
-    pool_tick_spacing: u32,
-    pool_fee_rate: u64,
+    venue_ticket: VenueTicket<Meme, Quote>,
 ): LaunchInitializer<Meme, Quote> {
     package_version.assert_current();
 
@@ -106,18 +107,13 @@ public fun new<Meme, Quote, Witness: drop>(
         type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(),
         blast_fun::errors::invalid_meme_quote_pair!(),
     );
-
-    let migration_witness = type_name::with_original_ids<Witness>();
-    let (quote_fee_bps, meme_fee_bps) = config.snapshot_for_launch<Quote>(
-        migration_witness,
-        ticket.decimals(),
-    );
+    let venue = venue_ticket.redeem_ticket();
+    let (quote_fee_bps, meme_fee_bps) = config.snapshot_for_launch<Quote>(venue, ticket.decimals());
 
     LaunchInitializer {
         ticket,
-        migration_witness,
-        pool_tick_spacing,
-        pool_fee_rate,
+        treasury_cap,
+        venue,
         quote_fee_bps,
         meme_fee_bps,
         virtual_quote: option::none(),
@@ -127,19 +123,6 @@ public fun new<Meme, Quote, Witness: drop>(
         opening_round_ms: 0,
         partner_id: option::none(),
     }
-}
-
-/// Lends the treasury capability to the starting adapter, e.g. for a pool reservation.
-public fun treasury_cap_mut<Meme, Quote, Witness: drop>(
-    self: &mut LaunchInitializer<Meme, Quote>,
-    _: Witness,
-): &mut TreasuryCap<Meme> {
-    assert!(
-        self.migration_witness == type_name::with_original_ids<Witness>(),
-        blast_fun::errors::invalid_migration_witness!(),
-    );
-
-    self.ticket.treasury_cap_mut()
 }
 
 /// Sets the virtual Quote reserve the curve starts from, which prices the first purchase.
@@ -231,9 +214,8 @@ public fun finalize<Meme, Quote>(
     package_version.assert_not_paused(constants::create_pause_bit!());
     let LaunchInitializer {
         ticket,
-        migration_witness,
-        pool_tick_spacing,
-        pool_fee_rate,
+        treasury_cap,
+        venue,
         quote_fee_bps,
         meme_fee_bps,
         virtual_quote,
@@ -274,7 +256,7 @@ public fun finalize<Meme, Quote>(
     let atomic_supply = launch_ticket::atomic_supply(ticket.decimals());
     let (curve_meme, _, _, _) = allocation_plan.apportion_meme(atomic_supply);
     let creation_fee_amount = creation_fee.value();
-    let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(currency, atomic_supply);
+    let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(treasury_cap, currency, atomic_supply);
     let id = object::new(ctx);
     let curve_fee_cap_reassignment = delayed_action::new(
         CurveFeeCapReassignment(),
@@ -300,9 +282,7 @@ public fun finalize<Meme, Quote>(
         graduation_target,
         quote_fee_bps,
         meme_fee_bps,
-        migration_witness,
-        pool_tick_spacing,
-        pool_fee_rate,
+        venue,
         lp_fee_split: lp_fee_split.destroy_some(),
         atomic_supply,
         meme_reserve: meme.split(curve_meme),
@@ -323,9 +303,7 @@ public fun finalize<Meme, Quote>(
     events::launch_created<Quote>(
         launch.id.to_inner(),
         ticket_id,
-        launch.migration_witness,
-        launch.pool_tick_spacing,
-        launch.pool_fee_rate,
+        launch.venue,
         launch.lp_fee_split,
         launch.virtual_quote,
         launch.graduation_target,
@@ -359,20 +337,6 @@ public fun share<Meme, Quote>(
     events::launch_shared(self.id.to_inner(), public_starts_at_ms);
 
     transfer::share_object(self);
-}
-
-/// Returns the creator's `(tick_spacing, fee_rate)` pool tier, in the adapter's venue units.
-public fun pool_tier<Meme, Quote>(self: &Launch<Meme, Quote>): (u32, u64) {
-    (self.pool_tick_spacing, self.pool_fee_rate)
-}
-
-public fun lp_fee_split<Meme, Quote>(self: &Launch<Meme, Quote>): FeeSplit {
-    self.lp_fee_split
-}
-
-/// Returns the Blast partner named at creation, which the launch's LP vault inherits.
-public fun partner_id<Meme, Quote>(self: &Launch<Meme, Quote>): Option<ID> {
-    self.partner_id
 }
 
 /// Authenticates the creator recipient and issues both creator capabilities.
@@ -873,14 +837,16 @@ public fun claim_protocol_fees_with_partner<Meme, Quote>(
 
 /// Pays every project recipient, accrues Blast's one-time Meme and Quote fee in the launch ledger,
 /// burns the curve's unsold Meme and pending sell-burn (or sends them to `@0x0` when the supply is
-/// fixed), and returns the pool's share to the stored adapter.
-public fun migrate<Meme, Quote, Witness: drop>(
+/// fixed), and returns the hand-off only the stored venue can redeem: the pool's share and the
+/// vault's terms, with Blast's applied LP-fee share and the migration residuals paid to Blast.
+/// Anyone may call it; an unredeemed hand-off aborts the transaction.
+public fun migrate<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
+    config: &LaunchConfig,
     currency: &mut Currency<Meme>,
-    _: Witness,
     ctx: &mut TxContext,
-): (Balance<Meme>, Balance<Quote>) {
+): Migration<Meme, Quote> {
     package_version.assert_current();
 
     package_version.assert_not_paused(constants::migration_pause_bit!());
@@ -888,11 +854,8 @@ public fun migrate<Meme, Quote, Witness: drop>(
         self.lifecycle == Lifecycle::MigrationReady,
         blast_fun::errors::invalid_launch_lifecycle!(),
     );
-    assert!(
-        self.migration_witness == type_name::with_original_ids<Witness>(),
-        blast_fun::errors::invalid_migration_witness!(),
-    );
 
+    let (protocol_meme_bps, protocol_quote_bps) = config.protocol_lp_fees();
     let plan = self.allocation_plan;
     let (
         _,
@@ -947,11 +910,35 @@ public fun migrate<Meme, Quote, Witness: drop>(
         currency.total_supply().destroy_some(),
     );
 
-    (meme, quote)
+    let terms = migration::vault_terms(
+        PackageWitness(),
+        self.id.to_inner(),
+        self.lp_fee_split,
+        protocol_meme_bps,
+        protocol_quote_bps,
+        self.partner_id,
+        migration::residuals_to_protocol(),
+    );
+
+    migration::new(PackageWitness(), meme, quote, self.venue, terms)
 }
 
+/// Proves to the launch's vault that the caller holds the curve-fee cap this launch honors.
+public fun prove_owner<Meme, Quote>(
+    self: &Launch<Meme, Quote>,
+    package_version: &PackageVersion,
+    curve_fee_cap: &CurveFeeCap<Meme>,
+): OwnerProof {
+    package_version.assert_current();
+    self.assert_curve_fee_cap(curve_fee_cap);
+
+    owner_proof::new(PackageWitness(), self.id.to_inner())
+}
+
+// === Private Functions ===
+
 /// Aborts unless `curve_fee_cap` is the curve-fee cap this launch currently honors.
-public fun assert_curve_fee_cap<Meme, Quote>(
+fun assert_curve_fee_cap<Meme, Quote>(
     self: &Launch<Meme, Quote>,
     curve_fee_cap: &CurveFeeCap<Meme>,
 ) {
@@ -960,8 +947,6 @@ public fun assert_curve_fee_cap<Meme, Quote>(
         blast_fun::errors::creator_cap_not_live!(),
     );
 }
-
-// === Private Functions ===
 
 fun assert_metadata_update<Meme, Quote>(
     self: &Launch<Meme, Quote>,
@@ -1245,8 +1230,8 @@ public fun virtual_quote_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): u
 }
 
 #[test_only]
-public fun migration_witness_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): TypeName {
-    self.migration_witness
+public fun venue_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): TypeName {
+    self.venue
 }
 
 // === Imports ===
@@ -1256,10 +1241,16 @@ use blast_admin::{
     blast_acl::AdminWitness,
 };
 
-use blast_fun::{
-    allocation::{AllocationPlan, FeeSplit},
-    blast_fun_domain::{CancelAdmin, CreatorAdmin},
+use blast_core::{
     bps::Bps,
+    fee_split::FeeSplit,
+    migration::{Self, Migration, VenueTicket},
+    owner_proof::{Self, OwnerProof}
+};
+
+use blast_fun::{
+    allocation::AllocationPlan,
+    blast_fun_domain::{CancelAdmin, CreatorAdmin},
     constants,
     creator_authority::{Self, BlastMetadataCap, CreatorRecipient, CurveFeeCap},
     curve,

@@ -6,7 +6,7 @@ module blast_fun::admin_delay_tests;
 
 // === Test-Only Types ===
 
-public struct AdapterWitness has drop {}
+public struct TestVenue has drop {}
 
 // === Tests ===
 
@@ -166,6 +166,26 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
         .delayed_cancelled_fields();
     assert_eq!(std::bcs::to_bytes(&value), fees_bytes);
 
+    config.schedule_protocol_lp_fees(
+        &version,
+        &fee_admin,
+        bps::new(1_200),
+        bps::new(900),
+        172_800_000,
+        &clock
+    );
+    let lp_fees_bytes = u64_fields(vector[1_200, 900]);
+    let (scheduled_owner, _, value, _, ready_at_ms) = single<
+        DelayedScheduled<ProtocolLpFeesKey, ProtocolLpFees>
+    >().delayed_scheduled_fields();
+    assert_eq!(scheduled_owner, owner);
+    assert_eq!(std::bcs::to_bytes(&value), lp_fees_bytes);
+    assert_eq!(ready_at_ms, 172_800_123);
+    config.cancel_protocol_lp_fees(&version, &cancel);
+    let (_, _, value, _, _) = single<DelayedCancelled<ProtocolLpFeesKey, ProtocolLpFees>>()
+        .delayed_cancelled_fields();
+    assert_eq!(std::bcs::to_bytes(&value), lp_fees_bytes);
+
     config.schedule_creation_fee(&version, &fee_admin, 123, 172_800_000, &clock);
     let (scheduled_owner, _, value, _, ready_at_ms) = single<DelayedScheduled<CreationFeeKey, u64>>()
         .delayed_scheduled_fields();
@@ -176,20 +196,20 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     let (_, _, value, _, _) = single<DelayedCancelled<CreationFeeKey, u64>>().delayed_cancelled_fields();
     assert_eq!(value, 123);
 
-    config.schedule_migration_witness<AdapterWitness>(
+    config.schedule_venue<TestVenue>(
         &version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
         &clock
     );
-    let witness = std::type_name::with_original_ids<AdapterWitness>();
+    let witness = std::type_name::with_original_ids<TestVenue>();
     let (scheduled_owner, _, change, _, ready_at_ms) = single<
-        SetScheduled<MigrationWitnessKey, TypeName>
+        SetScheduled<VenueKey, TypeName>
     >().set_scheduled_fields();
     assert_eq!(scheduled_owner, owner);
     assert_eq!(change.member_for_testing(), option::some(witness));
     assert_eq!(ready_at_ms, 172_800_123);
-    config.cancel_migration_witness<AdapterWitness>(&version, &cancel);
-    let (_, _, change, _, _) = single<SetCancelled<MigrationWitnessKey, TypeName>>()
+    config.cancel_venue<TestVenue>(&version, &cancel);
+    let (_, _, change, _, _) = single<SetCancelled<VenueKey, TypeName>>()
         .set_cancelled_fields();
     assert_eq!(change.member_for_testing(), option::some(witness));
 
@@ -308,12 +328,23 @@ use blast_admin::{
     delayed_action::{ActionCancelled, ActionScheduled},
     delayed_set::{SetCancelled, SetScheduled},
 };
+
+use blast_core::bps;
+
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},
     blast_fun as marker,
     blast_fun_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin},
-    bps,
-    launch_config::{Self, CreationFeeKey, MigrationWitnessKey, ProtocolAllocationKey, TradeFees, TradeFeesKey},
+    launch_config::{
+        Self,
+        CreationFeeKey,
+        ProtocolAllocationKey,
+        ProtocolLpFees,
+        ProtocolLpFeesKey,
+        TradeFees,
+        TradeFeesKey,
+        VenueKey,
+    },
     package_admin::{Self, UpgradeAction, UpgradeKey},
     runtime_config::{Self, TreasuryKey},
 };

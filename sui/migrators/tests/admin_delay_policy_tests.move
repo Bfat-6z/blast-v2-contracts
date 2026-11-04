@@ -12,95 +12,22 @@ const PUBLICATION_UPGRADE_NOTICE_MS: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
-public struct Adapter has drop {}
-
 public struct AdminDelayFixture {
     scenario: Scenario,
     admin: package_admin::PackageAdmin,
     version: marker::PackageVersion,
     clock: Clock,
-    policy: lp_fee_policy::LpFeePolicy,
 }
 
 // === Tests ===
 
-#[test]
-fun zero_notice_setup_enables_different_notices_for_independent_operations() {
-    let mut fixture = start();
-    fixture.run!(|f| {
-        f.schedule_fee(123, 100);
-        f.apply_fee();
-        assert_eq!(f.fee(), 123);
-        f.configure_destination();
-        assert_eq!(f.clock.timestamp_ms(), 0);
-        f.schedule_fee(456, 25);
-        f.clock.set_for_testing(100);
-        f.apply_fee();
-        assert_eq!(f.fee(), 456);
-        f.schedule_fee(789, 25);
-        f.clock.set_for_testing(125);
-        f.apply_fee();
-        assert_eq!(f.fee(), 789);
-    });
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun zero_next_delay_cannot_bypass_the_applied_notice() {
-    let mut fixture = start();
-    fixture.run!(|f| {
-        f.schedule_fee(123, 100);
-        f.apply_fee();
-        f.schedule_fee(456, 0);
-        f.clock.set_for_testing(99);
-        f.apply_fee();
-    });
-    fixture.end();
-}
-
-#[test]
-fun delay_only_change_keeps_the_value_and_cancel_keeps_the_notice() {
-    let mut fixture = start();
-    fixture.run!(|f| {
-        f.schedule_fee(123, 100);
-        f.apply_fee();
-        f.schedule_fee(123, 25);
-        f.clock.set_for_testing(100);
-        f.cancel_fee();
-        assert_eq!(f.fee(), 123);
-        f.schedule_fee(123, 25);
-        f.clock.set_for_testing(200);
-        f.apply_fee();
-        assert_eq!(f.fee(), 123);
-        f.schedule_fee(456, 25);
-        f.clock.set_for_testing(225);
-        f.apply_fee();
-        assert_eq!(f.fee(), 456);
-    });
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun replacing_a_ready_proposal_restarts_the_old_notice() {
-    let mut fixture = start();
-    fixture.run!(|f| {
-        f.schedule_fee(123, 100);
-        f.apply_fee();
-        f.schedule_fee(456, 0);
-        f.clock.set_for_testing(100);
-        f.schedule_fee(789, 0);
-        f.clock.set_for_testing(199);
-        f.apply_fee();
-    });
-    fixture.end();
-}
-
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun stale_delay_change_rejects_before_other_validation() {
+fun stale_notice_change_rejects_before_other_validation() {
     let mut fixture = start();
     fixture.run!(|f| {
         f.version.set_for_testing(9);
-        f.schedule_fee(0, 0);
+        let witness = blast_acl::witness_for_testing<UpgradeAdmin>();
+        f.admin.schedule_upgrade_delay(&f.version, &witness, 0, &f.clock);
     });
     fixture.end();
 }
@@ -238,7 +165,6 @@ fun end(self: AdminDelayFixture) {
 fun start(): AdminDelayFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     marker::init_for_testing(scenario.ctx());
-    lp_fee_policy::share_zero_notice_for_testing(scenario.ctx());
     scenario.next_tx(PUBLISHER);
     let publication = scenario.take_from_sender<marker::Publication>();
     let cap = sui::package::test_publish(@blast_fun_migrators.to_id(), scenario.ctx());
@@ -250,7 +176,6 @@ fun start(): AdminDelayFixture {
         admin: scenario.take_shared(),
         version,
         clock,
-        policy: scenario.take_shared(),
         scenario
     }
 }
@@ -262,41 +187,6 @@ fun replace_publication_upgrade_notice(self: &mut AdminDelayFixture, delay_ms: u
     self.clock.set_for_testing(PUBLICATION_UPGRADE_NOTICE_MS);
     self.admin.apply_upgrade_delay(&self.version, &self.clock);
     assert_eq!(self.admin.upgrade_delay_ms(), delay_ms);
-}
-
-fun schedule_fee(self: &mut AdminDelayFixture, value: u64, delay_ms: u64) {
-    self
-        .policy
-        .schedule_default_shares(
-            &self.version,
-            &blast_acl::witness_for_testing<FeeAdmin>(),
-            bps::new(value),
-            bps::new(0),
-            delay_ms,
-            &self.clock
-        );
-}
-fun apply_fee(self: &mut AdminDelayFixture) { self.policy.apply_default_shares(&self.version, &self.clock); }
-fun cancel_fee(self: &mut AdminDelayFixture) {
-    self
-        .policy
-        .cancel_default_shares(&self.version, &blast_acl::witness_for_testing<CancelAdmin>());
-}
-fun fee(self: &AdminDelayFixture): u64 {
-    { let (meme, _) = self.policy.shares<SUI>(); meme.value() }
-}
-fun configure_destination(self: &mut AdminDelayFixture) {
-    self
-        .policy
-        .schedule_protocol_destination(
-            &self.version,
-            &blast_acl::witness_for_testing<TreasuryAdmin>(),
-            @0xB0B,
-            200,
-            &self.clock
-        );
-    self.policy.apply_protocol_destination(&self.version, &self.clock);
-    assert_eq!(self.policy.protocol_destination(), @0xB0B);
 }
 
 /// Counts applied upgrade-notice changes, ignoring consumed upgrade actions.
@@ -312,9 +202,9 @@ fun upgrade_delay_changes(): u64 {
 use blast_admin::{blast_acl, delayed_action::{ActionApplied, ActionScheduled}};
 use blast_fun_migrators::{
     blast_fun_migrators as marker,
-    lp_fee_policy,
     package_admin::{Self, UpgradeAction, UpgradeKey},
 };
-use blast_fun::{blast_fun_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin}, bps};
+
+use blast_fun::blast_fun_domain::{CancelAdmin, UpgradeAdmin};
 use std::unit_test::{assert_eq, destroy};
-use sui::{clock::Clock, sui::SUI, test_scenario::{Self, Scenario}};
+use sui::{clock::Clock, test_scenario::{Self, Scenario}};

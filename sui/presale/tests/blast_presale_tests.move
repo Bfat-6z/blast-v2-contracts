@@ -67,8 +67,8 @@ const PARTNER_CUT_BPS: u64 = 4_000;
 
 public struct BLAST_PRESALE_TESTS() has drop;
 public struct QUOTE() has drop;
-public struct TEST_MIGRATOR() has drop;
-public struct OTHER_MIGRATOR() has drop;
+public struct TEST_VENUE() has drop;
+public struct OTHER_VENUE() has drop;
 
 public struct Fixture {
     scenario: Scenario,
@@ -93,8 +93,7 @@ public struct SaleTerms has drop {
     eligibility: EligibilityPolicy,
     uncapped: Option<UncappedPhase>,
     hard_cap: Option<HardCapTerms>,
-    fee_recipients: vector<RecipientShare>,
-    holder_rewards_bps: u64,
+    fee_split: FeeSplit,
 }
 
 /// The arguments of `set_hard_cap`.
@@ -113,18 +112,18 @@ public struct HardCapTerms has copy, drop {
 fun security_pause_blocks_new() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
-    let (treasury, mut currency) = new_currency(&mut ctx);
+    let (treasury, currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         constants::create_pause_bit!()
     );
     destroy(
-        presale::new<BLAST_PRESALE_TESTS, QUOTE, TEST_MIGRATOR>(
+        presale::new<BLAST_PRESALE_TESTS, QUOTE>(
             treasury,
             &version,
-            TEST_MIGRATOR(),
+            test_ticket(),
             &creation_policy,
             &fee_policy
         )
@@ -143,19 +142,19 @@ fun security_pause_blocks_new() {
 fun security_partial_unpause_keeps_new_paused() {
     let mut ctx = tx_context::dummy();
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
-    let (treasury, mut currency) = new_currency(&mut ctx);
+    let (treasury, currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     version.pause(
         &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
         constants::valid_pause_bits!()
     );
     version.clear_pause_bits(constants::commit_pause_bit!());
     destroy(
-        presale::new<BLAST_PRESALE_TESTS, QUOTE, TEST_MIGRATOR>(
+        presale::new<BLAST_PRESALE_TESTS, QUOTE>(
             treasury,
             &version,
-            TEST_MIGRATOR(),
+            test_ticket(),
             &creation_policy,
             &fee_policy
         )
@@ -173,7 +172,7 @@ fun security_presale_finalize_remains_available_as_specified() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let initializer = new_initializer<QUOTE>(
         &version,
         treasury,
@@ -204,7 +203,7 @@ fun security_pause_blocks_share() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let initializer = new_initializer<QUOTE>(
         &version,
         treasury,
@@ -237,7 +236,7 @@ fun security_partial_unpause_keeps_share_paused() {
     let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let initializer = new_initializer<QUOTE>(
         &version,
         treasury,
@@ -356,13 +355,9 @@ fun security_pause_blocks_migrate() {
     );
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
-        let (meme, quote) = sale.migrate(
-            &version,
-            &f.fee_policy,
-            TEST_MIGRATOR(),
-            &f.clock,
-            f.ctx!()
-        );
+        let (meme, quote, _) = sale
+            .migrate(&version, &f.fee_policy, &f.clock, f.ctx!())
+            .redeem(TEST_VENUE());
         destroy(meme);
         destroy(quote);
         f.return_presale(sale);
@@ -386,13 +381,9 @@ fun security_partial_unpause_keeps_migrate_paused() {
     version.clear_pause_bits(constants::commit_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
-        let (meme, quote) = sale.migrate(
-            &version,
-            &f.fee_policy,
-            TEST_MIGRATOR(),
-            &f.clock,
-            f.ctx!()
-        );
+        let (meme, quote, _) = sale
+            .migrate(&version, &f.fee_policy, &f.clock, f.ctx!())
+            .redeem(TEST_VENUE());
         destroy(meme);
         destroy(quote);
         f.return_presale(sale);
@@ -508,7 +499,7 @@ fun a_pending_policy_increase_does_not_raise_the_sales_immediate_fee_ceiling() {
     let clock = clock::create_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let mut fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let (mut sale, _cap) = new_presale<QUOTE>(
         treasury_cap,
         &mut currency,
@@ -564,13 +555,23 @@ fun oversubscription_uses_one_fill_rate_and_refunds_the_rest() {
     assert_eq!(fixture.funded_deadlines(), vector[COMMITMENT_ENDS_AT_MS, LIQUIDITY_DEADLINE_AT_MS]);
     assert!(fixture.is_funded());
 
-    assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, RAISE_TARGET]);
+    let (released, terms) = fixture.migrate_with_terms();
+    assert_eq!(released, vector[LIQUIDITY_TOKENS, RAISE_TARGET]);
+    // The hand-off seals the vault's terms for this sale under the presale's package witness: its
+    // LP-fee split, Blast's zero LP-fee rates, no partner, and residuals kept for the owner.
+    assert_eq!(terms.origin(), fixture.presale_id);
+    assert_eq!(terms.package_witness(), type_name::with_original_ids<presale::PackageWitness>());
+    assert_eq!(terms.fee_split(), creator_fee_split());
+    let (protocol_meme_bps, protocol_quote_bps) = terms.protocol_bps();
+    assert_eq!(vector[protocol_meme_bps.value(), protocol_quote_bps.value()], vector[0, 0]);
+    assert_eq!(terms.partner_id(), option::none());
+    assert!(!terms.has_protocol_residuals());
 
-    let (presale_id, migration_witness, quote, liquidity_tokens, recipient_tokens) = only_event<
+    let (presale_id, venue, quote, liquidity_tokens, recipient_tokens) = only_event<
         PresaleMigrated<BLAST_PRESALE_TESTS, QUOTE>,
     >().migrated_fields();
     assert_eq!(presale_id, fixture.presale_id);
-    assert_eq!(migration_witness, type_name::with_original_ids<TEST_MIGRATOR>());
+    assert_eq!(venue, type_name::with_original_ids<TEST_VENUE>());
     assert_eq!(
         vector[quote, liquidity_tokens, recipient_tokens],
         vector[RAISE_TARGET, LIQUIDITY_TOKENS, RECIPIENT_TOKENS],
@@ -1337,7 +1338,7 @@ fun a_sale_cannot_be_finalized_without_an_eligibility_policy() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let mut initializer = bare_initializer(
         &package_version,
         treasury_cap,
@@ -1346,7 +1347,7 @@ fun a_sale_cannot_be_finalized_without_an_eligibility_policy() {
     );
     initializer.set_fee_split(
         &package_version,
-        presale::fee_split(fee_recipients(), bps::new(HOLDER_REWARDS_BPS)),
+        creator_fee_split(),
     );
 
     let (_sale, _cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
@@ -1364,7 +1365,7 @@ fun a_sale_cannot_be_finalized_without_an_lp_fee_split() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let mut initializer = bare_initializer(
         &package_version,
         treasury_cap,
@@ -1389,7 +1390,7 @@ fun a_sale_cannot_be_finalized_without_a_raise() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let mut initializer = bare_initializer(
         &package_version,
         treasury_cap,
@@ -1399,7 +1400,7 @@ fun a_sale_cannot_be_finalized_without_a_raise() {
     initializer.set_eligibility(&package_version, single_wallet_eligibility());
     initializer.set_fee_split(
         &package_version,
-        presale::fee_split(fee_recipients(), bps::new(HOLDER_REWARDS_BPS)),
+        creator_fee_split(),
     );
 
     let (_sale, _cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
@@ -1676,11 +1677,9 @@ fun a_funded_sale_cannot_be_cancelled_before_the_liquidity_deadline() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EWrongMigrationWitness,
-    location = blast_presale::blast_presale,
-)]
-fun another_migrator_cannot_release_escrow() {
+#[expected_failure(abort_code = blast_core::errors::EWrongVenue, location = blast_core::migration)]
+/// Only the venue the sale stored redeems its hand-off; the abort undoes the whole migration.
+fun another_venue_cannot_redeem_the_hand_off() {
     let mut fixture = start_funded_sale();
     let package_version = blast_presale::blast_presale_package::new_for_testing(fixture
         .scenario
@@ -1688,15 +1687,11 @@ fun another_migrator_cannot_release_escrow() {
 
     fixture.next_tx!(KEEPER, |fixture| {
         let mut sale = fixture.take_presale();
-        let (liquidity_tokens, quote) = sale.migrate(
-            &package_version,
-            &fixture.fee_policy,
-            OTHER_MIGRATOR(),
-            &fixture.clock,
-            fixture.scenario.ctx(),
-        );
-        liquidity_tokens.destroy_zero();
-        quote.destroy_zero();
+        let (liquidity_tokens, quote, _) = sale
+            .migrate(&package_version, &fixture.fee_policy, &fixture.clock, fixture.scenario.ctx())
+            .redeem(OTHER_VENUE());
+        destroy(liquidity_tokens);
+        destroy(quote);
         fixture.return_presale(sale);
     });
 
@@ -1733,6 +1728,38 @@ fun sale_token_and_quote_types_must_differ() {
     terms.eligibility = presale::open_eligibility(1, 1, 1);
 
     create_sale<BLAST_PRESALE_TESTS>(terms);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EPaused,
+    location = blast_presale::blast_presale_package,
+)]
+/// The create pause precedes the venue check: a paused package refuses even an unadmitted venue's
+/// ticket by its pause.
+fun the_create_pause_precedes_an_unadmitted_venue() {
+    start_unadmitted<QUOTE, QUOTE>(true, false);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EQuoteNotAllowed,
+    location = blast_presale::creation_policy,
+)]
+/// The Quote check precedes the venue check.
+fun an_unlisted_quote_precedes_an_unadmitted_venue() {
+    start_unadmitted<QUOTE, BLAST_PRESALE_TESTS>(false, false);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EVenueNotAllowed,
+    location = blast_presale::creation_policy,
+)]
+/// A ticket from a venue Blast has not admitted is refused before the sale token's pair and
+/// supply are examined.
+fun an_unadmitted_venue_precedes_the_pair_and_supply_checks() {
+    start_unadmitted<BLAST_PRESALE_TESTS, BLAST_PRESALE_TESTS>(false, true);
 }
 
 #[test]
@@ -1800,7 +1827,7 @@ fun regulated_sale_currency_is_rejected_before_missing_settings() {
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_regulated_currency(false, &mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let initializer = bare_initializer(
         &package_version,
         treasury_cap,
@@ -1938,37 +1965,25 @@ fun a_positive_recipient_share_cannot_round_to_zero_tokens() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidFeeSplit,
-    location = blast_presale::blast_presale,
-)]
-fun fee_recipient_and_holder_shares_must_total_full_bps() {
-    create_with_fee_split(fee_recipients(), HOLDER_REWARDS_BPS - 1);
+/// A sale's vault may route LP fees to the sale's owner, auto-LP, and burn, which the creation
+/// event records as the split the vault starts with.
+fun a_sale_may_route_lp_fees_to_its_owner_auto_lp_and_burn() {
+    let split = fee_split::new(vector[
+        fee_split::route(fee_split::owner_destination(), bps::new(5_000)),
+        fee_split::route(fee_split::auto_lp_destination(), bps::new(3_000)),
+        fee_split::route(fee_split::burn_destination(), bps::new(2_000)),
+    ]);
+
+    create_with_fee_split(split);
+
+    let (_, created_fee_split) = only_event<
+        PresaleCreated<BLAST_PRESALE_TESTS, QUOTE>,
+    >().created_migration_fields();
+    assert_eq!(created_fee_split, split);
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidFeeSplit,
-    location = blast_presale::blast_presale,
-)]
-fun fee_recipients_must_be_distinct() {
-    create_with_fee_split(
-        vector[
-            presale::recipient_share(CREATOR, bps::new(CREATOR_FEE_BPS)),
-            presale::recipient_share(CREATOR, bps::new(FEE_PARTNER_BPS)),
-        ],
-        HOLDER_REWARDS_BPS,
-    );
-}
-
-#[test]
-/// With no fee recipients every collected fee funds holder rewards.
-fun holders_may_receive_every_fee() {
-    create_with_fee_split(vector[], 10_000);
-}
-
-#[test]
-#[expected_failure(abort_code = blast_presale::errors::EInvalidBps, location = blast_presale::bps)]
+#[expected_failure(abort_code = blast_core::errors::EInvalidBps, location = blast_core::bps)]
 /// An out-of-range LP share cannot be constructed, so the BPS sum cannot overflow.
 fun an_overflowing_liquidity_share_cannot_be_constructed() {
     let mut terms = valid_sale_terms();
@@ -1978,43 +1993,9 @@ fun an_overflowing_liquidity_share_cannot_be_constructed() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_presale::errors::EInvalidBps, location = blast_presale::bps)]
-/// An out-of-range holder share cannot be constructed, so the BPS sum cannot overflow.
-fun an_overflowing_holder_share_cannot_be_constructed() {
-    create_with_fee_split(fee_recipients(), std::u64::max_value!());
-}
-
-#[test]
-/// Sixteen distinct fee recipients fit one collection's transfer bound.
-fun sixteen_fee_recipients_are_accepted() {
-    create_with_fee_split(distinct_fee_recipients(16), 10_000 - 16 * 100);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidFeeSplit,
-    location = blast_presale::blast_presale,
-)]
-fun a_seventeenth_fee_recipient_is_rejected() {
-    create_with_fee_split(distinct_fee_recipients(17), 10_000 - 17 * 100);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidFeeSplit,
-    location = blast_presale::blast_presale,
-)]
-fun a_fee_recipient_cannot_be_the_zero_address() {
-    create_with_fee_split(
-        vector[presale::recipient_share(@0x0, bps::new(CREATOR_FEE_BPS + FEE_PARTNER_BPS))],
-        HOLDER_REWARDS_BPS,
-    );
-}
-
-#[test]
 /// Bluefin accepts a Meme symbol at the 32-byte bound.
 fun bluefin_accepts_a_thirty_two_byte_meme_symbol() {
-    create_bluefin_sale<QUOTE, bluefin::Witness>(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
+    create_bluefin_sale<QUOTE, bluefin::Venue>(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
 }
 
 #[test]
@@ -2024,7 +2005,7 @@ fun bluefin_accepts_a_thirty_two_byte_meme_symbol() {
 )]
 /// A longer symbol would grow every Bluefin position past Sui's object size limit.
 fun bluefin_rejects_a_thirty_three_byte_meme_symbol() {
-    create_bluefin_sale<QUOTE, bluefin::Witness>(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456");
+    create_bluefin_sale<QUOTE, bluefin::Venue>(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456");
 }
 
 #[test]
@@ -2034,17 +2015,17 @@ fun bluefin_rejects_a_thirty_three_byte_meme_symbol() {
 )]
 /// A venue cannot create a sale raising a Quote type Blast has not allowed.
 fun a_sale_cannot_raise_a_quote_blast_has_not_allowed() {
-    create_bluefin_sale<BLAST_PRESALE_TESTS, bluefin::Witness>(b"SALE");
+    create_bluefin_sale<BLAST_PRESALE_TESTS, bluefin::Venue>(b"SALE");
 }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EVenueNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// A venue cannot create a sale while Blast has not allowed its migration witness.
-fun a_sale_cannot_use_a_migrator_blast_has_not_allowed() {
-    create_bluefin_sale<QUOTE, cetus::Witness>(b"SALE");
+fun a_sale_cannot_use_a_venue_blast_has_not_allowed() {
+    create_bluefin_sale<QUOTE, cetus::Venue>(b"SALE");
 }
 
 #[test]
@@ -2244,7 +2225,6 @@ fun the_admin_can_replace_a_sales_rates_before_it_starts() {
     // down; the 500 tokens Blast gives up join the sale allocation of 10,001.
     assert_eq!(vector[protocol_quote, protocol_tokens, token_allocation], vector[50, 500, 10_501]);
     assert_eq!(fixture.protocol_rates(), vector[500, 250, 100, 200]);
-    assert_eq!(fixture.vault_partner_id(), option::none());
 
     fixture.set_time(COMMITMENT_STARTS_AT_MS);
     fixture.commit_open(ALICE, 1_000);
@@ -2252,8 +2232,13 @@ fun the_admin_can_replace_a_sales_rates_before_it_starts() {
     fixture.set_time(COMMITMENT_ENDS_AT_MS);
     fixture.settle(KEEPER);
 
-    // The LP keeps the raise after the recipient's 200 and Blast's 50.
-    assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 750]);
+    // The LP keeps the raise after the recipient's 200 and Blast's 50; the vault terms carry the
+    // replaced LP-fee rates and no partner.
+    let (released, terms) = fixture.migrate_with_terms();
+    assert_eq!(released, vector[LIQUIDITY_TOKENS, 750]);
+    let (protocol_meme_bps, protocol_quote_bps) = terms.protocol_bps();
+    assert_eq!(vector[protocol_meme_bps.value(), protocol_quote_bps.value()], vector[100, 200]);
+    assert_eq!(terms.partner_id(), option::none());
     fixture.take_payout(TREASURY, 500, 50);
     fixture.take_quote(RAISE_RECIPIENT, 200);
 
@@ -2432,7 +2417,7 @@ fun an_unshared_sales_rates_can_change_before_its_share() {
     let clock = clock::create_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let mut fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let (mut sale, cap) = new_presale<QUOTE>(
         treasury_cap,
         &mut currency,
@@ -2586,7 +2571,7 @@ fun a_raise_share_that_leaves_the_lp_nothing_is_rejected() {
 fun a_token_share_that_leaves_buyers_nothing_is_rejected() {
     let mut ctx = tx_context::dummy();
     let mut fee_policy = treasury_fee_policy(0, 0, &mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let mut terms = valid_sale_terms();
     terms.token_allocation_bps = 500;
     terms.recipient_allocations = vector[
@@ -2625,7 +2610,7 @@ fun a_raise_share_cut_that_seeds_an_unpoolable_price_is_rejected() {
     let fee_policy = treasury_fee_policy(1_000, 0, scenario.ctx());
     let creation_policy = creation_policy::allowing_for_testing<
         QUOTE,
-        TEST_MIGRATOR,
+        TEST_VENUE,
     >(scenario.ctx());
     let mut terms = valid_sale_terms();
     terms.token_supply = 10;
@@ -3015,26 +3000,6 @@ fun a_cancelled_vesting_sale_refunds_without_a_schedule() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidFeeSplit,
-    location = blast_presale::blast_presale,
-)]
-/// LP fees are paid as they are collected, so a fee share cannot vest.
-fun fee_recipients_cannot_vest() {
-    create_with_fee_split(
-        vector[
-            presale::vested_recipient_share(
-                CREATOR,
-                bps::new(CREATOR_FEE_BPS),
-                team_vesting_terms(),
-            ),
-            presale::recipient_share(FEE_PARTNER, bps::new(FEE_PARTNER_BPS)),
-        ],
-        HOLDER_REWARDS_BPS,
-    );
-}
-
-#[test]
 /// The longest schedule is the technical bound, with the cliff at most its whole duration.
 fun vesting_terms_accept_the_technical_bound_with_a_full_cliff() {
     let max_duration_ms = constants::max_vesting_duration_ms!();
@@ -3087,9 +3052,10 @@ fun a_partnered_sale_pays_its_partner_a_cut_of_blasts_raise_fee_only() {
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let mut fixture = partner.start_partnered_sale();
 
-    assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 767]);
+    let (released, terms) = fixture.migrate_with_terms();
+    assert_eq!(released, vector[LIQUIDITY_TOKENS, 767]);
     assert!(event::events_by_type<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>().is_empty());
-    assert_eq!(fixture.vault_partner_id(), option::some(object::id(&partner)));
+    assert_eq!(terms.partner_id(), option::some(object::id(&partner)));
     assert_eq!(fixture.unpaid_protocol_quote(), option::some(33));
     fixture.take_quote(RAISE_RECIPIENT, 200);
     fixture.assert_treasury_received_nothing();
@@ -3183,7 +3149,7 @@ fun a_sale_cannot_name_a_partner_blast_has_not_accepted() {
     let clock = clock::create_for_testing(&mut ctx);
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let (treasury_cap, _currency) = new_currency(&mut ctx);
     let mut initializer = new_initializer<QUOTE>(
         &package_version,
@@ -3385,7 +3351,7 @@ fun stale_version_precedes_partner_admission() {
     let clock = clock::create_for_testing(&mut ctx);
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let (treasury_cap, _currency) = new_currency(&mut ctx);
     let mut initializer = new_initializer<QUOTE>(
         &package_version,
@@ -3411,7 +3377,7 @@ fun future_version_cannot_finalize() {
     let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let mut initializer = bare_initializer(
         &package_version,
         treasury_cap,
@@ -3420,7 +3386,7 @@ fun future_version_cannot_finalize() {
     );
     initializer.set_fee_split(
         &package_version,
-        presale::fee_split(fee_recipients(), bps::new(HOLDER_REWARDS_BPS)),
+        creator_fee_split(),
     );
 
     package_version.set_for_testing(3);
@@ -3529,13 +3495,9 @@ fun stale_version_rejects_migrate_before_lifecycle_or_amount_checks() {
             .ctx());
         package_version.set_for_testing(2);
         let mut sale = fixture.take_presale();
-        let (meme, quote) = sale.migrate(
-            &package_version,
-            &fixture.fee_policy,
-            TEST_MIGRATOR(),
-            &fixture.clock,
-            fixture.scenario.ctx(),
-        );
+        let (meme, quote, _) = sale
+            .migrate(&package_version, &fixture.fee_policy, &fixture.clock, fixture.scenario.ctx())
+            .redeem(TEST_VENUE());
         destroy(meme);
         destroy(quote);
         destroy(sale);
@@ -3554,7 +3516,7 @@ fun stale_version_prevents_initializer_creation() {
     let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     package_version.set_for_testing(2);
     let mut initializer = bare_initializer(
         &package_version,
@@ -3564,7 +3526,7 @@ fun stale_version_prevents_initializer_creation() {
     );
     initializer.set_fee_split(
         &package_version,
-        presale::fee_split(fee_recipients(), bps::new(HOLDER_REWARDS_BPS)),
+        creator_fee_split(),
     );
 
     let (_sale, _cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
@@ -3774,12 +3736,14 @@ fun a_delivered_commitment_cannot_be_claimed_twice() {
     abort_code = blast_presale::errors::EWrongPresaleCap,
     location = blast_presale::blast_presale,
 )]
-fun a_fresh_cap_for_the_same_sale_is_not_the_accepted_creator_cap() {
+/// Only the cap the sale issued proves ownership; a cap naming the same sale does not.
+fun a_fresh_cap_for_the_same_sale_cannot_prove_ownership() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.next_tx!(CREATOR, |f| {
+        let version = blast_presale::blast_presale_package::new_for_testing(f.ctx!());
         let sale = f.take_presale();
         let other_cap = presale::cap_for_testing(f.presale_id, f.ctx!());
-        sale.assert_cap(&other_cap);
+        destroy(sale.prove_owner(&version, &other_cap));
         abort
     });
     abort
@@ -3829,7 +3793,7 @@ fun propose_rates_under_zero_fee_policy(token_rate: u64, meme_lp_rate: u64) {
     let clock = clock::create_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
     let (mut sale, _cap) = new_presale<QUOTE>(
         treasury_cap,
         &mut currency,
@@ -4068,7 +4032,7 @@ fun share_new_sale(commitment_starts_at_ms: u64, now_at_ms: u64): ID {
         clock.set_for_testing(now_at_ms);
         let (treasury_cap, mut currency) = new_currency(&mut ctx);
         let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-        let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(&mut ctx);
+        let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
         let (sale, cap) = new_presale<QUOTE>(
             treasury_cap,
             &mut currency,
@@ -4134,7 +4098,7 @@ fun start_configured(
         );
         let creation_policy = creation_policy::allowing_for_testing<
             QUOTE,
-            TEST_MIGRATOR,
+            TEST_VENUE,
         >(scenario.ctx());
 
         let raise_vesting = raise_allocations.map_ref!(|share| share.vesting_terms_for_testing());
@@ -4265,11 +4229,11 @@ fun fund_partnered_sale(self: &mut Fixture) {
     self.settle(KEEPER);
 }
 
-/// A creation policy allowing the fixture's Quote and migrator that also accepts `partner`.
+/// A creation policy allowing the fixture's Quote and venue that also accepts `partner`.
 fun accepting_partner(partner: &Partner, ctx: &mut TxContext): CreationPolicy {
     let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
     let result = {
-        let mut creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_MIGRATOR>(ctx);
+        let mut creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(ctx);
         creation_policy.add_partner(&package_version, &fee_admin(), partner);
 
         creation_policy
@@ -4359,16 +4323,9 @@ fun assert_created_event(
     );
     assert_eq!(created_eligibility, eligibility);
 
-    let (
-        migration_witness,
-        fee_recipients,
-        fee_recipient_bps,
-        holder_rewards_bps,
-    ) = created.created_migration_fields();
-    assert_eq!(migration_witness, type_name::with_original_ids<TEST_MIGRATOR>());
-    assert_eq!(fee_recipients, vector[CREATOR, FEE_PARTNER]);
-    assert_eq!(fee_recipient_bps, vector[CREATOR_FEE_BPS, FEE_PARTNER_BPS]);
-    assert_eq!(holder_rewards_bps, HOLDER_REWARDS_BPS);
+    let (venue, created_fee_split) = created.created_migration_fields();
+    assert_eq!(venue, type_name::with_original_ids<TEST_VENUE>());
+    assert_eq!(created_fee_split, creator_fee_split());
 
     let (recipients, recipient_bps, created_burnable) = created.created_supply_fields();
     assert_eq!(recipients, vector[RECIPIENT_A, RECIPIENT_B]);
@@ -4500,8 +4457,7 @@ fun valid_sale_terms(): SaleTerms {
         eligibility: single_wallet_eligibility(),
         uncapped: option::none(),
         hard_cap: option::none(),
-        fee_recipients: fee_recipients(),
-        holder_rewards_bps: HOLDER_REWARDS_BPS,
+        fee_split: creator_fee_split(),
     }
 }
 
@@ -4510,20 +4466,50 @@ fun hard_cap_at(start_delay_ms: u64, closes_when_filled: bool): HardCapTerms {
     HardCapTerms { starts_after_ms: start_delay_ms, closes_when_filled }
 }
 
-/// A sale started for the fixture's migrator with nothing set.
+/// A sale started for the fixture's venue with nothing set.
 fun bare_initializer(
     package_version: &blast_presale::blast_presale_package::PackageVersion,
     treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
     creation_policy: &CreationPolicy,
     fee_policy: &FeePolicy,
 ): PresaleInitializer<BLAST_PRESALE_TESTS, QUOTE> {
-    presale::new<BLAST_PRESALE_TESTS, QUOTE, TEST_MIGRATOR>(
+    presale::new<BLAST_PRESALE_TESTS, QUOTE>(
         treasury_cap,
         package_version,
-        TEST_MIGRATOR(),
+        test_ticket(),
         creation_policy,
         fee_policy,
     )
+}
+
+/// Starts a sale raising `Quote` with a ticket from `TEST_VENUE` under a creation policy that
+/// admits only `ListedQuote` and `OTHER_VENUE`, optionally with the create bit paused and one atom
+/// already minted; the start must abort.
+fun start_unadmitted<Quote, ListedQuote>(paused: bool, minted: bool) {
+    let mut ctx = tx_context::dummy();
+    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let (mut treasury_cap, currency) = new_currency(&mut ctx);
+    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<ListedQuote, OTHER_VENUE>(&mut ctx);
+    if (paused) version.pause(
+        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
+        constants::create_pause_bit!(),
+    );
+    if (minted) {
+        treasury_cap.mint(1, &mut ctx).burn_for_testing();
+    };
+
+    destroy(
+        presale::new<BLAST_PRESALE_TESTS, Quote>(
+            treasury_cap,
+            &version,
+            test_ticket(),
+            &creation_policy,
+            &fee_policy,
+        ),
+    );
+    destroy(currency);
+    abort
 }
 
 /// One wallet slot whose minimum is the whole raise, so a single commitment funds the sale.
@@ -4554,7 +4540,7 @@ fun new_presale<Quote>(
     (result_0, result_1)
 }
 
-/// Starts a sale with the fixture's migrator and sets every one of `terms`.
+/// Starts a sale with the fixture's venue and sets every one of `terms`.
 fun new_initializer<Quote>(
     package_version: &blast_presale::blast_presale_package::PackageVersion,
     treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
@@ -4576,13 +4562,12 @@ fun new_initializer<Quote>(
         eligibility,
         uncapped,
         hard_cap,
-        fee_recipients,
-        holder_rewards_bps,
+        fee_split,
     } = terms;
-    let mut initializer = presale::new<BLAST_PRESALE_TESTS, Quote, TEST_MIGRATOR>(
+    let mut initializer = presale::new<BLAST_PRESALE_TESTS, Quote>(
         treasury_cap,
         package_version,
-        TEST_MIGRATOR(),
+        test_ticket(),
         creation_policy,
         fee_policy,
     );
@@ -4608,10 +4593,7 @@ fun new_initializer<Quote>(
             cap.closes_when_filled,
         ),
     );
-    initializer.set_fee_split(
-        package_version,
-        presale::fee_split(fee_recipients, bps::new(holder_rewards_bps)),
-    );
+    initializer.set_fee_split(package_version, fee_split);
 
     initializer
 }
@@ -4634,7 +4616,7 @@ fun create_sale_with_treasury<Quote>(
     ctx: &mut TxContext,
 ) {
     let fee_policy = fee_policy::new_zero_fees_for_testing(ctx);
-    let creation_policy = creation_policy::allowing_for_testing<Quote, TEST_MIGRATOR>(ctx);
+    let creation_policy = creation_policy::allowing_for_testing<Quote, TEST_VENUE>(ctx);
 
     let (sale, cap) = new_presale<Quote>(
         treasury_cap,
@@ -4652,10 +4634,9 @@ fun create_sale_with_treasury<Quote>(
     destroy(creation_policy);
 }
 
-fun create_with_fee_split(fee_recipients: vector<RecipientShare>, holder_rewards_bps: u64) {
+fun create_with_fee_split(fee_split: FeeSplit) {
     let mut terms = valid_sale_terms();
-    terms.fee_recipients = fee_recipients;
-    terms.holder_rewards_bps = holder_rewards_bps;
+    terms.fee_split = fee_split;
 
     create_sale<QUOTE>(terms);
 }
@@ -4672,17 +4653,13 @@ fun create_bluefin_tier(tick_spacing: u32, pool_fee_rate: u64) {
     let mut ctx = tx_context::dummy();
     let version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury, currency) = new_currency(&mut ctx);
-    let policy = creation_policy::allowing_for_testing<QUOTE, bluefin::Witness>(&mut ctx);
-    let fees = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let mut venues = venue_config::new_for_testing(&mut ctx);
     std::unit_test::destroy(
-        bluefin::new<BLAST_PRESALE_TESTS, QUOTE>(
-            treasury,
+        bluefin::prepare<BLAST_PRESALE_TESTS, QUOTE>(
             &version,
-            &currency,
-            &policy,
-            &fees,
             &mut venues,
+            &treasury,
+            &currency,
             tick_spacing,
             pool_fee_rate,
         )
@@ -4691,26 +4668,31 @@ fun create_bluefin_tier(tick_spacing: u32, pool_fee_rate: u64) {
 }
 
 /// Creates a Bluefin sale under a creation policy that allows only `AllowedQuote` and
-/// `AllowedWitness`, and checks the pool tier it reserved.
-fun create_bluefin_sale<AllowedQuote, AllowedWitness>(symbol: vector<u8>) {
+/// `AllowedVenue`, and checks the pool tier it reserved.
+fun create_bluefin_sale<AllowedQuote, AllowedVenue>(symbol: vector<u8>) {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency_with_symbol(symbol, &mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<AllowedQuote, AllowedWitness>(
+    let creation_policy = creation_policy::allowing_for_testing<AllowedQuote, AllowedVenue>(
         &mut ctx,
     );
     let mut venue_config = venue_config::new_for_testing(&mut ctx);
 
-    let mut initializer = bluefin::new<BLAST_PRESALE_TESTS, QUOTE>(
-        treasury_cap,
+    let ticket = bluefin::prepare<BLAST_PRESALE_TESTS, QUOTE>(
         &package_version,
-        &currency,
-        &creation_policy,
-        &fee_policy,
         &mut venue_config,
+        &treasury_cap,
+        &currency,
         TICK_SPACING,
         POOL_FEE_RATE,
+    );
+    let mut initializer = presale::new(
+        treasury_cap,
+        &package_version,
+        ticket,
+        &creation_policy,
+        &fee_policy,
     );
     let (reserved_tick_spacing, reserved_fee_rate) = only_event<
         PoolTierReserved<BLAST_PRESALE_TESTS, QUOTE, bluefin::Venue>,
@@ -4732,7 +4714,7 @@ fun create_bluefin_sale<AllowedQuote, AllowedWitness>(symbol: vector<u8>) {
     initializer.set_eligibility(&package_version, single_wallet_eligibility());
     initializer.set_fee_split(
         &package_version,
-        presale::fee_split(fee_recipients(), bps::new(HOLDER_REWARDS_BPS)),
+        creator_fee_split(),
     );
     let (sale, cap) = initializer.finalize(&package_version, &mut currency, &mut ctx);
 
@@ -4819,18 +4801,18 @@ fun new_currency_with_symbol(
     (treasury_cap, coin_registry::unwrap_for_testing(initializer))
 }
 
-/// `count` distinct non-zero fee recipients taking 100 BPS each.
-fun distinct_fee_recipients(count: u64): vector<RecipientShare> {
-    vector::tabulate!(count, |i| {
-        presale::recipient_share(sui::address::from_u256((i as u256) + 1), bps::new(100))
-    })
+/// The standard LP-fee split: the creator and a fee partner by address, then holder rewards.
+fun creator_fee_split(): FeeSplit {
+    fee_split::new(vector[
+        fee_split::route(fee_split::address_destination(CREATOR), bps::new(CREATOR_FEE_BPS)),
+        fee_split::route(fee_split::address_destination(FEE_PARTNER), bps::new(FEE_PARTNER_BPS)),
+        fee_split::route(fee_split::holder_rewards_destination(), bps::new(HOLDER_REWARDS_BPS)),
+    ])
 }
 
-fun fee_recipients(): vector<RecipientShare> {
-    vector[
-        presale::recipient_share(CREATOR, bps::new(CREATOR_FEE_BPS)),
-        presale::recipient_share(FEE_PARTNER, bps::new(FEE_PARTNER_BPS)),
-    ]
+/// A ticket for the fixture's admitted venue.
+fun test_ticket<SaleToken, Quote>(): VenueTicket<SaleToken, Quote> {
+    migration::issue_ticket(TEST_VENUE())
 }
 
 /// Recipient A's token share, vesting under `vesting` when it has terms.
@@ -5082,7 +5064,7 @@ fun protocol_rates(self: &mut Fixture): vector<u64> {
     let mut rates = vector[];
     self.next_tx!(KEEPER, |fixture| {
         let sale = fixture.take_presale();
-        let (_, _, _, protocol_fees, _) = sale.vault_config();
+        let protocol_fees = sale.protocol_fees_for_testing();
         rates.append(
             vector[
             protocol_fees.raise_bps().value(),
@@ -5094,19 +5076,6 @@ fun protocol_rates(self: &mut Fixture): vector<u64> {
     });
 
     rates
-}
-
-/// Returns the partner the sale's vault inherits, which it pays a cut of Blast's LP fees.
-fun vault_partner_id(self: &mut Fixture): Option<ID> {
-    let partner_id;
-    self.next_tx!(KEEPER, |fixture| {
-        let sale = fixture.take_presale();
-        let (_, _, _, _, vault_partner_id) = sale.vault_config();
-        partner_id = vault_partner_id;
-        fixture.return_presale(sale);
-    });
-
-    partner_id
 }
 
 /// The window end and LP deadline the sale's `PresaleFunded` event records.
@@ -5131,24 +5100,31 @@ fun settle(self: &mut Fixture, sender: address) {
     std::unit_test::destroy(package_version);
 }
 
-/// Migrates with the allowed witness and returns the released `[liquidity_tokens, quote]`.
+/// Migrates, redeems the hand-off with the admitted venue, and returns the released
+/// `[liquidity_tokens, quote]`.
 fun migrate(self: &mut Fixture): vector<u64> {
+    let (released, _) = self.migrate_with_terms();
+
+    released
+}
+
+/// Migrates, redeems the hand-off with the admitted venue, and returns the released
+/// `[liquidity_tokens, quote]` and the vault terms it carried.
+fun migrate_with_terms(self: &mut Fixture): (vector<u64>, VaultTerms) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(self
         .scenario
         .ctx());
+    let mut vault_terms = option::none();
     let result = {
         let mut released = vector[];
         self.next_tx!(KEEPER, |fixture| {
             let mut sale = fixture.take_presale();
-            let (liquidity_tokens, quote) = sale.migrate(
-                &package_version,
-                &fixture.fee_policy,
-                TEST_MIGRATOR(),
-                &fixture.clock,
-                fixture.scenario.ctx(),
-            );
+            let (liquidity_tokens, quote, terms) = sale
+                .migrate(&package_version, &fixture.fee_policy, &fixture.clock, fixture.ctx!())
+                .redeem(TEST_VENUE());
             released.push_back(liquidity_tokens.into_coin(fixture.ctx!()).burn_for_testing());
             released.push_back(quote.into_coin(fixture.ctx!()).burn_for_testing());
+            vault_terms.fill(terms);
             assert!(sale.is_migrated_for_testing());
             fixture.return_presale(sale);
         });
@@ -5156,7 +5132,8 @@ fun migrate(self: &mut Fixture): vector<u64> {
         released
     };
     std::unit_test::destroy(package_version);
-    result
+
+    (result, vault_terms.destroy_some())
 }
 
 /// Has `sender` pay the sale's partner and Blast the fees its migration held.
@@ -5406,6 +5383,8 @@ use blast_fun_vesting::blast_fun_linear_vesting::{Vesting, VestingCreated};
 
 use blast_partners::blast_partners::{Self as partners, Partner, PartnerPaid};
 
+use blast_core::{bps, fee_split::{Self, FeeSplit}, migration::{Self, VaultTerms, VenueTicket}};
+
 use blast_presale::{
     blast_presale::{
         Self as presale,
@@ -5430,7 +5409,6 @@ use blast_presale::{
     },
     blast_presale_domain::{FeeAdmin, TreasuryAdmin},
     bluefin,
-    bps,
     cetus,
     constants,
     creation_policy::{Self, CreationPolicy},

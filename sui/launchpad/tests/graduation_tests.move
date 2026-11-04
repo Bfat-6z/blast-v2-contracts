@@ -112,50 +112,6 @@ fun one_and_sixteen_recipients_are_admitted() {
     assert_conservation(meme, quote, std::u64::max_value!());
 }
 
-#[test]
-fun recurring_protocol_ceiling_leaves_project_remainder_for_equal_weights() {
-    let gross = 11;
-    let protocol = bps::new(1_000).apply_up(gross);
-    let project = route_amounts(
-        &vector[route(@0x3, 5_000), route(@0x7, 5_000)],
-        gross - protocol,
-    );
-
-    assert_eq!(protocol, 2);
-    assert_eq!(project, vector[5, 4]);
-    assert_eq!(protocol + project.fold!(0u64, |sum, amount| sum + amount), gross);
-}
-
-#[test]
-fun route_ties_use_table_order_without_protecting_any_route() {
-    let routes = vector[route(@0x3, 5_000), route(@0x7, 5_000)];
-
-    assert_eq!(route_amounts(&routes, 1), vector[1, 0]);
-    assert_eq!(route_amounts(&routes, 2), vector[1, 1]);
-    assert_eq!(route_amounts(&routes, 3), vector[2, 1]);
-}
-
-#[test]
-fun route_distinct_remainders_precede_table_order() {
-    let routes = vector[route(@0x3, 1_000), route(@0x7, 6_000), route(@0x9, 3_000)];
-
-    assert_eq!(route_amounts(&routes, 1), vector[0, 1, 0]);
-    assert_eq!(route_amounts(&routes, 3), vector[0, 2, 1]);
-    assert_eq!(route_amounts(&routes, 10), vector[1, 6, 3]);
-}
-
-#[test]
-fun route_zero_and_maximum_totals_conserve_without_overflow() {
-    let routes = vector[route(@0x3, 5_000), route(@0x7, 5_000)];
-    let maximum = std::u64::max_value!();
-    let amounts = route_amounts(&routes, maximum);
-
-    assert_eq!(route_amounts(&routes, 0), vector[0, 0]);
-    assert_eq!(amounts, vector[maximum / 2 + 1, maximum / 2]);
-    assert_eq!(amounts.fold!(0u64, |sum, amount| sum + amount), maximum);
-    assert_eq!(route_amounts(&vector[route(@0x7, 10_000)], maximum), vector[maximum]);
-}
-
 #[test, expected_failure(abort_code = blast_fun::errors::EInvalidShares, location = blast_fun::allocation)]
 fun zero_curve_share_is_rejected() {
     allocation::plan(bps::new(0), bps::new(2_000), bps::new(10_000), vector[]);
@@ -205,16 +161,11 @@ fun capacity_precedes_the_share_sums() {
 #[test, expected_failure(abort_code = blast_fun::errors::EInvalidDestination, location = blast_fun::allocation)]
 fun zero_recipient_destination_is_rejected() { recipient(@0x0, 0, 0); }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EInvalidDestination, location = blast_fun::allocation)]
-fun zero_route_destination_is_rejected() { route(@0x0, 0); }
-
 // === Test Helpers ===
 
 fun recipient(destination: address, meme_bps: u64, quote_bps: u64): Recipient {
     allocation::recipient(destination, bps::new(meme_bps), bps::new(quote_bps))
 }
-
-fun route(destination: address, value: u64): Route { allocation::route(destination, bps::new(value)) }
 
 /// Builds a plan from Meme shares `[curve, lp, blast, ...]` and Quote shares `[lp, blast, ...]`;
 /// Blast pays to `@0x1` and the creator's recipients to `@0x2` onward.
@@ -267,15 +218,6 @@ fun quote_amounts(plan: &AllocationPlan, reserve: u64): vector<u64> {
     amounts
 }
 
-/// Apportions `total` across a split whose whole share goes to `routes`.
-fun route_amounts(routes: &vector<Route>, total: u64): vector<u64> {
-    let split = allocation::fee_split(bps::new(0), bps::new(0), bps::new(0), bps::new(0), *routes);
-    let (creator, auto_lp, rewards, burn, amounts) = split.apportion_fee_split(total);
-    assert_eq!(creator + auto_lp + rewards + burn, 0);
-
-    amounts
-}
-
 /// `count` positive shares summing to 10,000.
 fun random_shares(count: u64, mut seed: u64): vector<u64> {
     let mut remaining = 10_000u64;
@@ -307,7 +249,9 @@ fun assert_apportioned(shares: &vector<u64>, amounts: vector<u64>, blast: u64, t
 
 // === Imports ===
 
-use blast_fun::{allocation::{Self, AllocationPlan, Recipient, Route}, bps};
+use blast_core::bps;
+
+use blast_fun::allocation::{Self, AllocationPlan, Recipient};
 
 use std::unit_test::assert_eq;
 

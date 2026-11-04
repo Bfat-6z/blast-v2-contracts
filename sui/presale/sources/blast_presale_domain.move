@@ -20,14 +20,11 @@ public struct TreasuryAdmin()
 /// the partners new sales may name.
 public struct FeeAdmin()
 
-/// Admits or removes the Quotes new sales and vaults may use.
+/// Admits or removes the Quotes new sales may use.
 public struct ListingAdmin()
 
-/// Admits or removes the migrators that may create sales and vaults.
+/// Admits or removes the venues whose tickets may start sales.
 public struct AdapterAdmin()
-
-/// Publishes holder-reward rounds and settles capped gas reserves.
-public struct RewardsAdmin()
 
 /// May set emergency pause bits, never clear them.
 public struct PauseAdmin()

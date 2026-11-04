@@ -33,7 +33,7 @@ macro public(package) fun basis_points_denominator(): u64 {
     10_000
 }
 
-/// Maximum recipients in an allocation plan or an LP-fee split.
+/// Maximum recipients in an allocation plan.
 macro public(package) fun max_recipients(): u64 {
     16
 }
@@ -46,6 +46,11 @@ macro public(package) fun max_trade_fee_bps(): u64 {
 /// Maximum Blast allocation of a launch's Meme supply or final Quote reserve, each asset.
 macro public(package) fun max_protocol_allocation_bps(): u64 {
     1_000
+}
+
+/// Maximum Blast share of each asset in a vault's LP fees.
+macro public(package) fun max_lp_fee_bps(): u64 {
+    3_000
 }
 
 /// Maximum Blast share of each launch trade fee; the creator receives the rest.

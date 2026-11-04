@@ -1,10 +1,17 @@
 //! Publication must remain inactive until the original, never-upgraded cap enters custody.
+//!
+//! The stack publishes `blast_core`, whose initializer shares the `Treasury`, and `blast_vault`,
+//! whose initializer shares the `VaultRegistry` and keeps its publication. The vault package
+//! starts fully paused with a zero venue notice: a venue is admitted at that notice, the notice is
+//! raised, and only then does the package's own unpause release it.
 
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
-    Delayed, DelayedApplied, DelayedScheduled, Expected, Harness, Outcome, Proposal, build, call, sui_dir,
+    Delayed, DelayedApplied, DelayedScheduled, Expected, Harness, Outcome, PUBLICATION_UPGRADE_NOTICE_MS, Proposal,
+    TEST_GENESIS_RECIPIENT, VaultStack, call, publish_stack, sui_dir,
 };
 use sui_types::{
+    TypeTag,
     base_types::{ObjectID, SuiAddress},
     move_package::{MovePackage, UpgradeCap},
     parse_sui_type_tag,
@@ -15,15 +22,14 @@ use sui_types::{
 #[test]
 fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let work = blast_launchpad_ptb_tests::test_work_dir().join("launchpad_bootstrap");
-    let sui = sui_dir();
-    let admin_dir = sui.join("admin");
-    let partners_dir = sui.join("partners");
     let mut h = Harness::new()?;
-    let (admin, admin_publication) = h.publish(build(&admin_dir, &[], &work)?)?;
-    let (partners, _) = h.publish(build(&partners_dir, &[(&admin_dir, admin)], &work)?)?;
-    assert_initial_partner_payment(&mut h, admin, &admin_publication, partners)?;
-    let code = build(&sui.join("launchpad"), &[(&admin_dir, admin), (&partners_dir, partners)], &work)?;
-    let (blast, publication) = h.publish(code.clone())?;
+    let stack = publish_stack(&mut h, &work)?;
+    let (admin, partners, core) = (stack.admin, stack.partners, stack.core);
+    let admin_publication = &stack.admin_publication;
+    assert_initial_partner_payment(&mut h, admin, admin_publication, partners)?;
+    assert_treasury_publication(&h, stack.treasury)?;
+    let code = stack.launchpad_code.clone();
+    let (blast, publication) = (stack.launchpad, &stack.launchpad_publication);
     assert!(publication.created(&h, "blast_fun", "PackageVersion").is_empty());
     assert!(publication.created(&h, "package_admin", "PackageAdmin").is_empty());
     assert!(publication.created(&h, "package", "Publisher").is_empty());
@@ -47,14 +53,22 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     // Initial routes use real ACL roles at zero delay; enabling 48h needs no Clock advance.
     let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
     let runtime = publication.created(&h, "runtime_config", "RuntimeConfig")[0];
-    let (version, custody) = h.wrap_launchpad(blast, &publication, admin, &admin_publication, parse_sui_type_tag("0x2::sui::SUI")?, parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)?;
-    h.unpause(blast, "blast_fun_domain", admin, &admin_publication, version, custody, [runtime, config], 7)?;
+    let venue = parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?;
+    let (version, custody) = h.wrap_launchpad(blast, publication, admin, admin_publication, core, parse_sui_type_tag("0x2::sui::SUI")?, venue.clone())?;
+    h.unpause(blast, "blast_fun_domain", admin, admin_publication, version, custody, [runtime, config], 7)?;
     h.shared(version, false);
     assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
     // Simulacrum resolves historical owned inputs; test_scenario covers repeated intake.
     assert!(h.sim.store().get_object(&bootstrap).is_none());
 
-    assert_delay_changes_use_the_old_notice(&mut h, blast, admin, &admin_publication, version, config)?;
+    assert_delay_changes_use_the_old_notice(&mut h, blast, admin, admin_publication, version, config)?;
+
+    // The vault package is released only after its venue notice is raised.
+    let (vault, vault_publication) = stack.publish(&mut h, &sui_dir().join("vault"), &work)?;
+    let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
+    assert_vault_release_waits_for_the_notice(&mut h, admin, admin_publication, core, &vault_stack, venue)?;
+    let later = parse_sui_type_tag(&format!("{blast}::launch::PackageWitness"))?;
+    assert_vault_admission_waits_the_raised_notice(&mut h, admin, admin_publication, core, &vault_stack, later)?;
 
     // A native upgrade is possible before wrapping, but its cap can never activate this lineage.
     let (unwrapped, publication) = h.publish(code.clone())?;
@@ -86,6 +100,64 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
         &[h.sender],
     )?;
 
+    Ok(())
+}
+
+/// `blast_core`'s initializer shares the one `Treasury`, paying the configured genesis recipient
+/// behind the 48-hour notice with nothing pending.
+fn assert_treasury_publication(h: &Harness, treasury: ObjectID) -> Result<()> {
+    let (id, destination): (ObjectID, Delayed<SuiAddress>) = bcs::from_bytes(&h.contents(treasury))?;
+    let recipient = SuiAddress::from(ObjectID::from_hex_literal(TEST_GENESIS_RECIPIENT)?);
+    assert_eq!(id, treasury);
+    assert_eq!(destination, Delayed { owner: treasury, key: false, value: recipient, delay_ms: 172_800_000, pending: None });
+    Ok(())
+}
+
+/// While the venue notice is zero the vault's own unpause refuses, committing nothing; once a
+/// venue is listed at that notice and the notice is raised to 48 hours, the same unpause releases
+/// the package.
+fn assert_vault_release_waits_for_the_notice(h: &mut Harness, admin: ObjectID, publication: &Outcome, core: ObjectID,
+    vault: &VaultStack, venue: TypeTag,
+) -> Result<()> {
+    let role = vault.unpause_role(admin)?;
+    let cap = h.grant_roles(admin, publication, std::slice::from_ref(&role))?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    let witness = h.sign_in_as(&mut b, admin, publication, cap, role)?;
+    vault.append_unpause(h, &mut b, witness, 1)?;
+    h.assert_rolled_back(
+        b.finish(),
+        Expected::Abort { package: vault.package, module: "blast_vault_package", code: 2 },
+        &[vault.registry, vault.custody, vault.version, cap],
+        &[h.sender],
+    )?;
+    h.release_vault(admin, publication, core, vault, &[venue])
+}
+
+/// After release, a new venue admission waits the raised 48-hour notice.
+fn assert_vault_admission_waits_the_raised_notice(h: &mut Harness, admin: ObjectID, publication: &Outcome,
+    core: ObjectID, vault: &VaultStack, venue: TypeTag,
+) -> Result<()> {
+    let role = parse_sui_type_tag(&format!("{core}::blast_domain::AdapterAdmin"))?;
+    let cap = h.grant_roles(admin, publication, std::slice::from_ref(&role))?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    let adapter = h.sign_in_as(&mut b, admin, publication, cap, role)?;
+    let registry = b.obj(h.shared(vault.registry, true))?;
+    let version = b.obj(h.shared(vault.version, false))?;
+    let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+    call(&mut b, vault.package, "blast_vault_package", "schedule_witness", vec![venue.clone()], vec![registry, adapter, version, clock]);
+    h.execute(b.finish())?.assert_success();
+    let apply = |h: &Harness| -> Result<_> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let registry = b.obj(h.shared(vault.registry, true))?;
+        let version = b.obj(h.shared(vault.version, false))?;
+        let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        call(&mut b, vault.package, "blast_vault_package", "apply_witness", vec![venue.clone()], vec![registry, version, clock]);
+        Ok(b.finish())
+    };
+    h.sim.advance_clock(std::time::Duration::from_millis(PUBLICATION_UPGRADE_NOTICE_MS - 1));
+    h.assert_rolled_back(apply(h)?, Expected::Abort { package: admin, module: "delayed_set", code: 17 }, &[vault.registry], &[])?;
+    h.sim.advance_clock(std::time::Duration::from_millis(1));
+    h.execute(apply(h)?)?.assert_success();
     Ok(())
 }
 

@@ -4,6 +4,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Succeeds when the cap is bound before the ticket and cap are delivered, in that order.
+in_order_template() {
+  local text="$1" before
+  before="${text%%'let (ticket, treasury_cap) = launch_ticket::new('*}"
+  [[ "$before" != "$text" ]] || return 1
+  text="${text#"$before"}"
+  before="${text%%'transfer::public_transfer(ticket, ctx.sender()); transfer::public_transfer(treasury_cap, ctx.sender()); }'*}"
+  [[ "$before" != "$text" ]]
+}
+
 source_file='sources/meme.move'
 production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' "$source_file")"
 # Whitespace-free source, so argument checks do not depend on formatting.
@@ -37,8 +47,27 @@ if [[ "$(rg -c '^const CREATOR_RECIPIENT_BYTES: vector<u8> = x"[0-9a-f]{64}";$' 
   exit 1
 fi
 
-if rg -n '\b(TreasuryCap|MetadataCap|mint|make_supply_[a-z_]*|finalize)\b' "$source_file"; then
+# Comment- and string-free source from the launchpad's Move reader, so documentation may name the
+# cap while code may not use it beyond the two pinned statements.
+normalized="$(awk -f ../launchpad/scripts/move_facts.awk "$source_file" \
+  | awk -F'\t' '$1 == "MALFORMED" { print "MALFORMED"; exit } $1 == "NORM" { print $2 }')"
+
+if [[ -z "$normalized" || "$normalized" == MALFORMED ]] \
+  || rg -q '\b(TreasuryCap|MetadataCap|mint|mint_balance|burn|make_supply_[a-z_]*|finalize|share_object|public_share_object|freeze_object|public_freeze_object|coin|balance)\b' \
+    <<<"$normalized"; then
   echo 'Currency creation, supply finalization, and metadata authority must remain inside Blast.' >&2
+  exit 1
+fi
+
+# launch_ticket::new returns the TreasuryCap beside the ticket so the publisher can prepare a venue.
+# The template only binds it and delivers it to the publisher: no mint, burn, wrap, share, or
+# freeze, and no other mention.
+if [[ "$(rg -oF 'let (ticket, treasury_cap) = launch_ticket::new(' <<<"$normalized" | wc -l)" != 1 ]] \
+  || [[ "$(rg -oF 'transfer::public_transfer(treasury_cap, ctx.sender());' <<<"$normalized" | wc -l)" != 1 ]] \
+  || [[ "$(rg -o '\btreasury_cap\b' <<<"$normalized" | wc -l)" != 2 ]] \
+  || [[ "$(rg -o 'transfer::[a-z_]+\(' <<<"$normalized" | sort | uniq -c | tr -s ' ')" != ' 2 transfer::public_transfer(' ]] \
+  || ! in_order_template "$normalized"; then
+  echo 'The template must bind the TreasuryCap from launch_ticket::new and only transfer it, with the ticket, to the publisher.' >&2
   exit 1
 fi
 

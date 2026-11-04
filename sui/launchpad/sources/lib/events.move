@@ -73,9 +73,7 @@ public struct LaunchCreated has copy, drop {
     launch_id: ID,
     ticket_id: ID,
     quote: TypeName,
-    migration_witness: TypeName,
-    pool_tick_spacing: u32,
-    pool_fee_rate: u64,
+    venue: TypeName,
     lp_fee_split: FeeSplit,
     virtual_quote: u64,
     graduation_target: u64,
@@ -287,9 +285,7 @@ public(package) fun launch_ticket_created<Meme>(
 public(package) fun launch_created<Quote>(
     launch_id: ID,
     ticket_id: ID,
-    migration_witness: TypeName,
-    pool_tick_spacing: u32,
-    pool_fee_rate: u64,
+    venue: TypeName,
     lp_fee_split: FeeSplit,
     virtual_quote: u64,
     graduation_target: u64,
@@ -304,9 +300,7 @@ public(package) fun launch_created<Quote>(
         launch_id,
         ticket_id,
         quote: type_name::with_original_ids<Quote>(),
-        migration_witness,
-        pool_tick_spacing,
-        pool_fee_rate,
+        venue,
         lp_fee_split,
         virtual_quote,
         graduation_target,
@@ -461,8 +455,10 @@ public(package) fun protocol_fees_accrued(
 
 // === Imports ===
 
+use blast_core::fee_split::FeeSplit;
+
 use blast_fun::{
-    allocation::{AllocationPlan, FeeSplit},
+    allocation::AllocationPlan,
     blast_events::emit_event as emit,
     creator_authority::CreatorRecipient,
 };

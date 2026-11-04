@@ -58,7 +58,8 @@ blast_admin                  -> Sui framework only
 
 The launchpad imports no DEX. A migrator package depends on the launchpad and
 composes with it inside one PTB. Presale uses typed roles from the shared
-`blast_admin` ACL and holds migrated liquidity in its own `presale_vault::Vault`.
+`blast_admin` ACL. Both products hand migrated liquidity to a venue, which locks
+it in a `blast_vault::vault::Vault`.
 Use the presale guide for presale calls.
 
 `blast_fun_vesting` (used by `blast_presale`) lives in this repository at
@@ -99,11 +100,9 @@ names.
   or merge it. A value with no abilities at all (a "hot potato", such as a
   launch initializer or a migration handoff) can only be consumed by the specific
   later call that accepts it, so the whole sequence must sit in one PTB.
-- **Basis points.** Each package that takes rates defines its own validated
-  `Bps` type in its `bps` module. Build one inside the PTB with that package's
-  constructor, for example `blast_presale::bps::new` or `blast_fun::bps::new`,
-  which aborts above 10,000. A `blast_fun` `Bps` is a different type from a
-  `blast_presale` `Bps`.
+- **Basis points.** The launch products and the vault share one validated
+  `Bps` type, `blast_core::bps::Bps`. Build one inside the PTB with
+  `blast_core::bps::new`, which aborts above 10,000.
 - **Options.** Pass `Option<T>` arguments with `0x1::option::some` or
   `0x1::option::none` calls, or as pure BCS-encoded options.
 
@@ -305,8 +304,9 @@ pending admission or change to zero.
 ### Reading state
 
 - `blast_vault::vault::pool_id`: the pool the vault's position belongs to.
-- `blast_vault::vault::has_auto_lp_position` and `blast_vault::vault::auto_lp_position`: the venue's
-  separate auto-LP position.
+- The venue's positions are dynamic object fields of the vault, under the venue's
+  `PositionKey` and, once auto-LP has opened one, `AutoLpPositionKey`; only the venue's own code
+  can borrow them, so read them as object fields.
 - Events carry every balance change; index `FeesCollected` for per-route amounts.
 
 ### Events
@@ -417,8 +417,9 @@ address with `blast_treasury::destination`.
 ### Migration hand-off and owner proof
 
 - Before a sale's supply is minted, its venue prepares the coin and returns a
-  `migration::VenueTicket` sealed by the venue's witness (`migration::issue_ticket`). The venue keeps
-  the coin's pool tier. The product's creation call redeems the ticket with `migration::redeem_ticket`
+  `migration::VenueTicket` for the sale's exact Meme and Quote pair, sealed by the venue's witness
+  (`migration::issue_ticket`), so a ticket cannot start a sale of another coin or Quote. The venue
+  keeps the pair's pool tier. The product's creation call redeems the ticket with `migration::redeem_ticket`
   and stores the venue.
 - `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
   split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
@@ -1479,9 +1480,10 @@ public struct VaultTerms has copy, drop, store {
     residuals: ResidualPolicy,
 }
 
-/// A venue's sealed ticket for one prepared coin, redeemed by the product that admits it. The
-/// venue keeps the coin's pool tier itself (ADR 0111).
-public struct VenueTicket {
+/// A venue's sealed ticket for the `Meme` and `Quote` pair it prepared, redeemed by the product
+/// that admits it for a sale of exactly that pair. The venue keeps the pair's pool tier and any
+/// reserved pool-creation authority itself (ADR 0111).
+public struct VenueTicket<phantom Meme, phantom Quote> {
     venue: TypeName,
 }
 
@@ -1503,11 +1505,12 @@ public fun residuals_to_protocol(): ResidualPolicy
 /// Residuals held in the vault for the sale's owner to claim.
 public fun residuals_to_owner(): ResidualPolicy
 
-/// Issues a ticket for a coin the venue has prepared, sealed under its witness `Venue`.
-public fun issue_ticket<Venue: drop>(_: Venue): VenueTicket
+/// Issues a ticket for the `Meme` and `Quote` pair the venue has prepared, sealed under its
+/// witness `Venue`.
+public fun issue_ticket<Meme, Quote, Venue: drop>(_: Venue): VenueTicket<Meme, Quote>
 
 /// Redeems a ticket, returning the venue witness type to admit and store.
-public fun redeem_ticket(self: VenueTicket): TypeName
+public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName
 
 /// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
 /// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at

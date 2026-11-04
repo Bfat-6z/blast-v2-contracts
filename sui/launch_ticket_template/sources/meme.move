@@ -31,14 +31,15 @@ public struct MEME has drop {}
 
 // === Private Initialization ===
 
-/// Creates the sole currency ticket and hands it to the publisher, who opens the launch with it.
+/// Creates the sole currency ticket and hands it, with the currency's `TreasuryCap`, to the
+/// publisher, who prepares the venue and opens the launch with both.
 fun init(otw: MEME, ctx: &mut TxContext) {
     let creator_recipient = if (CREATOR_IS_ACCOUNT) {
         creator_authority::new_account(CREATOR_RECIPIENT_BYTES)
     } else {
         creator_authority::new_address(address::from_bytes(CREATOR_RECIPIENT_BYTES))
     };
-    let ticket = launch_ticket::new(
+    let (ticket, treasury_cap) = launch_ticket::new(
         otw,
         DECIMALS,
         SYMBOL.to_string(),
@@ -52,6 +53,7 @@ fun init(otw: MEME, ctx: &mut TxContext) {
     );
 
     transfer::public_transfer(ticket, ctx.sender());
+    transfer::public_transfer(treasury_cap, ctx.sender());
 }
 
 // === Test-Only Functions ===

@@ -36,7 +36,7 @@ REPO_URL = "https://github.com/interest-protocol/blast-v2-contracts/blob/main"
 PACKAGES = [
     ("sui/presale", "Presale"),
     ("sui/launchpad", "Launchpad"),
-    ("sui/migrators", "Migration and LP vaults"),
+    ("sui/migrators", "Cetus and Bluefin venues"),
     ("sui/partners", "Partner codes"),
     ("sui/boosts/core", "Boosts core"),
     ("sui/boosts/products", "Boost product tags"),
@@ -79,19 +79,20 @@ PRODUCTS = [
         "presale",
         "Presale",
         "standalone overflow presales on Sui: commit Quote to a capped or overflow sale, claim tokens or "
-        "refunds, migrate into Cetus or Bluefin, and earn LP fees and holder rewards after migration",
-        ["presale.md", "partners.md"],
+        "refunds, migrate into Cetus, Bluefin, or Aftermath, and collect LP fees and holder rewards "
+        "from the LP vault",
+        ["presale.md", "vault.md", "core.md", "partners.md"],
         ["sui/presale", "sui/vendors/aftermath_dao_presale"],
-        ["sui/partners", "sui/admin"],
+        ["sui/core", "sui/vault", "sui/partners", "sui/admin"],
     ),
     Product(
         "launchpad",
         "Launchpad",
         "bonding-curve coin launches on Sui: launch a coin, trade it on the curve, graduate it into a "
         "Cetus or Bluefin pool, and collect LP fees and holder rewards from the LP vault",
-        ["launchpad.md", "migrators.md", "partners.md"],
+        ["launchpad.md", "migrators.md", "vault.md", "core.md", "partners.md"],
         ["sui/launchpad", "sui/migrators"],
-        ["sui/partners", "sui/admin"],
+        ["sui/core", "sui/vault", "sui/partners", "sui/admin"],
     ),
     Product(
         "partners",

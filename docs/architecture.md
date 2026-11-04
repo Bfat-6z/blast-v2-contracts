@@ -20,17 +20,25 @@ This keeps V2 smaller than the historical collection of interdependent packages
 without forcing unrelated dependencies into the trusted core.
 
 The operationally versioned, compatible-upgradeable `blast_presale` package is a separate product boundary: it owns
-presale escrow, eligibility, proportional settlement, permissionless Bluefin,
-Cetus, and Aftermath migration, LP custody, and fee/reward distribution without
-importing or mutating launchpad state. Its adapters share the package with presale core so a
-sealed witness makes pool creation atomic with escrow release. Its public `new` and
-`migrate` take any migrator's sealed witness the `CreationPolicy` allows, so one-off
-partner migrators live in their own packages under `sui/vendors` and depend inward
-on it. It depends on the immutable `blast_partners` package only to pay a sale's
-Blast partner. See [ADR 0099](decisions/0099-standalone-overflow-presale.md),
-[ADR 0104](decisions/0104-external-presale-migrators-and-vendor-packages.md),
-[ADR 0106](decisions/0106-presale-partners.md), and
-[ADR 0107](decisions/0107-partner-cut-of-lp-fees.md).
+presale escrow, eligibility, proportional settlement, and its Bluefin, Cetus,
+and Aftermath venues, without importing or mutating launchpad state. Its venues
+share the package so a sealed witness makes pool creation atomic with escrow
+release. Its public `new` and `migrate` redeem the ticket and seal the hand-off
+of any venue whose witness the `CreationPolicy` admits, so one-off partner venues
+live in their own packages under `sui/vendors` and depend inward on it. It
+depends on the immutable `blast_partners` package only to pay a sale's Blast
+partner. See [ADR 0099](decisions/0099-standalone-overflow-presale.md),
+[ADR 0104](decisions/0104-external-presale-migrators-and-vendor-packages.md), and
+[ADR 0106](decisions/0106-presale-partners.md).
+
+What both sale products share sits below them
+([ADR 0137](decisions/0137-shared-launch-stack-core-vault-and-venues.md)): the
+immutable `blast_core` holds the money vocabulary (basis points, payouts, the fee
+split, the protocol-fee ledger, the treasury, Merkle proofs) and the sealed
+values that carry a sale to its venue and prove ownership to its vault, and the
+upgradeable `blast_vault` holds every migrated sale's LP custody, fee split,
+Blast share, partner hold, and holder rewards. Each product keeps its own
+venue allowlist, Quote allowlist, and partner list.
 
 The package boundaries are decided in
 [decisions/0001-sui-package-and-module-layout.md](decisions/0001-sui-package-and-module-layout.md):
@@ -38,14 +46,18 @@ keep external dependencies and independently governed custody outside core.
 
 ### Dependency direction
 
-**Launchpad core imports no venue package, at launch or at migration.** Core defines the
-neutral route and handoff types; every adapter depends inward on core. Composition
-between core and an adapter happens **in the programmable transaction block, not in
-core code**: a transaction threads core-defined values through an adapter call and
-back into core, so venue preflight is possible without core naming any venue.
+**No product imports a venue or the vault, and the vault imports no product.**
+`blast_core` defines the sealed values that cross those boundaries: the venue
+ticket a venue issues when it prepares a coin, the `Migration` a product returns
+at migration, and the owner proof a product issues to its creator authority.
+Venues depend inward on their product, `blast_core`, and `blast_vault`; the vault
+depends on neither a product nor a venue. Composition happens **in the programmable
+transaction block, not in product code**: a transaction threads these values
+from a venue call into the product and back to the venue or the vault, so venue
+preparation is possible without the product naming any venue.
 
 The values crossing that boundary are non-droppable, so the transaction cannot end
-without returning to core for its post-conditions.
+until the call that must consume each one has run.
 
 ## Logical components
 
@@ -55,22 +67,21 @@ without returning to core for its post-conditions.
 | Package administration | validated `Publisher` and raw `UpgradeCap` custody, exact-digest authorization under the compatible policy, receipt commit, package-specific operational activation, and deliberate `make_immutable` | ACL membership storage, feature configuration, or state migration |
 | Protocol ACL | root rotation and revocable routine-admin membership | feature configuration, backend keys, creator recipients, or fees |
 | Runtime config | one dedicated creator-claim backend key, the live bonding-curve trade protocol fee share, and the treasury every permissionless protocol fee claim pays | admin delegation, creator recipient or issuance, cold launch policy, accrued balances, total trade-fee rates, or claim authority |
-| LP fee policy | migrators-owned default and per-coin Blast shares per asset, read live at every collection, and the protocol destination every vault pays | trade fee shares, the creator's split, accrued balances, or launch state |
-| Launch config | a table of admitted Quote types (the creator picks each launch's virtual Quote reserve), mutable generated-Meme decimal admission, Quote/Meme trade-fee rates, a future-launch migration-fee allocation that defaults to zero, and bounded external migrator witness admission that gates which adapter may start a launch | live launch repricing, per-launch project allocation choices, quote currency-registry objects, DEX costs or dependencies, user balances, derived valuations, or hot trade configuration |
+| Launch config | a table of admitted Quote types (the creator picks each launch's virtual Quote reserve), mutable generated-Meme decimal admission, Quote/Meme trade-fee rates, a future-launch migration-fee allocation that defaults to zero, Blast's delayed LP-fee share each new vault takes at migration, and the delayed venue allowlist that gates which venue's ticket may start a launch | live launch repricing, per-launch project allocation choices, quote currency-registry objects, DEX costs or dependencies, user balances, derived valuations, or hot trade configuration |
 | Registry/config | global limits, other fee ceilings, emergency state | user balances or curve math |
-| Launch ticket | one-time-witness currency creation, exact supply mint, and pre-launch capability custody | adapter binding, decimal policy, trades, metadata updates, or migration |
-| Launch initializer | no-ability construction started by the adapter with its witness and the creator's tier; creator setters for target, plan, LP-fee split, and opening round; the adapter-only treasury-capability loan; `finalize` checks every invariant | persistence beyond its transaction or any post-migration behavior |
-| Launch | key-only top-level shared asset identity, lifecycle, reserves, the partner-aware protocol fee ledger, transition guards, and the creator's immutable post-migration settings (adapter, pool tier, LP-fee split) | owned transfer, nesting, venue-specific migration code, or any post-migration update |
-| Basis-points unit | universal 0–10,000 rate validation, explicit up/down application, and complement math | domain ceilings, combined-rate policy, authority, storage ownership, or events |
+| Launch ticket | one-time-witness currency creation, exact supply mint, and pre-launch supply and metadata custody; the `TreasuryCap` travels beside it | venue binding, decimal policy, trades, metadata updates, or migration |
+| Launch initializer | no-ability construction by `launch::new` from the ticket, the `TreasuryCap`, and a redeemed venue ticket; creator setters for target, plan, LP-fee split, and opening round; `finalize` checks every invariant | persistence beyond its transaction or any post-migration behavior |
+| Launch | key-only top-level shared asset identity, lifecycle, reserves, the partner-aware protocol fee ledger, transition guards, and the creator's immutable post-migration settings (venue, LP-fee split) | owned transfer, nesting, venue-specific migration code, or any post-migration update |
+| Basis-points unit (`blast_core`) | universal 0–10,000 rate validation, explicit up/down application, and exact apportionment | domain ceilings, combined-rate policy, authority, storage ownership, or events |
 | Curve math | pure quote and reserve transition formulas | authority, storage, transfers |
-| Allocation math | the migration allocation plan, the LP-fee split, and their exact apportionment | lifecycle state, custody, claims, venue costs, transfers, or DEX dependencies |
+| Allocation math | the migration allocation plan and its exact apportionment | lifecycle state, custody, claims, venue costs, transfers, or DEX dependencies |
 | Off-chain SDK | deterministic curve-release and native-Quote valuation previews from immutable launch facts | contract authority, balance mutation, migration permission, or a second source of truth |
 | Fees | creator/protocol curve-fee splitting and the launch's accrued accounting for creation, curve, and one-time migration fees; the embedding launch checks its live curve-fee capability or bound custodian | recurring LP fees, venue residuals, arbitrary recipient execution, or referral attribution |
-| LP vault (migrators) | permanent position and venue-residual custody and the fee split; every permissionless collection pays Blast's live share, or holds it when the launch named a partner until a permissionless payout gives the partner its cut and Blast the rest, pays the recipients, credits the creator and rewards balances, burns the burn share's Meme and keeps its Quote, and adds the auto-LP share back to the position; creator claims and delayed split schedule/cancel under the launch's live curve-fee cap, with permissionless ready settlement and application; buyback-and-burn of the burn Quote under the buyback-admin role | launch pricing or pre-migration settings |
-| Holder rewards (migrators) | Merkle rounds funded from a vault's rewards balance, independent optional Quote gas custody bound to the governed treasury, one-shot capped reimbursement, proof claims before a deadline and permissionless deadline recovery | holder accounting, which stays off-chain |
-| Migration interface | one-time liquidity handoff, linear migration value, and reconciled completion | DEX-specific object/storage details |
-| Adapter | start a launch at a venue-valid tier, prepare its venue, complete a migration, and collect the position's fees | changing core economics |
-| Standalone presale | require a zero-supply meme TreasuryCap; derive and escrow BPS allocations; lock Quote commitments; settle one proportional fill; atomically migrate permissionlessly to the configured venue; custody LP; delayed creator-cap schedule/cancel of migrated-vault fee splits with permissionless venue settlement/application; pay collected fees to applied recipients and fund Blast-published Merkle holder rewards; pay the Blast partner named at creation its cut of Blast's raise fee and, from its vault, of Blast's LP fees | launchpad curves or state, fixed-supply policy, giving a partner a cut of Blast's token fee, or post-creation sale-economics changes |
+| LP vault (`blast_vault`) | permanent position custody for both products under the venue's key, the sale's sealed terms, and the fee split; every permissionless collection pays Blast's per-vault share to the core treasury, or holds it when the sale named a partner until a permissionless payout gives the partner its cut and the treasury the rest, pays the address routes, and credits the owner, auto-LP, holder-reward, and burn balances; migration residuals settled once by the sale's terms; owner claims and delayed split schedule/cancel under the product's owner proof; the admitted-venue registry | sale pricing, pre-migration settings, or venue code |
+| Holder rewards (`blast_vault`) | Merkle rounds funded from a vault's holder-reward balance, an optional Quote gas reserve reimbursed once to the treasury within its cap, proof claims before a deadline and permissionless deadline recovery | holder accounting, which stays off-chain |
+| Migration hand-off (`blast_core`) | the venue ticket for one Meme and Quote pair, the one-time `Migration` only the stored venue redeems, the vault terms, and the owner proof | DEX-specific object/storage details or custody |
+| Venue | prepare a coin at a venue-valid tier, redeem a migration, create the pool and the vault, collect the position's fees into the vault, add auto-LP, and buy back | changing product economics |
+| Standalone presale | require a zero-supply meme TreasuryCap; derive and escrow BPS allocations; lock Quote commitments; settle one proportional fill; permissionlessly hand the configured venue a sealed migration; prove the cap holder's ownership to its vault; pay the Blast partner named at creation its cut of Blast's raise fee | launchpad curves or state, LP custody or fee splits, fixed-supply policy, giving a partner a cut of Blast's token fee, or post-creation sale-economics changes |
 
 Modules may begin together in the single chain project. These are dependency
 directions, not a demand for seven packages.
@@ -116,8 +127,8 @@ quote's original `TypeName`; an entry only admits its Quote. The creator picks
 each launch's virtual Quote reserve and graduation target, and intake rejects a
 zero reserve and a target whose pool Quote share rounds to zero. Launch state
 stores the creator's reserve and target, snapshots both administratively
-configured trade-fee rates, and records the original `TypeName` of the starting
-adapter's witness. Both registries are
+configured trade-fee rates, and records the original `TypeName` of the witness of
+the venue whose ticket started it. Both registries are
 admission decisions; the snapshot does not add a quote `Currency` shared-object
 dependency or a DEX package dependency. See
 [ADR 0025](decisions/0025-quote-whitelist-and-migration-targets.md) and
@@ -126,8 +137,9 @@ dependency or a DEX package dependency. See
 [ADR 0041](decisions/0041-launch-config-owned-trade-fees.md); since
 [ADR 0092](decisions/0092-creator-picks-the-virtual-quote.md) the creator, not
 `LaunchConfig`, picks the virtual reserve.
-The shared unit and rounding boundary are fixed by
-[ADR 0044](decisions/0044-validated-basis-points-unit.md).
+The unit and rounding boundary of
+[ADR 0044](decisions/0044-validated-basis-points-unit.md) are now the one
+`blast_core::bps::Bps` (ADR 0137).
 
 ## One-time allocation and payouts
 
@@ -150,25 +162,25 @@ curve reserve and the rest is pooled in the launch. When migration begins, the
 terminal real-Quote reserve is apportioned by the same plan, every project
 recipient is paid its Meme and Quote as coins, Blast's Meme and Quote migration
 fee joins the launch's protocol fee ledger, and only the pool's share is handed
-to the adapter.
+to the venue in the sealed `Migration`.
 Only a regulated Quote whose deny list names a destination can make that
 transfer fail, which strands the launch; the founder accepted that risk.
 `LaunchCreated` carries the complete plan, the pool tier, the LP-fee split,
 and the opening-round length, one `MigrationAllocationPaid` records each
 payout, `ProtocolFeesAccrued` records Blast's one-time migration fee, the
-migrators' `VaultCreated` records the vault, pool, and position identities with
-the split, the residuals it keeps, and the position's liquidity, and `Migrated`
+vault's `VaultCreated` records the vault, pool, and position identities with
+the sealed terms, the residuals, and the position's liquidity, and `Migrated`
 records the handoff and disposal amounts. Each LP-fee collection's `FeesCollected`
 records Blast's share and every part of the split, `AutoLiquidityAdded`
-what went back into the position, and `BuybackBurned` each buyback. See
-[ADR 0088](decisions/0088-reusable-launch-accounting-and-atomic-migration.md) and
-[ADR 0089](decisions/0089-migrators-own-post-migration-and-start-launches.md), and
-[ADR 0091](decisions/0091-fee-split-buyback-and-burn.md).
+what went back into the pool, and `BuybackBurned` each buyback. See
+[ADR 0088](decisions/0088-reusable-launch-accounting-and-atomic-migration.md),
+[ADR 0091](decisions/0091-fee-split-buyback-and-burn.md), and
+[ADR 0137](decisions/0137-shared-launch-stack-core-vault-and-venues.md).
 
 One property remains invariant regardless of the admitted quote set:
 
-- **Pair and migrator immutability.** The selected `(Meme, Quote)` pair and
-  migration witness type are fixed at launch and never change through bonding,
+- **Pair and venue immutability.** The selected `(Meme, Quote)` pair and
+  venue witness type are fixed at launch and never change through bonding,
   migration, recovery, or settlement.
 See [ADR 0023](decisions/0023-generated-coin-supply-and-metadata-custody.md).
 
@@ -179,19 +191,18 @@ package's initializer passes its witness to the sole launchpad constructor,
 which computes exactly one billion whole tokens in `u64` arithmetic that aborts
 on overflow, creates the currency at the requested decimals, mints that supply,
 and finalizes metadata; the initializer transfers the persistable launch ticket
-to the publisher. The ticket holds the complete `Balance<Meme>`, the treasury
-cap, `MetadataCap<Meme>`, the decimals, the owner-selected `Fixed` or
-`BurnOnly` mode, and the creator-selected fixed sell-burn rate capped at 50%.
-The creator starts the launch through one admitted migration adapter's `new`,
-which validates the creator's pool tier against its venue and calls
-`launch::new` with the adapter's witness. That returns a `LaunchInitializer`
-with no abilities: only the starting adapter's witness can borrow its treasury
-cap, which the adapter uses to prepare its venue before any Meme can leave the
-launch (the Cetus adapter reserves pool creation). The creator sets the
-graduation target, allocation plan, LP-fee split, and optional opening round, and
-`finalize` checks them all. Because a generated package's initializer cannot
-read launch policy, starting checks the decimals, the Quote, and the adapter
-against the current policy, and finalization checks the Meme symbol against its
+and the coin's `TreasuryCap` to the publisher. The ticket holds the complete
+`Balance<Meme>`, `MetadataCap<Meme>`, the decimals, the owner-selected `Fixed`
+or `BurnOnly` mode, and the creator-selected fixed sell-burn rate capped at 50%.
+In one PTB the launcher prepares the coin on a venue, whose `prepare` validates
+the creator's pool tier, uses the borrowed `TreasuryCap` before any Meme can
+leave the ticket (the Cetus venue reserves pool creation with it), and returns a
+sealed venue ticket. `launch::new` redeems it and takes the launch ticket and the
+`TreasuryCap` by value, returning a `LaunchInitializer` with no abilities. The
+creator sets the graduation target, allocation plan, LP-fee split, and optional
+opening round, and `finalize` checks them all. Because a generated package's
+initializer cannot read launch policy, starting checks the decimals, the Quote,
+and the venue against the current policy, and finalization checks the Meme symbol against its
 32-byte bound and, since a ticket may come from an older launchpad version, the
 sell-burn rate and the whole minted supply again, then consumes the treasury cap into the
 selected mode, so no mint authority survives finalization. The native `Currency` is delivered to the Coin Registry
@@ -202,9 +213,10 @@ leaves `Launch`. The creator claim issues a `CurveFeeCap<Meme>` for curve fees
 and a `BlastMetadataCap<Meme>` for metadata updates through the launch; a
 creator administrator can reassign each independently
 ([ADR 0082](decisions/0082-revocable-creator-and-lp-fee-capabilities.md)). The
-creator always keeps the curve-fee cap: after migration it also claims the
-creator's LP-fee share from the migrators' `LpVault` and changes the split
-([ADR 0089](decisions/0089-migrators-own-post-migration-and-start-launches.md)).
+creator always keeps the curve-fee cap: after migration its holder proves
+ownership to the launch's vault with `launch::prove_owner`, to claim the owner's
+balances and change the split
+([ADR 0137](decisions/0137-shared-launch-stack-core-vault-and-venues.md)).
 See [ADR 0035](decisions/0035-initializer-finalized-meme-supply.md),
 [ADR 0036](decisions/0036-fixed-nine-decimal-generated-memes.md), and
 [ADR 0047](decisions/0047-coin-registry-authoritative-supply-mode.md), and
@@ -238,7 +250,7 @@ The common lifecycle is intentionally small:
   is shared; sell-designated burn waits in a pending balance.
 - `MigrationReady`: a buy or the round's settlement reached the target, closed
   trading, and returned excess Quote; a buy before sharing may do this. Only the
-  adapter whose witness the launch stored can migrate it.
+  venue whose witness the launch stored can redeem its migration.
 - `Migrated`: set by the one `migrate` call, which also completes terminal
   disposal.
 
@@ -250,24 +262,26 @@ The historical contracts correctly treated migration as a typed, one-time
 handoff. V2 retains that property but narrows it:
 
 1. An exact-target buy returns excess Quote and closes trading.
-2. The adapter calls `migrate` with its sealed witness. Core verifies the
-   witness type the launch stored, pays every recipient, burns the curve's
-   unsold Meme and the pending sell-burn (or sends them to `@0x0` under a fixed
-   supply), marks the launch `Migrated`, and hands off only the pool's Meme and
-   Quote.
-3. The adapter seeds the pool and installs the position, which must hold
-   liquidity, in the migrators' sealed `LpVault` with the launch's LP-fee split,
-   keeping any residual there. Any failure rolls back the whole transaction.
-   From then on the migrators own the position and its fees.
+2. Anyone calls the stored venue's `migrate`, which calls `launch::migrate`.
+   The launch pays every recipient, burns the curve's unsold Meme and the
+   pending sell-burn (or sends them to `@0x0` under a fixed supply), marks the
+   launch `Migrated`, and returns a sealed `Migration` holding only the pool's
+   Meme and Quote and the vault's terms. Only the stored venue's witness can
+   redeem it.
+3. The venue seeds the pool and installs the position, which must hold
+   liquidity, in a new `blast_vault` vault with the launch's sealed terms; the
+   residuals go to Blast at once, or are held for the launch's partner. Any
+   failure rolls back the whole transaction. From then on the vault holds the
+   position and its fees.
 
-Incomplete adapters never ship as aborting production functions. An unavailable
+Incomplete venues never ship as aborting production functions. An unavailable
 venue stays outside the release. A venue whose dependency cannot yet be pinned to an
-immutable commit is a **release gate on that adapter, not a reason to omit its
+immutable commit is a **release gate on that venue, not a reason to omit its
 design**.
 
-Every adapter creates a fresh pool. Where anyone holding Meme could create the
-pool first (Cetus), the adapter reserves creation while starting the launch,
-before the curve opens. No adapter adopts a pool someone else created. A
+Every venue creates a fresh pool. Where anyone holding Meme could create the
+pool first (Cetus), the venue reserves creation when it prepares the coin,
+before the curve opens. No venue adopts a pool someone else created. A
 mismatch is an atomic abort that leaves the launch `MigrationReady` with every
 balance in place. The initial price is derived from the terminal atomic
 reserves and is never a configured constant. See
@@ -307,9 +321,9 @@ Upgradeability is a product/security decision, not a default convenience.
   The only upgrade finalizer commits the native receipt and advances the
   operational version to the exact next compiled generation in the same call;
   there is no separate activation step.
-- The migrators package keeps its `UpgradeCap` in its own `PackageAdmin` and is
+- The migrators package keeps its `UpgradeCap` in its own `PackageAdmin` and
   normally retains upgradeability: Cetus and Bluefin gate callers by package
-  version, and launchpad cutovers require adapter relinks (ADR 0088). Every
+  version, and launchpad cutovers require venue relinks (ADR 0088). Every
   migrators upgrade uses the compatible policy and bumps both compiled
   generation constants. ADR 0134 permits a delayed terminal immutability
   decision only after dependency and exit review; no path narrows cap policy.
@@ -335,22 +349,25 @@ Publication precedes the shared PackageVersion. Its separate provenance module
 the same version to each operational mutation; upgrade commit advances it
 atomically and makes prior-generation bytecode unusable.
 
-Launchpad, presale and migrators retain the canonical Publisher and generation
-in a unique owned Publication until validated custody wrap consumes it. It has
-no policy authority. Wrap shares the canonical PackageVersion; launchpad and
-presale start fully paused. Ordinary ACL operations configure policy after wrap.
+Launchpad, presale, migrators and the vault retain the canonical Publisher and
+generation in a unique owned Publication until validated custody wrap consumes
+it; the vault uses `blast_admin`'s generic publication and package
+administration (ADR 0137). It has no policy authority. Wrap shares the canonical
+PackageVersion; launchpad, presale and the vault start fully paused. Ordinary ACL operations configure policy after wrap.
 Each protected operation owns its applied notice, initially zero for publication-owned
 policy. A proposal binds its value, next notice and a deadline derived from the old
 applied notice. Application commits both fields; cancellation preserves both applied
 fields. Delay-only changes follow the same timelock, with no immediate setter or
 bypass. Upgrade custody persists its own notice independently of other policy.
 `blast_admin::delayed` stores settings as `Delayed`, one-shot actions as
-`DelayedAction` and adapter allowlists as `DelayedSet`, each keyed by an
+`DelayedAction` and venue allowlists as `DelayedSet`, each keyed by an
 owner-defined type and owner object ID; it emits every lifecycle event, so owners
 emit only their own side effects.
 Settle or cancel all setup proposals, configure and verify every operation's intended
-notice, then unpause. New creator-cap and presale-vault operations begin at 48 hours;
-per-coin LP policy inherits the applied defaults notice. Pausing, cancellation and
+notice, then unpause. New creator-cap operations begin at 48 hours; a vault's
+fee-split and Blast-share changes always wait a fixed 48 hours. The vault's venue
+admissions start at zero notice, so Blast admits its venues and raises that
+notice before unpausing the vault. Pausing, cancellation and
 upgrading never reset an applied notice. The backend creator-claim signer remains
 a separate immediate, revocable ACL setting (ADR 0134).
 

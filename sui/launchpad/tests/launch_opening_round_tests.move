@@ -54,7 +54,8 @@ public struct LAUNCH_OPENING_ROUND_TESTS has drop {}
 
 public struct TEST_QUOTE() has drop;
 
-public struct TEST_MIGRATION_WITNESS() has drop;
+/// The venue every launch here migrates to.
+public struct TestVenue() has drop;
 
 /// Configured cold policy and one clock standing at the public start time.
 public struct OpeningRoundFixture {
@@ -192,9 +193,9 @@ fun opening_round_above_the_maximum_is_rejected() {
 #[test, expected_failure(abort_code = blast_fun::errors::EInvalidOpeningRound, location = blast_fun::launch)]
 fun invalid_opening_round_precedes_the_ticket_sell_burn() {
     let mut fixture = start();
-    let mut ticket = fixture.new_ticket();
+    let (mut ticket, treasury_cap) = fixture.new_ticket();
     ticket.set_sell_burn_bps_for_testing(5_001);
-    let launch = fixture.intake(ticket, plan(), 1, VIRTUAL_QUOTE, TARGET);
+    let launch = fixture.intake(ticket, treasury_cap, plan(), 1, VIRTUAL_QUOTE, TARGET);
 
     destroy(launch);
     fixture.end();
@@ -203,14 +204,14 @@ fun invalid_opening_round_precedes_the_ticket_sell_burn() {
 #[test, expected_failure(abort_code = blast_fun::errors::EInvalidShares, location = blast_fun::allocation)]
 fun allocation_sums_precede_an_invalid_opening_round() {
     let mut fixture = start();
-    let ticket = fixture.new_ticket();
+    let (ticket, treasury_cap) = fixture.new_ticket();
     let plan = allocation::plan(
         bps::new(8_000),
         bps::new(2_000),
         bps::new(10_000),
         vector[allocation::recipient(CREATOR, bps::new(1), bps::new(0))],
     );
-    let launch = fixture.intake(ticket, plan, 1, VIRTUAL_QUOTE, TARGET);
+    let launch = fixture.intake(ticket, treasury_cap, plan, 1, VIRTUAL_QUOTE, TARGET);
 
     destroy(launch);
     fixture.end();
@@ -219,9 +220,9 @@ fun allocation_sums_precede_an_invalid_opening_round() {
 #[test, expected_failure(abort_code = blast_fun::errors::EInvalidOpeningRound, location = blast_fun::launch)]
 fun invalid_opening_round_aborts_before_ticket_custody_moves() {
     let mut fixture = start();
-    let mut ticket = fixture.new_ticket();
+    let (mut ticket, treasury_cap) = fixture.new_ticket();
     ticket.burn_meme_for_testing(1);
-    let launch = fixture.intake(ticket, plan(), 1, VIRTUAL_QUOTE, TARGET);
+    let launch = fixture.intake(ticket, treasury_cap, plan(), 1, VIRTUAL_QUOTE, TARGET);
 
     destroy(launch);
     fixture.end();
@@ -595,8 +596,8 @@ fun pot_past_the_target_graduates_and_refunds_the_excess_pro_rata() {
 #[test]
 fun terminal_zero_output_opening_round_graduates_and_delivers_only_excess_quote() {
     let mut fixture = start();
-    let ticket = fixture.new_ticket();
-    let launch = fixture.intake(ticket, plan(), MIN_ROUND_DURATION_MS, 1_000_000_000_000_000_000, 1);
+    let (ticket, treasury_cap) = fixture.new_ticket();
+    let launch = fixture.intake(ticket, treasury_cap, plan(), MIN_ROUND_DURATION_MS, 1_000_000_000_000_000_000, 1);
     let launch_id = object::id(&launch);
     fixture.share(launch);
     fixture.join(ALICE, 40);
@@ -810,7 +811,7 @@ fun has_coin<T>(_: &OpeningRoundFixture, owner: address): bool {
     test_scenario::has_most_recent_for_address<Coin<T>>(owner)
 }
 
-/// Migrates the launch as its stored adapter and discards the pool's share.
+/// Migrates the launch, redeems the hand-off as its stored venue, and discards the pool's share.
 fun migrate(
     self: &mut OpeningRoundFixture,
     launch: &mut Launch<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>
@@ -818,12 +819,9 @@ fun migrate(
     let mut currency = self
         .scenario
         .take_from_address<Currency<LAUNCH_OPENING_ROUND_TESTS>>(COIN_REGISTRY);
-    let (meme, quote) = launch.migrate(
-        &self.package_version,
-        &mut currency,
-        TEST_MIGRATION_WITNESS(),
-        self.scenario.ctx(),
-    );
+    let (meme, quote, _) = launch
+        .migrate(&self.package_version, &self.config, &mut currency, self.scenario.ctx())
+        .redeem(TestVenue());
     destroy(meme);
     destroy(quote);
     test_scenario::return_to_address(COIN_REGISTRY, currency);
@@ -844,7 +842,7 @@ fun start(): OpeningRoundFixture {
         &blast_acl::witness_for_testing<ListingAdmin>(),
         true,
     );
-    config.set_migration_witness_allowed_for_testing<TEST_MIGRATION_WITNESS>(
+    config.set_venue_allowed_for_testing<TestVenue>(
         &package_version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
         true,
@@ -865,7 +863,9 @@ fun plan(): AllocationPlan {
     allocation::plan(bps::new(8_000), bps::new(2_000), bps::new(10_000), vector[])
 }
 
-fun new_ticket(self: &mut OpeningRoundFixture): LaunchTicket<LAUNCH_OPENING_ROUND_TESTS> {
+fun new_ticket(
+    self: &mut OpeningRoundFixture,
+): (LaunchTicket<LAUNCH_OPENING_ROUND_TESTS>, TreasuryCap<LAUNCH_OPENING_ROUND_TESTS>) {
     launch_ticket::new(
         test_utils::create_one_time_witness<LAUNCH_OPENING_ROUND_TESTS>(),
         9,
@@ -885,6 +885,7 @@ fun new_ticket(self: &mut OpeningRoundFixture): LaunchTicket<LAUNCH_OPENING_ROUN
 fun intake(
     self: &mut OpeningRoundFixture,
     ticket: LaunchTicket<LAUNCH_OPENING_ROUND_TESTS>,
+    treasury_cap: TreasuryCap<LAUNCH_OPENING_ROUND_TESTS>,
     plan: AllocationPlan,
     opening_round_duration_ms: u64,
     virtual_quote: u64,
@@ -894,20 +895,19 @@ fun intake(
     let mut currency = self
         .scenario
         .take_from_address<Currency<LAUNCH_OPENING_ROUND_TESTS>>(COIN_REGISTRY);
-    let mut initializer = launch::new<_, TEST_QUOTE, _>(
+    let mut initializer = launch::new(
         ticket,
+        treasury_cap,
         &self.package_version,
         &self.config,
-        TEST_MIGRATION_WITNESS(),
-        200,
-        10_000,
+        migration::issue_ticket<_, TEST_QUOTE, _>(TestVenue()),
     );
     initializer.set_virtual_quote(&self.package_version, virtual_quote);
     initializer.set_graduation_target(&self.package_version, target);
     initializer.set_allocation_plan(&self.package_version, plan);
     initializer.set_lp_fee_split(
         &self.package_version,
-        allocation::fee_split(bps::new(10_000), bps::new(0), bps::new(0), bps::new(0), vector[]),
+        fee_split::new(vector[fee_split::route(fee_split::owner_destination(), bps::new(10_000))]),
     );
     initializer.set_opening_round(&self.package_version, opening_round_duration_ms);
     let creation_fee = coin::zero(self.scenario.ctx());
@@ -927,9 +927,9 @@ fun new_launch(
     self: &mut OpeningRoundFixture,
     opening_round_duration_ms: u64,
 ): Launch<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE> {
-    let ticket = self.new_ticket();
+    let (ticket, treasury_cap) = self.new_ticket();
 
-    self.intake(ticket, plan(), opening_round_duration_ms, VIRTUAL_QUOTE, TARGET)
+    self.intake(ticket, treasury_cap, plan(), opening_round_duration_ms, VIRTUAL_QUOTE, TARGET)
 }
 
 /// Moves the fixture clock to `timestamp_ms` for the following transactions.
@@ -1086,11 +1086,12 @@ fun end(self: OpeningRoundFixture) {
 
 use blast_admin::blast_acl;
 
+use blast_core::{bps, fee_split, migration};
+
 use blast_fun::{
     allocation::{Self, AllocationPlan},
     blast_events::Event,
     blast_fun_domain::{AdapterAdmin, FeeAdmin, ListingAdmin},
-    bps,
     creator_authority,
     curve,
     events::{Bought, LaunchCreated, OpeningRoundDelivered, OpeningRoundJoined, OpeningRoundSettled},
@@ -1105,7 +1106,7 @@ use std::{bcs, unit_test::{assert_eq, destroy}};
 
 use sui::{
     clock::{Self, Clock},
-    coin::{Self, Coin},
+    coin::{Self, Coin, TreasuryCap},
     coin_registry::Currency,
     event,
     test_scenario::{Self, Scenario},

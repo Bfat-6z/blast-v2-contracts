@@ -11,9 +11,10 @@ module blast_aftermath_dao_presale::blast_aftermath_dao_presale;
 
 // === Public Types ===
 
-/// Sealed migrator identity a sale fixes when `new` starts it. Only this module constructs it, so
-/// only `migrate` can release that sale's liquidity.
-public struct Witness() has drop;
+/// The package's sealed venue witness: it issues the ticket a sale redeems when `new` starts it and
+/// redeems that sale's migration hand-off. Only this module constructs it, so only `migrate` can
+/// release the sale's liquidity.
+public struct Venue() has drop;
 
 /// The package's only administrator, sent to the publisher at publication. Its one power is
 /// creating sales through `new` and `finalize`.
@@ -39,10 +40,10 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Starts a presale that migrates through this module. Its pool's weights and fees are this
-/// module's constants, so the sale carries no pool terms. The sale is set like any other, then
-/// finalized only through this module's `finalize`, which reserves its pool creation. The
-/// `CreationPolicy` must allow `Witness`.
+/// Starts a presale that migrates through this module, with a ticket for the pair this venue
+/// issues. Its pool's weights and fees are this module's constants, so the sale carries no pool
+/// terms. The sale is set like any other, then finalized only through this module's `finalize`,
+/// which reserves its pool creation. The `CreationPolicy` must admit `Venue`.
 public fun new<SaleToken, Quote>(
     _: &AdminCap,
     package_version: &PackageVersion,
@@ -50,14 +51,20 @@ public fun new<SaleToken, Quote>(
     creation_policy: &CreationPolicy,
     fee_policy: &FeePolicy,
 ): PresaleInitializer<SaleToken, Quote> {
-    presale::new(treasury_cap, package_version, Witness(), creation_policy, fee_policy)
+    presale::new(
+        treasury_cap,
+        package_version,
+        migration::issue_ticket(Venue()),
+        creation_policy,
+        fee_policy,
+    )
 }
 
 /// Finalizes a sale `new` started, sends its `PresaleCap` to the treasury, and shares a
 /// `PoolCreation` binding `create_pool_cap`, minted by the fresh LP coin `Lp`, to it. Every LP fee
 /// its pool pays reaches the treasury, so this sets the sale's LP-fee split to name the treasury as
-/// its only recipient. The initializer must be one `new` started: another migrator's sale could
-/// never consume the pool creation.
+/// its only route. The initializer must be one `new` started: another venue's sale could never
+/// consume the pool creation.
 public fun finalize<Lp, SaleToken, Quote>(
     _: &AdminCap,
     package_version: &PackageVersion,
@@ -66,17 +73,13 @@ public fun finalize<Lp, SaleToken, Quote>(
     create_pool_cap: CreatePoolCapV2,
     ctx: &mut TxContext,
 ): Presale<SaleToken, Quote> {
-    assert!(
-        initializer.migration_witness() == type_name::with_original_ids<Witness>(),
-        EWrongMigrator,
-    );
+    assert!(initializer.venue() == type_name::with_original_ids<Venue>(), EWrongVenue);
 
     initializer.set_fee_split(
         package_version,
-        presale::fee_split(
-            vector[presale::recipient_share(TREASURY, bps::new(ALL_BPS))],
-            bps::new(0),
-        ),
+        fee_split::new(vector[
+            fee_split::route(fee_split::address_destination(TREASURY), bps::new(ALL_BPS)),
+        ]),
     );
     let (sale, cap) = initializer.finalize(package_version, currency, ctx);
 
@@ -99,9 +102,10 @@ public fun finalize<Lp, SaleToken, Quote>(
 
 // `dao_fee_pool::new` creates the shared pool in this transaction.
 /// Anyone may migrate a funded sale `finalize` created, consuming the `PoolCreation` bound to it: it
-/// seeds a 50/50 Aftermath pool with all of the sale's LP tokens and Quote, wraps it in a DAO-fee
-/// pool paying the treasury, shares that pool, sends its owner cap to the treasury, and locks the
-/// LP at `BURN_ADDRESS`.
+/// redeems the sale's hand-off, seeds a 50/50 Aftermath pool with all of the sale's LP tokens and
+/// Quote, wraps it in a DAO-fee pool paying the treasury, shares that pool, sends its owner cap to
+/// the treasury, and locks the LP at `BURN_ADDRESS`. No vault is created, so the hand-off's vault
+/// terms are dropped.
 #[allow(lint(share_owned))]
 public fun migrate<Lp, SaleToken, Quote>(
     sale: &mut Presale<SaleToken, Quote>,
@@ -117,7 +121,9 @@ public fun migrate<Lp, SaleToken, Quote>(
     assert!(presale_id == object::id(sale), EWrongPresale);
     id.delete();
 
-    let (tokens, quote) = sale.migrate(package_version, fee_policy, Witness(), clock, ctx);
+    let (tokens, quote, _) = sale
+        .migrate(package_version, fee_policy, clock, ctx)
+        .redeem(Venue());
     let (token_amount, quote_amount) = (tokens.value(), quote.value());
 
     let (pool, lp) = if (sorts_before<SaleToken, Quote>()) {
@@ -338,7 +344,7 @@ const BASE_SWAP_FEE: u64 = 100_000_000_000_000;
 
 const POOL_NAME: vector<u8> = b"Blast Presale Pool";
 
-/// The whole LP-fee split, which the treasury takes.
+/// The whole LP-fee split, which the treasury's address route takes.
 const ALL_BPS: u64 = 10_000;
 
 // === Errors ===
@@ -353,16 +359,17 @@ const EDaoFeePoolMismatch: vector<u8> = b"The DAO-fee pool must charge this pack
 const EWrongPresale: vector<u8> = b"The pool creation is bound to a different presale.";
 
 #[error(code = 3)]
-const EWrongMigrator: vector<u8> = b"Only a sale this package's `new` started can be finalized here.";
+const EWrongVenue: vector<u8> = b"Only a sale this package's `new` started can be finalized here.";
 
 // === Imports ===
 
 use amm::{pool::{CreatePoolCapV2, Pool}, pool_factory, pool_registry::PoolRegistry};
 
+use blast_core::{bps, fee_split, migration};
+
 use blast_presale::{
     blast_presale::{Self as presale, Presale, PresaleInitializer},
     blast_presale_package::PackageVersion,
-    bps,
     creation_policy::CreationPolicy,
     fee_policy::FeePolicy
 };

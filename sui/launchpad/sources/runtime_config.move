@@ -355,11 +355,12 @@ use blast_admin::{
     blast_acl::AdminWitness,
 };
 
-use sui::clock::Clock;
+use blast_core::bps::{Self, Bps};
 
 use blast_fun::{
     blast_fun_domain::{CancelAdmin, ClaimSignerAdmin, FeeAdmin, TreasuryAdmin},
-    bps::{Self, Bps},
     constants,
     blast_fun::{PackageVersion},
 };
+
+use sui::clock::Clock;

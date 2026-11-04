@@ -16,6 +16,13 @@ it migrated its two Aftermath sales sale-token-first only. E2E-042 (added 2026-1
 presale adapter's Aftermath migration in the Quote-first coin order, which every SUI-quoted sale
 takes. Whoever runs it records the evidence as a new deployment record and names that run here.
 
+The tickets below were run against those publications and name their ABI: the presale's own vault,
+LP-fee rates and holder rewards, migration witnesses, `claim_migration_residuals`, and Aftermath's
+`FinalizeTicket` and shared `PoolCreation`. ADR 0137 removed them: a sale now starts from a venue's
+`prepare` ticket, migrates through a sealed hand-off into a `blast_vault` vault, and its owner acts
+on that vault with `blast_presale::prove_owner`. A run on the ADR 0137 lineage uses current source
+and the presale, vault and core guides for its calls; E2E-042 below is written for it.
+
 Goal: exercise every public `blast_presale` function and every abort condition users can hit,
 on the real mainnet package (the deployment record each run names),
 with real transactions. Unit tests already cover the math; this run proves the deployed bytecode,
@@ -54,7 +61,7 @@ the venues (Bluefin, Cetus), the vesting package, and the SDK builders work toge
 - Windows: commitment windows of 3–10 minutes, uncapped phases a few minutes in, vesting with
   30-second cliffs and periods. The liquidity window cannot be under seven days
   (`MIN_LIQUIDITY_WINDOW_MS`), so only E2E-017 waits for it.
-- Keeper path: `settle` and the venue's `migrate` in one PTB, as DEPLOYING.md step 7 runs it.
+- Keeper path: `settle` and the venue's `migrate` in one PTB, as DEPLOYING.md step 8 runs it.
 - Negative checks are submitted as real transactions and must fail with the named abort code and
   module. Each costs only gas.
 - Every scenario checks: conservation (Quote in = refunds + Blast + recipients + LP + residuals;
@@ -223,31 +230,33 @@ transfer, a buy, a sell), replayed checkpoint by checkpoint through the SDK ledg
 token's registration, weighted from vault creation, cross-checked against an independent
 replay of the token's transactions, then allocated, published, and paid to every holder.
 
-**E2E-042 Aftermath presale adapter, Quote-first coin order (SUI).** Why: `blast_presale::aftermath::migrate`
+**E2E-042 Aftermath presale venue, Quote-first coin order (SUI).** Why: `blast_presale::aftermath::migrate`
 creates the base pool in Aftermath's coin order, which the module's `sorts_before` computes as the
 byte order of the two defining-ID type names (`0000…0002::sui::SUI` for SUI). Every SUI-quoted
 Aftermath sale therefore takes the Quote-first branch of `create_pool`, because SUI's address sorts
-before any user package's. The 2026-10-20 run exercised only the sale-token-first branch on this
-adapter (its two Aftermath sales used `TEST_SUI` from the testkit package, whose module name sorts
-after `sale_tokens`); only the immutable vendor package's byte-identical `sorts_before` has run
+before any user package's. The 2026-10-20 run exercised only the sale-token-first branch of the
+presale's Aftermath migration (its two Aftermath sales used `TEST_SUI` from the testkit package,
+whose module name sorts after `sale_tokens`); only the immutable vendor package's byte-identical `sorts_before` has run
 Quote-first on mainnet (E2E-040), and `sui/presale/DEPLOYING.md` step 7 requires both orders on this
-adapter before the Aftermath witness is allowed on the production policy. Steps: (1) publish a fresh
-Aftermath LP coin through Aftermath's `publish-lp-coin` flow and keep its `CreatePoolCapV2`; (2)
-create a SUI-quoted Aftermath sale with `blast_presale::aftermath::new<SaleX, SUI>` (DAO fee 200
-BPS), which returns the initializer and its `FinalizeTicket`, the required setters,
-`blast_presale::aftermath::finalize<Lp, SaleX, SUI>` with that ticket,
-`blast_presale::blast_presale::share`, and `blast_presale::aftermath::share`, raising a small real SUI
-amount as E2E-011 does, under a single-wallet open policy and the seven-day LP window; (3) commit the
-raise and `settle`; (4) dev-inspect `blast_presale::aftermath::migrate<Lp, SaleX, SUI>` with the
-shared `PoolCreation`, then execute it; (5) one small swap each way on the shared DAO-fee pool, then
-`blast_presale::aftermath::collect_fees` listing every `Coin<SaleX>` and `Coin<SUI>` the vault's
-address owns; (6) `claim` for the participant. Checks: the SDK's coin-order helper and the executed
-branch both put `SUI` first (the base pool's first coin type is `SUI`); `DaoFeePoolCreated` and
-`presale_vault::VaultCreated` are emitted with the base pool, DAO-fee pool, owner cap, and LP coin
-IDs; `amm::pool::balance_of` for `SaleX` and for `SUI` equal `PresaleMigrated`'s `liquidity_tokens`
-and `liquidity_quote`; the LP coin is owned by `0x0`; the owner cap is the vault's position under
-`blast_presale::aftermath::Venue`; each swap sends its DAO fee as a coin to the vault's address, and
-`FeesCollected` splits exactly what was received. Done when: the new deployment record carries the
+venue before `blast_presale::aftermath::Venue` is admitted on the production policy. It runs on the
+ADR 0137 publication, with that venue admitted in its `CreationPolicy` and in the vault's
+`VaultRegistry` and SUI allowed. Steps: (1) publish a fresh Aftermath LP coin through Aftermath's
+`publish-lp-coin` flow and keep its `CreatePoolCapV2`; (2) in one PTB,
+`blast_presale::aftermath::prepare<Lp, SaleX, SUI>` with the sale token's `TreasuryCap`, that
+capability and a 200 BPS DAO fee, `blast_presale::blast_presale::new` with the returned ticket, the
+required setters, `blast_presale::blast_presale::finalize`, and `blast_presale::blast_presale::share`,
+raising a small real SUI amount as E2E-011 does, under a single-wallet open policy and the seven-day
+LP window; (3) commit the raise and `settle`; (4) dev-inspect
+`blast_presale::aftermath::migrate<Lp, SaleX, SUI>`, then execute it; (5) one small swap each way on
+the shared DAO-fee pool, then `blast_presale::aftermath::collect_fees` listing every `Coin<SaleX>`
+and `Coin<SUI>` the vault's address owns; (6) `claim` for the participant. Checks: the SDK's
+coin-order helper and the executed branch both put `SUI` first (the base pool's first coin type is
+`SUI`); `DaoFeePoolCreated` and `blast_vault_events::VaultCreated` are emitted with the base pool,
+DAO-fee pool, owner cap, and LP coin IDs; `amm::pool::balance_of` for `SaleX` and for `SUI` equal
+`PresaleMigrated`'s `liquidity_tokens` and `liquidity_quote`; the LP coin is owned by `0x0`; the
+owner cap is the vault's position under `blast_presale::aftermath::Venue`; each swap sends its DAO
+fee as a coin to the vault's address, and `blast_vault_events::FeesCollected` splits exactly what
+was received. Done when: the new deployment record carries the
 digests and checks and lists no reverse-order limitation, and the status paragraph at the top of this
 file names the run.
 
@@ -261,5 +270,5 @@ currently hand-encodes them) and the list of test sale IDs to hide.
 
 E2E-001 → 002 → 003 → decisions D1–D5 → 004 → 017 (starts the seven-day clock) → 010–016,
 018–019 in any order → 020–022 on migrated sales → 025 → 023 → 024 → 030. E2E-042 runs on its own
-against the versioned package once the Aftermath witness and SUI are allowed there, and before
-Aftermath is allowed on the production policy.
+against the ADR 0137 publication once its Aftermath venue and SUI are admitted there, and before
+that venue is admitted on the production policy.

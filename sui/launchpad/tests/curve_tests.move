@@ -1013,6 +1013,8 @@ fun assert_sell_back_invariant_with_trace(
 
 // === Imports ===
 
-use blast_fun::{bps, curve};
+use blast_core::bps;
+
+use blast_fun::curve;
 
 use std::unit_test::assert_eq;

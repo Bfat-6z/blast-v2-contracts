@@ -336,10 +336,11 @@ const MANIFESTS = [
         packageName: 'blast_fun_migrators',
         publishedAt: null,
         addresses: { blast_fun_migrators: '0x0' },
-        genesisDestinationAddress: 'blast_lp_fee_destination',
         dependencies: {
             blast_admin: { local: '../admin' },
+            blast_core: { local: '../core' },
             blast_fun: { local: '../launchpad' },
+            blast_vault: { local: '../vault' },
             BluefinSpot: { git: BLUEFIN_GIT, rev: REV.bluefin },
             CetusClmm: { local: 'interfaces/cetus' },
             CetusLpBurn: { local: 'interfaces/cetus_lp_burn' },
@@ -521,11 +522,31 @@ const LOCK_NODES = {
         source: { local: '../admin' },
         deps: { Sui: 'Sui_2' },
     },
+    // The shared core, the launchpad, and the vault are local, inward-only edges on the same
+    // framework revision; none adds a venue dependency.
+    blast_core: {
+        source: { local: '../core' },
+        deps: {
+            blast_admin: 'blast_admin',
+            blast_fun_vesting: 'blast_fun_vesting',
+            blast_partners: 'blast_partners',
+            std: 'MoveStdlib_2',
+            sui: 'Sui_2',
+        },
+    },
     blast_fun: {
         source: { local: '../launchpad' },
         deps: {
             blast_admin: 'blast_admin',
+            blast_core: 'blast_core',
             blast_partners: 'blast_partners',
+            std: 'MoveStdlib_2',
+            sui: 'Sui_2',
+        },
+    },
+    blast_fun_vesting: {
+        source: { local: '../vesting' },
+        deps: {
             std: 'MoveStdlib_2',
             sui: 'Sui_2',
         },
@@ -548,7 +569,19 @@ const LOCK_NODES = {
             IntegerMate: 'IntegerMate_1',
             Sui: 'Sui_2',
             blast_admin: 'blast_admin',
+            blast_core: 'blast_core',
             blast_fun: 'blast_fun',
+            blast_vault: 'blast_vault',
+        },
+    },
+    blast_vault: {
+        source: { local: '../vault' },
+        deps: {
+            blast_admin: 'blast_admin',
+            blast_core: 'blast_core',
+            blast_partners: 'blast_partners',
+            std: 'MoveStdlib_2',
+            sui: 'Sui_2',
         },
     },
 };
@@ -1551,17 +1584,6 @@ function validateManifestSource(spec, source) {
         : { ...spec.addresses };
     const addresses = tables.get('addresses');
     if (check(addresses !== undefined, `${label}: missing [addresses]`)) {
-        if (spec.genesisDestinationAddress) {
-            const name = spec.genesisDestinationAddress;
-            const destination = addresses.get(name);
-            try {
-                // Source checkouts use zero; publication requires a configured destination.
-                normalizeAddress(destination, `${label}: ${name}`);
-                expectedAddresses[name] = destination;
-            } catch (error) {
-                check(false, error.message);
-            }
-        }
         checkEqual(
             recordToString(addresses),
             expectedToString(expectedAddresses),
@@ -1815,12 +1837,6 @@ function selfTestCases() {
     );
     const manifest = (spec, source) => () => validateManifestSource(spec, source);
     const lockCase = (source) => () => validateLockSource(source);
-    const genesisDestinationLine = rootManifest.match(/^blast_lp_fee_destination\s*=.*$/m)?.[0];
-    if (!genesisDestinationLine) throw new Error('self-test fixture missing: genesis destination');
-    const withGenesisDestination = (value) => mutateSource(
-        rootManifest, genesisDestinationLine, `blast_lp_fee_destination = ${value}`,
-    );
-    const configuredManifest = withGenesisDestination('"0xa"');
 
     return [
         // --- Positive: the committed files and a well-formed response ---
@@ -1829,11 +1845,6 @@ function selfTestCases() {
             expect: 'pass',
             run: () => verifyLocalPins(),
         },
-        ...['0x0', '0xa', `0x${'Ab'.repeat(32)}`].map((destination) => ({
-            name: `genesis destination ${destination} validates clean`,
-            expect: 'pass',
-            run: manifest(rootSpec, withGenesisDestination(JSON.stringify(destination))),
-        })),
         {
             name: 'well-formed function renders canonically',
             expect: 'pass',
@@ -2075,28 +2086,20 @@ function selfTestCases() {
         },
 
         // --- Negative: manifest records ---
-        ...['"0x"', '"a"', '"0xg"', `"0x${'a'.repeat(65)}"`, 'true'].map((value) => ({
-            name: `invalid genesis destination ${value} is rejected`,
-            run: manifest(rootSpec, withGenesisDestination(value)),
-        })),
         {
-            name: 'missing genesis destination is rejected',
-            run: manifest(rootSpec, mutateSource(rootManifest, genesisDestinationLine, '')),
+            name: 'an extra named address is rejected',
+            run: manifest(rootSpec, `${rootManifest}\nextra_address = "0xb"\n`),
         },
         {
-            name: 'configured genesis destination does not allow extra addresses',
-            run: manifest(rootSpec, `${configuredManifest}\nextra_address = "0xb"\n`),
-        },
-        {
-            name: 'configured genesis destination does not allow package identity drift',
+            name: 'package identity drift is rejected',
             run: manifest(
                 rootSpec,
-                mutateSource(configuredManifest, 'blast_fun_migrators = "0x0"', 'blast_fun_migrators = "0xb"'),
+                mutateSource(rootManifest, 'blast_fun_migrators = "0x0"', 'blast_fun_migrators = "0xb"'),
             ),
         },
         {
-            name: 'configured genesis destination does not allow dependency drift',
-            run: manifest(rootSpec, mutateSource(configuredManifest, REV.sui, REV.suiBluefin)),
+            name: 'dependency drift is rejected',
+            run: manifest(rootSpec, mutateSource(rootManifest, REV.sui, REV.suiBluefin)),
         },
         {
             name: 'commented-out dependency cannot satisfy an expectation',

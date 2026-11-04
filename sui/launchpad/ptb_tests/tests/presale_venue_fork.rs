@@ -2,27 +2,32 @@
 //! and Aftermath AMM and DAO-fee mainnet bytecode, offline.
 //!
 //! Each world inserts the committed mainnet snapshot (`fork/`, see `blast_launchpad_ptb_tests::fork`)
-//! into the in-memory simulator at the real IDs, then publishes the local admin, partner, vesting, and
-//! `blast_presale` dependencies linked to the real venue packages exactly as the presale manifest
-//! pins them. No transaction reaches a network.
+//! into the in-memory simulator at the real IDs, then publishes the local admin, partner, vesting,
+//! `blast_core`, `blast_vault` and `blast_presale` packages linked to the real venue packages
+//! exactly as the presale manifest pins them. The vault package is released with the route's venue
+//! listed, and the presale's creation policy admits the same venue. No transaction reaches a
+//! network.
 //!
 //! One lifecycle test per route runs through public PTBs: Cetus with Meme as coin A (SUI Quote),
-//! Cetus with Meme as coin B (USDC Quote), and Bluefin (SUI Quote). Each creates a presale with
-//! open eligibility, commits with overflow, settles after the window, and shows that a migration
-//! aborting after pool creation commits nothing, that Cetus refuses the reversed coin order and a
-//! foreign pair, and that Bluefin charges exactly its configured creation fee. One PTB then
-//! migrates into a new full-range pool at the configured tier, pays the recipient allocations, and
-//! seals the position (the LP Burn proof on Cetus) in a shared `Vault`; supplied plus
-//! residual reconciles exactly with the hand-off. The participant claims its tokens and overflow,
-//! real swaps accrue fees, permissionless collections pay every fee recipient and grow the vault's
-//! holder Quote share and pay holder Meme to the treasury by the exact apportionment. Collection
-//! against another pool of the same type is refused, and the creator claims the migration residuals.
+//! Cetus with Meme as coin B (USDC Quote), and Bluefin (SUI Quote). Each creation PTB runs the
+//! venue's `prepare` on the sale token's `TreasuryCap`, then `blast_presale::new` takes the cap and
+//! the venue ticket (ADR 0137). Each creates a presale with open eligibility, commits with
+//! overflow, settles after the window, and shows that a migration aborting after pool creation
+//! commits nothing, that Cetus refuses the reversed coin order and a foreign pair, and that Bluefin
+//! charges exactly its configured creation fee. One PTB then migrates into a new full-range pool at
+//! the configured tier, pays the recipient allocations, and seals the position (the LP Burn proof
+//! on Cetus) in a shared `blast_vault` vault that keeps the migration residuals for the owner;
+//! supplied plus residual reconciles exactly with the hand-off. The participant claims its tokens
+//! and overflow, real swaps accrue fees, permissionless collections pay every address route and
+//! grow the vault's holder-reward balances by the exact apportionment. A split change is proved
+//! with the `PresaleCap` and applied after the vault's notice; collection against another pool of
+//! the same type is refused, and the owner claims the migration residuals with an owner proof.
 //!
-//! Aftermath publishes a fresh LP coin from the pinned SDK template, shares its reservation,
-//! then aborts after pool creation and retries with the same reservation. Successful migration
-//! consumes the reservation, shares the pool and vault, sends the LP coin to the zero address,
+//! Aftermath publishes a fresh LP coin from the pinned SDK template, whose pool creation cap
+//! `prepare` keeps under `VenueConfig`, then aborts after pool creation and retries. Successful
+//! migration consumes the cap, shares the pool and vault, sends the LP coin to the zero address,
 //! and leaves the participant's claim intact for either coin order. Swaps in both directions
-//! accrue DAO fees, then collection reconciles recipient payouts and holder reward custody.
+//! accrue DAO fees, then collection reconciles address-route payouts and holder-reward custody.
 //!
 //! The fix-side tests seed each route with a raise and LP allocation of about 2^62 atoms whose
 //! larger side, if fixed, makes the venue demand one atom more of the smaller side than the
@@ -35,8 +40,8 @@ use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
-    CompiledPackage, Delayed, DelayedAction, DelayedApplied, Expected, Harness, Outcome, RoundTerms, UnlinkedPackage,
-    append_unpause, build, build_unlinked, build_vesting, call,
+    CompiledPackage, Delayed, DelayedAction, DelayedApplied, Destination, Expected, FeeSplit, Harness, Outcome,
+    RoundTerms, UnlinkedPackage, VaultStack, append_unpause, build, build_unlinked, call,
     fork::{
         AFTERMATH_DAO_FEE, BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusCollectFee, CetusOpenPosition,
@@ -44,7 +49,7 @@ use blast_launchpad_ptb_tests::{
         UserFeeCollected, apportion, cetus_name, expected_sqrt_price, id, insert_snapshot, meme_is_cetus_a, sui, tag,
         venue_dependencies, venue_events,
     },
-    sui_dir,
+    publish_core_stack, sui_dir, unique_bps,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use sui_types::{
@@ -70,12 +75,14 @@ const BLUEFIN_FEE_RATE: u64 = 3_000;
 const SUPPLY: u64 = 1_000_000_000_000_000_000;
 const SALE_BPS: u64 = 4_000;
 const LP_BPS: u64 = 4_000;
-/// LP fees: two recipients (the creator is the first) and the holder-reward share.
+/// LP fees: two address routes (the creator is the first) and the holder-reward route.
 const FEE_BPS: [u64; 2] = [6_000, 2_500];
 const HOLDER_REWARDS_BPS: u64 = 1_500;
 const DURATION_MS: u64 = 3_600_000;
-/// The shortest LP window `blast_presale::new` accepts: seven days.
+/// The shortest LP window `blast_presale::finalize` accepts: seven days.
 const LIQUIDITY_WINDOW_MS: u64 = 604_800_000;
+/// The vault's fixed notice for fee-split changes.
+const VAULT_FEE_NOTICE_MS: u64 = 172_800_000;
 
 /// Near-equal seed atoms from `fixside_sim.py`: fixing the larger side makes both venues demand
 /// `SMALL + 1` of the smaller side.
@@ -86,13 +93,15 @@ const CETUS_NEAR_EQUAL_LIQUIDITY: u128 = 4_611_686_019_503_084_323;
 const BLUEFIN_NEAR_EQUAL_LIQUIDITY: u128 = 4_611_686_019_504_160_504;
 
 /// `blast_presale::errors` registry codes; each aborts at the module that raises it.
-const INVALID_PAUSE_BITS: u64 = 1;
-const PAUSE_UNCHANGED: u64 = 2;
-const INVALID_LIFECYCLE: u64 = 19;
-const INVALID_COIN_ORDER: u64 = 79;
-const POSITION_POOL_MISMATCH: u64 = 80;
-const WRONG_COIN_PAIR: u64 = 81;
-const NOT_AFTERMATH_VAULT: u64 = 88;
+const INVALID_PAUSE_BITS: u64 = 0;
+const PAUSE_UNCHANGED: u64 = 1;
+const INVALID_LIFECYCLE: u64 = 18;
+const INVALID_COIN_ORDER: u64 = 49;
+const POSITION_POOL_MISMATCH: u64 = 50;
+const WRONG_COIN_PAIR: u64 = 51;
+/// `blast_vault::errors` codes.
+const WRONG_VENUE: u64 = 5;
+const NOTHING_TO_CLAIM: u64 = 6;
 /// Bluefin `pool` code for a creation fee other than the configured amount.
 const BLUEFIN_WRONG_CREATION_FEE: u64 = 1039;
 /// Cetus `factory::create_pool_v3_` code when the fixed coin B needs more coin A than supplied, and
@@ -344,20 +353,24 @@ fn run_aftermath(meme_first: bool) -> Result<()> {
     let create = world.create_presale_pt(treasury, currency, &meme, &terms, Some((lp.clone(), cap)))?;
     let created = world.h.execute(create)?;
     created.assert_success();
-    let reservations = created.created(&world.h, "aftermath", "PoolCreation");
-    ensure!(reservations.len() == 1 && world.h.object(reservations[0]).is_shared());
+    // `prepare` keeps the pool creation cap under VenueConfig until migration.
+    let reserved: Vec<PoolCreationReserved> = world.events(&created, "aftermath", "PoolCreationReserved");
+    ensure!(reserved.len() == 1 && reserved[0].create_pool_cap_id == cap);
+    let Owner::ObjectOwner(field) = world.h.object(cap).owner().clone() else { bail!("the cap is not a child") };
+    ensure!(*world.h.object(field.into()).owner() == Owner::ObjectOwner(world.venue_config.into()));
     let sale = world.fund_sale(created, meme, currency, &terms)?;
-    let reservation = reservations[0];
     let registry = world.venue("aftermath_pool_registry");
     let mut b = ProgrammableTransactionBuilder::new();
     let args = vec![
         world.shared(&mut b, sale.presale, true)?,
         world.shared(&mut b, world.version, false)?,
-        world.shared(&mut b, reservation, true)?,
         world.shared(&mut b, world.fee_policy, false)?,
-        world.shared(&mut b, world.venue_config, false)?,
+        world.shared(&mut b, world.venue_config, true)?,
         world.shared(&mut b, registry, true)?,
         world.shared(&mut b, world.venue("aftermath_dao_fee_version"), false)?,
+        world.shared(&mut b, world.vault_stack.registry, false)?,
+        world.shared(&mut b, world.vault_stack.version, false)?,
+        world.shared(&mut b, world.treasury, false)?,
         world.clock(&mut b)?,
     ];
     call(&mut b, world.presale, "aftermath", "migrate", vec![lp.clone(), sale.meme.clone(), world.quote()], args);
@@ -380,7 +393,7 @@ fn run_aftermath(meme_first: bool) -> Result<()> {
     let watched = [
         sale.presale,
         sale.currency,
-        reservation,
+        world.venue_config,
         registry,
         world.venue("aftermath_pool_registry_state"),
         world.venue("aftermath_pool_registry_state_field"),
@@ -393,10 +406,9 @@ fn run_aftermath(meme_first: bool) -> Result<()> {
         ExecutionStatus::Failure(failure) if failure.command == Some(2)
     ), "the injected split failed after migration");
     ensure!(world.sale_state(&sale)? == before);
-    ensure!(world.h.object(reservation).is_shared());
 
-    // Keep the real registry, reservation and package. Only change the DAO-fee version field
-    // so Aftermath itself rejects the migration after the AMM pool creation call.
+    // Keep the real registry and package. Only change the DAO-fee version field so Aftermath
+    // itself rejects the migration after the AMM pool creation call.
     let version_id = world.venue("aftermath_dao_fee_version");
     let version = world.h.object(version_id);
     let (stored_id, current): (ObjectID, u64) = bcs::from_bytes(&world.h.contents(version_id))?;
@@ -412,7 +424,6 @@ fn run_aftermath(meme_first: bool) -> Result<()> {
         ExecutionStatus::Failure(failure) if failure.command == Some(0)
     ), "Aftermath rejected the migration command");
     ensure!(world.sale_state(&sale)? == before);
-    ensure!(world.h.object(reservation).is_shared());
     world.h.insert(version);
 
     let migrated = world.h.execute(migration)?;
@@ -420,15 +431,15 @@ fn run_aftermath(meme_first: bool) -> Result<()> {
     let events: Vec<DaoFeePoolCreated> = world.events(&migrated, "aftermath", "DaoFeePoolCreated");
     ensure!(events.len() == 1);
     let DaoFeePoolCreated { vault, base_pool, pool, owner_cap, lp_coin } = events[0];
-    let vaults: Vec<VaultCreated> = world.events(&migrated, "presale_vault", "VaultCreated");
+    let vaults: Vec<VaultCreated> = world.vault_events(&migrated, "VaultCreated");
     ensure!(vaults.len() == 1);
     let created_vault = &vaults[0];
-    ensure!((created_vault.vault_id, created_vault.presale_id) == (vault, sale.presale));
+    ensure!((created_vault.vault_id, created_vault.terms.origin) == (vault, sale.presale));
     ensure!((created_vault.pool_id, created_vault.position_id) == (base_pool, owner_cap));
-    ensure!((created_vault.migration_meme_residual, created_vault.migration_quote_residual) == (0, 0));
+    ensure!((created_vault.residual_meme_amount, created_vault.residual_quote_amount) == (0, 0));
     ensure!(world.h.object(pool).is_shared() && world.h.object(vault).is_shared());
     ensure!(*world.h.object(lp_coin).owner() == Owner::AddressOwner(ObjectID::ZERO.into()));
-    ensure!(migrated.effects.deleted().iter().any(|object| object.0 == reservations[0]));
+    ensure!(migrated.consumed(cap), "migration consumes the pool creation cap");
     ensure!(world.sale_state(&sale)?.lifecycle == Lifecycle::Migrated);
     let releases: Vec<PresaleMigrated> = world.events(&migrated, "blast_presale", "PresaleMigrated");
     ensure!(releases.len() == 1 && releases[0].presale_id == sale.presale);
@@ -485,7 +496,7 @@ fn run_near_equal(route: Route) -> Result<()> {
     let (meme, quote) = (terms.lp_tokens(), terms.raise);
     ensure!(meme.max(quote) == LARGE && meme.min(quote) == SMALL, "the seed is ({meme}, {quote})");
 
-    let (direct_token, direct_pool, direct_position) = w.larger_side_fix_aborts(meme, quote)?;
+    w.larger_side_fix_aborts(meme, quote)?;
 
     let sale = w.open_sale(&terms)?;
     let m = w.migrate(&sale, &terms)?;
@@ -505,14 +516,6 @@ fn run_near_equal(route: Route) -> Result<()> {
         m.residual,
         m.liquidity,
     ));
-
-    w.standalone_vault_rejects_wrong_pool_then_locks(
-        &sale.meme,
-        m.pool,
-        &direct_token,
-        direct_pool,
-        direct_position,
-    )?;
 
     w.print_report();
     Ok(())
@@ -670,7 +673,7 @@ fn presale() -> &'static UnlinkedPackage {
         let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("presale_venue_fork");
         build_unlinked(
             &sui_dir().join("presale"),
-            &["blast_admin", "blast_partners", "blast_fun_vesting"],
+            &["blast_admin", "blast_partners", "blast_fun_vesting", "blast_core", "blast_vault"],
             &work,
         )
         .expect("build the presale")
@@ -692,7 +695,7 @@ struct Migration {
     /// Cetus: the `CetusLPBurnProof`; Bluefin: the `Position`.
     position: ObjectID,
     liquidity: u128,
-    /// (Meme, Quote) the venue took and the vault kept.
+    /// (Meme, Quote) the venue took and the vault kept for the owner.
     supplied: (u64, u64),
     residual: (u64, u64),
 }
@@ -703,6 +706,9 @@ struct World {
     checkpoint: u64,
     venue: BTreeMap<String, ObjectID>,
     presale: ObjectID,
+    core: ObjectID,
+    vault_stack: VaultStack,
+    treasury: ObjectID,
     version: ObjectID,
     admin: ObjectID,
     acl: ObjectID,
@@ -716,7 +722,8 @@ struct World {
     quote_type: TypeTag,
     quote_currency: ObjectID,
     coins: u64,
-    projected_fee_weights: [u64; 3],
+    /// The vault's applied split, which every collection's payout oracle reads.
+    split: FeeSplit,
     lines: Vec<String>,
 }
 
@@ -733,24 +740,27 @@ impl World {
         let mut h = Harness::new()?;
         let (checkpoint, venue) = insert_snapshot(&mut h)?;
 
-        let admin_dir = sui_dir().join("admin");
-        let partners_dir = sui_dir().join("partners");
-        let (admin, admin_published) = h.publish(build(&admin_dir, &[], &work)?)?;
-        let (partners, _) = h.publish(build(&partners_dir, &[(&admin_dir, admin)], &work)?)?;
-        let (vesting, _) = h.publish(build_vesting(&work)?)?;
+        let stack = publish_core_stack(&mut h, &work)?;
+        let (admin, core) = (stack.admin, stack.core);
+        let admin_published = &stack.admin_publication;
+        let (vault, vault_publication) = stack.publish(&mut h, &sui_dir().join("vault"), &work)?;
         let mut dependencies = vec![
             ObjectID::from_single_byte(1),
             ObjectID::from_single_byte(2),
             admin,
-            partners,
-            vesting,
+            stack.partners,
+            stack.vesting,
+            core,
+            vault,
         ];
         dependencies.extend(venue_dependencies(&h)?);
         let linked = presale().link(
             &[
                 ("blast_admin", admin),
-                ("blast_partners", partners),
-                ("blast_fun_vesting", vesting),
+                ("blast_partners", stack.partners),
+                ("blast_fun_vesting", stack.vesting),
+                ("blast_core", core),
+                ("blast_vault", vault),
             ],
             dependencies,
         )?;
@@ -772,6 +782,13 @@ impl World {
         } else {
             (route.quote(), *venue.get("sui_currency").context("SUI currency")?)
         };
+        // Both admissions name the route's one venue witness: the vault registry lists it, beside
+        // the presale's package witness as the issuer of the sale's vault terms, while the vault
+        // package is paused, and the creation policy admits it.
+        let venue_type = tag(&format!("{presale}::{}::Venue", route.module()));
+        let issuer_type = tag(&format!("{presale}::blast_presale::PackageWitness"));
+        let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
+        h.release_vault(admin, admin_published, core, &vault_stack, &[venue_type.clone(), issuer_type])?;
         assert!(published.created(&h, "blast_presale_package", "PackageVersion").is_empty());
         let clock_before = h.contents(SUI_CLOCK_OBJECT_ID);
         let bootstrap_id = published.created(&h, "blast_presale_package", "Publication")[0];
@@ -792,23 +809,22 @@ impl World {
         let custody = wrapped.created(&h, "package_admin", "PackageAdmin");
         ensure!(custody.len() == 1);
         h.assert_publication_upgrade_notice(custody[0])?;
-        let config_cap = h.configuration_admin(admin, &admin_published, presale, "blast_presale_domain", &["ListingAdmin", "AdapterAdmin", "TreasuryAdmin", "FeeAdmin"])?;
+        let config_cap = h.configuration_admin(admin, admin_published, presale, "blast_presale_domain", &["ListingAdmin", "AdapterAdmin", "TreasuryAdmin", "FeeAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
-        let listing = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "ListingAdmin")?;
-        let adapter = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "AdapterAdmin")?;
-        let treasury = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "TreasuryAdmin")?;
-        let fee_admin = h.configuration_witness(&mut b, admin, &admin_published, config_cap, presale, "blast_presale_domain", "FeeAdmin")?;
+        let listing = h.configuration_witness(&mut b, admin, admin_published, config_cap, presale, "blast_presale_domain", "ListingAdmin")?;
+        let adapter = h.configuration_witness(&mut b, admin, admin_published, config_cap, presale, "blast_presale_domain", "AdapterAdmin")?;
+        let treasury = h.configuration_witness(&mut b, admin, admin_published, config_cap, presale, "blast_presale_domain", "TreasuryAdmin")?;
+        let fee_admin = h.configuration_witness(&mut b, admin, admin_published, config_cap, presale, "blast_presale_domain", "FeeAdmin")?;
         let policy = b.obj(h.shared(creation_policy[0], true))?;
         let version_arg = b.obj(h.shared(version, false))?;
         let clock = b.obj(h.shared(SUI_CLOCK_OBJECT_ID, false))?;
         let allowed = b.pure(true)?;
-        let witness = tag(&format!("{presale}::{}::Witness", route.module()));
         call(&mut b, presale, "creation_policy", "set_quote_allowed", vec![quote_type.clone()], vec![policy, version_arg, listing, allowed]);
-        call(&mut b, presale, "creation_policy", "schedule_migration_witness", vec![witness.clone()], vec![policy, version_arg, adapter, clock]);
-        call(&mut b, presale, "creation_policy", "apply_migration_witness", vec![witness], vec![policy, version_arg, clock]);
+        call(&mut b, presale, "creation_policy", "schedule_venue", vec![venue_type.clone()], vec![policy, version_arg, adapter, clock]);
+        call(&mut b, presale, "creation_policy", "apply_venue", vec![venue_type], vec![policy, version_arg, clock]);
         let delay = b.pure(172_800_000u64)?;
-        call(&mut b, presale, "creation_policy", "schedule_migration_delay", vec![], vec![policy, version_arg, adapter, delay, clock]);
-        call(&mut b, presale, "creation_policy", "apply_migration_delay", vec![], vec![policy, version_arg, clock]);
+        call(&mut b, presale, "creation_policy", "schedule_venue_delay", vec![], vec![policy, version_arg, adapter, delay, clock]);
+        call(&mut b, presale, "creation_policy", "apply_venue_delay", vec![], vec![policy, version_arg, clock]);
         let fees = b.obj(h.shared(fee_policy[0], true))?;
         let destination = b.pure(h.sender)?;
         let next_delay = b.pure(172_800_000u64)?;
@@ -816,11 +832,11 @@ impl World {
         call(&mut b, presale, "fee_policy", "apply_destination", vec![], vec![fees, version_arg, clock]);
         // Venue arithmetic cases use an explicit zero-fee policy rather than publication defaults.
         let zero = b.pure(0u64)?;
-        let zero_bps = call(&mut b, presale, "bps", "new", vec![], vec![zero]);
+        let zero_bps = call(&mut b, core, "bps", "new", vec![], vec![zero]);
         call(&mut b, presale, "fee_policy", "schedule_fees", vec![], vec![fees, version_arg, fee_admin, zero_bps, zero_bps, zero_bps, zero_bps, next_delay, clock]);
         call(&mut b, presale, "fee_policy", "apply_fees", vec![], vec![fees, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
-        h.unpause(presale, "blast_presale_domain", admin, &admin_published, version, custody[0], [fee_policy[0], creation_policy[0]], 7)?;
+        h.unpause(presale, "blast_presale_domain", admin, admin_published, version, custody[0], [fee_policy[0], creation_policy[0]], 7)?;
         ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
         Ok(World {
@@ -828,6 +844,9 @@ impl World {
             checkpoint,
             venue,
             presale,
+            core,
+            vault_stack,
+            treasury: stack.treasury,
             version,
             admin,
             acl: admin_published.created(&h, "blast_acl", "ACL")[0],
@@ -841,7 +860,7 @@ impl World {
             quote_type,
             quote_currency,
             coins: 0,
-            projected_fee_weights: [0; 3],
+            split: initial_split(),
             lines: Vec::new(),
             h,
         })
@@ -950,11 +969,9 @@ impl World {
         self.shared(b, SUI_CLOCK_OBJECT_ID, false)
     }
 
-    /// A `blast_presale::bps::Bps` built in the PTB, since a `Bps` cannot be a pure argument.
+    /// A `blast_core::bps::Bps` built in the PTB, since a `Bps` cannot be a pure argument.
     fn bps(&self, b: &mut ProgrammableTransactionBuilder, value: u64) -> Result<Argument> {
-        let value = b.pure(value)?;
-
-        Ok(call(b, self.presale, "bps", "new", vec![], vec![value]))
+        unique_bps(b, self.core, value)
     }
 
     fn presale_tag(&self, module: &str, name: &str) -> TypeTag {
@@ -1004,12 +1021,38 @@ impl World {
             .collect()
     }
 
+    /// Vault events of `name`, from `blast_vault_events`.
+    fn vault_events<T: DeserializeOwned>(&self, outcome: &Outcome, name: &str) -> Vec<T> {
+        outcome
+            .events
+            .iter()
+            .filter(|event| {
+                ObjectID::from(event.type_.address) == self.vault_stack.package
+                    && event.type_.module.as_str() == "blast_vault_events"
+                    && event.type_.name.as_str() == name
+            })
+            .map(|event| bcs::from_bytes(&event.contents).expect("vault event payload"))
+            .collect()
+    }
+
     fn sale_state(&self, sale: &Sale) -> Result<PresaleState> {
         bcs::from_bytes(&self.h.contents(sale.presale)).context("decode Presale")
     }
 
     fn vault(&self, m: &Migration) -> Result<VaultState> {
-        bcs::from_bytes(&self.h.contents(m.vault)).context("decode presale Vault")
+        self.vault_at(m.vault)
+    }
+
+    fn vault_at(&self, vault: ObjectID) -> Result<VaultState> {
+        bcs::from_bytes(&self.h.contents(vault)).context("decode Vault")
+    }
+
+    /// Appends `blast_presale::prove_owner` with the sale's `PresaleCap`, returning the proof.
+    fn prove_owner(&self, b: &mut ProgrammableTransactionBuilder, sale: &Sale) -> Result<Argument> {
+        let presale = self.shared(b, sale.presale, false)?;
+        let version = self.shared(b, self.version, false)?;
+        let cap = b.obj(self.h.owned(sale.cap))?;
+        Ok(call(b, self.presale, "blast_presale", "prove_owner", self.pair(sale), vec![presale, version, cap]))
     }
 
     fn coins(&self, meme: &TypeTag, meme_amount: u64, quote_amount: u64) -> Vec<(String, u64)> {
@@ -1094,11 +1137,13 @@ impl World {
     }
 
     fn collect_aftermath_fees(&mut self, sale: &Sale, vault: ObjectID) -> Result<()> {
-        let before: VaultState = bcs::from_bytes(&self.h.contents(vault))?;
+        let before = self.vault_at(vault)?;
         let mut b = ProgrammableTransactionBuilder::new();
         let vault_arg = self.shared(&mut b, vault, true)?;
         let version = self.shared(&mut b, self.version, false)?;
-        let fee_policy = self.shared(&mut b, self.fee_policy, false)?;
+        let vault_version = self.shared(&mut b, self.vault_stack.version, false)?;
+        let treasury = self.shared(&mut b, self.treasury, false)?;
+        let currency = self.shared(&mut b, sale.currency, true)?;
         let coins = self.h.owned_by(vault.into());
         let mut fees = Vec::new();
         let mut totals = Vec::new();
@@ -1115,10 +1160,10 @@ impl World {
             totals.push(total);
         }
         call(&mut b, self.presale, "aftermath", "collect_fees", self.pair(sale),
-             vec![vault_arg, version, fee_policy, fees[0], fees[1]]);
+             vec![vault_arg, version, vault_version, treasury, currency, fees[0], fees[1]]);
         let collected = self.h.execute(b.finish())?;
         collected.assert_success();
-        let events: Vec<FeesCollected> = self.events(&collected, "presale_vault", "FeesCollected");
+        let events: Vec<FeesCollected> = self.vault_events(&collected, "FeesCollected");
         ensure!(events.len() == 1 && events[0].vault_id == vault);
         let event = &events[0];
         ensure!((event.gross_meme, event.gross_quote) == (totals[0], totals[1]));
@@ -1126,20 +1171,19 @@ impl World {
         let weights = [FEE_BPS[0], FEE_BPS[1], HOLDER_REWARDS_BPS];
         let meme = apportion(&weights, totals[0]);
         let quote = apportion(&weights, totals[1]);
-        ensure!(event.fee_recipient_meme == meme[..2] && event.holder_rewards_meme == meme[2]);
-        ensure!(event.fee_recipient_quote == quote[..2] && event.holder_rewards_quote == quote[2]);
+        ensure!(event.route_meme == meme && event.route_quote == quote, "FeesCollected {event:?}");
         for (index, recipient) in [CREATOR, FEE_B].into_iter().enumerate() {
             ensure!(
                 collected.coins_created_for(&self.h, recipient.into()) == self.coins(&sale.meme, meme[index], quote[index]),
                 "Aftermath fee recipient {recipient} was paid"
             );
         }
+        ensure!(collected.coins_created_for(&self.h, self.h.sender).is_empty(), "nothing is paid to the sender");
+        let after = self.vault_at(vault)?;
         ensure!(
-            collected.coins_created_for(&self.h, self.h.sender) == self.coins(&sale.meme, meme[2], 0),
-            "Aftermath holder Meme was paid to the treasury"
+            (after.rewards_meme, after.rewards_quote) == (before.rewards_meme + meme[2], before.rewards_quote + quote[2]),
+            "the holder-reward route accrues in the vault"
         );
-        let after: VaultState = bcs::from_bytes(&self.h.contents(vault))?;
-        ensure!(after.holder_rewards_quote == before.holder_rewards_quote + quote[2]);
         ensure!(self.h.owned_by(vault.into()).iter().all(|coin| coin.coin_type_maybe().is_none()));
         Ok(())
     }
@@ -1167,25 +1211,9 @@ impl World {
         Ok((tag(&format!("{package}::af_lp::AF_LP")), caps[0]))
     }
 
-    fn initial_fee_split(&self, b: &mut ProgrammableTransactionBuilder) -> Result<Argument> {
-        let mut fee_recipients = Vec::new();
-        for (recipient, bps) in [(CREATOR, FEE_BPS[0]), (FEE_B, FEE_BPS[1])] {
-            let args = vec![b.pure(SuiAddress::from(recipient))?, self.bps(b, bps)?];
-            fee_recipients.push(call(b, self.presale, "blast_presale", "recipient_share", vec![], args));
-        }
-        let fee_type = self.presale_tag("blast_presale", "RecipientShare");
-        let fee_recipients = b.command(Command::make_move_vec(Some(fee_type), fee_recipients));
-        let holder_bps = self.bps(b, HOLDER_REWARDS_BPS)?;
-        Ok(call(
-            b,
-            self.presale,
-            "blast_presale",
-            "fee_split",
-            vec![],
-            vec![fee_recipients, holder_bps],
-        ))
-    }
-
+    /// One PTB: the venue's `prepare` on the token's `TreasuryCap`, `blast_presale::new` with the
+    /// cap and the venue ticket, the setters, `finalize`, and `share`. Aftermath's `prepare` also
+    /// takes the LP coin's pool creation cap.
     fn create_presale_pt(
         &self,
         treasury_cap: ObjectID,
@@ -1210,34 +1238,31 @@ impl World {
         let eligibility = call(&mut b, self.presale, "blast_presale", "open_eligibility", vec![], eligibility_args);
 
         let version = self.shared(&mut b, self.version, false)?;
-        let mut args = vec![b.obj(self.h.owned(treasury_cap))?, version];
-        if self.route == Route::Bluefin {
-            args.push(self.shared(&mut b, currency, true)?);
-        }
-        args.extend([
-            self.shared(&mut b, self.creation_policy, false)?,
-            self.shared(&mut b, self.fee_policy, false)?,
-            self.shared(&mut b, self.venue_config, true)?,
-        ]);
+        let cap = b.obj(self.h.owned(treasury_cap))?;
+        let venue_config = self.shared(&mut b, self.venue_config, true)?;
+        let currency = self.shared(&mut b, currency, true)?;
         let (tick_spacing, fee_rate) = self.route.tier();
-        if self.route.is_cetus() {
-            args.extend([
+        let venue_ticket = if self.route.is_cetus() {
+            let args = vec![
+                version,
+                venue_config,
                 self.shared(&mut b, self.venue("cetus_global_config"), false)?,
                 self.shared(&mut b, self.venue("cetus_pools"), true)?,
+                cap,
                 b.pure(tick_spacing)?,
-            ]);
-        } else if self.route == Route::Aftermath {
-            args.push(b.pure(fee_rate as u16)?);
+            ];
+            call(&mut b, self.presale, "cetus", "prepare", pair.clone(), args)
+        } else if let Some((lp, create_pool_cap)) = &aftermath_lp {
+            let args = vec![version, venue_config, cap, b.obj(self.h.owned(*create_pool_cap))?, b.pure(fee_rate as u16)?];
+            call(&mut b, self.presale, "aftermath", "prepare", vec![lp.clone(), meme.clone(), self.quote()], args)
         } else {
-            args.extend([b.pure(tick_spacing)?, b.pure(fee_rate)?]);
-        }
-        let result = call(&mut b, self.presale, self.route.module(), "new", pair.clone(), args);
-        let (init, ticket) = if aftermath_lp.is_some() {
-            let Argument::Result(index) = result else { unreachable!() };
-            (Argument::NestedResult(index, 0), Some(Argument::NestedResult(index, 1)))
-        } else {
-            (result, None)
+            let args = vec![version, venue_config, cap, currency, b.pure(tick_spacing)?, b.pure(fee_rate)?];
+            call(&mut b, self.presale, "bluefin", "prepare", pair.clone(), args)
         };
+        let creation_policy = self.shared(&mut b, self.creation_policy, false)?;
+        let fee_policy = self.shared(&mut b, self.fee_policy, false)?;
+        let init = call(&mut b, self.presale, "blast_presale", "new", pair.clone(),
+            vec![cap, version, venue_ticket, creation_policy, fee_policy]);
         let supply = b.pure(terms.supply)?;
         let burnable = b.pure(false)?;
         let sale_bps = self.bps(&mut b, terms.sale_bps)?;
@@ -1245,7 +1270,7 @@ impl World {
         let raise = b.pure(terms.raise)?;
         let duration = b.pure(DURATION_MS)?;
         let window = b.pure(LIQUIDITY_WINDOW_MS)?;
-        let split = self.initial_fee_split(&mut b)?;
+        let split = initial_split().arg(&mut b, self.core)?;
         for (function, arguments) in [
             ("set_supply", vec![init, version, supply, burnable]),
             ("set_token_allocations", vec![init, version, sale_bps, lp_bps, recipients]),
@@ -1256,19 +1281,11 @@ impl World {
         ] {
             call(&mut b, self.presale, "blast_presale", function, pair.clone(), arguments);
         }
-        let currency = self.shared(&mut b, currency, true)?;
-        let (module, types, args) = if let Some((lp, cap)) = aftermath_lp {
-            ("aftermath", vec![lp, meme.clone(), self.quote()],
-             vec![init, version, ticket.context("Aftermath finalize ticket")?, currency, b.obj(self.h.owned(cap))?])
-        } else {
-            ("blast_presale", pair.clone(), vec![init, version, currency])
-        };
-        let Argument::Result(created) = call(&mut b, self.presale, module, "finalize", types.clone(), args) else {
+        let Argument::Result(created) =
+            call(&mut b, self.presale, "blast_presale", "finalize", pair.clone(), vec![init, version, currency])
+        else {
             unreachable!()
         };
-        if ticket.is_some() {
-            call(&mut b, self.presale, "aftermath", "share", types, vec![Argument::NestedResult(created, 2), version]);
-        }
         let clock = self.clock(&mut b)?;
         let start = b.pure(0u64)?;
         call(&mut b, self.presale, "blast_presale", "share", pair, vec![Argument::NestedResult(created, 0), version, start, clock]);
@@ -1295,7 +1312,8 @@ impl World {
         let state = self.sale_state(&sale)?;
         ensure!(state.lifecycle == Lifecycle::Open && state.presale_cap_id == sale.cap);
         ensure!((state.protocol_quote, state.protocol_tokens) == (0, 0), "a zero-rate policy reserves Blast nothing");
-        ensure!(state.migration_witness.ends_with(&format!("::{}::Witness", self.route.module())));
+        ensure!(state.venue.ends_with(&format!("::{}::Venue", self.route.module())), "the sale records its venue");
+        ensure!(state.fee_split == initial_split(), "the sale records its vault's fee split");
         let tiers: Vec<PoolTierReserved> = self.events(&created, "venue_config", "PoolTierReserved");
         ensure!(
             tiers.len() == 1 && (tiers[0].tick_spacing, tiers[0].pool_fee_rate) == self.route.tier(),
@@ -1322,7 +1340,7 @@ impl World {
             ensure!(*self.h.object(field.into()).owner() == Owner::ObjectOwner(self.venue_config.into()));
         }
         self.report(format!(
-            "{}::new at {:?}: sale {} LP {} recipients {:?}, raise {}{}",
+            "{}::prepare at {:?} then blast_presale::new: sale {} LP {} recipients {:?}, raise {}{}",
             self.route.module(),
             self.route.tier(),
             terms.sale_tokens(),
@@ -1371,6 +1389,12 @@ impl World {
         creation_fee: Option<u64>,
     ) -> Result<()> {
         let presale = self.shared(b, sale.presale, true)?;
+        let version = self.shared(b, self.version, false)?;
+        let fee_policy = self.shared(b, self.fee_policy, false)?;
+        let venue_config = self.shared(b, self.venue_config, false)?;
+        let registry = self.shared(b, self.vault_stack.registry, false)?;
+        let vault_version = self.shared(b, self.vault_stack.version, false)?;
+        let treasury = self.shared(b, self.treasury, false)?;
         let clock = self.clock(b)?;
         if self.route.is_cetus() {
             let (coin_a, coin_b) = order.unwrap_or_else(|| {
@@ -1379,12 +1403,15 @@ impl World {
             });
             let args = vec![
                 presale,
-                self.shared(b, self.version, false)?,
-                self.shared(b, self.fee_policy, false)?,
-                self.shared(b, self.venue_config, false)?,
+                version,
+                fee_policy,
+                venue_config,
                 self.shared(b, self.venue("cetus_global_config"), false)?,
                 self.shared(b, self.venue("cetus_pools"), true)?,
                 self.shared(b, self.venue("cetus_burn_manager"), true)?,
+                registry,
+                vault_version,
+                treasury,
                 clock,
             ];
             call(b, self.presale, "cetus", "migrate", vec![sale.meme.clone(), self.quote(), coin_a, coin_b], args);
@@ -1395,12 +1422,15 @@ impl World {
             };
             let args = vec![
                 presale,
-                self.shared(b, self.version, false)?,
-                self.shared(b, self.fee_policy, false)?,
-                self.shared(b, self.venue_config, false)?,
+                version,
+                fee_policy,
+                venue_config,
                 self.shared(b, sale.currency, false)?,
                 self.shared(b, self.quote_currency, false)?,
                 self.shared(b, self.venue("bluefin_global_config"), true)?,
+                registry,
+                vault_version,
+                treasury,
                 Argument::NestedResult(fee, 0),
                 clock,
             ];
@@ -1434,7 +1464,7 @@ impl World {
         self.migrate_command(&mut b, sale, None, None)?;
         let expected = Expected::Abort { package: self.presale, module: "blast_presale", code: INVALID_LIFECYCLE };
         self.h.assert_rolled_back(b.finish(), expected, &watched, &owners)?;
-        self.report("PTB [migrate (pool created, position sealed), migrate again]: EInvalidLifecycle, nothing committed".into());
+        self.report("PTB [migrate (pool created, vault shared), migrate again]: EInvalidLifecycle, nothing committed".into());
 
         if self.route.is_cetus() {
             let pool_pair = self.pool_pair(&sale.meme);
@@ -1496,7 +1526,7 @@ impl World {
             (migrated[0].liquidity_quote, migrated[0].liquidity_tokens, migrated[0].recipient_tokens) == (raise, lp, recipient_total),
             "the hand-off is the raise and the LP allocation"
         );
-        ensure!(migrated[0].migration_witness.ends_with(&format!("::{}::Witness", self.route.module())));
+        ensure!(migrated[0].venue.ends_with(&format!("::{}::Venue", self.route.module())));
         let allocated: Vec<RecipientAllocated> = self.events(&outcome, "blast_presale", "RecipientAllocated");
         ensure!(allocated.len() == terms.recipients.len());
         for (((recipient, _), amount), event) in terms.recipients.iter().zip(terms.recipient_tokens()).zip(&allocated) {
@@ -1505,9 +1535,10 @@ impl World {
             ensure!(outcome.coins_created_for(&self.h, recipient) == self.coins(&sale.meme, amount, 0));
         }
 
-        // The vault holds the position as a dynamic object field and the residuals.
-        let created: Vec<VaultCreated> = self.events(&outcome, "presale_vault", "VaultCreated");
-        ensure!(created.len() == 1 && created[0].presale_id == sale.presale);
+        // The vault holds the position as a dynamic object field and keeps the residuals for the
+        // sale's owner.
+        let created: Vec<VaultCreated> = self.vault_events(&outcome, "VaultCreated");
+        ensure!(created.len() == 1 && created[0].terms.origin == sale.presale);
         let created = &created[0];
         let venue_marker = outcome
             .events
@@ -1516,19 +1547,20 @@ impl World {
             .and_then(|event| event.type_.type_params.get(2).cloned())
             .context("vault venue marker")?;
         ensure!(venue_marker == self.presale_tag(self.route.module(), "Venue"), "venue marker {venue_marker}");
+        let terms_sealed = &created.terms;
+        ensure!(terms_sealed.package_witness.ends_with("::blast_presale::PackageWitness"), "{}", terms_sealed.package_witness);
         ensure!(
-            created.fee_recipients == vec![SuiAddress::from(CREATOR), FEE_B.into()]
-                && created.fee_recipient_bps == FEE_BPS.to_vec()
-                && created.holder_rewards_bps == HOLDER_REWARDS_BPS
-                && (created.protocol_lp_fee_meme_bps, created.protocol_lp_fee_quote_bps) == (0, 0)
+            terms_sealed.fee_split == initial_split()
+                && (terms_sealed.protocol_meme_bps, terms_sealed.protocol_quote_bps) == (0, 0)
+                && terms_sealed.partner_id.is_none()
+                && terms_sealed.residuals == ResidualPolicy::Owner
         );
-        self.projected_fee_weights = [created.fee_recipient_bps[0], created.fee_recipient_bps[1], created.holder_rewards_bps];
-        let residual = (created.migration_meme_residual, created.migration_quote_residual);
+        let residual = (created.residual_meme_amount, created.residual_quote_amount);
         let m = Migration {
             pool: created.pool_id,
             vault: created.vault_id,
             position: created.position_id,
-            liquidity: created.position_liquidity,
+            liquidity: created.liquidity,
             supplied: (lp - residual.0, raise - residual.1),
             residual,
         };
@@ -1547,9 +1579,11 @@ impl World {
         ensure!(pool_types == self.pool_pair(&sale.meme), "the pool stores the exact coin A/B order");
         let vault = self.vault(&m)?;
         ensure!(
-            (vault.presale_id, vault.presale_cap_id, vault.pool_id) == (sale.presale, sale.cap, m.pool)
-                && (vault.migration_meme_residual, vault.migration_quote_residual) == residual
-                && (vault.holder_rewards_quote, vault.next_round) == (0, 0)
+            vault.terms == *terms_sealed
+                && vault.pool_id == m.pool
+                && (vault.owner_meme, vault.owner_quote) == residual
+                && (vault.rewards_quote, vault.next_round) == (0, 0)
+                && (vault.protocol.meme, vault.protocol.quote, vault.protocol.sui) == (0, 0, 0)
         );
         let Owner::ObjectOwner(field) = self.h.object(m.position).owner().clone() else {
             bail!("position is not a child")
@@ -1557,7 +1591,7 @@ impl World {
         ensure!(*self.h.object(field.into()).owner() == Owner::ObjectOwner(m.vault.into()));
         let field_type = self.h.object(field.into()).data.try_as_move().context("field")?.type_().to_string();
         ensure!(
-            field_type.contains("::presale_vault::PositionKey<")
+            field_type.contains("::vault::PositionKey<")
                 && field_type.contains(&format!("::{}::Venue", self.route.module())),
             "{field_type}"
         );
@@ -1755,38 +1789,39 @@ impl World {
 
     fn collect_route_pt(&self, sale: &Sale, m: &Migration, pool: ObjectID, apply: bool) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
-        let vault = self.shared(&mut b, m.vault, true)?;
+        let mut args = vec![
+            self.shared(&mut b, m.vault, true)?,
+            self.shared(&mut b, self.version, false)?,
+            self.shared(&mut b, self.vault_stack.version, false)?,
+            self.shared(&mut b, self.treasury, false)?,
+            self.shared(&mut b, sale.currency, true)?,
+        ];
+        let function = if apply { "settle_and_apply_fee_split" } else { "collect_fees" };
         if self.route.is_cetus() {
-            let mut args = vec![
-                vault,
-                self.shared(&mut b, self.version, false)?,
-                self.shared(&mut b, self.fee_policy, false)?,
+            args.extend([
                 self.shared(&mut b, self.venue("cetus_global_config"), false)?,
                 self.shared(&mut b, self.venue("cetus_burn_manager"), false)?,
                 self.shared(&mut b, pool, true)?,
-            ];
+            ]);
             let mut types = self.pair(sale);
             types.extend(self.pool_pair(&sale.meme));
             if apply { args.push(self.clock(&mut b)?); }
-            call(&mut b, self.presale, "cetus", if apply { "settle_and_apply_fee_split" } else { "collect_fees" }, types, args);
+            call(&mut b, self.presale, "cetus", function, types, args);
         } else {
-            let args = vec![
-                vault,
-                self.shared(&mut b, self.version, false)?,
-                self.shared(&mut b, self.fee_policy, false)?,
+            args.extend([
                 self.shared(&mut b, self.venue("bluefin_global_config"), false)?,
                 self.shared(&mut b, pool, true)?,
                 self.clock(&mut b)?,
-            ];
-            call(&mut b, self.presale, "bluefin", if apply { "settle_and_apply_fee_split" } else { "collect_fees" }, self.pair(sale), args);
+            ]);
+            call(&mut b, self.presale, "bluefin", function, self.pair(sale), args);
         }
 
         Ok(b.finish())
     }
 
     /// A permissionless collection: the gross is exactly what the venue paid the vault's
-    /// position, every fee recipient is paid its apportioned share, and the rest grows the vault's
-    /// holder Quote balance and pays holder Meme to the treasury.
+    /// position, each address route is paid its apportioned share, and the holder-reward route
+    /// grows the vault's reward balances.
     fn collect(&mut self, sale: &Sale, m: &Migration) -> Result<FeesCollected> {
         self.collect_impl(sale, m, false)
     }
@@ -1808,110 +1843,96 @@ impl World {
         };
         let (gross_meme, gross_quote) =
             if self.route.meme_is_a() { (venue_a, venue_b) } else { (venue_b, venue_a) };
-        let fees: Vec<FeesCollected> = self.events(&outcome, "presale_vault", "FeesCollected");
+        let fees: Vec<FeesCollected> = self.vault_events(&outcome, "FeesCollected");
         ensure!(fees.len() == 1, "one FeesCollected");
         let fees = fees[0].clone();
         ensure!(fees.vault_id == m.vault && (fees.gross_meme, fees.gross_quote) == (gross_meme, gross_quote));
-        let treasury = self.h.sender;
-        // Publication selected this treasury; the zero-rate policy takes no Blast share.
-        ensure!(
-            (fees.protocol_destination, fees.protocol_meme, fees.protocol_quote)
-                == (Some(treasury), 0, 0),
-            "a zero-rate policy pays Blast nothing"
-        );
+        // The zero-rate policy sealed no Blast share into the vault's terms.
+        ensure!((fees.protocol_meme, fees.protocol_quote) == (0, 0), "a zero-rate policy pays Blast nothing");
 
-        let weights = self.projected_fee_weights;
+        // Collection runs under the split applied before it, even when it applies a new one.
+        ensure!(before.fee_split.value == self.split, "the oracle tracks the applied split");
+        let weights: Vec<u64> = self.split.routes.iter().map(|route| route.bps).collect();
         let meme = apportion(&weights, gross_meme);
         let quote = apportion(&weights, gross_quote);
-        ensure!(
-            fees.fee_recipient_meme == meme[..2] && fees.fee_recipient_quote == quote[..2]
-                && (fees.holder_rewards_meme, fees.holder_rewards_quote) == (meme[2], quote[2]),
-            "FeesCollected {fees:?} is the exact apportionment"
-        );
-        for (i, recipient) in [CREATOR, FEE_B].into_iter().enumerate() {
-            ensure!(
-                outcome.coins_created_for(&self.h, recipient.into()) == self.coins(&sale.meme, meme[i], quote[i]),
-                "{recipient} paid"
-            );
+        ensure!(fees.route_meme == meme && fees.route_quote == quote, "FeesCollected {fees:?} is the exact apportionment");
+        let mut rewards = (0, 0);
+        for (i, route) in self.split.routes.iter().enumerate() {
+            match route.destination {
+                Destination::Address(recipient) => ensure!(
+                    outcome.coins_created_for(&self.h, recipient) == self.coins(&sale.meme, meme[i], quote[i]),
+                    "{recipient} paid"
+                ),
+                Destination::HolderRewards => rewards = (meme[i], quote[i]),
+                _ => bail!("the fixture split routes only to addresses and holder rewards"),
+            }
         }
+        ensure!(outcome.coins_created_for(&self.h, self.h.sender).is_empty(), "nothing is paid to the sender");
         let after = self.vault(m)?;
         ensure!(
-            after.holder_rewards_quote == before.holder_rewards_quote + fees.holder_rewards_quote,
-            "holder Quote accrues in the vault; holder Meme is paid to the treasury"
-        );
-        ensure!(
-            outcome.coins_created_for(&self.h, treasury)
-                == self.coins(&sale.meme, fees.holder_rewards_meme, 0),
-            "holder Meme paid exactly to the treasury"
+            (after.rewards_meme, after.rewards_quote) == (before.rewards_meme + rewards.0, before.rewards_quote + rewards.1),
+            "the holder-reward route accrues in the vault"
         );
         if apply {
-            let changes: Vec<DelayedApplied<(Vec<RecipientShare>, u64)>> =
-                outcome.delayed("DelayedApplied", "presale_vault", "FeeSplitKey")?;
+            let changes: Vec<DelayedApplied<FeeSplit>> = outcome.delayed("DelayedApplied", "vault", "FeeSplitKey")?;
             ensure!(changes.len() == 1 && changes[0].owner == m.vault);
             ensure!(changes[0].previous_value == before.fee_split.value && changes[0].value == after.fee_split.value);
             ensure!(changes[0].delay_ms == after.fee_split.delay_ms && after.fee_split.pending.is_none());
-            let (recipients, holders) = &changes[0].value;
-            self.projected_fee_weights = [recipients[0].bps, recipients[1].bps, *holders];
+            self.split = after.fee_split.value.clone();
+        } else {
+            ensure!(after.fee_split == before.fee_split);
         }
-        ensure!(after.holder_rewards_quote > before.holder_rewards_quote);
-        ensure!(
-            (after.migration_meme_residual, after.migration_quote_residual)
-                == (before.migration_meme_residual, before.migration_quote_residual)
-        );
+        ensure!(after.rewards_quote > before.rewards_quote);
+        ensure!((after.owner_meme, after.owner_quote) == (before.owner_meme, before.owner_quote), "the residuals wait");
         ensure!(self.position_liquidity(m.position)? == m.liquidity, "collection keeps the liquidity");
 
         Ok(fees)
     }
 
-    fn schedule_split_pt(&self, sale: &Sale, m: &Migration, next_delay: u64) -> Result<ProgrammableTransaction> {
+    /// The owner proposes `split` with an owner proof; the vault's notice is fixed.
+    fn schedule_split_pt(&self, sale: &Sale, m: &Migration, split: &FeeSplit) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
-        let mut recipients = Vec::new();
-        for (recipient, share) in [(CREATOR, 3_000), (FEE_B, 2_000)] {
-            let args = vec![b.pure(SuiAddress::from(recipient))?, self.bps(&mut b, share)?];
-            recipients.push(call(&mut b, self.presale, "blast_presale", "recipient_share", vec![], args));
-        }
-        let recipient_type = self.presale_tag("blast_presale", "RecipientShare");
-        let recipients = b.command(Command::make_move_vec(Some(recipient_type), recipients));
-        let holder = self.bps(&mut b, 5_000)?;
-        let split = call(&mut b, self.presale, "blast_presale", "fee_split", vec![], vec![recipients, holder]);
-        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?,
-            b.obj(self.h.owned(sale.cap))?, split, b.pure(next_delay)?, self.clock(&mut b)?];
-        call(&mut b, self.presale, "presale_vault", "schedule_fee_split", self.pair(sale), args);
+        let proof = self.prove_owner(&mut b, sale)?;
+        let args = vec![self.shared(&mut b, m.vault, true)?, proof, self.shared(&mut b, self.vault_stack.version, false)?,
+            split.arg(&mut b, self.core)?, self.clock(&mut b)?];
+        call(&mut b, self.vault_stack.package, "vault", "schedule_fee_split", self.pair(sale), args);
         Ok(b.finish())
     }
 
     fn delayed_fee_split(&mut self, sale: &Sale, m: &Migration, terms: &Terms) -> Result<()> {
         let old = self.vault(m)?.fee_split;
-        let pt = self.schedule_split_pt(sale, m, 0)?;
+        let pt = self.schedule_split_pt(sale, m, &next_split())?;
         let scheduled = self.h.execute(pt)?;
         scheduled.assert_success();
-        ensure!(self.vault(m)?.fee_split.value == old.value, "scheduling retains the old recipients");
+        let pending = self.vault(m)?.fee_split;
+        ensure!(pending.value == old.value, "scheduling retains the old routes");
+        ensure!(pending.pending.as_ref().is_some_and(|p| p.value == next_split() && p.delay_ms == VAULT_FEE_NOTICE_MS));
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
-        let watched = [m.vault, m.pool];
+        let watched = [m.vault, m.pool, sale.currency];
         self.set_pause_generation_for_fixture(2)?;
         let stale = self.collect_route_pt(sale, m, m.pool, true)?;
         self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "operational_version", code: 9}, &watched, &owners)?;
         self.set_pause_generation_for_fixture(1)?;
         let early = self.collect_route_pt(sale, m, m.pool, true)?;
         self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 17}, &watched, &owners)?;
-        // An Aftermath endpoint cannot bypass collectible position settlement.
-        let mut b = ProgrammableTransactionBuilder::new();
-        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?, self.clock(&mut b)?];
-        call(&mut b, self.presale, "aftermath", "apply_fee_split", self.pair(sale), args);
-        self.h.assert_rolled_back(b.finish(), Expected::Abort {package: self.presale, module: "aftermath", code: NOT_AFTERMATH_VAULT}, &watched, &owners)?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(old.delay_ms));
+        // An Aftermath endpoint cannot apply a ready split without settling this venue's position.
+        let mut b = ProgrammableTransactionBuilder::new();
+        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?,
+            self.shared(&mut b, self.vault_stack.version, false)?, self.clock(&mut b)?];
+        call(&mut b, self.presale, "aftermath", "apply_fee_split", self.pair(sale), args);
+        self.h.assert_rolled_back(b.finish(), Expected::Abort {package: self.vault_stack.package, module: "vault", code: WRONG_VENUE}, &watched, &owners)?;
         self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
         self.swap(sale, m, Side::MemeIn, terms.lp_tokens() / 100)?;
         let mut rollback = self.collect_route_pt(sale, m, m.pool, true)?;
         rollback.commands.push(rollback.commands.last().expect("apply").clone());
         self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 18}, &watched, &owners)?;
-        self.collect_impl(sale, m, true)?; // Existing payout oracle uses the OLD split.
+        self.collect_impl(sale, m, true)?; // Settles under the OLD split, then applies the new one.
         let active = self.vault(m)?.fee_split;
-        ensure!(active.value.0[0].bps == 3_000 && active.value.0[1].bps == 2_000 && active.value.1 == 5_000);
-        ensure!(active.delay_ms == 0 && active.pending.is_none());
+        ensure!(active.value == next_split() && active.delay_ms == VAULT_FEE_NOTICE_MS && active.pending.is_none());
         self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
-        self.collect(sale, m)?; // The same oracle now reads the explicitly applied split.
-        self.report("48-hour creator split: early apply and wrong-venue Aftermath rejected; later PTB abort restores fees/proposal; settled apply pays old recipients; next collection uses new split".into());
+        self.collect(sale, m)?; // The same oracle now reads the applied split.
+        self.report("48-hour owner-proved split: early apply and wrong-venue Aftermath rejected; later PTB abort restores fees/proposal; settled apply pays old routes; next collection uses new split".into());
         Ok(())
     }
 
@@ -1991,41 +2012,54 @@ impl World {
         let expected = Expected::Abort { package: self.presale, module: self.route.module(), code };
         let pt = self.collect_pt(sale, m, other)?;
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
-        self.h.assert_rolled_back(pt, expected, &[m.vault, other], &owners)?;
-        let schedule = self.schedule_split_pt(sale, m, 25)?;
-        self.h.execute(schedule)?.assert_success(); // Applied notice is now zero; delay-only proposal is ready.
+        self.h.assert_rolled_back(pt, expected, &[m.vault, other, sale.currency], &owners)?;
+        // Proposing the applied split is refused as unchanged, so propose one basis point moved.
+        let mut moved = next_split();
+        moved.routes[0].bps -= 1;
+        moved.routes[1].bps += 1;
+        let schedule = self.schedule_split_pt(sale, m, &moved)?;
+        self.h.execute(schedule)?.assert_success();
+        self.h.sim.advance_clock(std::time::Duration::from_millis(VAULT_FEE_NOTICE_MS));
         let ready_wrong_pool = self.collect_route_pt(sale, m, other, true)?;
-        self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.presale, module: self.route.module(), code}, &[m.vault, other], &owners)?;
+        self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.presale, module: self.route.module(), code}, &[m.vault, other, sale.currency], &owners)?;
         let mut b = ProgrammableTransactionBuilder::new();
-        let args = vec![self.shared(&mut b, m.vault, true)?, self.shared(&mut b, self.version, false)?, b.obj(self.h.owned(sale.cap))?];
-        call(&mut b, self.presale, "presale_vault", "cancel_fee_split", self.pair(sale), args);
+        let proof = self.prove_owner(&mut b, sale)?;
+        let args = vec![self.shared(&mut b, m.vault, true)?, proof, self.shared(&mut b, self.vault_stack.version, false)?];
+        call(&mut b, self.vault_stack.package, "vault", "cancel_fee_split", self.pair(sale), args);
         self.h.execute(b.finish())?.assert_success();
         self.report(format!("collect_fees against another pool {other} of the same type: EPositionPoolMismatch, rolled back"));
 
         Ok(())
     }
 
-    /// The creator claims the residuals the venue did not take with its `PresaleCap`.
+    /// The owner claims the residuals the venue did not take, which the vault holds as its owner
+    /// balances, with an owner proof from the `PresaleCap`.
     fn claim_residuals(&mut self, sale: &Sale, m: &Migration) -> Result<()> {
         let mut b = ProgrammableTransactionBuilder::new();
+        let proof = self.prove_owner(&mut b, sale)?;
         let vault = self.shared(&mut b, m.vault, true)?;
-        let cap = b.obj(self.h.owned(sale.cap))?;
-        let version = self.shared(&mut b, self.version, false)?;
+        let vault_version = self.shared(&mut b, self.vault_stack.version, false)?;
         let Argument::Result(claimed) = call(
             &mut b,
-            self.presale,
-            "presale_vault",
-            "claim_migration_residuals",
+            self.vault_stack.package,
+            "vault",
+            "claim_owner_balances",
             self.pair(sale),
-            vec![vault, version, cap],
+            vec![vault, proof, vault_version],
         ) else {
             unreachable!()
         };
         b.transfer_args(self.h.sender, vec![Argument::NestedResult(claimed, 0), Argument::NestedResult(claimed, 1)]);
+        if m.residual == (0, 0) {
+            let expected = Expected::Abort { package: self.vault_stack.package, module: "vault", code: NOTHING_TO_CLAIM };
+            self.h.assert_rolled_back(b.finish(), expected, &[m.vault, sale.cap], &[self.h.sender])?;
+            self.report("claim_owner_balances with no residuals: nothing_to_claim, rolled back".into());
+            return Ok(());
+        }
         let outcome = self.h.execute(b.finish())?;
         outcome.assert_success();
-        let claimed: Vec<ResidualsClaimed> = self.events(&outcome, "presale_vault", "MigrationResidualsClaimed");
-        ensure!(claimed.len() == 1 && (claimed[0].meme, claimed[0].quote) == m.residual);
+        let claimed: Vec<OwnerBalancesClaimed> = self.vault_events(&outcome, "OwnerBalancesClaimed");
+        ensure!(claimed.len() == 1 && claimed[0].vault_id == m.vault && (claimed[0].meme_amount, claimed[0].quote_amount) == m.residual);
         let mut coins = vec![
             (sale.meme.to_canonical_string(true), m.residual.0),
             (self.quote().to_canonical_string(true), m.residual.1),
@@ -2033,8 +2067,8 @@ impl World {
         coins.sort();
         ensure!(outcome.coins_created_for(&self.h, self.h.sender) == coins, "both coins, a zero one included");
         let vault = self.vault(m)?;
-        ensure!((vault.migration_meme_residual, vault.migration_quote_residual) == (0, 0));
-        self.report(format!("claim_migration_residuals with the PresaleCap: {:?}", m.residual));
+        ensure!((vault.owner_meme, vault.owner_quote) == (0, 0));
+        self.report(format!("claim_owner_balances with a PresaleCap owner proof: residuals {:?}", m.residual));
 
         Ok(())
     }
@@ -2042,12 +2076,12 @@ impl World {
     /// A fresh token seeded at the near-equal amounts straight into the venue: fixing the larger
     /// side aborts in the venue, and fixing the smaller side succeeds, at the same price and range
     /// the presale migration uses.
-    fn larger_side_fix_aborts(&mut self, meme: u64, quote: u64) -> Result<(TypeTag, ObjectID, ObjectID)> {
+    fn larger_side_fix_aborts(&mut self, meme: u64, quote: u64) -> Result<()> {
         let (treasury_cap, _, token) = self.publish_token()?;
         let meme_is_a = self.route.meme_is_a();
         let larger_is_a = (meme > quote) == meme_is_a;
         let sqrt_price = expected_sqrt_price(meme, quote, meme_is_a);
-        let mut direct_position = None;
+        let mut direct_position = false;
         for fix_a in [larger_is_a, !larger_is_a] {
             let quote_id = self.mint(self.quote(), quote);
             let mut b = ProgrammableTransactionBuilder::new();
@@ -2146,7 +2180,7 @@ impl World {
                 let pools = outcome.created(&self.h, "pool", "Pool");
                 let positions = outcome.created(&self.h, "position", "Position");
                 ensure!(pools.len() == 1 && positions.len() == 1);
-                direct_position = Some((token.clone(), pools[0], positions[0]));
+                direct_position = true;
                 continue;
             }
             let (expected, watched) = if self.route.is_cetus() {
@@ -2166,80 +2200,29 @@ impl World {
             if self.route.is_cetus() { "Cetus factory 5: coin A below the amount the fixed coin B needs" } else { "Bluefin utils 1004 EInsufficientCoinBalance" },
         ));
 
-        direct_position.context("direct venue pool and position")
-    }
-
-    fn standalone_vault_pt(
-        &self,
-        meme: &TypeTag,
-        pool: ObjectID,
-        position: ObjectID,
-    ) -> Result<ProgrammableTransaction> {
-        let mut b = ProgrammableTransactionBuilder::new();
-        let split = self.initial_fee_split(&mut b)?;
-        let no_partner = call(&mut b, id("0x1"), "option", "none", vec![tag("0x2::object::ID")], vec![]);
-        let mut args = vec![
-            b.obj(self.h.owned(position))?,
-            self.shared(&mut b, self.version, false)?,
-            split,
-            no_partner,
-            self.shared(&mut b, self.creation_policy, false)?,
-            self.shared(&mut b, self.fee_policy, false)?,
-            self.shared(&mut b, pool, false)?,
-        ];
-        let mut types = vec![meme.clone(), self.quote()];
-        if self.route.is_cetus() {
-            types.extend(self.pool_pair(meme));
-            args.push(self.shared(&mut b, self.venue("cetus_burn_manager"), true)?);
-        }
-        args.push(self.clock(&mut b)?);
-        call(&mut b, self.presale, self.route.module(), "new_vault", types, args);
-        Ok(b.finish())
-    }
-
-    fn standalone_vault_rejects_wrong_pool_then_locks(
-        &mut self,
-        wrong_meme: &TypeTag,
-        wrong_pool: ObjectID,
-        meme: &TypeTag,
-        pool: ObjectID,
-        position: ObjectID,
-    ) -> Result<()> {
-        let wrong = self.standalone_vault_pt(wrong_meme, wrong_pool, position)?;
-        let code = POSITION_POOL_MISMATCH;
-        let mut watched = vec![wrong_pool, pool, position];
-        if self.route.is_cetus() {
-            watched.push(self.venue("cetus_burn_manager"));
-        }
-        self.h.assert_rolled_back(
-            wrong,
-            Expected::Abort { package: self.presale, module: self.route.module(), code },
-            &watched,
-            &[self.h.sender],
-        )?;
-
-        let correct = self.standalone_vault_pt(meme, pool, position)?;
-        let outcome = self.h.execute(correct)?;
-        outcome.assert_success();
-        let vaults: Vec<VaultCreated> = self.events(&outcome, "presale_vault", "VaultCreated");
-        ensure!(vaults.len() == 1);
-        let vault = &vaults[0];
-        ensure!(vault.presale_id == ObjectID::ZERO && vault.pool_id == pool && vault.position_liquidity > 0);
-        ensure!(self.h.object(vault.vault_id).is_shared());
-        if self.route.is_cetus() {
-            ensure!(outcome.effects.wrapped().iter().any(|object| object.0 == position));
-            let proof: BurnProof = bcs::from_bytes(&self.h.contents(vault.position_id))?;
-            ensure!((proof.position.id, proof.position.pool) == (position, pool));
-        } else {
-            ensure!(vault.position_id == position);
-        }
-        let Owner::ObjectOwner(field) = self.h.object(vault.position_id).owner().clone() else {
-            bail!("vault position is not a child object");
-        };
-        ensure!(*self.h.object(field.into()).owner() == Owner::ObjectOwner(vault.vault_id.into()));
+        ensure!(direct_position, "the direct venue pool and position");
         Ok(())
     }
+}
 
+// === Fee splits ===
+
+/// The vault's starting split: the creator's and a second address route, then holder rewards.
+fn initial_split() -> FeeSplit {
+    FeeSplit::new([
+        (Destination::Address(CREATOR.into()), FEE_BPS[0]),
+        (Destination::Address(FEE_B.into()), FEE_BPS[1]),
+        (Destination::HolderRewards, HOLDER_REWARDS_BPS),
+    ])
+}
+
+/// The split the owner proposes.
+fn next_split() -> FeeSplit {
+    FeeSplit::new([
+        (Destination::Address(CREATOR.into()), 3_000),
+        (Destination::Address(FEE_B.into()), 2_000),
+        (Destination::HolderRewards, 5_000),
+    ])
 }
 
 // === Presale object and event mirrors (BCS field order) ===
@@ -2257,14 +2240,6 @@ enum Lifecycle {
 enum Eligibility {
     Open { wallet_cap: u64, max_participants: u64, min_commitment: u64 },
     Allowlisted { root: Vec<u8>, leaf_count: u64 },
-}
-
-/// Mirrors `blast_presale::blast_presale::RecipientShare`.
-#[derive(Debug, Deserialize, PartialEq)]
-struct RecipientShare {
-    recipient: SuiAddress,
-    bps: u64,
-    vesting: Option<VestingTerms>,
 }
 
 /// Mirrors `blast_presale::blast_presale::VestingTerms`.
@@ -2303,9 +2278,8 @@ struct PresaleState {
     eligibility: Eligibility,
     _uncapped: Option<UncappedPhase>,
     _hard_cap: Option<(u64, bool)>,
-    migration_witness: String,
-    fee_recipients: Vec<RecipientShare>,
-    holder_rewards_bps: u64,
+    venue: String,
+    fee_split: FeeSplit,
     total_commitments: u64,
     participants: u64,
     quote: u64,
@@ -2332,21 +2306,52 @@ struct ProtocolFees {
     _lp_fee_quote_bps: u64,
 }
 
-/// Mirrors `blast_presale::presale_vault::Vault`.
+/// Mirrors `blast_core::migration::ResidualPolicy`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+enum ResidualPolicy {
+    Protocol,
+    Owner,
+}
+
+/// Mirrors `blast_core::migration::VaultTerms`; each `Bps` is one `u64`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+struct VaultTerms {
+    origin: ObjectID,
+    package_witness: String,
+    fee_split: FeeSplit,
+    protocol_meme_bps: u64,
+    protocol_quote_bps: u64,
+    partner_id: Option<ObjectID>,
+    residuals: ResidualPolicy,
+}
+
+/// Mirrors `blast_core::protocol_fees::Ledger`; each `Balance` is one `u64`.
+#[derive(Debug, Deserialize)]
+struct Ledger {
+    _package_witness: String,
+    _origin: ObjectID,
+    _partner_id: Option<ObjectID>,
+    meme: u64,
+    quote: u64,
+    sui: u64,
+}
+
+/// Mirrors `blast_vault::vault::Vault`; each `Balance` is one `u64`.
 #[derive(Debug, Deserialize)]
 struct VaultState {
     _id: ObjectID,
-    presale_id: ObjectID,
-    presale_cap_id: ObjectID,
+    terms: VaultTerms,
     pool_id: ObjectID,
-    fee_split: Delayed<(Vec<RecipientShare>, u64)>,
-    _protocol_fees: Delayed<ProtocolFees>,
-    _partner_id: Option<ObjectID>,
-    _unpaid_protocol_meme: u64,
-    _unpaid_protocol_quote: u64,
-    migration_meme_residual: u64,
-    migration_quote_residual: u64,
-    holder_rewards_quote: u64,
+    fee_split: Delayed<FeeSplit>,
+    _protocol_bps: Delayed<(u64, u64)>,
+    protocol: Ledger,
+    owner_meme: u64,
+    owner_quote: u64,
+    _auto_lp_meme: u64,
+    _auto_lp_quote: u64,
+    rewards_meme: u64,
+    rewards_quote: u64,
+    _burn_quote: u64,
     next_round: u64,
     _last_checkpoint: Option<u64>,
     _round_publication: DelayedAction<RoundTerms>,
@@ -2356,6 +2361,11 @@ struct VaultState {
 struct PoolTierReserved {
     tick_spacing: u32,
     pool_fee_rate: u64,
+}
+
+#[derive(Deserialize)]
+struct PoolCreationReserved {
+    create_pool_cap_id: ObjectID,
 }
 
 #[derive(Deserialize)]
@@ -2372,7 +2382,7 @@ struct PresaleFunded {
 #[derive(Deserialize)]
 struct PresaleMigrated {
     presale_id: ObjectID,
-    migration_witness: String,
+    venue: String,
     liquidity_quote: u64,
     liquidity_tokens: u64,
     recipient_tokens: u64,
@@ -2397,6 +2407,8 @@ struct Claimed {
     vesting_id: Option<ObjectID>,
 }
 
+/// Mirrors `blast_presale::aftermath::DaoFeePoolCreated`: the vault, the AMM pool, the DAO-fee
+/// pool, its owner cap, and the LP coin.
 #[derive(Clone, Copy, Deserialize)]
 struct DaoFeePoolCreated {
     vault: ObjectID,
@@ -2406,49 +2418,43 @@ struct DaoFeePoolCreated {
     lp_coin: ObjectID,
 }
 
+/// Mirrors `blast_vault::blast_vault_events::VaultCreated<Meme, Quote, Venue>`.
 #[derive(Deserialize)]
 struct VaultCreated {
     vault_id: ObjectID,
-    presale_id: ObjectID,
     pool_id: ObjectID,
     position_id: ObjectID,
-    position_liquidity: u128,
-    fee_recipients: Vec<SuiAddress>,
-    fee_recipient_bps: Vec<u64>,
-    holder_rewards_bps: u64,
-    protocol_lp_fee_meme_bps: u64,
-    protocol_lp_fee_quote_bps: u64,
-    migration_meme_residual: u64,
-    migration_quote_residual: u64,
+    liquidity: u128,
+    terms: VaultTerms,
+    residual_meme_amount: u64,
+    residual_quote_amount: u64,
 }
 
+/// Mirrors `blast_vault::blast_vault_events::FeesCollected<Meme, Quote>`: route amounts follow
+/// the vault's split.
 #[derive(Clone, Debug, Deserialize)]
 struct FeesCollected {
     vault_id: ObjectID,
     gross_meme: u64,
     gross_quote: u64,
-    /// None when a partnered vault holds Blast's LP fees for the partner payout.
-    protocol_destination: Option<SuiAddress>,
     protocol_meme: u64,
     protocol_quote: u64,
-    fee_recipient_meme: Vec<u64>,
-    fee_recipient_quote: Vec<u64>,
-    holder_rewards_meme: u64,
-    holder_rewards_quote: u64,
+    route_meme: Vec<u64>,
+    route_quote: Vec<u64>,
 }
 
 impl FeesCollected {
     fn line(&self) -> String {
         format!(
-            "gross=({}, {}) recipients=({:?}, {:?}) holder rewards=({}, {})",
-            self.gross_meme, self.gross_quote, self.fee_recipient_meme, self.fee_recipient_quote, self.holder_rewards_meme, self.holder_rewards_quote,
+            "gross=({}, {}) protocol=({}, {}) routes=({:?}, {:?})",
+            self.gross_meme, self.gross_quote, self.protocol_meme, self.protocol_quote, self.route_meme, self.route_quote,
         )
     }
 }
 
 #[derive(Deserialize)]
-struct ResidualsClaimed {
-    _vault_id: ObjectID,
-    meme: u64,
-    quote: u64,
+struct OwnerBalancesClaimed {
+    vault_id: ObjectID,
+    meme_amount: u64,
+    quote_amount: u64,
 }

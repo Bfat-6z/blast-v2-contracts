@@ -5,10 +5,10 @@ cd "$(dirname "$0")/.."
 fixture_backup=$(mktemp -d)
 find sui -name Published.toml -not -path "*/interfaces/*" -not -path "*/build/*" -print > "$fixture_backup/publications"
 tar -T "$fixture_backup/publications" -cf "$fixture_backup/publications.tar"
-for pkg in launchpad presale migrators; do cp "sui/$pkg/Move.toml" "$fixture_backup/$pkg.toml"; done
+for pkg in core launchpad presale migrators; do cp "sui/$pkg/Move.toml" "$fixture_backup/$pkg.toml"; done
 find sui -name Move.lock -not -path '*/build/*' -print0 | tar --null -T - -cf "$fixture_backup/locks.tar"
 restore_source() {
- for pkg in launchpad presale migrators; do cp "$fixture_backup/$pkg.toml" "sui/$pkg/Move.toml"; done
+ for pkg in core launchpad presale migrators; do cp "$fixture_backup/$pkg.toml" "sui/$pkg/Move.toml"; done
  tar -xf "$fixture_backup/locks.tar"
  tar -xf "$fixture_backup/publications.tar"
  rm -rf "$fixture_backup"
@@ -19,9 +19,9 @@ trap 'exit 143' TERM
 while IFS= read -r publication; do rm "$publication"; done < "$fixture_backup/publications"
 python3 - <<'PY'
 from pathlib import Path
-for package, key in [('launchpad', 'blast_treasury'), ('presale', 'blast_treasury'), ('migrators', 'blast_lp_fee_destination')]:
+for package in ['core', 'launchpad', 'presale', 'migrators']:
     p = Path(f'sui/{package}/Move.toml')
-    s = p.read_text().replace(f'{key} = "0x0"', f'{key} = "0xa"')
+    s = p.read_text().replace('blast_treasury = "0x0"', 'blast_treasury = "0xa"')
     # Native upgrade-cap fixtures require a nonzero package identity.
     if package == 'launchpad':
         s = s.replace('blast_fun = "0x0"', 'blast_fun = "0xc"')

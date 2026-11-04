@@ -3,7 +3,7 @@
 
 // Package error macros preserve the allocation owner's abort location.
 #[allow(lint(abort_without_constant))]
-/// Migration allocation plans, LP-fee splits, and their exact apportionment.
+/// Migration allocation plans and their exact apportionment.
 module blast_fun::allocation;
 
 // === Public Types ===
@@ -30,23 +30,6 @@ public struct AllocationPlan has copy, drop, store {
 public struct ProtocolAllocation has copy, drop, store {
     meme_bps: Bps,
     quote_bps: Bps,
-}
-
-/// One LP-fee recipient and its share.
-public struct Route has copy, drop, store {
-    destination: address,
-    bps: Bps,
-}
-
-/// The creator's split of every LP-fee collection after Blast's share, applied to both assets.
-/// The burn part's Meme is burned at collection and its Quote buys Meme back to burn. The parts
-/// sum to 10,000.
-public struct FeeSplit has copy, drop, store {
-    creator_bps: Bps,
-    auto_lp_bps: Bps,
-    rewards_bps: Bps,
-    burn_bps: Bps,
-    recipients: vector<Route>,
 }
 
 // === Public Functions ===
@@ -78,52 +61,6 @@ public fun plan(
         protocol_quote_bps: bps::new(0),
         recipients,
     }
-}
-
-public fun route(destination: address, bps: Bps): Route {
-    assert!(destination != @0x0, blast_fun::errors::invalid_destination!());
-
-    Route { destination, bps }
-}
-
-public fun fee_split(
-    creator_bps: Bps,
-    auto_lp_bps: Bps,
-    rewards_bps: Bps,
-    burn_bps: Bps,
-    recipients: vector<Route>,
-): FeeSplit {
-    assert!(
-        recipients.length() <= constants::max_recipients!(),
-        blast_fun::errors::recipient_capacity_reached!(),
-    );
-    recipients.do_ref!(|route| assert!(
-        recipients.count!(|other| other.destination == route.destination) == 1,
-        blast_fun::errors::duplicate_destination!(),
-    ));
-    assert!(
-        recipients.fold!(
-            creator_bps.value() + auto_lp_bps.value() + rewards_bps.value() + burn_bps.value(),
-            |sum, route| sum + route.bps.value(),
-        ) == constants::basis_points_denominator!(),
-        blast_fun::errors::invalid_shares!(),
-    );
-
-    FeeSplit { creator_bps, auto_lp_bps, rewards_bps, burn_bps, recipients }
-}
-
-public fun recipients(self: &FeeSplit): &vector<Route> { &self.recipients }
-
-public fun destination(self: &Route): address { self.destination }
-
-/// Splits `total` into the creator, auto-LP, rewards, burn, and per-recipient amounts, exactly.
-public fun apportion_fee_split(self: &FeeSplit, total: u64): (u64, u64, u64, u64, vector<u64>) {
-    let mut bps = vector[self.creator_bps, self.auto_lp_bps, self.rewards_bps, self.burn_bps];
-    bps.append(self.recipients.map_ref!(|route| route.bps));
-    let amounts = apportion(bps, total, option::none());
-    let recipients = vector::tabulate!(amounts.length() - 4, |i| amounts[i + 4]);
-
-    (amounts[0], amounts[1], amounts[2], amounts[3], recipients)
 }
 
 // === Package Functions ===
@@ -179,7 +116,7 @@ public(package) fun apportion_meme(
 ): (u64, u64, u64, vector<u64>) {
     let mut bps = vector[self.curve_meme_bps, self.lp_meme_bps, self.protocol_meme_bps];
     bps.append(self.recipients.map_ref!(|recipient| recipient.meme_bps));
-    let amounts = apportion(bps, supply, option::some(2));
+    let amounts = bps::apportion(bps, supply, option::some(2));
     let recipients = vector::tabulate!(amounts.length() - 3, |i| amounts[i + 3]);
 
     (amounts[0], amounts[1], amounts[2], recipients)
@@ -193,7 +130,7 @@ public(package) fun apportion_quote(
 ): (u64, u64, vector<u64>) {
     let mut bps = vector[self.lp_quote_bps, self.protocol_quote_bps];
     bps.append(self.recipients.map_ref!(|recipient| recipient.quote_bps));
-    let amounts = apportion(bps, reserve, option::some(1));
+    let amounts = bps::apportion(bps, reserve, option::some(1));
     let recipients = vector::tabulate!(amounts.length() - 2, |i| amounts[i + 2]);
 
     (amounts[0], amounts[1], recipients)
@@ -201,32 +138,6 @@ public(package) fun apportion_quote(
 
 public(package) fun destinations(self: &AllocationPlan): vector<address> {
     self.recipients.map_ref!(|recipient| recipient.destination)
-}
-
-// === Private Functions ===
-
-/// Largest-remainder apportionment of `total` over shares summing to 10,000: the `rounded_up` part
-/// takes its ceiling, every other part its floor, and the leftover units go one each to the largest
-/// remaining remainders, earlier parts first.
-fun apportion(bps: vector<Bps>, total: u64, rounded_up: Option<u64>): vector<u64> {
-    let denominator = constants::basis_points_denominator!() as u128;
-    let products = bps.map!(|share| (total as u128) * (share.value() as u128));
-    let mut amounts = vector::tabulate!(products.length(), |i| {
-        if (rounded_up.contains(&i)) products[i].div_ceil(denominator) as u64
-        else (products[i] / denominator) as u64
-    });
-
-    let mut order = vector::tabulate!(products.length(), |i| i)
-        .filter!(|i| !rounded_up.contains(i));
-    order.insertion_sort_by!(|a, b| {
-        let (remainder_a, remainder_b) = (products[*a] % denominator, products[*b] % denominator);
-        remainder_a > remainder_b || (remainder_a == remainder_b && *a <= *b)
-    });
-
-    let leftover = total - amounts.fold!(0, |sum, amount| sum + amount);
-    leftover.do!(|i| *&mut amounts[order[i]] = amounts[order[i]] + 1);
-
-    amounts
 }
 
 // === Test-Only Functions ===
@@ -249,21 +160,8 @@ public fun add_protocol_for_testing(
     self.add_protocol(protocol_allocation(meme_bps, quote_bps))
 }
 
-#[test_only]
-public fun creator_bps_for_testing(self: &FeeSplit): Bps { self.creator_bps }
-
-#[test_only]
-public fun auto_lp_bps_for_testing(self: &FeeSplit): Bps { self.auto_lp_bps }
-
-#[test_only]
-public fun rewards_bps_for_testing(self: &FeeSplit): Bps { self.rewards_bps }
-
-#[test_only]
-public fun burn_bps_for_testing(self: &FeeSplit): Bps { self.burn_bps }
-
-#[test_only]
-public fun route_bps_for_testing(self: &Route): u64 { self.bps.value() }
-
 // === Imports ===
 
-use blast_fun::{bps::{Self, Bps}, constants};
+use blast_core::bps::{Self, Bps};
+
+use blast_fun::constants;

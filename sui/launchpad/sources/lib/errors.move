@@ -8,277 +8,265 @@ module blast_fun::errors;
 // === Errors ===
 
 #[test_only]
-/// A basis-points value is above 10,000.
-const EInvalidBps: u64 = 0;
-
-#[test_only]
 /// A trade fee is above the launch configuration's ceiling.
-const EInvalidTradeFeeBps: u64 = 1;
+const EInvalidTradeFeeBps: u64 = 0;
 
 #[test_only]
 /// The Meme decimals are not admitted for new launches.
-const EDecimalsNotAllowed: u64 = 2;
+const EDecimalsNotAllowed: u64 = 1;
 
 #[test_only]
-/// The migration adapter is not admitted for new launches.
-const EMigrationWitnessNotAllowed: u64 = 3;
+/// The venue is not admitted for new launches.
+const EVenueNotAllowed: u64 = 2;
 
 #[test_only]
-/// A framework type cannot be a migration witness.
-const EInvalidMigrationWitnessType: u64 = 4;
+/// A primitive or framework type cannot be a venue.
+const EInvalidVenue: u64 = 3;
 
 #[test_only]
 /// Blast's allocation exceeds its 1,000 bps maximum for either asset.
-const EInvalidProtocolAllocation: u64 = 5;
+const EInvalidProtocolAllocation: u64 = 4;
 
 #[test_only]
 /// A recipient address is zero.
-const EInvalidDestination: u64 = 6;
+const EInvalidDestination: u64 = 5;
 
 #[test_only]
 /// The shares do not sum to 10,000, or the curve or pool Meme share is zero.
-const EInvalidShares: u64 = 7;
+const EInvalidShares: u64 = 6;
 
 #[test_only]
 /// A split has more than sixteen recipients.
-const ERecipientCapacityReached: u64 = 8;
+const ERecipientCapacityReached: u64 = 7;
 
 #[test_only]
 /// The sell-burn rate is above its ceiling.
-const EInvalidSellBurnBps: u64 = 9;
+const EInvalidSellBurnBps: u64 = 8;
 
 #[test_only]
 /// The ticket's supply is not the canonical one billion tokens.
-const EInvalidInitialMemeSupply: u64 = 10;
+const EInvalidInitialMemeSupply: u64 = 9;
 
 #[test_only]
 /// Meme and Quote are the same type.
-const EInvalidMemeQuotePair: u64 = 11;
+const EInvalidMemeQuotePair: u64 = 10;
 
 #[test_only]
 /// The Meme symbol is longer than 32 bytes.
-const EMemeSymbolTooLong: u64 = 12;
+const EMemeSymbolTooLong: u64 = 11;
 
 #[test_only]
 /// The opening round is neither zero nor within its bounds.
-const EInvalidOpeningRound: u64 = 13;
+const EInvalidOpeningRound: u64 = 12;
 
 #[test_only]
 /// The pool's Quote share of the graduation target rounds to zero.
-const EInvalidGraduationTarget: u64 = 14;
+const EInvalidGraduationTarget: u64 = 13;
 
 #[test_only]
 /// The launch is not in the state this operation needs.
-const EInvalidLaunchLifecycle: u64 = 15;
+const EInvalidLaunchLifecycle: u64 = 14;
 
 #[test_only]
 /// The output is below the caller's minimum.
-const ESlippageExceeded: u64 = 16;
+const ESlippageExceeded: u64 = 15;
 
 #[test_only]
 /// The trade's net output is zero.
-const EZeroTradeOutput: u64 = 17;
+const EZeroTradeOutput: u64 = 16;
 
 #[test_only]
 /// The opening round has ended.
-const EOpeningRoundEnded: u64 = 18;
+const EOpeningRoundEnded: u64 = 17;
 
 #[test_only]
 /// The opening round has not ended, or the launch is not shared yet.
-const EOpeningRoundNotEnded: u64 = 19;
+const EOpeningRoundNotEnded: u64 = 18;
 
 #[test_only]
 /// There are no fees to claim.
-const ENothingAccrued: u64 = 20;
-
-#[test_only]
-/// The witness is not the launch's migration adapter.
-const EInvalidMigrationWitness: u64 = 21;
+const ENothingAccrued: u64 = 19;
 
 #[test_only]
 /// The creator cap is not the one the launch honors.
-const ECreatorCapNotLive: u64 = 22;
+const ECreatorCapNotLive: u64 = 20;
 
 #[test_only]
 /// A setter was called with the value already in place.
-const EUnchanged: u64 = 23;
-
-#[test_only]
-/// A fee split names the same recipient twice.
-const EDuplicateDestination: u64 = 24;
+const EUnchanged: u64 = 21;
 
 #[test_only]
 /// The creator recipient address is zero.
-const EInvalidCreatorRecipient: u64 = 25;
+const EInvalidCreatorRecipient: u64 = 22;
 
 #[test_only]
 /// The account commitment is not 32 bytes.
-const EInvalidAccountCommitment: u64 = 26;
+const EInvalidAccountCommitment: u64 = 23;
 
 #[test_only]
 /// The claim signer key is neither empty nor 32 bytes.
-const EInvalidCreatorClaimPublicKey: u64 = 27;
+const EInvalidCreatorClaimPublicKey: u64 = 24;
 
 #[test_only]
 /// The claim attestation is unexpected or malformed.
-const EInvalidCreatorClaimAttestation: u64 = 28;
+const EInvalidCreatorClaimAttestation: u64 = 25;
 
 #[test_only]
 /// The claim attestation has expired.
-const ECreatorClaimExpired: u64 = 29;
+const ECreatorClaimExpired: u64 = 26;
 
 #[test_only]
 /// The sender is not the creator recipient.
-const ECreatorNotSender: u64 = 30;
+const ECreatorNotSender: u64 = 27;
 
 #[test_only]
 /// The claim attestation's signature does not verify.
-const EInvalidCreatorClaimSignature: u64 = 31;
+const EInvalidCreatorClaimSignature: u64 = 28;
 
 #[test_only]
 /// The Quote is not admitted for new launches.
-const EQuoteNotAllowed: u64 = 32;
+const EQuoteNotAllowed: u64 = 29;
 
 #[test_only]
 /// The virtual Quote reserve is zero, which would let the first purchase take the whole curve.
-const EInvalidVirtualQuote: u64 = 33;
+const EInvalidVirtualQuote: u64 = 30;
 
 #[test_only]
 /// An opening-round bid is zero.
-const EZeroOpeningRoundBid: u64 = 34;
+const EZeroOpeningRoundBid: u64 = 31;
 
 #[test_only]
 /// The creation fee paid is not exactly the configured one, or a configured fee exceeds 10 SUI.
-const EInvalidCreationFee: u64 = 35;
+const EInvalidCreationFee: u64 = 32;
 
 #[test_only]
 /// New launches may not name this Blast partner.
-const EPartnerNotAccepted: u64 = 36;
+const EPartnerNotAccepted: u64 = 33;
 
 #[test_only]
 /// The call does not name exactly the launch's partner.
-const EPartnerMismatch: u64 = 37;
+const EPartnerMismatch: u64 = 34;
 
 #[test_only]
 /// The pause bits are zero or unsupported by this package.
-const EInvalidPauseBits: u64 = 38;
+const EInvalidPauseBits: u64 = 35;
 
 #[test_only]
 /// The requested pause change does not alter the active bits.
-const EPauseUnchanged: u64 = 39;
+const EPauseUnchanged: u64 = 36;
 
 #[test_only]
 /// The operation is paused.
-const EPaused: u64 = 40;
+const EPaused: u64 = 37;
 
 #[test_only]
 /// The ready action does not match the requested upgrade digest or immutability.
-const EWrongUpgradeAction: u64 = 41;
+const EWrongUpgradeAction: u64 = 38;
 
 #[test_only]
 /// The package digest is not 32 bytes.
-const EInvalidDigest: u64 = 42;
+const EInvalidDigest: u64 = 39;
 
 #[test_only]
 /// The account-claim signer set already holds its most live and pending keys.
-const ETooManyClaimSigners: u64 = 43;
+const ETooManyClaimSigners: u64 = 40;
 
 #[test_only]
 /// Unpausing needs every policy notice nonzero, with no pending zero notice or admission.
-const EUnguardedNotice: u64 = 44;
+const EUnguardedNotice: u64 = 41;
 
 #[test_only]
 /// Blast's share of the trade fee exceeds its 7,000 bps maximum.
-const EInvalidProtocolFeeShare: u64 = 45;
+const EInvalidProtocolFeeShare: u64 = 42;
 
-macro public(package) fun invalid_bps(): u64 { 0 }
+#[test_only]
+/// Blast's LP-fee share exceeds its 3,000 bps maximum for either asset.
+const EInvalidLpFeeBps: u64 = 43;
 
-macro public(package) fun invalid_trade_fee_bps(): u64 { 1 }
+macro public(package) fun invalid_trade_fee_bps(): u64 { 0 }
 
-macro public(package) fun decimals_not_allowed(): u64 { 2 }
+macro public(package) fun decimals_not_allowed(): u64 { 1 }
 
-macro public(package) fun migration_witness_not_allowed(): u64 { 3 }
+macro public(package) fun venue_not_allowed(): u64 { 2 }
 
-macro public(package) fun invalid_migration_witness_type(): u64 { 4 }
+macro public(package) fun invalid_venue(): u64 { 3 }
 
-macro public(package) fun invalid_protocol_allocation(): u64 { 5 }
+macro public(package) fun invalid_protocol_allocation(): u64 { 4 }
 
-macro public(package) fun invalid_destination(): u64 { 6 }
+macro public(package) fun invalid_destination(): u64 { 5 }
 
-macro public(package) fun invalid_shares(): u64 { 7 }
+macro public(package) fun invalid_shares(): u64 { 6 }
 
-macro public(package) fun recipient_capacity_reached(): u64 { 8 }
+macro public(package) fun recipient_capacity_reached(): u64 { 7 }
 
-macro public(package) fun invalid_sell_burn_bps(): u64 { 9 }
+macro public(package) fun invalid_sell_burn_bps(): u64 { 8 }
 
-macro public(package) fun invalid_initial_meme_supply(): u64 { 10 }
+macro public(package) fun invalid_initial_meme_supply(): u64 { 9 }
 
-macro public(package) fun invalid_meme_quote_pair(): u64 { 11 }
+macro public(package) fun invalid_meme_quote_pair(): u64 { 10 }
 
-macro public(package) fun meme_symbol_too_long(): u64 { 12 }
+macro public(package) fun meme_symbol_too_long(): u64 { 11 }
 
-macro public(package) fun invalid_opening_round(): u64 { 13 }
+macro public(package) fun invalid_opening_round(): u64 { 12 }
 
-macro public(package) fun invalid_graduation_target(): u64 { 14 }
+macro public(package) fun invalid_graduation_target(): u64 { 13 }
 
-macro public(package) fun invalid_launch_lifecycle(): u64 { 15 }
+macro public(package) fun invalid_launch_lifecycle(): u64 { 14 }
 
-macro public(package) fun slippage_exceeded(): u64 { 16 }
+macro public(package) fun slippage_exceeded(): u64 { 15 }
 
-macro public(package) fun zero_trade_output(): u64 { 17 }
+macro public(package) fun zero_trade_output(): u64 { 16 }
 
-macro public(package) fun opening_round_ended(): u64 { 18 }
+macro public(package) fun opening_round_ended(): u64 { 17 }
 
-macro public(package) fun opening_round_not_ended(): u64 { 19 }
+macro public(package) fun opening_round_not_ended(): u64 { 18 }
 
-macro public(package) fun nothing_accrued(): u64 { 20 }
+macro public(package) fun nothing_accrued(): u64 { 19 }
 
-macro public(package) fun invalid_migration_witness(): u64 { 21 }
+macro public(package) fun creator_cap_not_live(): u64 { 20 }
 
-macro public(package) fun creator_cap_not_live(): u64 { 22 }
+macro public(package) fun unchanged(): u64 { 21 }
 
-macro public(package) fun unchanged(): u64 { 23 }
+macro public(package) fun invalid_creator_recipient(): u64 { 22 }
 
-macro public(package) fun duplicate_destination(): u64 { 24 }
+macro public(package) fun invalid_account_commitment(): u64 { 23 }
 
-macro public(package) fun invalid_creator_recipient(): u64 { 25 }
+macro public(package) fun invalid_creator_claim_public_key(): u64 { 24 }
 
-macro public(package) fun invalid_account_commitment(): u64 { 26 }
+macro public(package) fun invalid_creator_claim_attestation(): u64 { 25 }
 
-macro public(package) fun invalid_creator_claim_public_key(): u64 { 27 }
+macro public(package) fun creator_claim_expired(): u64 { 26 }
 
-macro public(package) fun invalid_creator_claim_attestation(): u64 { 28 }
+macro public(package) fun creator_not_sender(): u64 { 27 }
 
-macro public(package) fun creator_claim_expired(): u64 { 29 }
+macro public(package) fun invalid_creator_claim_signature(): u64 { 28 }
 
-macro public(package) fun creator_not_sender(): u64 { 30 }
+macro public(package) fun quote_not_allowed(): u64 { 29 }
 
-macro public(package) fun invalid_creator_claim_signature(): u64 { 31 }
+macro public(package) fun invalid_virtual_quote(): u64 { 30 }
 
-macro public(package) fun quote_not_allowed(): u64 { 32 }
+macro public(package) fun zero_opening_round_bid(): u64 { 31 }
 
-macro public(package) fun invalid_virtual_quote(): u64 { 33 }
+macro public(package) fun invalid_creation_fee(): u64 { 32 }
 
-macro public(package) fun zero_opening_round_bid(): u64 { 34 }
+macro public(package) fun partner_not_accepted(): u64 { 33 }
 
-macro public(package) fun invalid_creation_fee(): u64 { 35 }
+macro public(package) fun partner_mismatch(): u64 { 34 }
 
-macro public(package) fun partner_not_accepted(): u64 { 36 }
+macro public(package) fun invalid_pause_bits(): u64 { 35 }
 
-macro public(package) fun partner_mismatch(): u64 { 37 }
+macro public(package) fun pause_unchanged(): u64 { 36 }
 
-macro public(package) fun invalid_pause_bits(): u64 { 38 }
+macro public(package) fun paused(): u64 { 37 }
 
-macro public(package) fun pause_unchanged(): u64 { 39 }
+macro public(package) fun wrong_upgrade_action(): u64 { 38 }
 
-macro public(package) fun paused(): u64 { 40 }
+macro public(package) fun invalid_digest(): u64 { 39 }
 
-macro public(package) fun wrong_upgrade_action(): u64 { 41 }
+macro public(package) fun too_many_claim_signers(): u64 { 40 }
 
-macro public(package) fun invalid_digest(): u64 { 42 }
+macro public(package) fun unguarded_notice(): u64 { 41 }
 
-macro public(package) fun too_many_claim_signers(): u64 { 43 }
+macro public(package) fun invalid_protocol_fee_share(): u64 { 42 }
 
-macro public(package) fun unguarded_notice(): u64 { 44 }
-
-macro public(package) fun invalid_protocol_fee_share(): u64 { 45 }
+macro public(package) fun invalid_lp_fee_bps(): u64 { 43 }

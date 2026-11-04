@@ -14,16 +14,18 @@ public struct TradeFees has copy, drop, store {
     meme_fee_bps: Bps
 }
 
-/// Admitted decimals, Quotes, and migration adapters; the trade fees; Blast's one-time migration
-/// allocation; the SUI every launch pays at creation; and the Blast partners new launches may
-/// name. Each creator picks the virtual Quote reserve their curve starts from.
+/// Admitted decimals, Quotes, and venues; the trade fees; Blast's one-time migration allocation;
+/// Blast's share of each new vault's LP fees; the SUI every launch pays at creation; and the Blast
+/// partners new launches may name. Each creator picks the virtual Quote reserve their curve
+/// starts from.
 public struct LaunchConfig has key {
     id: UID,
     meme_decimals: VecSet<u8>,
     quotes: Table<TypeName, bool>,
     trade_fees: Delayed<TradeFeesKey, TradeFees>,
-    migration_witnesses: DelayedSet<MigrationWitnessKey, TypeName>,
+    venues: DelayedSet<VenueKey, TypeName>,
     protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>,
+    protocol_lp_fees: Delayed<ProtocolLpFeesKey, ProtocolLpFees>,
     /// In MIST.
     creation_fee: Delayed<CreationFeeKey, u64>,
 }
@@ -31,11 +33,21 @@ public struct LaunchConfig has key {
 /// Keys the trade fees' delayed lifecycle.
 public struct TradeFeesKey() has copy, drop, store;
 
-/// Keys the migration-adapter admissions' delayed lifecycle.
-public struct MigrationWitnessKey() has copy, drop, store;
+/// Blast's share of each asset in a new vault's LP-fee collections, each at most 3,000 bps; the
+/// value applied when a launch migrates goes into its vault.
+public struct ProtocolLpFees has copy, drop, store {
+    meme_bps: Bps,
+    quote_bps: Bps,
+}
+
+/// Keys the venue admissions' delayed lifecycle.
+public struct VenueKey() has copy, drop, store;
 
 /// Keys Blast's migration allocation's delayed lifecycle.
 public struct ProtocolAllocationKey() has copy, drop, store;
+
+/// Keys Blast's LP-fee share's delayed lifecycle.
+public struct ProtocolLpFeesKey() has copy, drop, store;
 
 /// Keys the creation fee's delayed lifecycle.
 public struct CreationFeeKey() has copy, drop, store;
@@ -50,6 +62,7 @@ fun init(ctx: &mut TxContext) {
     transfer::share_object(new(
         TradeFees { quote_fee_bps: bps::new(150), meme_fee_bps: bps::new(0) },
         allocation::protocol_allocation(bps::new(250), bps::new(150)),
+        new_protocol_lp_fees(bps::new(1_500), bps::new(1_500)),
         0,
         ctx,
     ));
@@ -95,6 +108,44 @@ public fun cancel_protocol_allocation(
     package_version.assert_current();
 
     self.protocol_allocation.cancel();
+}
+
+/// Schedules Blast's share of each asset in the LP fees of vaults created afterward, each at most
+/// 3,000 bps, after the applied notice. Migrated launches' vaults keep the share they started with.
+public fun schedule_protocol_lp_fees(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<FeeAdmin>,
+    meme_bps: Bps,
+    quote_bps: Bps,
+    delay_ms: u64,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+
+    self.protocol_lp_fees.schedule(new_protocol_lp_fees(meme_bps, quote_bps), delay_ms, clock);
+}
+
+/// Applies Blast's scheduled LP-fee share permissionlessly once ready.
+public fun apply_protocol_lp_fees(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    clock: &Clock,
+) {
+    package_version.assert_current();
+
+    self.protocol_lp_fees.apply(clock);
+}
+
+/// Cancels a pending LP-fee share change, including after its delay has elapsed.
+public fun cancel_protocol_lp_fees(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    _: &AdminWitness<CancelAdmin>,
+) {
+    package_version.assert_current();
+
+    self.protocol_lp_fees.cancel();
 }
 
 public fun set_meme_decimals_allowed(
@@ -261,102 +312,101 @@ public fun remove_partner(
     events::partner_removed(partner_id, acceptance_ends_at_ms);
 }
 
-/// Admits a migration adapter's witness type after the applied admission notice. An admitted
-/// adapter can start launches and receives their liquidity at migration; existing launches keep
-/// their witness. Rescheduling a pending admission restarts its notice.
+/// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
+/// start launches, and only that venue redeems their migrations; existing launches keep their
+/// venue. Rescheduling a pending admission restarts its notice.
 ///
-/// Framework types are rejected because anyone can construct them.
-public fun schedule_migration_witness<MigrationWitness: drop>(
+/// Primitive and framework types are rejected because anyone can construct them.
+public fun schedule_venue<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
     _: &AdminWitness<AdapterAdmin>,
-    clock: &Clock
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    let witness = type_name::with_original_ids<MigrationWitness>();
-    assert!(!witness.is_primitive(), blast_fun::errors::invalid_migration_witness_type!());
+    let venue = type_name::with_original_ids<Venue>();
+    assert!(!venue.is_primitive(), blast_fun::errors::invalid_venue!());
+    let origin = type_name::original_id<Venue>();
+    assert!(origin != @0x1 && origin != @0x2, blast_fun::errors::invalid_venue!());
 
-    let origin = type_name::original_id<MigrationWitness>();
-    assert!(origin != @0x1 && origin != @0x2, blast_fun::errors::invalid_migration_witness_type!());
-
-    self.migration_witnesses.schedule_add(witness, clock);
+    self.venues.schedule_add(venue, clock);
 }
 
 /// Permissionlessly applies the approved admission once ready.
-public fun apply_migration_witness<MigrationWitness: drop>(
+public fun apply_venue<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
-    clock: &Clock
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.apply_add(type_name::with_original_ids<MigrationWitness>(), clock);
+    self.venues.apply_add(type_name::with_original_ids<Venue>(), clock);
 }
 
-/// Cancels a pending adapter admission, including after its threshold.
-public fun cancel_migration_witness<MigrationWitness: drop>(
+/// Cancels a pending venue admission, including after its threshold.
+public fun cancel_venue<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
-    _: &AdminWitness<CancelAdmin>
+    _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.cancel_add(type_name::with_original_ids<MigrationWitness>());
+    self.venues.cancel_add(type_name::with_original_ids<Venue>());
 }
 
-/// Immediately removes adapter authority and cancels any pending admission.
-public fun remove_migration_witness<MigrationWitness: drop>(
+/// Immediately removes a venue for new launches and cancels any pending admission.
+public fun remove_venue<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
-    _: &AdminWitness<AdapterAdmin>
+    _: &AdminWitness<AdapterAdmin>,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.remove(type_name::with_original_ids<MigrationWitness>());
+    self.venues.remove(type_name::with_original_ids<Venue>());
 }
 
 /// Proposes only the admission notice. Pending admissions keep their deadlines.
-public fun schedule_migration_delay(
+public fun schedule_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
     _: &AdminWitness<AdapterAdmin>,
     delay_ms: u64,
-    clock: &Clock
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.schedule_delay(delay_ms, clock);
+    self.venues.schedule_delay(delay_ms, clock);
 }
 
 /// Permissionlessly applies a ready admission-notice proposal.
-public fun apply_migration_delay(
+public fun apply_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
-    clock: &Clock
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.apply_delay(clock);
+    self.venues.apply_delay(clock);
 }
 
 /// Cancels only the admission-notice proposal.
-public fun cancel_migration_delay(
+public fun cancel_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
-    _: &AdminWitness<CancelAdmin>
+    _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.cancel_delay();
+    self.venues.cancel_delay();
 }
 
 // === Package Functions ===
 
-/// Checks the Quote, the adapter, and the decimals, and returns the trade fees.
+/// Checks the Quote, the venue, and the decimals, and returns the trade fees.
 public(package) fun snapshot_for_launch<Quote>(
     self: &LaunchConfig,
-    migration_witness: TypeName,
+    venue: TypeName,
     decimals: u8,
 ): (Bps, Bps) {
     assert!(
@@ -364,8 +414,8 @@ public(package) fun snapshot_for_launch<Quote>(
         blast_fun::errors::quote_not_allowed!(),
     );
     assert!(
-        self.migration_witnesses.contains(&migration_witness),
-        blast_fun::errors::migration_witness_not_allowed!(),
+        self.venues.contains(&venue),
+        blast_fun::errors::venue_not_allowed!(),
     );
     assert!(self.meme_decimals.contains(&decimals), blast_fun::errors::decimals_not_allowed!());
 
@@ -376,11 +426,19 @@ public(package) fun protocol_allocation(self: &LaunchConfig): ProtocolAllocation
     self.protocol_allocation.value()
 }
 
+/// Blast's applied share of each asset in new vaults' LP fees.
+public(package) fun protocol_lp_fees(self: &LaunchConfig): (Bps, Bps) {
+    let ProtocolLpFees { meme_bps, quote_bps } = self.protocol_lp_fees.value();
+
+    (meme_bps, quote_bps)
+}
+
 /// True when every launch policy's notice is guarded (see `package_admin::unpause`).
 public(package) fun is_guarded(self: &LaunchConfig): bool {
     self.trade_fees.is_guarded()
-        && self.migration_witnesses.is_guarded()
+        && self.venues.is_guarded()
         && self.protocol_allocation.is_guarded()
+        && self.protocol_lp_fees.is_guarded()
         && self.creation_fee.is_guarded()
 }
 
@@ -400,9 +458,21 @@ public(package) fun assert_partner(self: &LaunchConfig, partner_id: ID, now_at_m
 
 // === Private Functions ===
 
+/// Blast's LP-fee share, each asset at most 3,000 bps.
+fun new_protocol_lp_fees(meme_bps: Bps, quote_bps: Bps): ProtocolLpFees {
+    assert!(
+        meme_bps.value() <= constants::max_lp_fee_bps!()
+            && quote_bps.value() <= constants::max_lp_fee_bps!(),
+        blast_fun::errors::invalid_lp_fee_bps!(),
+    );
+
+    ProtocolLpFees { meme_bps, quote_bps }
+}
+
 fun new(
     trade_fees: TradeFees,
     protocol_allocation: ProtocolAllocation,
+    protocol_lp_fees: ProtocolLpFees,
     delay_ms: u64,
     ctx: &mut TxContext,
 ): LaunchConfig {
@@ -412,8 +482,9 @@ fun new(
         meme_decimals: vec_set::from_keys(vector[6, 9]),
         quotes: table::new(ctx),
         trade_fees: delayed::new(TradeFeesKey(), &id, trade_fees, delay_ms),
-        migration_witnesses: delayed_set::new(MigrationWitnessKey(), &id, delay_ms),
+        venues: delayed_set::new(VenueKey(), &id, delay_ms),
         protocol_allocation: delayed::new(ProtocolAllocationKey(), &id, protocol_allocation, delay_ms),
+        protocol_lp_fees: delayed::new(ProtocolLpFeesKey(), &id, protocol_lp_fees, delay_ms),
         creation_fee: delayed::new(CreationFeeKey(), &id, 0, delay_ms),
         id,
     }
@@ -423,19 +494,17 @@ fun new(
 
 #[test_only]
 /// Reads the applied admission notice independently of pending admissions.
-public fun migration_delay_ms_for_testing(self: &LaunchConfig): u64 {
-    self.migration_witnesses.delay_ms()
+public fun venue_delay_ms_for_testing(self: &LaunchConfig): u64 {
+    self.venues.delay_ms()
 }
 
 #[test_only]
-public fun migration_witnesses_for_testing(
-    self: &LaunchConfig,
-): &DelayedSet<MigrationWitnessKey, TypeName> {
-    &self.migration_witnesses
+public fun venues_for_testing(self: &LaunchConfig): &DelayedSet<VenueKey, TypeName> {
+    &self.venues
 }
 
 #[test_only]
-public fun set_migration_witness_allowed_for_testing<MigrationWitness: drop>(
+public fun set_venue_allowed_for_testing<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion,
     admin: &AdminWitness<AdapterAdmin>,
@@ -443,13 +512,13 @@ public fun set_migration_witness_allowed_for_testing<MigrationWitness: drop>(
     ctx: &mut TxContext
 ) {
     if (!allowed) {
-        self.remove_migration_witness<MigrationWitness>(package_version, admin);
+        self.remove_venue<Venue>(package_version, admin);
         return
     };
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_migration_witness<MigrationWitness>(package_version, admin, &clock);
+    self.schedule_venue<Venue>(package_version, admin, &clock);
     clock.set_for_testing(172_800_000);
-    self.apply_migration_witness<MigrationWitness>(package_version, &clock);
+    self.apply_venue<Venue>(package_version, &clock);
     clock.destroy_for_testing();
 }
 
@@ -524,6 +593,7 @@ public fun new_zero_fees_for_testing(ctx: &mut TxContext): LaunchConfig {
     new(
         TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
         allocation::protocol_allocation(bps::new(0), bps::new(0)),
+        new_protocol_lp_fees(bps::new(0), bps::new(0)),
         172_800_000,
         ctx,
     )
@@ -535,6 +605,7 @@ public fun init_zero_fees_for_testing(ctx: &mut TxContext) {
     transfer::share_object(new(
         TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
         allocation::protocol_allocation(bps::new(0), bps::new(0)),
+        new_protocol_lp_fees(bps::new(0), bps::new(0)),
         0,
         ctx,
     ));
@@ -556,8 +627,26 @@ public fun rate_defaults_for_testing(self: &LaunchConfig): (u64, u64) {
 }
 
 #[test_only]
-public fun allowed_migration_witness_count_for_testing(self: &LaunchConfig): u64 {
-    self.migration_witnesses.members().length()
+public fun allowed_venue_count_for_testing(self: &LaunchConfig): u64 {
+    self.venues.members().length()
+}
+
+#[test_only]
+/// Fixture convenience: exercises scheduling, advances a synthetic Clock, then applies.
+public fun set_protocol_lp_fees_for_testing(
+    self: &mut LaunchConfig,
+    package_version: &PackageVersion,
+    admin: &AdminWitness<FeeAdmin>,
+    meme_bps: Bps,
+    quote_bps: Bps,
+    ctx: &mut TxContext,
+) {
+    let mut clock = sui::clock::create_for_testing(ctx);
+    let delay_ms = self.protocol_lp_fees.delay_ms();
+    self.schedule_protocol_lp_fees(package_version, admin, meme_bps, quote_bps, delay_ms, &clock);
+    clock.set_for_testing(172_800_000);
+    self.apply_protocol_lp_fees(package_version, &clock);
+    clock.destroy_for_testing();
 }
 
 // === Imports ===
@@ -570,10 +659,11 @@ use blast_admin::{
     blast_acl::AdminWitness,
 };
 
+use blast_core::bps::{Self, Bps};
+
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},
     blast_fun_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
-    bps::{Self, Bps},
     constants,
     events,
     blast_fun::{PackageVersion},

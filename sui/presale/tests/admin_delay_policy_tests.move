@@ -225,11 +225,11 @@ fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
         let witness = blast_acl::witness_for_testing<AdapterAdmin>();
-        f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
-        f.config.apply_migration_delay(&f.version, &f.clock);
-        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
+        f.config.apply_venue_delay(&f.version, &f.clock);
+        f.config.schedule_venue<Adapter>(&f.version, &witness, &f.clock);
         f.clock.set_for_testing(99);
-        f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
+        f.config.apply_venue<Adapter>(&f.version, &f.clock);
     });
     fixture.end();
 }
@@ -239,19 +239,19 @@ fun old_admissions_preserve_a_new_policy_in_either_application_order() {
     let mut fixture = start();
     fixture.run!(|f| {
         let witness = blast_acl::witness_for_testing<AdapterAdmin>();
-        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
-        f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
-        f.config.apply_migration_delay(&f.version, &f.clock);
-        f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
-        assert_eq!(f.config.migration_delay_ms_for_testing(), 100);
+        f.config.schedule_venue<Adapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
+        f.config.apply_venue_delay(&f.version, &f.clock);
+        f.config.apply_venue<Adapter>(&f.version, &f.clock);
+        assert_eq!(f.config.venue_delay_ms_for_testing(), 100);
 
-        f.config.schedule_migration_witness<OtherAdapter>(&f.version, &witness, &f.clock);
-        f.config.schedule_migration_delay(&f.version, &witness, 25, &f.clock);
+        f.config.schedule_venue<OtherAdapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue_delay(&f.version, &witness, 25, &f.clock);
         f.clock.set_for_testing(100);
-        f.config.apply_migration_witness<OtherAdapter>(&f.version, &f.clock);
-        assert_eq!(f.config.migration_delay_ms_for_testing(), 100);
-        f.config.apply_migration_delay(&f.version, &f.clock);
-        assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
+        f.config.apply_venue<OtherAdapter>(&f.version, &f.clock);
+        assert_eq!(f.config.venue_delay_ms_for_testing(), 100);
+        f.config.apply_venue_delay(&f.version, &f.clock);
+        assert_eq!(f.config.venue_delay_ms_for_testing(), 25);
 
         assert_eq!(migration_delay_changes(), 2);
     });
@@ -263,22 +263,22 @@ fun multiple_admissions_cannot_restore_a_superseded_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
         let witness = blast_acl::witness_for_testing<AdapterAdmin>();
-        f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
-        f.config.apply_migration_delay(&f.version, &f.clock);
-        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
-        f.config.schedule_migration_witness<OtherAdapter>(&f.version, &witness, &f.clock);
-        f.config.schedule_migration_delay(&f.version, &witness, 25, &f.clock);
+        f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
+        f.config.apply_venue_delay(&f.version, &f.clock);
+        f.config.schedule_venue<Adapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue<OtherAdapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue_delay(&f.version, &witness, 25, &f.clock);
 
         f.clock.set_for_testing(100);
-        f.config.apply_migration_delay(&f.version, &f.clock);
-        f.config.apply_migration_witness<OtherAdapter>(&f.version, &f.clock);
-        f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
-        assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
+        f.config.apply_venue_delay(&f.version, &f.clock);
+        f.config.apply_venue<OtherAdapter>(&f.version, &f.clock);
+        f.config.apply_venue<Adapter>(&f.version, &f.clock);
+        assert_eq!(f.config.venue_delay_ms_for_testing(), 25);
 
-        f.config.schedule_migration_witness<LaterAdapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue<LaterAdapter>(&f.version, &witness, &f.clock);
         f.clock.set_for_testing(125);
-        f.config.apply_migration_witness<LaterAdapter>(&f.version, &f.clock);
-        assert_eq!(f.config.migration_delay_ms_for_testing(), 25);
+        f.config.apply_venue<LaterAdapter>(&f.version, &f.clock);
+        assert_eq!(f.config.venue_delay_ms_for_testing(), 25);
         assert_eq!(migration_delay_changes(), 2);
     });
     fixture.end();
@@ -293,14 +293,14 @@ fun applying_an_old_admission_cannot_shorten_a_new_admissions_wait() {
     let mut fixture = start();
     fixture.run!(|f| {
         let witness = blast_acl::witness_for_testing<AdapterAdmin>();
-        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
-        f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
-        f.config.apply_migration_delay(&f.version, &f.clock);
-        f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
-        f.config.schedule_migration_witness<OtherAdapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue<Adapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
+        f.config.apply_venue_delay(&f.version, &f.clock);
+        f.config.apply_venue<Adapter>(&f.version, &f.clock);
+        f.config.schedule_venue<OtherAdapter>(&f.version, &witness, &f.clock);
 
         f.clock.set_for_testing(99);
-        f.config.apply_migration_witness<OtherAdapter>(&f.version, &f.clock);
+        f.config.apply_venue<OtherAdapter>(&f.version, &f.clock);
     });
     fixture.end();
 }
@@ -310,15 +310,15 @@ fun cancelling_policy_does_not_cancel_admission_or_change_its_notice() {
     let mut fixture = start();
     fixture.run!(|f| {
         let witness = blast_acl::witness_for_testing<AdapterAdmin>();
-        f.config.schedule_migration_delay(&f.version, &witness, 100, &f.clock);
-        f.config.apply_migration_delay(&f.version, &f.clock);
-        f.config.schedule_migration_witness<Adapter>(&f.version, &witness, &f.clock);
-        f.config.schedule_migration_delay(&f.version, &witness, 0, &f.clock);
+        f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
+        f.config.apply_venue_delay(&f.version, &f.clock);
+        f.config.schedule_venue<Adapter>(&f.version, &witness, &f.clock);
+        f.config.schedule_venue_delay(&f.version, &witness, 0, &f.clock);
         f.clock.set_for_testing(100);
-        f.config.cancel_migration_delay(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
-        f.config.apply_migration_witness<Adapter>(&f.version, &f.clock);
+        f.config.cancel_venue_delay(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+        f.config.apply_venue<Adapter>(&f.version, &f.clock);
 
-        assert_eq!(f.config.migration_delay_ms_for_testing(), 100);
+        assert_eq!(f.config.venue_delay_ms_for_testing(), 100);
         assert_eq!(migration_delay_changes(), 1);
     });
     fixture.end();
@@ -440,7 +440,7 @@ fun configure_destination(self: &mut AdminDelayFixture) {
 
 /// Counts applied admission-notice changes, ignoring applied admissions.
 fun migration_delay_changes(): u64 {
-    sui::event::events_by_type<SetApplied<MigrationWitnessKey, TypeName>>().count!(|applied| {
+    sui::event::events_by_type<SetApplied<VenueKey, TypeName>>().count!(|applied| {
         let (_, _, change, _) = applied.set_applied_fields();
         change.member_for_testing().is_none()
     })
@@ -457,10 +457,11 @@ fun upgrade_delay_changes(): u64 {
 // === Imports ===
 
 use blast_admin::{blast_acl, delayed_action::{ActionApplied, ActionScheduled}, delayed_set::SetApplied};
+use blast_core::bps;
+
 use blast_presale::{
     blast_presale_package as marker,
-    bps,
-    creation_policy::{Self, MigrationWitnessKey},
+    creation_policy::{Self, VenueKey},
     fee_policy,
     package_admin::{Self, UpgradeAction, UpgradeKey},
     blast_presale_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, TreasuryAdmin, UpgradeAdmin}

@@ -148,6 +148,12 @@ use_environment = "mainnet"
 manifest_digest = "294D98BBBEFA7E526C52FD7F30B5691CD30B86738DDC489AC065D612D0E5F9EF"
 deps = { Sui = "Sui" }
 
+[pinned.mainnet.blast_core]
+source = { local = "../core" }
+use_environment = "mainnet"
+manifest_digest = "9CE506844EBD14541322B1AA0DDCB6E887F311260F08F7DB7BD871A37987F635"
+deps = { blast_admin = "blast_admin", blast_fun_vesting = "blast_fun_vesting", blast_partners = "blast_partners", std = "MoveStdlib", sui = "Sui" }
+
 [pinned.mainnet.blast_fun_vesting]
 source = { local = "../vesting" }
 use_environment = "mainnet"
@@ -163,5 +169,11 @@ deps = { blast_admin = "blast_admin", std = "MoveStdlib", sui = "Sui" }
 [pinned.mainnet.blast_presale]
 source = { root = true }
 use_environment = "mainnet"
-manifest_digest = "92E414DA3C000892F1BFF641A1C575855EF5E561023DCC3396902950E1F6949D"
-deps = { AftermathAmm = "AftermathAmm", AftermathDaoFeePools = "AftermathDaoFeePools", BluefinSpot = "BluefinSpot", CetusClmm = "CetusClmm", CetusLpBurn = "CetusLpBurn", IntegerLibrary = "IntegerLibrary", IntegerMate = "IntegerMate_1", Sui = "Sui", blast_admin = "blast_admin", blast_fun_vesting = "blast_fun_vesting", blast_partners = "blast_partners" }
+manifest_digest = "195E337979A9290F50CA64B5EBB2A2B97DBEBE6179738E0FAD5A2C4FAA0973F0"
+deps = { AftermathAmm = "AftermathAmm", AftermathDaoFeePools = "AftermathDaoFeePools", BluefinSpot = "BluefinSpot", CetusClmm = "CetusClmm", CetusLpBurn = "CetusLpBurn", IntegerLibrary = "IntegerLibrary", IntegerMate = "IntegerMate_1", Sui = "Sui", blast_admin = "blast_admin", blast_core = "blast_core", blast_fun_vesting = "blast_fun_vesting", blast_partners = "blast_partners", blast_vault = "blast_vault" }
+
+[pinned.mainnet.blast_vault]
+source = { local = "../vault" }
+use_environment = "mainnet"
+manifest_digest = "E12781373163C6F0BF389DA440468BA512094AE57D59065A7DFCEC565A42919D"
+deps = { blast_admin = "blast_admin", blast_core = "blast_core", blast_partners = "blast_partners", std = "MoveStdlib", sui = "Sui" }

@@ -152,16 +152,17 @@ once, whenever anyone claims Blast's fees from the launch:
   when it migrates.
 
 The creator's part of each trade fee and the sell burn are never divided with
-the partner, and neither are the venue's migration residuals.
+the partner.
 
 After migration the partner also earns its cut of Blast's LP fees on the
-launch's pool ([ADR 0107](decisions/0107-partner-cut-of-lp-fees.md)). The
-launch's LP vault inherits its partner, and each fee collection holds Blast's
-LP fees in that vault instead of paying them. Anyone may then call
-`vault::claim_protocol_lp_fees_with_partner`, which pays the partner its cut of
-each asset and the `LpFeePolicy` destination the rest; the SDK adds it to every
+launch's pool and of the migration residuals, which go to Blast
+([ADR 0137](decisions/0137-shared-launch-stack-core-vault-and-venues.md)). The
+launch's vault inherits its partner and holds Blast's residuals, and at each
+fee collection Blast's LP fees, instead of paying them. Anyone may then call
+`blast_vault::vault::pay_protocol_fees_with_partner`, which pays the partner its
+cut of each asset and the core `Treasury` the rest; the SDK adds it to every
 collection on a partnered vault. Vaults of launches without a partner pay
-Blast at each collection, as before.
+Blast at migration and at each collection.
 
 - **Integrators** that create coins call `launch::set_partner` on the
   initializer, passing the `Partner` object and the `Clock`, alongside the other
@@ -176,15 +177,17 @@ Blast at each collection, as before.
   treasury the rest, and `claim_protocol_fees` refuses a partnered launch.
   `ProtocolFeesClaimed` records both parts and the treasury paid, and
   `LaunchCreated` records the partner and the creation fee.
-- **Operators.** The fee administrator (`FeeAdmin`) sets the creation fee with
-  `launch_config::set_creation_fee`. It also accepts deals with
+- **Operators.** The fee administrator (`FeeAdmin`) schedules the creation fee
+  with `launch_config::schedule_creation_fee`, which anyone applies after its
+  notice. It also accepts deals with
   `launch_config::add_partner`, which applies at once, and ends them with
   `launch_config::remove_partner`, which applies seven days later. Removing a
   deal only stops new launches from naming it. Launches that already name it
   keep paying it, unless its share is scheduled to zero. The treasury
-  administrator (`TreasuryAdmin`) sets where Blast is paid with
-  `runtime_config::set_treasury`; every later claim pays that address the
-  creation fee with each launch's trade fees.
+  administrator (`TreasuryAdmin`) schedules where Blast's launch fees are paid
+  with `runtime_config::schedule_treasury`; once applied, every later claim pays
+  that address the creation fee with each launch's trade fees. Blast's LP fees
+  and migration residuals go to the core `Treasury` instead.
 
 ## On presales
 
@@ -213,11 +216,13 @@ pool receive exactly what they would without a partner.
   partner.
 - **After migration** the sale's vault inherits its partner, and each LP-fee
   collection holds Blast's LP fees in the vault
-  ([ADR 0107](decisions/0107-partner-cut-of-lp-fees.md)). Anyone may then call
-  `presale_vault::pay_protocol_lp_fees_with_partner`, which pays the partner its
-  cut of each asset and the fee policy's destination the rest; the SDK adds it
-  to every collection on a partnered vault. `ProtocolLpFeesPaid` records both
-  parts.
+  ([ADR 0137](decisions/0137-shared-launch-stack-core-vault-and-venues.md)).
+  Anyone may then call `blast_vault::vault::pay_protocol_fees_with_partner`,
+  which pays the partner its cut of each asset and the core `Treasury` the
+  rest; the SDK adds it to every collection on a partnered vault.
+  `blast_core_events::ProtocolFeesPaid` records the payment. A presale's
+  migration residuals belong to its owner, so the partner takes no cut of
+  them.
 - **Operators.** The presale `FeeAdmin` accepts deals with
   `creation_policy::add_partner`, which applies at once, and ends them with
   `creation_policy::remove_partner`, which applies seven days later. Removing a
