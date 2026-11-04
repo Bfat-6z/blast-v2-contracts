@@ -254,8 +254,12 @@ with its type arguments, so `UpgradeAdmin<A>` and `UpgradeAdmin<B>` are separate
 grants and one package's administrator cannot sign in for another package.
 
 **Publication and wrap.** The package's `init` calls
-`package_version::new_publication` with its one-time witness by value and the
-bits it defines (`valid_pause_bits`; zero defines none). It claims the
+`package_version::new_publication` with its one-time witness by value, the bits
+it defines (`valid_pause_bits`; zero defines none) and a second type argument,
+the package's unpause witness: a struct of that package, other than its marker,
+whose value only the package's own unpause constructs. The publication stores
+that exact type (with defining IDs) and aborts with code 28 for a primitive, the
+marker itself, or a type from another package. It claims the
 `Publisher`, seeds generation 1 and returns a `Publication<M>`, which
 `package_version::keep` transfers to the publisher. In the publication PTB the
 publisher calls `blast_admin::package_admin::wrap` with that `Publication` and
@@ -265,9 +269,9 @@ the upgrade notice at 48 hours, and shares the `PackageAdmin<M>` and the
 
 **Generation.** The package compiles its own generation and passes it to
 `package_version::assert_current` in every protected call, which aborts with code
-9 unless it equals the stored one. `package_version::assert_next` checks a
-compiled generation is exactly the next one.
-`blast_admin::package_admin::commit_upgrade_and_advance` commits the native receipt
+9 unless it equals the stored one.
+`blast_admin::package_admin::commit_upgrade_and_advance` computes the next
+generation (code 10 at the end of the range), then commits the native receipt
 into the sealed cap and advances the stored generation by one in the same call
 (emits `UpgradeCommitted` and `OperationalVersionAdvanced`), so the new bytecode
 must compile the next generation. Because `blast_admin` is immutable, these
@@ -290,7 +294,8 @@ compiled the wrong generation can still schedule and install a repair.
 
 `blast_admin::package_admin::schedule_make_immutable` and
 `blast_admin::package_admin::make_immutable` destroy the `UpgradeCap` the same
-way. `blast_admin::package_admin::schedule_upgrade_delay` proposes only a new
+way; once the cap is destroyed, both schedule calls abort with code 14.
+`blast_admin::package_admin::schedule_upgrade_delay` proposes only a new
 notice, which anyone applies with `blast_admin::package_admin::apply_upgrade_delay`
 once ready; `blast_admin::package_admin::cancel_upgrade_action` (CancelAdmin)
 discards whatever is pending, even when ready.
@@ -301,12 +306,14 @@ discards whatever is pending, even when ready.
 code 25 while an operation's bit is set. Clearing goes through the package's own
 `unpause`, which checks the package's own configuration notices, then calls
 `blast_admin::package_admin::clear_pause_bits` with the `PackageAdmin<M>`, the
-`PackageVersion<M>`, the `UnpauseAdmin<M>` witness, a witness value whose type the
-package itself defines, and the bits. It aborts with code 28 for a witness type
-from another package or a primitive, with code 27 while any upgrade notice still
-to come could be zero, and emits `blast_admin_events::Unpaused`. Pause and unpause
+`PackageVersion<M>`, the `UnpauseAdmin<M>` witness, a value of the unpause
+witness type pinned at publication, and the bits. Any other type aborts with code
+29, including every other droppable type the package defines or returns, so an
+`UnpauseAdmin<M>` cannot skip the package's own checks by calling `blast_admin`
+directly. It then aborts with code 27 while any upgrade notice still to come
+could be zero, and emits `blast_admin_events::Unpaused`. Pause and unpause
 requests must name nonzero bits the package defines (code 23) and must change at
-least one bit (code 24).
+least one bit (code 24); the witness and notice checks come first.
 
 ### Delayed values, actions, sets and maps
 
@@ -499,7 +506,7 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 11 | `EInvalidPackagePublisher` | `upgrade_custody` | the `Publisher` is not from the package |
 | 12 | `EInvalidUpgradeCap` | `upgrade_custody` | the cap is for another package or already upgraded |
 | 13 | `EInvalidPackageDigest` | `upgrade_custody`; `blast_admin::package_admin` when scheduling | digest is not 32 bytes |
-| 14 | `EUpgradeCapUnavailable` | `upgrade_custody` | the package was made immutable |
+| 14 | `EUpgradeCapUnavailable` | `upgrade_custody`; `blast_admin::package_admin` when scheduling | the package was made immutable |
 | 15 | `EUpgradePolicyNotMoreRestrictive` | `upgrade_custody` | the policy is already that strict or stricter |
 | 16 | `EInvalidPackageMarker` | `operational_version` | the marker passed to `operational_version::new` or `package_version::new_publication` is not a one-time witness |
 | 17 | `ENotReady` | `delayed`; `delayed_set` for `delayed_set::apply_add`, `delayed_map` for `delayed_map::apply` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
@@ -513,7 +520,8 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 25 | `EPaused` | `package_version` | the operation's pause bit is set; wait for Blast to unpause it |
 | 26 | `EWrongUpgradeAction` | `blast_admin::package_admin` | the ready action is not the upgrade of this digest (authorize) or not immutability (make immutable) |
 | 27 | `EUnguardedUpgradeNotice` | `blast_admin::package_admin` | clearing pause bits while the upgrade notice is zero or a pending change would make it zero |
-| 28 | `EInvalidPackageWitness` | `blast_admin::package_admin` | the witness passed to `clear_pause_bits` is a primitive or comes from another package |
+| 28 | `EInvalidPackageWitness` | `package_version` | the unpause witness type given to `new_publication` is a primitive, the package's marker, or from another package |
+| 29 | `EWrongUnpauseWitness` | `package_version` | `clear_pause_bits` received a value of a type other than the unpause witness pinned at publication |
 
 The one an integrator most often meets is code 9 from `operational_version`: a
 PTB built against an old package ID after an upgrade.

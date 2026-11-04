@@ -287,8 +287,10 @@ fun destroying_a_map_ends_its_remaining_entries_and_records_the_end() {
 
     map.destroy();
 
-    let (destroyed_owner, _) = collect<MapDestroyed<Overrides, address, u64>>().map_destroyed_fields();
+    let (destroyed_owner, destroyed_key) = collect<MapDestroyed<Overrides, address, u64>>()
+        .map_destroyed_fields();
     assert_eq!(destroyed_owner, owner());
+    assert_eq!(destroyed_key, Overrides());
     clock.destroy_for_testing();
 }
 

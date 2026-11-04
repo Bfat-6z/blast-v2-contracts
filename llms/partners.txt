@@ -684,6 +684,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 26 | `EWrongUpgradeAction` |  |
 | 27 | `EUnguardedUpgradeNotice` |  |
 | 28 | `EInvalidPackageWitness` |  |
+| 29 | `EWrongUnpauseWitness` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -1616,7 +1617,7 @@ public struct UpgradeAdmin<phantom PackageMarker> {}
 /// May set the package's pause bits immediately, never clear them.
 public struct PauseAdmin<phantom PackageMarker> {}
 
-/// May clear the package's pause bits through the package's own unpause guard.
+/// May clear the package's pause bits, only through the package's own unpause.
 public struct UnpauseAdmin<phantom PackageMarker> {}
 
 /// May cancel the package's scheduled upgrade action or notice change.
@@ -1636,7 +1637,8 @@ public fun wrap<PackageMarker: drop>(
 )
 
 /// Schedules one exact code digest under the applied notice, replacing any previous action.
-/// Changing the notice requires a separate notice-only proposal.
+/// Changing the notice requires a separate notice-only proposal. Aborts once the package is
+/// immutable.
 public fun schedule_upgrade<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
@@ -1645,6 +1647,7 @@ public fun schedule_upgrade<PackageMarker: drop>(
 )
 
 /// Schedules the irreversible destruction of upgrade authority under the applied notice.
+/// Aborts once the package is immutable.
 public fun schedule_make_immutable<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
@@ -1706,15 +1709,14 @@ public fun pause<PackageMarker: drop>(
 )
 
 /// Clears the requested pause bits for the package's own unpause, which first checks its own
-/// configuration notices and then passes a witness its package defines. Aborts while any
-/// upgrade notice still to come could be zero. The witness proves the call came from the
-/// package's bytecode, so a role alone cannot skip that package's checks; the package must
-/// never hand its witness type to callers.
-public fun clear_pause_bits<PackageMarker: drop, PackageWitness: drop>(
+/// configuration notices and then passes a value of the exact witness type the package pinned
+/// at publication. Aborts while any upgrade notice still to come could be zero. Only the
+/// package's unpause constructs that type, so a role alone cannot skip its checks.
+public fun clear_pause_bits<PackageMarker: drop, UnpauseWitness: drop>(
     self: &PackageAdmin<PackageMarker>,
     package_version: &mut package_version::PackageVersion<PackageMarker>,
     _: &blast_acl::AdminWitness<UnpauseAdmin<PackageMarker>>,
-    _: PackageWitness,
+    _: UnpauseWitness,
     bits: u8,
 )
 ```
@@ -1722,11 +1724,10 @@ public fun clear_pause_bits<PackageMarker: drop, PackageWitness: drop>(
 #### Constants
 
 - `INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: The notice every upgrade or immutability action waits from publication until changed.
-- `PACKAGE_DIGEST_LENGTH: u64 = 32`
 
 ### `blast_admin::package_version`
 
-One package's publication proof, operational generation and pause bits, typed by its one-time witness.  The consumer's initializer turns its one-time witness into an owned `Publication`, which `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused. The consumer compiles its own generation constant and checks it with `assert_current`; it also chooses which pause bits exist. Setting and clearing bits and advancing the generation are sealed here and reached only through `package_admin`'s role-gated calls.
+One package's publication proof, operational generation and pause bits, typed by its one-time witness.  The consumer's initializer turns its one-time witness into an owned `Publication`, which `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused. The consumer compiles its own generation constant and checks it with `assert_current`; it also chooses which pause bits exist and pins the one witness type its own unpause passes when clearing them. Setting and clearing bits and advancing the generation are sealed here and reached only through `package_admin`'s role-gated calls.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package_version.move
 
@@ -1738,6 +1739,7 @@ public struct Publication<phantom PackageMarker: drop> has key {
     id: UID,
     publisher: Publisher,
     valid_pause_bits: u8,
+    unpause_witness: TypeName,
     generation: operational_version::OperationalVersion<PackageMarker>,
 }
 
@@ -1747,6 +1749,9 @@ public struct PackageVersion<phantom PackageMarker: drop> has key {
     /// The bits this package defines; every pause or unpause request must fall within them.
     valid_pause_bits: u8,
     paused: u8,
+    /// The exact type, with defining IDs, whose value the package's own unpause passes to
+    /// `package_admin::clear_pause_bits`.
+    unpause_witness: TypeName,
     generation: operational_version::OperationalVersion<PackageMarker>,
 }
 ```
@@ -1757,7 +1762,9 @@ public struct PackageVersion<phantom PackageMarker: drop> has key {
 /// Claims the Publisher and seeds the first generation from the package's one-time witness,
 /// so a publication can only come into existence inside that package's initializer.
 /// `valid_pause_bits` fixes the bits the package defines, and zero defines none.
-public fun new_publication<PackageMarker: drop>(
+/// `UnpauseWitness` pins the one type that can clear them: a struct the package defines, other
+/// than its marker, that it constructs only inside its own unpause and never returns or stores.
+public fun new_publication<PackageMarker: drop, UnpauseWitness: drop>(
     otw: PackageMarker,
     valid_pause_bits: u8,
     ctx: &mut TxContext,
@@ -1769,12 +1776,6 @@ public fun keep<PackageMarker: drop>(self: Publication<PackageMarker>, ctx: &mut
 
 /// Rejects callable bytecode whose compiled generation is not the active one.
 public fun assert_current<PackageMarker: drop>(
-    self: &PackageVersion<PackageMarker>,
-    compiled_generation: u64,
-)
-
-/// Proves `compiled_generation` is exactly the generation after the active one.
-public fun assert_next<PackageMarker: drop>(
     self: &PackageVersion<PackageMarker>,
     compiled_generation: u64,
 )

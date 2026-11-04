@@ -94,6 +94,9 @@ const EUnguardedUpgradeNotice: u64 = 27;
 #[test_only]
 const EInvalidPackageWitness: u64 = 28;
 
+#[test_only]
+const EWrongUnpauseWitness: u64 = 29;
+
 macro public(package) fun invalid_super_admin_cap(): u64 { 0 }
 
 macro public(package) fun invalid_admin_cap(): u64 { 1 }
@@ -151,3 +154,5 @@ macro public(package) fun wrong_upgrade_action(): u64 { 26 }
 macro public(package) fun unguarded_upgrade_notice(): u64 { 27 }
 
 macro public(package) fun invalid_package_witness(): u64 { 28 }
+
+macro public(package) fun wrong_unpause_witness(): u64 { 29 }

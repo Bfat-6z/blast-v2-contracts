@@ -17,8 +17,6 @@ module blast_admin::package_admin;
 /// The notice every upgrade or immutability action waits from publication until changed.
 const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
-const PACKAGE_DIGEST_LENGTH: u64 = 32;
-
 // === Public Types ===
 
 /// The exact code digest or irreversible end of upgrades approved for execution.
@@ -43,7 +41,7 @@ public struct UpgradeAdmin<phantom PackageMarker>()
 /// May set the package's pause bits immediately, never clear them.
 public struct PauseAdmin<phantom PackageMarker>()
 
-/// May clear the package's pause bits through the package's own unpause guard.
+/// May clear the package's pause bits, only through the package's own unpause.
 public struct UnpauseAdmin<phantom PackageMarker>()
 
 /// May cancel the package's scheduled upgrade action or notice change.
@@ -69,15 +67,17 @@ public fun wrap<PackageMarker: drop>(
 }
 
 /// Schedules one exact code digest under the applied notice, replacing any previous action.
-/// Changing the notice requires a separate notice-only proposal.
+/// Changing the notice requires a separate notice-only proposal. Aborts once the package is
+/// immutable.
 public fun schedule_upgrade<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
     digest: vector<u8>,
     clock: &Clock,
 ) {
+    assert!(self.custody.has_upgrade_cap(), blast_admin::errors::upgrade_cap_unavailable!());
     assert!(
-        digest.length() == PACKAGE_DIGEST_LENGTH,
+        digest.length() == upgrade_custody::package_digest_length(),
         blast_admin::errors::invalid_package_digest!(),
     );
 
@@ -85,11 +85,14 @@ public fun schedule_upgrade<PackageMarker: drop>(
 }
 
 /// Schedules the irreversible destruction of upgrade authority under the applied notice.
+/// Aborts once the package is immutable.
 public fun schedule_make_immutable<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
     clock: &Clock,
 ) {
+    assert!(self.custody.has_upgrade_cap(), blast_admin::errors::upgrade_cap_unavailable!());
+
     self.upgrade.schedule(UpgradeAction::MakeImmutable, clock);
 }
 
@@ -127,8 +130,10 @@ public fun commit_upgrade_and_advance<PackageMarker: drop>(
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
     receipt: UpgradeReceipt,
 ) {
+    let next_generation = package_version.next_generation();
+
     self.custody.commit_upgrade(self.id.to_inner(), receipt);
-    package_version.advance();
+    package_version.advance(next_generation);
 }
 
 /// Consumes the ready immutability action and irreversibly destroys native upgrade authority.
@@ -172,22 +177,17 @@ public fun pause<PackageMarker: drop>(
 }
 
 /// Clears the requested pause bits for the package's own unpause, which first checks its own
-/// configuration notices and then passes a witness its package defines. Aborts while any
-/// upgrade notice still to come could be zero. The witness proves the call came from the
-/// package's bytecode, so a role alone cannot skip that package's checks; the package must
-/// never hand its witness type to callers.
-public fun clear_pause_bits<PackageMarker: drop, PackageWitness: drop>(
+/// configuration notices and then passes a value of the exact witness type the package pinned
+/// at publication. Aborts while any upgrade notice still to come could be zero. Only the
+/// package's unpause constructs that type, so a role alone cannot skip its checks.
+public fun clear_pause_bits<PackageMarker: drop, UnpauseWitness: drop>(
     self: &PackageAdmin<PackageMarker>,
     package_version: &mut PackageVersion<PackageMarker>,
     _: &AdminWitness<UnpauseAdmin<PackageMarker>>,
-    _: PackageWitness,
+    _: UnpauseWitness,
     bits: u8,
 ) {
-    assert!(
-        !type_name::with_original_ids<PackageWitness>().is_primitive()
-            && type_name::original_id<PackageWitness>() == type_name::original_id<PackageMarker>(),
-        blast_admin::errors::invalid_package_witness!(),
-    );
+    package_version.assert_unpause_witness<PackageMarker, UnpauseWitness>();
     assert!(self.upgrade.is_guarded(), blast_admin::errors::unguarded_upgrade_notice!());
 
     package_version.clear_pause_bits(bits);
@@ -271,7 +271,5 @@ use blast_admin::{
     package_version::{PackageVersion, Publication},
     upgrade_custody::{Self, UpgradeCustody}
 };
-
-use std::type_name;
 
 use sui::{clock::Clock, package::{Publisher, UpgradeCap, UpgradeReceipt, UpgradeTicket}};

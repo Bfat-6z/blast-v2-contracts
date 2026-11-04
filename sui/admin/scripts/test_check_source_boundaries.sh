@@ -217,4 +217,13 @@ edit 's/^public struct UnpauseAdmin<phantom PackageMarker>()$/public struct Unpa
   "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
+case_dir="$(new_case unpinned_unpause_witness)"
+edit '/^    unpause_witness: TypeName,$/d' "$case_dir/sources/package_version.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case unchecked_unpause_witness)"
+edit '/package_version.assert_unpause_witness<PackageMarker, UnpauseWitness>();/d' \
+  "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
 printf 'blast_admin boundary checker self-tests passed\n'

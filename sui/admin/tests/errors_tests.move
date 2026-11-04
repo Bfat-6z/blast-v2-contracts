@@ -38,6 +38,7 @@ fun shared_error_codes_are_stable() {
     assert_eq!(errors::wrong_upgrade_action!(), 26);
     assert_eq!(errors::unguarded_upgrade_notice!(), 27);
     assert_eq!(errors::invalid_package_witness!(), 28);
+    assert_eq!(errors::wrong_unpause_witness!(), 29);
 }
 
 // === Imports ===

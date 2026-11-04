@@ -214,6 +214,13 @@ public fun make_immutable<PackageMarker: drop>(
     );
 }
 
+// === Package Functions ===
+
+/// The byte length of a package digest, the only length `authorize_upgrade` accepts.
+public(package) fun package_digest_length(): u64 {
+    PACKAGE_DIGEST_LENGTH
+}
+
 // === Test-Only Functions ===
 
 #[test_only]
