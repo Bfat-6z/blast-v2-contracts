@@ -110,6 +110,16 @@ at the price the two balances imply, locks or burns the position, and creates th
 call, so the transaction completes whole or not at all. A stranger cannot forge a vault that claims
 a launch, and an unadmitted venue cannot take a launch's liquidity.
 
+The vault keeps one delayed list of admitted witnesses. `vault::new` requires both the calling
+venue's witness and the witness that sealed the vault's terms to be on it: the launchpad and
+presale are issuers, and each venue is a venue and, for the standalone vaults whose terms it seals
+itself from Blast policy, an issuer. The list does not distinguish the two roles; every entry is
+Blast-reviewed code, and products never create vaults themselves. Because `VaultTerms` is `copy`, an admitted venue obtains
+terms only from the migration it redeems or by sealing its own, and never accepts them from its
+caller; otherwise anyone holding a sale's terms could create a second vault for it. Gating issuers
+keeps a stranger package, which could otherwise seal its own terms and migrate through an admitted
+venue, from creating Blast vaults with a Blast share and partner of its choosing.
+
 Each product keeps its own creator authority (the launchpad's reassignable curve-fee cap, the
 presale's transferable cap). A product proves ownership to the vault with a non-droppable owner proof
 sealed by its witness, so the vault imports neither product.
@@ -155,7 +165,8 @@ The owner accepted these behaviour changes on 2026-11-04:
 11. **No event envelope; numeric error registries everywhere.** On-chain abort messages are lost;
     the SDK maps codes.
 12. **Unchanged:** the 2-hour round notice, the 48-hour fee-split notice, and the existing fee
-    maximums.
+    maximums. A vault's fee-split and Blast-share notices are fixed at 48 hours; no call changes
+    them, so every change gives that notice.
 
 ## Alternatives considered
 

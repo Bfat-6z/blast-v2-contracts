@@ -180,13 +180,18 @@ Package `blast_vault` holds the one LP vault every Blast sale migrates into. A v
 venue's liquidity position with no removal path, so the liquidity is locked for good. It splits
 every LP-fee collection: Blast's share first, then the sale's fee split across the owner, auto-LP,
 holder rewards, burn, and address routes. It also pays holder-reward rounds by Merkle proof. Only
-an admitted venue's code can create a vault or move its fees; integrators reach a vault through the
+an admitted venue's code can create a vault or move its fees, and only from terms an admitted
+issuer sealed; integrators reach a vault through the
 venue's calls, and call the owner, round, and payout functions on it directly.
 
 ### Objects and authority
 
-- `blast_vault_package::VaultRegistry` (shared singleton) lists the venue witness types that may
-  create vaults. A venue is admitted by its witness type, which only its own module can construct.
+- `blast_vault_package::VaultRegistry` (shared singleton) lists the admitted witness types: the
+  venues that may create vaults and the issuers whose sealed terms they may use (the launchpad, the
+  presale, and each venue for the standalone vaults it seals itself). A witness is admitted by its
+  type, which only its own module can construct. A venue obtains terms only from
+  `blast_core::migration::redeem` or by sealing them itself; it never accepts terms from its
+  caller.
 - `blast_vault::vault::Vault<Meme, Quote>` (shared, one per migrated sale) holds the position under
   the venue's key, the terms the sale sealed (`blast_core::migration::VaultTerms`), the fee split
   and Blast's share, each behind a notice, and the owner, auto-LP, holder-reward, and burn
@@ -199,15 +204,15 @@ venue's calls, and call the owner, round, and payout functions on it directly.
   creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
   witness.
 
-Blast admins hold these roles: `AdapterAdmin` admits and removes venues; `FeeAdmin` changes Blast's
+Blast admins hold these roles: `AdapterAdmin` admits and removes venue and issuer witnesses; `FeeAdmin` changes Blast's
 per-vault share; `RewardsAdmin` schedules rounds and settles gas reserves; `BuybackAdmin` spends
 the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 
 ### Lifecycle
 
 1. A venue creates the vault with `blast_vault::vault::new`, unshared, from terms the sale sealed.
-   It aborts unless the venue's witness is admitted and Blast's share is at most 3,000 basis points
-   per asset.
+   It aborts unless the venue's witness and the terms' sealing witness are both admitted and
+   Blast's share is at most 3,000 basis points per asset.
 2. The venue attaches its position and shares the vault with
    `blast_vault::vault::share_with_position`, which settles the migration residuals and emits
    `blast_vault_events::VaultCreated`.
@@ -281,9 +286,10 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 
 ### Time rules
 
-- Venue admissions start at zero notice, so Blast lists its venues at launch while the package is
-  still paused; Blast then raises the notice before unpausing. Afterwards each admission and
-  notice change waits the applied notice.
+- Witness admissions start at zero notice, so Blast lists its products and venues at launch while
+  the package is still paused; Blast then raises the notice before unpausing. Afterwards each
+  admission and notice change waits the applied notice. Removing a witness takes effect at once:
+  a removed venue creates no more vaults, and a removed issuer's sales can no longer migrate.
 - Fee-split and Blast-share changes always wait 48 hours; no call changes that notice.
 - A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
 - Claims are open while the clock is before the deadline; a round closes at or after it.
@@ -293,8 +299,8 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 The package is published fully paused. The admin pause bit stops Blast-share changes, buybacks,
 round scheduling and publication, and gas settlement. It never stops venue admissions, fee
 collection, owner claims, partner payouts, holder claims, round closing, or cancellations.
-Unpausing with `blast_vault_package::unpause` requires a nonzero venue admission notice, with no
-pending change to zero.
+Unpausing with `blast_vault_package::unpause` requires a nonzero witness admission notice, with no
+pending admission or change to zero.
 
 ### Reading state
 
@@ -309,7 +315,8 @@ pending change to zero.
 - `blast_vault_events::FeesCollected`: gross amounts, Blast's cut, and each route's amounts, in
   route order.
 - `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded`: auto-LP.
-- `blast_vault_events::BuybackBurned`: Quote spent and Meme burned.
+- `blast_vault_events::BuybackBurned`: Quote spent and Meme burned. The vault measures both from
+  the buyback receipt, as it measures `AutoLiquidityAdded` from the auto-LP receipt.
 - Burned Meme leaves the supply when the Meme `Currency` is burn-only; when its supply is fixed
   it is sent to `0x0` instead. Both supply states are final, so an indexer reads the
   currency's supply state once to tell the two apart.
@@ -319,6 +326,9 @@ pending change to zero.
 
 ### Aborts
 
+- Vault creation: `unadmitted_venue`, then `unadmitted_issuer`, then `invalid_protocol_bps`.
+- A venue's buyback or auto-LP return: `wrong_vault` for another vault's receipt,
+  `returned_exceeds_taken` when it returns more than it took.
 - Owner claim with nothing accrued: `nothing_to_claim`. A proof for another sale or package
   aborts in `blast_core::owner_proof`.
 - Holder claim: `claims_closed` past the deadline, `invalid_index`, `already_claimed`,
@@ -453,9 +463,9 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 | Code | Constant | Meaning |
 | --- | --- | --- |
-| 0 | `EInvalidVenue` | A venue witness must not be a primitive or framework type. |
+| 0 | `EInvalidWitness` | An admitted witness must not be a primitive or framework type. |
 | 1 | `EUnadmittedVenue` | Only an admitted venue may create vaults. |
-| 2 | `EUnguardedNotice` | Unpause needs a nonzero venue admission notice. |
+| 2 | `EUnguardedNotice` | Unpause needs a nonzero witness admission notice and no pending admission. |
 | 3 | `EInvalidProtocolBps` | Blast's share must be at most 3,000 basis points per asset. |
 | 4 | `EZeroLiquidity` | The migration position must hold liquidity. |
 | 5 | `EWrongVenue` | Only the venue holding the vault's position may act on it. |
@@ -482,10 +492,12 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 26 | `EInvalidBeneficiary` | The beneficiary must not be the zero address. |
 | 27 | `EEmptyClaim` | At least one claimed amount must be nonzero. |
 | 28 | `EInvalidProof` | The proof must match the committed recipient, amounts, and domain. |
-| 29 | `EWrongVault` | A round settles and closes only against its own vault. |
+| 29 | `EWrongVault` | A round or a venue receipt acts only on its own vault. |
 | 30 | `EReserveSettled` | Gas reimbursement is disabled or already settled. |
 | 31 | `EOverReserve` | The reimbursement must not exceed the round's gas reserve. |
 | 32 | `EClaimsStillOpen` | A round can close only at or after its claim deadline. |
+| 33 | `EUnadmittedIssuer` | Only terms sealed by an admitted issuer may create vaults. |
+| 34 | `EReturnedExceedsTaken` | A venue returns at most what it took from the vault. |
 
 ### `blast_vault::blast_vault_events`
 
@@ -602,7 +614,7 @@ public struct RoundClosed<phantom Meme, phantom Quote> has copy, drop {
 
 ### `blast_vault::blast_vault_package`
 
-The vault package's publication, its venue admission, and its unpause.  Only an admitted venue may create a vault. A venue is admitted by its witness type, the one its module alone can construct. Gating venues rather than products covers standalone vaults with the same list, and binds every position key to venue code Blast reviewed. An `AdapterAdmin` schedules an admission, anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an `AdapterAdmin` removes a venue at once.  The admission notice starts at zero and admissions ignore the pause, so Blast lists its venues and raises the notice while publication keeps the package paused; `unpause` refuses until that notice is guarded.
+The vault package's publication, its witness admission, and its unpause.  One list of admitted witness types decides who may create a vault: the venue whose witness calls `vault::new`, and the issuer whose witness sealed the vault's terms, must both be on it. Each witness is the one its module alone can construct. The launchpad and presale witnesses are issuers; a venue is a venue and, for the standalone vaults whose terms it seals itself, an issuer too. The list does not distinguish the two roles, so an admitted product witness would also pass the venue check; both are Blast-reviewed code, and products never call `vault::new`. Gating venues binds every position key to venue code Blast reviewed; gating issuers keeps a stranger's terms, with a Blast share and partner of its choosing, out of Blast vaults.  An admitted venue obtains `VaultTerms` only from `migration::redeem` or by sealing them itself under its own witness from Blast policy; it never accepts `VaultTerms` from its caller. Terms are `copy`, so a venue that took them as an argument would let anyone who obtained a sale's terms create a second vault claiming that sale.  An `AdapterAdmin` schedules an admission, anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an `AdapterAdmin` removes a witness at once. Removing a venue stops it creating vaults; removing an issuer stops every vault for its sales, so a migration sealed by it can no longer complete. Existing vaults keep working either way.  The admission notice starts at zero and admissions ignore the pause, so Blast lists the launchpad, presale, and venue witnesses and raises the notice while publication keeps the package paused; `unpause` refuses until that notice is guarded. The product and venue packages must therefore be published before the vault is unpaused.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/blast_vault_package.move
 
@@ -615,51 +627,51 @@ public struct BLAST_VAULT_PACKAGE() has drop;
 /// The witness `unpause` passes to clear pause bits; only this module constructs it.
 public struct UnpauseWitness() has drop;
 
-/// Keys the admitted venues' delayed lifecycle.
-public struct VenuesKey() has copy, drop, store;
+/// Keys the admitted witnesses' delayed lifecycle.
+public struct WitnessesKey() has copy, drop, store;
 
-/// Shared singleton holding the venue witness types that may create vaults.
+/// Shared singleton holding the venue and issuer witness types that may create vaults.
 public struct VaultRegistry has key {
     id: UID,
-    venues: blast_admin::delayed_set::DelayedSet<VenuesKey, TypeName>,
+    witnesses: blast_admin::delayed_set::DelayedSet<WitnessesKey, TypeName>,
 }
 ```
 
 #### Functions
 
 ```move
-/// Schedules `Venue`'s admission after the applied notice. Framework and primitive types are
+/// Schedules `Witness`'s admission after the applied notice. Framework and primitive types are
 /// rejected because anyone can construct them.
-public fun schedule_venue<Venue: drop>(
+public fun schedule_witness<Witness: drop>(
     self: &mut VaultRegistry,
     _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
     package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 )
 
-/// Applies `Venue`'s ready admission; anyone may call it.
-public fun apply_venue<Venue: drop>(
+/// Applies `Witness`'s ready admission; anyone may call it.
+public fun apply_witness<Witness: drop>(
     self: &mut VaultRegistry,
     package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 )
 
-/// Cancels `Venue`'s pending admission, even a ready one.
-public fun cancel_venue<Venue: drop>(
+/// Cancels `Witness`'s pending admission, even a ready one.
+public fun cancel_witness<Witness: drop>(
     self: &mut VaultRegistry,
     _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
     package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
 )
 
-/// Removes an admitted venue at once; its existing vaults keep working.
-public fun remove_venue<Venue: drop>(
+/// Removes an admitted witness at once; existing vaults keep working.
+public fun remove_witness<Witness: drop>(
     self: &mut VaultRegistry,
     _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
     package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
 )
 
 /// Schedules a new admission notice after the applied one.
-public fun schedule_venue_delay(
+public fun schedule_witness_delay(
     self: &mut VaultRegistry,
     _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
     package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
@@ -668,21 +680,21 @@ public fun schedule_venue_delay(
 )
 
 /// Applies a ready admission-notice change; anyone may call it.
-public fun apply_venue_delay(
+public fun apply_witness_delay(
     self: &mut VaultRegistry,
     package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 )
 
 /// Cancels the pending admission-notice change, even a ready one.
-public fun cancel_venue_delay(
+public fun cancel_witness_delay(
     self: &mut VaultRegistry,
     _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
     package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
 )
 
-/// Clears pause bits once the venue admission notice is guarded; the generic administration then
-/// checks the upgrade notice and the pinned witness.
+/// Clears pause bits once the witness admission notice is guarded; the generic administration
+/// then checks the upgrade notice and the pinned witness.
 public fun unpause(
     self: &VaultRegistry,
     unpause_admin: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UnpauseAdmin<BLAST_VAULT_PACKAGE>>,
@@ -703,7 +715,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/va
 - `generation: u64 = 1`: The package generation this bytecode serves.
 - `admin_pause_bit: u8 = 1`: Stops Blast's administrative operations: protocol-share changes, holder-reward rounds, gas settlement, and buyback. Venue admission, collection, owner actions, claims, closes, and cancels never pause.
 - `valid_pause_bits: u8 = blast_vault::constants::admin_pause_bit!()`: Every supported vault pause flag.
-- `venue_admission_delay_ms: u64 = 0`: Initial venue admission notice: zero, so Blast lists its venues at launch while publication keeps the package paused. `blast_vault_package::unpause` refuses until a nonzero notice applies.
+- `witness_admission_delay_ms: u64 = 0`: Initial witness admission notice: zero, so Blast lists its products and venues at launch while publication keeps the package paused. `blast_vault_package::unpause` refuses until a nonzero notice applies.
 - `fee_change_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Fixed notice before a vault's fee split or Blast share changes; no call can change it.
 - `round_notice_ms: u64 = 2 * 60 * 60 * 1_000`: Initial notice before a scheduled holder-reward round may publish, or its next notice period may change: 2 hours, so a cancel administrator can stop a bad round while daily rounds fit.
 - `max_protocol_bps: u64 = 3_000`: Blast's largest share of each LP-fee collection, per asset.
@@ -870,6 +882,21 @@ public struct RoundPublicationKey() has copy, drop, store;
 /// The witness that creates every vault's protocol ledger; only this module constructs it.
 public struct VaultWitness() has drop;
 
+/// What a venue took from one vault's burn Quote for a buyback; `burn_buyback` on the same vault
+/// consumes it, so the Quote spent is measured here, not reported by the venue.
+public struct BuybackReceipt {
+    vault_id: ID,
+    taken_quote: u64,
+}
+
+/// What a venue took from one vault's auto-LP balances; `keep_auto_lp` on the same vault consumes
+/// it, so the liquidity added is measured here, not reported by the venue.
+public struct AutoLpReceipt {
+    vault_id: ID,
+    taken_meme: u64,
+    taken_quote: u64,
+}
+
 /// Blast's share of each LP-fee collection, per asset, each at most 3,000 basis points.
 public struct ProtocolBps has copy, drop, store {
     meme_bps: blast_core::bps::Bps,
@@ -922,8 +949,9 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 
 ```move
 /// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
-/// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` is admitted and Blast's
-/// share is within the vault maximum.
+/// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` and the terms' sealing
+/// witness are admitted and Blast's share is within the vault maximum. The vault has `key` without
+/// `store`, so it cannot leave this transaction except through `share_with_position`.
 public fun new<Meme, Quote, Venue>(
     registry: &blast_vault_package::VaultRegistry,
     _: &Venue,
@@ -1017,44 +1045,48 @@ public fun apply_fee_split<Meme, Quote, Venue>(
     clock: &Clock,
 )
 
-/// Takes every Meme and Quote waiting to be added back to the position.
+/// Takes every Meme and Quote waiting to be added back to the position, with the receipt
+/// `keep_auto_lp` must consume, even when both are zero.
 public fun take_auto_lp<Meme, Quote, Venue>(
     self: &mut Vault<Meme, Quote>,
     _: &Venue,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
-): (Balance<Meme>, Balance<Quote>)
+): (Balance<Meme>, Balance<Quote>, AutoLpReceipt)
 
-/// Keeps what the pool did not take for the next call and records what it added.
+/// Consumes the auto-LP receipt, keeps what the pool did not take for the next call, and records
+/// what it added: the receipt's amounts less what returns. Aborts unless the receipt is this
+/// vault's and each return is at most what was taken.
 public fun keep_auto_lp<Meme, Quote, Venue>(
     self: &mut Vault<Meme, Quote>,
     _: &Venue,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
-    added_meme: u64,
-    added_quote: u64,
+    receipt: AutoLpReceipt,
     meme: Balance<Meme>,
     quote: Balance<Quote>,
 )
 
-/// Takes exactly `quote_in` of the Quote waiting to buy Meme back, under a buyback administrator.
-/// Aborts unless `quote_in` is positive and at most the burn Quote held.
+/// Takes exactly `quote_in` of the Quote waiting to buy Meme back, under a buyback administrator,
+/// with the receipt `burn_buyback` must consume. Aborts unless `quote_in` is positive and at most
+/// the burn Quote held.
 public fun take_buyback_quote<Meme, Quote, Venue>(
     self: &mut Vault<Meme, Quote>,
     _: &Venue,
     _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::BuybackAdmin>,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
     quote_in: u64,
-): Balance<Quote>
+): (Balance<Quote>, BuybackReceipt)
 
-/// Burns the Meme a swap of `quote_in` returned, which must reach `min_meme_out`, and keeps the
-/// Quote the pool did not take for the next buyback.
+/// Consumes the buyback receipt, burns the Meme the swap returned, which must reach
+/// `min_meme_out`, and keeps the Quote the pool did not take for the next buyback. Aborts unless
+/// the receipt is this vault's and the unspent Quote is at most what was taken.
 public fun burn_buyback<Meme, Quote, Venue>(
     self: &mut Vault<Meme, Quote>,
     _: &Venue,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    receipt: BuybackReceipt,
     currency: &mut Currency<Meme>,
     meme: Balance<Meme>,
     unspent_quote: Balance<Quote>,
-    quote_in: u64,
     min_meme_out: u64,
     ctx: &mut TxContext,
 )
@@ -1432,6 +1464,8 @@ public enum ResidualPolicy has copy, drop, store {
 }
 
 /// Everything a new vault snapshots from the sale or standalone issuer that sealed its terms.
+/// Sealed terms authorize a vault, so products and venues must not return them by value: a venue
+/// takes them only from `redeem` or seals its own.
 public struct VaultTerms has copy, drop, store {
     /// The launch or presale the vault belongs to; owner proofs name it.
     origin: ID,

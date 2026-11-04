@@ -36,6 +36,21 @@ public struct RoundPublicationKey() has copy, drop, store;
 /// The witness that creates every vault's protocol ledger; only this module constructs it.
 public struct VaultWitness() has drop;
 
+/// What a venue took from one vault's burn Quote for a buyback; `burn_buyback` on the same vault
+/// consumes it, so the Quote spent is measured here, not reported by the venue.
+public struct BuybackReceipt {
+    vault_id: ID,
+    taken_quote: u64,
+}
+
+/// What a venue took from one vault's auto-LP balances; `keep_auto_lp` on the same vault consumes
+/// it, so the liquidity added is measured here, not reported by the venue.
+public struct AutoLpReceipt {
+    vault_id: ID,
+    taken_meme: u64,
+    taken_quote: u64,
+}
+
 /// Blast's share of each LP-fee collection, per asset, each at most 3,000 basis points.
 public struct ProtocolBps has copy, drop, store {
     meme_bps: Bps,
@@ -88,8 +103,9 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 // Venue: creation and custody
 
 /// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
-/// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` is admitted and Blast's
-/// share is within the vault maximum.
+/// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` and the terms' sealing
+/// witness are admitted and Blast's share is within the vault maximum. The vault has `key` without
+/// `store`, so it cannot leave this transaction except through `share_with_position`.
 public fun new<Meme, Quote, Venue>(
     registry: &VaultRegistry,
     _: &Venue,
@@ -99,7 +115,8 @@ public fun new<Meme, Quote, Venue>(
     ctx: &mut TxContext,
 ): Vault<Meme, Quote> {
     package_version.assert_current(constants::generation!());
-    registry.assert_admitted<Venue>();
+    registry.assert_venue<Venue>();
+    registry.assert_issuer(terms.package_witness());
     let (meme_bps, quote_bps) = terms.protocol_bps();
     let protocol_bps = new_protocol_bps(meme_bps, quote_bps);
 
@@ -322,30 +339,49 @@ public fun apply_fee_split<Meme, Quote, Venue>(
     self.fee_split.apply(clock);
 }
 
-/// Takes every Meme and Quote waiting to be added back to the position.
+/// Takes every Meme and Quote waiting to be added back to the position, with the receipt
+/// `keep_auto_lp` must consume, even when both are zero.
 public fun take_auto_lp<Meme, Quote, Venue>(
     self: &mut Vault<Meme, Quote>,
     _: &Venue,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
-): (Balance<Meme>, Balance<Quote>) {
+): (Balance<Meme>, Balance<Quote>, AutoLpReceipt) {
     package_version.assert_current(constants::generation!());
     self.assert_position<_, _, Venue>();
 
-    (self.auto_lp_meme.withdraw_all(), self.auto_lp_quote.withdraw_all())
+    let meme = self.auto_lp_meme.withdraw_all();
+    let quote = self.auto_lp_quote.withdraw_all();
+    let receipt = AutoLpReceipt {
+        vault_id: self.id.to_inner(),
+        taken_meme: meme.value(),
+        taken_quote: quote.value(),
+    };
+
+    (meme, quote, receipt)
 }
 
-/// Keeps what the pool did not take for the next call and records what it added.
+/// Consumes the auto-LP receipt, keeps what the pool did not take for the next call, and records
+/// what it added: the receipt's amounts less what returns. Aborts unless the receipt is this
+/// vault's and each return is at most what was taken.
 public fun keep_auto_lp<Meme, Quote, Venue>(
     self: &mut Vault<Meme, Quote>,
     _: &Venue,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
-    added_meme: u64,
-    added_quote: u64,
+    receipt: AutoLpReceipt,
     meme: Balance<Meme>,
     quote: Balance<Quote>,
 ) {
     package_version.assert_current(constants::generation!());
     self.assert_position<_, _, Venue>();
+    let AutoLpReceipt { vault_id, taken_meme, taken_quote } = receipt;
+    assert!(vault_id == self.id.to_inner(), blast_vault::errors::wrong_vault!());
+    assert!(
+        meme.value() <= taken_meme && quote.value() <= taken_quote,
+        blast_vault::errors::returned_exceeds_taken!(),
+    );
+
+    let added_meme = taken_meme - meme.value();
+    let added_quote = taken_quote - quote.value();
 
     self.auto_lp_meme.join(meme);
     self.auto_lp_quote.join(quote);
@@ -360,15 +396,16 @@ public fun keep_auto_lp<Meme, Quote, Venue>(
     );
 }
 
-/// Takes exactly `quote_in` of the Quote waiting to buy Meme back, under a buyback administrator.
-/// Aborts unless `quote_in` is positive and at most the burn Quote held.
+/// Takes exactly `quote_in` of the Quote waiting to buy Meme back, under a buyback administrator,
+/// with the receipt `burn_buyback` must consume. Aborts unless `quote_in` is positive and at most
+/// the burn Quote held.
 public fun take_buyback_quote<Meme, Quote, Venue>(
     self: &mut Vault<Meme, Quote>,
     _: &Venue,
     _: &AdminWitness<BuybackAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     quote_in: u64,
-): Balance<Quote> {
+): (Balance<Quote>, BuybackReceipt) {
     package_version.assert_current(constants::generation!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
     self.assert_position<_, _, Venue>();
@@ -377,28 +414,35 @@ public fun take_buyback_quote<Meme, Quote, Venue>(
         blast_vault::errors::buyback_quote_out_of_range!(),
     );
 
-    self.burn_quote.split(quote_in)
+    let receipt = BuybackReceipt { vault_id: self.id.to_inner(), taken_quote: quote_in };
+
+    (self.burn_quote.split(quote_in), receipt)
 }
 
-/// Burns the Meme a swap of `quote_in` returned, which must reach `min_meme_out`, and keeps the
-/// Quote the pool did not take for the next buyback.
+/// Consumes the buyback receipt, burns the Meme the swap returned, which must reach
+/// `min_meme_out`, and keeps the Quote the pool did not take for the next buyback. Aborts unless
+/// the receipt is this vault's and the unspent Quote is at most what was taken.
 public fun burn_buyback<Meme, Quote, Venue>(
     self: &mut Vault<Meme, Quote>,
     _: &Venue,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
+    receipt: BuybackReceipt,
     currency: &mut Currency<Meme>,
     meme: Balance<Meme>,
     unspent_quote: Balance<Quote>,
-    quote_in: u64,
     min_meme_out: u64,
     ctx: &mut TxContext,
 ) {
     package_version.assert_current(constants::generation!());
     self.assert_position<_, _, Venue>();
+    let BuybackReceipt { vault_id, taken_quote } = receipt;
+    assert!(vault_id == self.id.to_inner(), blast_vault::errors::wrong_vault!());
+    assert!(unspent_quote.value() <= taken_quote, blast_vault::errors::returned_exceeds_taken!());
     let meme_burned = meme.value();
     assert!(meme_burned >= min_meme_out, blast_vault::errors::buyback_below_minimum!());
 
-    let quote_spent = quote_in - unspent_quote.value();
+    let quote_spent = taken_quote - unspent_quote.value();
+
     burn(currency, meme, ctx);
     self.burn_quote.join(unspent_quote);
 

@@ -184,6 +184,37 @@ public(package) fun round_closed<Meme, Quote>(
     });
 }
 
+// === Test-Only Functions ===
+
+#[test_only]
+/// The `AutoLiquidityAdded` payload with these fields, for comparing emitted events.
+public fun auto_liquidity_added_for_testing<Meme, Quote>(
+    vault_id: ID,
+    meme_amount: u64,
+    quote_amount: u64,
+    auto_lp_meme_pending: u64,
+    auto_lp_quote_pending: u64,
+): AutoLiquidityAdded<Meme, Quote> {
+    AutoLiquidityAdded {
+        vault_id,
+        meme_amount,
+        quote_amount,
+        auto_lp_meme_pending,
+        auto_lp_quote_pending,
+    }
+}
+
+#[test_only]
+/// The `BuybackBurned` payload with these fields, for comparing emitted events.
+public fun buyback_burned_for_testing<Meme, Quote>(
+    vault_id: ID,
+    quote_spent: u64,
+    meme_burned: u64,
+    burn_quote_pending: u64,
+): BuybackBurned<Meme, Quote> {
+    BuybackBurned { vault_id, quote_spent, meme_burned, burn_quote_pending }
+}
+
 // === Events ===
 
 /// A venue created and shared a vault with its position and settled its migration residuals.

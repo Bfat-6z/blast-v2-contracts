@@ -151,6 +151,108 @@ fun terms_at_the_blast_share_maximum_create_a_vault() {
 }
 
 #[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EUnadmittedIssuer,
+    location = blast_vault::blast_vault_package,
+)]
+fun terms_sealed_by_an_unadmitted_issuer_cannot_create_a_vault() {
+    let mut scenario = vault_fixture::begin();
+    let f = vault_fixture::start(&mut scenario);
+    let terms = vault_fixture::terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
+
+    destroy(f.new_vault(terms, scenario.ctx()));
+    f.end();
+    scenario.end();
+}
+
+#[test]
+fun an_admitted_venue_seals_its_own_standalone_terms() {
+    let mut scenario = vault_fixture::begin();
+    let f = vault_fixture::start(&mut scenario);
+    let terms = vault_fixture::terms_sealed_by(vault_fixture::venue(), owner_split());
+
+    destroy(f.new_vault(terms, scenario.ctx()));
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EUnadmittedIssuer,
+    location = blast_vault::blast_vault_package,
+)]
+fun a_removed_issuer_cannot_create_vaults_for_its_sales() {
+    let mut scenario = vault_fixture::begin();
+    let f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
+    let mut registry = blast_vault_package::registry_for_testing<TestVenue, SaleWitness>(
+        scenario.ctx(),
+    );
+    registry.remove_witness<SaleWitness>(&adapter_admin(), f.version());
+
+    destroy(
+        vault::new<VAULT_FIXTURE, QUOTE, _>(
+            &registry,
+            &vault_fixture::venue(),
+            f.version(),
+            terms,
+            vault_fixture::pool_id(),
+            scenario.ctx(),
+        ),
+    );
+    destroy(registry);
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EUnadmittedVenue,
+    location = blast_vault::blast_vault_package,
+)]
+fun an_unadmitted_venue_is_reported_before_an_unadmitted_issuer() {
+    let mut scenario = vault_fixture::begin();
+    let f = vault_fixture::start(&mut scenario);
+    let terms = vault_fixture::terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
+
+    destroy(
+        vault::new<VAULT_FIXTURE, QUOTE, _>(
+            f.registry(),
+            &vault_fixture::other_venue(),
+            f.version(),
+            terms,
+            vault_fixture::pool_id(),
+            scenario.ctx(),
+        ),
+    );
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EUnadmittedIssuer,
+    location = blast_vault::blast_vault_package,
+)]
+fun an_unadmitted_issuer_is_reported_before_the_blast_share_maximum() {
+    let mut scenario = vault_fixture::begin();
+    let f = vault_fixture::start(&mut scenario);
+    let terms = migration::vault_terms(
+        vault_fixture::stranger_issuer(),
+        vault_fixture::sale_id(),
+        owner_split(),
+        bps::new(3_001),
+        bps::new(3_001),
+        option::none(),
+        migration::residuals_to_owner(),
+    );
+
+    destroy(f.new_vault(terms, scenario.ctx()));
+    f.end();
+    scenario.end();
+}
+
+#[test]
 #[expected_failure(abort_code = blast_vault::errors::EZeroLiquidity, location = blast_vault::vault)]
 fun a_position_without_liquidity_is_rejected() {
     let mut scenario = vault_fixture::begin();
@@ -604,15 +706,23 @@ fun a_buyback_takes_only_the_requested_quote_burns_the_meme_and_keeps_the_rest()
     vault.fund_burn_quote_for_testing(balance::create_for_testing(100));
     let supply_before = f.meme_total_supply();
 
-    let quote_in = vault.take_buyback_quote(&vault_fixture::venue(), &buyback_admin(), f.version(), 60);
-    assert_eq!(quote_in.value(), 60);
-    destroy(quote_in);
-    f.burn_buyback(&mut vault, 50, 10, 60, 40, scenario.ctx());
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::venue(),
+        &buyback_admin(),
+        f.version(),
+        60,
+    );
+    assert_eq!(taken_quote.value(), 60);
+    destroy(taken_quote);
+    f.burn_buyback(&mut vault, receipt, 50, 10, 40, scenario.ctx());
 
     let (_, _, _, _, _, _, burn_quote) = vault.balances_for_testing();
     assert_eq!(burn_quote, 50);
     assert_eq!(f.meme_total_supply(), supply_before - 50);
-    assert_eq!(event::events_by_type<BuybackBurned<VAULT_FIXTURE, QUOTE>>().length(), 1);
+    assert_eq!(
+        event::events_by_type<BuybackBurned<VAULT_FIXTURE, QUOTE>>(),
+        vector[blast_vault_events::buyback_burned_for_testing(object::id(&vault), 50, 50, 50)],
+    );
 
     test_scenario::return_shared(vault);
     f.end();
@@ -632,7 +742,15 @@ fun a_buyback_of_more_than_the_burn_quote_is_rejected() {
     let mut vault = vault_fixture::take_vault(&scenario);
     vault.fund_burn_quote_for_testing(balance::create_for_testing(100));
 
-    destroy(vault.take_buyback_quote(&vault_fixture::venue(), &buyback_admin(), f.version(), 101));
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::venue(),
+        &buyback_admin(),
+        f.version(),
+        101,
+    );
+
+    destroy(taken_quote);
+    destroy(receipt);
 
     abort
 }
@@ -648,8 +766,16 @@ fun a_buyback_below_its_minimum_is_rejected() {
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
     f.share_vault(&mut scenario, terms, 0, 0);
     let mut vault = vault_fixture::take_vault(&scenario);
+    vault.fund_burn_quote_for_testing(balance::create_for_testing(10));
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::venue(),
+        &buyback_admin(),
+        f.version(),
+        10,
+    );
+    destroy(taken_quote);
 
-    f.burn_buyback(&mut vault, 39, 0, 10, 40, scenario.ctx());
+    f.burn_buyback(&mut vault, receipt, 39, 0, 40, scenario.ctx());
 
     abort
 }
@@ -666,16 +792,194 @@ fun auto_lp_hands_over_its_balances_and_keeps_what_the_pool_did_not_take() {
     let mut vault = vault_fixture::take_vault(&scenario);
     f.collect(&mut vault, 30, 40, scenario.ctx());
 
-    let (mut meme, mut quote) = vault.take_auto_lp(&vault_fixture::venue(), f.version());
+    let (mut meme, mut quote, receipt) = vault.take_auto_lp(&vault_fixture::venue(), f.version());
     assert!(meme.value() == 30 && quote.value() == 40);
     destroy(meme.split(20));
     destroy(quote.split(40));
-    vault.keep_auto_lp(&vault_fixture::venue(), f.version(), 20, 40, meme, quote);
+    vault.keep_auto_lp(&vault_fixture::venue(), f.version(), receipt, meme, quote);
 
     let (_, _, auto_lp_meme, auto_lp_quote, _, _, _) = vault.balances_for_testing();
     assert!(auto_lp_meme == 10 && auto_lp_quote == 0);
-    assert_eq!(event::events_by_type<AutoLiquidityAdded<VAULT_FIXTURE, QUOTE>>().length(), 1);
+    assert_eq!(
+        event::events_by_type<AutoLiquidityAdded<VAULT_FIXTURE, QUOTE>>(),
+        vector[blast_vault_events::auto_liquidity_added_for_testing(object::id(&vault), 20, 40, 10, 0)],
+    );
 
+    test_scenario::return_shared(vault);
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_vault::errors::EWrongVault, location = blast_vault::vault)]
+fun a_buyback_receipt_from_another_vault_is_rejected() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let (mut vault, mut other_vault) = share_two_vaults(&mut f, &mut scenario);
+    vault.fund_burn_quote_for_testing(balance::create_for_testing(10));
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::venue(),
+        &buyback_admin(),
+        f.version(),
+        10,
+    );
+    destroy(taken_quote);
+
+    f.burn_buyback(&mut other_vault, receipt, 0, 11, 1, scenario.ctx());
+
+    abort
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EReturnedExceedsTaken,
+    location = blast_vault::vault,
+)]
+fun a_buyback_returning_more_quote_than_it_took_is_rejected() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 0, 0, false, false);
+    f.share_vault(&mut scenario, terms, 0, 0);
+    let mut vault = vault_fixture::take_vault(&scenario);
+    vault.fund_burn_quote_for_testing(balance::create_for_testing(10));
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::venue(),
+        &buyback_admin(),
+        f.version(),
+        10,
+    );
+    destroy(taken_quote);
+
+    f.burn_buyback(&mut vault, receipt, 50, 11, 0, scenario.ctx());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_vault::errors::EWrongVault, location = blast_vault::vault)]
+fun an_auto_lp_receipt_from_another_vault_is_rejected() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let (mut vault, mut other_vault) = share_two_vaults(&mut f, &mut scenario);
+    let (mut meme, quote, receipt) = vault.take_auto_lp(&vault_fixture::venue(), f.version());
+    meme.join(f.meme(1));
+
+    other_vault.keep_auto_lp(&vault_fixture::venue(), f.version(), receipt, meme, quote);
+
+    abort
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EReturnedExceedsTaken,
+    location = blast_vault::vault,
+)]
+fun an_auto_lp_meme_return_above_its_take_is_rejected() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let auto_lp_split = fee_split::new(vector[
+        fee_split::route(fee_split::auto_lp_destination(), bps::new(10_000)),
+    ]);
+    let terms = f.terms_for(auto_lp_split, 0, 0, false, false);
+    f.share_vault(&mut scenario, terms, 0, 0);
+    let mut vault = vault_fixture::take_vault(&scenario);
+    f.collect(&mut vault, 30, 40, scenario.ctx());
+    let (mut meme, quote, receipt) = vault.take_auto_lp(&vault_fixture::venue(), f.version());
+    meme.join(f.meme(1));
+
+    vault.keep_auto_lp(&vault_fixture::venue(), f.version(), receipt, meme, quote);
+
+    abort
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EReturnedExceedsTaken,
+    location = blast_vault::vault,
+)]
+fun a_buyback_returning_more_than_it_took_is_reported_before_its_minimum() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 0, 0, false, false);
+    f.share_vault(&mut scenario, terms, 0, 0);
+    let mut vault = vault_fixture::take_vault(&scenario);
+    vault.fund_burn_quote_for_testing(balance::create_for_testing(10));
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::venue(),
+        &buyback_admin(),
+        f.version(),
+        10,
+    );
+    destroy(taken_quote);
+
+    f.burn_buyback(&mut vault, receipt, 0, 11, 1, scenario.ctx());
+
+    abort
+}
+
+#[test]
+fun a_buyback_returning_all_its_quote_spends_none() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 0, 0, false, false);
+    f.share_vault(&mut scenario, terms, 0, 0);
+    let mut vault = vault_fixture::take_vault(&scenario);
+    vault.fund_burn_quote_for_testing(balance::create_for_testing(10));
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::venue(),
+        &buyback_admin(),
+        f.version(),
+        10,
+    );
+    destroy(taken_quote);
+
+    f.burn_buyback(&mut vault, receipt, 0, 10, 0, scenario.ctx());
+
+    assert_eq!(
+        event::events_by_type<BuybackBurned<VAULT_FIXTURE, QUOTE>>(),
+        vector[blast_vault_events::buyback_burned_for_testing(object::id(&vault), 0, 0, 10)],
+    );
+    test_scenario::return_shared(vault);
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EReturnedExceedsTaken,
+    location = blast_vault::vault,
+)]
+fun an_auto_lp_quote_return_above_its_take_is_rejected() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let auto_lp_split = fee_split::new(vector[
+        fee_split::route(fee_split::auto_lp_destination(), bps::new(10_000)),
+    ]);
+    let terms = f.terms_for(auto_lp_split, 0, 0, false, false);
+    f.share_vault(&mut scenario, terms, 0, 0);
+    let mut vault = vault_fixture::take_vault(&scenario);
+    f.collect(&mut vault, 30, 40, scenario.ctx());
+    let (meme, mut quote, receipt) = vault.take_auto_lp(&vault_fixture::venue(), f.version());
+    quote.join(balance::create_for_testing(1));
+
+    vault.keep_auto_lp(&vault_fixture::venue(), f.version(), receipt, meme, quote);
+
+    abort
+}
+
+#[test]
+fun a_zero_auto_lp_take_keeps_nothing_and_emits_nothing() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 0, 0, false, false);
+    f.share_vault(&mut scenario, terms, 0, 0);
+    let mut vault = vault_fixture::take_vault(&scenario);
+
+    let (meme, quote, receipt) = vault.take_auto_lp(&vault_fixture::venue(), f.version());
+    assert!(meme.value() == 0 && quote.value() == 0);
+    vault.keep_auto_lp(&vault_fixture::venue(), f.version(), receipt, meme, quote);
+
+    assert_eq!(event::events_by_type<AutoLiquidityAdded<VAULT_FIXTURE, QUOTE>>().length(), 0);
     test_scenario::return_shared(vault);
     f.end();
     scenario.end();
@@ -780,7 +1084,15 @@ fun the_admin_pause_stops_buybacks() {
     vault.fund_burn_quote_for_testing(balance::create_for_testing(100));
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
 
-    destroy(vault.take_buyback_quote(&vault_fixture::venue(), &buyback_admin(), f.version(), 10));
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::venue(),
+        &buyback_admin(),
+        f.version(),
+        10,
+    );
+
+    destroy(taken_quote);
+    destroy(receipt);
 
     abort
 }
@@ -819,14 +1131,34 @@ fun a_paused_buyback_reports_the_pause_before_the_venue() {
     let mut vault = vault_fixture::take_vault(&scenario);
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
 
-    destroy(
-        vault.take_buyback_quote(&vault_fixture::other_venue(), &buyback_admin(), f.version(), 10),
+    let (taken_quote, receipt) = vault.take_buyback_quote(
+        &vault_fixture::other_venue(),
+        &buyback_admin(),
+        f.version(),
+        10,
     );
+
+    destroy(taken_quote);
+    destroy(receipt);
 
     abort
 }
 
 // === Test Helpers ===
+
+/// Shares two vaults for the test sale and takes both, the first shared first.
+fun share_two_vaults(
+    f: &mut VaultFixture,
+    scenario: &mut Scenario,
+): (Vault<VAULT_FIXTURE, QUOTE>, Vault<VAULT_FIXTURE, QUOTE>) {
+    let terms = f.terms_for(owner_split(), 0, 0, false, false);
+    f.share_vault(scenario, terms, 0, 0);
+    let first_id = test_scenario::most_recent_id_shared<Vault<VAULT_FIXTURE, QUOTE>>().destroy_some();
+    f.share_vault(scenario, terms, 0, 0);
+    let second_id = test_scenario::most_recent_id_shared<Vault<VAULT_FIXTURE, QUOTE>>().destroy_some();
+
+    (scenario.take_shared_by_id(first_id), scenario.take_shared_by_id(second_id))
+}
 
 /// Owner 40%, auto-LP 20%, holder rewards 20%, burn 10%, and one address 10%.
 fun every_route_split(): FeeSplit {
@@ -840,6 +1172,8 @@ fun every_route_split(): FeeSplit {
 }
 
 fun fee_admin(): AdminWitness<FeeAdmin> { blast_acl::witness_for_testing() }
+
+fun adapter_admin(): AdminWitness<AdapterAdmin> { blast_acl::witness_for_testing() }
 
 fun cancel_admin(): AdminWitness<CancelAdmin> { blast_acl::witness_for_testing() }
 
@@ -855,33 +1189,37 @@ use blast_admin::{blast_acl::{Self, AdminWitness}, package_admin::{Self, PauseAd
 
 use blast_core::{
     blast_core_events::ProtocolFeesPaid,
-    blast_domain::{BuybackAdmin, CancelAdmin, FeeAdmin},
+    blast_domain::{AdapterAdmin, BuybackAdmin, CancelAdmin, FeeAdmin},
     bps,
     fee_split::{Self, FeeSplit},
+    migration,
     owner_proof
 };
 
 use blast_vault::{
     blast_vault_events::{
+        Self,
         AutoLiquidityAdded,
         BuybackBurned,
         FeesCollected,
         OwnerBalancesClaimed,
         VaultCreated
     },
-    blast_vault_package::BLAST_VAULT_PACKAGE,
+    blast_vault_package::{Self, BLAST_VAULT_PACKAGE},
     constants,
-    vault,
+    vault::{Self, Vault},
     vault_fixture::{
         Self,
         QUOTE,
+        SaleWitness,
         TestPosition,
         TestVenue,
         VAULT_FIXTURE,
+        VaultFixture,
         owner_split
     }
 };
 
 use std::unit_test::{assert_eq, destroy};
 
-use sui::{balance, coin::{Self, Coin}, event, test_scenario};
+use sui::{balance, coin::{Self, Coin}, event, test_scenario::{Self, Scenario}};

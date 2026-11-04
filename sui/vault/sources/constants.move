@@ -23,9 +23,10 @@ macro public(package) fun valid_pause_bits(): u8 {
     blast_vault::constants::admin_pause_bit!()
 }
 
-/// Initial venue admission notice: zero, so Blast lists its venues at launch while publication
-/// keeps the package paused. `blast_vault_package::unpause` refuses until a nonzero notice applies.
-macro public(package) fun venue_admission_delay_ms(): u64 {
+/// Initial witness admission notice: zero, so Blast lists its products and venues at launch while
+/// publication keeps the package paused. `blast_vault_package::unpause` refuses until a nonzero
+/// notice applies.
+macro public(package) fun witness_admission_delay_ms(): u64 {
     0
 }
 

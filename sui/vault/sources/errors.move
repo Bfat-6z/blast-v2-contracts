@@ -8,15 +8,15 @@ module blast_vault::errors;
 // === Errors ===
 
 #[test_only]
-/// A venue witness must not be a primitive or framework type.
-const EInvalidVenue: u64 = 0;
+/// An admitted witness must not be a primitive or framework type.
+const EInvalidWitness: u64 = 0;
 
 #[test_only]
 /// Only an admitted venue may create vaults.
 const EUnadmittedVenue: u64 = 1;
 
 #[test_only]
-/// Unpause needs a nonzero venue admission notice.
+/// Unpause needs a nonzero witness admission notice and no pending admission.
 const EUnguardedNotice: u64 = 2;
 
 #[test_only]
@@ -124,7 +124,7 @@ const EEmptyClaim: u64 = 27;
 const EInvalidProof: u64 = 28;
 
 #[test_only]
-/// A round settles and closes only against its own vault.
+/// A round or a venue receipt acts only on its own vault.
 const EWrongVault: u64 = 29;
 
 #[test_only]
@@ -139,7 +139,15 @@ const EOverReserve: u64 = 31;
 /// A round can close only at or after its claim deadline.
 const EClaimsStillOpen: u64 = 32;
 
-macro public(package) fun invalid_venue(): u64 { 0 }
+#[test_only]
+/// Only terms sealed by an admitted issuer may create vaults.
+const EUnadmittedIssuer: u64 = 33;
+
+#[test_only]
+/// A venue returns at most what it took from the vault.
+const EReturnedExceedsTaken: u64 = 34;
+
+macro public(package) fun invalid_witness(): u64 { 0 }
 
 macro public(package) fun unadmitted_venue(): u64 { 1 }
 
@@ -204,3 +212,7 @@ macro public(package) fun reserve_settled(): u64 { 30 }
 macro public(package) fun over_reserve(): u64 { 31 }
 
 macro public(package) fun claims_still_open(): u64 { 32 }
+
+macro public(package) fun unadmitted_issuer(): u64 { 33 }
+
+macro public(package) fun returned_exceeds_taken(): u64 { 34 }
