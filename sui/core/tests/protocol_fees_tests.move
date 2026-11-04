@@ -49,11 +49,12 @@ fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
     assert_balances(&ledger, 0, 0, 0);
     let paid = event::events_by_type<ProtocolFeesPaid<MEME, QUOTE>>();
     assert_eq!(paid.length(), 1);
-    let (origin, destination, meme, quote, sui, partner_id, partner_meme, _, _) = paid[0].paid_fields();
+    let (origin, destination, meme, quote, sui, partner_id, partner_meme, partner_quote, partner_sui) =
+        paid[0].paid_fields();
     assert_eq!(origin, ledger.origin());
     assert_eq!(destination, TREASURY);
-    assert_eq!(meme + quote + sui, 60);
-    assert!(partner_id.is_none() && partner_meme == 0);
+    assert!(meme == 10 && quote == 20 && sui == 30);
+    assert!(partner_id.is_none() && partner_meme == 0 && partner_quote == 0 && partner_sui == 0);
 
     scenario.next_tx(TREASURY);
     let sui_coin = scenario.take_from_address<Coin<SUI>>(TREASURY);
@@ -77,9 +78,13 @@ fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
     ledger.pay_with_partner(&treasury, &partner, scenario.ctx());
 
     let paid = event::events_by_type<ProtocolFeesPaid<MEME, QUOTE>>();
-    let (_, _, meme, quote, sui, partner_id, partner_meme, partner_quote, partner_sui) = paid[0]
-        .paid_fields();
+    assert_eq!(paid.length(), 1);
+    let (origin, destination, meme, quote, sui, partner_id, partner_meme, partner_quote, partner_sui) =
+        paid[0].paid_fields();
+    assert_eq!(origin, ledger.origin());
+    assert_eq!(destination, TREASURY);
     assert_eq!(partner_id, option::some(object::id(&partner)));
+    assert_eq!(ledger.partner_id(), partner_id);
     // The partner's cut rounds down, so Blast keeps the remainder of each asset.
     assert!(partner_meme == 300 && partner_quote == 3 && partner_sui == 30);
     assert!(meme == 701 && quote == 7 && sui == 70);

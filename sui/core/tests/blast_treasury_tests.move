@@ -73,6 +73,31 @@ fun a_destination_must_be_a_nonzero_address() {
 
 #[test]
 #[expected_failure(abort_code = blast_core::errors::EInvalidTreasury, location = blast_core::blast_treasury)]
+/// The zero address is rejected before the delayed setting sees an unchanged proposal.
+fun a_zero_destination_is_rejected_before_an_unchanged_notice() {
+    let ctx = &mut tx_context::dummy();
+    let clock = clock::create_for_testing(ctx);
+    let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
+
+    treasury.schedule_destination(&blast_acl::witness_for_testing<TreasuryAdmin>(), @0x0, NOTICE_MS, &clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
+fun an_unchanged_destination_and_notice_is_rejected() {
+    let ctx = &mut tx_context::dummy();
+    let clock = clock::create_for_testing(ctx);
+    let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
+
+    treasury.schedule_destination(&blast_acl::witness_for_testing<TreasuryAdmin>(), GENESIS, NOTICE_MS, &clock);
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_core::errors::EInvalidTreasury, location = blast_core::blast_treasury)]
 fun the_genesis_destination_must_be_set() {
     blast_treasury::new_for_testing(@0x0, &mut tx_context::dummy()).share_for_testing();
 }

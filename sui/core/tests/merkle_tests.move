@@ -20,6 +20,23 @@ fun every_leaf_of_an_odd_tree_proves_with_its_positional_path() {
 }
 
 #[test]
+/// The SDK's three-holder vector (the migrators' holder-reward leaves): Alice's two-level proof
+/// and Carol's odd leaf, which is its own sibling, verify against the SDK root.
+fun the_sdk_three_holder_vector_verifies() {
+    let root = x"93f46ab27a1d3a5def3379afd0a3b02cc149d6fa03b7105b2697deba8c12cb2d";
+    let alice = x"18ba1db53bc0da39eb6f1f00df49fa5be0932e85ca8f8257f4d278edea7f1aa8";
+    let alice_proof = vector[
+        x"f0290d0717f5ac2c221a66e27d80e3c76a9ea2774a7dc7399cc5d108633526f1",
+        x"4fd4325f78a40a6972b998c35cf40ec26237d6ff9e5dc2934fb882b9aa18e08a",
+    ];
+    assert!(merkle::verify(root, alice, 0, 3, &alice_proof));
+    // Carol's leaf is the right child of the Carol/Carol pair, the second level's sibling.
+    let carol_pair = alice_proof[1];
+    let ab = x"ca047224c2edac2b2dcd7f28d0a6d6c7175a2f10beef5f440b0597d0e1c7a7f5";
+    assert_eq!(merkle::node(ab, carol_pair), root);
+}
+
+#[test]
 fun a_single_leaf_is_its_own_root() {
     assert!(merkle::verify(leaf(7), leaf(7), 0, 1, &vector[]));
 }
@@ -59,3 +76,5 @@ fun leaf(value: u8): vector<u8> {
 // === Imports ===
 
 use blast_core::merkle;
+
+use std::unit_test::assert_eq;
