@@ -43,11 +43,6 @@ macro public(package) fun max_recipients(): u64 {
     64
 }
 
-/// Bounds the transfers one fee collection makes.
-macro public(package) fun max_fee_recipients(): u64 {
-    16
-}
-
 /// The shortest LP-migration window. Migration is permissionless, so a funded sale reaches its
 /// refund exit only after a week in which nobody migrated it, and a sale that nobody settled by
 /// its end cannot be settled and cancelled in one transaction inside that week.
@@ -76,19 +71,15 @@ macro public(package) fun max_lp_fee_bps(): u64 {
     3_000
 }
 
-/// The most leaves one holder-reward round may commit.
-macro public(package) fun max_reward_leaves(): u64 {
-    65_536
-}
-
-/// Largest holder-reward gas reserve, in basis points of the round's holder Quote.
-macro public(package) fun max_gas_reserve_bps(): u64 {
-    1_000
-}
-
-/// Byte length of a Blake2b-256 digest: Merkle roots and nodes.
+/// Byte length of a Blake2b-256 digest: an allowlist's Merkle root.
 macro public(package) fun digest_length(): u64 {
     32
+}
+
+/// The Merkle leaf domain of every presale allowlist, `blast_core::merkle::leaf`'s domain for
+/// each `(index, wallet, wallet_cap)` payload.
+macro public(package) fun allowlist_leaf_domain(): vector<u8> {
+    b"blast-presale-v1"
 }
 
 /// Bluefin stores the pool name, built from this symbol, twice in every `Position`; the

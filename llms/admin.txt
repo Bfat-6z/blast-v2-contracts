@@ -96,11 +96,9 @@ names.
   or merge it. A value with no abilities at all (a "hot potato", such as a
   launch initializer or a migration handoff) can only be consumed by the specific
   later call that accepts it, so the whole sequence must sit in one PTB.
-- **Basis points.** Each package that takes rates defines its own validated
-  `Bps` type in its `bps` module. Build one inside the PTB with that package's
-  constructor, for example `blast_presale::bps::new` or `blast_fun::bps::new`,
-  which aborts above 10,000. A `blast_fun` `Bps` is a different type from a
-  `blast_presale` `Bps`.
+- **Basis points.** The launch products and the vault share one validated
+  `Bps` type, `blast_core::bps::Bps`. Build one inside the PTB with
+  `blast_core::bps::new`, which aborts above 10,000.
 - **Options.** Pass `Option<T>` arguments with `0x1::option::some` or
   `0x1::option::none` calls, or as pure BCS-encoded options.
 

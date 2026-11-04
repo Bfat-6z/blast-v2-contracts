@@ -13,7 +13,7 @@ public struct ReleaseFixture {
     creation_policy: CreationPolicy,
 }
 
-public struct MIGRATOR() has drop;
+public struct VENUE() has drop;
 
 // === Tests ===
 
@@ -108,8 +108,8 @@ fun unpause_rejects_a_pending_change_to_a_zero_notice() {
     abort_code = blast_presale::errors::EUnguardedNotice,
     location = blast_presale::package_admin,
 )]
-fun unpause_rejects_a_pending_migrator_admission() {
-    let mut f = release_fixture().with_pending_migrator_admission();
+fun unpause_rejects_a_pending_venue_admission() {
+    let mut f = release_fixture().with_pending_venue_admission();
     f.unpause(1);
     abort
 }
@@ -650,10 +650,10 @@ fun with_zero_notice_fees_proposal(self: ReleaseFixture): ReleaseFixture {
     ReleaseFixture { version, package_admin, fee_policy, creation_policy }
 }
 
-fun with_pending_migrator_admission(self: ReleaseFixture): ReleaseFixture {
+fun with_pending_venue_admission(self: ReleaseFixture): ReleaseFixture {
     let ReleaseFixture { version, package_admin, fee_policy, mut creation_policy } = self;
     let clock = sui::clock::create_for_testing(&mut tx_context::dummy());
-    creation_policy.schedule_migration_witness<MIGRATOR>(
+    creation_policy.schedule_venue<VENUE>(
         &version,
         &blast_acl::witness_for_testing<AdapterAdmin>(),
         &clock,
@@ -708,10 +708,11 @@ fun assert_guard_rejects_mask(initial: u8, query: u8) {
 // === Imports ===
 
 use blast_admin::blast_acl;
+use blast_core::bps;
+
 use blast_presale::{
     blast_presale_domain::{AdapterAdmin, FeeAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin},
     blast_presale_package as marker,
-    bps,
     constants,
     creation_policy::{Self, CreationPolicy},
     fee_policy::{Self, FeePolicy},

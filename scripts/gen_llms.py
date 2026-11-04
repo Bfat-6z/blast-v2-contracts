@@ -79,10 +79,11 @@ PRODUCTS = [
         "presale",
         "Presale",
         "standalone overflow presales on Sui: commit Quote to a capped or overflow sale, claim tokens or "
-        "refunds, migrate into Cetus or Bluefin, and earn LP fees and holder rewards after migration",
-        ["presale.md", "partners.md"],
+        "refunds, migrate into Cetus, Bluefin, or Aftermath, and collect LP fees and holder rewards "
+        "from the LP vault",
+        ["presale.md", "vault.md", "core.md", "partners.md"],
         ["sui/presale", "sui/vendors/aftermath_dao_presale"],
-        ["sui/partners", "sui/admin"],
+        ["sui/core", "sui/vault", "sui/partners", "sui/admin"],
     ),
     Product(
         "launchpad",

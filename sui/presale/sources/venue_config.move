@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Write-once custody for the venue capabilities and pool tiers migrators reserve before a presale
-/// opens.
+/// Custody for the venue capabilities and pool tiers venues reserve while preparing a sale token,
+/// before its presale opens. Entries are write-once under keys only their venue module constructs;
+/// a capability the venue's migration consumes leaves with it.
 module blast_presale::venue_config;
 
 // === Public Types ===
@@ -41,6 +42,14 @@ public(package) fun object<Key: copy + drop + store, Object: key + store>(
     key: Key,
 ): &Object {
     self.id.dynamic_object_field(key)
+}
+
+/// Removes the object added under `key`, for the migration that consumes it.
+public(package) fun remove_object<Key: copy + drop + store, Object: key + store>(
+    self: &mut VenueConfig,
+    key: Key,
+): Object {
+    self.id.remove_dynamic_object_field(key)
 }
 
 /// Records the tier of the `<Meme, Quote>` sale's pool at the venue `Venue` marks, which only that
@@ -101,3 +110,4 @@ use fun dynamic_field::add as UID.add_dynamic_field;
 use fun dynamic_field::borrow as UID.dynamic_field;
 use fun dynamic_object_field::add as UID.add_dynamic_object_field;
 use fun dynamic_object_field::borrow as UID.dynamic_object_field;
+use fun dynamic_object_field::remove as UID.remove_dynamic_object_field;

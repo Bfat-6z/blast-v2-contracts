@@ -4,10 +4,15 @@
 // Package error macros preserve the module's abort location.
 #[allow(lint(abort_without_constant))]
 /// Standalone presales with capped commitments, proportional fills or a first-come hard cap,
-/// migration-gated claims, and full refunds when a sale does not migrate.
+/// migration-gated claims, full refunds when a sale does not migrate, the migration hand-off to
+/// the sale's venue, and the owner proof its vault accepts.
 module blast_presale::blast_presale;
 
 // === Public Types ===
+
+/// The presale's package witness: it seals each sale's migration, vault terms, and owner proofs,
+/// and only this module constructs it.
+public struct PackageWitness() has drop;
 
 /// Who may commit and the maximum Quote each wallet may commit.
 ///
@@ -74,9 +79,8 @@ public struct VestingTerms has copy, drop, store {
     periods: u64,
 }
 
-/// One recipient's share, in BPS, of the token supply, of the raise, or of every collected LP
-/// fee. The creator takes LP fees as an ordinary fee recipient. A token or raise share may vest;
-/// a fee share may not.
+/// One recipient's share, in BPS, of the token supply or of the raise, paid at migration or
+/// vested from it.
 public struct RecipientShare has copy, drop, store {
     recipient: address,
     bps: Bps,
@@ -91,14 +95,6 @@ public struct RecipientPayout has copy, drop, store {
     vesting: Option<VestingTerms>,
 }
 
-/// How every collected LP fee is split: each recipient's share, then the holder-reward share.
-/// Only `fee_split` builds one, so wherever a split is held its rates total exactly 10,000 BPS and
-/// every fee it apportions is assigned in full.
-public struct FeeSplit has copy, drop, store {
-    fee_recipients: vector<RecipientShare>,
-    holder_rewards_bps: Bps,
-}
-
 /// Dynamic-field name for one wallet's undelivered commitment.
 public struct CommitmentKey(address) has copy, drop, store;
 
@@ -111,10 +107,11 @@ public struct Commitment has copy, drop, store {
 /// Hot potato from `new` to `finalize`, collecting the creator's settings. Only `finalize`
 /// consumes it, so every sale is finalized in the transaction whose `new` checked the creation
 /// policy and snapshotted Blast's rates. `finalize` validates the settings together; the supply,
-/// token allocations, raise, windows, eligibility policy, and LP-fee split must all be set.
+/// token allocations, raise, windows, eligibility policy, and the vault's LP-fee split must all be
+/// set.
 public struct PresaleInitializer<phantom SaleToken, phantom Quote> {
     treasury_cap: TreasuryCap<SaleToken>,
-    migration_witness: TypeName,
+    venue: TypeName,
     protocol_fees: ProtocolFees,
     token_supply: u64,
     burnable: bool,
@@ -161,7 +158,9 @@ public struct Presale<phantom SaleToken, phantom Quote> has key {
     eligibility: EligibilityPolicy,
     uncapped: Option<UncappedPhase>,
     hard_cap: Option<HardCap>,
-    migration_witness: TypeName,
+    /// The venue witness type the sale's liquidity migrates to; only it redeems the hand-off.
+    venue: TypeName,
+    /// The LP-fee split the sale's vault starts with.
     fee_split: FeeSplit,
     total_commitments: u64,
     /// The wallets holding an undelivered commitment: admitted by their first commitment and
@@ -264,28 +263,17 @@ public fun vesting_terms(
     terms
 }
 
-/// The LP-fee split a sale and its vault pay collected fees under: at most
-/// `constants::max_fee_recipients!()` distinct unvested recipients whose shares total exactly
-/// 10,000 BPS with the holder-reward share. The creator takes its LP fees as one of the recipients.
-public fun fee_split(fee_recipients: vector<RecipientShare>, holder_rewards_bps: Bps): FeeSplit {
-    let split = FeeSplit { fee_recipients, holder_rewards_bps };
-    split.assert_valid_fee_split();
-
-    split
-}
-
-/// Starts a presale of `SaleToken` raising `Quote` for the migrator that constructs
-/// `MigrationWitness`, and snapshots Blast's rates. The venue's pool terms, such as a CLMM tier,
-/// belong to the migrator, which records any it needs before calling this.
+/// Starts a presale of `SaleToken` raising `Quote` whose liquidity migrates to the venue that
+/// issued `venue_ticket` for the pair, and snapshots Blast's rates. The venue keeps the pool terms,
+/// such as a CLMM tier, which it records while preparing the ticket.
 ///
-/// A migrator in this or any other package starts its sales here with its own `MigrationWitness`,
-/// which only its defining module can construct. The `CreationPolicy` must allow that witness, so
-/// Blast decides which migrators may open sales; the sale then releases its liquidity only to
-/// `migrate` called with the same witness.
-public fun new<SaleToken, Quote, MigrationWitness: drop>(
+/// A venue in this or any other package issues tickets sealed by its own witness, which only its
+/// defining module can construct. The `CreationPolicy` must admit that venue, so Blast decides
+/// which venues may open sales; the sale's migration hand-off is then redeemable only by it.
+public fun new<SaleToken, Quote>(
     treasury_cap: TreasuryCap<SaleToken>,
     package_version: &PackageVersion,
-    _: MigrationWitness,
+    venue_ticket: VenueTicket<SaleToken, Quote>,
     creation_policy: &CreationPolicy,
     fee_policy: &FeePolicy,
 ): PresaleInitializer<SaleToken, Quote> {
@@ -293,7 +281,8 @@ public fun new<SaleToken, Quote, MigrationWitness: drop>(
 
     package_version.assert_not_paused(constants::create_pause_bit!());
 
-    creation_policy.assert_allowed<Quote, MigrationWitness>();
+    let venue = venue_ticket.redeem_ticket();
+    creation_policy.assert_allowed<Quote>(venue);
     assert!(
         type_name::with_original_ids<SaleToken>() != type_name::with_original_ids<Quote>(),
         blast_presale::errors::invalid_asset_pair!(),
@@ -304,7 +293,7 @@ public fun new<SaleToken, Quote, MigrationWitness: drop>(
 
     PresaleInitializer {
         treasury_cap,
-        migration_witness: type_name::with_original_ids<MigrationWitness>(),
+        venue,
         protocol_fees: fee_policy.fees(),
         token_supply: 0,
         burnable: false,
@@ -432,7 +421,8 @@ public fun set_hard_cap<SaleToken, Quote>(
     self.hard_cap = option::some(HardCap { starts_after_ms: start_delay_ms, closes_when_filled });
 }
 
-/// Sets how the sale's vault splits every collected LP fee.
+/// Sets how the sale's vault splits every collected LP fee after Blast's share: any of the core
+/// routes, including the sale owner, auto-LP, holder rewards, and burn.
 public fun set_fee_split<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
     package_version: &PackageVersion,
@@ -463,12 +453,10 @@ public fun set_partner<SaleToken, Quote>(
     self.partner_id = option::some(partner_id);
 }
 
-/// The witness type of the migrator that started the sale, so a migrator finalizing an
-/// initializer it is handed can confirm the sale is its own.
-public fun migration_witness<SaleToken, Quote>(
-    self: &PresaleInitializer<SaleToken, Quote>,
-): TypeName {
-    self.migration_witness
+/// The venue witness type the sale migrates to, so a venue finalizing an initializer it is
+/// handed can confirm the sale is its own.
+public fun venue<SaleToken, Quote>(self: &PresaleInitializer<SaleToken, Quote>): TypeName {
+    self.venue
 }
 
 /// Requires a confirmed unregulated sale currency and checks every setting, then mints and
@@ -486,7 +474,7 @@ public fun finalize<SaleToken, Quote>(
 
     let PresaleInitializer {
         treasury_cap,
-        migration_witness,
+        venue,
         protocol_fees,
         token_supply,
         burnable,
@@ -513,7 +501,6 @@ public fun finalize<SaleToken, Quote>(
     participant_vesting.do_ref!(|terms| terms.assert_valid_vesting());
     recipient_allocations.do_ref!(|share| share.vesting.do_ref!(|terms| terms.assert_valid_vesting()));
     raise_allocations.do_ref!(|share| share.vesting.do_ref!(|terms| terms.assert_valid_vesting()));
-    fee_split.assert_valid_fee_split();
     assert!(raise_target > 0, blast_presale::errors::invalid_raise_target!());
     assert_raise_allocations(&raise_allocations, protocol_fees.raise_bps());
     assert_token_allocations(
@@ -594,10 +581,8 @@ public fun finalize<SaleToken, Quote>(
         eligibility,
         uncapped,
         hard_cap,
-        migration_witness,
-        fee_recipients: fee_split.fee_recipients.recipients(),
-        fee_recipient_bps: fee_split.fee_recipients.bps(),
-        holder_rewards_bps: fee_split.holder_rewards_bps.value(),
+        venue,
+        fee_split,
         protocol_raise_bps: protocol_fees.raise_bps().value(),
         protocol_token_bps: protocol_fees.token_bps().value(),
         protocol_lp_fee_meme_bps: protocol_fees.lp_fee_meme_bps().value(),
@@ -618,7 +603,7 @@ public fun finalize<SaleToken, Quote>(
             eligibility,
             uncapped,
             hard_cap,
-            migration_witness,
+            venue,
             fee_split,
             total_commitments: 0,
             participants: 0,
@@ -950,29 +935,24 @@ public fun claim<SaleToken, Quote>(
 
 /// Pays Blast and the raise recipients their shares and releases every token
 /// recipient's tokens at once, locking each vesting share in its own shared irrevocable
-/// schedule starting now, then releases the rest of the raise and the
-/// LP-token allocation only to the configured migrator, the holder of the witness the sale was
-/// created with. A sale naming a Blast partner holds Blast's fees instead, for
-/// `pay_protocol_fees_with_partner`.
-/// Anyone may call that migrator at any time until the sale is cancelled; its pool creation
-/// remains atomic with this state transition.
-public fun migrate<SaleToken, Quote, MigrationWitness: drop>(
+/// schedule starting now, then returns the hand-off only the stored venue can redeem: the rest
+/// of the raise, the LP-token allocation, and the vault's terms, with the sale's LP-fee split,
+/// Blast's snapshotted LP-fee rates, its partner, and the migration residuals kept for the owner.
+/// A sale naming a Blast partner holds Blast's fees instead, for `pay_protocol_fees_with_partner`.
+/// Anyone may call it until the sale is cancelled; an unredeemed hand-off aborts the transaction,
+/// so the venue's pool creation stays atomic with this state transition.
+public fun migrate<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &PackageVersion,
     fee_policy: &FeePolicy,
-    _: MigrationWitness,
     clock: &Clock,
     ctx: &mut TxContext,
-): (Balance<SaleToken>, Balance<Quote>) {
+): Migration<SaleToken, Quote> {
     package_version.assert_current();
 
     package_version.assert_not_paused(constants::migration_pause_bit!());
 
     assert!(self.lifecycle == Lifecycle::Funded, blast_presale::errors::invalid_lifecycle!());
-    assert!(
-        self.migration_witness == type_name::with_original_ids<MigrationWitness>(),
-        blast_presale::errors::wrong_migration_witness!(),
-    );
 
     let mut quote = self.quote.split(self.raise_target);
     let protocol_quote = quote.split(self.protocol_quote);
@@ -986,13 +966,35 @@ public fun migrate<SaleToken, Quote, MigrationWitness: drop>(
 
     event::emit(PresaleMigrated<SaleToken, Quote> {
         presale_id: self.id.to_inner(),
-        migration_witness: self.migration_witness,
+        venue: self.venue,
         liquidity_quote: quote.value(),
         liquidity_tokens: liquidity_tokens.value(),
         recipient_tokens,
     });
 
-    (liquidity_tokens, quote)
+    let terms = migration::vault_terms(
+        PackageWitness(),
+        self.id.to_inner(),
+        self.fee_split,
+        self.protocol_fees.lp_fee_meme_bps(),
+        self.protocol_fees.lp_fee_quote_bps(),
+        self.partner_id,
+        migration::residuals_to_owner(),
+    );
+
+    migration::new(PackageWitness(), liquidity_tokens, quote, self.venue, terms)
+}
+
+/// Proves to the sale's vault that the caller holds the sale's creator capability.
+public fun prove_owner<SaleToken, Quote>(
+    self: &Presale<SaleToken, Quote>,
+    package_version: &PackageVersion,
+    cap: &PresaleCap,
+): OwnerProof {
+    package_version.assert_current();
+    self.assert_cap(cap);
+
+    owner_proof::new(PackageWitness(), self.id.to_inner())
 }
 
 /// Pays a migrated sale's Blast partner its cut of Blast's raise fee, rounded down so Blast keeps
@@ -1030,78 +1032,27 @@ public fun destroy_cap<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, cap: 
     id.delete();
 }
 
-// === Package Functions ===
+// === Private Functions ===
 
-public(package) fun assert_cap<SaleToken, Quote>(
-    self: &Presale<SaleToken, Quote>,
-    cap: &PresaleCap,
-) {
+/// Aborts unless `cap` is the sale's creator capability.
+fun assert_cap<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, cap: &PresaleCap) {
     assert!(object::id(cap) == self.presale_cap_id, blast_presale::errors::wrong_presale_cap!());
 }
 
-/// The presale and creator-capability IDs, the LP-fee split, Blast's rates, and the partner its
-/// vault inherits.
-public(package) fun vault_config<SaleToken, Quote>(
-    self: &Presale<SaleToken, Quote>,
-): (ID, ID, FeeSplit, ProtocolFees, Option<ID>) {
-    (self.id.to_inner(), self.presale_cap_id, self.fee_split, self.protocol_fees, self.partner_id)
-}
-
-/// Splits one fee amount into each recipient's share followed by the holder-reward
-/// share, assigning every atomic unit exactly once. Remainder units go to the largest
-/// fractional remainders; equal remainders favor the earlier share, so fee recipients
-/// win ties over the holder-reward share and earlier recipients over later ones.
-public(package) fun apportion_fee(self: &FeeSplit, amount: u64): vector<u64> {
-    let mut split_bps = self.fee_recipients.map_ref!(|fee_recipient| fee_recipient.bps);
-    split_bps.push_back(self.holder_rewards_bps);
-
-    apportion(split_bps, amount)
-}
-
-/// Each fee recipient and its rate, in payment order.
-public(package) fun fee_recipients(self: &FeeSplit): &vector<RecipientShare> {
-    &self.fee_recipients
-}
-
-/// Checks the split's rules: bounded distinct unvested recipients totalling 10,000 BPS with the
-/// holder-reward share. Every consumer rechecks, so a split built by superseded bytecode still
-/// meets this generation's rules.
-public(package) fun assert_valid_fee_split(self: &FeeSplit) {
-    assert!(
-        valid_shares(&self.fee_recipients, constants::max_fee_recipients!())
-            && self.fee_recipients.all!(|fee_recipient| fee_recipient.vesting.is_none())
-            && total_bps(&self.fee_recipients) + self.holder_rewards_bps.value()
-                == constants::basis_points_denominator!(),
-        blast_presale::errors::invalid_fee_split!(),
-    );
-}
-
-/// The holder-reward share of every collected fee.
-public(package) fun holder_rewards_bps(self: &FeeSplit): Bps {
-    self.holder_rewards_bps
-}
-
 /// Each share's recipient, in order.
-public(package) fun recipients_of(shares: &vector<RecipientShare>): vector<address> {
+fun recipients_of(shares: &vector<RecipientShare>): vector<address> {
     shares.map_ref!(|share| share.recipient)
 }
 
 /// Each share's BPS, in order.
-public(package) fun bps_of(shares: &vector<RecipientShare>): vector<u64> {
+fun bps_of(shares: &vector<RecipientShare>): vector<u64> {
     shares.map_ref!(|share| share.bps.value())
 }
 
 /// Transfers `amount` split from `self` to `recipient`, skipping empty shares.
-public(package) fun pay<Asset>(
-    self: &mut Balance<Asset>,
-    amount: u64,
-    recipient: address,
-    ctx: &mut TxContext,
-) {
+fun pay<Asset>(self: &mut Balance<Asset>, amount: u64, recipient: address, ctx: &mut TxContext) {
     if (amount > 0) transfer::public_transfer(self.split(amount).into_coin(ctx), recipient);
 }
-
-// === Private Functions ===
 
 fun assert_open<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, clock: &Clock) {
     assert!(self.lifecycle == Lifecycle::Open, blast_presale::errors::invalid_lifecycle!());
@@ -1151,27 +1102,6 @@ fun can_close_early<SaleToken, Quote>(self: &Presale<SaleToken, Quote>, now_at_m
     self.hard_cap.is_some_and!(|cap| cap.closes_when_filled)
         && self.is_hard_capped(now_at_ms)
         && self.total_commitments >= self.raise_target
-}
-
-/// Largest-remainder apportionment. Shares must sum to 10,000 BPS.
-fun apportion(shares: vector<Bps>, total: u64): vector<u64> {
-    let denominator = constants::basis_points_denominator!() as u128;
-    let scaled_shares = shares.map!(|share| (total as u128) * (share.value() as u128));
-    let mut amounts = scaled_shares.map_ref!(|scaled| (*scaled / denominator) as u64);
-    let remainders = scaled_shares.map!(|scaled| scaled % denominator);
-
-    // Hand out the leftover units to the largest remainders, earlier shares first on ties.
-    let mut by_remainder = vector::tabulate!(remainders.length(), |i| i);
-    by_remainder.insertion_sort_by!(|a, b| {
-        remainders[*a] > remainders[*b] || (remainders[*a] == remainders[*b] && *a <= *b)
-    });
-    let leftover = total - amounts.fold!(0, |sum, amount| sum + amount);
-    leftover.do!(|rank| {
-        let amount = &mut amounts[by_remainder[rank]];
-        *amount = *amount + 1;
-    });
-
-    amounts
 }
 
 // Presale creation
@@ -1365,7 +1295,7 @@ fun apportion_supply(
         protocol_token_bps,
     ];
     shares.append(recipient_allocations.map_ref!(|allocation| allocation.bps));
-    let amounts = apportion(shares, token_supply);
+    let amounts = bps::apportion(shares, token_supply, option::none());
 
     let (token_allocation, liquidity_token_allocation) = (amounts[0], amounts[1]);
     let recipient_payouts = payouts(recipient_allocations, &amounts, 3);
@@ -1393,7 +1323,7 @@ fun apportion_raise(
 
     shares.push_back(protocol_raise_bps);
     shares.push_back(bps::new(constants::basis_points_denominator!() - allocated_bps));
-    let amounts = apportion(shares, raise_target);
+    let amounts = bps::apportion(shares, raise_target, option::none());
 
     let raise_payouts = payouts(raise_allocations, &amounts, 0);
     let protocol_quote = amounts[raise_allocations.length()];
@@ -1665,7 +1595,7 @@ fun verify_allowlisted(
 
             let digest = allowlist_leaf(index, wallet, wallet_cap);
             assert!(
-                merkle_tree::verify(root, digest, index, leaf_count, proof),
+                merkle::verify(root, digest, index, leaf_count, proof),
                 blast_presale::errors::invalid_eligibility_proof!(),
             );
 
@@ -1674,14 +1604,13 @@ fun verify_allowlisted(
     }
 }
 
-/// The domain-separated digest of one allowlist leaf.
+/// The digest of one allowlist leaf, under the presale allowlist's Merkle leaf domain.
 fun allowlist_leaf(index: u64, wallet: address, wallet_cap: u64): vector<u8> {
-    let mut bytes = b"\x00blast-presale-v1";
-    bytes.append(bcs::to_bytes(&index));
-    bytes.append(bcs::to_bytes(&wallet));
-    bytes.append(bcs::to_bytes(&wallet_cap));
+    let mut payload = bcs::to_bytes(&index);
+    payload.append(bcs::to_bytes(&wallet));
+    payload.append(bcs::to_bytes(&wallet_cap));
 
-    hash::blake2b256(&bytes)
+    merkle::leaf(constants::allowlist_leaf_domain!(), payload)
 }
 
 // Claims
@@ -1839,15 +1768,6 @@ fun cancel<SaleToken, Quote>(self: &mut Presale<SaleToken, Quote>) {
 // === Test-Only Functions ===
 
 #[test_only]
-/// Builds a split without its rules, as superseded bytecode could, to prove consumers recheck.
-public fun fee_split_unchecked_for_testing(
-    fee_recipients: vector<RecipientShare>,
-    holder_rewards_bps: Bps,
-): FeeSplit {
-    FeeSplit { fee_recipients, holder_rewards_bps }
-}
-
-#[test_only]
 /// Builds an open policy without its rules, as superseded bytecode could.
 public fun open_eligibility_unchecked_for_testing(
     wallet_cap: u64,
@@ -1879,7 +1799,12 @@ public fun allowlist_leaf_for_testing(index: u64, wallet: address, wallet_cap: u
 
 #[test_only]
 public fun merkle_node_for_testing(left: vector<u8>, right: vector<u8>): vector<u8> {
-    merkle_tree::node(left, right)
+    merkle::node(left, right)
+}
+
+#[test_only]
+public fun protocol_fees_for_testing<SaleToken, Quote>(self: &Presale<SaleToken, Quote>): ProtocolFees {
+    self.protocol_fees
 }
 
 #[test_only]
@@ -1950,13 +1875,8 @@ public fun created_fields<SaleToken, Quote>(
 #[test_only]
 public fun created_migration_fields<SaleToken, Quote>(
     event: &PresaleCreated<SaleToken, Quote>,
-): (TypeName, vector<address>, vector<u64>, u64) {
-    (
-        event.migration_witness,
-        event.fee_recipients,
-        event.fee_recipient_bps,
-        event.holder_rewards_bps,
-    )
+): (TypeName, FeeSplit) {
+    (event.venue, event.fee_split)
 }
 
 #[test_only]
@@ -2090,7 +2010,7 @@ public fun migrated_fields<SaleToken, Quote>(
 ): (ID, TypeName, u64, u64, u64) {
     (
         event.presale_id,
-        event.migration_witness,
+        event.venue,
         event.liquidity_quote,
         event.liquidity_tokens,
         event.recipient_tokens,
@@ -2191,10 +2111,8 @@ public struct PresaleCreated<phantom SaleToken, phantom Quote> has copy, drop {
     eligibility: EligibilityPolicy,
     uncapped: Option<UncappedPhase>,
     hard_cap: Option<HardCap>,
-    migration_witness: TypeName,
-    fee_recipients: vector<address>,
-    fee_recipient_bps: vector<u64>,
-    holder_rewards_bps: u64,
+    venue: TypeName,
+    fee_split: FeeSplit,
     /// Blast's rates, snapshotted for this sale.
     protocol_raise_bps: u64,
     protocol_token_bps: u64,
@@ -2262,11 +2180,11 @@ public struct PresaleCancelled<phantom SaleToken, phantom Quote> has copy, drop 
     refundable_quote: u64,
 }
 
-/// The raise left after Blast's and the recipients' shares, and the LP-token allocation,
-/// entered the configured migrator.
+/// The raise left after Blast's and the recipients' shares, and the LP-token allocation, left
+/// the sale in its hand-off to `venue`.
 public struct PresaleMigrated<phantom SaleToken, phantom Quote> has copy, drop {
     presale_id: ID,
-    migration_witness: TypeName,
+    venue: TypeName,
     liquidity_quote: u64,
     liquidity_tokens: u64,
     recipient_tokens: u64,
@@ -2316,6 +2234,14 @@ public struct Claimed<phantom SaleToken, phantom Quote> has copy, drop {
 
 use blast_admin::blast_acl::AdminWitness;
 
+use blast_core::{
+    bps::{Self, Bps},
+    fee_split::FeeSplit,
+    merkle,
+    migration::{Self, Migration, VenueTicket},
+    owner_proof::{Self, OwnerProof}
+};
+
 use blast_fun_vesting::blast_fun_linear_vesting as linear_vesting;
 
 use blast_partners::blast_partners::Partner;
@@ -2323,11 +2249,9 @@ use blast_partners::blast_partners::Partner;
 use blast_presale::{
     blast_presale_domain::FeeAdmin,
     blast_presale_package::PackageVersion,
-    bps::{Self, Bps},
     constants,
     creation_policy::CreationPolicy,
     fee_policy::{Self, FeePolicy, ProtocolFees},
-    merkle_tree,
     migration_math
 };
 
@@ -2339,8 +2263,7 @@ use sui::{
     coin::{Coin, TreasuryCap},
     coin_registry::Currency,
     dynamic_field,
-    event,
-    hash
+    event
 };
 
 use fun pay as Balance.pay;

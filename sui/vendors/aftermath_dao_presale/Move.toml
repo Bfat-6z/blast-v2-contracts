@@ -5,6 +5,7 @@ license = "BUSL-1.1"
 authors = ["Jose Cerqueira (jose@interestprotocol.com)"]
 
 [dependencies]
+blast_core = { local = "../../core" }
 blast_presale = { local = "../../presale" }
 AftermathAmm = { local = "interfaces/aftermath_amm", override = true }
 AftermathDaoFeePools = { local = "interfaces/aftermath_dao_fee", override = true }

@@ -3,31 +3,31 @@
 
 // Package error macros preserve the module's abort location.
 #[allow(lint(abort_without_constant))]
-/// Permissionless Bluefin migration and LP-fee collection for configured presales.
+/// Bluefin sale-token preparation, permissionless migration into `blast_vault` custody, and LP-fee
+/// collection for presales. Auto-LP and burn routes accrue in the vault until the shared venues
+/// compound and buy back (ADR 0137, step 5).
 module blast_presale::bluefin;
 
 // === Public Types ===
 
-/// Sealed Bluefin migrator identity fixed before commitments open.
-public struct Witness() has drop;
-
-/// Sealed marker for the Bluefin position held by a presale vault.
+/// The Bluefin venue's sealed witness: it issues tickets, redeems migrations, and keys the
+/// position in the vault, so the creation policy and the vault registry admit this one type.
 public struct Venue() has drop;
 
 // === Public Functions ===
 
-/// Starts a presale irrevocably configured to migrate to a Bluefin pool at this tier. Every sale
-/// token has one sale, so the tier is recorded under its type.
-public fun new<Meme, Quote>(
-    treasury_cap: TreasuryCap<Meme>,
+/// Prepares `Meme` for a presale in `Quote` that migrates to a Bluefin pool at this tier, and
+/// returns the ticket `blast_presale::new` redeems. Every sale token has one sale, so the tier is
+/// recorded under its type; the treasury capability proves the caller controls the token, so no
+/// one else can record its tier first.
+public fun prepare<Meme, Quote>(
     package_version: &PackageVersion,
-    currency: &Currency<Meme>,
-    creation_policy: &CreationPolicy,
-    fee_policy: &FeePolicy,
     venue_config: &mut VenueConfig,
+    _: &TreasuryCap<Meme>,
+    currency: &Currency<Meme>,
     tick_spacing: u32,
     pool_fee_rate: u64,
-): PresaleInitializer<Meme, Quote> {
+): VenueTicket<Meme, Quote> {
     package_version.assert_current();
 
     assert!(
@@ -44,10 +44,12 @@ public fun new<Meme, Quote>(
 
     venue_config.add_pool_tier<Meme, Quote, _>(&Venue(), tick_spacing, pool_fee_rate);
 
-    presale::new(treasury_cap, package_version, Witness(), creation_policy, fee_policy)
+    migration::issue_ticket(Venue())
 }
 
-/// Anyone may atomically migrate a funded presale into its configured Bluefin pool.
+/// Anyone may atomically migrate a funded presale into its configured Bluefin pool and a
+/// `blast_vault` vault holding the position under the sale's terms; Bluefin's residuals wait in
+/// it for the sale's owner.
 public fun migrate<Meme, Quote>(
     sale: &mut Presale<Meme, Quote>,
     package_version: &PackageVersion,
@@ -56,6 +58,9 @@ public fun migrate<Meme, Quote>(
     currency: &Currency<Meme>,
     quote_currency: &Currency<Quote>,
     bluefin_config: &mut GlobalConfig,
+    registry: &VaultRegistry,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
     creation_fee: Coin<SUI>,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -63,7 +68,9 @@ public fun migrate<Meme, Quote>(
     package_version.assert_current();
 
     let (tick_spacing, pool_fee_rate) = venue_config.pool_tier<Meme>();
-    let (meme, quote) = sale.migrate(package_version, fee_policy, Witness(), clock, ctx);
+    let (meme, quote, terms) = sale
+        .migrate(package_version, fee_policy, clock, ctx)
+        .redeem(Venue());
 
     let source_meme = meme.value();
     let source_quote = quote.value();
@@ -106,67 +113,29 @@ public fun migrate<Meme, Quote>(
         fix_meme,
     );
 
+    let pool_id = position.pool_id();
     let liquidity = position.liquidity();
-
-    vault::create(
-        sale,
-        &Venue(),
-        position.pool_id(),
-        position,
-        liquidity,
-        residual_meme,
-        residual_quote,
-        ctx,
-    );
-
+    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx)
+        .share_with_position(
+            &Venue(),
+            treasury,
+            position,
+            liquidity,
+            residual_meme,
+            residual_quote,
+            ctx,
+        );
     pool.share_pool_object();
 }
 
-/// Seals the caller's own Bluefin position in `pool`, whose first coin must be Meme, in a new
-/// shared vault splitting its LP fees by `fee_split`, after Blast's current rates. The liquidity is
-/// locked for good. Blast must allow Quote and this migrator, as for a presale,
-/// and accept the partner, if one is named.
-public fun new_vault<Meme, Quote>(
-    position: Position,
-    package_version: &PackageVersion,
-    fee_split: FeeSplit,
-    partner_id: Option<ID>,
-    creation_policy: &CreationPolicy,
-    fee_policy: &FeePolicy,
-    pool: &Pool<Meme, Quote>,
-    clock: &Clock,
-    ctx: &mut TxContext,
-) {
-    package_version.assert_current();
-
-    creation_policy.assert_allowed<Quote, Witness>();
-    assert!(
-        position.pool_id() == object::id(pool),
-        blast_presale::errors::position_pool_mismatch!(),
-    );
-
-    let liquidity = position.liquidity();
-
-    vault::create_without_presale<Meme, Quote, _, _>(
-        fee_split,
-        partner_id,
-        creation_policy,
-        fee_policy,
-        clock,
-        &Venue(),
-        object::id(pool),
-        position,
-        liquidity,
-        ctx,
-    );
-}
-
-/// Anyone may collect LP fees, paying Blast and each fee recipient and accruing the
-/// holder Quote and paying holder Meme to the governed treasury.
+/// Anyone may collect LP fees from a migrated presale's Bluefin position and split them through
+/// its vault.
 public fun collect_fees<Meme, Quote>(
     vault: &mut Vault<Meme, Quote>,
     package_version: &PackageVersion,
-    fee_policy: &FeePolicy,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
+    currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
     clock: &Clock,
@@ -180,18 +149,20 @@ public fun collect_fees<Meme, Quote>(
         clock,
         bluefin_config,
         pool,
-        vault.position_mut<_, _, _, Position>(&Venue()),
+        vault.position_mut<_, _, _, Position>(&Venue(), vault_version),
     );
 
-    vault.split_fees(fee_policy, meme, quote, ctx);
+    vault.split_fees(&Venue(), vault_version, treasury, currency, meme, quote, ctx);
 }
 
 /// Anyone may collect every accrued position fee under the applied split, then activate the
-/// stored ready split and notice. Readiness alone never changes collection accounting.
+/// vault's ready split. Readiness alone never changes collection accounting.
 public fun settle_and_apply_fee_split<Meme, Quote>(
     vault: &mut Vault<Meme, Quote>,
     package_version: &PackageVersion,
-    fee_policy: &FeePolicy,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
+    currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
     clock: &Clock,
@@ -200,9 +171,19 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
     package_version.assert_current();
     vault.assert_fee_split_ready(clock);
 
-    collect_fees(vault, package_version, fee_policy, bluefin_config, pool, clock, ctx);
+    collect_fees(
+        vault,
+        package_version,
+        vault_version,
+        treasury,
+        currency,
+        bluefin_config,
+        pool,
+        clock,
+        ctx,
+    );
 
-    vault.apply_fee_split(clock);
+    vault.apply_fee_split(&Venue(), vault_version, clock);
 }
 
 // === Private Functions ===
@@ -250,17 +231,53 @@ fun fixes_meme<Meme, Quote>(
     if (needed_meme <= source_meme && needed_quote <= source_quote) prefer_meme else !prefer_meme
 }
 
+// === Test-Only Functions ===
+
+#[test_only]
+/// Runs `migrate`'s redemption and vault creation with `position` in place of the pool's, keeping
+/// the whole hand-off as the owner's residuals: the Bluefin link stubs cannot create a pool in unit
+/// tests. Returns the vault's ID.
+public fun migrate_for_testing<Meme, Quote, Position: key + store>(
+    sale: &mut Presale<Meme, Quote>,
+    package_version: &PackageVersion,
+    fee_policy: &FeePolicy,
+    registry: &VaultRegistry,
+    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    treasury: &Treasury,
+    position: Position,
+    pool_id: ID,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): ID {
+    let (meme, quote, terms) = sale
+        .migrate(package_version, fee_policy, clock, ctx)
+        .redeem(Venue());
+    let vault = vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx);
+    let vault_id = object::id(&vault);
+
+    vault.share_with_position(&Venue(), treasury, position, 1, meme, quote, ctx);
+
+    vault_id
+}
+
 // === Imports ===
 
+use blast_admin::package_version::PackageVersion as VaultVersion;
+
+use blast_core::{blast_treasury::Treasury, migration::{Self, VenueTicket}};
+
 use blast_presale::{
-    blast_presale::{Self as presale, FeeSplit, Presale, PresaleInitializer},
+    blast_presale::Presale,
     blast_presale_package::PackageVersion,
     constants,
-    creation_policy::CreationPolicy,
     fee_policy::FeePolicy,
     migration_math,
-    presale_vault::{Self as vault, Vault},
     venue_config::VenueConfig
+};
+
+use blast_vault::{
+    blast_vault_package::{BLAST_VAULT_PACKAGE, VaultRegistry},
+    vault::{Self, Vault}
 };
 
 use bluefin_spot::{config::GlobalConfig, pool::{Self, Pool}, position::Position};

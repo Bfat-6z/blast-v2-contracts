@@ -3,26 +3,25 @@
 
 // Package error macros preserve the module's abort location.
 #[allow(lint(abort_without_constant))]
-/// Blast's allowlists for new presales and new vaults without a presale: the Quote coins a sale may
-/// raise or a vault may hold, the migrators, in this package or another, that may create a sale or,
-/// for this package's venues, such a vault, and the Blast partners a sale may name.
+/// Blast's allowlists for new presales: the Quote coins a sale may raise, the venues, in this
+/// package or another, whose tickets may start a sale, and the Blast partners a sale may name.
 ///
-/// A presale or vault is checked once, when it is created. Later changes apply only to later sales, so a
+/// A presale is checked once, when it is created. Later changes apply only to later sales, so a
 /// delisting never strands a live sale's commitments, blocks its migration, or stops paying its
 /// partner.
 module blast_presale::creation_policy;
 
 // === Public Types ===
 
-/// Shared singleton holding the Quote types and migration witnesses new presales may use.
+/// Shared singleton holding the Quote types and venues new presales may use.
 public struct CreationPolicy has key {
     id: UID,
     allowed_quotes: VecSet<TypeName>,
-    migration_witnesses: DelayedSet<MigrationWitnessKey, TypeName>,
+    venues: DelayedSet<VenueKey, TypeName>,
 }
 
-/// Keys the delayed lifecycle of migration-witness admissions and their notice.
-public struct MigrationWitnessKey() has copy, drop, store;
+/// Keys the delayed lifecycle of venue admissions and their notice.
+public struct VenueKey() has copy, drop, store;
 
 /// Dynamic-field key of a Blast partner new presales may name. Its value is the time the partner
 /// stops being accepted: `u64::MAX` until Blast removes it.
@@ -36,8 +35,7 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Allows or disallows `Quote` for presales and vaults without a presale created afterward;
-/// existing ones keep it.
+/// Allows or disallows `Quote` for presales created afterward; existing ones keep it.
 public fun set_quote_allowed<Quote>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
@@ -57,62 +55,61 @@ public fun set_quote_allowed<Quote>(
     event::emit(QuoteSet { quote, allowed });
 }
 
-/// Allows or disallows the migrator identified by `MigrationWitness` to create presales, and its
-/// venue vaults without a presale, afterward; existing sales still migrate through it.
+/// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
+/// start presales afterward, and only that venue redeems their migrations; existing sales keep
+/// their venue. Rescheduling a pending admission restarts its notice.
 ///
-/// `presale::new` and `presale::migrate` are public, so whoever can construct an allowed witness
-/// can open sales and release their liquidity. Allow only a struct whose defining module is the
-/// reviewed migrator and keeps its constructor private. A primitive, a vector, or a framework type,
+/// `presale::new` and `presale::migrate` are public, so whoever can construct an admitted witness
+/// can open sales and redeem their liquidity. Admit only a struct whose defining module is the
+/// reviewed venue and keeps its constructor private. A primitive, a vector, or a framework type,
 /// any of which a caller can construct, is rejected.
-/// Admits an adapter only after the currently applied admission notice.
-public fun schedule_migration_witness<MigrationWitness: drop>(
+public fun schedule_venue<Venue: drop>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
     _: &AdminWitness<AdapterAdmin>,
-    clock: &Clock
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    let witness = type_name::with_original_ids<MigrationWitness>();
-    assert!(!witness.is_primitive(), blast_presale::errors::invalid_migration_witness!());
+    let venue = type_name::with_original_ids<Venue>();
+    assert!(!venue.is_primitive(), blast_presale::errors::invalid_venue!());
+    let origin = type_name::original_id<Venue>();
+    assert!(origin != @0x1 && origin != @0x2, blast_presale::errors::invalid_venue!());
 
-    let origin = type_name::original_id<MigrationWitness>();
-    assert!(origin != @0x1 && origin != @0x2, blast_presale::errors::invalid_migration_witness!());
-
-    self.migration_witnesses.schedule_add(witness, clock);
+    self.venues.schedule_add(venue, clock);
 }
 
 /// Permissionlessly applies the approved admission once ready.
-public fun apply_migration_witness<MigrationWitness: drop>(
+public fun apply_venue<Venue: drop>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
-    clock: &Clock
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.apply_add(type_name::with_original_ids<MigrationWitness>(), clock);
+    self.venues.apply_add(type_name::with_original_ids<Venue>(), clock);
 }
 
-/// Cancels a pending adapter admission, including after its threshold.
-public fun cancel_migration_witness<MigrationWitness: drop>(
+/// Cancels a pending venue admission, including after its threshold.
+public fun cancel_venue<Venue: drop>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
-    _: &AdminWitness<CancelAdmin>
+    _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.cancel_add(type_name::with_original_ids<MigrationWitness>());
+    self.venues.cancel_add(type_name::with_original_ids<Venue>());
 }
 
-/// Immediately removes adapter authority and cancels any pending admission.
-public fun remove_migration_witness<MigrationWitness: drop>(
+/// Immediately removes a venue for new presales and cancels any pending admission.
+public fun remove_venue<Venue: drop>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
-    _: &AdminWitness<AdapterAdmin>
+    _: &AdminWitness<AdapterAdmin>,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.remove(type_name::with_original_ids<MigrationWitness>());
+    self.venues.remove(type_name::with_original_ids<Venue>());
 }
 
 /// Lets new presales name `partner`, at once. Adding a partner whose removal is pending cancels
@@ -168,59 +165,55 @@ public fun remove_partner(
     event::emit(PartnerRemoved { partner_id, accepted_until_ms: notice_ends_at_ms });
 }
 
-/// Proposes only the admission notice period. Existing admission deadlines remain fixed.
-public fun schedule_migration_delay(
+/// Proposes only the admission notice. Existing admission deadlines remain fixed.
+public fun schedule_venue_delay(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
     _: &AdminWitness<AdapterAdmin>,
     delay_ms: u64,
-    clock: &Clock
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.schedule_delay(delay_ms, clock);
+    self.venues.schedule_delay(delay_ms, clock);
 }
 
-/// Permissionlessly applies a ready admission-policy proposal.
-public fun apply_migration_delay(
+/// Permissionlessly applies a ready admission-notice proposal.
+public fun apply_venue_delay(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
-    clock: &Clock
+    clock: &Clock,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.apply_delay(clock);
+    self.venues.apply_delay(clock);
 }
 
-/// Cancels only the admission-policy proposal.
-public fun cancel_migration_delay(
+/// Cancels only the admission-notice proposal.
+public fun cancel_venue_delay(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
-    _: &AdminWitness<CancelAdmin>
+    _: &AdminWitness<CancelAdmin>,
 ) {
     package_version.assert_current();
 
-    self.migration_witnesses.cancel_delay();
+    self.venues.cancel_delay();
 }
 
 // === Package Functions ===
 
-/// True when the migrator allowlist's notice is guarded (see `package_admin::unpause`).
+/// True when the venue allowlist's notice is guarded (see `package_admin::unpause`).
 public(package) fun is_guarded(self: &CreationPolicy): bool {
-    self.migration_witnesses.is_guarded()
+    self.venues.is_guarded()
 }
 
-/// Aborts unless a new presale, or a new vault without a presale, may use `Quote` and be created
-/// by `MigrationWitness`'s migrator.
-public(package) fun assert_allowed<Quote, MigrationWitness>(self: &CreationPolicy) {
+/// Aborts unless a new presale may raise `Quote` and migrate to `venue`.
+public(package) fun assert_allowed<Quote>(self: &CreationPolicy, venue: TypeName) {
     assert!(
         self.allowed_quotes.contains(&type_name::with_original_ids<Quote>()),
         blast_presale::errors::quote_not_allowed!(),
     );
-    assert!(
-        self.migration_witnesses.contains(&type_name::with_original_ids<MigrationWitness>()),
-        blast_presale::errors::migration_witness_not_allowed!(),
-    );
+    assert!(self.venues.contains(&venue), blast_presale::errors::venue_not_allowed!());
 }
 
 /// Aborts unless a new presale may name the partner `partner_id` at `now_at_ms`.
@@ -237,42 +230,40 @@ public(package) fun assert_partner(self: &CreationPolicy, partner_id: ID, now_at
 
 fun new(delay_ms: u64, ctx: &mut TxContext): CreationPolicy {
     let id = object::new(ctx);
-    let migration_witnesses = delayed_set::new(MigrationWitnessKey(), &id, delay_ms);
+    let venues = delayed_set::new(VenueKey(), &id, delay_ms);
 
-    CreationPolicy { id, allowed_quotes: vec_set::empty(), migration_witnesses }
+    CreationPolicy { id, allowed_quotes: vec_set::empty(), venues }
 }
 
 // === Test-Only Functions ===
 
 #[test_only]
 /// Reads the shared admission policy independently of pending admissions.
-public fun migration_delay_ms_for_testing(self: &CreationPolicy): u64 {
-    self.migration_witnesses.delay_ms()
+public fun venue_delay_ms_for_testing(self: &CreationPolicy): u64 {
+    self.venues.delay_ms()
 }
 
 #[test_only]
-public fun migration_witnesses_for_testing(
-    self: &CreationPolicy,
-): &DelayedSet<MigrationWitnessKey, TypeName> {
-    &self.migration_witnesses
+public fun venues_for_testing(self: &CreationPolicy): &DelayedSet<VenueKey, TypeName> {
+    &self.venues
 }
 
 #[test_only]
-public fun set_migration_witness_allowed_for_testing<MigrationWitness: drop>(
+public fun set_venue_allowed_for_testing<Venue: drop>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion,
     admin: &AdminWitness<AdapterAdmin>,
     allowed: bool,
-    ctx: &mut TxContext
+    ctx: &mut TxContext,
 ) {
     if (!allowed) {
-        self.remove_migration_witness<MigrationWitness>(package_version, admin);
+        self.remove_venue<Venue>(package_version, admin);
         return
     };
     let mut clock = sui::clock::create_for_testing(ctx);
-    self.schedule_migration_witness<MigrationWitness>(package_version, admin, &clock);
+    self.schedule_venue<Venue>(package_version, admin, &clock);
     clock.set_for_testing(172_800_000);
-    self.apply_migration_witness<MigrationWitness>(package_version, &clock);
+    self.apply_venue<Venue>(package_version, &clock);
     clock.destroy_for_testing();
 }
 
@@ -292,18 +283,18 @@ public fun new_publication_for_testing(ctx: &mut TxContext): CreationPolicy {
     new(0, ctx)
 }
 
-/// A policy that allows exactly `Quote` and `MigrationWitness`, admitted at zero notice before the
-/// 48-hour notice applies.
+/// A policy that allows exactly `Quote` and `Venue`, admitted at zero notice before the 48-hour
+/// notice applies.
 #[test_only]
-public fun allowing_for_testing<Quote, MigrationWitness>(ctx: &mut TxContext): CreationPolicy {
+public fun allowing_for_testing<Quote, Venue>(ctx: &mut TxContext): CreationPolicy {
     let clock = sui::clock::create_for_testing(ctx);
     let mut policy = new(0, ctx);
-    let witness = type_name::with_original_ids<MigrationWitness>();
+    let venue = type_name::with_original_ids<Venue>();
     policy.allowed_quotes.insert(type_name::with_original_ids<Quote>());
-    policy.migration_witnesses.schedule_add(witness, &clock);
-    policy.migration_witnesses.apply_add(witness, &clock);
-    policy.migration_witnesses.schedule_delay(172_800_000, &clock);
-    policy.migration_witnesses.apply_delay(&clock);
+    policy.venues.schedule_add(venue, &clock);
+    policy.venues.apply_add(venue, &clock);
+    policy.venues.schedule_delay(172_800_000, &clock);
+    policy.venues.apply_delay(&clock);
     clock.destroy_for_testing();
 
     policy
@@ -311,8 +302,8 @@ public fun allowing_for_testing<Quote, MigrationWitness>(ctx: &mut TxContext): C
 
 #[test_only]
 public fun destroy_for_testing(self: CreationPolicy) {
-    let CreationPolicy { id, allowed_quotes: _, migration_witnesses } = self;
-    std::unit_test::destroy(migration_witnesses);
+    let CreationPolicy { id, allowed_quotes: _, venues } = self;
+    std::unit_test::destroy(venues);
     id.delete();
 }
 

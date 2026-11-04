@@ -110,25 +110,25 @@ fun exercise(case: Case) {
         true
     );
     if (case == Case::StaleSchedule) version.set_for_testing(2);
-    config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
+    config.schedule_venue<AdapterA>(&version, &admin, &clock);
     if (case == Case::StaleSchedule) {
         destroy(config);
         destroy(version);
         destroy(clock);
         return
     };
-    config.schedule_migration_witness<AdapterB>(&version, &admin, &clock);
+    config.schedule_venue<AdapterB>(&version, &admin, &clock);
     clock.set_for_testing(1234 + DELAY - if (case == Case::Early) 1 else 0);
     if (case == Case::Replacement) {
-        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
+        config.schedule_venue<AdapterA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 2 * DELAY - 1);
     };
     if (case == Case::StaleCancel || case == Case::StaleRemove || case == Case::StaleApply)
         version.set_for_testing(2);
     if (case == Case::Cancelled || case == Case::StaleCancel || case == Case::Success)
-        config.cancel_migration_witness<AdapterA>(&version, &cancel);
+        config.cancel_venue<AdapterA>(&version, &cancel);
     if (case == Case::Removed || case == Case::StaleRemove)
-        config.remove_migration_witness<AdapterA>(&version, &admin);
+        config.remove_venue<AdapterA>(&version, &admin);
     if (case == Case::StaleCancel || case == Case::StaleRemove) {
         destroy(config);
         destroy(version);
@@ -137,19 +137,19 @@ fun exercise(case: Case) {
     };
     if (case == Case::Success) {
         // Cancelling A must not cancel B. Re-admission after removal gets a new full notice.
-        config.apply_migration_witness<AdapterB>(&version, &clock);
-        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
+        config.apply_venue<AdapterB>(&version, &clock);
+        config.schedule_venue<AdapterA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 2 * DELAY);
-        config.apply_migration_witness<AdapterA>(&version, &clock);
-        config.remove_migration_witness<AdapterA>(&version, &admin);
-        config.schedule_migration_witness<AdapterA>(&version, &admin, &clock);
+        config.apply_venue<AdapterA>(&version, &clock);
+        config.remove_venue<AdapterA>(&version, &admin);
+        config.schedule_venue<AdapterA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 3 * DELAY + 1);
-        config.apply_migration_witness<AdapterA>(&version, &clock);
-        config.assert_allowed<Quote, AdapterA>();
-        config.assert_allowed<Quote, AdapterB>();
+        config.apply_venue<AdapterA>(&version, &clock);
+        config.assert_allowed<Quote>(type_name::with_original_ids<AdapterA>());
+        config.assert_allowed<Quote>(type_name::with_original_ids<AdapterB>());
     } else {
-        config.apply_migration_witness<AdapterA>(&version, &clock);
-        if (case == Case::Replay) config.apply_migration_witness<AdapterA>(&version, &clock);
+        config.apply_venue<AdapterA>(&version, &clock);
+        if (case == Case::Replay) config.apply_venue<AdapterA>(&version, &clock);
     };
     destroy(config);
     destroy(version);
@@ -163,4 +163,4 @@ use blast_presale::{
     blast_presale_domain::{AdapterAdmin, CancelAdmin, ListingAdmin}
 };
 use blast_admin::blast_acl;
-use std::unit_test::destroy;
+use std::{type_name, unit_test::destroy};

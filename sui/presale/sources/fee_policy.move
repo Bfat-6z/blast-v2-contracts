@@ -8,8 +8,8 @@
 ///
 /// Each presale snapshots the rates when it is created. Until the sale's window starts, the
 /// `FeeAdmin` may change that sale's rates, so its economics are fixed before commitments open;
-/// after migration it may change the sale's LP-fee rates on its vault. Every payout reads the
-/// current destination.
+/// the LP-fee rates then pass to the sale's vault in its migration terms, which changes them per
+/// vault after notice. Every raise and token payout reads the current destination.
 module blast_presale::fee_policy;
 
 // === Public Types ===
@@ -180,15 +180,6 @@ public(package) fun lp_fee_quote_bps(self: &ProtocolFees): Bps {
     self.lp_fee_quote_bps
 }
 
-/// Returns these rates with both LP-fee rates replaced, under the same maximums.
-public(package) fun with_lp_fees(
-    self: ProtocolFees,
-    lp_fee_meme_bps: Bps,
-    lp_fee_quote_bps: Bps,
-): ProtocolFees {
-    protocol_fees(self.raise_bps, self.token_bps, lp_fee_meme_bps, lp_fee_quote_bps)
-}
-
 // === Private Functions ===
 
 fun new(
@@ -301,11 +292,12 @@ use blast_admin::{
     blast_acl::AdminWitness,
 };
 
-use sui::clock::Clock;
+use blast_core::bps::{Self, Bps};
 
 use blast_presale::{
     blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin},
     blast_presale_package::{PackageVersion},
-    bps::{Self, Bps},
     constants
 };
+
+use sui::clock::Clock;
