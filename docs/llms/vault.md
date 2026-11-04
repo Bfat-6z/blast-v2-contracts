@@ -1,0 +1,173 @@
+## Vault
+
+### What it is
+
+Package `blast_vault` holds the one LP vault every Blast sale migrates into. A vault keeps a
+venue's liquidity position with no removal path, so the liquidity is locked for good. It splits
+every LP-fee collection: Blast's share first, then the sale's fee split across the owner, auto-LP,
+holder rewards, burn, and address routes. It also pays holder-reward rounds by Merkle proof. Only
+an admitted venue's code can create a vault or move its fees; integrators reach a vault through the
+venue's calls, and call the owner, round, and payout functions on it directly.
+
+### Objects and authority
+
+- `blast_vault_package::VaultRegistry` (shared singleton) lists the venue witness types that may
+  create vaults. A venue is admitted by its witness type, which only its own module can construct.
+- `blast_vault::vault::Vault<Meme, Quote>` (shared, one per migrated sale) holds the position under
+  the venue's key, the terms the sale sealed (`blast_core::migration::VaultTerms`), the fee split
+  and Blast's share, each behind a notice, and the owner, auto-LP, holder-reward, and burn
+  balances.
+- `blast_vault::holder_rewards::Round<Meme, Quote>` (shared, one per published round) holds one
+  round's holder budget, its Merkle root, the claimed-leaf bitmap, and an optional gas reserve.
+- `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>` (shared) gates every call by
+  code generation and holds the admin pause bit.
+- Owner authority is a `blast_core::owner_proof::OwnerProof` that the sale's product issues to its
+  creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
+  witness.
+
+Blast admins hold these roles: `AdapterAdmin` admits and removes venues; `FeeAdmin` changes Blast's
+per-vault share; `RewardsAdmin` schedules rounds and settles gas reserves; `BuybackAdmin` spends
+the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
+
+### Lifecycle
+
+1. A venue creates the vault with `blast_vault::vault::new`, unshared, from terms the sale sealed.
+   It aborts unless the venue's witness is admitted and Blast's share is at most 3,000 basis points
+   per asset.
+2. The venue attaches its position and shares the vault with
+   `blast_vault::vault::share_with_position`, which settles the migration residuals and emits
+   `blast_vault_events::VaultCreated`.
+3. Each fee collection through the venue calls `blast_vault::vault::split_fees`.
+4. Holder-reward rounds are scheduled, published, claimed, and closed (see Flows).
+
+A vault never closes; its position cannot be removed.
+
+### Flows
+
+#### Claim the owner's balances
+
+1. Call the sale product's owner-proof function to get an `OwnerProof` (cap holder: the sale's
+   creator authority).
+2. Call `blast_vault::vault::claim_owner_balances` with the vault (shared), the proof, and the
+   package version. It returns a `Coin<Meme>` and a `Coin<Quote>` holding every owner fee and
+   owner residual, and emits `blast_vault_events::OwnerBalancesClaimed`. Transfer or use both coins
+   in the same PTB.
+
+#### Change the fee split (owner)
+
+1. Get an `OwnerProof`, then call `blast_vault::vault::schedule_fee_split` with the proposed
+   `blast_core::fee_split::FeeSplit`, the next notice, and the `Clock` (`0x6`). It is ready after the
+   applied notice (48 hours at creation).
+2. Once ready, the venue settles fees under the current split and applies the new one with
+   `blast_vault::vault::apply_fee_split`, so every fee follows the split it accrued under. Integrators
+   check readiness with `blast_vault::vault::assert_fee_split_ready`.
+3. The owner may cancel with `blast_vault::vault::cancel_fee_split`, even once ready.
+
+#### Pay Blast's partnered fees
+
+When the sale named a partner, Blast's cut is held in the vault. Anyone calls
+`blast_vault::vault::pay_protocol_fees_with_partner` with the vault, the package version, the
+treasury, and the partner (all shared). The partner receives its cut of each asset, the treasury the
+rest, and `blast_core::blast_core_events::ProtocolFeesPaid` is emitted. Without a partner, Blast's
+cut is paid to the treasury during each collection.
+
+#### Claim a holder reward
+
+1. Read the round's leaf for your address from Blast's published allocation: the index, the
+   beneficiary, the Meme and Quote amounts, and the proof (a list of 32-byte siblings).
+2. Call `blast_vault::holder_rewards::claim` with the round (shared), the package version, those
+   values, and the `Clock`. Anyone may relay a claim; the coins always go to the committed
+   beneficiary. It emits `blast_vault_events::RewardClaimed`.
+
+#### Close a round
+
+At or after its claim deadline, anyone calls `blast_vault::holder_rewards::close_round` with the
+round, the package version, its vault, and the `Clock`. Every unclaimed balance and any unsettled gas
+reserve returns to the vault's holder rewards, and `blast_vault_events::RoundClosed` is emitted.
+
+#### Publish a scheduled round
+
+Once a scheduled round's notice has passed, anyone calls
+`blast_vault::holder_rewards::publish_round` with the vault, the package version, the treasury, and
+the `Clock`. It reserves the round's budget from the vault, opens claims for the scheduled window,
+shares the `Round`, and emits `blast_vault_events::RoundPublished`.
+
+### Economics
+
+- Each collection first takes Blast's share of each asset, rounded up
+  (`blast_core::protocol_fees::take_cut`). The rest is apportioned over the fee split's routes by
+  largest remainder (`blast_core::fee_split::apportion`), so the routes always sum to what is left.
+- Address routes are paid at once. Owner, auto-LP, and holder-reward routes accrue in the vault.
+  The burn route's Meme is burned when the supply is burn-only, or sent to `0x0` when it is
+  fixed; its Quote is kept for buybacks.
+- Migration residuals go to Blast or the owner, as the sale's terms say.
+- A round's gas reserve is at most 10% of its Quote budget. It is reimbursed to the treasury once,
+  measured and capped, with `blast_vault::holder_rewards::settle_gas_reserve` (Blast admin:
+  `RewardsAdmin`); the rest returns to the vault at once.
+
+### Time rules
+
+- Venue admissions and their notice changes wait 48 hours from publication until changed.
+- Fee-split and Blast-share changes wait the vault's applied notice, 48 hours at creation.
+- A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
+- Claims are open while the clock is before the deadline; a round closes at or after it.
+
+### Pause
+
+The admin pause bit stops venue admissions, Blast-share changes, buybacks, round scheduling and
+publication, and gas settlement. It never stops fee collection, owner claims, partner payouts,
+holder claims, round closing, or cancellations. Unpausing with `blast_vault_package::unpause`
+requires every notice to be nonzero, with no pending change to zero.
+
+### Reading state
+
+- `blast_vault::vault::pool_id`: the pool the vault's position belongs to.
+- `blast_vault::vault::has_auto_lp_position` and `blast_vault::vault::auto_lp_position`: the venue's
+  separate auto-LP position.
+- Events carry every balance change; index `FeesCollected` for per-route amounts.
+
+### Events
+
+- `blast_vault_events::VaultCreated`: vault, pool, position, liquidity, terms, and residuals.
+- `blast_vault_events::FeesCollected`: gross amounts, Blast's cut, and each route's amounts, in
+  route order.
+- `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded`: auto-LP.
+- `blast_vault_events::BuybackBurned`: Quote spent and Meme burned.
+- `blast_vault_events::OwnerBalancesClaimed`: the owner's payout.
+- `blast_vault_events::RoundPublished`, `blast_vault_events::RewardClaimed`,
+  `blast_vault_events::GasReserveSettled`, `blast_vault_events::RoundClosed`: rounds.
+
+### Aborts
+
+- Owner claim with nothing accrued: `nothing_to_claim`. A proof for another sale or package
+  aborts in `blast_core::owner_proof`.
+- Holder claim: `claims_closed` past the deadline, `invalid_index`, `already_claimed`,
+  `invalid_beneficiary` for `0x0`, `empty_claim` for zero amounts, and `invalid_proof` when any
+  leaf value or the proof is wrong.
+- Closing a round early: `claims_still_open`; with another vault: `wrong_vault`.
+- Publishing: the scheduled round's notice must have passed, the treasury must still be the one it
+  expected (`treasury_changed`), and the vault must still hold its budget
+  (`insufficient_budget`).
+
+### Pitfalls
+
+- The coins from an owner claim must be consumed in the same PTB.
+- An `OwnerProof` cannot be stored or dropped; create it in the PTB that uses it.
+- A claim relayed by anyone still pays the beneficiary in the leaf, never the relayer.
+
+### Q&A
+
+**Can anyone withdraw the liquidity?** No. The position is held under the venue's key with no
+removal path; only the venue's code can borrow it to collect fees or add auto-LP.
+
+**Who receives the burn route's Meme?** Nobody: it is burned when the supply is burn-only, or sent
+to `0x0` when it is fixed.
+
+**Do claims stop when Blast pauses the vault package?** No. Holder claims, owner claims, fee
+collection, and round closing never pause.
+
+**What happens to unclaimed rewards?** At the deadline anyone closes the round and they return to
+the vault's holder rewards for later rounds.
+
+**Can Blast change its share?** Yes, up to 3,000 basis points per asset, after the vault's notice
+and only for fees collected afterwards.

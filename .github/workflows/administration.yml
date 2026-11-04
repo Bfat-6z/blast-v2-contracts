@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        package: [admin, partners, core, launchpad, presale, migrators, presale_testkit, vendors/aftermath_dao_presale]
+        package: [admin, partners, core, vault, launchpad, presale, migrators, presale_testkit, vendors/aftermath_dao_presale]
     env:
       SUI_RELEASE: mainnet-v1.77.2
       CARGO_BUILD_JOBS: 1
@@ -36,7 +36,7 @@ jobs:
           MOVE_PACKAGE: ${{ matrix.package }}
         run: bash scripts/test_admin_delay.sh "$MOVE_PACKAGE"
       - name: Check administration boundaries
-        if: contains(fromJSON('["admin", "partners", "core", "launchpad", "presale", "migrators"]'), matrix.package)
+        if: contains(fromJSON('["admin", "partners", "core", "vault", "launchpad", "presale", "migrators"]'), matrix.package)
         env:
           MOVE_PACKAGE: ${{ matrix.package }}
         run: bash scripts/test_admin_delay.sh --boundaries-only "$MOVE_PACKAGE"

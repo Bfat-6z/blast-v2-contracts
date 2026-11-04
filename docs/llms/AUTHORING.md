@@ -29,7 +29,7 @@ honestly when something is not supported.
 - **Exact names.** Name every call, type, and event exactly as in source, in
   backticks. Write `module::member` (for example `presale_vault::collect_fees`).
   When the module name is one of `blast_events`, `bluefin`, `bps`, `cetus`,
-  `constants`, `errors`, `events`, `migration_math`, `package_admin`, `vault`,
+  `constants`, `errors`, `events`, `holder_rewards`, `migration_math`, `package_admin`, `vault`,
   or `venue_config` (each exists in more than one package), write
   `package::module::member` (for example `blast_presale::cetus::migrate`). The
   generator fails on any name it cannot resolve.

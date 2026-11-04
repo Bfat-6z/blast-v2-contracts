@@ -43,6 +43,7 @@ PACKAGES = [
     ("sui/boosts/aftermath_adapter", "Boosts Aftermath adapter"),
     ("sui/blast_sui", "blastSUI and funSUI"),
     ("sui/core", "Shared core"),
+    ("sui/vault", "LP vault"),
     ("sui/admin", "Administration"),
     ("sui/vendors/aftermath_dao_presale", "Aftermath DAO-pool presale migrator"),
 ]
@@ -56,6 +57,7 @@ GUIDES = [
     ("boosts.md", ["sui/boosts/core", "sui/boosts/products", "sui/boosts/aftermath_adapter"]),
     ("blast-sui.md", ["sui/blast_sui"]),
     ("core.md", ["sui/core"]),
+    ("vault.md", ["sui/vault"]),
     ("admin.md", ["sui/admin"]),
 ]
 
@@ -127,6 +129,16 @@ PRODUCTS = [
         ["core.md"],
         ["sui/core"],
         ["sui/partners", "sui/admin"],
+    ),
+    Product(
+        "vault",
+        "LP vault",
+        "Blast's LP vault on Sui: locked migration liquidity, LP-fee splits across the owner, "
+        "auto-LP, holder rewards, burn, and address routes, owner claims, and Merkle holder-reward "
+        "rounds",
+        ["vault.md", "core.md"],
+        ["sui/vault"],
+        ["sui/core", "sui/partners", "sui/admin"],
     ),
     Product(
         "admin",

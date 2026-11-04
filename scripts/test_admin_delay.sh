@@ -35,7 +35,7 @@ boundaries_only=0
 if [ "${1:-}" = --boundaries-only ]; then boundaries_only=1; shift; fi
 coverage_args=()
 if [ "${1:-}" = --coverage ]; then coverage_args=(--coverage); shift; fi
-if [ "$#" -eq 0 ]; then set -- admin partners core launchpad presale migrators presale_testkit vendors/aftermath_dao_presale; fi
+if [ "$#" -eq 0 ]; then set -- admin partners core vault launchpad presale migrators presale_testkit vendors/aftermath_dao_presale; fi
 for package in "$@"; do
  if [ "$boundaries_only" -eq 1 ]; then
   if [ "$package" = admin ]; then

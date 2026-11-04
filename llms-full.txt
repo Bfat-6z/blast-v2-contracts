@@ -2,7 +2,7 @@
 
 > Everything an integrator needs to understand and call Blast's Sui Move contracts: a bonding-curve launchpad whose graduated coins migrate into Cetus or Bluefin pools, standalone overflow presales, partner fee codes, Boost leverage coins on Aftermath perpetuals, and the funSUI/blastSUI staking vault. Sui mainnet only.
 
-This file is self-contained. Give it to an AI agent and ask it anything about Blast's contracts. An agent that needs one product can take that product's smaller file instead: [Presale](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/presale.txt), [Launchpad](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/launchpad.txt), [Partner codes](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/partners.txt), [Boosts](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/boosts.txt), [blastSUI and funSUI](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/blast-sui.txt), [Shared core](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/core.txt), [Administration](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/admin.txt).
+This file is self-contained. Give it to an AI agent and ask it anything about Blast's contracts. An agent that needs one product can take that product's smaller file instead: [Presale](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/presale.txt), [Launchpad](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/launchpad.txt), [Partner codes](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/partners.txt), [Boosts](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/boosts.txt), [blastSUI and funSUI](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/blast-sui.txt), [Shared core](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/core.txt), [LP vault](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/vault.txt), [Administration](https://github.com/interest-protocol/blast-v2-contracts/blob/main/llms/admin.txt).
 
 How it is organized:
 
@@ -29,6 +29,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | `blast_boosts_aftermath` | Boosts Aftermath adapter | not yet published | — | — |
 | `blast_sui` | blastSUI and funSUI | not yet published | — | — |
 | `blast_core` | Shared core | not yet published | — | — |
+| `blast_vault` | LP vault | not yet published | — | — |
 | `blast_admin` | Administration | not yet published | — | — |
 | `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | live; source has changed since | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` |
 
@@ -254,7 +255,7 @@ Per-sale objects:
   pool's `OwnerCap` (Aftermath, whose LP coin is owned by `0x0`), the migration residuals, the
   holder-reward share of collected fees, and Blast's held LP fees on partnered sales. An
   Aftermath vault is also the address its DAO-fee pool pays fees to.
-- `holder_rewards::Round<Meme, Quote>`: shared, one per published holder-reward round.
+- `blast_presale::holder_rewards::Round<Meme, Quote>`: shared, one per published holder-reward round.
 - A vesting schedule (`Vesting<T>` from the external, immutable `blast_fun_vesting` package):
   shared, one per vested payout. See "Claiming vested tokens".
 
@@ -282,7 +283,7 @@ reference. Each admin call names exactly one role in its signature:
 | `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
 | `blast_presale_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
 | `blast_presale_domain::AdapterAdmin` | `creation_policy::schedule_migration_witness` |
-| `blast_presale_domain::RewardsAdmin` | `holder_rewards::schedule_round`, `holder_rewards::schedule_round_delay`, `holder_rewards::settle_gas_reserve` |
+| `blast_presale_domain::RewardsAdmin` | `blast_presale::holder_rewards::schedule_round`, `blast_presale::holder_rewards::schedule_round_delay`, `blast_presale::holder_rewards::settle_gas_reserve` |
 | `blast_presale_domain::UpgradeAdmin` | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` |
 
 A role from another package, such as `blast_fun_domain::FeeAdmin`, is a different type and
@@ -804,10 +805,10 @@ nothing is valid and emits nothing, so it can follow every collection.
 
 The holder Quote share of LP fees accrues in the vault. Blast decides off chain
 who receives holder assets and whether each round reimburses gas. A single
-`holder_rewards::Round` holds its holder balances separately from its optional
+`blast_presale::holder_rewards::Round` holds its holder balances separately from its optional
 Quote gas reserve.
 
-1. `holder_rewards::schedule_round`: *Blast admin* (`RewardsAdmin`). It takes the
+1. `blast_presale::holder_rewards::schedule_round`: *Blast admin* (`RewardsAdmin`). It takes the
    mutable shared vault, the round number, checkpoint interval, root and
    manifest digest, leaf count, exact holder Meme/Quote amounts, an explicit gas
    reserve amount, the claim window in milliseconds, the expected treasury
@@ -829,7 +830,7 @@ Quote gas reserve.
    restarts the notice. It emits `delayed_action::ActionScheduled` with key
    `presale_vault::RoundPublicationKey` and `change = Action(RoundTerms)`, so
    the terms are public while the round waits.
-2. `holder_rewards::publish_round`: *anyone*, once the scheduled round is
+2. `blast_presale::holder_rewards::publish_round`: *anyone*, once the scheduled round is
    ready. It takes the mutable shared vault, shared governed `FeePolicy` and
    Clock, and nothing else. It consumes the scheduled round, then re-checks that
    the expected treasury still equals the governed destination
@@ -838,30 +839,30 @@ Quote gas reserve.
    deadline is the publication time plus the claim window
    (`blast_presale::errors::EClaimDeadlineOverflow` if it exceeds `u64`), so a late
    publication still gets the full window. It snapshots the checked treasury
-   and emits `delayed_action::ActionApplied`, then `holder_rewards::RoundPublished`
+   and emits `delayed_action::ActionApplied`, then `blast_presale::holder_rewards::RoundPublished`
    with the absolute deadline. Zero reserve disables reimbursement for this
    round and requires no settlement. A positive reserve creates separate
    pending custody. Blast may cover gas and allocate the entire holder Quote
    budget to holder leaves. The round notice starts at two hours, so a round is
    public and cancellable before it publishes; a daily cadence publishes each
    round before scheduling the next, since a new schedule replaces a waiting one.
-3. `holder_rewards::cancel_round`: *Blast admin* (`CancelAdmin`). It discards
+3. `blast_presale::holder_rewards::cancel_round`: *Blast admin* (`CancelAdmin`). It discards
    the scheduled round, even a ready one, and emits
    `delayed_action::ActionCancelled` with its terms. Nothing was reserved, so no
    balance moves. `blast_presale::errors::EWrongRoundProposal` rejects it while a notice
    change is pending instead.
-4. Round notice: `holder_rewards::schedule_round_delay` (*Blast admin*,
+4. Round notice: `blast_presale::holder_rewards::schedule_round_delay` (*Blast admin*,
    `RewardsAdmin`) proposes a new notice, ready after the applied one and
-   replacing any scheduled round; `holder_rewards::apply_round_delay` (*anyone*)
-   applies it once ready; `holder_rewards::cancel_round_delay` (*Blast admin*,
+   replacing any scheduled round; `blast_presale::holder_rewards::apply_round_delay` (*anyone*)
+   applies it once ready; `blast_presale::holder_rewards::cancel_round_delay` (*Blast admin*,
    `CancelAdmin`) discards it (`blast_presale::errors::EWrongRoundProposal` while a
    round is scheduled instead). A shorter notice, zero included, still waits the
    applied one. Every vault starts with a 7,200,000 ms (2-hour) notice; no notice
    exceeds `blast_admin::delayed::max_delay_ms` (30 days).
-5. `holder_rewards::claim`: *anyone* may relay, while `now < claim_deadline_ms`
+5. `blast_presale::holder_rewards::claim`: *anyone* may relay, while `now < claim_deadline_ms`
    (`blast_presale::errors::EClaimsClosed` from the deadline, so claims never race
    `close_round`). It takes the mutable shared round, beneficiary/amount proof
-   and Clock, and pays that beneficiary only, once per index. It emits `holder_rewards::RewardClaimed` and leaves gas custody
+   and Clock, and pays that beneficiary only, once per index. It emits `blast_presale::holder_rewards::RewardClaimed` and leaves gas custody
    untouched. Leaf:
 
    ```
@@ -874,17 +875,17 @@ Quote gas reserve.
 
    The proof follows the allowlist rules above (same node hash, positional
    order, exact depth).
-6. `holder_rewards::settle_gas_reserve`: *Blast admin* (`RewardsAdmin`). It takes
+6. `blast_presale::holder_rewards::settle_gas_reserve`: *Blast admin* (`RewardsAdmin`). It takes
    the mutable shared round and its mutable shared vault and an amount from
    zero through an enabled reserve. It pays the publication-time treasury,
    returns all unused Quote to the vault and consumes settlement once.
-   `holder_rewards::GasReserveSettled` records payment, return and remaining
+   `blast_presale::holder_rewards::GasReserveSettled` records payment, return and remaining
    vault Quote. Disabled reimbursement and repeated settlement abort. The
    contract bounds custody; verified off-chain effects determine actual cost.
-7. `holder_rewards::close_round`: *anyone*, once `now >= claim_deadline_ms`.
+7. `blast_presale::holder_rewards::close_round`: *anyone*, once `now >= claim_deadline_ms`.
    It consumes the shared round and returns unclaimed holder assets and any
    unsettled reserve to the correct mutable vault. It emits
-   `holder_rewards::RoundClosed` and deletes the round. Missing settlement
+   `blast_presale::holder_rewards::RoundClosed` and deletes the round. Missing settlement
    authority cannot strand reserve. Elapsed time alone moves nothing.
    Closing before reimbursement leaves that cost with Blast.
 
@@ -903,7 +904,7 @@ Integrators cannot call these; they explain state changes. Each takes the
 | `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `delayed_set::SetApplied<creation_policy::MigrationWitnessKey, TypeName>`; `remove_migration_witness` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted witness) and cancels pending admission. |
 | `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `creation_policy::PartnerAdded`. |
 | `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `creation_policy::PartnerRemoved`. |
-| `holder_rewards::schedule_round`, `holder_rewards::schedule_round_delay`, `holder_rewards::cancel_round`, `holder_rewards::cancel_round_delay`, `holder_rewards::settle_gas_reserve` | See above. |
+| `blast_presale::holder_rewards::schedule_round`, `blast_presale::holder_rewards::schedule_round_delay`, `blast_presale::holder_rewards::cancel_round`, `blast_presale::holder_rewards::cancel_round_delay`, `blast_presale::holder_rewards::settle_gas_reserve` | See above. |
 | `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic operational-version cutover. |
 
 `blast_presale::package_admin::wrap` consumes the publication Publication and never-upgraded matching cap once. Each upgrade increments both compiled generation constants and commits/advances in one PTB; old bytecode then rejects the advanced version. Existing dependency-only deployments require a fresh publication to adopt this design.
@@ -1262,8 +1263,8 @@ directly (no envelope).
 | Vault partner pay | `presale_vault::ProtocolLpFeesPaid` | Partner and Blast amounts per asset. |
 | Vault without a presale | `presale_vault::VaultCreated` | Zero `presale_id` and residuals; pool, position, `position_liquidity` (venue units), fee split, and Blast's rates. |
 | Residuals | `presale_vault::MigrationResidualsClaimed` | Amounts claimed. |
-| Round scheduling | `delayed_action::ActionScheduled`, `delayed_action::ActionCancelled`, `delayed_action::ActionApplied` keyed by `presale_vault::RoundPublicationKey` | The scheduled terms or notice change; no balance moves until `holder_rewards::RoundPublished`. |
-| Rounds | `holder_rewards::RoundPublished`, `holder_rewards::RewardClaimed`, `holder_rewards::GasReserveSettled`, `holder_rewards::RoundClosed` | Holder funding separate from optional gas reserve, snapshotted treasury, exact reimbursement and returns; zero reserve disables reimbursement. |
+| Round scheduling | `delayed_action::ActionScheduled`, `delayed_action::ActionCancelled`, `delayed_action::ActionApplied` keyed by `presale_vault::RoundPublicationKey` | The scheduled terms or notice change; no balance moves until `blast_presale::holder_rewards::RoundPublished`. |
+| Rounds | `blast_presale::holder_rewards::RoundPublished`, `blast_presale::holder_rewards::RewardClaimed`, `blast_presale::holder_rewards::GasReserveSettled`, `blast_presale::holder_rewards::RoundClosed` | Holder funding separate from optional gas reserve, snapshotted treasury, exact reimbursement and returns; zero reserve disables reimbursement. |
 | Vesting | `VestingCreated`, `VestingClaimed` (from `blast_fun_vesting`) | Schedule terms and releases. |
 
 Admin events are listed in "Blast admin operations" and "Delayed administration".
@@ -1343,8 +1344,8 @@ it. Common ones by flow (module `blast_presale` unless named):
   proposal changes nothing, the witness is already admitted, or the removed witness is unknown
   (from the type's own module). 22 `EWrongChange` (from `delayed_action`):
   `authorize_upgrade` or `make_immutable` while a notice change is pending, or
-  `apply_upgrade_delay` while an action is pending; likewise `holder_rewards::publish_round` while
-  a round-notice change is pending, or `holder_rewards::apply_round_delay` while a round is
+  `apply_upgrade_delay` while an action is pending; likewise `blast_presale::holder_rewards::publish_round` while
+  a round-notice change is pending, or `blast_presale::holder_rewards::apply_round_delay` while a round is
   scheduled.
 
 ### Pitfalls
@@ -5416,6 +5417,182 @@ an empty tree, an index outside it, or a proof of the wrong depth return false i
 
 Every abort is a small integer from the package's numeric registry; the reference lists each code.
 The abort names the module that raised it.
+
+## Vault
+
+> **Deployment status:** `blast_vault` is not yet published on mainnet; its interface may change before publication.
+
+### What it is
+
+Package `blast_vault` holds the one LP vault every Blast sale migrates into. A vault keeps a
+venue's liquidity position with no removal path, so the liquidity is locked for good. It splits
+every LP-fee collection: Blast's share first, then the sale's fee split across the owner, auto-LP,
+holder rewards, burn, and address routes. It also pays holder-reward rounds by Merkle proof. Only
+an admitted venue's code can create a vault or move its fees; integrators reach a vault through the
+venue's calls, and call the owner, round, and payout functions on it directly.
+
+### Objects and authority
+
+- `blast_vault_package::VaultRegistry` (shared singleton) lists the venue witness types that may
+  create vaults. A venue is admitted by its witness type, which only its own module can construct.
+- `blast_vault::vault::Vault<Meme, Quote>` (shared, one per migrated sale) holds the position under
+  the venue's key, the terms the sale sealed (`blast_core::migration::VaultTerms`), the fee split
+  and Blast's share, each behind a notice, and the owner, auto-LP, holder-reward, and burn
+  balances.
+- `blast_vault::holder_rewards::Round<Meme, Quote>` (shared, one per published round) holds one
+  round's holder budget, its Merkle root, the claimed-leaf bitmap, and an optional gas reserve.
+- `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>` (shared) gates every call by
+  code generation and holds the admin pause bit.
+- Owner authority is a `blast_core::owner_proof::OwnerProof` that the sale's product issues to its
+  creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
+  witness.
+
+Blast admins hold these roles: `AdapterAdmin` admits and removes venues; `FeeAdmin` changes Blast's
+per-vault share; `RewardsAdmin` schedules rounds and settles gas reserves; `BuybackAdmin` spends
+the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
+
+### Lifecycle
+
+1. A venue creates the vault with `blast_vault::vault::new`, unshared, from terms the sale sealed.
+   It aborts unless the venue's witness is admitted and Blast's share is at most 3,000 basis points
+   per asset.
+2. The venue attaches its position and shares the vault with
+   `blast_vault::vault::share_with_position`, which settles the migration residuals and emits
+   `blast_vault_events::VaultCreated`.
+3. Each fee collection through the venue calls `blast_vault::vault::split_fees`.
+4. Holder-reward rounds are scheduled, published, claimed, and closed (see Flows).
+
+A vault never closes; its position cannot be removed.
+
+### Flows
+
+#### Claim the owner's balances
+
+1. Call the sale product's owner-proof function to get an `OwnerProof` (cap holder: the sale's
+   creator authority).
+2. Call `blast_vault::vault::claim_owner_balances` with the vault (shared), the proof, and the
+   package version. It returns a `Coin<Meme>` and a `Coin<Quote>` holding every owner fee and
+   owner residual, and emits `blast_vault_events::OwnerBalancesClaimed`. Transfer or use both coins
+   in the same PTB.
+
+#### Change the fee split (owner)
+
+1. Get an `OwnerProof`, then call `blast_vault::vault::schedule_fee_split` with the proposed
+   `blast_core::fee_split::FeeSplit`, the next notice, and the `Clock` (`0x6`). It is ready after the
+   applied notice (48 hours at creation).
+2. Once ready, the venue settles fees under the current split and applies the new one with
+   `blast_vault::vault::apply_fee_split`, so every fee follows the split it accrued under. Integrators
+   check readiness with `blast_vault::vault::assert_fee_split_ready`.
+3. The owner may cancel with `blast_vault::vault::cancel_fee_split`, even once ready.
+
+#### Pay Blast's partnered fees
+
+When the sale named a partner, Blast's cut is held in the vault. Anyone calls
+`blast_vault::vault::pay_protocol_fees_with_partner` with the vault, the package version, the
+treasury, and the partner (all shared). The partner receives its cut of each asset, the treasury the
+rest, and `blast_core::blast_core_events::ProtocolFeesPaid` is emitted. Without a partner, Blast's
+cut is paid to the treasury during each collection.
+
+#### Claim a holder reward
+
+1. Read the round's leaf for your address from Blast's published allocation: the index, the
+   beneficiary, the Meme and Quote amounts, and the proof (a list of 32-byte siblings).
+2. Call `blast_vault::holder_rewards::claim` with the round (shared), the package version, those
+   values, and the `Clock`. Anyone may relay a claim; the coins always go to the committed
+   beneficiary. It emits `blast_vault_events::RewardClaimed`.
+
+#### Close a round
+
+At or after its claim deadline, anyone calls `blast_vault::holder_rewards::close_round` with the
+round, the package version, its vault, and the `Clock`. Every unclaimed balance and any unsettled gas
+reserve returns to the vault's holder rewards, and `blast_vault_events::RoundClosed` is emitted.
+
+#### Publish a scheduled round
+
+Once a scheduled round's notice has passed, anyone calls
+`blast_vault::holder_rewards::publish_round` with the vault, the package version, the treasury, and
+the `Clock`. It reserves the round's budget from the vault, opens claims for the scheduled window,
+shares the `Round`, and emits `blast_vault_events::RoundPublished`.
+
+### Economics
+
+- Each collection first takes Blast's share of each asset, rounded up
+  (`blast_core::protocol_fees::take_cut`). The rest is apportioned over the fee split's routes by
+  largest remainder (`blast_core::fee_split::apportion`), so the routes always sum to what is left.
+- Address routes are paid at once. Owner, auto-LP, and holder-reward routes accrue in the vault.
+  The burn route's Meme is burned when the supply is burn-only, or sent to `0x0` when it is
+  fixed; its Quote is kept for buybacks.
+- Migration residuals go to Blast or the owner, as the sale's terms say.
+- A round's gas reserve is at most 10% of its Quote budget. It is reimbursed to the treasury once,
+  measured and capped, with `blast_vault::holder_rewards::settle_gas_reserve` (Blast admin:
+  `RewardsAdmin`); the rest returns to the vault at once.
+
+### Time rules
+
+- Venue admissions and their notice changes wait 48 hours from publication until changed.
+- Fee-split and Blast-share changes wait the vault's applied notice, 48 hours at creation.
+- A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
+- Claims are open while the clock is before the deadline; a round closes at or after it.
+
+### Pause
+
+The admin pause bit stops venue admissions, Blast-share changes, buybacks, round scheduling and
+publication, and gas settlement. It never stops fee collection, owner claims, partner payouts,
+holder claims, round closing, or cancellations. Unpausing with `blast_vault_package::unpause`
+requires every notice to be nonzero, with no pending change to zero.
+
+### Reading state
+
+- `blast_vault::vault::pool_id`: the pool the vault's position belongs to.
+- `blast_vault::vault::has_auto_lp_position` and `blast_vault::vault::auto_lp_position`: the venue's
+  separate auto-LP position.
+- Events carry every balance change; index `FeesCollected` for per-route amounts.
+
+### Events
+
+- `blast_vault_events::VaultCreated`: vault, pool, position, liquidity, terms, and residuals.
+- `blast_vault_events::FeesCollected`: gross amounts, Blast's cut, and each route's amounts, in
+  route order.
+- `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded`: auto-LP.
+- `blast_vault_events::BuybackBurned`: Quote spent and Meme burned.
+- `blast_vault_events::OwnerBalancesClaimed`: the owner's payout.
+- `blast_vault_events::RoundPublished`, `blast_vault_events::RewardClaimed`,
+  `blast_vault_events::GasReserveSettled`, `blast_vault_events::RoundClosed`: rounds.
+
+### Aborts
+
+- Owner claim with nothing accrued: `nothing_to_claim`. A proof for another sale or package
+  aborts in `blast_core::owner_proof`.
+- Holder claim: `claims_closed` past the deadline, `invalid_index`, `already_claimed`,
+  `invalid_beneficiary` for `0x0`, `empty_claim` for zero amounts, and `invalid_proof` when any
+  leaf value or the proof is wrong.
+- Closing a round early: `claims_still_open`; with another vault: `wrong_vault`.
+- Publishing: the scheduled round's notice must have passed, the treasury must still be the one it
+  expected (`treasury_changed`), and the vault must still hold its budget
+  (`insufficient_budget`).
+
+### Pitfalls
+
+- The coins from an owner claim must be consumed in the same PTB.
+- An `OwnerProof` cannot be stored or dropped; create it in the PTB that uses it.
+- A claim relayed by anyone still pays the beneficiary in the leaf, never the relayer.
+
+### Q&A
+
+**Can anyone withdraw the liquidity?** No. The position is held under the venue's key with no
+removal path; only the venue's code can borrow it to collect fees or add auto-LP.
+
+**Who receives the burn route's Meme?** Nobody: it is burned when the supply is burn-only, or sent
+to `0x0` when it is fixed.
+
+**Do claims stop when Blast pauses the vault package?** No. Holder claims, owner claims, fee
+collection, and round closing never pause.
+
+**What happens to unclaimed rewards?** At the deadline anyone closes the round and they return to
+the vault's holder rewards for later rounds.
+
+**Can Blast change its share?** Yes, up to 3,000 basis points per asset, after the vault's notice
+and only for fees collected afterwards.
 
 ## Administration
 
@@ -14010,6 +14187,689 @@ public fun pay_with_partner<Meme, Quote>(
 
 /// The Meme, Quote, and SUI held.
 public fun balances<Meme, Quote>(self: &Ledger<Meme, Quote>): (u64, u64, u64)
+```
+
+## API reference: `blast_vault` (LP vault)
+
+Not yet published on mainnet. Its interface may change before publication.
+
+Events: payload structs are emitted directly, each under its own type.
+
+Abort codes: this package aborts with the numeric codes below from whichever module detects the failure; the abort location names that module.
+
+| Code | Constant | Meaning |
+| --- | --- | --- |
+| 0 | `EInvalidVenue` | A venue witness must not be a primitive or framework type. |
+| 1 | `EUnadmittedVenue` | Only an admitted venue may create vaults. |
+| 2 | `EUnguardedNotice` | Unpause needs a nonzero venue admission notice. |
+| 3 | `EInvalidProtocolBps` | Blast's share must be at most 3,000 basis points per asset. |
+| 4 | `EZeroLiquidity` | The migration position must hold liquidity. |
+| 5 | `EWrongVenue` | Only the venue holding the vault's position may act on it. |
+| 6 | `ENothingToClaim` | The owner has nothing accrued to claim. |
+| 7 | `EBuybackQuoteOutOfRange` | Buyback Quote must be positive and at most the burn Quote held. |
+| 8 | `EBuybackBelowMinimum` | The buyback must return at least the minimum Meme. |
+| 9 | `EInvalidCommitment` | The root and manifest digest must each be 32 bytes. |
+| 10 | `EInvalidLeafCount` | A round must commit 1 to 65,536 leaves. |
+| 11 | `EEmptyBudget` | A round must fund some Meme or Quote. |
+| 12 | `EEmptyInterval` | The start checkpoint must precede the end checkpoint. |
+| 13 | `EBudgetOverflow` | The holder Quote and gas reserve must sum within u64. |
+| 14 | `EGasReserveTooLarge` | The gas reserve must be at most 10% of the holder Quote. |
+| 15 | `EZeroTreasury` | The expected treasury must be a nonzero address. |
+| 16 | `EZeroClaimWindow` | The claim window must be positive. |
+| 17 | `EWrongRound` | The round number must match the vault's next round. |
+| 18 | `EOverlappingInterval` | The checkpoint interval must not overlap the previous round. |
+| 19 | `EInsufficientBudget` | Holder funding and gas reserve must fit the vault's unreserved rewards. |
+| 20 | `EWrongRoundProposal` | Cancel the pending proposal with the call matching its kind. |
+| 21 | `ETreasuryChanged` | The expected treasury must match the treasury's destination. |
+| 22 | `EClaimDeadlineOverflow` | The claim window must end within u64 milliseconds. |
+| 23 | `EClaimsClosed` | The claim deadline has been reached. |
+| 24 | `EInvalidIndex` | The claim index must be less than the committed leaf count. |
+| 25 | `EAlreadyClaimed` | This allocation has already been paid. |
+| 26 | `EInvalidBeneficiary` | The beneficiary must not be the zero address. |
+| 27 | `EEmptyClaim` | At least one claimed amount must be nonzero. |
+| 28 | `EInvalidProof` | The proof must match the committed recipient, amounts, and domain. |
+| 29 | `EWrongVault` | A round settles and closes only against its own vault. |
+| 30 | `EReserveSettled` | Gas reimbursement is disabled or already settled. |
+| 31 | `EOverReserve` | The reimbursement must not exceed the round's gas reserve. |
+| 32 | `EClaimsStillOpen` | A round can close only at or after its claim deadline. |
+
+### `blast_vault::blast_vault_events`
+
+Event payloads and their package-only emitters for `blast_vault`. Delayed settings, venue admission, pauses, and versions emit from `blast_admin`; Blast's fee payments emit from `blast_core`.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/blast_vault_events.move
+
+#### Events
+
+```move
+/// A venue created and shared a vault with its position and settled its migration residuals.
+public struct VaultCreated<phantom Meme, phantom Quote, phantom Venue> has copy, drop {
+    vault_id: ID,
+    pool_id: ID,
+    position_id: ID,
+    liquidity: u128,
+    terms: blast_core::migration::VaultTerms,
+    residual_meme_amount: u64,
+    residual_quote_amount: u64,
+}
+
+/// One collection was split: Blast's cut, then each route's part in the applied split's order.
+public struct FeesCollected<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    gross_meme_amount: u64,
+    gross_quote_amount: u64,
+    protocol_meme_amount: u64,
+    protocol_quote_amount: u64,
+    route_meme_amounts: vector<u64>,
+    route_quote_amounts: vector<u64>,
+}
+
+/// The venue attached the vault's auto-LP position.
+public struct AutoLpPositionOpened<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    position_id: ID,
+}
+
+/// Auto-LP added liquidity, with what still waits for the next call.
+public struct AutoLiquidityAdded<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    meme_amount: u64,
+    quote_amount: u64,
+    auto_lp_meme_pending: u64,
+    auto_lp_quote_pending: u64,
+}
+
+/// Burn Quote bought Meme that was burned, with the burn Quote still waiting.
+public struct BuybackBurned<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    quote_spent: u64,
+    meme_burned: u64,
+    burn_quote_pending: u64,
+}
+
+/// The owner claimed its accrued fees and residuals.
+public struct OwnerBalancesClaimed<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    meme_amount: u64,
+    quote_amount: u64,
+}
+
+/// A holder-reward round was published with its terms and the vault's remaining rewards.
+public struct RoundPublished<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    claim_deadline_at_ms: u64,
+    root: vector<u8>,
+    manifest_digest: vector<u8>,
+    leaf_count: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+    meme_unallocated: u64,
+    quote_unallocated: u64,
+    treasury: address,
+    gas_reserve_amount: u64,
+}
+
+/// A leaf was paid, with the round's remaining balances.
+public struct RewardClaimed<phantom Meme, phantom Quote> has copy, drop {
+    round_id: ID,
+    index: u64,
+    beneficiary: address,
+    meme_amount: u64,
+    quote_amount: u64,
+    meme_remaining: u64,
+    quote_remaining: u64,
+}
+
+/// A round's gas reserve was settled, with the vault's unreserved Quote after the return.
+public struct GasReserveSettled<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    treasury: address,
+    reimbursement_amount: u64,
+    reserve_returned: u64,
+    quote_unallocated: u64,
+}
+
+/// A round closed and returned its remainder to its vault.
+public struct RoundClosed<phantom Meme, phantom Quote> has copy, drop {
+    vault_id: ID,
+    round_id: ID,
+    number: u64,
+    meme_returned: u64,
+    quote_returned: u64,
+    gas_reserve_returned: u64,
+}
+```
+
+### `blast_vault::blast_vault_package`
+
+The vault package's publication, its venue admission, and its unpause.  Only an admitted venue may create a vault. A venue is admitted by its witness type, the one its module alone can construct, so a vault's terms always come from the venue code that redeemed a sale's migration or sealed its own standalone terms. An `AdapterAdmin` schedules an admission, anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an `AdapterAdmin` removes a venue at once.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/blast_vault_package.move
+
+#### Types
+
+```move
+/// The package's one-time witness and the marker of its version, publication, and roles.
+public struct BLAST_VAULT_PACKAGE() has drop;
+
+/// The witness `unpause` passes to clear pause bits; only this module constructs it.
+public struct UnpauseWitness() has drop;
+
+/// Keys the admitted venues' delayed lifecycle.
+public struct VenuesKey() has copy, drop, store;
+
+/// Shared singleton holding the venue witness types that may create vaults.
+public struct VaultRegistry has key {
+    id: UID,
+    venues: blast_admin::delayed_set::DelayedSet<VenuesKey, TypeName>,
+}
+```
+
+#### Functions
+
+```move
+/// Schedules `Venue`'s admission after the applied notice. Framework and primitive types are
+/// rejected because anyone can construct them.
+public fun schedule_venue<Venue: drop>(
+    self: &mut VaultRegistry,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
+)
+
+/// Applies `Venue`'s ready admission; anyone may call it.
+public fun apply_venue<Venue: drop>(
+    self: &mut VaultRegistry,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
+)
+
+/// Cancels `Venue`'s pending admission, even a ready one.
+public fun cancel_venue<Venue: drop>(
+    self: &mut VaultRegistry,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+)
+
+/// Removes an admitted venue at once; its existing vaults keep working.
+public fun remove_venue<Venue: drop>(
+    self: &mut VaultRegistry,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+)
+
+/// Schedules a new admission notice after the applied one.
+public fun schedule_venue_delay(
+    self: &mut VaultRegistry,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Applies a ready admission-notice change; anyone may call it.
+public fun apply_venue_delay(
+    self: &mut VaultRegistry,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
+)
+
+/// Cancels the pending admission-notice change, even a ready one.
+public fun cancel_venue_delay(
+    self: &mut VaultRegistry,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+)
+
+/// Clears pause bits once the venue admission notice is guarded; the generic administration then
+/// checks the upgrade notice and the pinned witness.
+public fun unpause(
+    self: &VaultRegistry,
+    unpause_admin: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UnpauseAdmin<BLAST_VAULT_PACKAGE>>,
+    package_admin: &blast_admin::package_admin::PackageAdmin<BLAST_VAULT_PACKAGE>,
+    package_version: &mut blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+    bits: u8,
+)
+```
+
+### `blast_vault::constants`
+
+Package-wide vault constants exposed as zero-cost macros.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/constants.move
+
+#### Constants
+
+- `generation: u64 = 1`: The package generation this bytecode serves.
+- `admin_pause_bit: u8 = 1`: Stops Blast's administrative operations: venue admission, protocol-share changes, holder-reward rounds, gas settlement, and buyback. Collection, owner actions, claims, closes, and cancels never pause.
+- `valid_pause_bits: u8 = blast_vault::constants::admin_pause_bit!()`: Every supported vault pause flag.
+- `venue_admission_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Initial notice before a venue may create vaults, or the next such notice applies.
+- `fee_change_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Initial notice before a vault's fee split or Blast share changes.
+- `round_notice_ms: u64 = 2 * 60 * 60 * 1_000`: Initial notice before a scheduled holder-reward round may publish, or its next notice period may change: 2 hours, so a cancel administrator can stop a bad round while daily rounds fit.
+- `max_protocol_bps: u64 = 3_000`: Blast's largest share of each LP-fee collection, per asset.
+- `max_gas_reserve_bps: u64 = 1_000`: Largest holder-reward gas reserve, in basis points of the round's holder Quote.
+- `basis_points_denominator: u64 = 10_000`: Denominator for rates expressed in basis points.
+- `max_reward_leaves: u64 = 65_536`: The most leaves one holder-reward round may commit.
+- `digest_length: u64 = 32`: Byte length of a round's Merkle root and manifest digest.
+- `reward_leaf_domain: vector<u8> = b"blast-holder-rewards-v2"`: The domain every holder-reward leaf hashes under.
+
+### `blast_vault::holder_rewards`
+
+Holder rewards: rounds funded from a vault's holder-reward route and paid by Merkle proof.  Blast's off-chain system turns checkpointed holder balances into a Merkle allocation, and a `RewardsAdmin` schedules it as a round on the vault. Once the vault's round notice has elapsed, anyone publishes it, reserving its Meme and Quote budget from the vault. Anyone can relay a proof afterwards; each leaf pays its committed beneficiary once, and anyone closes the round at its deadline, returning what is left to the vault.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/holder_rewards.move
+
+#### Types
+
+```move
+/// A published round: independently funded claims with optional, one-shot gas custody that claims
+/// never touch, returned to its vault at the claim deadline.
+public struct Round<phantom Meme, phantom Quote> has key {
+    id: UID,
+    vault_id: ID,
+    number: u64,
+    claim_deadline_at_ms: u64,
+    root: vector<u8>,
+    leaf_count: u64,
+    claimed_bitmap: vector<u256>,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+    treasury: address,
+    gas_reserve: Option<Balance<Quote>>,
+}
+```
+
+#### Functions
+
+```move
+/// Schedules a round's terms for publication after the vault's applied round notice, replacing
+/// any scheduled round or notice change. The terms' static checks run now; the round number,
+/// interval, and budget are checked against the vault now to fail fast and again at publication.
+/// A zero reserve disables gas reimbursement. Gas attribution remains off chain.
+public fun schedule_round<Meme, Quote>(
+    vault: &mut vault::Vault<Meme, Quote>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::RewardsAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    root: vector<u8>,
+    manifest_digest: vector<u8>,
+    leaf_count: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+    gas_reserve_amount: u64,
+    claim_window_duration_ms: u64,
+    expected_treasury: address,
+    clock: &Clock,
+)
+
+/// Publishes the scheduled round once its notice has elapsed: the treasury must still be the
+/// expected one, and the round's number, interval, and budget must still fit the vault. Funds
+/// holder claims and optional gas custody separately, with claims open for the scheduled window
+/// from now, and shares the round. Anyone may call it.
+public fun publish_round<Meme, Quote>(
+    vault: &mut vault::Vault<Meme, Quote>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    treasury: &blast_core::blast_treasury::Treasury,
+    clock: &Clock,
+    ctx: &mut TxContext,
+)
+
+/// Cancels the scheduled round, even a ready one; nothing was reserved, so no balance moves.
+public fun cancel_round<Meme, Quote>(
+    vault: &mut vault::Vault<Meme, Quote>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+)
+
+/// Schedules a new round notice after the applied one, replacing any scheduled round.
+public fun schedule_round_delay<Meme, Quote>(
+    vault: &mut vault::Vault<Meme, Quote>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::RewardsAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Applies a ready round-notice change; anyone may call it.
+public fun apply_round_delay<Meme, Quote>(
+    vault: &mut vault::Vault<Meme, Quote>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
+)
+
+/// Cancels the pending round-notice change, even a ready one.
+public fun cancel_round_delay<Meme, Quote>(
+    vault: &mut vault::Vault<Meme, Quote>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+)
+
+/// Pays one committed allocation before the claim deadline, only to its committed beneficiary;
+/// anyone may relay an unchanged proof. Claims never pause.
+public fun claim<Meme, Quote>(
+    self: &mut Round<Meme, Quote>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    index: u64,
+    beneficiary: address,
+    meme_amount: u64,
+    quote_amount: u64,
+    proof: vector<vector<u8>>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+)
+
+/// Settles a measured, capped gas reimbursement once: the round's treasury receives it, and all
+/// unused reserve returns to the vault at once.
+public fun settle_gas_reserve<Meme, Quote>(
+    self: &mut Round<Meme, Quote>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::RewardsAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    vault: &mut vault::Vault<Meme, Quote>,
+    reimbursement_amount: u64,
+    ctx: &mut TxContext,
+)
+
+/// Closes the round at or after its claim deadline, returning every unclaimed holder balance and
+/// any unsettled reserve to its vault, so missing settlement authority cannot strand custody.
+/// Anyone may call it.
+public fun close_round<Meme, Quote>(
+    self: Round<Meme, Quote>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    vault: &mut vault::Vault<Meme, Quote>,
+    clock: &Clock,
+)
+```
+
+### `blast_vault::vault`
+
+The one LP vault every Blast sale migrates into: permanent custody of a venue position, and the split of every fee collection it earns.  An admitted venue builds the vault from the terms it redeemed from a sale's migration (or its own standalone terms), attaches the position under its sealed `Venue` key, and shares it. Every collection then pays Blast its per-vault share through the core protocol ledger, at once or held for the sale's partner, and divides the rest by the vault's fee split: address routes are paid at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with an `OwnerProof` from the sale's product; Blast acts through its roles; venue-only operations require the venue's witness, which only the venue module constructs.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/vault.move
+
+#### Types
+
+```move
+/// The key under which the venue's migration position is held; only `Venue` can reach it.
+public struct PositionKey<phantom Venue>() has copy, drop, store;
+
+/// The key for the separate position auto-LP adds to on venues whose migration position cannot
+/// receive more liquidity (Cetus burns it).
+public struct AutoLpPositionKey<phantom Venue>() has copy, drop, store;
+
+/// Keys the fee split's delayed lifecycle.
+public struct FeeSplitKey() has copy, drop, store;
+
+/// Keys Blast's per-vault share's delayed lifecycle.
+public struct ProtocolBpsKey() has copy, drop, store;
+
+/// Keys the holder-reward round publication's delayed lifecycle; its action is the round's terms.
+public struct RoundPublicationKey() has copy, drop, store;
+
+/// The witness that creates every vault's protocol ledger; only this module constructs it.
+public struct VaultWitness() has drop;
+
+/// Blast's share of each LP-fee collection, per asset, each at most 3,000 basis points.
+public struct ProtocolBps has copy, drop, store {
+    meme_bps: blast_core::bps::Bps,
+    quote_bps: blast_core::bps::Bps,
+}
+
+/// The committed terms of one holder-reward round, checked when built: two 32-byte commitments, 1
+/// to 65,536 leaves, a nonempty checkpoint interval and budget, a holder Quote and gas reserve that
+/// sum within u64 with the reserve at most 10% of the holder Quote, a nonzero expected treasury,
+/// and a positive claim window. The claim window is a duration; publication starts it.
+public struct RoundTerms has copy, drop, store {
+    number: u64,
+    start_checkpoint: u64,
+    end_checkpoint: u64,
+    root: vector<u8>,
+    manifest_digest: vector<u8>,
+    leaf_count: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+    gas_reserve_amount: u64,
+    claim_window_duration_ms: u64,
+    expected_treasury: address,
+}
+
+/// Shared custody for one migrated sale's position and the balances its LP fees are split into.
+/// A holder-reward round waits in `round_publication` for its applied notice before anyone may
+/// publish it; at most one round is scheduled at a time.
+public struct Vault<phantom Meme, phantom Quote> has key {
+    id: UID,
+    /// The terms the vault was created with; owner proofs are checked against them.
+    terms: blast_core::migration::VaultTerms,
+    pool_id: ID,
+    fee_split: blast_admin::delayed::Delayed<FeeSplitKey, blast_core::fee_split::FeeSplit>,
+    protocol_bps: blast_admin::delayed::Delayed<ProtocolBpsKey, ProtocolBps>,
+    protocol: blast_core::protocol_fees::Ledger<Meme, Quote>,
+    owner_meme: Balance<Meme>,
+    owner_quote: Balance<Quote>,
+    auto_lp_meme: Balance<Meme>,
+    auto_lp_quote: Balance<Quote>,
+    rewards_meme: Balance<Meme>,
+    rewards_quote: Balance<Quote>,
+    burn_quote: Balance<Quote>,
+    next_round: u64,
+    last_checkpoint: Option<u64>,
+    round_publication: blast_admin::delayed_action::DelayedAction<RoundPublicationKey, RoundTerms>,
+}
+```
+
+#### Functions
+
+```move
+/// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
+/// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` is admitted and Blast's
+/// share is within the vault maximum.
+public fun new<Meme, Quote, Venue: drop>(
+    registry: &blast_vault_package::VaultRegistry,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    terms: blast_core::migration::VaultTerms,
+    pool_id: ID,
+    ctx: &mut TxContext,
+): Vault<Meme, Quote>
+
+/// Attaches `position`, holding `liquidity`, under the venue's sealed key with no removal path,
+/// settles the migration residuals by the terms' policy, and shares the vault. Protocol residuals
+/// are paid to the treasury at once, or held for the partner; owner residuals wait for the owner.
+public fun share_with_position<Meme, Quote, Venue, Position: key + store>(
+    self: Vault<Meme, Quote>,
+    _: &Venue,
+    treasury: &blast_core::blast_treasury::Treasury,
+    position: Position,
+    liquidity: u128,
+    residual_meme: Balance<Meme>,
+    residual_quote: Balance<Quote>,
+    ctx: &mut TxContext,
+)
+
+/// Borrows the venue's migration position mutably, with no removal path. Another venue's key finds
+/// no field, so the borrow aborts.
+public fun position_mut<Meme, Quote, Venue, Position: key + store>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+): &mut Position
+
+/// Whether the venue's auto-LP position exists.
+public fun has_auto_lp_position<Meme, Quote, Venue>(self: &Vault<Meme, Quote>, _: &Venue): bool
+
+/// Attaches the venue's auto-LP position once, with no removal path.
+public fun attach_auto_lp_position<Meme, Quote, Venue, Position: key + store>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    position: Position,
+)
+
+/// Borrows the venue's auto-LP position.
+public fun auto_lp_position<Meme, Quote, Venue, Position: key + store>(
+    self: &Vault<Meme, Quote>,
+    _: &Venue,
+): &Position
+
+/// Borrows the venue's auto-LP position mutably, with no removal path.
+public fun auto_lp_position_mut<Meme, Quote, Venue, Position: key + store>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+): &mut Position
+
+/// Receives one coin sent to the vault's address, such as Aftermath's DAO fees, for the venue that
+/// holds the position.
+public fun receive_coin<Meme, Quote, Venue, Asset>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    coin: transfer::Receiving<Coin<Asset>>,
+): Balance<Asset>
+
+/// Splits one collection of the position's fees: Blast's share of each asset, rounded up, into the
+/// protocol ledger, paid to the treasury at once unless the sale named a partner; then the rest by
+/// the fee split, in route order. Address routes are paid at once; the owner, auto-LP, and
+/// holder-reward routes accrue; the burn route's Meme is burned and its Quote kept for buyback. A
+/// zero collection moves and emits nothing.
+public fun split_fees<Meme, Quote, Venue>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    treasury: &blast_core::blast_treasury::Treasury,
+    currency: &mut Currency<Meme>,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+    ctx: &mut TxContext,
+)
+
+/// Aborts unless the scheduled fee split is ready; a venue checks this before settling fees under
+/// the current split.
+public fun assert_fee_split_ready<Meme, Quote>(self: &Vault<Meme, Quote>, clock: &Clock)
+
+/// Applies the ready fee split after the venue has settled the fees accrued under the current one,
+/// so each fee follows the split it accrued under.
+public fun apply_fee_split<Meme, Quote, Venue>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
+)
+
+/// Takes every Meme and Quote waiting to be added back to the position.
+public fun take_auto_lp<Meme, Quote, Venue>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+): (Balance<Meme>, Balance<Quote>)
+
+/// Keeps what the pool did not take for the next call and records what it added.
+public fun keep_auto_lp<Meme, Quote, Venue>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    added_meme: u64,
+    added_quote: u64,
+    meme: Balance<Meme>,
+    quote: Balance<Quote>,
+)
+
+/// Takes exactly `quote_in` of the Quote waiting to buy Meme back, under a buyback administrator.
+/// Aborts unless `quote_in` is positive and at most the burn Quote held.
+public fun take_buyback_quote<Meme, Quote, Venue>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::BuybackAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    quote_in: u64,
+): Balance<Quote>
+
+/// Burns the Meme a swap of `quote_in` returned, which must reach `min_meme_out`, and keeps the
+/// Quote the pool did not take for the next buyback.
+public fun burn_buyback<Meme, Quote, Venue>(
+    self: &mut Vault<Meme, Quote>,
+    _: &Venue,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    currency: &mut Currency<Meme>,
+    meme: Balance<Meme>,
+    unspent_quote: Balance<Quote>,
+    quote_in: u64,
+    min_meme_out: u64,
+    ctx: &mut TxContext,
+)
+
+/// Claims the owner's accrued LP fees and owner residuals with an owner proof from the sale's
+/// product. Aborts when nothing has accrued.
+public fun claim_owner_balances<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    proof: blast_core::owner_proof::OwnerProof,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    ctx: &mut TxContext,
+): (Coin<Meme>, Coin<Quote>)
+
+/// Proposes a new fee split and next notice with an owner proof, ready after the applied notice.
+public fun schedule_fee_split<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    proof: blast_core::owner_proof::OwnerProof,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    proposed: blast_core::fee_split::FeeSplit,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Cancels the pending fee split with an owner proof, even a ready one.
+public fun cancel_fee_split<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    proof: blast_core::owner_proof::OwnerProof,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+)
+
+/// Proposes Blast's per-vault share and next notice, each at most 3,000 basis points, ready after
+/// the applied notice; it applies to fees collected after it is applied.
+public fun schedule_protocol_bps<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::FeeAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    meme_bps: blast_core::bps::Bps,
+    quote_bps: blast_core::bps::Bps,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Applies Blast's ready per-vault share; anyone may call it.
+public fun apply_protocol_bps<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
+)
+
+/// Cancels Blast's pending per-vault share, even a ready one.
+public fun cancel_protocol_bps<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+)
+
+/// Pays the Blast fees held for the sale's partner: the partner its cut of each asset, then the
+/// treasury the rest. Anyone may call it, since both payees are fixed; holding nothing moves and
+/// emits nothing.
+public fun pay_protocol_fees_with_partner<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
+    treasury: &blast_core::blast_treasury::Treasury,
+    partner: &blast_partners::blast_partners::Partner,
+    ctx: &mut TxContext,
+)
+
+/// The pool the vault's position belongs to; venues check collections come from it.
+public fun pool_id<Meme, Quote>(self: &Vault<Meme, Quote>): ID
 ```
 
 ## API reference: `blast_admin` (Administration)
