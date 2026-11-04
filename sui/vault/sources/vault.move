@@ -439,19 +439,18 @@ public fun claim_owner_balances<Meme, Quote>(
     (meme, quote)
 }
 
-/// Proposes a new fee split and next notice with an owner proof, ready after the applied notice.
+/// Proposes a new fee split with an owner proof, ready after the fixed 48-hour notice.
 public fun schedule_fee_split<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     proof: OwnerProof,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     proposed: FeeSplit,
-    delay_ms: u64,
     clock: &Clock,
 ) {
     package_version.assert_current(constants::generation!());
     proof.assert_terms(&self.terms);
 
-    self.fee_split.schedule(proposed, delay_ms, clock);
+    self.fee_split.schedule_value(proposed, clock);
 }
 
 /// Cancels the pending fee split with an owner proof, even a ready one.
@@ -468,22 +467,21 @@ public fun cancel_fee_split<Meme, Quote>(
 
 // Blast
 
-/// Proposes Blast's per-vault share and next notice, each at most 3,000 basis points, ready after
-/// the applied notice; it applies to fees collected after it is applied.
+/// Proposes Blast's per-vault share, each asset at most 3,000 basis points, ready after the fixed
+/// 48-hour notice; it applies to fees collected after it is applied.
 public fun schedule_protocol_bps<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     _: &AdminWitness<FeeAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     meme_bps: Bps,
     quote_bps: Bps,
-    delay_ms: u64,
     clock: &Clock,
 ) {
     package_version.assert_current(constants::generation!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
     let proposed = new_protocol_bps(meme_bps, quote_bps);
 
-    self.protocol_bps.schedule(proposed, delay_ms, clock);
+    self.protocol_bps.schedule_value(proposed, clock);
 }
 
 /// Applies Blast's ready per-vault share; anyone may call it.

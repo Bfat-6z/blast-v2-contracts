@@ -367,7 +367,6 @@ fun a_fee_split_change_waits_its_notice_and_applies_after_settling() {
         vault_fixture::owner_proof(),
         f.version(),
         rewards_split,
-        NOTICE_MS,
         f.clock(),
     );
     f.clock_mut().increment_for_testing(NOTICE_MS);
@@ -400,7 +399,6 @@ fun a_fee_split_change_cannot_apply_before_its_notice() {
         vault_fixture::owner_proof(),
         f.version(),
         rewards_split,
-        NOTICE_MS,
         f.clock(),
     );
 
@@ -425,13 +423,53 @@ fun the_owner_cancels_a_pending_fee_split() {
         vault_fixture::owner_proof(),
         f.version(),
         rewards_split,
-        NOTICE_MS,
         f.clock(),
     );
     vault.cancel_fee_split(vault_fixture::owner_proof(), f.version());
 
     f.clock_mut().increment_for_testing(NOTICE_MS);
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+/// The notice is fixed: a second fee-split change after an applied one still waits 48 hours.
+fun every_fee_split_change_waits_the_full_notice() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 0, 0, false, false);
+    f.share_vault(&mut scenario, terms, 0, 0);
+    let mut vault = vault_fixture::take_vault(&scenario);
+    let rewards_split = vault_fixture::single_route_split(fee_split::holder_rewards_destination());
+    vault.schedule_fee_split(vault_fixture::owner_proof(), f.version(), rewards_split, f.clock());
+    f.clock_mut().increment_for_testing(NOTICE_MS);
+    vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
+
+    vault.schedule_fee_split(vault_fixture::owner_proof(), f.version(), owner_split(), f.clock());
+    f.clock_mut().increment_for_testing(NOTICE_MS - 1);
+    vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+/// The notice is fixed: a second Blast-share change after an applied one still waits 48 hours.
+fun every_blast_share_change_waits_the_full_notice() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
+    f.share_vault(&mut scenario, terms, 0, 0);
+    let mut vault = vault_fixture::take_vault(&scenario);
+    vault.schedule_protocol_bps(&fee_admin(), f.version(), bps::new(2_000), bps::new(2_000), f.clock());
+    f.clock_mut().increment_for_testing(NOTICE_MS);
+    vault.apply_protocol_bps(f.version(), f.clock());
+
+    vault.schedule_protocol_bps(&fee_admin(), f.version(), bps::new(3_000), bps::new(3_000), f.clock());
+    f.clock_mut().increment_for_testing(NOTICE_MS - 1);
+    vault.apply_protocol_bps(f.version(), f.clock());
 
     abort
 }
@@ -451,7 +489,6 @@ fun blasts_share_changes_after_its_notice_and_governs_later_collections() {
         f.version(),
         bps::new(3_000),
         bps::new(1_000),
-        NOTICE_MS,
         f.clock(),
     );
     f.clock_mut().increment_for_testing(NOTICE_MS);
@@ -483,7 +520,6 @@ fun blasts_share_cannot_be_scheduled_above_the_maximum() {
         f.version(),
         bps::new(3_001),
         bps::new(0),
-        NOTICE_MS,
         f.clock(),
     );
 
@@ -503,7 +539,6 @@ fun a_cancel_administrator_cancels_blasts_pending_share() {
         f.version(),
         bps::new(2_000),
         bps::new(2_000),
-        NOTICE_MS,
         f.clock(),
     );
     vault.cancel_protocol_bps(&cancel_admin(), f.version());
@@ -531,7 +566,6 @@ fun the_admin_pause_stops_blasts_share_changes() {
         f.version(),
         bps::new(2_000),
         bps::new(2_000),
-        NOTICE_MS,
         f.clock(),
     );
 
@@ -764,7 +798,6 @@ fun the_admin_pause_stops_applying_blasts_share() {
         f.version(),
         bps::new(2_000),
         bps::new(2_000),
-        NOTICE_MS,
         f.clock(),
     );
     f.clock_mut().increment_for_testing(NOTICE_MS);
