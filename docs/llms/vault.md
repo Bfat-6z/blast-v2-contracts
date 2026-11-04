@@ -107,17 +107,20 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 
 ### Time rules
 
-- Venue admissions and their notice changes wait 48 hours from publication until changed.
+- Venue admissions start at zero notice, so Blast lists its venues at launch while the package is
+  still paused; Blast then raises the notice before unpausing. Afterwards each admission and
+  notice change waits the applied notice.
 - Fee-split and Blast-share changes wait the vault's applied notice, 48 hours at creation.
 - A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
 - Claims are open while the clock is before the deadline; a round closes at or after it.
 
 ### Pause
 
-The admin pause bit stops venue admissions, Blast-share changes, buybacks, round scheduling and
-publication, and gas settlement. It never stops fee collection, owner claims, partner payouts,
-holder claims, round closing, or cancellations. Unpausing with `blast_vault_package::unpause`
-requires every notice to be nonzero, with no pending change to zero.
+The package is published fully paused. The admin pause bit stops Blast-share changes, buybacks,
+round scheduling and publication, and gas settlement. It never stops venue admissions, fee
+collection, owner claims, partner payouts, holder claims, round closing, or cancellations.
+Unpausing with `blast_vault_package::unpause` requires a nonzero venue admission notice, with no
+pending change to zero.
 
 ### Reading state
 

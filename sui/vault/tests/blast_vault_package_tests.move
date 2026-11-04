@@ -15,13 +15,98 @@ public struct NewVenue() has drop;
 
 // === Tests ===
 
-// Venue admission
+// Launch
+
+#[test]
+/// Publication leaves the package fully paused with a zero admission notice: Blast lists its
+/// venues at once, raises the notice, and only then unpauses.
+fun venues_are_listed_at_launch_while_the_package_is_paused() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
+    let package_admin = new_package_admin(scenario.ctx());
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::valid_pause_bits!());
+
+    registry.schedule_venue<NewVenue>(&adapter_admin(), f.version(), f.clock());
+    registry.apply_venue<NewVenue>(f.version(), f.clock());
+    registry.schedule_venue_delay(&adapter_admin(), f.version(), ADMISSION_NOTICE_MS, f.clock());
+    registry.apply_venue_delay(f.version(), f.clock());
+    registry.unpause(
+        &unpause_admin(),
+        &package_admin,
+        f.version_mut(),
+        constants::valid_pause_bits!(),
+    );
+
+    assert_eq!(f.version().paused_for_testing(), 0);
+    let terms = f.terms_for(owner_split(), 0, 0, false, false);
+    let vault = vault::new<VAULT_FIXTURE, QUOTE, _>(
+        &registry,
+        &NewVenue(),
+        f.version(),
+        terms,
+        vault_fixture::pool_id(),
+        scenario.ctx(),
+    );
+    destroy(vault);
+    destroy(package_admin);
+    destroy(registry);
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EUnguardedNotice,
+    location = blast_vault::blast_vault_package,
+)]
+fun unpause_waits_for_a_nonzero_admission_notice() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
+    let package_admin = new_package_admin(scenario.ctx());
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
+
+    registry.unpause(
+        &unpause_admin(),
+        &package_admin,
+        f.version_mut(),
+        constants::admin_pause_bit!(),
+    );
+
+    abort
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_vault::errors::EUnguardedNotice,
+    location = blast_vault::blast_vault_package,
+)]
+fun unpause_waits_while_a_zero_admission_notice_is_pending() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let mut registry = guarded_registry(&f, scenario.ctx());
+    let package_admin = new_package_admin(scenario.ctx());
+    registry.schedule_venue_delay(&adapter_admin(), f.version(), 0, f.clock());
+    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
+
+    registry.unpause(
+        &unpause_admin(),
+        &package_admin,
+        f.version_mut(),
+        constants::admin_pause_bit!(),
+    );
+
+    abort
+}
+
+// Venue admission after launch
 
 #[test]
 fun an_admitted_venue_creates_vaults_after_its_notice() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
+    let mut registry = guarded_registry(&f, scenario.ctx());
     registry.schedule_venue<NewVenue>(&adapter_admin(), f.version(), f.clock());
     f.clock_mut().increment_for_testing(ADMISSION_NOTICE_MS);
 
@@ -47,7 +132,7 @@ fun an_admitted_venue_creates_vaults_after_its_notice() {
 fun a_venue_cannot_be_admitted_before_its_notice() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
+    let mut registry = guarded_registry(&f, scenario.ctx());
     registry.schedule_venue<NewVenue>(&adapter_admin(), f.version(), f.clock());
     f.clock_mut().increment_for_testing(ADMISSION_NOTICE_MS - 1);
 
@@ -61,7 +146,7 @@ fun a_venue_cannot_be_admitted_before_its_notice() {
 fun a_cancelled_admission_cannot_apply() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
+    let mut registry = guarded_registry(&f, scenario.ctx());
     registry.schedule_venue<NewVenue>(&adapter_admin(), f.version(), f.clock());
     registry.cancel_venue<NewVenue>(&cancel_admin(), f.version());
     f.clock_mut().increment_for_testing(ADMISSION_NOTICE_MS);
@@ -143,19 +228,6 @@ fun a_sui_framework_type_cannot_be_a_venue() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
-fun the_admin_pause_stops_venue_admission() {
-    let mut scenario = vault_fixture::begin();
-    let mut f = vault_fixture::start(&mut scenario);
-    let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
-    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
-
-    registry.schedule_venue<NewVenue>(&adapter_admin(), f.version(), f.clock());
-
-    abort
-}
-
-#[test]
 fun the_admin_pause_never_stops_cancellation_or_removal() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
@@ -171,13 +243,13 @@ fun the_admin_pause_never_stops_cancellation_or_removal() {
     scenario.end();
 }
 
-// Unpause
+// Unpause and notice changes
 
 #[test]
 fun unpause_clears_the_bits_while_every_notice_is_guarded() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
+    let registry = guarded_registry(&f, scenario.ctx());
     let package_admin = new_package_admin(scenario.ctx());
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
 
@@ -196,33 +268,10 @@ fun unpause_clears_the_bits_while_every_notice_is_guarded() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_vault::errors::EUnguardedNotice,
-    location = blast_vault::blast_vault_package,
-)]
-fun unpause_waits_while_a_zero_admission_notice_is_pending() {
-    let mut scenario = vault_fixture::begin();
-    let mut f = vault_fixture::start(&mut scenario);
-    let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
-    let package_admin = new_package_admin(scenario.ctx());
-    registry.schedule_venue_delay(&adapter_admin(), f.version(), 0, f.clock());
-    package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
-
-    registry.unpause(
-        &unpause_admin(),
-        &package_admin,
-        f.version_mut(),
-        constants::admin_pause_bit!(),
-    );
-
-    abort
-}
-
-#[test]
 fun an_admission_notice_change_applies_after_the_current_notice() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
+    let mut registry = guarded_registry(&f, scenario.ctx());
     registry.schedule_venue_delay(&adapter_admin(), f.version(), 1, f.clock());
     f.clock_mut().increment_for_testing(ADMISSION_NOTICE_MS);
     registry.apply_venue_delay(f.version(), f.clock());
@@ -241,7 +290,7 @@ fun an_admission_notice_change_applies_after_the_current_notice() {
 fun a_cancelled_admission_notice_change_cannot_apply() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
+    let mut registry = guarded_registry(&f, scenario.ctx());
     registry.schedule_venue_delay(&adapter_admin(), f.version(), 1, f.clock());
     registry.cancel_venue_delay(&cancel_admin(), f.version());
     f.clock_mut().increment_for_testing(ADMISSION_NOTICE_MS);
@@ -252,6 +301,15 @@ fun a_cancelled_admission_notice_change_cannot_apply() {
 }
 
 // === Test Helpers ===
+
+/// A registry after launch: nothing admitted, with the 48-hour admission notice applied.
+fun guarded_registry(f: &VaultFixture, ctx: &mut TxContext): VaultRegistry {
+    let mut registry = blast_vault_package::empty_registry_for_testing(ctx);
+    registry.schedule_venue_delay(&adapter_admin(), f.version(), ADMISSION_NOTICE_MS, f.clock());
+    registry.apply_venue_delay(f.version(), f.clock());
+
+    registry
+}
 
 /// Package administration for the vault package with its production upgrade notice.
 fun new_package_admin(ctx: &mut TxContext): PackageAdmin<BLAST_VAULT_PACKAGE> {
@@ -284,10 +342,10 @@ use blast_admin::{
 use blast_core::blast_domain::{AdapterAdmin, CancelAdmin};
 
 use blast_vault::{
-    blast_vault_package::{Self, BLAST_VAULT_PACKAGE},
+    blast_vault_package::{Self, BLAST_VAULT_PACKAGE, VaultRegistry},
     constants,
     vault,
-    vault_fixture::{Self, QUOTE, TestVenue, VAULT_FIXTURE, owner_split}
+    vault_fixture::{Self, QUOTE, TestVenue, VAULT_FIXTURE, VaultFixture, owner_split}
 };
 
 use std::unit_test::{assert_eq, destroy};

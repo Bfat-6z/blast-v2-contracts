@@ -10,6 +10,10 @@
 /// sale's migration or sealed its own standalone terms. An `AdapterAdmin` schedules an admission,
 /// anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an
 /// `AdapterAdmin` removes a venue at once.
+///
+/// The admission notice starts at zero and admissions ignore the pause, so Blast lists its venues
+/// and raises the notice while publication keeps the package paused; `unpause` refuses until that
+/// notice is guarded.
 module blast_vault::blast_vault_package;
 
 // === Public Types ===
@@ -48,7 +52,6 @@ public fun schedule_venue<Venue: drop>(
     clock: &Clock,
 ) {
     package_version.assert_current(constants::generation!());
-    package_version.assert_not_paused(constants::admin_pause_bit!());
 
     let venue = type_name::with_original_ids<Venue>();
     assert!(!venue.is_primitive(), blast_vault::errors::invalid_venue!());
@@ -65,7 +68,6 @@ public fun apply_venue<Venue: drop>(
     clock: &Clock,
 ) {
     package_version.assert_current(constants::generation!());
-    package_version.assert_not_paused(constants::admin_pause_bit!());
 
     self.venues.apply_add(type_name::with_original_ids<Venue>(), clock);
 }
@@ -101,7 +103,6 @@ public fun schedule_venue_delay(
     clock: &Clock,
 ) {
     package_version.assert_current(constants::generation!());
-    package_version.assert_not_paused(constants::admin_pause_bit!());
 
     self.venues.schedule_delay(delay_ms, clock);
 }
@@ -113,7 +114,6 @@ public fun apply_venue_delay(
     clock: &Clock,
 ) {
     package_version.assert_current(constants::generation!());
-    package_version.assert_not_paused(constants::admin_pause_bit!());
 
     self.venues.apply_delay(clock);
 }
@@ -165,21 +165,20 @@ fun new_registry(ctx: &mut TxContext): VaultRegistry {
 // === Test-Only Functions ===
 
 #[test_only]
-/// An unshared registry with `Venue` already admitted through a zero-notice admission.
+/// An unshared registry with `Venue` already admitted at the launch notice of zero.
 public fun registry_for_testing<Venue>(ctx: &mut TxContext): VaultRegistry {
-    let id = object::new(ctx);
-    let mut venues = delayed_set::new(VenuesKey(), &id, 0);
+    let mut registry = new_registry(ctx);
     let clock = sui::clock::create_for_testing(ctx);
     let venue = type_name::with_original_ids<Venue>();
-    venues.schedule_add(venue, &clock);
-    venues.apply_add(venue, &clock);
+    registry.venues.schedule_add(venue, &clock);
+    registry.venues.apply_add(venue, &clock);
     clock.destroy_for_testing();
 
-    VaultRegistry { id, venues }
+    registry
 }
 
 #[test_only]
-/// An unshared registry with nothing admitted and the production notice.
+/// An unshared registry as publication creates it: nothing admitted, at zero notice.
 public fun empty_registry_for_testing(ctx: &mut TxContext): VaultRegistry {
     new_registry(ctx)
 }
