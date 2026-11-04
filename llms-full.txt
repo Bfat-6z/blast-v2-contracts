@@ -8517,7 +8517,7 @@ Events: payload structs are emitted directly, each under its own type.
 
 ### `blast_fun_migrators::blast_events`
 
-Typed replay facts for Cetus pool reservations. Vault custody, LP-fee collection, auto-LP, buybacks, and holder rewards are recorded by `blast_vault`'s events.
+Typed replay facts for Cetus pool reservations and Bluefin pool tiers. Vault custody, LP-fee collection, auto-LP, buybacks, and holder rewards are recorded by `blast_vault`'s events.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/blast_events.move
 
@@ -8530,6 +8530,14 @@ public struct CetusPoolReserved has copy, drop {
     quote: TypeName,
     pool_creation_cap_id: ID,
     tick_spacing: u32,
+}
+
+/// Records the Bluefin pool tier a prepared pair's migration uses.
+public struct BluefinPoolTierRecorded has copy, drop {
+    meme: TypeName,
+    quote: TypeName,
+    tick_spacing: u32,
+    fee_rate: u64,
 }
 ```
 
