@@ -21,12 +21,14 @@ identified only through its package marker; ADR 0085 records why.
 | `blast_sui` | Publisher marker | `blast::BLAST` | `blast_sui_package::BLAST_SUI_PACKAGE` |
 | `blast_sui` | administration roles (ADR 0097) | `blast_sui_domain::BLAST_SUI_DOMAIN` | `blast_sui_domain::UpgradeAdmin`, `FeeAdmin` |
 | `blast_fun` (launchpad) | Publisher marker | `blast::BLAST` | `blast_fun::BLAST_FUN` |
-| `blast_fun` | administration roles, shared with migrators (ADR 0097) | `blast_fun_domain::BLAST_FUN_DOMAIN` | `blast_fun_domain::UpgradeAdmin`, `CreatorAdmin`, `BuybackAdmin`, `TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `ClaimSignerAdmin`, `RewardsAdmin` |
+| `blast_fun` | administration roles, shared with migrators (ADR 0097) | `blast_fun_domain::BLAST_FUN_DOMAIN` | `blast_fun_domain::UpgradeAdmin`, `CreatorAdmin`, `TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `ClaimSignerAdmin`, `PauseAdmin`, `UnpauseAdmin`, `CancelAdmin` |
 | `blast_fun_migrators` | Publisher marker | `package_marker::PACKAGE_MARKER` | `blast_fun_migrators::BLAST_FUN_MIGRATORS` |
+| `blast_core` | shared product roles (ADR 0137), taken today by the vault, the venues' buybacks, and the core treasury; no one-time witness or Publisher | — | `blast_domain::TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`, `ClaimSignerAdmin`, `CancelAdmin` |
+| `blast_vault` | Publisher marker (ADR 0137) | — | `blast_vault_package::BLAST_VAULT_PACKAGE` |
 | `blast_boosts_aftermath` | Publisher marker | `aftermath::AFTERMATH` | `blast_boosts_aftermath::BLAST_BOOSTS_AFTERMATH` |
 | `blast_boosts_core` | administration roles shared with the adapter; no one-time witness or Publisher (ADR 0097) | `blast_boosts_core::BLAST_BOOSTS_CORE` | `blast_boosts_core::VaultIssuer`, `RiskAdmin`, `ShutdownAdmin`, `UpgradeAdmin` |
 | `blast_partners` | administration role (ADR 0097); no one-time witness or Publisher | `blast_partners::BLAST_PARTNERS` (ADR 0095) | `blast_partners::PartnerAdmin` |
-| `blast_presale` | administration roles (ADR 0097); no one-time witness or Publisher | `blast_presale_admin::SuperAdminCap`, `AdminCap` (ADR 0099) | `blast_presale_domain::UpgradeAdmin`, `TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `RewardsAdmin` |
+| `blast_presale` | administration roles (ADR 0097); no one-time witness or Publisher | `blast_presale_admin::SuperAdminCap`, `AdminCap` (ADR 0099) | `blast_presale_domain::UpgradeAdmin`, `TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `PauseAdmin`, `UnpauseAdmin`, `CancelAdmin` |
 | `blast_boosts_products` | Publisher marker (new package) | — | `blast_boosts_products::BLAST_BOOSTS_PRODUCTS` |
 | `blast_admin` | `blast_acl` shares the singleton ACL from `init`; no one-time witness | — | — |
 | `launch_ticket_template` | generated package one-time witness | `meme::MEME` | unchanged name; the generated package's one-time witness, renamed per launch by the SDK template |
@@ -67,12 +69,13 @@ every package-administration object.
 | `blast_fun` | `package_admin::PackageAdmin` | unchanged | holds `UpgradeCustody<BLAST_FUN>` |
 | `blast_fun` | `package_version::PackageVersion` | `blast_fun::PackageVersion` | module; holds `OperationalVersion<BLAST_FUN>` |
 | `blast_fun` | `blast_fun::Bootstrap` | new (ADR 0114); deployer-owned until custody intake | module |
-| `blast_fun_migrators` | `vault::LpVault<Meme, Quote>` | unchanged | *residual* |
 | `blast_fun_migrators` | `venue_config::VenueConfig` | unchanged | *residual* |
 | `blast_fun_migrators` | `package_admin::PackageAdmin` | unchanged | holds `UpgradeCustody<BLAST_FUN_MIGRATORS>` |
 | `blast_fun_migrators` | `package_version::PackageVersion` | `blast_fun_migrators::PackageVersion` | module; holds `OperationalVersion<BLAST_FUN_MIGRATORS>` |
-| `blast_fun_migrators` | `lp_fee_policy::LpFeePolicy` | unchanged | *residual* |
-| `blast_fun_migrators` | `blast_holder_rewards::Round<Meme, Quote>` | new | module |
+| `blast_core` | `blast_treasury::Treasury` | new (ADR 0137); shared singleton | module |
+| `blast_vault` | `vault::Vault<Meme, Quote>` | new (ADR 0137); shared, one per migrated sale of either product | *residual* |
+| `blast_vault` | `holder_rewards::Round<Meme, Quote>` | new (ADR 0137); shared, one per published round | *residual* |
+| `blast_vault` | `blast_vault_package::VaultRegistry` | new (ADR 0137); shared singleton | module |
 | `blast_boosts_aftermath` | `vault::Vault<Product>` (shared custody) | unchanged | `Product` is a `blast_boosts_products` tag |
 | `blast_boosts_aftermath` | `protocol::Protocol` | `blast_boosts_aftermath::Protocol` | module; holds `OperationalVersion<BLAST_BOOSTS_AFTERMATH>` |
 | `blast_boosts_aftermath` | `package_admin::PackageAdmin` | unchanged | holds `UpgradeCustody<BLAST_BOOSTS_AFTERMATH>` |
@@ -81,8 +84,6 @@ every package-administration object.
 | `blast_partners` | `blast_partners::PartnerCap` | new (ADR 0095); wallet-held, one per company | module |
 | `blast_presale` | `blast_presale::Presale<SaleToken, Quote>` | new (ADR 0099) | module |
 | `blast_presale` | `blast_presale::PresaleCap` | new (ADR 0099); wallet-held, one per presale | module |
-| `blast_presale` | `presale_vault::Vault<Meme, Quote>` | new (ADR 0099); shared, one per migrated presale | module |
-| `blast_presale` | `holder_rewards::Round<Meme, Quote>` | new (ADR 0099); shared, one per reward root | module |
 | `blast_presale` | `package_admin::PackageAdmin` | new (ADR 0099); shared, one per package | module |
 | `blast_presale` | `creation_policy::CreationPolicy` | new (ADR 0102); shared, one per package | module |
 | `blast_aftermath_dao_presale` | `blast_aftermath_dao_presale::AdminCap` | new (ADR 0104); publisher-held, one per package | module |
@@ -98,10 +99,12 @@ every package-administration object.
 | `blast_sui` | `events_wrapper::Event<events::X>` | `blast_events::Event<events::X>` | envelope module |
 | `blast_fun` | `events_wrapper::Event<events::X>` | `blast_events::Event<events::X>` | envelope module |
 | `blast_boosts_aftermath` | `events_wrapper::Event<events::X<Product>>` | `blast_events::Event<events::X<Product>>` | envelope module and `Product` |
-| `blast_fun_migrators` | `events::X` (direct emission) | `blast_events::X`, `ProtocolLpFeesClaimed` included (ADR 0107) | module |
+| `blast_fun_migrators` | `events::X` (direct emission) | `blast_events::X`; vault and LP-fee events are `blast_vault`'s | module |
+| `blast_core` | — | `blast_core_events::ProtocolFeesPaid<Meme, Quote>` (direct emission, ADR 0137) | module |
+| `blast_vault` | — | `blast_vault_events::X` (direct emission, ADR 0137): vault creation, fee collection, auto-LP, buyback, owner-claim, and holder-reward events | module |
 | `blast_admin` | `events::X<Domain>` | `blast_admin_events::X`; custody and version events keep `<PackageMarker>` | module |
 | `blast_partners` | — | `blast_partners::PartnerUpdated` and `blast_partners::PartnerPaid<T>` (direct emission, ADR 0095) | module |
-| `blast_presale` | — | direct creation, commitment, settlement, migration, vault-fee, holder-reward, claim, and recovery events (ADR 0099); `creation_policy::PartnerAdded` and `PartnerRemoved` (ADR 0106); `presale_vault::ProtocolLpFeesPaid<Meme, Quote>` (ADR 0107); `venue_config::PoolTierReserved<Meme, Quote, Venue>` (ADR 0111) | module |
+| `blast_presale` | — | direct creation, commitment, settlement, migration, claim, and recovery events (ADR 0099); `creation_policy::PartnerAdded` and `PartnerRemoved` (ADR 0106); `venue_config::PoolTierReserved<Meme, Quote, Venue>` (ADR 0111); vault and LP-fee events are `blast_vault`'s | module |
 | `blast_aftermath_dao_presale` | — | `blast_aftermath_dao_presale::PoolCreationReserved<Lp, SaleToken, Quote>` and `Migrated<Lp, SaleToken, Quote>` (direct emission, ADR 0104) | module |
 | `blast_boosts_aftermath` | — | `blast_events::Event<events::PartnerAdded>` and `blast_events::Event<events::PartnerRemoved>` (ADR 0095; protocol-wide, no `Product`) | envelope module |
 
@@ -115,18 +118,17 @@ the same `blast_events::Event<T>` envelope (ADR 0130).
 
 | Package | Type | After | Note |
 | --- | --- | --- | --- |
-| `blast_admin` | `Role` parameter of `AdminWitness` | — | always a role declared in a Blast `*_domain` module above |
+| `blast_admin` | `Role` parameter of `AdminWitness` | — | always a role declared in a Blast `*_domain` module above, or one of `package_admin`'s package roles typed by a Blast marker, such as `package_admin::UpgradeAdmin<BLAST_VAULT_PACKAGE>` (ADR 0137) |
 | `blast_admin` | `PackageMarker` parameter of `OperationalVersion` and `UpgradeCustody` | — | always a Blast marker above |
 | `blast_sui` | `vault::TreasuryKey<CoinType>`, `package_admin::CapabilityKey<Capability>` | unchanged | dynamic-field keys under `Vault` and `PackageAdmin` |
-| `blast_fun_migrators` | `cetus::Venue`, `bluefin::Venue` | unchanged | sealed venue witnesses used as `PositionKey<Venue>` and `TierKey<Venue>` keys inside Blast objects; the module names the venue the migrator targets |
-| `blast_fun_migrators` | `cetus::Witness`, `bluefin::Witness` | unchanged | the only migration witnesses; appear as `TypeName` values in `LaunchConfig` and events |
+| `blast_fun_migrators` | `cetus::Venue`, `bluefin::Venue` | unchanged | the only launchpad venue witnesses (ADR 0137); appear as `TypeName` values in `LaunchConfig`, `VaultRegistry` and events, and type the vault's position keys; the module names the venue |
 | `blast_fun_migrators` | `cetus::CreationCapKey<Meme>` | unchanged | dynamic-object-field key under `VenueConfig` for the Meme type's Cetus `PoolCreationCap`; the cap keeps its own object ID |
 | `blast_fun_migrators` | `cetus::CastKey` | new (ADR 0100) | transient dynamic-field key on a UID created and deleted within one Cetus route call; retypes a coin or balance between Meme/Quote and pool coin order |
-| `blast_fun_migrators` | `cetus::ReservationKey<Meme, Quote>` | unchanged | dynamic-field key under `VenueConfig` naming one reserved Meme/Quote pair; the value is its reserved tick spacing |
-| `blast_presale` | `cetus::Venue`, `bluefin::Venue`, `aftermath::Venue` | new (ADRs 0099 and 0116) | sealed position keys under `Vault` |
-| `blast_presale` | `cetus::Witness`, `bluefin::Witness`, `aftermath::Witness` | new (ADRs 0099 and 0116) | sealed migration identities fixed before commitments open |
-| `blast_presale` | `aftermath::PoolCreation<Lp, Meme, Quote>`, `aftermath::PoolCreationReserved`, `aftermath::DaoFeePoolCreated` | new (ADR 0116) | one sale's shared pool reservation and the adapter's two events; they read on explorers as Aftermath types, like the venue modules' other types, which ADR 0116 accepts |
-| `blast_aftermath_dao_presale` | `blast_aftermath_dao_presale::Witness` | new (ADR 0104) | sealed external migration identity a presale fixes at creation |
+| `blast_fun_migrators` | `cetus::PoolTierKey<Meme>`, `bluefin::PoolTierKey<Meme>` | new (ADR 0137) | dynamic-field keys under `VenueConfig` for a Meme type's recorded tier: the Cetus tick spacing or the Bluefin `bluefin::PoolTier` |
+| `blast_presale` | `cetus::Venue`, `bluefin::Venue`, `aftermath::Venue` | new (ADRs 0099 and 0116) | sealed venue witnesses fixed before commitments open (ADR 0137); appear as `TypeName` values in `CreationPolicy`, `VaultRegistry` and events, and type the vault's position keys |
+| `blast_presale` | `aftermath::CreatePoolCapKey<Lp, Meme>`, `aftermath::PoolCreationReserved`, `aftermath::DaoFeePoolCreated` | new (ADRs 0116 and 0137) | the `VenueConfig` key for a sale's reserved `CreatePoolCapV2` and the venue's two events; they read on explorers as Aftermath types, like the venue modules' other types, which ADR 0116 accepts |
+| `blast_aftermath_dao_presale` | `blast_aftermath_dao_presale::Venue` | new (ADRs 0104 and 0137) | sealed external venue witness a presale fixes at creation |
+| `blast_vault` | `vault::PositionKey<Venue>`, `vault::AutoLpPositionKey<Venue>` | new (ADR 0137) | dynamic-object-field keys under `Vault` for the venue's migration and auto-LP positions |
 | `blast_presale` | `cetus::CreationCapKey<Meme>`, `venue_config::PoolTierKey<Meme>` | new (ADRs 0099 and 0111) | keys under `VenueConfig` for a sale token's reserved Cetus `PoolCreationCap` (a dynamic object field) and its venue's `venue_config::PoolTier` |
 | `blast_presale` | `creation_policy::PartnerKey` | new (ADR 0106) | dynamic-field key under `CreationPolicy`, one per Blast partner new presales may name; the value is the time it stops being accepted |
 | `blast_boosts_aftermath` | `vault::TreasuryKey<Product>`, `vault::MetadataKey<Product>`, `vault::AdminCashKey`, `vault::TerminalCashKey` | unchanged | dynamic-field keys under `Vault` |

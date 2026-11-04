@@ -2,12 +2,17 @@
 
 One-off Move packages built for a specific partner's custom demands. Each lives in
 its own directory here, is published on its own, and depends inward
-on the Blast packages it extends; no core package imports a vendor package.
+on the Blast packages it extends; no Blast package imports a vendor package.
 
-A vendor package that creates `blast_presale` sales does so through the public
-`blast_presale::new`, `finalize`, and `migrate` with its own sealed witness, which Blast's presale
-`AdapterAdmin` must allow in the shared `CreationPolicy` before the package can open a
-sale ([ADR 0104](../../docs/decisions/0104-external-presale-migrators-and-vendor-packages.md)).
+A vendor package that creates `blast_presale` sales is a venue with its own sealed
+`Venue` witness. It issues the `blast_core::migration::VenueTicket` that the public
+`blast_presale::new` redeems, and only its witness redeems the sealed `Migration` that
+`blast_presale::migrate` returns. Blast's presale `AdapterAdmin` must admit that witness in the
+shared `CreationPolicy` (`creation_policy::schedule_venue`, then `apply_venue` after the notice)
+before the package can open a sale. A vendor venue that also creates a `blast_vault` vault must
+be admitted in the vault's `VaultRegistry` too
+([ADR 0104](../../docs/decisions/0104-external-presale-migrators-and-vendor-packages.md),
+[ADR 0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md)).
 
 Keep each package self-contained: its venue interface stubs under `interfaces/`,
 its own `scripts/verify.sh`, publish script, and README naming the partner terms

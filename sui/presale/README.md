@@ -4,24 +4,27 @@
 fill first come up to a hard cap. Its
 `UpgradeCap` is held in shared compatible `PackageAdmin` custody after activation, allowing governed logic changes and venue relinks with an atomic version cutover.
 It does not import or mutate launchpad state. Its Bluefin, Cetus, and Aftermath
-adapters, LP vault, and holder-reward rounds live in the same package.
+venues live in the same package; the LP vault and its holder-reward rounds are
+`blast_vault`'s, and the fee split, hand-off, owner proof, and Merkle verifier are
+`blast_core`'s ([ADR 0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md)).
 
-A creator starts a sale through a venue's `new` with a zero-supply
-`TreasuryCap<SaleToken>`, sets its terms on the returned `PresaleInitializer`, and
-`finalize` checks them together and mints the supply with its matching
+A creator prepares the coin on a venue, whose `prepare` borrows the zero-supply
+`TreasuryCap<SaleToken>`, records the pool tier, and returns a sealed
+`blast_core::migration::VenueTicket`. `blast_presale::new` redeems the ticket and
+returns a `PresaleInitializer`; the creator sets its terms on it, and `finalize`
+checks them together and mints the supply with its matching
 `Currency<SaleToken>` ([ADR 0110](../../docs/decisions/0110-presale-initializer-and-early-close.md)).
 The currency must be confirmed unregulated; regulated coins and legacy coins
 whose regulatory status is unknown cannot create a presale.
 The terms are token supply; presale, LP, and per-recipient
 allocation BPS; fixed or burn-only supply; Quote raise; commitment and migration
 windows (the migration window is at least seven days); `EligibilityPolicy`;
-migration venue (Cetus and Bluefin also take a pool tier, which they keep in
-`VenueConfig`, not in the sale; Aftermath takes its DAO fee as the tier and the
-pool-creation capability of a fresh LP coin, which its `finalize` binds to the sale in
-a shared reservation the migration consumes; its `new` also returns a ticket only that
-`finalize` consumes, so no Aftermath sale exists without the reservation); and the LP-fee split:
-up to 16 distinct fee recipients (the creator is one of them) and a holder-reward
-share, whose BPS total 10,000. Allocation BPS must total 10,000. The contract mints the complete
+migration venue, fixed by the ticket (Cetus and Bluefin record a pool tier in
+`VenueConfig`, not in the sale; Aftermath records its DAO fee as the tier and keeps
+the pool-creation capability of a fresh LP coin there for the sale's migration); and
+the vault's starting `blast_core::fee_split::FeeSplit`: up to 20 routes to
+addresses, the owner, auto-LP, holder rewards, or burn, whose BPS total 10,000.
+Allocation BPS must total 10,000. The contract mints the complete
 supply once and uses largest-remainder apportionment so every atomic unit belongs
 to exactly one allocation. Eligibility is either an open policy (wallet cap,
 participant bound, and a minimum commitment whose product with the bound must
@@ -47,13 +50,14 @@ each claim then locks the participant's tokens in its own irrevocable schedule
 that starts at that claim, while its Quote refund is paid at once.
 
 Blast's shared `FeePolicy` sets its shares of the raise, the token supply, and
-collected LP fees; each sale snapshots them at creation, every rate can be zero,
-and payouts go to the policy's current destination. Until a sale's window starts,
+collected LP fees; each sale snapshots them at creation, and every rate can be zero.
+Raise and token payouts go to the policy's current destination; LP fees go to the
+core `Treasury`. Until a sale's window starts,
 including in its creation transaction before `share`, Blast's `FeeAdmin` can change
 all four of its rates with `blast_presale::set_protocol_fees`; Blast's token
 difference moves to or from the buyers' sale allocation and its raise difference to or from the LP's Quote. After
-migration it can change one sale's LP-fee rates on its vault with
-`presale_vault::set_protocol_lp_fees`. Blast's token share counts
+migration Blast's LP-fee share is the vault's own setting, which Blast can change
+per vault after a fixed 48-hour notice. Blast's token share counts
 toward the 10,000 allocation BPS, and its raise share is apportioned with the raise
 recipients'. Nothing is charged at creation, on commitment, on refund, or if a
 sale does not migrate.
@@ -66,16 +70,15 @@ fees, and anyone may then call `pay_protocol_fees_with_partner` once to pay the
 partner its cut and Blast the rest
 ([ADR 0106](../../docs/decisions/0106-presale-partners.md)). Its vault inherits
 the partner and holds Blast's LP fees at each collection, until anyone calls
-`presale_vault::pay_protocol_lp_fees_with_partner`
-([ADR 0107](../../docs/decisions/0107-partner-cut-of-lp-fees.md)).
+`blast_vault::vault::pay_protocol_fees_with_partner` (ADR 0137).
 
-Blast's shared `CreationPolicy` lists the Quote types, venue migration witnesses,
+Blast's shared `CreationPolicy` lists the Quote types, venue witnesses,
 and Blast partners new presales may use; creation aborts for anything unlisted. It is checked only at
 creation, so delisting a type never affects a live sale. `blast_presale::new`,
-`finalize`, and `migrate` are public, so a migrator in another package, such as a partner's under
-[`sui/vendors`](../vendors/README.md), creates and migrates sales with its own sealed
-witness once Blast's `AdapterAdmin` allows it; a primitive or vector, which anyone can
-construct, is never allowed
+`finalize`, and `migrate` are public, so a venue in another package, such as a partner's under
+[`sui/vendors`](../vendors/README.md), issues the ticket `new` redeems and redeems the
+hand-off `migrate` returns with its own sealed witness, once Blast's `AdapterAdmin` admits
+it; a primitive or vector, which anyone can construct, is never admitted
 ([ADR 0104](../../docs/decisions/0104-external-presale-migrators-and-vendor-packages.md)).
 
 Sharing a sale fixes its windows from a start time, which may be ahead of the
@@ -94,24 +97,28 @@ which nobody migrated it. Migration
 atomically pays Blast its raise and token fees, or holds them for
 `pay_protocol_fees_with_partner` when the sale names a partner, takes the rest of
 the raise and
-the LP allocation, creates the configured
-pool, and seals the position, burn proof, or Aftermath DAO-fee owner cap in a
-`Vault` (the Aftermath LP coin goes to `0x0`); a DEX failure rolls back the presale
-transition. An Aftermath pool pays
+the LP allocation, and hands them to the stored venue in a sealed `Migration`. The
+venue creates the pool and locks the position, burn proof, or Aftermath DAO-fee owner
+cap in a new shared `blast_vault::vault::Vault`, which the vault's `VaultRegistry`
+must admit the venue to create (the Aftermath LP coin goes to `0x0`); a DEX failure
+rolls back the presale transition. An Aftermath pool pays
 its DAO fee as coins sent to the vault's address, which anyone receives into the
 vault through `aftermath::collect_fees` (ADR 0116). Configured recipients receive their
 distinct allocations in that same transaction. Claims open only after success.
 
 Permissionless fee collection pays Blast its share of each asset at the vault's
-current rates, or holds it for a partnered sale's partner payout, then applies the explicitly active creator split to the rest: every fee recipient
-is paid in the same transaction, and the holder-reward share stays
-in the vault. Blast's `RewardsAdmin` publishes Merkle
-rounds funded from that share, each with a claim deadline after which anyone can
-return its unclaimed rewards to the vault. The `PresaleCap` claims migration residuals and
-can be destroyed after cancellation. Anyone may relay participant or reward claims, but payment
-always goes to the committed beneficiary. Eligibility and rewards share the
-package's generic positional Blake2b-256 Merkle verifier. Neither adapter
-collects venue incentive rewards credited to the position.
+current rate, or holds it for a partnered sale's partner payout, then applies the vault's
+active split to the rest: address routes are paid in the same transaction, and the owner,
+auto-LP, holder-reward and burn shares accrue in the vault. Presale venues do not yet add
+auto-LP or buy back, so those balances only accrue. The vault's holder-reward rounds
+(`blast_vault::holder_rewards`, under the shared `blast_core::blast_domain` roles) are
+funded from the holder-reward share, each with a claim deadline after which anyone can
+return its unclaimed rewards to the vault. The `PresaleCap` proves ownership to the vault
+through `prove_owner`, whose owner claim pays the migration residuals and owner-route fees;
+the cap can be destroyed after cancellation. Anyone may relay participant or reward claims,
+but payment always goes to the committed beneficiary. Allowlists and holder rewards share
+`blast_core::merkle`, each with its own leaf domain. No venue collects venue incentive
+rewards credited to the position.
 
 After minting, the contract consumes the matching TreasuryCap into Coin Registry
 `Fixed` or `BurnOnly` state. No mint authority remains after the presale is
@@ -127,10 +134,10 @@ capability: Blast administers it through the one shared Blast ACL
 (`blast_admin`, [ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)),
 which it already links through `blast_partners`. `blast_presale_domain` declares
 roles: `FeeAdmin` sets Blast's rates and the partners new sales may name,
-`TreasuryAdmin` governs the fee destination,
-`ListingAdmin` and `AdapterAdmin` admit Quote types and migrators for new sales,
-and `RewardsAdmin` publishes holder-reward rounds and settles capped gas reserves. `UpgradeAdmin` authorizes
-compatible upgrades and atomic version cutovers.
+`TreasuryAdmin` governs the raise and token fee destination,
+and `ListingAdmin` and `AdapterAdmin` admit Quote types and venues for new sales. `UpgradeAdmin` authorizes
+compatible upgrades and atomic version cutovers. Holder-reward rounds and per-vault Blast
+shares belong to the vault, under the shared `blast_core::blast_domain` roles.
 [DEPLOYING.md](DEPLOYING.md) gives the complete order: custody verification, ordinary ACL configuration at zero delay,
 enabling each operation’s intended notice, then immediate UnpauseAdmin release. No presale can exist
 under an unsealed cap or before unpause.
@@ -151,11 +158,11 @@ pending actions keep their deadlines. See
 [ADR 0117](../../docs/decisions/0117-presale-versioning-and-activation.md). This
 source requires fresh publication; existing dependency-only releases stay unchanged.
 
-The migrated sale's exact `PresaleCap` holder schedules or cancels a new creator
-split with `presale_vault::schedule_fee_split` / `cancel_fee_split`. Its initial
-notice is 48 hours; replacements and notice reductions wait the full old notice.
-Expiry alone retains the old split. Anyone applies a ready stored proposal through
-Bluefin or Cetus `settle_and_apply_fee_split`, collecting position fees under the
-old split first. Aftermath `apply_fee_split` retains collection-time accounting:
-separate DAO-fee coins use the applied split when received, even if sent before
-activation. Standalone vaults have no matching creator cap and retain their split.
+The migrated sale's exact `PresaleCap` holder schedules or cancels a new split on
+the vault with an owner proof from `prove_owner` (`blast_vault::vault::schedule_fee_split`
+/ `cancel_fee_split`). The notice is a fixed 48 hours. Expiry alone retains the old
+split. Anyone applies a ready stored proposal through Bluefin or Cetus
+`settle_and_apply_fee_split`, collecting position fees under the old split first.
+Aftermath `apply_fee_split` retains collection-time accounting: separate DAO-fee coins
+use the applied split when received, even if sent before activation. This source has no
+vault without a sale; ADR 0137's shared venues restore it.
