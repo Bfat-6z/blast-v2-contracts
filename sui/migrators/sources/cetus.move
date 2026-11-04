@@ -106,7 +106,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     cetus_config: &GlobalConfig,
     pools: &mut Pools,
     burn_manager: &mut BurnManager,
-    registry: &VaultRegistry,
+    registry: &mut VaultRegistry,
     vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     clock: &Clock,
@@ -161,7 +161,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     let pool_id = position.pool_id();
     let liquidity = position.liquidity();
     let burn_proof = lp_burn::burn_lp_v2(burn_manager, position, ctx);
-    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx)
+    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id)
         .share_with_position(
             &Venue(),
             treasury,

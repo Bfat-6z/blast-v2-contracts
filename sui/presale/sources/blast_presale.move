@@ -10,6 +10,15 @@ module blast_presale::blast_presale;
 
 // === Public Types ===
 
+/// Shared singleton every presale's object ID derives from, so a client finds a coin's one sale
+/// from the coin type alone.
+public struct PresaleRegistry has key {
+    id: UID,
+}
+
+/// Derives the one presale of `SaleToken` from the registry.
+public struct PresaleKey<phantom SaleToken>() has copy, drop, store;
+
 /// The presale's package witness: it seals each sale's migration, vault terms, and owner proofs,
 /// and only this module constructs it.
 public struct PackageWitness() has drop;
@@ -183,6 +192,12 @@ public struct Presale<phantom SaleToken, phantom Quote> has key {
     /// Blast's raise fee, held from a partnered sale's migration until
     /// `pay_protocol_fees_with_partner` splits it.
     unpaid_protocol_quote: Option<Balance<Quote>>,
+}
+
+// === Private Initialization ===
+
+fun init(ctx: &mut TxContext) {
+    transfer::share_object(PresaleRegistry { id: object::new(ctx) });
 }
 
 // === Public Functions ===
@@ -465,6 +480,7 @@ public fun venue<SaleToken, Quote>(self: &PresaleInitializer<SaleToken, Quote>):
 public fun finalize<SaleToken, Quote>(
     self: PresaleInitializer<SaleToken, Quote>,
     package_version: &PackageVersion,
+    registry: &mut PresaleRegistry,
     currency: &mut Currency<SaleToken>,
     ctx: &mut TxContext,
 ): (Presale<SaleToken, Quote>, PresaleCap) {
@@ -555,7 +571,7 @@ public fun finalize<SaleToken, Quote>(
         burnable,
     );
 
-    let id = object::new(ctx);
+    let id = derived_object::claim(&mut registry.id, PresaleKey<SaleToken>());
     let presale_id = id.to_inner();
     let cap = PresaleCap { id: object::new(ctx), presale_id };
     let presale_cap_id = cap.id.to_inner();
@@ -1768,6 +1784,12 @@ fun cancel<SaleToken, Quote>(self: &mut Presale<SaleToken, Quote>) {
 // === Test-Only Functions ===
 
 #[test_only]
+/// An unshared presale registry, as publication shares it.
+public fun registry_for_testing(ctx: &mut TxContext): PresaleRegistry {
+    PresaleRegistry { id: object::new(ctx) }
+}
+
+#[test_only]
 /// Builds an open policy without its rules, as superseded bytecode could.
 public fun open_eligibility_unchecked_for_testing(
     wallet_cap: u64,
@@ -2262,6 +2284,7 @@ use sui::{
     clock::Clock,
     coin::{Coin, TreasuryCap},
     coin_registry::Currency,
+    derived_object,
     dynamic_field,
     event
 };

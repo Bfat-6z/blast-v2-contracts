@@ -13,6 +13,15 @@ const DEFAULT_CAP_REASSIGNMENT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Public Types ===
 
+/// Shared singleton every launch's object ID derives from, so a client finds a coin's one launch
+/// from the coin type alone.
+public struct LaunchRegistry has key {
+    id: UID,
+}
+
+/// Derives the one launch of `Meme` from the registry.
+public struct LaunchKey<phantom Meme>() has copy, drop, store;
+
 /// The launchpad's package witness: it seals each launch's migration, vault terms, and owner
 /// proofs, and only this module constructs it.
 public struct PackageWitness() has drop;
@@ -87,6 +96,12 @@ public struct LaunchInitializer<phantom Meme, phantom Quote> {
     lp_fee_split: Option<FeeSplit>,
     opening_round_ms: u64,
     partner_id: Option<ID>,
+}
+
+// === Private Initialization ===
+
+fun init(ctx: &mut TxContext) {
+    transfer::share_object(LaunchRegistry { id: object::new(ctx) });
 }
 
 // === Public Functions ===
@@ -200,14 +215,15 @@ public fun set_partner<Meme, Quote>(
 /// Checks every setting, adds Blast's allocation to the plan, fixes the canonical supply in the
 /// Coin Registry, and splits the Meme into the curve reserve and the migration allocations.
 /// `creation_fee` must be exactly the configured fee; it joins Blast's fees on the launch. The
-/// version check also rejects stale finalization in a transaction that used current intake.
+/// version check also rejects stale finalization in a transaction that used current intake. The
+/// launch's ID derives from `registry` and the coin type.
 public fun finalize<Meme, Quote>(
     self: LaunchInitializer<Meme, Quote>,
     package_version: &PackageVersion,
+    registry: &mut LaunchRegistry,
     currency: &mut Currency<Meme>,
     config: &LaunchConfig,
     creation_fee: Coin<SUI>,
-    ctx: &mut TxContext,
 ): Launch<Meme, Quote> {
     package_version.assert_current();
 
@@ -257,7 +273,7 @@ public fun finalize<Meme, Quote>(
     let (curve_meme, _, _, _) = allocation_plan.apportion_meme(atomic_supply);
     let creation_fee_amount = creation_fee.value();
     let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(treasury_cap, currency, atomic_supply);
-    let id = object::new(ctx);
+    let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>());
     let curve_fee_cap_reassignment = delayed_action::new(
         CurveFeeCapReassignment(),
         &id,
@@ -1056,6 +1072,12 @@ fun has_opening_round_ended<Meme, Quote>(self: &Launch<Meme, Quote>, clock: &Clo
 // === Test-Only Functions ===
 
 #[test_only]
+/// An unshared launch registry, as publication shares it.
+public fun registry_for_testing(ctx: &mut TxContext): LaunchRegistry {
+    LaunchRegistry { id: object::new(ctx) }
+}
+
+#[test_only]
 public fun reassign_metadata_cap_for_testing<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,
@@ -1271,6 +1293,7 @@ use sui::{
     clock::Clock,
     coin::{Coin, TreasuryCap},
     coin_registry::{Currency, MetadataCap},
+    derived_object,
     dynamic_field,
     sui::SUI,
 };

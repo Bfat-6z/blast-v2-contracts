@@ -70,7 +70,7 @@ public fun migrate<Meme, Quote>(
     quote_currency: &Currency<Quote>,
     venue_config: &VenueConfig,
     bluefin_config: &mut GlobalConfig,
-    registry: &VaultRegistry,
+    registry: &mut VaultRegistry,
     vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     creation_fee: Coin<SUI>,
@@ -115,7 +115,7 @@ public fun migrate<Meme, Quote>(
 
     let pool_id = position.pool_id();
     let liquidity = position.liquidity();
-    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx)
+    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id)
         .share_with_position(
             &Venue(),
             treasury,
