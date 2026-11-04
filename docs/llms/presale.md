@@ -924,9 +924,9 @@ All times are Unix milliseconds from `Clock`.
 
 - Find a coin's presale without an indexer: its object ID is derived from the shared
   `blast_presale::blast_presale::PresaleRegistry` and the key
-  `blast_presale::blast_presale::PresaleKey<SaleToken>`, a zero-field struct with empty BCS:
-  `0x2::dynamic_field::hash_type_and_key(registry_id,
-  0x2::derived_object::DerivedObjectKey<PresaleKey<SaleToken>>, [])`, with types named by original
+  `blast_presale::blast_presale::PresaleKey<SaleToken>`, a field-less struct whose BCS is the single
+  byte `0x00` (Move gives it a `dummy_field: bool`): `0x2::dynamic_field::hash_type_and_key(registry_id,
+  0x2::derived_object::DerivedObjectKey<PresaleKey<SaleToken>>, [0])`, with types named by original
   package IDs. A coin has at most one presale.
 
 The package exposes no public read functions on its shared objects (the initializer's

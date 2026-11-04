@@ -696,9 +696,10 @@ All times are `Clock` milliseconds.
 ### Reading state
 
 - Find a coin's launch without an indexer: its object ID is derived from the shared
-  `launch::LaunchRegistry` and the key `launch::LaunchKey<Meme>`, a zero-field struct with empty
-  BCS: `0x2::dynamic_field::hash_type_and_key(registry_id,
-  0x2::derived_object::DerivedObjectKey<blast_fun::launch::LaunchKey<Meme>>, [])`, with types named
+  `launch::LaunchRegistry` and the key `launch::LaunchKey<Meme>`, a field-less struct whose BCS is
+  the single byte `0x00` (Move gives it a `dummy_field: bool`):
+  `0x2::dynamic_field::hash_type_and_key(registry_id,
+  0x2::derived_object::DerivedObjectKey<blast_fun::launch::LaunchKey<Meme>>, [0])`, with types named
   by original package IDs. A coin has at most one launch; a second `launch::finalize` for the same
   Meme aborts in `sui::derived_object`.
 

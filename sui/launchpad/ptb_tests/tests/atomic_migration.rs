@@ -110,6 +110,10 @@ struct World {
     version: ObjectID,
     runtime: ObjectID,
     config: ObjectID,
+    /// The shared `launch::LaunchRegistry` every launch ID derives from, and the original
+    /// launchpad ID its key types carry.
+    launch_registry: ObjectID,
+    launchpad_origin: ObjectID,
     project: CompiledPackage,
     launchpad_code: CompiledPackage,
     adapter_code: CompiledPackage,
@@ -1143,13 +1147,14 @@ fn world(work: &str) -> Result<World> {
     let root = one(admin_published, "blast_acl", "SuperAdminCap");
     let config = one(published, "launch_config", "LaunchConfig");
     let runtime = one(published, "runtime_config", "RuntimeConfig");
+    let launch_registry = h.derived_registry(published, "launch", "LaunchRegistry")?;
     let adapter_code = build(&fixture.join("adapter"), &stack.linked(), &work)?;
     let (adapter, _) = h.publish(adapter_code.clone())?;
     let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
     let project = build(&fixture.join("project"), &stack.linked(), &work)?;
     h.unpause(blast, "blast_fun_domain", admin, admin_published, version, custody, [runtime, config], 7)?;
     let launchpad_code = stack.launchpad_code.clone();
-    let mut w = World { h, core, blast, adapter, version, runtime, config, project, launchpad_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody };
+    let mut w = World { h, core, blast, adapter, version, runtime, config, launch_registry, launchpad_origin: blast, project, launchpad_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody };
 
     // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap and each role the
     // setters below take; the cap then signs in once per role.
@@ -1381,8 +1386,10 @@ impl World {
         }
         let currency = builder.obj(self.h.shared(ticket.currency, true))?;
         let creation_fee = call(&mut builder, SUI_FRAMEWORK_PACKAGE_ID, "coin", "zero", vec![sui()], vec![]);
+        let registry = builder.obj(self.h.shared(self.launch_registry, true))?;
         let launch = call(&mut builder, self.blast, "launch", "finalize", pair.clone(), vec![
             initializer, version,
+            registry,
             currency,
             config,
             creation_fee,
@@ -1433,6 +1440,9 @@ impl World {
         let launch = created.created(&self.h, "launch", "Launch");
         assert_eq!(launch.len(), 1, "launch::Launch");
         assert!(self.h.object(launch[0]).is_shared());
+        let derived = blast_launchpad_ptb_tests::launch_id(self.launchpad_origin, self.launch_registry, &ticket.meme)
+            .expect("derive the launch ID");
+        assert_eq!(launch[0], derived, "the launch ID derives from the registry and the coin type");
 
         Launch { meme: ticket.meme, launch: launch[0], currency: ticket.currency }
     }

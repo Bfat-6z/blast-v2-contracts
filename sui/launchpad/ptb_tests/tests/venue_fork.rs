@@ -521,6 +521,8 @@ struct World {
     migrators_version: ObjectID,
     runtime: ObjectID,
     config: ObjectID,
+    /// The shared `launch::LaunchRegistry` every launch ID derives from.
+    launch_registry: ObjectID,
     venue_config: ObjectID,
     acl: ObjectID,
     root: ObjectID,
@@ -559,6 +561,7 @@ impl World {
         let root = one(&h, admin_published, "blast_acl", "SuperAdminCap");
         let config = one(&h, published, "launch_config", "LaunchConfig");
         let runtime = one(&h, published, "runtime_config", "RuntimeConfig");
+        let launch_registry = h.derived_registry(published, "launch", "LaunchRegistry")?;
 
         let mut dependencies = vec![
             ObjectID::from_single_byte(1),
@@ -629,6 +632,7 @@ impl World {
             migrators_version,
             runtime,
             config,
+            launch_registry,
             venue_config,
             acl,
             root,
@@ -932,8 +936,10 @@ impl World {
         call(&mut b, self.blast, "launch", "set_lp_fee_split", pair.clone(), vec![initializer, version, split]);
         let currency = self.shared(&mut b, ticket.currency, true)?;
         let creation_fee = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "zero", vec![sui()], vec![]);
+        let registry = self.shared(&mut b, self.launch_registry, true)?;
         let launch = call(&mut b, self.blast, "launch", "finalize", pair.clone(), vec![
             initializer, version,
+            registry,
             currency,
             config,
             creation_fee,
@@ -1024,6 +1030,10 @@ impl World {
         created.assert_success();
         let launches = created.created(&self.h, "launch", "Launch");
         ensure!(launches.len() == 1 && self.h.object(launches[0]).is_shared());
+        ensure!(
+            launches[0] == blast_launchpad_ptb_tests::launch_id(self.blast, self.launch_registry, &ticket.meme)?,
+            "the launch ID derives from the LaunchRegistry and the coin type"
+        );
         let launch = Launch { meme: ticket.meme.clone(), launch: launches[0], currency: ticket.currency, split: split.clone() };
         let recorded: Vec<LaunchCreated> = self.launchpad_events(&created, "LaunchCreated");
         ensure!(recorded.len() == 1);
@@ -1136,7 +1146,7 @@ impl World {
         let config = self.shared(b, self.config, false)?;
         let currency = self.shared(b, launch.currency, true)?;
         let venue_config = self.shared(b, self.venue_config, false)?;
-        let registry = self.shared(b, self.vault_stack.registry, false)?;
+        let registry = self.shared(b, self.vault_stack.registry, true)?;
         let vault_version = self.vault_version(b)?;
         let treasury = self.shared(b, self.treasury, false)?;
         let clock = self.clock(b)?;
@@ -1308,6 +1318,12 @@ impl World {
         ensure!((terms.protocol_meme_bps, terms.protocol_quote_bps) == DEFAULT_SHARES);
         ensure!(terms.partner_id.is_none() && terms.residuals == ResidualPolicy::Protocol);
         let vault_id = created.vault_id;
+        let issuer = tag(&format!("{}::launch::PackageWitness", self.blast));
+        ensure!(terms.package_witness == issuer.to_canonical_string(false), "{}", terms.package_witness);
+        ensure!(
+            vault_id == self.vault_stack.vault_id(&issuer, launch.launch)?,
+            "the vault ID derives from the VaultRegistry, the launchpad's witness, and the launch"
+        );
         ensure!(self.h.object(vault_id).is_shared() && self.h.object(created.pool_id).is_shared());
         let residual = (created.residual_meme_amount, created.residual_quote_amount);
         let supplied = (migrated.meme - residual.0, migrated.quote - residual.1);

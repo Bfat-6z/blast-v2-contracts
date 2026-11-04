@@ -711,6 +711,10 @@ pub struct Harness {
     pub sender: SuiAddress,
     key: AccountKeyPair,
     gas: ObjectID,
+    /// The shared registries that launch, presale and vault IDs derive from. Every creation or
+    /// migration takes one mutably, so a failed one still bumps its version; `assert_rolled_back`
+    /// watches each for unchanged contents.
+    registries: Vec<ObjectID>,
     #[cfg(feature = "fork-coverage")]
     replay: coverage::ReplayEngine,
 }
@@ -724,6 +728,7 @@ impl Harness {
             sender,
             key,
             gas: gas.0,
+            registries: Vec::new(),
             #[cfg(feature = "fork-coverage")]
             replay: coverage::ReplayEngine::default(),
         })
@@ -731,6 +736,17 @@ impl Harness {
 
     pub fn gas_id(&self) -> ObjectID {
         self.gas
+    }
+
+    /// Records the one shared derived-ID registry of `module::name` that `publication` created,
+    /// so every rollback assertion also watches it, and returns its ID.
+    pub fn derived_registry(&mut self, publication: &Outcome, module: &str, name: &str) -> Result<ObjectID> {
+        let registry = publication.created(self, module, name);
+        ensure!(registry.len() == 1 && self.object(registry[0]).is_shared(), "publication shares one {name}");
+        if !self.registries.contains(&registry[0]) {
+            self.registries.push(registry[0]);
+        }
+        Ok(registry[0])
     }
 
     pub fn object(&self, id: ObjectID) -> Object {
@@ -1038,8 +1054,7 @@ impl Harness {
     /// generic custody. The package version starts fully paused and the registry admits no venue
     /// at a zero admission notice, so nothing is released yet (see `release_vault`).
     pub fn wrap_vault(&mut self, admin: ObjectID, vault: ObjectID, publication: &Outcome) -> Result<VaultStack> {
-        let registry = publication.created(self, "blast_vault_package", "VaultRegistry");
-        ensure!(registry.len() == 1 && self.object(registry[0]).is_shared(), "publication shares one VaultRegistry");
+        let registry = [self.derived_registry(publication, "blast_vault_package", "VaultRegistry")?];
         let (registry_id, venues): VaultRegistryContents = bcs::from_bytes(&self.contents(registry[0]))?;
         ensure!(registry_id == registry[0] && venues.members.is_empty() && venues.delay_ms == 0,
             "publication lists no venue at a zero admission notice");
@@ -1210,6 +1225,13 @@ impl Harness {
         objects: &[ObjectID],
         owners: &[SuiAddress],
     ) -> Result<Outcome> {
+        let mut objects = objects.to_vec();
+        for registry in &self.registries {
+            if !objects.contains(registry) {
+                objects.push(*registry);
+            }
+        }
+        let objects = objects.as_slice();
         let before = self.snapshot(objects, owners);
         let outcome = self.execute(pt)?;
         match (outcome.effects.status(), &expected) {
@@ -1272,6 +1294,42 @@ impl VaultStack {
         call(b, self.package, "blast_vault_package", "unpause", vec![], vec![registry, witness, custody, version, bits]);
         Ok(())
     }
+
+    /// The ID `vault::new` claims for the vault of terms sealed by `issuer` for `origin`:
+    /// `VaultKey { issuer, origin }` under the registry. The key's BCS is the issuer `TypeName`'s
+    /// string (original package IDs, no `0x`) followed by the 32-byte origin.
+    pub fn vault_id(&self, issuer: &sui_types::TypeTag, origin: ObjectID) -> Result<ObjectID> {
+        let key = sui_types::parse_sui_type_tag(&format!("{}::vault::VaultKey", self.package))?;
+        derived_id(self.registry, &key, &bcs::to_bytes(&(issuer.to_canonical_string(false), origin))?)
+    }
+}
+
+/// The ID `sui::derived_object::claim(parent, key)` gives: `parent`'s dynamic-field ID for
+/// `DerivedObjectKey<K>` holding `key`, where `key_type` is `K` at original package IDs and
+/// `key_bcs` is the key's BCS.
+pub fn derived_id(parent: ObjectID, key_type: &sui_types::TypeTag, key_bcs: &[u8]) -> Result<ObjectID> {
+    Ok(sui_types::derived_object::derive_object_id(parent, key_type, key_bcs)?)
+}
+
+/// The BCS of a zero-field positional key such as `LaunchKey<Meme>()`: Move compiles it with one
+/// `dummy_field: bool`, so it is one zero byte.
+const UNIT_KEY_BCS: [u8; 1] = [0];
+
+/// The ID `launch::finalize` claims for `meme`'s one launch: `LaunchKey<Meme>()` under the
+/// `LaunchRegistry` that `launchpad` (the original package ID) shared at publication.
+pub fn launch_id(launchpad: ObjectID, registry: ObjectID, meme: &sui_types::TypeTag) -> Result<ObjectID> {
+    let key = sui_types::parse_sui_type_tag(&format!("{launchpad}::launch::LaunchKey<{}>", meme.to_canonical_string(true)))?;
+    derived_id(registry, &key, &UNIT_KEY_BCS)
+}
+
+/// The ID `blast_presale::finalize` claims for `sale_token`'s one presale: `PresaleKey<SaleToken>()`
+/// under the `PresaleRegistry` that `presale` (the original package ID) shared at publication.
+pub fn presale_id(presale: ObjectID, registry: ObjectID, sale_token: &sui_types::TypeTag) -> Result<ObjectID> {
+    let key = sui_types::parse_sui_type_tag(&format!(
+        "{presale}::blast_presale::PresaleKey<{}>",
+        sale_token.to_canonical_string(true),
+    ))?;
+    derived_id(registry, &key, &UNIT_KEY_BCS)
 }
 
 /// The Blast packages every world publishes first: the ACL, partners, vesting, and `blast_core`,
