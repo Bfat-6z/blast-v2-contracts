@@ -709,14 +709,14 @@ launch_config_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 if [[ ! -f sources/launch_config.move ]] \
   || [[ "$(move_production_function_contract schedule_protocol_allocation <<<"$launch_config_facts")" != 'public:0:0:fun schedule_protocol_allocation( self: &mut LaunchConfig, package_version: &PackageVersion<BLAST_FUN>, _: &AdminWitness<TreasuryAdmin>,'* ]] \
   || [[ "$(move_production_type LaunchConfig <<<"$launch_config_facts")" \
-    != 'struct LaunchConfig has key { id: UID, meme_decimals: VecSet<u8>, quotes: Table<TypeName, bool>, trade_fees: Delayed<TradeFeesKey, TradeFees>, venues: DelayedSet<VenueKey, TypeName>, protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>, protocol_lp_fees: Delayed<ProtocolLpFeesKey, ProtocolLpFees>, creation_fee: Delayed<CreationFeeKey, u64>, }' ]] \
+    != 'struct LaunchConfig has key { id: UID, meme_decimals: VecSet<u8>, quotes: Table<TypeName, bool>, trade_fees: Delayed<TradeFeesKey, TradeFees>, venues: DelayedSet<VenueKey, TypeName>, protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>, protocol_lp_fees: Delayed<ProtocolLpFeesKey, ProtocolLpFees>, creation_fee: Delayed<CreationFeeKey, u64>, partners: PartnerList, }' ]] \
   || [[ "$(move_production_type ProtocolLpFees <<<"$launch_config_facts")" \
     != 'struct ProtocolLpFees has copy, drop, store { meme_bps: Bps, quote_bps: Bps, }' ]] \
   || [[ "$(move_production_function_contract new_protocol_lp_fees <<<"$launch_config_facts")" \
     != 'private:0:0:fun new_protocol_lp_fees(meme_bps: Bps, quote_bps: Bps): ProtocolLpFees' ]] \
   || [[ "$(move_production_body new_protocol_lp_fees <<<"$launch_config_facts")" \
-    != 'assert!( meme_bps.value() <= constants::max_lp_fee_bps!() && quote_bps.value() <= constants::max_lp_fee_bps!(), blast_fun::errors::invalid_lp_fee_bps!(), ); ProtocolLpFees { meme_bps, quote_bps }' ]] \
-  || [[ "$(move_production_body max_lp_fee_bps <<<"$(move_facts sources/lib/constants.move)")" != '3_000' ]] \
+    != 'assert!( meme_bps.value() <= blast_core::constants::max_lp_fee_bps!() && quote_bps.value() <= blast_core::constants::max_lp_fee_bps!(), blast_fun::errors::invalid_lp_fee_bps!(), ); ProtocolLpFees { meme_bps, quote_bps }' ]] \
+  || rg -n 'fun (max_lp_fee_bps|basis_points_denominator|max_meme_symbol_length)\(' sources/lib/constants.move \
   || [[ "$(count_occurrences 'ProtocolLpFees \{ meme_bps, quote_bps \}' <<<"$launch_config_source")" != 2 ]] \
   || [[ "$(move_production_body schedule_protocol_lp_fees <<<"$launch_config_facts")" \
     != 'package_version.assert_current(constants::generation!()); self.protocol_lp_fees.schedule(new_protocol_lp_fees(meme_bps, quote_bps), delay_ms, clock);' ]] \
@@ -743,11 +743,12 @@ fi
 
 # ADR 0098: the creation fee and the accepted partners change only through apply_creation_fee,
 # add_partner, and remove_partner, each version-gated first; creation reads them, nothing else does.
+# The acceptance window is blast_partners::partner_list's, embedded once.
 launch_config_fee_writers="$(awk -F'\t' '
   $1 == "FN" && $6 == 0 && $10 ~ /self\.creation_fee\.apply/ { print $2 }
 ' <<<"$launch_config_facts" | sort | tr '\n' ' ')"
 launch_config_partner_writers="$(awk -F'\t' '
-  $1 == "FN" && $6 == 0 && $10 ~ /self\.id\.(add_dynamic_field|dynamic_field_mut)/ { print $2 }
+  $1 == "FN" && $6 == 0 && $10 ~ /self\.partners\.(add|remove)\(/ { print $2 }
 ' <<<"$launch_config_facts" | sort | tr '\n' ' ')"
 launch_config_ungated="$(awk -F'\t' '
   $1 == "FN" && $6 == 0 && ($2 == "apply_creation_fee" || $2 == "add_partner" || $2 == "remove_partner") \
@@ -757,9 +758,12 @@ launch_config_ungated="$(awk -F'\t' '
 if [[ "$launch_config_fee_writers" != 'apply_creation_fee ' ]] \
   || [[ "$launch_config_partner_writers" != 'add_partner remove_partner ' ]] \
   || [[ -n "$launch_config_ungated" ]] \
-  || [[ "$(move_production_type PartnerKey <<<"$launch_config_facts")" != 'struct PartnerKey(ID) has copy, drop, store;' ]] \
+  || [[ -n "$(move_production_type PartnerKey <<<"$launch_config_facts")" ]] \
+  || rg -n 'dynamic_field' sources/launch_config.move \
+  || ! rg -Fq 'partners: partner_list::new(&id, ctx),' sources/launch_config.move \
+  || [[ "$(move_production_body assert_partner <<<"$launch_config_facts")" != 'self.partners.assert_accepted(partner_id, clock);' ]] \
   || [[ "$(rg -l '\.(creation_fee|assert_partner)\(' sources | sort | tr '\n' ' ')" \
-    != 'sources/launch.move sources/launch_config.move ' ]]; then
+    != 'sources/launch.move ' ]]; then
   echo 'LaunchConfig must change its creation fee and accepted partners only through their version-gated setters, and only launch creation may read them.' >&2
   failures=$((failures + 1))
 fi
@@ -893,7 +897,7 @@ launch_source="$(move_normalized_source <<<"$launch_facts")"
 # apportionment: Blast has an explicit route, each asset sums to 10,000, and Blast's part is the
 # one rounded up. The apportionment itself is pinned by blast_core's gate.
 if [[ ! -f sources/allocation.move ]] \
-  || [[ "$(move_production_type Recipient <<<"$allocation_facts")" != 'struct Recipient has copy, drop, store { destination: address, meme_bps: Bps, quote_bps: Bps, }' ]] \
+  || [[ "$(move_production_type Recipient <<<"$allocation_facts")" != 'struct Recipient has copy, drop, store { payee: payout::Recipient, meme_bps: Bps, quote_bps: Bps, }' ]] \
   || [[ "$(move_production_type ProtocolAllocation <<<"$allocation_facts")" != 'struct ProtocolAllocation has copy, drop, store { meme_bps: Bps, quote_bps: Bps, }' ]] \
   || [[ "$(move_production_type AllocationPlan <<<"$allocation_facts")" != 'struct AllocationPlan has copy, drop, store { curve_meme_bps: Bps, lp_meme_bps: Bps, lp_quote_bps: Bps, protocol_meme_bps: Bps, protocol_quote_bps: Bps, recipients: vector<Recipient>, }' ]] \
   || [[ "$(move_production_body plan <<<"$allocation_facts")" != 'assert!( curve_meme_bps.value() > 0 && lp_meme_bps.value() > 0 && lp_quote_bps.value() > 0, blast_fun::errors::invalid_shares!(), ); AllocationPlan { curve_meme_bps, lp_meme_bps, lp_quote_bps, protocol_meme_bps: bps::new(0), protocol_quote_bps: bps::new(0), recipients, }' ]] \
@@ -903,7 +907,7 @@ if [[ ! -f sources/allocation.move ]] \
   || [[ "$(move_production_body apportion_quote <<<"$allocation_facts")" \
     != 'let mut bps = vector[self.lp_quote_bps, self.protocol_quote_bps]; bps.append(self.recipients.map_ref!(|recipient| recipient.quote_bps)); let amounts = bps::apportion(bps, reserve, option::some(1)); let recipients = vector::tabulate!(amounts.length() - 2, |i| amounts[i + 2]); (amounts[0], amounts[1], recipients)' ]] \
   || [[ "$(count_occurrences 'bps::apportion\(' <<<"$allocation_source")" != 2 ]] \
-  || [[ "$(count_occurrences '\) == constants::basis_points_denominator!\(\)' <<<"$allocation_source")" != 2 ]] \
+  || [[ "$(count_occurrences '\) == blast_core::constants::basis_points_denominator!\(\)' <<<"$allocation_source")" != 2 ]] \
   || rg -q '\b(UID|Balance|Coin|TxContext|TreasuryCap|transfer::|object::|dynamic_field|events::)\b' <<<"$allocation_source"; then
   echo 'allocation.move must validate bounded plans with an explicit Blast route and apportion exactly, without custody, cap, or transfer effects.' >&2
   failures=$((failures + 1))
@@ -958,7 +962,6 @@ if [[ ! -f sources/launch.move ]] \
     'let graduation_target = graduation_target.destroy_some();' \
     'allocation_plan.destroy_some().add_protocol(config.protocol_allocation());' \
     'invalid_opening_round!()' \
-    'meme_symbol_too_long!()' \
     'invalid_graduation_target!()' \
     'let atomic_supply = launch_ticket::atomic_supply(ticket.decimals());' \
     'allocation_plan.apportion_meme(atomic_supply)' \
@@ -1023,8 +1026,8 @@ for authority_spec in \
   'transfer::public_transfer(|apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment migrate ' \
   '.opening_round_meme.pay(|deliver_opening_round ' \
   '.opening_round_quote.pay(|deliver_opening_round ' \
-  '.allocated_meme.pay(|migrate ' \
-  '.real_quote_reserve.pay(|migrate '; do
+  'payout::pay_or_vest(&mut self.allocated_meme,|migrate ' \
+  'payout::pay_or_vest(&mut self.real_quote_reserve,|migrate '; do
   authority_needle="${authority_spec%%|*}"
   authority_expected="${authority_spec#*|}"
   authority_actual="$(launch_functions_containing "$authority_needle")"
@@ -1110,7 +1113,7 @@ check_launch_needles() {
 # creator capabilities to the caller.
 check_launch_needles T-004 \
   'creator_authority::claim_creator_caps<|claim_creator_caps ' \
-  'clock.timestamp_ms()|has_opening_round_ended set_partner share ' \
+  'clock.timestamp_ms()|has_opening_round_ended share ' \
   'curve::cap_buy_quote_input(|buy_from_curve ' \
   'curve::quote_buy(|buy_from_curve ' \
   'transfer::share_object(self)|share ' \
@@ -1393,7 +1396,7 @@ fi
 launch_migrate_shape="$(move_production_body migrate <<<"$launch_facts" | move_semantic_shape)"
 if [[ "$(launch_functions_containing 'self.lifecycle = Lifecycle::Migrated;')" != 'migrate ' ]] \
   || [[ "$(move_production_type Migrated <<<"$events_facts")" != 'struct Migrated<phantom Meme, phantom Quote> has copy, drop { launch_id: ID, meme_amount: u64, quote_amount: u64, disposed_meme: u64, total_supply_after: u64, }' ]] \
-  || [[ "$(move_production_function_contract migrate <<<"$launch_facts")" != 'public:0:0:fun migrate<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, ctx: &mut TxContext, ): Migration<Meme, Quote>' ]] \
+  || [[ "$(move_production_function_contract migrate <<<"$launch_facts")" != 'public:0:0:fun migrate<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, clock: &Clock, ctx: &mut TxContext, ): Migration<Meme, Quote>' ]] \
   || [[ "$launch_migrate_shape" != 'package_version.assert_current(constants::generation!());package_version.assert_not_paused(constants::migration_pause_bit!());assert!(self.lifecycle == Lifecycle::MigrationReady,blast_fun::errors::invalid_launch_lifecycle!());let(protocol_meme_bps,protocol_quote_bps)= config.protocol_lp_fees();let plan = self.allocation_plan;'* ]] \
   || [[ "$(count_occurrences 'config\.protocol_lp_fees\(\)' <<<"$launch_migrate_shape")" != 1 ]] \
   || ! in_order \
@@ -1437,10 +1440,6 @@ if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'eve
     'self.curve_fee_cap_id = option::some(' 'transfer::public_transfer(' 'events::curve_fee_cap_reassigned<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch.move apply_metadata_cap_reassignment \
     'self.blast_metadata_cap_id = option::some(' 'transfer::public_transfer(' 'events::metadata_cap_reassigned<Meme,Quote>(' \
-  || ! events_follow_mutations sources/launch_config.move add_partner \
-    '.add_dynamic_field(' 'events::partner_added(' \
-  || ! events_follow_mutations sources/launch_config.move remove_partner \
-    '*current = ' 'events::partner_removed(' \
   || ! events_follow_mutations sources/launch.move buy_from_curve \
     'self.real_quote_reserve.join(' \
     'self.meme_reserve.split(' \
@@ -1457,8 +1456,8 @@ if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'eve
     '.remove_dynamic_field' 'self.opening_round_bids = ' 'self.opening_round_quote.pay(' \
     'events::opening_round_delivered<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch.move migrate \
-    'self.allocated_meme.pay(meme,destination,ctx);' \
-    'self.real_quote_reserve.pay(quote,destination,ctx);' \
+    'payout::pay_or_vest(&mut self.allocated_meme,meme,payee,clock,ctx);' \
+    'payout::pay_or_vest(&mut self.real_quote_reserve,quote,payee,clock,ctx);' \
     'events::migration_allocation_paid<Meme,Quote>(' \
     'self.protocol_fees.accrue(' \
     'events::protocol_fees_accrued<Meme,Quote>(' \

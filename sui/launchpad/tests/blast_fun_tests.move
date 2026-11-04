@@ -34,7 +34,7 @@ fun package_init_retains_canonical_publisher_in_publication() {
 /// Publication shares no version; wrapping it shares the package version with every launchpad
 /// bit paused and the generic package administration.
 fun wrapping_the_publication_shares_a_fully_paused_version() {
-    let mut fixture = start();
+    let fixture = start();
     assert!(!fixture.has_shared_version());
 
     let (paused, valid_pause_bits, generation) = fixture.wrap();
@@ -81,7 +81,7 @@ fun wrap(self: PublicationFixture): (u8, u8, u64) {
     scenario.next_tx(PUBLISHER);
     assert!(test_scenario::has_most_recent_shared<PackageAdmin<BLAST_FUN>>());
     let version = scenario.take_shared<PackageVersion<BLAST_FUN>>();
-    let facts = (
+    let (paused, valid_pause_bits, generation) = (
         version.paused_for_testing(),
         version.valid_pause_bits_for_testing(),
         version.generation_for_testing(),
@@ -89,7 +89,7 @@ fun wrap(self: PublicationFixture): (u8, u8, u64) {
     test_scenario::return_shared(version);
     scenario.end();
 
-    facts
+    (paused, valid_pause_bits, generation)
 }
 
 fun end(self: PublicationFixture) {

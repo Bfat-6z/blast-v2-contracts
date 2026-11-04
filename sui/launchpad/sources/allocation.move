@@ -8,9 +8,10 @@ module blast_fun::allocation;
 
 // === Public Types ===
 
-/// One address paid at migration, with its shares of the Meme supply and the final Quote reserve.
+/// One payee at migration, paid outright or vested, with its shares of the Meme supply and the
+/// final Quote reserve.
 public struct Recipient has copy, drop, store {
-    destination: address,
+    payee: payout::Recipient,
     meme_bps: Bps,
     quote_bps: Bps,
 }
@@ -34,10 +35,10 @@ public struct ProtocolAllocation has copy, drop, store {
 
 // === Public Functions ===
 
-public fun recipient(destination: address, meme_bps: Bps, quote_bps: Bps): Recipient {
-    assert!(destination != @0x0, blast_fun::errors::invalid_destination!());
-
-    Recipient { destination, meme_bps, quote_bps }
+/// A plan recipient: `payee` (`blast_core::payout::recipient`, which rejects the zero address)
+/// receives `meme_bps` of the Meme supply and `quote_bps` of the final Quote reserve at migration.
+public fun recipient(payee: payout::Recipient, meme_bps: Bps, quote_bps: Bps): Recipient {
+    Recipient { payee, meme_bps, quote_bps }
 }
 
 /// The curve needs positive Meme and the pool needs positive Meme and Quote shares.
@@ -97,11 +98,11 @@ public(package) fun add_protocol(
         self.recipients.fold!(
             self.curve_meme_bps.value() + self.lp_meme_bps.value() + protocol.meme_bps.value(),
             |sum, recipient| sum + recipient.meme_bps.value(),
-        ) == constants::basis_points_denominator!()
+        ) == blast_core::constants::basis_points_denominator!()
             && self.recipients.fold!(
                 self.lp_quote_bps.value() + protocol.quote_bps.value(),
                 |sum, recipient| sum + recipient.quote_bps.value(),
-            ) == constants::basis_points_denominator!(),
+            ) == blast_core::constants::basis_points_denominator!(),
         blast_fun::errors::invalid_shares!(),
     );
 
@@ -136,8 +137,9 @@ public(package) fun apportion_quote(
     (amounts[0], amounts[1], recipients)
 }
 
-public(package) fun destinations(self: &AllocationPlan): vector<address> {
-    self.recipients.map_ref!(|recipient| recipient.destination)
+/// The plan's payees, in plan order.
+public(package) fun payees(self: &AllocationPlan): vector<payout::Recipient> {
+    self.recipients.map_ref!(|recipient| recipient.payee)
 }
 
 // === Test-Only Functions ===
@@ -162,6 +164,6 @@ public fun add_protocol_for_testing(
 
 // === Imports ===
 
-use blast_core::bps::{Self, Bps};
+use blast_core::{bps::{Self, Bps}, payout};
 
 use blast_fun::constants;

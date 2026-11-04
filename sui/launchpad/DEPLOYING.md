@@ -152,7 +152,7 @@ intended notice (172,800,000 ms = 48 hours for this rollout). Upgrade custody
 already holds 48 hours; do not propose it again (an unchanged notice aborts).
 Raising a notice never rewrites an earlier proposal's deadline or proposed next
 notice. Record all applied notices and pending-proposal state. The release call
-below enforces the minimum: it aborts with `unguarded_notice` (35) while any
+below enforces the minimum: it aborts with `unguarded_notice` (32) while any
 covered notice is zero, any pending proposal would set one to zero, or any
 adapter or claim-signer admission is still pending. Initial setup may span transactions while fully paused.
 

@@ -16,14 +16,6 @@ public(package) fun quote_set<Quote>(allowed: bool) {
     sui::event::emit(QuoteSet<Quote> { allowed });
 }
 
-public(package) fun partner_added(partner_id: ID) {
-    sui::event::emit(PartnerAdded { partner_id });
-}
-
-public(package) fun partner_removed(partner_id: ID, acceptance_ends_at_ms: u64) {
-    sui::event::emit(PartnerRemoved { partner_id, accepted_until_ms: acceptance_ends_at_ms });
-}
-
 public(package) fun creator_caps_claimed<Meme, Quote>(curve_fee_cap_id: ID, blast_metadata_cap_id: ID) {
     sui::event::emit(CreatorCapsClaimed<Meme, Quote> {
         curve_fee_cap_id,
@@ -233,17 +225,6 @@ public struct MemeDecimalsSet has copy, drop {
 /// launches. Existing launches keep trading in it.
 public struct QuoteSet<phantom Quote> has copy, drop {
     allowed: bool,
-}
-
-/// New launches may name the partner from now on, or its pending removal was cancelled.
-public struct PartnerAdded has copy, drop {
-    partner_id: ID,
-}
-
-/// New launches may name the partner until `accepted_until_ms`; launches that name it keep paying it.
-public struct PartnerRemoved has copy, drop {
-    partner_id: ID,
-    accepted_until_ms: u64,
 }
 
 public struct CreatorCapsClaimed<phantom Meme, phantom Quote> has copy, drop {

@@ -227,6 +227,7 @@ public fun migration_inputs(
     &mut VaultRegistry,
     &VaultVersion<BLAST_VAULT_PACKAGE>,
     &Treasury,
+    &Clock,
     &mut TxContext,
 ) {
     (
@@ -235,6 +236,7 @@ public fun migration_inputs(
         &mut self.registry,
         &self.vault_version,
         &self.treasury,
+        &self.clock,
         self.scenario.ctx(),
     )
 }

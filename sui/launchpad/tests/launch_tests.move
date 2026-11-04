@@ -41,8 +41,6 @@ const VIRTUAL_QUOTE: u64 = 5_000_000;
 
 const MIGRATION_QUOTE_TARGET: u64 = 25_000_000;
 
-/// A Meme symbol exactly at the 32-byte launch intake bound.
-const MAX_LENGTH_SYMBOL: vector<u8> = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
 
 const QUOTE_FEE_BPS: u64 = 100;
 
@@ -1302,63 +1300,6 @@ fun intake_rejects_a_ticket_whose_decimals_are_no_longer_allowed() {
     fixture.end();
 }
 
-#[test]
-fun intake_accepts_a_meme_symbol_at_the_length_bound() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket_with_symbol(MAX_LENGTH_SYMBOL);
-
-        destroy(f.intake<TEST_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_fun::errors::EMemeSymbolTooLong, location = blast_fun::launch)]
-fun intake_rejects_a_meme_symbol_over_the_length_bound() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket_with_symbol(over_length_symbol());
-
-        destroy(f.intake<TEST_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_fun::errors::EDecimalsNotAllowed, location = blast_fun::launch_config)]
-fun intake_checks_the_decimals_before_the_symbol_length() {
-    let mut fixture = start();
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let ticket = f.new_ticket_with(CREATOR, false, 6, over_length_symbol());
-        let admin_witness = listing_admin();
-
-        f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, false);
-
-        destroy(f.intake<TEST_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
 fun set_virtual_quote_rejects_a_stale_generation() {
     let mut fixture = start();
@@ -1487,49 +1428,12 @@ fun share_checks_the_version_before_already_shared_lifecycle() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun intake_checks_the_version_before_the_symbol_length() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket_with_symbol(over_length_symbol());
-        f.package_version.set_generation_for_testing(2);
-
-        destroy(f.intake<TEST_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
 #[test, expected_failure(abort_code = blast_fun::errors::EQuoteNotAllowed, location = blast_fun::launch_config)]
 fun launch_delegates_quote_admission_to_launch_config() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
-
-        destroy(f.intake<OTHER_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_fun::errors::EQuoteNotAllowed, location = blast_fun::launch_config)]
-fun starting_checks_the_quote_before_finalize_checks_the_symbol() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket_with_symbol(over_length_symbol());
 
         destroy(f.intake<OTHER_QUOTE, _>(
             ticket,
@@ -3301,7 +3205,7 @@ fun set_partner_binds_the_partner_at_creation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPartnerNotAccepted, location = blast_fun::launch_config)]
+#[test, expected_failure(abort_code = blast_partners::errors::EPartnerNotAccepted, location = blast_partners::partner_list)]
 fun set_partner_rejects_a_partner_launches_may_not_name() {
     let mut fixture = start();
 
@@ -3422,7 +3326,7 @@ fun claim_protocol_fees_with_partner_includes_migration_fees() {
 
         let mut currency = f.take_currency();
         let (pool_meme, pool_quote, terms) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
         assert_eq!(terms.partner_id(), option::some(partner_id));
 
@@ -3700,13 +3604,15 @@ fun claim_creator_fees_rejects_an_empty_creator_balance() {
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
-        let (curve_fee_cap, _metadata_cap) = f.claim(&mut launch);
+        let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
 
         let (meme, quote) = launch.claim_creator_fees(&f.package_version, &curve_fee_cap, f.ctx!());
 
         destroy(meme);
         destroy(quote);
-        abort
+        destroy(curve_fee_cap);
+        destroy(metadata_cap);
+        destroy(launch);
     });
 
     fixture.end();
@@ -3850,7 +3756,7 @@ fun migration_pays_recipients_and_accrues_blast_allocation() {
             .fee_totals_for_testing();
         let mut currency = f.take_currency();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
         let paid = collect<events::MigrationAllocationPaid<LAUNCH_TESTS, TEST_QUOTE>>();
         let (curve, real_quote, pending_burn, allocated) = launch.balances_for_testing();
@@ -3893,6 +3799,51 @@ fun migration_pays_recipients_and_accrues_blast_allocation() {
 }
 
 #[test]
+/// A vesting recipient's allocation is locked in one schedule per asset, starting at migration,
+/// instead of being sent outright; the payout event still reports its amounts.
+fun migration_vests_a_vesting_recipients_allocation() {
+    let mut fixture = start();
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let vesting = option::some(blast_core::payout::vesting_terms(0, 1_000, 10));
+        let plan = allocation::plan(
+            bps::new(7_000),
+            bps::new(LP_MEME_BPS),
+            bps::new(9_000),
+            vector[
+                allocation::recipient(blast_core::payout::recipient(CREATOR, option::none()), bps::new(0), bps::new(750)),
+                allocation::recipient(blast_core::payout::recipient(ALICE, vesting), bps::new(250), bps::new(0)),
+            ],
+        );
+        let launch = f.new_launch_with(MIGRATION_QUOTE_TARGET, plan);
+        f.share_launch(launch);
+    });
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.take_launch();
+        let launch_id = object::id(&launch);
+        f.graduate(&mut launch);
+        f.migrate(&mut launch);
+
+        let paid = collect<events::MigrationAllocationPaid<LAUNCH_TESTS, TEST_QUOTE>>();
+        assert_eq!(
+            bcs::to_bytes(&paid[1]),
+            allocation_paid_bytes(launch_id, ALICE, 25_000_000__000_000_000, 0),
+        );
+        launch.put_back();
+    });
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        assert_eq!(f.take_coin<TEST_QUOTE>(CREATOR).burn_for_testing(), 1_875_000);
+        assert!(!f.has_coin<LAUNCH_TESTS>(ALICE));
+        assert!(f.has_vesting<LAUNCH_TESTS>());
+        assert!(!f.has_vesting<TEST_QUOTE>());
+    });
+
+    fixture.end();
+}
+
+#[test]
 /// Odd shares of an odd target: Blast's Quote rounds up, the one leftover Quote unit goes to the
 /// largest remaining remainder (ALICE 7,777 over BOB 6,034 and the pool's 4,439), and every Meme
 /// and Quote unit is accounted for.
@@ -3905,8 +3856,8 @@ fun migration_apportions_by_largest_remainder_and_conserves_both_assets() {
             bps::new(2_333),
             bps::new(7_777),
             vector[
-                allocation::recipient(ALICE, bps::new(333), bps::new(1_111)),
-                allocation::recipient(BOB, bps::new(583), bps::new(862)),
+                allocation::recipient(blast_core::payout::recipient(ALICE, option::none()), bps::new(333), bps::new(1_111)),
+                allocation::recipient(blast_core::payout::recipient(BOB, option::none()), bps::new(583), bps::new(862)),
             ],
         );
         let launch = f.new_launch_with(25_000_007, plan);
@@ -3929,7 +3880,7 @@ fun migration_apportions_by_largest_remainder_and_conserves_both_assets() {
 
         let mut currency = f.take_currency();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
         let paid = collect<events::MigrationAllocationPaid<LAUNCH_TESTS, TEST_QUOTE>>();
         let (protocol_meme, _, protocol_quote, _) = launch.fee_totals_for_testing();
@@ -4004,7 +3955,7 @@ fun fixed_supply_migration_sends_the_disposal_to_zero() {
         let mut currency = f.take_currency();
         let supply = currency.total_supply().destroy_some();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
 
         assert_eq!(meme.value(), EXPECTED_POOL_MEME);
@@ -4054,7 +4005,7 @@ fun burn_only_migration_burns_the_disposal_from_native_supply() {
         let mut currency = f.take_currency();
         let supply = currency.total_supply().destroy_some();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
 
         assert_eq!(currency.total_supply().destroy_some(), supply - disposed_meme);
@@ -4086,7 +4037,7 @@ fun migration_rejects_a_live_launch() {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         let mut currency = f.take_currency();
-        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, f.ctx!());
+        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!());
 
         destroy(migration);
         destroy(currency);
@@ -4106,11 +4057,11 @@ fun migration_cannot_be_repeated() {
         f.graduate(&mut launch);
         let mut currency = f.take_currency();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
         destroy(meme);
         destroy(quote);
-        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, f.ctx!());
+        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!());
 
         destroy(migration);
         destroy(currency);
@@ -4130,7 +4081,7 @@ fun only_the_stored_venue_redeems_the_migration() {
         f.graduate(&mut launch);
         let mut currency = f.take_currency();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(OtherVenue());
 
         destroy(meme);
@@ -4151,7 +4102,7 @@ fun stale_package_version_aborts_migration_before_its_lifecycle_check() {
         let mut launch = f.open_launch(launch);
         f.package_version.set_generation_for_testing(2);
         let mut currency = f.take_currency();
-        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, f.ctx!());
+        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!());
 
         destroy(migration);
         destroy(currency);
@@ -4174,7 +4125,7 @@ fun migration_hands_the_stored_venue_the_pool_share_and_the_vault_terms() {
         f.graduate(&mut launch);
         let mut currency = f.take_currency();
         let (meme, quote, terms) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
         let (protocol_meme_bps, protocol_quote_bps) = terms.protocol_bps();
 
@@ -4509,8 +4460,8 @@ fun external_plan(): AllocationPlan {
         bps::new(LP_MEME_BPS),
         bps::new(9_000),
         vector[
-            allocation::recipient(CREATOR, bps::new(0), bps::new(750)),
-            allocation::recipient(ALICE, bps::new(250), bps::new(0)),
+            allocation::recipient(blast_core::payout::recipient(CREATOR, option::none()), bps::new(0), bps::new(750)),
+            allocation::recipient(blast_core::payout::recipient(ALICE, option::none()), bps::new(250), bps::new(0)),
         ],
     )
 }
@@ -4521,7 +4472,7 @@ fun recipients_plan(count: u64): AllocationPlan {
         bps::new(CURVE_MEME_BPS - count),
         bps::new(LP_MEME_BPS),
         bps::new(LP_QUOTE_BPS - count),
-        vector::tabulate!(count, |_| allocation::recipient(CREATOR, bps::new(1), bps::new(1))),
+        vector::tabulate!(count, |_| allocation::recipient(blast_core::payout::recipient(CREATOR, option::none()), bps::new(1), bps::new(1))),
     )
 }
 
@@ -4564,13 +4515,6 @@ fun launch_new_ticket_with_decimals(
     self.new_ticket_with(creator, burnable, decimals, b"LAUNCH")
 }
 
-fun launch_new_ticket_with_symbol(
-    self: &mut LaunchFixture,
-    symbol: vector<u8>,
-): LaunchTicket<LAUNCH_TESTS> {
-    self.new_ticket_with(CREATOR, false, MEME_DECIMALS, symbol)
-}
-
 fun launch_new_ticket_with(
     self: &mut LaunchFixture,
     creator: address,
@@ -4594,13 +4538,6 @@ fun launch_new_ticket_with(
     transfer::public_transfer(treasury_cap, self.ctx!().sender());
 
     ticket
-}
-
-/// A Meme symbol one byte over the launch intake bound.
-fun over_length_symbol(): vector<u8> {
-    let mut symbol = MAX_LENGTH_SYMBOL;
-    symbol.push_back(b"X"[0]);
-    symbol
 }
 
 /// Starts the launch with a ticket from `venue`, sets the target, plan, and default fee split, and
@@ -4904,7 +4841,7 @@ fun launch_claim(
 fun migrate(self: &mut LaunchFixture, launch: &mut Launch<LAUNCH_TESTS, TEST_QUOTE>): VaultTerms {
     let mut currency = self.take_currency();
     let (meme, quote, terms) = launch
-        .migrate(&self.package_version, &self.config, &mut currency, self.ctx!())
+        .migrate(&self.package_version, &self.config, &mut currency, &self.clock, self.ctx!())
         .redeem(TestVenue());
     destroy(meme);
     destroy(quote);
@@ -4932,6 +4869,10 @@ fun launch_take_currency(self: &LaunchFixture): Currency<LAUNCH_TESTS> {
 
 fun launch_take_coin<T>(self: &LaunchFixture, owner: address): Coin<T> {
     self.scenario.take_from_address(owner)
+}
+
+fun launch_has_vesting<T>(_: &LaunchFixture): bool {
+    test_scenario::has_most_recent_shared<Vesting<T>>()
 }
 
 fun launch_has_coin<T>(_: &LaunchFixture, owner: address): bool {
@@ -5197,6 +5138,8 @@ use blast_fun::{
     runtime_config,
 };
 
+use blast_fun_vesting::blast_fun_linear_vesting::Vesting;
+
 use blast_partners::blast_partners::{Self as partners, Partner, PartnerPaid};
 
 use std::{bcs, type_name, unit_test::{assert_eq, destroy}};
@@ -5231,8 +5174,6 @@ use fun launch_new_ticket_with_mode as LaunchFixture.new_ticket_with_mode;
 
 use fun launch_new_ticket_with_decimals as LaunchFixture.new_ticket_with_decimals;
 
-use fun launch_new_ticket_with_symbol as LaunchFixture.new_ticket_with_symbol;
-
 use fun launch_new_ticket_with as LaunchFixture.new_ticket_with;
 
 use fun launch_intake as LaunchFixture.intake;
@@ -5266,6 +5207,8 @@ use fun launch_take_currency as LaunchFixture.take_currency;
 use fun launch_take_coin as LaunchFixture.take_coin;
 
 use fun launch_has_coin as LaunchFixture.has_coin;
+
+use fun launch_has_vesting as LaunchFixture.has_vesting;
 
 use fun launch_burn_paid as LaunchFixture.burn_paid;
 

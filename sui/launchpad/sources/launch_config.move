@@ -28,6 +28,7 @@ public struct LaunchConfig has key {
     protocol_lp_fees: Delayed<ProtocolLpFeesKey, ProtocolLpFees>,
     /// In MIST.
     creation_fee: Delayed<CreationFeeKey, u64>,
+    partners: PartnerList,
 }
 
 /// Keys the trade fees' delayed lifecycle.
@@ -51,10 +52,6 @@ public struct ProtocolLpFeesKey() has copy, drop, store;
 
 /// Keys the creation fee's delayed lifecycle.
 public struct CreationFeeKey() has copy, drop, store;
-
-/// Dynamic-field key of a Blast partner new launches may name. Its value is the time the partner
-/// stops being accepted: `u64::MAX` until Blast removes it.
-public struct PartnerKey(ID) has copy, drop, store;
 
 // === Private Initialization ===
 
@@ -275,18 +272,7 @@ public fun add_partner(
 ) {
     package_version.assert_current(constants::generation!());
 
-    let partner_id = object::id(partner);
-    let key = PartnerKey(partner_id);
-
-    if (self.id.has_dynamic_field(key)) {
-        let acceptance_ends_at_ms: &mut u64 = self.id.dynamic_field_mut(key);
-        assert!(*acceptance_ends_at_ms != std::u64::max_value!(), blast_fun::errors::unchanged!());
-        *acceptance_ends_at_ms = std::u64::max_value!();
-    } else {
-        self.id.add_dynamic_field(key, std::u64::max_value!());
-    };
-
-    events::partner_added(partner_id);
+    self.partners.add(partner);
 }
 
 /// Stops new launches naming `partner` after the notice Blast gives for every change to a
@@ -300,16 +286,7 @@ public fun remove_partner(
 ) {
     package_version.assert_current(constants::generation!());
 
-    let partner_id = object::id(partner);
-    let now_at_ms = clock.timestamp_ms();
-    self.assert_partner(partner_id, now_at_ms);
-    let acceptance_ends_at_ms = now_at_ms + partners::delay_ms();
-
-    let current: &mut u64 = self.id.dynamic_field_mut(PartnerKey(partner_id));
-    assert!(*current == std::u64::max_value!(), blast_fun::errors::unchanged!());
-    *current = acceptance_ends_at_ms;
-
-    events::partner_removed(partner_id, acceptance_ends_at_ms);
+    self.partners.remove(object::id(partner), clock);
 }
 
 /// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
@@ -469,14 +446,9 @@ public(package) fun creation_fee(self: &LaunchConfig): u64 {
     self.creation_fee.value()
 }
 
-/// Aborts unless new launches may name `partner_id` at `now_at_ms`.
-public(package) fun assert_partner(self: &LaunchConfig, partner_id: ID, now_at_ms: u64) {
-    let key = PartnerKey(partner_id);
-
-    assert!(self.id.has_dynamic_field(key), blast_fun::errors::partner_not_accepted!());
-
-    let acceptance_ends_at_ms: u64 = *dynamic_field::borrow(&self.id, key);
-    assert!(now_at_ms < acceptance_ends_at_ms, blast_fun::errors::partner_not_accepted!());
+/// Aborts unless new launches may name `partner_id` now.
+public(package) fun assert_partner(self: &LaunchConfig, partner_id: ID, clock: &Clock) {
+    self.partners.assert_accepted(partner_id, clock);
 }
 
 // === Private Functions ===
@@ -484,8 +456,8 @@ public(package) fun assert_partner(self: &LaunchConfig, partner_id: ID, now_at_m
 /// Blast's LP-fee share, each asset at most 3,000 bps.
 fun new_protocol_lp_fees(meme_bps: Bps, quote_bps: Bps): ProtocolLpFees {
     assert!(
-        meme_bps.value() <= constants::max_lp_fee_bps!()
-            && quote_bps.value() <= constants::max_lp_fee_bps!(),
+        meme_bps.value() <= blast_core::constants::max_lp_fee_bps!()
+            && quote_bps.value() <= blast_core::constants::max_lp_fee_bps!(),
         blast_fun::errors::invalid_lp_fee_bps!(),
     );
 
@@ -509,6 +481,7 @@ fun new(
         protocol_allocation: delayed::new(ProtocolAllocationKey(), &id, protocol_allocation, delay_ms),
         protocol_lp_fees: delayed::new(ProtocolLpFeesKey(), &id, protocol_lp_fees, delay_ms),
         creation_fee: delayed::new(CreationFeeKey(), &id, 0, delay_ms),
+        partners: partner_list::new(&id, ctx),
         id,
     }
 }
@@ -674,7 +647,7 @@ public fun set_protocol_lp_fees_for_testing(
 
 // === Imports ===
 
-use sui::{clock::Clock, dynamic_field, table::{Self, Table}, vec_set::{Self, VecSet}};
+use sui::{clock::Clock, table::{Self, Table}, vec_set::{Self, VecSet}};
 
 use blast_admin::{
     blast_acl::AdminWitness,
@@ -697,12 +670,6 @@ use blast_fun::{
     runtime_config::RuntimeConfig
 };
 
-use blast_partners::blast_partners::{Self as partners, Partner};
+use blast_partners::{blast_partners::Partner, partner_list::{Self, PartnerList}};
 
 use std::type_name::{Self, TypeName};
-
-use fun dynamic_field::add as UID.add_dynamic_field;
-
-use fun dynamic_field::borrow_mut as UID.dynamic_field_mut;
-
-use fun dynamic_field::exists as UID.has_dynamic_field;

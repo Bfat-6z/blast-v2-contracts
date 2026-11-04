@@ -309,7 +309,7 @@ for module in $matrix_venue_modules; do
         <<<"$venue_facts" | tr -d '[:space:]')"
     [[ "$custody_body" == 'migrate|migrators_version.assert_current();'* ]] \
         && in_order \
-            '.migrate(package_version,config,currency,ctx).redeem(Venue());' \
+            '.migrate(package_version,config,currency,clock,ctx).redeem(Venue());' \
             'vault::new<Meme,Quote,_>(registry,&Venue(),vault_version,terms,pool_id).share_with_position(&Venue(),treasury,' \
             <<<"$custody_body" || \
         fail "${module}::migrate alone must redeem the hand-off under its own witness, then create and share a blast_vault vault from the redeemed terms"
@@ -523,7 +523,7 @@ bluefin_migrate_body="$(bluefin_body migrate)"
 # hand-off, creates the named pool priced from the handed-off balances with the caller's whole
 # creation fee, opens and seeds a full-range position, creates and shares the vault holding the
 # position under the redeemed terms, then shares the pool.
-[[ "$bluefin_migrate_body" == 'migrators_version.assert_current();letPoolTier{tick_spacing,fee_rate}=*venue_config.value(PoolTierKey<Meme>());let(lower_tick,upper_tick)=bluefin_config.full_range_tick_range(tick_spacing);let(meme,quote,terms)=launch.migrate(package_version,config,currency,ctx).redeem(Venue());letmutpool=pool::create_pool_and_get_object<Meme,Quote,SUI>(clock,bluefin_config,currency.pool_name(quote_currency),b"",currency.symbol().into_bytes(),currency.decimals(),b"",quote_currency.symbol().into_bytes(),quote_currency.decimals(),quote_currency.icon_url().into_bytes(),tick_spacing,fee_rate,migration_math::sqrt_price_x64(meme.value(),quote.value(),true),creation_fee.into_balance(),ctx);letmutposition=pool::open_position(bluefin_config,&mutpool,lower_tick,upper_tick,ctx);let(residual_meme,residual_quote)=pool.seed(bluefin_config,&mutposition,meme,quote,clock);letpool_id=position.pool_id();letliquidity=position.liquidity();vault::new<Meme,Quote,_>(registry,&Venue(),vault_version,terms,pool_id).share_with_position(&Venue(),treasury,position,liquidity,residual_meme,residual_quote,ctx);pool.share_pool_object();' ]] \
+[[ "$bluefin_migrate_body" == 'migrators_version.assert_current();letPoolTier{tick_spacing,fee_rate}=*venue_config.value(PoolTierKey<Meme>());let(lower_tick,upper_tick)=bluefin_config.full_range_tick_range(tick_spacing);let(meme,quote,terms)=launch.migrate(package_version,config,currency,clock,ctx).redeem(Venue());letmutpool=pool::create_pool_and_get_object<Meme,Quote,SUI>(clock,bluefin_config,currency.pool_name(quote_currency),b"",currency.symbol().into_bytes(),currency.decimals(),b"",quote_currency.symbol().into_bytes(),quote_currency.decimals(),quote_currency.icon_url().into_bytes(),tick_spacing,fee_rate,migration_math::sqrt_price_x64(meme.value(),quote.value(),true),creation_fee.into_balance(),ctx);letmutposition=pool::open_position(bluefin_config,&mutpool,lower_tick,upper_tick,ctx);let(residual_meme,residual_quote)=pool.seed(bluefin_config,&mutposition,meme,quote,clock);letpool_id=position.pool_id();letliquidity=position.liquidity();vault::new<Meme,Quote,_>(registry,&Venue(),vault_version,terms,pool_id).share_with_position(&Venue(),treasury,position,liquidity,residual_meme,residual_quote,ctx);pool.share_pool_object();' ]] \
     && [[ "$(bluefin_body full_range_tick_range)" == 'let(minimum_tick,maximum_tick)=bluefin_config.get_tick_range();letspacing=i32::from(tick_spacing);(minimum_tick.div(spacing).mul(spacing).as_u32(),maximum_tick.div(spacing).mul(spacing).as_u32())' ]] || \
     fail "Bluefin migrate must redeem the launch, create and fund the pool, create and share the vault holding the position, then share the pool"
 # The pool and the position record no Meme icon, as Cetus: the position stores the URL it is given,
@@ -645,7 +645,7 @@ pair_proof='letmeme_is_a=is_meme_coin_a<Meme,Quote,CoinA,CoinB>();'
     && in_order \
         'lettick_spacing=*venue_config.value(PoolTierKey<Meme>());' \
         'let(tick_lower,tick_upper)=pool_creator::full_range_tick_range(tick_spacing);' \
-        'let(meme,quote,terms)=launch.migrate(package_version,config,currency,ctx).redeem(Venue());' \
+        'let(meme,quote,terms)=launch.migrate(package_version,config,currency,clock,ctx).redeem(Venue());' \
         'letmeme_amount=meme.value();letquote_amount=quote.value();' \
         'letsqrt_price=migration_math::sqrt_price_x64(meme_amount,quote_amount,meme_is_a);' \
         'letfix_a=is_coin_a_seed_side(tick_lower,tick_upper,sqrt_price,meme_amount,quote_amount,meme_is_a);' \
@@ -1038,7 +1038,7 @@ atomic_body="$(awk -F'\t' '$1 == "FN" && $2 == "mock_adapter_with" { print $10 }
 [[ "$atomic_public" == mock_adapter:* && "$atomic_public" != *$'\n'* && "$atomic_public" != *'):'* ]] || \
     fail "the atomic fixture's only public function must be the unit-returning mock_adapter"
 in_order \
-    'launch.migrate(version,config,currency,ctx).redeem(Venue());' \
+    'launch.migrate(version,config,currency,clock,ctx).redeem(Venue());' \
     'vault::new<_,_,_>(registry,&Venue(),vault_version,terms,pool_id).share_with_position(&Venue(),treasury,position,liquidity,' \
     'transfer::share_object(pool)' \
     <<<"$atomic_body" || \

@@ -358,7 +358,7 @@ own pool, position, and swap events in the same transactions.
 | Bluefin prepare | `blast_fun_migrators::bluefin::EInvalidTier` | tick spacing 1..=400, fee rate 1..=20,000 |
 | Cetus migrate, collect, buyback | `blast_fun_migrators::cetus::EInvalidCoinOrder` (migrate), `blast_fun_migrators::cetus::EWrongCoinPair` | pass the pool's coin order; `CoinA` and `CoinB` must be the launch's Meme and Quote |
 | migrate | `sui::dynamic_field` code 1 reading the tier; 8 `blast_core::errors::EWrongVenue` in `blast_core::migration` | call the migrate of the venue the launch stores |
-| migrate | 14 `blast_fun::errors::EInvalidLaunchLifecycle`, 25 `blast_admin::errors::EPaused` (`package_version`) | wait for `MigrationReady`; wait for Migrate to be unpaused |
+| migrate | 12 `blast_fun::errors::EInvalidLaunchLifecycle`, 25 `blast_admin::errors::EPaused` (`package_version`) | wait for `MigrationReady`; wait for Migrate to be unpaused |
 | migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedIssuer`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the launchpad's `PackageWitness` must be listed in `VaultRegistry`; the seed must give positive liquidity |
 | migrate | Cetus aborts when the pair's pool already exists or the tick spacing is no longer registered; Bluefin aborts on a wrong creation fee | the launch stays `MigrationReady`; pass the exact Bluefin fee |
 | collect, settle, buyback | `blast_fun_migrators::cetus::EPositionPoolMismatch`, `blast_fun_migrators::bluefin::EPositionPoolMismatch` | pass the vault's own pool |

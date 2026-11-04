@@ -1153,10 +1153,10 @@ fun an_added_partner_is_accepted_at_once() {
 
         f.add_partner(&partner);
 
-        f.config.assert_partner(object::id(&partner), NOW_AT_MS);
+        f.assert_partner_at(object::id(&partner), NOW_AT_MS);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::PartnerAdded>()),
-            bcs::to_bytes(&object::id(&partner)),
+            bcs::to_bytes(&collect_one<PartnerAdded>()),
+            partner_event_bytes(&f.config, object::id(&partner)),
         );
         destroy(partner);
     });
@@ -1176,17 +1176,17 @@ fun a_removed_partner_stays_accepted_for_the_partner_delay() {
 
         f.remove_partner(&partner);
 
-        f.config.assert_partner(partner_id, NOW_AT_MS + partners::delay_ms() - 1);
-        let mut expected = bcs::to_bytes(&partner_id);
+        f.assert_partner_at(partner_id, NOW_AT_MS + partners::delay_ms() - 1);
+        let mut expected = partner_event_bytes(&f.config, partner_id);
         expected.append(bcs::to_bytes(&(NOW_AT_MS + partners::delay_ms())));
-        assert_eq!(bcs::to_bytes(&collect_one<events::PartnerRemoved>()), expected);
+        assert_eq!(bcs::to_bytes(&collect_one<PartnerRemoved>()), expected);
         destroy(partner);
     });
 
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPartnerNotAccepted, location = blast_fun::launch_config)]
+#[test, expected_failure(abort_code = blast_partners::errors::EPartnerNotAccepted, location = blast_partners::partner_list)]
 fun a_removed_partner_is_refused_once_its_notice_ends() {
     let mut fixture = start();
 
@@ -1195,7 +1195,7 @@ fun a_removed_partner_is_refused_once_its_notice_ends() {
         f.add_partner(&partner);
         f.remove_partner(&partner);
 
-        f.config.assert_partner(object::id(&partner), NOW_AT_MS + partners::delay_ms());
+        f.assert_partner_at(object::id(&partner), NOW_AT_MS + partners::delay_ms());
         destroy(partner);
     });
 
@@ -1214,14 +1214,14 @@ fun adding_a_removed_partner_accepts_it_again() {
 
         f.add_partner(&partner);
 
-        f.config.assert_partner(object::id(&partner), std::u64::max_value!() - 1);
+        f.assert_partner_at(object::id(&partner), std::u64::max_value!() - 1);
         destroy(partner);
     });
 
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EUnchanged, location = blast_fun::launch_config)]
+#[test, expected_failure(abort_code = blast_partners::errors::EUnchanged, location = blast_partners::partner_list)]
 fun adding_an_accepted_partner_aborts() {
     let mut fixture = start();
 
@@ -1236,7 +1236,7 @@ fun adding_an_accepted_partner_aborts() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EUnchanged, location = blast_fun::launch_config)]
+#[test, expected_failure(abort_code = blast_partners::errors::EUnchanged, location = blast_partners::partner_list)]
 fun removing_a_partner_twice_aborts() {
     let mut fixture = start();
 
@@ -1252,7 +1252,7 @@ fun removing_a_partner_twice_aborts() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPartnerNotAccepted, location = blast_fun::launch_config)]
+#[test, expected_failure(abort_code = blast_partners::errors::EPartnerNotAccepted, location = blast_partners::partner_list)]
 fun removing_an_unknown_partner_aborts() {
     let mut fixture = start();
 
@@ -1490,6 +1490,22 @@ fun remove_partner(self: &mut ConfigFixture, partner: &Partner) {
     self.config.remove_partner(&self.package_version, &fee_admin(), partner, &self.clock);
 }
 
+/// Checks the configuration accepts `partner_id` at `at_ms`, on a clock of its own.
+fun assert_partner_at(self: &mut ConfigFixture, partner_id: ID, at_ms: u64) {
+    let mut clock = clock::create_for_testing(self.ctx!());
+    clock.set_for_testing(at_ms);
+    self.config.assert_partner(partner_id, &clock);
+    destroy(clock);
+}
+
+/// The leading bytes of a partner-list event of the configuration's list: its owner, the
+/// configuration, then the partner.
+fun partner_event_bytes(config: &LaunchConfig, partner_id: ID): vector<u8> {
+    let mut expected = bcs::to_bytes(&object::id(config));
+    expected.append(bcs::to_bytes(&partner_id));
+    expected
+}
+
 fun init_end(self: InitFixture) {
     destroy(self);
 }
@@ -1527,7 +1543,10 @@ use blast_fun::{
     blast_fun::{Self as package_version, BLAST_FUN},
 };
 
-use blast_partners::blast_partners::{Self as partners, Partner};
+use blast_partners::{
+    blast_partners::{Self as partners, Partner},
+    partner_list::{PartnerAdded, PartnerRemoved}
+};
 
 use std::{bcs, type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 

@@ -87,7 +87,7 @@ fun blast_is_separate_and_creator_recipients_keep_their_order() {
         vector[recipient(@0x7, 400, 1_000), recipient(@0x1, 100, 0)],
     ).add_protocol(allocation::protocol_allocation(bps::new(500), bps::new(1_000)));
 
-    assert_eq!(plan.destinations(), vector[@0x7, @0x1]);
+    assert_eq!(plan.payees().map!(|payee| payee.destination()), vector[@0x7, @0x1]);
     assert_eq!(plan.meme_amounts(10_000), vector[7_000, 2_000, 500, 400, 100]);
     assert_eq!(plan.quote_amounts(10_000), vector[8_000, 1_000, 1_000, 0]);
 }
@@ -105,10 +105,10 @@ fun zero_shares_receive_nothing() {
 #[test]
 fun one_and_sixteen_recipients_are_admitted() {
     let (meme, quote) = bounded(1);
-    assert_eq!(shaped(meme, quote).destinations(), vector[@0x2]);
+    assert_eq!(shaped(meme, quote).payees().map!(|payee| payee.destination()), vector[@0x2]);
 
     let (meme, quote) = bounded(16);
-    assert_eq!(shaped(meme, quote).destinations().length(), 16);
+    assert_eq!(shaped(meme, quote).payees().map!(|payee| payee.destination()).length(), 16);
     assert_conservation(meme, quote, std::u64::max_value!());
 }
 
@@ -158,13 +158,13 @@ fun capacity_precedes_the_share_sums() {
     shaped(meme, quote);
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EInvalidDestination, location = blast_fun::allocation)]
+#[test, expected_failure(abort_code = blast_core::errors::EInvalidRecipient, location = blast_core::payout)]
 fun zero_recipient_destination_is_rejected() { recipient(@0x0, 0, 0); }
 
 // === Test Helpers ===
 
 fun recipient(destination: address, meme_bps: u64, quote_bps: u64): Recipient {
-    allocation::recipient(destination, bps::new(meme_bps), bps::new(quote_bps))
+    allocation::recipient(blast_core::payout::recipient(destination, option::none()), bps::new(meme_bps), bps::new(quote_bps))
 }
 
 /// Builds a plan from Meme shares `[curve, lp, blast, ...]` and Quote shares `[lp, blast, ...]`;

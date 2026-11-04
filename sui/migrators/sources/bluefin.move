@@ -82,7 +82,7 @@ public fun migrate<Meme, Quote>(
     let PoolTier { tick_spacing, fee_rate } = *venue_config.value(PoolTierKey<Meme>());
     let (lower_tick, upper_tick) = bluefin_config.full_range_tick_range(tick_spacing);
     let (meme, quote, terms) = launch
-        .migrate(package_version, config, currency, ctx)
+        .migrate(package_version, config, currency, clock, ctx)
         .redeem(Venue());
 
     let mut pool = pool::create_pool_and_get_object<Meme, Quote, SUI>(

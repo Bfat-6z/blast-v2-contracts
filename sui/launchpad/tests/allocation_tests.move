@@ -24,14 +24,14 @@ fun smallest_positive_curve_and_pool_shares_are_admitted() {
 fun plan_leaves_the_share_sums_to_add_protocol() {
     let plan = allocation::plan(bps::new(1), bps::new(1), bps::new(1), vector[]);
 
-    assert_eq!(plan.destinations(), vector[]);
+    assert_eq!(plan.payees().map!(|payee| payee.destination()), vector[]);
 }
 
 #[test]
 fun a_recipient_without_shares_is_admitted_and_paid_nothing() {
     let plan = shaped(vector[7_000, 2_000, 1_000, 0], vector[9_000, 1_000, 0]);
 
-    assert_eq!(plan.destinations(), vector[@0x2]);
+    assert_eq!(plan.payees().map!(|payee| payee.destination()), vector[@0x2]);
     assert_eq!(plan.meme_amounts(999), vector[699, 200, 100, 0]);
     assert_eq!(plan.quote_amounts(999), vector[899, 100, 0]);
 }
@@ -90,7 +90,7 @@ fun random_plans_follow_largest_remainder_with_blast_rounded_up() {
     48u64.do!(|_| {
         seed = next(seed);
         let recipients = seed % constants::max_recipients!();
-        let denominator = constants::basis_points_denominator!();
+        let denominator = blast_core::constants::basis_points_denominator!();
         let mut meme = random_shares(recipients + 3, denominator - 2, next(seed));
         *&mut meme[0] = meme[0] + 1;
         *&mut meme[1] = meme[1] + 1;
@@ -107,7 +107,7 @@ fun random_plans_follow_largest_remainder_with_blast_rounded_up() {
 // === Test Helpers ===
 
 fun recipient(destination: address, meme_bps: u64, quote_bps: u64): Recipient {
-    allocation::recipient(destination, bps::new(meme_bps), bps::new(quote_bps))
+    allocation::recipient(blast_core::payout::recipient(destination, option::none()), bps::new(meme_bps), bps::new(quote_bps))
 }
 
 /// Builds a plan from Meme shares `[curve, lp, blast, ...]` and Quote shares `[lp, blast, ...]`;
@@ -173,7 +173,7 @@ fun assert_largest_remainder(
     total: u64,
 ) {
     let products = shares.map_ref!(|share| (total as u128) * (*share as u128));
-    let denominator = constants::basis_points_denominator!() as u128;
+    let denominator = blast_core::constants::basis_points_denominator!() as u128;
     let floors = products.map_ref!(|product| (*product / denominator) as u64);
     let extra = vector::tabulate!(amounts.length(), |i| amounts[i] > floors[i]);
 

@@ -200,7 +200,7 @@ fun allocation_sums_precede_an_invalid_opening_round() {
         bps::new(8_000),
         bps::new(2_000),
         bps::new(10_000),
-        vector[allocation::recipient(CREATOR, bps::new(1), bps::new(0))],
+        vector[allocation::recipient(blast_core::payout::recipient(CREATOR, option::none()), bps::new(1), bps::new(0))],
     );
     let launch = fixture.intake(ticket, treasury_cap, plan, 1, VIRTUAL_QUOTE, TARGET);
 
@@ -811,7 +811,7 @@ fun migrate(
         .scenario
         .take_from_address<Currency<LAUNCH_OPENING_ROUND_TESTS>>(COIN_REGISTRY);
     let (meme, quote, _) = launch
-        .migrate(&self.package_version, &self.config, &mut currency, self.scenario.ctx())
+        .migrate(&self.package_version, &self.config, &mut currency, &self.clock, self.scenario.ctx())
         .redeem(TestVenue());
     destroy(meme);
     destroy(quote);

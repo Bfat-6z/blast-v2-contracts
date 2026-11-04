@@ -119,7 +119,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     let tick_spacing = *venue_config.value(PoolTierKey<Meme>());
     let (tick_lower, tick_upper) = pool_creator::full_range_tick_range(tick_spacing);
     let (meme, quote, terms) = launch
-        .migrate(package_version, config, currency, ctx)
+        .migrate(package_version, config, currency, clock, ctx)
         .redeem(Venue());
 
     let meme_amount = meme.value();

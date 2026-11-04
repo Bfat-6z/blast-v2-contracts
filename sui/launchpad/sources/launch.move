@@ -211,7 +211,7 @@ public fun set_partner<Meme, Quote>(
     package_version.assert_current(constants::generation!());
 
     let partner_id = object::id(partner);
-    config.assert_partner(partner_id, clock.timestamp_ms());
+    config.assert_partner(partner_id, clock);
 
     self.partner_id = option::some(partner_id);
 }
@@ -262,10 +262,6 @@ public fun finalize<Meme, Quote>(
                 && opening_round_duration_ms <= constants::max_opening_round_ms!()
         ),
         blast_fun::errors::invalid_opening_round!(),
-    );
-    assert!(
-        currency.symbol().length() <= constants::max_meme_symbol_length!(),
-        blast_fun::errors::meme_symbol_too_long!(),
     );
 
     // Trading closes with the reserve at the target, so the pool's share of it must be positive.
@@ -819,9 +815,9 @@ public fun claim_protocol_fees_with_partner<Meme, Quote>(
     self.protocol_fees.pay_with_partner(treasury, partner, ctx);
 }
 
-/// Pays every project recipient, accrues Blast's one-time Meme and Quote fee in the launch ledger,
-/// burns the curve's unsold Meme and pending sell-burn (or sends them to `@0x0` when the supply is
-/// fixed), and returns the hand-off only the stored venue can redeem: the pool's share and the
+/// Pays every project recipient, outright or into its vesting schedule starting now, accrues
+/// Blast's one-time Meme and Quote fee in the launch ledger, burns the curve's unsold Meme and
+/// pending sell-burn (or sends them to `@0x0` when the supply is fixed), and returns the hand-off only the stored venue can redeem: the pool's share and the
 /// vault's terms, with Blast's applied LP-fee share and the migration residuals paid to Blast.
 /// Anyone may call it; an unredeemed hand-off aborts the transaction.
 public fun migrate<Meme, Quote>(
@@ -829,6 +825,7 @@ public fun migrate<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<Meme>,
+    clock: &Clock,
     ctx: &mut TxContext,
 ): Migration<Meme, Quote> {
     package_version.assert_current(constants::generation!());
@@ -852,13 +849,18 @@ public fun migrate<Meme, Quote>(
         .apportion_quote(self
         .real_quote_reserve
         .value());
-    let destinations = plan.destinations();
+    let payees = plan.payees();
 
-    destinations.length().do!(|i| {
-        let (destination, meme, quote) = (destinations[i], recipient_meme[i], recipient_quote[i]);
-        self.allocated_meme.pay(meme, destination, ctx);
-        self.real_quote_reserve.pay(quote, destination, ctx);
-        events::migration_allocation_paid<Meme, Quote>(self.id.to_inner(), destination, meme, quote);
+    payees.length().do!(|i| {
+        let (payee, meme, quote) = (&payees[i], recipient_meme[i], recipient_quote[i]);
+        payout::pay_or_vest(&mut self.allocated_meme, meme, payee, clock, ctx);
+        payout::pay_or_vest(&mut self.real_quote_reserve, quote, payee, clock, ctx);
+        events::migration_allocation_paid<Meme, Quote>(
+            self.id.to_inner(),
+            payee.destination(),
+            meme,
+            quote,
+        );
     });
 
     self
@@ -1259,6 +1261,7 @@ use blast_core::{
     fee_split::FeeSplit,
     migration::{Self, Migration, VenueTicket},
     owner_proof::{Self, OwnerProof},
+    payout,
     protocol_fees::{Self, Ledger}
 };
 

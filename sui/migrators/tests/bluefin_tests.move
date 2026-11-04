@@ -169,9 +169,9 @@ fun a_launch_prepared_at_bluefin_hands_off_only_to_bluefin() {
     f.next_tx(launch_fixture::buyer());
     let mut launch = f.take_launch<BLUEFIN_TESTS, QUOTE>(launch_id);
     let mut currency = f.take_currency<BLUEFIN_TESTS>();
-    let (version, config, _, _, _, ctx) = f.migration_inputs();
+    let (version, config, _, _, _, clock, ctx) = f.migration_inputs();
     let (_meme, _quote, _terms) = launch
-        .migrate(version, config, &mut currency, ctx)
+        .migrate(version, config, &mut currency, clock, ctx)
         .redeem(OtherVenue());
 
     abort EUnexpectedSuccess

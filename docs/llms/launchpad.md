@@ -88,8 +88,10 @@ constructors in the same PTB:
 
 - `blast_core::bps::Bps`: a rate from 0 to 10,000 basis points, built by `blast_core::bps::new`
   (aborts above 10,000).
-- `allocation::Recipient` (`allocation::recipient`) and `allocation::AllocationPlan`
-  (`allocation::plan`): the migration split of the supply and the final Quote.
+- `allocation::Recipient` (`allocation::recipient`, wrapping a `blast_core::payout::Recipient`
+  from `blast_core::payout::recipient`, paid outright or under `blast_core::payout::VestingTerms`)
+  and `allocation::AllocationPlan` (`allocation::plan`): the migration split of the supply and the
+  final Quote.
 - `blast_core::fee_split::FeeSplit` (`blast_core::fee_split::new`), from
   `blast_core::fee_split::Route` values (`blast_core::fee_split::route`), each naming a
   `blast_core::fee_split::Destination` (see Flow 3, step 6).
@@ -171,7 +173,7 @@ the publisher. It exposes no public functions. Patch these constants in the comp
 
 | Constant | Meaning | Checked |
 | --- | --- | --- |
-| `SYMBOL` | coin symbol | ASCII printable (Coin Registry); at most 32 bytes at finalization |
+| `SYMBOL` | coin symbol | ASCII printable (Coin Registry) |
 | `NAME`, `DESCRIPTION`, `ICON_URL` | coin metadata | valid UTF-8; changeable later with the metadata cap |
 | `DECIMALS` | coin decimals | must be admitted in `LaunchConfig` when the launch starts; default admitted set is 6 and 9 |
 | `BURNABLE` | `true`: supply becomes burn-only; `false`: supply becomes fixed | none |
@@ -239,8 +241,11 @@ initializer, and the launch are values returned by earlier commands of the same 
    in Quote atomic units. Required, non-zero. It sets the opening price.
 4. `launch::set_graduation_target` with the initializer and a `u64`: the real Quote reserve at which
    trading closes. Required.
-5. Build the allocation plan: one `blast_core::bps::new` per share; one `allocation::recipient` per
-   project recipient (address, Meme share, Quote share); a `MakeMoveVec` of type
+5. Build the allocation plan: one `blast_core::bps::new` per share; per project recipient, one
+   `blast_core::payout::recipient` (a non-zero address and `Option<VestingTerms>`: `None` pays
+   outright, `Some` from `blast_core::payout::vesting_terms` locks the allocation in a linear
+   schedule starting at migration) and one `allocation::recipient` (that payee, Meme share, Quote
+   share); a `MakeMoveVec` of type
    `allocation::Recipient` (may be empty); then `allocation::plan` with the curve Meme share, pool
    Meme share, pool Quote share, and the vector. Pass it to `launch::set_allocation_plan`. Required.
 6. Build the LP-fee split. For each route, build a destination with
@@ -401,8 +406,11 @@ the transaction fail. `launch::migrate`:
    `MigrationReady`.
 2. Apportions the Meme supply and the final real Quote reserve by the allocation plan (see
    Economics).
-3. Pays every project recipient its Meme and Quote as coins (zero amounts are skipped) and emits
-   `blast_fun::events::MigrationAllocationPaid` for each recipient.
+3. Pays every project recipient its Meme and Quote through `blast_core::payout::pay_or_vest`: as
+   coins, or into one shared `blast_fun_vesting::blast_fun_linear_vesting::Vesting` per asset
+   starting now for a vesting recipient (zero amounts are skipped). It emits
+   `blast_fun::events::MigrationAllocationPaid` for each recipient. The venue's migrate passes the
+   `Clock`.
 4. Moves Blast's one-time Meme and Quote allocation into the launch's fee ledger and, when either is
    non-zero, emits `blast_fun::events::ProtocolFeesAccrued`.
 5. Disposes of the curve's unsold Meme plus `pending_burn`: burned through the Coin Registry when
@@ -448,10 +456,11 @@ requested state.
   each asset in the LP fees of vaults created afterward, each at most 3,000 (30%). Vaults already
   created keep the share they started with.
 - `launch_config::add_partner` (FeeAdmin), with a `Partner`: new launches may name it at once;
-  cancels a pending removal. Emits `blast_fun::events::PartnerAdded`.
+  cancels a pending removal. The config's `blast_partners::partner_list::PartnerList` emits
+  `blast_partners::partner_list::PartnerAdded` with the config as `owner`.
 - `launch_config::remove_partner` (FeeAdmin), with a `Partner` and `Clock`: new launches may still
   name it for `blast_partners::blast_partners::delay_ms` (seven days); launches that already name it
-  keep paying it. Emits `blast_fun::events::PartnerRemoved`.
+  keep paying it. Emits `blast_partners::partner_list::PartnerRemoved`.
 - `runtime_config::schedule_protocol_fee_share` (FeeAdmin), with a `Bps`: Blast's share of every trade
   fee on every launch, from the next trade; at most 7,000 (70%), so the creator keeps at least 30%.
 - The treasury address is `blast_core::blast_treasury::Treasury`'s, shared by every product and
@@ -698,8 +707,8 @@ All times are `Clock` milliseconds.
   end, a join aborts and settlement succeeds. Settlement is never possible before share. Length is 0
   or 60,000 to 300,000 ms.
 - Account claims: accepted while `now <= expiry_ms`.
-- Partner acceptance: `launch::set_partner` needs `now < accepted_until_ms`; removal sets
-  `accepted_until_ms = now + 7 days`, and `launch_config::add_partner` restores `u64::MAX`.
+- Partner acceptance: `launch::set_partner` needs the partner list to accept it now; removal keeps
+  it accepted until `now + 7 days` (exclusive), and `launch_config::add_partner` accepts it again.
 - Trades, claims, deliveries, and migration have no deadline.
 - Snapshots: the trade fees at `launch::new`; the migration allocation and the creation fee at
   `launch::finalize`; Blast's LP-fee share at migration. `protocol_fee_share_bps`, the core treasury
@@ -750,7 +759,8 @@ by the Quote `TypeName` with original IDs), `venues`, and the delayed `trade_fee
 `protocol_allocation`, `protocol_lp_fees` (`meme_bps`, `quote_bps`), and `creation_fee` (MIST).
 `venues` is a `delayed_set::DelayedSet`: `members` holds the admitted venue type names, `delay_ms`
 the applied admission notice, and `admissions` each pending type's `delay_ms` and `ready_at_ms`.
-Accepted partners are dynamic fields `launch_config::PartnerKey(ID)` holding `accepted_until_ms`.
+Accepted partners are the config's `partners` field, a `blast_partners::partner_list::PartnerList`
+(see the partners guide).
 `RuntimeConfig` holds `creator_claim_signers` (a `DelayedSet` of keys) and
 `protocol_fee_share_bps`; `blast_core::blast_treasury::destination` reads the treasury address.
 A `Bps` is a positional struct wrapping one `u64`. Preview a trade exactly by dev-inspecting `launch::buy` or `launch::sell` against the live launch.
@@ -784,7 +794,8 @@ carry the transaction sender; take it from the transaction.
 | `blast_fun::events::Migrated` | migration | `meme_amount`, `quote_amount` handed to the venue for the pool, `disposed_meme`, `total_supply_after` |
 
 Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSet`,
-`blast_fun::events::PartnerAdded`, `blast_fun::events::PartnerRemoved`. From other packages: the
+and the partner list's `blast_partners::partner_list::PartnerAdded` and
+`blast_partners::partner_list::PartnerRemoved`. From other packages: the
 pause and version events of `blast_admin::blast_admin_events`, the delayed modules' events (see "Delayed administration"), the Cetus venue's
 `blast_fun_migrators::blast_events::CetusPoolReserved` at creation, the vault's
 `blast_vault_events::VaultCreated` at migration, and `blast_partners::blast_partners::PartnerPaid`
@@ -793,47 +804,49 @@ for each partner payout.
 ### Aborts
 
 Launchpad aborts carry a numeric code from `blast_fun::errors`; the abort location is the module
-that detected it. Pause, version, and upgrade aborts come from `blast_admin` and fee-payout aborts
-from `blast_core`.
+that detected it. Pause, version, and upgrade aborts come from `blast_admin`, recipient and
+fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partners`.
 
 | Flow | Code, constant (module) | Fix |
 | --- | --- | --- |
 | any | 9 in `blast_admin::operational_version` | call the launchpad's current package ID |
 | pause, unpause | 23 `EInvalidPauseBits`, 24 `EPauseUnchanged` from `blast_admin::package_version` | select nonzero supported bits that change the active mask |
 | create, buy, sell, join, settle, migrate | 25 `blast_admin::errors::EPaused` (`package_version`) | wait for an `UnpauseAdmin<BLAST_FUN>` to clear the operation's bit |
-| unpause | 35 `blast_fun::errors::EUnguardedNotice` (`launch_config`); 27 `EUnguardedUpgradeNotice` from `blast_admin::package_admin` | make every notice nonzero, cancel proposals that would zero one, settle pending admissions |
+| unpause | 32 `blast_fun::errors::EUnguardedNotice` (`launch_config`); 27 `EUnguardedUpgradeNotice` from `blast_admin::package_admin` | make every notice nonzero, cancel proposals that would zero one, settle pending admissions |
 | package administration | 26 `EWrongUpgradeAction`, 13 `EInvalidPackageDigest` from `blast_admin::package_admin` | execute the exact scheduled action; use a 32-byte digest |
 | delayed administration | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin's delayed modules | wait for `ready_at_ms`; schedule before applying or cancelling; choose a notice of at most 30 days; change the value or notice; apply with the call matching the pending change |
-| publish | 8 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 22 `blast_fun::errors::EInvalidCreatorRecipient`, 23 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
+| publish | 7 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 20 `blast_fun::errors::EInvalidCreatorRecipient`, 21 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | prepare | `blast_fun_migrators::bluefin::EInvalidTier`; Cetus aborts in its own modules | a tier within Bluefin's bounds; a tick spacing Cetus registers and a pair it accepts |
-| start | 10 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
-| start | 29 `blast_fun::errors::EQuoteNotAllowed`, 2 `blast_fun::errors::EVenueNotAllowed`, 1 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, venue, and decimals |
-| building values | 0 `blast_core::errors::EInvalidBps` (`blast_core::bps`); 3 `blast_core::errors::EInvalidRoute`, 4 `blast_core::errors::EInvalidFeeSplit` (`blast_core::fee_split`); 5 `blast_fun::errors::EInvalidDestination`, 6 `blast_fun::errors::EInvalidShares` (`allocation`) | rates at most 10,000; positive route shares and non-zero addresses; at most 20 distinct routes summing to 10,000; curve Meme and pool Meme/Quote positive |
+| start | 9 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
+| start | 27 `blast_fun::errors::EQuoteNotAllowed`, 2 `blast_fun::errors::EVenueNotAllowed`, 1 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, venue, and decimals |
+| building values | 0 `blast_core::errors::EInvalidBps` (`blast_core::bps`); 3 `blast_core::errors::EInvalidRoute`, 4 `blast_core::errors::EInvalidFeeSplit` (`blast_core::fee_split`); 12 `blast_core::errors::EInvalidRecipient` (`blast_core::payout`); 2 `blast_core::errors::EInvalidVestingTerms` (`blast_core::payout`); 5 `blast_fun::errors::EInvalidShares` (`allocation`) | rates at most 10,000; positive route shares and non-zero addresses; at most 20 distinct routes summing to 10,000; positive vesting periods; curve Meme and pool Meme/Quote positive |
 | finalize | `std::option` `EOPTION_NOT_SET` | set the virtual Quote, target, plan, and LP-fee split |
-| finalize | 32 `blast_fun::errors::EInvalidCreationFee`, 30 `blast_fun::errors::EInvalidVirtualQuote`, 12 `blast_fun::errors::EInvalidOpeningRound`, 11 `blast_fun::errors::EMemeSymbolTooLong`, 13 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; symbol at most 32 bytes; target big enough that the pool's Quote share is at least 1 |
-| finalize | 6 `blast_fun::errors::EInvalidShares`, 7 `blast_fun::errors::ERecipientCapacityReached` (`allocation`) | plan plus Blast's allocation must sum to 10,000 per asset; at most 16 recipients |
-| finalize | 9 `blast_fun::errors::EInvalidInitialMemeSupply`, 8 (`launch_ticket`) | an untouched supply (nothing minted or burned with the `TreasuryCap`); sell-burn at most 5,000 |
-| set partner | 33 `blast_fun::errors::EPartnerNotAccepted` (`launch_config`) | name a partner `LaunchConfig` accepts now |
-| buy, sell | 14 `blast_fun::errors::EInvalidLaunchLifecycle` (`launch`) | trade only while `Live`; sell only after share |
-| buy | 16 `blast_fun::errors::EZeroTradeOutput`, 15 `blast_fun::errors::ESlippageExceeded` (`launch`) | larger input; lower `min_meme_out` or re-quote |
-| sell | 16 (`curve`), 15 (`launch`) | larger input; lower `min_quote_out` |
-| join | 14, 17 `blast_fun::errors::EOpeningRoundEnded`, 31 `blast_fun::errors::EZeroOpeningRoundBid` (`launch`) | join during the round with a non-zero coin |
-| settle | 14, 18 `blast_fun::errors::EOpeningRoundNotEnded` (`launch`) | wait for the end; settle once |
-| deliver | 14 (`launch`); `sui::dynamic_field` code 1 | settle first; the address has no undelivered bid |
-| creator claim | 14 (`launch`) before share; `std::option` `EOPTION_NOT_SET` when already claimed or reassigned, or when an account claim passes `None` | claim once, after share |
-| creator claim | 27 `blast_fun::errors::ECreatorNotSender`, 25 `blast_fun::errors::EInvalidCreatorClaimAttestation`, 26 `blast_fun::errors::ECreatorClaimExpired`, 28 `blast_fun::errors::EInvalidCreatorClaimSignature` (`creator_authority`); a truncated attestation aborts in `sui::bcs` | send from the recipient address with `None`, or a fresh, well-formed attestation for this sender |
-| creator fees, owner proof, metadata | 20 `blast_fun::errors::ECreatorCapNotLive` (`launch`); 19 `blast_fun::errors::ENothingAccrued` (`launch`); 21 `blast_fun::errors::EUnchanged` (`launch`) | use the live cap; wait for fees; pass a new value |
+| finalize | 30 `blast_fun::errors::EInvalidCreationFee`, 28 `blast_fun::errors::EInvalidVirtualQuote`, 10 `blast_fun::errors::EInvalidOpeningRound`, 11 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; target big enough that the pool's Quote share is at least 1 |
+| finalize | 5 `blast_fun::errors::EInvalidShares`, 6 `blast_fun::errors::ERecipientCapacityReached` (`allocation`) | plan plus Blast's allocation must sum to 10,000 per asset; at most 16 recipients |
+| finalize | 8 `blast_fun::errors::EInvalidInitialMemeSupply`, 7 (`launch_ticket`) | an untouched supply (nothing minted or burned with the `TreasuryCap`); sell-burn at most 5,000 |
+| set partner | 4 `blast_partners::errors::EPartnerNotAccepted` (`blast_partners::partner_list`) | name a partner `LaunchConfig` accepts now |
+| buy, sell | 12 `blast_fun::errors::EInvalidLaunchLifecycle` (`launch`) | trade only while `Live`; sell only after share |
+| buy | 14 `blast_fun::errors::EZeroTradeOutput`, 13 `blast_fun::errors::ESlippageExceeded` (`launch`) | larger input; lower `min_meme_out` or re-quote |
+| sell | 14 (`curve`), 13 (`launch`) | larger input; lower `min_quote_out` |
+| join | 12, 15 `blast_fun::errors::EOpeningRoundEnded`, 29 `blast_fun::errors::EZeroOpeningRoundBid` (`launch`) | join during the round with a non-zero coin |
+| settle | 12, 16 `blast_fun::errors::EOpeningRoundNotEnded` (`launch`) | wait for the end; settle once |
+| deliver | 12 (`launch`); `sui::dynamic_field` code 1 | settle first; the address has no undelivered bid |
+| creator claim | 12 (`launch`) before share; `std::option` `EOPTION_NOT_SET` when already claimed or reassigned, or when an account claim passes `None` | claim once, after share |
+| creator claim | 25 `blast_fun::errors::ECreatorNotSender`, 23 `blast_fun::errors::EInvalidCreatorClaimAttestation`, 24 `blast_fun::errors::ECreatorClaimExpired`, 26 `blast_fun::errors::EInvalidCreatorClaimSignature` (`creator_authority`); a truncated attestation aborts in `sui::bcs` | send from the recipient address with `None`, or a fresh, well-formed attestation for this sender |
+| creator fees, owner proof, metadata | 18 `blast_fun::errors::ECreatorCapNotLive` (`launch`); 17 `blast_fun::errors::ENothingAccrued` (`launch`); 19 `blast_fun::errors::EUnchanged` (`launch`) | use the live cap; wait for fees; pass a new value |
 | Blast launch-fee claim | 7 `blast_core::errors::EPartnerMismatch` (`blast_core::protocol_fees`) | use the call that matches `partner_id`, with that partner |
-| migrate | 14 (`launch`) | migrate only a `MigrationReady` launch |
+| migrate | 12 (`launch`) | migrate only a `MigrationReady` launch |
 | migrate | 8 `blast_core::errors::EWrongVenue` (`blast_core::migration`), or a missing tier in `sui::dynamic_field` | call the migrate of the venue the launch stores |
 
 Admin setters also abort with 0 `blast_fun::errors::EInvalidTradeFeeBps`, 3
-`blast_fun::errors::EInvalidVenue`, 4 `blast_fun::errors::EInvalidProtocolAllocation`, 37
-`blast_fun::errors::EInvalidLpFeeBps`, 36 `blast_fun::errors::EInvalidProtocolFeeShare`, 32
-(creation fee above 10 SUI), 22 (zero reassignment recipient), 24
-`blast_fun::errors::EInvalidCreatorClaimPublicKey`, 34 `blast_fun::errors::ETooManyClaimSigners`,
-33 (removing a partner not accepted now), or 21 (adding an accepted partner, or removing one already
-being removed); and in `blast_acl::sign_in` when the cap is not a live admin cap or lacks the role.
+`blast_fun::errors::EInvalidVenue`, 4 `blast_fun::errors::EInvalidProtocolAllocation`, 34
+`blast_fun::errors::EInvalidLpFeeBps`, 33 `blast_fun::errors::EInvalidProtocolFeeShare`, 30
+(creation fee above 10 SUI), 20 (zero reassignment recipient), 22
+`blast_fun::errors::EInvalidCreatorClaimPublicKey`, 31 `blast_fun::errors::ETooManyClaimSigners`;
+with `blast_partners::errors::EPartnerNotAccepted` (removing a partner not accepted now) or
+`blast_partners::errors::EUnchanged` (adding an accepted partner, or removing one already being
+removed) from `blast_partners::partner_list`; and in `blast_acl::sign_in` when the cap is not a
+live admin cap or lacks the role.
 
 ### Pitfalls
 
