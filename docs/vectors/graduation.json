@@ -22,8 +22,8 @@
   "parameters": {
     "basis_points_denominator": 10000,
     "maximum_migration_channels": 16,
-    "maximum_protocol_meme_bps": 9998,
-    "maximum_protocol_quote_bps": 9999
+    "maximum_protocol_meme_bps": 1000,
+    "maximum_protocol_quote_bps": 1000
   },
   "policy": {
     "owner": "LaunchConfig",
@@ -315,8 +315,8 @@
         "protocol_policy": {
           "channel_id": "2",
           "destination": "0x2",
-          "meme_bps": 9998,
-          "quote_bps": 9999
+          "meme_bps": 1000,
+          "quote_bps": 1000
         },
         "channels": [
           {
@@ -333,25 +333,25 @@
         "meme_weights": [
           {
             "channel_id": "2",
-            "bps": 9998
+            "bps": 1000
           },
           {
             "channel_id": "0",
-            "bps": 1
+            "bps": 4500
           },
           {
             "channel_id": "1",
-            "bps": 1
+            "bps": 4500
           }
         ],
         "quote_weights": [
           {
             "channel_id": "2",
-            "bps": 9999
+            "bps": 1000
           },
           {
             "channel_id": "1",
-            "bps": 1
+            "bps": 9000
           }
         ]
       },
@@ -363,33 +363,33 @@
         "meme_allocations": [
           {
             "channel_id": "0",
-            "amount": "1"
+            "amount": "4500"
           },
           {
             "channel_id": "1",
-            "amount": "1"
+            "amount": "4500"
           },
           {
             "channel_id": "2",
-            "amount": "9998"
+            "amount": "1000"
           }
         ],
         "quote_allocations": [
           {
             "channel_id": "1",
-            "amount": "1"
+            "amount": "9000"
           },
           {
             "channel_id": "2",
-            "amount": "9999"
+            "amount": "1000"
           }
         ],
         "protocol_paid_at_migration": {
-          "meme": "9998",
-          "quote": "9999"
+          "meme": "1000",
+          "quote": "1000"
         }
       },
-      "notes": "The policy maxima preserve one positive BPS for Quote liquidity and one positive BPS each for the Meme curve and liquidity channel."
+      "notes": "The policy maxima: Blast takes 1,000 BPS of each asset, the most launch configuration admits."
     },
     {
       "name": "maximum_u64_width",

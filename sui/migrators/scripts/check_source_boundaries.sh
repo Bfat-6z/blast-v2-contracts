@@ -1227,13 +1227,18 @@ package_admin_body() {
     && [[ "$(move_production_type CoinSharesKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct CoinSharesKey() has copy, drop, store;' ]] || \
     fail "LpFeePolicy must store its destination and defaults as keyed Delayed values and its per-coin overrides as one keyed DelayedMap"
 [[ "$(policy_body new)" == 'assert!(destination!=@0x0,EInvalidProtocolDestination);letid=object::new(ctx);LpFeePolicy{destination:delayed::new(ProtocolDestinationKey(),&id,destination,delay_ms),defaults:delayed::new(DefaultSharesKey(),&id,defaults,delay_ms),coins:delayed_map::new(CoinSharesKey(),&id,delay_ms,ctx),id,}' ]] \
-    && [[ "$(policy_body schedule_coin_shares)" == 'migrators_version.assert_current();letmeme=type_name::with_original_ids<Meme>();self.coins.schedule(meme,option::some(SharePair{meme_bps,quote_bps}),clock);' ]] \
+    && [[ "$(policy_body schedule_coin_shares)" == 'migrators_version.assert_current();letmeme=type_name::with_original_ids<Meme>();self.coins.schedule(meme,option::some(share_pair(meme_bps,quote_bps)),clock);' ]] \
+    && [[ "$(policy_body schedule_default_shares)" == 'migrators_version.assert_current();self.defaults.schedule(share_pair(meme_bps,quote_bps),delay_ms,clock);' ]] \
+    && [[ "$(policy_body share_pair)" == 'assert!(meme_bps.value()<=MAX_SHARE_BPS&&quote_bps.value()<=MAX_SHARE_BPS,EInvalidShares);SharePair{meme_bps,quote_bps}' ]] \
     && [[ "$(policy_body schedule_clear_coin_shares)" == 'migrators_version.assert_current();self.coins.schedule(type_name::with_original_ids<Meme>(),option::none(),clock);' ]] \
     && [[ "$(policy_body schedule_coin_shares_delay)" == 'migrators_version.assert_current();self.coins.schedule_delay(delay_ms,clock);' ]] \
     && [[ "$(policy_body schedule_protocol_destination)" == 'migrators_version.assert_current();assert!(destination!=@0x0,EInvalidProtocolDestination);self.destination.schedule(destination,delay_ms,clock);' ]] || \
-    fail "the policy must own its keyed values, open the coin overrides at its publication notice, propose every override and clear under their own notice, and validate the destination before proposing"
-require_errors "$LP_FEE_POLICY_SOURCE" "lp_fee_policy must use code 0 for its destination check" <<'EOF'
+    fail "the policy must own its keyed values, open the coin overrides at its publication notice, propose every override and clear under their own notice, cap every share pair through share_pair, and validate the destination before proposing"
+grep -Fxq 'const MAX_SHARE_BPS: u64 = 3_000;' "$LP_FEE_POLICY_SOURCE" \
+    || fail "lp_fee_policy must cap each Blast LP-fee share at 3,000 bps"
+require_errors "$LP_FEE_POLICY_SOURCE" "lp_fee_policy must use codes 0-1 for its destination and share checks" <<'EOF'
 0 EInvalidProtocolDestination Protocol destination must be a nonzero address.
+1 EInvalidShares Each Blast LP-fee share must be at most 3,000 bps (30%).
 EOF
 [[ "$(move_production_type PackageAdmin <<<"$PACKAGE_ADMIN_FACTS")" \
     == 'struct PackageAdmin has key { id: UID, custody: UpgradeCustody<BLAST_FUN_MIGRATORS>, upgrade: DelayedAction<UpgradeKey, UpgradeAction>, }' ]] \

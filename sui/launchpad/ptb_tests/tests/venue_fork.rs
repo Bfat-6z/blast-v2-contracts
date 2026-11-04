@@ -91,8 +91,8 @@ const ADMIN_ROLES: [&str; 7] =
 /// Blast's default LP-fee share, then per-coin overrides for the forked Meme.
 const DEFAULT_SHARES: (u64, u64) = (1_000, 500);
 const COIN_SHARES: (u64, u64) = (2_500, 1_500);
-/// A per-coin share that leaves only 0.01% of the Meme fees to split.
-const TINY_SHARES: (u64, u64) = (9_999, 1_500);
+/// A per-coin share at Blast's 30% LP-fee cap.
+const TINY_SHARES: (u64, u64) = (3_000, 1_500);
 
 // Addresses.
 const DESTINATION: ObjectID = address(&[0xD5]);
@@ -292,18 +292,23 @@ fn run(case: Case) -> Result<()> {
     ensure!(c.added.is_some(), "two-sided auto-LP must add");
     w.report(format!("collect two-sided, default share: {}", c.line()));
 
-    // Tiny: a per-coin share that leaves Blast all but 0.01% of the Meme fees applies from the
-    // next collection, whose few Meme atoms of auto-LP cannot carry any venue liquidity.
+    // Tiny: a per-coin share at the cap applies from the next collection. Bluefin accepts a swap
+    // so small that the Meme left to auto-LP cannot carry any venue liquidity, so auto-LP waits.
+    // Cetus rejects a swap that pays out nothing, and at this pool price the smallest swap it
+    // accepts leaves auto-LP enough Meme to add even beside one waiting Quote atom; there the
+    // smallest collectable auto-LP is added.
     w.set_coin_shares(&launch, TINY_SHARES)?;
-    let tiny = LP_MEME / w.lp_quote() * 20;
+    let tiny = if w.case.is_cetus() { LP_MEME / w.lp_quote() * 2 } else { LP_MEME / w.lp_quote() * 20 / 7_000 };
     w.swap(&launch, &m, Side::MemeIn, tiny)?;
     let c = w.collect(&launch, &mut m, None)?;
     let vault = w.vault(&m)?;
-    ensure!(
-        c.fees.auto_lp_meme > 0 && vault.auto_lp_meme > 0 && vault.auto_lp_quote > 0,
-        "tiny Meme and waiting Quote"
-    );
-    ensure!(c.added.is_none(), "tiny auto-LP must wait");
+    ensure!(c.fees.auto_lp_meme > 0, "the swap left Meme for auto-LP");
+    if w.case.is_cetus() {
+        ensure!(c.added.is_some(), "Cetus adds the smallest collectable auto-LP");
+    } else {
+        ensure!(vault.auto_lp_meme > 0 && vault.auto_lp_quote > 0, "tiny Meme and waiting Quote");
+        ensure!(c.added.is_none(), "tiny auto-LP must wait");
+    }
     w.report(format!(
         "collect tiny, per-coin share {TINY_SHARES:?}, {tiny} Meme swapped: {} pending=({}, {})",
         c.line(),

@@ -44,6 +44,7 @@ fun trade_and_fee_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::zero_trade_output!(), 17);
     assert_eq!(blast_fun::errors::nothing_accrued!(), 20);
     assert_eq!(blast_fun::errors::partner_mismatch!(), 37);
+    assert_eq!(blast_fun::errors::invalid_protocol_fee_share!(), 45);
 }
 
 #[test]

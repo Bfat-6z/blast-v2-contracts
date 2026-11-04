@@ -57,8 +57,8 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Sets Blast's fee share of future launches' Meme supply and final Quote reserve. The shares
-/// leave room for the curve and the pool; finalized launches keep their snapshotted shares.
+/// Sets Blast's fee share of future launches' Meme supply and final Quote reserve, each at most
+/// 1,000 bps; finalized launches keep their snapshotted shares.
 /// Schedules protocol allocation after the full administrative delay.
 public fun schedule_protocol_allocation(
     self: &mut LaunchConfig,
@@ -70,11 +70,6 @@ public fun schedule_protocol_allocation(
     clock: &Clock,
 ) {
     package_version.assert_current();
-
-    assert!(
-        meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999,
-        blast_fun::errors::invalid_protocol_allocation!()
-    );
 
     let value = allocation::protocol_allocation(meme_bps, quote_bps);
     self.protocol_allocation.schedule(value, delay_ms, clock);
@@ -178,7 +173,7 @@ public fun cancel_trade_fees(
     self.trade_fees.cancel();
 }
 
-/// Sets the SUI, in MIST, every launch created afterward pays.
+/// Sets the SUI, in MIST, every launch created afterward pays; at most 10 SUI.
 /// Schedules creation fee after the full administrative delay.
 public fun schedule_creation_fee(
     self: &mut LaunchConfig,
@@ -190,6 +185,10 @@ public fun schedule_creation_fee(
 ) {
     package_version.assert_current();
 
+    assert!(
+        creation_fee <= constants::max_creation_fee_mist!(),
+        blast_fun::errors::invalid_creation_fee!(),
+    );
     self.creation_fee.schedule(creation_fee, delay_ms, clock);
 }
 

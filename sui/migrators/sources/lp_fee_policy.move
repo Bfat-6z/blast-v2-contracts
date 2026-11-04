@@ -15,6 +15,9 @@ module blast_fun_migrators::lp_fee_policy;
 /// shares are compiled, so no setup needs a zero notice.
 const INITIAL_POLICY_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
+/// Blast's largest share of a vault's collected LP fees, per asset: 30%.
+const MAX_SHARE_BPS: u64 = 3_000;
+
 // === Public Types ===
 
 /// Shared singleton holding independent Meme/Quote Blast shares and the address every vault pays
@@ -36,7 +39,8 @@ public struct DefaultSharesKey() has copy, drop, store;
 /// Keys the per-coin share overrides' delayed lifecycle; each event names its coin.
 public struct CoinSharesKey() has copy, drop, store;
 
-/// Atomic pair of validated shares; a per-coin entry always replaces both assets together.
+/// Atomic pair of shares, each at most `MAX_SHARE_BPS`; a per-coin entry always replaces both
+/// assets together.
 public struct SharePair has copy, drop, store {
     meme_bps: Bps,
     quote_bps: Bps,
@@ -47,7 +51,7 @@ public struct SharePair has copy, drop, store {
 fun init(ctx: &mut TxContext) {
     transfer::share_object(new(
         @blast_lp_fee_destination,
-        SharePair { meme_bps: bps::new(1_500), quote_bps: bps::new(1_500) },
+        share_pair(bps::new(1_500), bps::new(1_500)),
         INITIAL_POLICY_DELAY_MS,
         ctx,
     ));
@@ -107,7 +111,7 @@ public fun schedule_default_shares(
 ) {
     migrators_version.assert_current();
 
-    self.defaults.schedule(SharePair { meme_bps, quote_bps }, delay_ms, clock);
+    self.defaults.schedule(share_pair(meme_bps, quote_bps), delay_ms, clock);
 }
 
 /// Applies the scheduled default shares permissionlessly once ready.
@@ -145,7 +149,7 @@ public fun schedule_coin_shares<Meme>(
     migrators_version.assert_current();
 
     let meme = type_name::with_original_ids<Meme>();
-    self.coins.schedule(meme, option::some(SharePair { meme_bps, quote_bps }), clock);
+    self.coins.schedule(meme, option::some(share_pair(meme_bps, quote_bps)), clock);
 }
 
 /// Proposes returning this coin to the defaults. Removing an override may increase fees
@@ -235,6 +239,13 @@ public(package) fun shares<Meme>(self: &LpFeePolicy): (Bps, Bps) {
 }
 
 // === Private Functions ===
+
+/// Builds a pair only when both shares are within Blast's cap.
+fun share_pair(meme_bps: Bps, quote_bps: Bps): SharePair {
+    assert!(meme_bps.value() <= MAX_SHARE_BPS && quote_bps.value() <= MAX_SHARE_BPS, EInvalidShares);
+
+    SharePair { meme_bps, quote_bps }
+}
 
 /// Initializes the explicit genesis destination; an unset destination prevents publication.
 fun new(
@@ -338,7 +349,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 public fun share_zero_notice_for_testing(ctx: &mut TxContext) {
     transfer::share_object(new(
         @blast_lp_fee_destination,
-        SharePair { meme_bps: bps::new(1_500), quote_bps: bps::new(1_500) },
+        share_pair(bps::new(1_500), bps::new(1_500)),
         0,
         ctx,
     ));
@@ -349,7 +360,7 @@ public fun share_zero_notice_for_testing(ctx: &mut TxContext) {
 public fun new_zero_fees_for_testing(ctx: &mut TxContext): LpFeePolicy {
     new(
         ctx.sender(),
-        SharePair { meme_bps: bps::new(0), quote_bps: bps::new(0) },
+        share_pair(bps::new(0), bps::new(0)),
         172_800_000,
         ctx,
     )
@@ -360,7 +371,7 @@ public fun new_zero_fees_for_testing(ctx: &mut TxContext): LpFeePolicy {
 public fun init_zero_fees_for_testing(ctx: &mut TxContext) {
     transfer::share_object(new(
         @blast_lp_fee_destination,
-        SharePair { meme_bps: bps::new(0), quote_bps: bps::new(0) },
+        share_pair(bps::new(0), bps::new(0)),
         0,
         ctx,
     ));
@@ -382,6 +393,9 @@ public fun default_shares_for_testing(self: &LpFeePolicy): (Bps, Bps) {
 
 #[error(code = 0)]
 const EInvalidProtocolDestination: vector<u8> = b"Protocol destination must be a nonzero address.";
+
+#[error(code = 1)]
+const EInvalidShares: vector<u8> = b"Each Blast LP-fee share must be at most 3,000 bps (30%).";
 
 // === Imports ===
 

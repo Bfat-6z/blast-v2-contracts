@@ -43,6 +43,21 @@ macro public(package) fun max_launch_fee_bps(): u64 {
     1_000
 }
 
+/// Maximum Blast allocation of a launch's Meme supply or final Quote reserve, each asset.
+macro public(package) fun max_protocol_allocation_bps(): u64 {
+    1_000
+}
+
+/// Maximum Blast share of each launch trade fee; the creator receives the rest.
+macro public(package) fun max_protocol_fee_share_bps(): u64 {
+    7_000
+}
+
+/// Maximum creation fee, in MIST (10 SUI).
+macro public(package) fun max_creation_fee_mist(): u64 {
+    10_000_000_000
+}
+
 /// Maximum creator-selected share of post-fee Meme sell input reserved for burn.
 macro public(package) fun max_sell_burn_bps(): u64 {
     5_000

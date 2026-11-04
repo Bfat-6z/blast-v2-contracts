@@ -281,10 +281,10 @@ reference. Each admin call names exactly one role in its signature:
 A role from another package, such as `blast_fun_domain::FeeAdmin`, is a different type and
 cannot reach these calls. PauseAdmin may freeze creation, commitments or migration. No admin may cancel a sale, move commitments, change windows, recipients, or the fee split. Its
 power over a live sale is limited to: its Blast rates before the window starts, its vault's Blast
-LP-fee rates (anything from 0 to 10,000 BPS), the fee destination, and how the vault's
+LP-fee rates (from 0 to 3,000 BPS), the fee destination, and how the vault's
 holder-reward share is distributed. A holder-reward round waits its vault's round notice after
-`RewardsAdmin` schedules it; the notice starts at zero, so until `RewardsAdmin` raises it a round
-can be scheduled and published in one transaction and a compromised `RewardsAdmin` is not delayed.
+`RewardsAdmin` schedules it; the notice starts at two hours, so `CancelAdmin` can stop a bad
+round before anyone publishes it.
 
 ### Lifecycle
 
@@ -888,10 +888,10 @@ Integrators cannot call these; they explain state changes. Each takes the
 
 | Call | Effect |
 | --- | --- |
-| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise rate < 10,000 BPS; token rate <= 9,998. Application emits `delayed::DelayedApplied<fee_policy::FeesKey, fee_policy::ProtocolFees>`. |
+| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise and token rates at most 1,000 BPS each; each LP-fee rate at most 3,000 (`fee_policy::EInvalidFees`). Compiled maximums: raising one needs a package upgrade. Application emits `delayed::DelayedApplied<fee_policy::FeesKey, fee_policy::ProtocolFees>`. |
 | `fee_policy::schedule_destination` | Redirects every later Blast payout, existing sales included; rejects `0x0`. Application emits `delayed::DelayedApplied<fee_policy::DestinationKey, address>`. |
 | `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate. Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`EProtocolFeesIncreased` otherwise). Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
-| `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections. Application emits `delayed::DelayedApplied<presale_vault::ProtocolLpFeesKey, fee_policy::ProtocolFees>`. |
+| `presale_vault::schedule_protocol_lp_fees` | Replaces one vault's Blast LP-fee rates for later collections, each at most 3,000 BPS (`fee_policy::EInvalidFees`). Application emits `delayed::DelayedApplied<presale_vault::ProtocolLpFeesKey, fee_policy::ProtocolFees>`. |
 | `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `creation_policy::QuoteSet`. |
 | `creation_policy::schedule_migration_witness` | Schedules admission of a migrator witness; rejects primitives, vectors, and `0x1`/`0x2` types. Application emits `delayed_set::SetApplied<creation_policy::MigrationWitnessKey, TypeName>`; `remove_migration_witness` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted witness) and cancels pending admission. |
 | `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `creation_policy::PartnerAdded`. |
@@ -1065,7 +1065,7 @@ charged at creation, on commitment, on refund, or when a sale does not migrate.
 - LP fees: at each collection, Blast takes `ceil(gross × lp_fee_meme_bps / 10,000)` of the Meme
   and `ceil(gross × lp_fee_quote_bps / 10,000)` of the Quote (rounded up), at the vault's current
   rates. The vault starts with the sale's snapshot rates; `presale_vault::schedule_protocol_lp_fees`
-  can change them later.
+  can change them later, never above 3,000 BPS.
 - Every payout goes to `FeePolicy.destination` as it is when paid.
 
 Per-sale changes before the start (`blast_presale::blast_presale::set_protocol_fees`): a rate may rise
@@ -3291,12 +3291,14 @@ public fun cancel_destination(
 
 | Constant | Code | Message |
 | --- | --- | --- |
-| `EInvalidFees` | 0 | Blast's raise share must be below 10,000 BPS and its token share at most 9,998. |
+| `EInvalidFees` | 0 | Blast's raise and token shares must be at most 1,000 BPS and each LP fee at most 3,000. |
 | `EInvalidDestination` | 1 | The protocol destination must be a nonzero address. |
 
 #### Constants
 
-- `MAX_TOKEN_BPS: u64 = 9_998`: The sale and LP allocations each keep at least one BPS of the supply.
+- `MAX_RAISE_BPS: u64 = 1_000`: Blast's largest share of a sale's raise.
+- `MAX_TOKEN_BPS: u64 = 1_000`: Blast's largest share of a sale's tokens.
+- `MAX_LP_FEE_BPS: u64 = 3_000`: Blast's largest share of each LP fee, Meme and Quote.
 
 ### `blast_presale::holder_rewards`
 

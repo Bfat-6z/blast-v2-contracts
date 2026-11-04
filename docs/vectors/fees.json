@@ -11,7 +11,7 @@
   "parameters": {
     "max_launch_fee_bps_per_asset": 1000,
     "minimum_protocol_fee_share_bps": 0,
-    "maximum_protocol_fee_share_bps": 10000,
+    "maximum_protocol_fee_share_bps": 7000,
     "basis_points_denominator": 10000,
     "rounding_remainder_beneficiary": "protocol"
   },
@@ -59,11 +59,11 @@
       "notes": "Ceiling division assigns the odd unit to protocol."
     },
     {
-      "name": "full_protocol_share",
+      "name": "maximum_protocol_share",
       "kind": "split",
-      "given": { "fee": "9", "protocol_fee_share_bps": 10000 },
-      "expect": { "protocol": "9", "creator": "0" },
-      "notes": "The inclusive upper boundary routes the complete fee to protocol."
+      "given": { "fee": "9", "protocol_fee_share_bps": 7000 },
+      "expect": { "protocol": "7", "creator": "2" },
+      "notes": "The inclusive 7,000 bps policy maximum; the creator keeps the floor of its 30%."
     },
     {
       "name": "maximum_u64",
@@ -84,7 +84,7 @@
       "given": {
         "accruals": [
           { "fee": "3", "protocol_fee_share_bps": 5000 },
-          { "fee": "5", "protocol_fee_share_bps": 8000 }
+          { "fee": "5", "protocol_fee_share_bps": 7000 }
         ]
       },
       "expect": { "protocol_total": "6", "creator_total": "2" },

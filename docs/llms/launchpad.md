@@ -401,10 +401,12 @@ Quotes and decimals instead abort inside the Sui collection (`sui::dynamic_field
 - `launch_config::schedule_trade_fees` (FeeAdmin), with Quote and Meme fee `Bps`, each at most 1,000;
   only launches started afterward use them. Application emits
   `delayed::DelayedApplied<launch_config::TradeFeesKey, launch_config::TradeFees>`.
-- `launch_config::schedule_creation_fee` (FeeAdmin), with an amount in MIST. Application emits
+- `launch_config::schedule_creation_fee` (FeeAdmin), with an amount in MIST, at most
+  10,000,000,000 (10 SUI); above it aborts with `EInvalidCreationFee` (35). Application emits
   `delayed::DelayedApplied<launch_config::CreationFeeKey, u64>`.
 - `launch_config::schedule_protocol_allocation` (TreasuryAdmin), with Meme and Quote `Bps`: Blast's
-  one-time share for launches finalized afterward; Meme at most 9,998 and Quote at most 9,999.
+  one-time share for launches finalized afterward; each asset at most 1,000 (10%), checked when the
+  allocation is built, which aborts with `EInvalidProtocolAllocation` (5).
   Application emits `delayed::DelayedApplied<launch_config::ProtocolAllocationKey, allocation::ProtocolAllocation>`.
 - `launch_config::add_partner` (FeeAdmin), with a `Partner`: new launches may name it at once;
   cancels a pending removal. Emits `blast_fun::events::PartnerAdded`.
@@ -413,7 +415,8 @@ Quotes and decimals instead abort inside the Sui collection (`sui::dynamic_field
   keep paying it. Aborts with `EPartnerNotAccepted` when it is not accepted now. Emits
   `blast_fun::events::PartnerRemoved`.
 - `runtime_config::schedule_protocol_fee_share` (FeeAdmin), with a `Bps`: Blast's share of every trade
-  fee on every launch, from the next trade. Application emits
+  fee on every launch, from the next trade; at most 7,000 (70%), so the creator keeps at least 30%.
+  Above it aborts with `EInvalidProtocolFeeShare` (45). Application emits
   `delayed::DelayedApplied<runtime_config::ProtocolFeeShareKey, blast_fun::bps::Bps>`.
 - `runtime_config::schedule_treasury` (TreasuryAdmin), with a non-zero address: every later Blast fee
   claim on every launch pays it. Application emits
@@ -585,7 +588,7 @@ Genesis treasury is configured before publication, never defaulted to the publis
 
 ### Economics
 
-Publication defaults follow the [Blast visual map](https://map.blast.fun/#fees): the curve charges 150 BPS of Quote and 0 BPS of Meme, and Blast receives 5,000 BPS of each collected trade fee (50/50 with the creator). The migration allocation defaults to 250 BPS of original Meme supply and 150 BPS of the final real Quote reserve. The creation fee defaults to zero. Administrators can change these settings; read the current objects before constructing a launch. Changing source defaults does not update existing objects or a finalized launch.
+Publication defaults follow the [Blast visual map](https://map.blast.fun/#fees): the curve charges 150 BPS of Quote and 0 BPS of Meme, and Blast receives 5,000 BPS of each collected trade fee (50/50 with the creator). The migration allocation defaults to 250 BPS of original Meme supply and 150 BPS of the final real Quote reserve. The creation fee defaults to zero. Administrators can change these settings within compiled maximums (trade fees 1,000 BPS each, Blast's trade-fee share 7,000 BPS, migration allocation 1,000 BPS per asset, creation fee 10 SUI); read the current objects before constructing a launch. Changing source defaults does not update existing objects or a finalized launch.
 
 All amounts are atomic units. Rates are BPS out of 10,000. `ceil` rounds up, `floor` rounds down.
 
@@ -855,7 +858,8 @@ that detected it.
 
 Admin setters also abort with 1 `blast_fun::errors::EInvalidTradeFeeBps`, 4
 `blast_fun::errors::EInvalidMigrationWitnessType`, 5
-`blast_fun::errors::EInvalidProtocolAllocation`, 6 (zero treasury), 25
+`blast_fun::errors::EInvalidProtocolAllocation`, 6 (zero treasury), 35 (creation fee above 10 SUI),
+45 `blast_fun::errors::EInvalidProtocolFeeShare`, 25
 `blast_fun::errors::EInvalidCreatorRecipient`, 27
 `blast_fun::errors::EInvalidCreatorClaimPublicKey`, 36, or 23; and in `blast_acl::sign_in` when
 the cap is not a live admin cap or lacks the role.

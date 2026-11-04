@@ -128,8 +128,9 @@ balances except the flows below.
   different: Cetus LP Burn has burned it, and its `CetusLPBurnProof` can only collect fees. The
   Bluefin position, the Cetus auto-LP position, and every vault balance depend on this package's
   code.
-- **Blast controls its own share.** `FeeAdmin` schedules Blast's LP-fee share
-  from 0 to 10,000 BPS per asset, by default or per coin. `TreasuryAdmin` schedules
+- **Blast controls its own share, up to a compiled cap.** `FeeAdmin` schedules Blast's LP-fee share
+  from 0 to 3,000 BPS (30%) per asset, by default or per coin; raising the cap needs a package
+  upgrade. `TreasuryAdmin` schedules
   payout destination changes. Anyone applies a scheduled change after the snapshotted deadline;
   it applies from the next collection.
 - **The admin can schedule any round.** Merkle proofs enforce the published allocation, not the
@@ -516,12 +517,13 @@ sits in the launch and is claimed through the launchpad.
 #### LP-fee policy (Blast admin)
 
 - `lp_fee_policy::schedule_default_shares` (`FeeAdmin`): sets the default Meme and Quote BPS for every
-  coin without its own pair. Aborts with code 20 from Blast admin's `delayed` module if neither
+  coin without its own pair. Aborts with `EInvalidShares` if either share is above 3,000, and with
+  code 20 from Blast admin's `delayed` module if neither
   the pair nor the notice changes.
 - `lp_fee_policy::schedule_coin_shares` (type argument `Meme`; `FeeAdmin`): sets this Meme's own pair,
   keyed by its original type name, after the coin overrides' notice; it takes no notice argument.
   A pair equal to the defaults is still a real entry: later default changes skip that coin. Aborts
-  with code 20 from Blast admin's `delayed_map` module if the pair equals the coin's applied pair.
+  with `EInvalidShares` if either share is above 3,000, and with code 20 from Blast admin's `delayed_map` module if the pair equals the coin's applied pair.
 - `lp_fee_policy::schedule_clear_coin_shares` (type argument `Meme`; `FeeAdmin`): schedules a return
   to live defaults, also after the coin overrides' notice. Applying it deletes the coin's entry;
   there is no immediate deletion. Aborts with code 20 from `delayed_map` when the coin has no
@@ -627,7 +629,8 @@ All amounts are atomic units. BPS are out of 10,000.
 
 #### Blast's LP-fee share
 
-For each collection, with the Meme's own pair if `FeeAdmin` set one, otherwise the defaults:
+For each collection, with the Meme's own pair if `FeeAdmin` set one, otherwise the defaults (each
+share at most 3,000 BPS; the publication pair is 1,500 and 1,500):
 
 - `protocol_meme = ceil(gross_meme × meme_bps / 10,000)`
 - `protocol_quote = ceil(gross_quote × quote_bps / 10,000)`
@@ -866,6 +869,7 @@ Blast admin abort with plain numeric codes from the named module.
 | cancel round or round notice | `EWrongRoundProposal` (13, module `vault`); code 18 from `delayed_action` | Use `cancel_round` for a scheduled round and `cancel_round_delay` for a notice change. |
 | reward claim | `EInvalidIndex` (3), `EAlreadyClaimed` (4), `EInvalidBeneficiary` (5), `EEmptyClaim` (2), `EInvalidProof` (6) in `blast_holder_rewards` | Pass the leaf exactly as committed with its full-depth proof; each leaf pays once. |
 | policy | `EInvalidProtocolDestination` (0) in `lp_fee_policy` | Pass a nonzero destination. |
+| policy | `EInvalidShares` (1) in `lp_fee_policy` | Keep each Meme and Quote share at or below 3,000 BPS (30%). |
 
 Venue-side aborts (Cetus or Bluefin refusing a tier, a pair, or a fee amount) carry the venue's own
 codes.

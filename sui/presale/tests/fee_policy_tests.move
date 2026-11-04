@@ -37,19 +37,19 @@ fun the_admin_sets_maximum_and_zero_rates() {
     policy.set_fees_for_testing(
         &package_version,
         &fee_admin(),
-        bps::new(9_999),
-        bps::new(9_998),
-        bps::new(10_000),
-        bps::new(10_000),
+        bps::new(1_000),
+        bps::new(1_000),
+        bps::new(3_000),
+        bps::new(3_000),
      &mut sui::tx_context::dummy());
 
-    assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
+    assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000));
     let (owner, _, previous, applied, _) = last_event<
         DelayedApplied<FeesKey, ProtocolFees>,
     >().delayed_applied_fields();
     assert_eq!(owner, object::id(&policy));
     assert_eq!(previous, fee_policy::protocol_fees_for_testing(0, 0, 0, 0));
-    assert_eq!(applied, fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
+    assert_eq!(applied, fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000));
 
     policy.set_fees_for_testing(
         &package_version,
@@ -69,16 +69,30 @@ fun the_admin_sets_maximum_and_zero_rates() {
 
 #[test]
 #[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
-/// Blast cannot take the whole raise, which would leave the pool no Quote.
-fun the_raise_share_must_stay_below_full() {
-    set_fees_for_testing(10_000, 0, 0, 0);
+/// Blast's raise share is at most 1,000 BPS.
+fun the_raise_share_is_capped() {
+    set_fees_for_testing(1_001, 0, 0, 0);
 }
 
 #[test]
 #[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
-/// The sale and LP allocations each need at least one BPS of the supply.
-fun the_token_share_must_leave_two_bps() {
-    set_fees_for_testing(0, 9_999, 0, 0);
+/// Blast's token share is at most 1,000 BPS.
+fun the_token_share_is_capped() {
+    set_fees_for_testing(0, 1_001, 0, 0);
+}
+
+#[test]
+#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+/// Blast's Meme LP-fee share is at most 3,000 BPS.
+fun the_meme_lp_fee_share_is_capped() {
+    set_fees_for_testing(0, 0, 3_001, 0);
+}
+
+#[test]
+#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+/// Blast's Quote LP-fee share is at most 3,000 BPS.
+fun the_quote_lp_fee_share_is_capped() {
+    set_fees_for_testing(0, 0, 0, 3_001);
 }
 
 #[test]
@@ -93,10 +107,22 @@ fun lp_fee_rates_change_alone() {
     assert_eq!(
         fee_policy::protocol_fees_for_testing(100, 200, 300, 400).with_lp_fees(
             bps::new(0),
-            bps::new(10_000),
+            bps::new(3_000),
         ),
-        fee_policy::protocol_fees_for_testing(100, 200, 0, 10_000),
+        fee_policy::protocol_fees_for_testing(100, 200, 0, 3_000),
     );
+}
+
+#[test]
+#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+/// A vault's LP-rate change is held to the same maximum as the policy.
+fun lp_fee_rate_changes_are_capped() {
+    fee_policy::protocol_fees_for_testing(100, 200, 300, 400).with_lp_fees(
+        bps::new(3_001),
+        bps::new(0),
+    );
+
+    abort
 }
 
 #[test]
@@ -229,19 +255,19 @@ fun stale_version_cannot_set_fees() {
     policy.set_fees_for_testing(
         &package_version,
         &fee_admin(),
-        bps::new(9_999),
-        bps::new(9_998),
-        bps::new(10_000),
-        bps::new(10_000),
+        bps::new(1_000),
+        bps::new(1_000),
+        bps::new(3_000),
+        bps::new(3_000),
      &mut sui::tx_context::dummy());
 
-    assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
+    assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000));
     let (owner, _, previous, applied, _) = last_event<
         DelayedApplied<FeesKey, ProtocolFees>,
     >().delayed_applied_fields();
     assert_eq!(owner, object::id(&policy));
     assert_eq!(previous, fee_policy::protocol_fees_for_testing(0, 0, 0, 0));
-    assert_eq!(applied, fee_policy::protocol_fees_for_testing(9_999, 9_998, 10_000, 10_000));
+    assert_eq!(applied, fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000));
 
     policy.set_fees_for_testing(
         &package_version,

@@ -339,7 +339,7 @@ require(signer['cancel_creator_claim_signer_delay'][1], 'self.creator_claim_sign
 for name in ('apply_creator_claim_signer', 'apply_creator_claim_signer_delay'):
     assert 'AdminWitness' not in signer[name][0], name
 assert 'set_creator_claim_signer' not in signer
-require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'self.coins.schedule(meme, option::some(SharePair { meme_bps, quote_bps }), clock)')
+require(functions('migrators', 'lp_fee_policy')['schedule_coin_shares'][1], 'self.coins.schedule(meme, option::some(share_pair(meme_bps, quote_bps)), clock)')
 for package in ('launchpad', 'presale', 'migrators'):
     fs = functions(package, 'package_admin')
     require(fs['schedule_upgrade_delay'][0], '&AdminWitness<UpgradeAdmin>', 'delay_ms: u64')

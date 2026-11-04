@@ -796,15 +796,16 @@ launch_config_facts="$(move_facts sources/launch_config.move)"
 launch_config_source="$(move_normalized_source <<<"$launch_config_facts")"
 launch_config_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/launch_config.move)"
 
-# Blast's allocation starts at the map's 250/150 BPS and may change only for future launches while
-# leaving room for the curve and the pool. Every delayed policy, adapter admission included, stores
+# Blast's allocation starts at the map's 250/150 BPS and may change only for future launches, each
+# asset at most the constructor's 1,000 BPS maximum. Every delayed policy, adapter admission included, stores
 # the primitive keyed by its own operation.
 if [[ ! -f sources/launch_config.move ]] \
   || [[ "$(move_production_function_contract schedule_protocol_allocation <<<"$launch_config_facts")" != 'public:0:0:fun schedule_protocol_allocation( self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<TreasuryAdmin>,'* ]] \
   || [[ "$(move_production_type LaunchConfig <<<"$launch_config_facts")" \
     != 'struct LaunchConfig has key { id: UID, meme_decimals: VecSet<u8>, quotes: Table<TypeName, bool>, trade_fees: Delayed<TradeFeesKey, TradeFees>, migration_witnesses: DelayedSet<MigrationWitnessKey, TypeName>, protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>, creation_fee: Delayed<CreationFeeKey, u64>, }' ]] \
   || rg -Fq 'protocol_allocation: Option<' sources/launch_config.move \
-  || ! rg -Fq 'meme_bps.value() <= 9_998 && quote_bps.value() <= 9_999' <<<"$launch_config_source" \
+  || ! rg -Fq 'meme_bps.value() <= constants::max_protocol_allocation_bps!()' sources/allocation.move \
+  || ! rg -Fq 'quote_bps.value() <= constants::max_protocol_allocation_bps!()' sources/allocation.move \
   || ! rg -Fq 'self.protocol_allocation.schedule(value, delay_ms, clock);' <<<"$launch_config_source" \
   || ! rg -Fq 'protocol_allocation: delayed::new(ProtocolAllocationKey(), &id, protocol_allocation, delay_ms)' <<<"$launch_config_source" \
   || ! rg -Fq 'allocation::protocol_allocation(bps::new(250), bps::new(150))' <<<"$(move_production_body init <<<"$launch_config_facts")" \
