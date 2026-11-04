@@ -49,13 +49,3 @@ macro public(package) fun sqrt_upper_bound_shift(): u8 {
 macro public(package) fun auto_lp_margin(): u256 {
     2
 }
-
-/// Maximum leaves in one holder-rewards round.
-macro public(package) fun max_reward_leaves(): u64 {
-    65_536
-}
-
-/// Byte length of a Blake2b-256 digest: Merkle roots, nodes, and manifest digests.
-macro public(package) fun digest_length(): u64 {
-    32
-}

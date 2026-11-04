@@ -16,11 +16,7 @@ public struct UpgradeAdmin()
 /// Revokes and reissues a launch's creator capabilities.
 public struct CreatorAdmin()
 
-/// Swaps a vault's burn Quote for Meme to burn.
-public struct BuybackAdmin()
-
-/// Chooses where Blast is paid and Blast's share of future launches, and claims Blast's migration
-/// residuals from the migrators.
+/// Chooses where Blast is paid and Blast's share of future launches.
 public struct TreasuryAdmin()
 
 /// Sets Blast's creation and trade fees, its fee share, and the partners new launches may name.
@@ -34,9 +30,6 @@ public struct AdapterAdmin()
 
 /// Proposes and revokes the keys that may sign account claims.
 public struct ClaimSignerAdmin()
-
-/// Publishes holder-reward rounds.
-public struct RewardsAdmin()
 
 /// May set emergency pause bits, never clear them.
 public struct PauseAdmin()

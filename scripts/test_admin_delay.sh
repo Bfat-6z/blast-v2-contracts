@@ -19,9 +19,9 @@ trap 'exit 143' TERM
 while IFS= read -r publication; do rm "$publication"; done < "$fixture_backup/publications"
 python3 - <<'PY'
 from pathlib import Path
-for package, key in [('core', 'blast_treasury'), ('launchpad', 'blast_treasury'), ('presale', 'blast_treasury'), ('migrators', 'blast_lp_fee_destination')]:
+for package in ['core', 'launchpad', 'presale', 'migrators']:
     p = Path(f'sui/{package}/Move.toml')
-    s = p.read_text().replace(f'{key} = "0x0"', f'{key} = "0xa"')
+    s = p.read_text().replace('blast_treasury = "0x0"', 'blast_treasury = "0xa"')
     # Native upgrade-cap fixtures require a nonzero package identity.
     if package == 'launchpad':
         s = s.replace('blast_fun = "0x0"', 'blast_fun = "0xc"')

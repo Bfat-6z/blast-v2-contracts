@@ -157,9 +157,8 @@ never call `pay` directly; products call it inside their own partnered functions
 | --- | --- | --- | --- |
 | Boosts | on each trade: `operations::mint_with_partner` or `operations::redeem_with_partner`, passing the `Partner` right after the `Protocol` | Blast's admin fee that trade retained; never the reserve fee | push: paid in the same call |
 | Launchpad | once, at creation: `launch::set_partner` on the `LaunchInitializer` before `launch::finalize`; fixed for good | Blast's whole fee ledger on the launch: the creation fee (SUI), Blast's share of every curve trade fee (Meme and Quote), and Blast's one-time migration fee | held in the launch; paid when anyone calls `launch::claim_protocol_fees_with_partner` |
-| Launchpad LP vault | inherited from the launch at migration | Blast's LP fees on each collection | held in the vault; paid when anyone calls `blast_fun_migrators::vault::claim_protocol_lp_fees_with_partner` |
+| LP vault (launchpad and presale) | inherited from the launch or sale at migration, in its vault terms | Blast's LP fees on each collection, and protocol migration residuals | held in the vault; paid when anyone calls `blast_vault::vault::pay_protocol_fees_with_partner` |
 | Presale | once, at creation: `blast_presale::blast_presale::set_partner` on the `PresaleInitializer` before `blast_presale::blast_presale::finalize`; fixed for good | Blast's raise fee (Quote) only; Blast's token fee is never divided | held at migration; paid when anyone calls `blast_presale::blast_presale::pay_protocol_fees_with_partner` (once) |
-| Presale LP vault | inherited from the sale at migration | Blast's LP fees on each collection | held in the vault; paid when anyone calls `presale_vault::pay_protocol_lp_fees_with_partner` |
 
 Rules common to every product:
 
@@ -218,7 +217,8 @@ replay the events below. The only on-chain read is
 - Whether a product accepts a partner: read the product config's dynamic field
   `PartnerKey(partner_id)`; accepted while it exists and `now < value`.
 - Which partner a launch, sale, or vault names: its `partner_id: Option<ID>`
-  field (`launch::partner_id` returns it for a launch).
+  field; a vault's comes from its terms, recorded in
+  `blast_vault::blast_vault_events::VaultCreated`.
 
 ### Events
 
@@ -243,9 +243,8 @@ Every event is emitted directly (no envelope).
   its own event in the same transaction:
   `blast_boosts_aftermath::events::PartnerFeePaid` (Boosts),
   `blast_fun::events::ProtocolFeesClaimed` (launch claims),
-  `blast_fun_migrators::blast_events::ProtocolLpFeesClaimed` (launchpad LP),
-  `blast_presale::blast_presale::ProtocolFeesPaid` (presale raise fee), and
-  `presale_vault::ProtocolLpFeesPaid` (presale LP).
+  `blast_core::blast_core_events::ProtocolFeesPaid` (LP vaults),
+  and `blast_presale::blast_presale::ProtocolFeesPaid` (presale raise fee).
   `blast_fun::events::LaunchCreated` and
   `blast_presale::blast_presale::PresaleOpened` record the partner a launch or
   sale names.

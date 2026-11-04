@@ -131,8 +131,9 @@ pending admission or change to zero.
 ### Reading state
 
 - `blast_vault::vault::pool_id`: the pool the vault's position belongs to.
-- `blast_vault::vault::has_auto_lp_position` and `blast_vault::vault::auto_lp_position`: the venue's
-  separate auto-LP position.
+- The venue's positions are dynamic object fields of the vault, under the venue's
+  `PositionKey` and, once auto-LP has opened one, `AutoLpPositionKey`; only the venue's own code
+  can borrow them, so read them as object fields.
 - Events carry every balance change; index `FeesCollected` for per-route amounts.
 
 ### Events

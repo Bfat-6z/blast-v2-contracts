@@ -33,7 +33,7 @@ macro public(package) fun basis_points_denominator(): u64 {
     10_000
 }
 
-/// Maximum recipients in an allocation plan or an LP-fee split.
+/// Maximum recipients in an allocation plan.
 macro public(package) fun max_recipients(): u64 {
     16
 }
