@@ -359,4 +359,8 @@ use sui::clock::Clock;
 
 use blast_core::bps::{Self, Bps};
 
-use blast_fun::{blast_fun_domain::{CancelAdmin, ClaimSignerAdmin, FeeAdmin, TreasuryAdmin}, constants, blast_fun::{PackageVersion}};
+use blast_fun::{
+    blast_fun_domain::{CancelAdmin, ClaimSignerAdmin, FeeAdmin, TreasuryAdmin},
+    constants,
+    blast_fun::{PackageVersion},
+};

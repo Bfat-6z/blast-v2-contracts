@@ -935,7 +935,6 @@ public fun prove_owner<Meme, Quote>(
     owner_proof::new(PackageWitness(), self.id.to_inner())
 }
 
-
 // === Private Functions ===
 
 /// Aborts unless `curve_fee_cap` is the curve-fee cap this launch currently honors.
@@ -1249,7 +1248,19 @@ use blast_core::{
     owner_proof::{Self, OwnerProof}
 };
 
-use blast_fun::{allocation::AllocationPlan, blast_fun_domain::{CancelAdmin, CreatorAdmin}, constants, creator_authority::{Self, BlastMetadataCap, CreatorRecipient, CurveFeeCap}, curve, events, fees::{Self, FeeLedger}, launch_config::LaunchConfig, launch_ticket::{Self, LaunchTicket}, blast_fun::PackageVersion, runtime_config::RuntimeConfig};
+use blast_fun::{
+    allocation::AllocationPlan,
+    blast_fun_domain::{CancelAdmin, CreatorAdmin},
+    constants,
+    creator_authority::{Self, BlastMetadataCap, CreatorRecipient, CurveFeeCap},
+    curve,
+    events,
+    fees::{Self, FeeLedger},
+    launch_config::LaunchConfig,
+    launch_ticket::{Self, LaunchTicket},
+    blast_fun::PackageVersion,
+    runtime_config::RuntimeConfig,
+};
 
 use blast_partners::blast_partners::Partner;
 

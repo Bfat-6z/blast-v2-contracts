@@ -661,7 +661,13 @@ use blast_admin::{
 
 use blast_core::bps::{Self, Bps};
 
-use blast_fun::{allocation::{Self, ProtocolAllocation}, blast_fun_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin}, constants, events, blast_fun::{PackageVersion}};
+use blast_fun::{
+    allocation::{Self, ProtocolAllocation},
+    blast_fun_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
+    constants,
+    events,
+    blast_fun::{PackageVersion},
+};
 
 use blast_partners::blast_partners::{Self as partners, Partner};
 
