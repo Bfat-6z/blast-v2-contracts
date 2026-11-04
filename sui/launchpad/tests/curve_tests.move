@@ -698,9 +698,8 @@ fun sell_math_supports_maximum_u64_operands_without_intermediate_overflow() {
 #[test]
 fun seeded_sell_back_invariant_holds_for_reachable_buy_then_sell() {
     let mut entropy = PROPERTY_SEED;
-    let mut operation = 0;
 
-    while (operation < PROPERTY_OPERATION_COUNT) {
+    PROPERTY_OPERATION_COUNT.do!(|operation| {
         entropy = next_property_entropy(entropy);
         let fee_rate_bps = 1 + entropy % 1_000;
         let fee_mode = operation % 4;
@@ -779,8 +778,7 @@ fun seeded_sell_back_invariant_holds_for_reachable_buy_then_sell() {
         );
 
         assert!(quote_out_gross <= real_quote);
-        operation = operation + 1;
-    };
+    });
 }
 
 #[test]

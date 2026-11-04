@@ -36,7 +36,7 @@ fun the_largest_split_has_sixteen_addresses_and_every_special_kind() {
         fee_split::route(fee_split::burn_destination(), bps::new(500)),
     ]);
     let amounts = fee_split::new(routes).apportion(20);
-    assert!(amounts.length() == 20 && amounts.all!(|amount| *amount == 1));
+    assert_eq!(amounts, vector::tabulate!(20, |_| 1));
 }
 
 #[test]

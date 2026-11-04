@@ -37,7 +37,7 @@ fun the_stored_venue_redeems_the_balances_and_terms() {
     assert_eq!(terms.origin(), sale_id());
     assert_eq!(terms.package_witness(), type_name::with_original_ids<TestPackageWitness>());
     let (meme_share, quote_share) = terms.protocol_bps();
-    assert!(meme_share == bps::new(1_500) && quote_share == bps::new(1_000));
+    assert_eq!(vector[meme_share, quote_share], vector[bps::new(1_500), bps::new(1_000)]);
     assert_eq!(terms.partner_id(), option::none());
     assert!(terms.has_protocol_residuals());
     assert!(terms.fee_split().routes()[0].destination().is_owner());

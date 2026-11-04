@@ -39,16 +39,14 @@ fun apportionment_assigns_every_unit_and_leftovers_to_the_largest_remainders() {
 fun apportionment_preserves_the_total_for_every_rounded_up_choice() {
     let rates = vector[1, 2_499, 2_500, 4_999, 1];
     vector[0u64, 1, 9, 9_999, 10_001, 123_456_789, std::u64::max_value!()].do!(|total| {
-        let mut choice = 0;
-        while (choice <= rates.length()) {
+        (rates.length() + 1).do!(|choice| {
             let rounded_up = if (choice == rates.length()) option::none() else option::some(choice);
             let amounts = apportion_rates(rates, total, rounded_up);
             assert_eq!(amounts.fold!(0u128, |sum, amount| sum + (amount as u128)), total as u128);
             rounded_up.do!(|index| {
                 assert_eq!(amounts[index], bps::new(rates[index]).apply_up(total));
             });
-            choice = choice + 1;
-        };
+        });
     });
 }
 

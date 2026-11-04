@@ -71,14 +71,15 @@ fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
     assert_eq!(package_witness, type_name::with_original_ids<LedgerPackageWitness>());
     assert_eq!(origin, sale_id());
     assert_eq!(destination, TREASURY);
-    assert!(meme == 10 && quote == 20 && sui == 30);
-    assert!(partner_id.is_none() && partner_meme == 0 && partner_quote == 0 && partner_sui == 0);
+    assert_eq!(vector[meme, quote, sui], vector[10, 20, 30]);
+    assert!(partner_id.is_none());
+    assert_eq!(vector[partner_meme, partner_quote, partner_sui], vector[0, 0, 0]);
 
     scenario.next_tx(TREASURY);
     let meme_coin = scenario.take_from_address<Coin<MEME>>(TREASURY);
     let quote_coin = scenario.take_from_address<Coin<QUOTE>>(TREASURY);
     let sui_coin = scenario.take_from_address<Coin<SUI>>(TREASURY);
-    assert!(meme_coin.value() == 10 && quote_coin.value() == 20 && sui_coin.value() == 30);
+    assert_eq!(vector[meme_coin.value(), quote_coin.value(), sui_coin.value()], vector[10, 20, 30]);
 
     destroy(meme_coin);
     destroy(quote_coin);
@@ -118,8 +119,8 @@ fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
     assert_eq!(destination, TREASURY);
     assert_eq!(partner_id, option::some(object::id(&partner)));
     // The partner's cut rounds down, so Blast keeps the remainder of each asset.
-    assert!(partner_meme == 300 && partner_quote == 3 && partner_sui == 30);
-    assert!(meme == 701 && quote == 7 && sui == 70);
+    assert_eq!(vector[partner_meme, partner_quote, partner_sui], vector[300, 3, 30]);
+    assert_eq!(vector[meme, quote, sui], vector[701, 7, 70]);
     assert_balances(&ledger, 0, 0, 0);
 
     destroy(partner);
@@ -198,7 +199,7 @@ fun a_ledger_rejects_one_type_for_both_assets() {
 
 fun assert_balances(ledger: &Ledger<MEME, QUOTE>, meme: u64, quote: u64, sui: u64) {
     let (held_meme, held_quote, held_sui) = ledger.balances();
-    assert!(held_meme == meme && held_quote == quote && held_sui == sui);
+    assert_eq!(vector[held_meme, held_quote, held_sui], vector[meme, quote, sui]);
 }
 
 fun sale_id(): ID { object::id_from_address(@0x5A1E) }

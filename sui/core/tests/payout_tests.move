@@ -85,7 +85,8 @@ fun a_payout_vests_at_the_technical_bound_with_a_full_cliff() {
     let ctx = scenario.ctx();
     let schedule = payout::pay_or_vest(&mut funds, 1, BOB, option::some(terms), &clock, ctx);
 
-    assert!(schedule.is_some() && funds.value() == 0);
+    assert!(schedule.is_some());
+    assert_eq!(funds.value(), 0);
     destroy(funds);
     destroy(clock);
     scenario.end();
