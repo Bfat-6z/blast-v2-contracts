@@ -39,7 +39,7 @@ macro public(package) fun max_recipients(): u64 {
 }
 
 /// Maximum LaunchConfig trade-fee rate for either the meme or quote asset.
-macro public(package) fun max_launch_fee_bps(): u64 {
+macro public(package) fun max_trade_fee_bps(): u64 {
     1_000
 }
 
