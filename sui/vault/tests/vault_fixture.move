@@ -3,8 +3,8 @@
 
 #[test_only]
 /// A shared fixture for vault and holder-reward tests: an unpaused version, a registry with the
-/// test venue admitted, the treasury, a partner, a burn-only or fixed-supply Meme currency with
-/// minted supply, and sale terms sealed by a test package witness.
+/// test venue and test sale witness admitted, the treasury, a partner, a burn-only or fixed-supply
+/// Meme currency with minted supply, and sale terms sealed by a test package witness.
 module blast_vault::vault_fixture;
 
 // === Constants ===
@@ -30,6 +30,9 @@ public struct OtherVenue() has drop;
 
 /// The sale package witness that seals the test terms and owner proofs.
 public struct SaleWitness() has drop;
+
+/// A package witness that was never admitted as an issuer.
+public struct StrangerIssuer() has drop;
 
 /// A stand-in for a venue's position object.
 public struct TestPosition has key, store {
@@ -76,7 +79,7 @@ public fun start_with_supply(scenario: &mut Scenario, burn_only: bool): VaultFix
     else currency.make_supply_fixed(treasury_cap);
 
     VaultFixture {
-        registry: blast_vault_package::registry_for_testing<TestVenue>(ctx),
+        registry: blast_vault_package::registry_for_testing<TestVenue, SaleWitness>(ctx),
         version: blast_vault_package::version_for_testing(ctx),
         treasury: blast_treasury::new_for_testing(TREASURY, ctx),
         partner: blast_partners::new_for_testing(PARTNER_RECIPIENT, 3_000, ctx),
@@ -106,6 +109,9 @@ public fun other_venue(): OtherVenue { OtherVenue() }
 
 /// The test sale's package witness.
 public fun sale_witness(): SaleWitness { SaleWitness() }
+
+/// A package witness that was never admitted.
+public fun stranger_issuer(): StrangerIssuer { StrangerIssuer() }
 
 public fun sender(): address { SENDER }
 
@@ -146,6 +152,19 @@ public fun terms_for(
         if (names_partner) option::some(object::id(&self.partner)) else option::none(),
         if (residuals_to_protocol) migration::residuals_to_protocol()
         else migration::residuals_to_owner(),
+    )
+}
+
+/// Terms for `fee_split` at Blast's 15% share, sealed by `issuer` for the test sale's ID.
+public fun terms_sealed_by<Issuer: drop>(issuer: Issuer, fee_split: FeeSplit): VaultTerms {
+    migration::vault_terms(
+        issuer,
+        sale_id(),
+        fee_split,
+        bps::new(1_500),
+        bps::new(1_500),
+        option::none(),
+        migration::residuals_to_owner(),
     )
 }
 
@@ -233,13 +252,13 @@ public fun collect_through<Venue>(
     );
 }
 
-/// Burns `meme_out` of bought Meme for a buyback of `quote_in` that left `unspent_quote`.
+/// Burns `meme_out` of bought Meme for the buyback `receipt` records, returning `unspent_quote`.
 public fun burn_buyback(
     self: &mut VaultFixture,
     vault: &mut Vault<VAULT_FIXTURE, QUOTE>,
+    receipt: BuybackReceipt,
     meme_out: u64,
     unspent_quote: u64,
-    quote_in: u64,
     min_meme_out: u64,
     ctx: &mut TxContext,
 ) {
@@ -247,10 +266,10 @@ public fun burn_buyback(
     vault.burn_buyback(
         &TestVenue(),
         &self.version,
+        receipt,
         &mut self.currency,
         meme,
         balance::create_for_testing<QUOTE>(unspent_quote),
-        quote_in,
         min_meme_out,
         ctx,
     );
@@ -321,7 +340,7 @@ use blast_partners::blast_partners::{Self, Partner};
 
 use blast_vault::{
     blast_vault_package::{Self, BLAST_VAULT_PACKAGE, VaultRegistry},
-    vault::{Self, Vault}
+    vault::{Self, BuybackReceipt, Vault}
 };
 
 use std::unit_test::destroy;

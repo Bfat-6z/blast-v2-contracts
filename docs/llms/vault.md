@@ -6,13 +6,18 @@ Package `blast_vault` holds the one LP vault every Blast sale migrates into. A v
 venue's liquidity position with no removal path, so the liquidity is locked for good. It splits
 every LP-fee collection: Blast's share first, then the sale's fee split across the owner, auto-LP,
 holder rewards, burn, and address routes. It also pays holder-reward rounds by Merkle proof. Only
-an admitted venue's code can create a vault or move its fees; integrators reach a vault through the
+an admitted venue's code can create a vault or move its fees, and only from terms an admitted
+issuer sealed; integrators reach a vault through the
 venue's calls, and call the owner, round, and payout functions on it directly.
 
 ### Objects and authority
 
-- `blast_vault_package::VaultRegistry` (shared singleton) lists the venue witness types that may
-  create vaults. A venue is admitted by its witness type, which only its own module can construct.
+- `blast_vault_package::VaultRegistry` (shared singleton) lists the admitted witness types: the
+  venues that may create vaults and the issuers whose sealed terms they may use (the launchpad, the
+  presale, and each venue for the standalone vaults it seals itself). A witness is admitted by its
+  type, which only its own module can construct. A venue obtains terms only from
+  `blast_core::migration::redeem` or by sealing them itself; it never accepts terms from its
+  caller.
 - `blast_vault::vault::Vault<Meme, Quote>` (shared, one per migrated sale) holds the position under
   the venue's key, the terms the sale sealed (`blast_core::migration::VaultTerms`), the fee split
   and Blast's share, each behind a notice, and the owner, auto-LP, holder-reward, and burn
@@ -25,15 +30,15 @@ venue's calls, and call the owner, round, and payout functions on it directly.
   creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
   witness.
 
-Blast admins hold these roles: `AdapterAdmin` admits and removes venues; `FeeAdmin` changes Blast's
+Blast admins hold these roles: `AdapterAdmin` admits and removes venue and issuer witnesses; `FeeAdmin` changes Blast's
 per-vault share; `RewardsAdmin` schedules rounds and settles gas reserves; `BuybackAdmin` spends
 the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 
 ### Lifecycle
 
 1. A venue creates the vault with `blast_vault::vault::new`, unshared, from terms the sale sealed.
-   It aborts unless the venue's witness is admitted and Blast's share is at most 3,000 basis points
-   per asset.
+   It aborts unless the venue's witness and the terms' sealing witness are both admitted and
+   Blast's share is at most 3,000 basis points per asset.
 2. The venue attaches its position and shares the vault with
    `blast_vault::vault::share_with_position`, which settles the migration residuals and emits
    `blast_vault_events::VaultCreated`.
@@ -107,9 +112,10 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 
 ### Time rules
 
-- Venue admissions start at zero notice, so Blast lists its venues at launch while the package is
-  still paused; Blast then raises the notice before unpausing. Afterwards each admission and
-  notice change waits the applied notice.
+- Witness admissions start at zero notice, so Blast lists its products and venues at launch while
+  the package is still paused; Blast then raises the notice before unpausing. Afterwards each
+  admission and notice change waits the applied notice. Removing a witness takes effect at once:
+  a removed venue creates no more vaults, and a removed issuer's sales can no longer migrate.
 - Fee-split and Blast-share changes always wait 48 hours; no call changes that notice.
 - A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
 - Claims are open while the clock is before the deadline; a round closes at or after it.
@@ -119,8 +125,8 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 The package is published fully paused. The admin pause bit stops Blast-share changes, buybacks,
 round scheduling and publication, and gas settlement. It never stops venue admissions, fee
 collection, owner claims, partner payouts, holder claims, round closing, or cancellations.
-Unpausing with `blast_vault_package::unpause` requires a nonzero venue admission notice, with no
-pending change to zero.
+Unpausing with `blast_vault_package::unpause` requires a nonzero witness admission notice, with no
+pending admission or change to zero.
 
 ### Reading state
 
@@ -135,7 +141,8 @@ pending change to zero.
 - `blast_vault_events::FeesCollected`: gross amounts, Blast's cut, and each route's amounts, in
   route order.
 - `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded`: auto-LP.
-- `blast_vault_events::BuybackBurned`: Quote spent and Meme burned.
+- `blast_vault_events::BuybackBurned`: Quote spent and Meme burned. The vault measures both from
+  the buyback receipt, as it measures `AutoLiquidityAdded` from the auto-LP receipt.
 - Burned Meme leaves the supply when the Meme `Currency` is burn-only; when its supply is fixed
   it is sent to `0x0` instead. Both supply states are final, so an indexer reads the
   currency's supply state once to tell the two apart.
@@ -145,6 +152,9 @@ pending change to zero.
 
 ### Aborts
 
+- Vault creation: `unadmitted_venue`, then `unadmitted_issuer`, then `invalid_protocol_bps`.
+- A venue's buyback or auto-LP return: `wrong_vault` for another vault's receipt,
+  `returned_exceeds_taken` when it returns more than it took.
 - Owner claim with nothing accrued: `nothing_to_claim`. A proof for another sale or package
   aborts in `blast_core::owner_proof`.
 - Holder claim: `claims_closed` past the deadline, `invalid_index`, `already_claimed`,

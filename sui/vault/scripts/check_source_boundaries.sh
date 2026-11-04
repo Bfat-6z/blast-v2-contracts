@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Structural gates for blast_vault (ADR 0137): the one vault below every venue. It depends only on
-# the ACL, core, and partners; imports no product or venue; admits venues, not issuers, as the
-# only vault creators; keeps fee notices fixed; and keeps holder claims outside the admin pause.
+# the ACL, core, and partners; imports no product or venue; creates vaults only for an admitted
+# venue and an admitted issuer; keeps fee notices fixed; and keeps holder claims outside the admin
+# pause.
 set -euo pipefail
 
 package_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,8 +19,10 @@ if rg -n '\b(blast_fun|blast_presale|blast_fun_migrators|blast_venues|cetus_clmm
 fi
 [[ "$(rg -l '^fun init\(' sources | tr '\n' ' ')" == "sources/blast_vault_package.move " ]] \
   || fail "only blast_vault_package may initialize state"
-rg -q 'registry.assert_admitted<Venue>\(\);' sources/vault.move \
+rg -q 'registry.assert_venue<Venue>\(\);' sources/vault.move \
   || fail "vault::new must require an admitted venue witness"
+rg -q 'registry.assert_issuer\(terms.package_witness\(\)\);' sources/vault.move \
+  || fail "vault::new must require an admitted issuer witness"
 if rg -n 'self\.(fee_split|protocol_bps)\.schedule(_delay)?\(' sources; then
   fail "fee-split and Blast-share changes must keep the fixed notice (schedule_value only)"
 fi

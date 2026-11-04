@@ -29,6 +29,8 @@ public enum ResidualPolicy has copy, drop, store {
 }
 
 /// Everything a new vault snapshots from the sale or standalone issuer that sealed its terms.
+/// Sealed terms authorize a vault, so products and venues must not return them by value: a venue
+/// takes them only from `redeem` or seals its own.
 public struct VaultTerms has copy, drop, store {
     /// The launch or presale the vault belongs to; owner proofs name it.
     origin: ID,

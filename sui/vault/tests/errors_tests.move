@@ -10,7 +10,7 @@ module blast_vault::errors_tests;
 /// Pins every registry code to its position, so a reorder or gap fails here first.
 fun error_registry_is_stable() {
     let codes = vector[
-        errors::invalid_venue!(),
+        errors::invalid_witness!(),
         errors::unadmitted_venue!(),
         errors::unguarded_notice!(),
         errors::invalid_protocol_bps!(),
@@ -43,8 +43,10 @@ fun error_registry_is_stable() {
         errors::reserve_settled!(),
         errors::over_reserve!(),
         errors::claims_still_open!(),
+        errors::unadmitted_issuer!(),
+        errors::returned_exceeds_taken!(),
     ];
-    assert_eq!(codes.length(), 33);
+    assert_eq!(codes.length(), 35);
     codes.length().do!(|i| assert_eq!(codes[i], i));
 }
 
