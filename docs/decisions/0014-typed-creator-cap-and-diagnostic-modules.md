@@ -1,6 +1,7 @@
 # 0014: Coin-typed creator authority and diagnostic modules
 
 - Status: accepted
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-08-22
 - Amends: [0013](0013-creator-fee-authority-and-x-claims.md)
 - Amended by: [0016](0016-unified-creator-cap-claim-and-suins-periphery.md), [0017](0017-coin-type-domain-for-x-creator-claims.md), [0018](0018-authority-module-separation.md), [0019](0019-consuming-creator-authority-and-cap-return.md), [0023](0023-generated-coin-supply-and-metadata-custody.md), [0030](0030-singleton-event-identity.md)

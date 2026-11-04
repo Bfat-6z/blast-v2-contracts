@@ -1,6 +1,7 @@
 # 0044: Validated basis-points unit
 
 - Status: accepted
+- Superseded by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-08-28
 - Amends: [0021](0021-pure-constant-product-curve-quotes.md),
   [0022](0022-dual-asset-fee-ledger-and-claims.md),

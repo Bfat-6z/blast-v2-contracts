@@ -1,6 +1,7 @@
 # 0116: Aftermath adapter with vault-addressed DAO fees
 
 - Status: accepted
+- Superseded by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-10-17
 - Amends: [0099](0099-standalone-overflow-presale.md), whose presale adapters
   were Cetus and Bluefin only

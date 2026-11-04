@@ -1,6 +1,7 @@
 # 0104: External presale migrators and vendor packages
 
 - Status: proposed
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-10-05
 - Amends: [0099](0099-standalone-overflow-presale.md), which kept every presale
   adapter inside `blast_presale`, and [0102](0102-presale-creation-allowlists.md),

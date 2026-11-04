@@ -2,6 +2,7 @@
 
 - Status: accepted; role bits, checks, and gate map superseded by
   [0097](0097-one-singleton-acl-with-typed-roles.md), which keeps this grouping as types
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-09-25
 - Amends: [0082](0082-revocable-creator-and-lp-fee-capabilities.md) and
   [0091](0091-fee-split-buyback-and-burn.md)

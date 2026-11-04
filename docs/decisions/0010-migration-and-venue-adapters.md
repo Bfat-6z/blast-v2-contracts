@@ -1,6 +1,7 @@
 # 0010: Migration routes and venue adapters
 
 - Status: proposed
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-08-22
 
 > Amended by accepted
