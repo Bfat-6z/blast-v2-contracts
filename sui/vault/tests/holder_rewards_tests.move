@@ -184,9 +184,9 @@ fun a_round_cannot_close_before_its_deadline() {
 #[test]
 #[expected_failure(abort_code = blast_vault::errors::EWrongVault, location = blast_vault::holder_rewards)]
 fun a_round_cannot_close_into_another_vault() {
-    let (mut scenario, mut f, vault, round, _) = two_leaf_round();
-    let terms = f.terms_for(owner_split(), 0, 0, false, false);
-    let mut other = f.new_vault(terms, scenario.ctx());
+    let (scenario, mut f, vault, round, _) = two_leaf_round();
+    let terms = vault_fixture::terms_sealed_by(vault_fixture::venue(), owner_split());
+    let mut other = f.new_vault(terms);
     f.clock_mut().increment_for_testing(CLAIM_WINDOW_MS);
 
     round.close_round(f.version(), &mut other, f.clock());
@@ -252,9 +252,9 @@ fun a_reimbursement_above_the_reserve_is_rejected() {
 #[test]
 #[expected_failure(abort_code = blast_vault::errors::EWrongVault, location = blast_vault::holder_rewards)]
 fun the_gas_reserve_cannot_settle_into_another_vault() {
-    let (mut scenario, f, vault, mut round, _) = two_leaf_round();
-    let terms = f.terms_for(owner_split(), 0, 0, false, false);
-    let mut other = f.new_vault(terms, scenario.ctx());
+    let (mut scenario, mut f, vault, mut round, _) = two_leaf_round();
+    let terms = vault_fixture::terms_sealed_by(vault_fixture::venue(), owner_split());
+    let mut other = f.new_vault(terms);
 
     round.settle_gas_reserve(&rewards_admin(), f.version(), &mut other, 1, scenario.ctx());
 

@@ -187,7 +187,7 @@ public fun share_vault(
     residual_meme: u64,
     residual_quote: u64,
 ) {
-    let vault = self.new_vault(terms, scenario.ctx());
+    let vault = self.new_vault(terms);
     let residual_meme = self.meme(residual_meme);
     vault.share_with_position(
         &TestVenue(),
@@ -202,12 +202,23 @@ public fun share_vault(
 }
 
 /// Builds an unshared vault for `terms` through the admitted test venue.
-public fun new_vault(
-    self: &VaultFixture,
+public fun new_vault(self: &mut VaultFixture, terms: VaultTerms): Vault<VAULT_FIXTURE, QUOTE> {
+    self.new_vault_through(&TestVenue(), terms)
+}
+
+/// Builds an unshared vault for `terms` through `venue`.
+public fun new_vault_through<Venue>(
+    self: &mut VaultFixture,
+    venue: &Venue,
     terms: VaultTerms,
-    ctx: &mut TxContext,
 ): Vault<VAULT_FIXTURE, QUOTE> {
-    vault::new(&self.registry, &TestVenue(), &self.version, terms, pool_id(), ctx)
+    vault::new(&mut self.registry, venue, &self.version, terms, pool_id())
+}
+
+/// The ID the registry derives for the vault of terms sealed by `Issuer` for the sale `origin`.
+public fun derived_vault_id<Issuer>(self: &VaultFixture, origin: ID): ID {
+    let key = vault::vault_key_for_testing(type_name::with_original_ids<Issuer>(), origin);
+    object::id_from_address(derived_object::derive_address(object::id(&self.registry), key))
 }
 
 /// Takes the shared vault.
@@ -343,13 +354,14 @@ use blast_vault::{
     vault::{Self, BuybackReceipt, Vault}
 };
 
-use std::unit_test::destroy;
+use std::{type_name, unit_test::destroy};
 
 use sui::{
     balance::{Self, Balance},
     clock::{Self, Clock},
     coin::Coin,
     coin_registry::{Self, Currency},
+    derived_object,
     test_scenario::{Self, Scenario},
     test_utils
 };

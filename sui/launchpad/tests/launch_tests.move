@@ -98,6 +98,7 @@ public struct CapProposal has copy, drop {
 public struct LaunchFixture {
     scenario: Scenario,
     package_version: PackageVersion,
+    registry: LaunchRegistry,
     config: launch_config::LaunchConfig,
     runtime_config: runtime_config::RuntimeConfig,
     clock: Clock,
@@ -960,6 +961,38 @@ fun finalize_snapshots_the_config_and_emits_launch_created() {
         launch.assert_snapshot();
 
         destroy(launch);
+    });
+
+    fixture.end();
+}
+
+#[test]
+fun a_launch_id_derives_from_the_registry_and_its_coin_type() {
+    let mut fixture = start();
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let launch = f.new_default_launch(CREATOR);
+
+        let key = launch::launch_key_for_testing<LAUNCH_TESTS>();
+        let derived = derived_object::derive_address(object::id(&f.registry), key);
+        assert_eq!(object::id(&launch), object::id_from_address(derived));
+        destroy(launch);
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = sui::derived_object::EObjectAlreadyExists, location = sui::derived_object)]
+fun a_second_launch_of_the_same_coin_type_is_rejected() {
+    let mut fixture = start();
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let first = f.new_default_launch(CREATOR);
+
+        let second = f.new_default_launch(CREATOR);
+
+        destroy(first);
+        destroy(second);
     });
 
     fixture.end();
@@ -3264,7 +3297,7 @@ fun finalize_rejects_a_creation_fee_other_than_the_configured_one() {
         let mut currency = f.take_currency();
         let creation_fee = coin::mint_for_testing<SUI>(CREATION_FEE - 1, f.ctx!());
 
-        destroy(initializer.finalize(&f.package_version, &mut currency, &f.config, creation_fee, f.ctx!()));
+        destroy(initializer.finalize(&f.package_version, &mut f.registry, &mut currency, &f.config, creation_fee));
         destroy(currency);
     });
 
@@ -4305,6 +4338,7 @@ fun an_owner_proof_for_one_launch_does_not_open_another_launchs_vault() {
         other_terms = f.migrate(&mut launch);
         launch.put_back();
     });
+    let mut fixture = fixture.with_fresh_registry();
 
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
@@ -4347,6 +4381,7 @@ fun start(): LaunchFixture {
 fun start_with_zero_protocol_allocation(): LaunchFixture {
     let mut scenario = test_scenario::begin(@0x0);
     let package_version = package_version::new_for_testing(scenario.ctx());
+    let registry = launch::registry_for_testing(scenario.ctx());
     launch_config::init_zero_fees_for_testing(scenario.ctx());
     let mut runtime_config = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
     let clock = clock::create_for_testing(scenario.ctx());
@@ -4372,6 +4407,7 @@ fun start_with_zero_protocol_allocation(): LaunchFixture {
     LaunchFixture {
         scenario,
         package_version,
+        registry,
         config,
         runtime_config,
         clock,
@@ -4413,6 +4449,16 @@ fun listing_admin(): AdminWitness<ListingAdmin> {
 
 fun launch_end(self: LaunchFixture) {
     destroy(self);
+}
+
+/// Replaces the launch registry with a new one, as another publication would hold, so the same
+/// coin type can launch again under a different derived ID.
+fun launch_with_fresh_registry(self: LaunchFixture): LaunchFixture {
+    let LaunchFixture { mut scenario, package_version, registry, config, runtime_config, clock } = self;
+    destroy(registry);
+    let registry = launch::registry_for_testing(scenario.ctx());
+
+    LaunchFixture { scenario, package_version, registry, config, runtime_config, clock }
 }
 
 // --- Plans ---
@@ -4605,7 +4651,13 @@ fun launch_finalize<Quote>(
 ): Launch<LAUNCH_TESTS, Quote> {
     let mut currency = self.take_currency();
     let creation_fee = coin::mint_for_testing<SUI>(self.config.creation_fee(), self.ctx!());
-    let launch = initializer.finalize(&self.package_version, &mut currency, &self.config, creation_fee, self.ctx!());
+    let launch = initializer.finalize(
+        &self.package_version,
+        &mut self.registry,
+        &mut currency,
+        &self.config,
+        creation_fee,
+    );
     test_scenario::return_to_address(COIN_REGISTRY, currency);
 
     launch
@@ -5080,7 +5132,14 @@ use blast_fun::{
     curve,
     constants,
     events,
-    launch::{Self, CurveFeeCapReassignment, Launch, LaunchInitializer, MetadataCapReassignment},
+    launch::{
+        Self,
+        CurveFeeCapReassignment,
+        Launch,
+        LaunchInitializer,
+        LaunchRegistry,
+        MetadataCapReassignment
+    },
     launch_config,
     launch_ticket::{Self, LaunchTicket},
     blast_fun::{Self as package_version, PackageVersion},
@@ -5096,6 +5155,7 @@ use sui::{
     clock::{Self, Clock},
     coin::{Self, Coin, TreasuryCap},
     coin_registry::Currency,
+    derived_object,
     event,
     sui::SUI,
     test_scenario::{Self, Scenario},
@@ -5105,6 +5165,8 @@ use sui::{
 use fun launch_ctx as LaunchFixture.ctx;
 
 use fun launch_end as LaunchFixture.end;
+
+use fun launch_with_fresh_registry as LaunchFixture.with_fresh_registry;
 
 use fun launch_next_tx as LaunchFixture.next_tx;
 

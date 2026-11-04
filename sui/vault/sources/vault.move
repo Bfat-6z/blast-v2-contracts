@@ -815,6 +815,12 @@ fun burn<Meme>(currency: &mut Currency<Meme>, meme: Balance<Meme>, ctx: &mut TxC
 // === Test-Only Functions ===
 
 #[test_only]
+/// The key a vault's ID derives from, for the terms sealed by `issuer` for the sale `origin`.
+public fun vault_key_for_testing(issuer: TypeName, origin: ID): VaultKey {
+    VaultKey { issuer, origin }
+}
+
+#[test_only]
 /// The owner's, auto-LP's, holder rewards', and burn's balances, in that order.
 public fun balances_for_testing<Meme, Quote>(
     self: &Vault<Meme, Quote>,

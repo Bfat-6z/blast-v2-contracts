@@ -1078,6 +1078,12 @@ public fun registry_for_testing(ctx: &mut TxContext): LaunchRegistry {
 }
 
 #[test_only]
+/// The key the launch of `Meme` derives its ID from.
+public fun launch_key_for_testing<Meme>(): LaunchKey<Meme> {
+    LaunchKey()
+}
+
+#[test_only]
 public fun reassign_metadata_cap_for_testing<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion,

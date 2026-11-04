@@ -61,6 +61,7 @@ public struct TestVenue() has drop;
 public struct OpeningRoundFixture {
     scenario: Scenario,
     package_version: PackageVersion,
+    registry: LaunchRegistry,
     config: LaunchConfig,
     runtime_config: RuntimeConfig,
     clock: Clock,
@@ -830,6 +831,7 @@ fun migrate(
 fun start(): OpeningRoundFixture {
     let mut scenario = test_scenario::begin(PROTOCOL_ADMIN);
     let package_version = package_version::new_for_testing(scenario.ctx());
+    let registry = launch::registry_for_testing(scenario.ctx());
     launch_config::init_zero_fees_for_testing(scenario.ctx());
     let runtime_config = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -855,7 +857,7 @@ fun start(): OpeningRoundFixture {
      scenario.ctx());
     scenario.next_tx(LAUNCHER);
 
-    OpeningRoundFixture { scenario, package_version, config, runtime_config, clock }
+    OpeningRoundFixture { scenario, package_version, registry, config, runtime_config, clock }
 }
 
 /// A curve holding 80 percent of supply and the pool the rest; Blast's allocation is zero.
@@ -913,10 +915,10 @@ fun intake(
     let creation_fee = coin::zero(self.scenario.ctx());
     let launch = initializer.finalize(
         &self.package_version,
+        &mut self.registry,
         &mut currency,
         &self.config,
         creation_fee,
-        self.scenario.ctx()
     );
     test_scenario::return_to_address(COIN_REGISTRY, currency);
 
@@ -1095,7 +1097,7 @@ use blast_fun::{
     creator_authority,
     curve,
     events::{Bought, LaunchCreated, OpeningRoundDelivered, OpeningRoundJoined, OpeningRoundSettled},
-    launch::{Self, Launch},
+    launch::{Self, Launch, LaunchRegistry},
     launch_config::{Self, LaunchConfig},
     launch_ticket::{Self, LaunchTicket},
     blast_fun::{Self as package_version, PackageVersion},

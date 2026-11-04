@@ -1790,6 +1790,12 @@ public fun registry_for_testing(ctx: &mut TxContext): PresaleRegistry {
 }
 
 #[test_only]
+/// The key the presale of `SaleToken` derives its ID from.
+public fun presale_key_for_testing<SaleToken>(): PresaleKey<SaleToken> {
+    PresaleKey()
+}
+
+#[test_only]
 /// Builds an open policy without its rules, as superseded bytecode could.
 public fun open_eligibility_unchecked_for_testing(
     wallet_cap: u64,

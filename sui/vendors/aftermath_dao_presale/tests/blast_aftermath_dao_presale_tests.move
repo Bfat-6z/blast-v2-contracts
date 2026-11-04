@@ -286,9 +286,11 @@ fun finalize_rejects_another_venues_sale() {
         &creation_policy,
         &fee_policy,
     );
+    let mut registry = presale::registry_for_testing(scenario.ctx());
 
     let _sale = admin_cap.finalize<LP, _, _>(
         &package_version,
+        &mut registry,
         initializer,
         &mut currency,
         amm_pool::create_pool_cap_for_testing(scenario.ctx()),
@@ -493,11 +495,13 @@ fun finalize_sale(
     mut currency: Currency<BLAST_AFTERMATH_DAO_PRESALE_TESTS>,
 ): (Presale<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>, ID) {
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let mut registry = presale::registry_for_testing(scenario.ctx());
     let (result_0, result_1) = {
         let create_pool_cap = amm_pool::create_pool_cap_for_testing(scenario.ctx());
 
         let sale = admin_cap.finalize<LP, _, _>(
             &package_version,
+            &mut registry,
             initializer,
             &mut currency,
             create_pool_cap,
@@ -514,6 +518,7 @@ fun finalize_sale(
         (sale, pool_creation_id)
     };
     std::unit_test::destroy(package_version);
+    destroy(registry);
     (result_0, result_1)
 }
 

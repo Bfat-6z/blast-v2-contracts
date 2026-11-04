@@ -310,7 +310,6 @@ fun the_vault_registry_refuses_a_venue_the_launch_policy_admitted() {
         vault_version,
         terms,
         @0x9001.to_id(),
-        ctx,
     );
 
     destroy(meme);
@@ -354,7 +353,7 @@ public fun mock_adapter(
     version: &PackageVersion,
     config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
-    registry: &VaultRegistry,
+    registry: &mut VaultRegistry,
     vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     ctx: &mut TxContext,
@@ -370,7 +369,7 @@ fun mock_adapter_with(
     version: &PackageVersion,
     config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
-    registry: &VaultRegistry,
+    registry: &mut VaultRegistry,
     vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     liquidity: u128,
@@ -382,7 +381,7 @@ fun mock_adapter_with(
     let pool = MockPool { id: object::new(ctx) };
     let pool_id = object::id(&pool);
     let position = MockPosition { id: object::new(ctx), pool_id, meme, quote, liquidity };
-    vault::new<_, _, _>(registry, &Venue(), vault_version, terms, pool_id, ctx).share_with_position(
+    vault::new<_, _, _>(registry, &Venue(), vault_version, terms, pool_id).share_with_position(
         &Venue(),
         treasury,
         position,
