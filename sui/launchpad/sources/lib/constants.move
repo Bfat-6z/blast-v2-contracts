@@ -48,6 +48,11 @@ macro public(package) fun max_protocol_allocation_bps(): u64 {
     1_000
 }
 
+/// Maximum Blast share of each asset in a vault's LP fees.
+macro public(package) fun max_lp_fee_bps(): u64 {
+    3_000
+}
+
 /// Maximum Blast share of each launch trade fee; the creator receives the rest.
 macro public(package) fun max_protocol_fee_share_bps(): u64 {
     7_000

@@ -13,7 +13,7 @@ public struct TOKEN has drop {}
 
 /// Creates the currency and its launch ticket and hands the ticket to the publisher.
 fun init(otw: TOKEN, ctx: &mut TxContext) {
-    let ticket = launch_ticket::new(
+    let (ticket, treasury_cap) = launch_ticket::new(
         otw,
         9,
         b"PTB".to_string(),
@@ -27,6 +27,7 @@ fun init(otw: TOKEN, ctx: &mut TxContext) {
     );
 
     transfer::public_transfer(ticket, ctx.sender());
+    transfer::public_transfer(treasury_cap, ctx.sender());
 }
 
 // === Imports ===

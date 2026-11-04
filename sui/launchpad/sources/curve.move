@@ -86,4 +86,6 @@ fun amount_out(amount_in: u256, reserve_in: u256, reserve_out: u256): u64 {
 
 // === Imports ===
 
-use blast_fun::{bps::Bps, constants};
+use blast_core::bps::Bps;
+
+use blast_fun::constants;
