@@ -10,6 +10,7 @@
 - Amended: 2026-11-03 — pre-audit hardening: a 30-day notice ceiling, a guarded-notice release gate
   on `unpause`, a 2-hour default round notice with a capped gas reserve, a 48-hour start for the
   migrators LP-fee policy, and consumption-time validation of presale terms
+- Amended: 2026-11-04 — accepted trust boundaries from the pre-audit's informational findings
 - Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
   [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
   [0007](0007-acl-pause-and-versioning.md) (pause),
@@ -449,3 +450,41 @@ and presale `package_admin::EUnguardedNotice`; migrators gains `vault::EGasReser
 and runbooks follow. Accepted residual: the Merkle root stays opaque, so a compromised
 RewardsAdmin can still assign one round's unreserved holder balance once its 2-hour notice
 passes uncancelled; revoking the role and cancelling the round is the response.
+
+## Amendment 2026-11-04: accepted trust boundaries
+
+### Context
+
+The same pre-audit listed informational findings. Most were fixed in code or docs; five
+describe authority the design deliberately keeps. They are recorded here so integrators and
+the external auditor see them as accepted, not overlooked.
+
+### Decision
+
+The owner accepts these boundaries without a code change:
+
+- **No exit from MigrationReady or OpeningRound (LP-I6).** A graduated launch leaves only
+  through its stored adapter, and the migration pause bit has no expiry. An opening round
+  settles only while the trading bit is clear. The 48-hour upgrade notice therefore protects
+  Live holders, who can sell; holders of a launch waiting to migrate or settle depend on
+  PauseAdmin and UnpauseAdmin acting in good faith.
+- **Presale PauseAdmin and FeeAdmin (PS-I2).** PauseAdmin can hold the presale migration bit
+  until a sale's liquidity deadline, which turns a funded sale into refunds. FeeAdmin can raise
+  one vault's Blast LP rate up to 10,000 bps after its 48-hour notice; no cap below 100% exists.
+- **Deny-listed fee recipients (PS-I3).** Cetus and Bluefin vaults collect under the old split
+  before applying a new one, so a Quote whose issuer deny-lists a fee recipient blocks that
+  vault's collection and its re-split repair. Aftermath does not collect first and stays
+  repairable. Listing only Quote types whose deny-list Blast accepts remains the control.
+- **Venue operators (MG-I1).** A venue can strand a MigrationReady launch: a Cetus
+  `add_denied_list<Meme>`, removing the fee tier, a venue pause or version bump, or a Cetus
+  BurnManager pause aborts its migration, and the last two also stop fee collection.
+  Recovery needs a migrators upgrade, which waits its notice.
+- **LP-share changes reach accrued fees (MG-I2).** A FeeAdmin change to Blast's default or
+  per-coin LP share applies to fees accrued but not yet collected. The 48-hour notice lets
+  anyone call `collect_fees` first; no cap below 100% exists.
+
+### Consequences
+
+The runbooks and integrator guides point here instead of restating each boundary. Any
+future cap or exit path is a new decision.
+

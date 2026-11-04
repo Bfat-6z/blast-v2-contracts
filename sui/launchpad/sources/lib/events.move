@@ -92,20 +92,21 @@ public struct LaunchShared has copy, drop {
     public_start_ms: u64,
 }
 
-/// Quote joined a launch's opening round from the sender; `bids` is the pot after it.
+/// `quote_amount` joined a launch's opening round from the sender; `bids` is the pot after it.
 public struct OpeningRoundJoined has copy, drop {
     launch_id: ID,
-    quote: u64,
+    quote_amount: u64,
     bids: u64,
 }
 
-/// The opening round closed: its `bids` bought `meme` from the curve, in the same transaction's
-/// `Bought` when there is one, and left `quote` to refund. Both are delivered pro rata.
+/// The opening round closed: its `bids` bought `meme_amount` from the curve, in the same
+/// transaction's `Bought` when there is one, and left `quote_amount` to refund. Both are delivered
+/// pro rata.
 public struct OpeningRoundSettled has copy, drop {
     launch_id: ID,
     bids: u64,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
 }
 
 /// `bidder`'s share of the opening round, for its `bid`, was sent to it.
@@ -113,8 +114,8 @@ public struct OpeningRoundDelivered has copy, drop {
     launch_id: ID,
     bidder: address,
     bid: u64,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
 }
 
 /// A curve purchase; reserves are after the purchase. Purchases before `LaunchShared` are the
@@ -152,16 +153,16 @@ public struct Sold has copy, drop {
 public struct MigrationAllocationPaid has copy, drop {
     launch_id: ID,
     destination: address,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
 }
 
-/// Migration committed: the adapter received `meme` and `quote` for the pool, and `disposed_meme`
-/// was burned (or sent to `@0x0` under a fixed supply).
+/// Migration committed: the adapter received `meme_amount` and `quote_amount` for the pool, and
+/// `disposed_meme` was burned (or sent to `@0x0` under a fixed supply).
 public struct Migrated has copy, drop {
     launch_id: ID,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
     disposed_meme: u64,
     total_supply_after: u64,
 }
@@ -322,22 +323,27 @@ public(package) fun launch_shared(launch_id: ID, public_starts_at_ms: u64) {
     emit(LaunchShared { launch_id, public_start_ms: public_starts_at_ms });
 }
 
-public(package) fun opening_round_joined(launch_id: ID, quote: u64, bids: u64) {
-    emit(OpeningRoundJoined { launch_id, quote, bids });
+public(package) fun opening_round_joined(launch_id: ID, quote_amount: u64, bids: u64) {
+    emit(OpeningRoundJoined { launch_id, quote_amount, bids });
 }
 
-public(package) fun opening_round_settled(launch_id: ID, bids: u64, meme: u64, quote: u64) {
-    emit(OpeningRoundSettled { launch_id, bids, meme, quote });
+public(package) fun opening_round_settled(
+    launch_id: ID,
+    bids: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+) {
+    emit(OpeningRoundSettled { launch_id, bids, meme_amount, quote_amount });
 }
 
 public(package) fun opening_round_delivered(
     launch_id: ID,
     bidder: address,
     bid: u64,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
 ) {
-    emit(OpeningRoundDelivered { launch_id, bidder, bid, meme, quote });
+    emit(OpeningRoundDelivered { launch_id, bidder, bid, meme_amount, quote_amount });
 }
 
 public(package) fun bought(
@@ -397,23 +403,23 @@ public(package) fun sold(
 public(package) fun migration_allocation_paid(
     launch_id: ID,
     destination: address,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
 ) {
-    emit(MigrationAllocationPaid { launch_id, destination, meme, quote });
+    emit(MigrationAllocationPaid { launch_id, destination, meme_amount, quote_amount });
 }
 
 public(package) fun migrated(
     launch_id: ID,
-    meme: u64,
-    quote: u64,
+    meme_amount: u64,
+    quote_amount: u64,
     disposed_meme: u64,
     total_supply_after: u64,
 ) {
     emit(Migrated {
         launch_id,
-        meme,
-        quote,
+        meme_amount,
+        quote_amount,
         disposed_meme,
         total_supply_after,
     });

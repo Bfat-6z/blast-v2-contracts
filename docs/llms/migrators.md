@@ -93,6 +93,8 @@ Calls also take objects from other packages:
 
 #### What an `LpVault` holds
 
+- `launch_id`: the launch whose migration created the vault. `claim_creator_fees`,
+  `schedule_fee_split` and `cancel_fee_split` abort with `EWrongLaunch` for any other launch.
 - The venue position, as a dynamic object field under `blast_fun_migrators::vault::PositionKey`
   (`PositionKey<Venue>`), where `Venue` is `blast_fun_migrators::cetus::Venue` or
   `blast_fun_migrators::bluefin::Venue`. On Cetus this is the `CetusLPBurnProof` of the burned
@@ -394,7 +396,7 @@ units), and `Clock`. It checks the pool is the vault's (`EPositionPoolMismatch`)
 `burn_quote` holds), swaps it for Meme in the vault's pool up to the widest price limit, aborts with
 `EBuybackBelowMinimum` if the Meme bought is below `min_meme_out`, burns that Meme (or sends it to
 `@0x0` when the supply is not burn-only, as collections do), returns any Quote the pool did not
-take to `burn_quote`, and emits `BuybackBurned`, whose `quote_pending` is the burn Quote still
+take to `burn_quote`, and emits `BuybackBurned`, whose `burn_quote_pending` is the burn Quote still
 waiting afterwards. The admin may spend `burn_quote` in several smaller buybacks. The admin sets
 `min_meme_out` from an off-chain price, because anyone can move the pool price inside a
 transaction.
@@ -723,7 +725,7 @@ economics: the proposal becomes applied only when its apply call succeeds.
   `burn_bps` (each a `Bps` wrapping one u64) and `recipients` (each with `destination` and `bps`).
   The position is a dynamic object field of the vault: list its dynamic fields, or read the child
   object by the ID in `VaultCreated.position_id`.
-- **Find a launch's vault:** scan `VaultCreated` events for its `meme` type name, or read the
+- **Find a launch's vault:** scan `VaultCreated` events for its `launch_id`, or read the
   objects the migrate transaction created. Each Meme type has exactly one launch, so `LpVault<Meme,
   Quote>` is unique per Meme.
 - **Blast's live share for a coin:** `LpFeePolicy.coins` is a
@@ -777,18 +779,18 @@ admin's delayed-module events instead; see "Delayed administration" for their ke
 | Event | Emitted by | Fields |
 | --- | --- | --- |
 | `CetusPoolReserved` | Cetus `new` | `meme`, `quote` (type names), `pool_creation_cap_id`, `tick_spacing` |
-| `VaultCreated` | `migrate` | `vault_id`, `pool_id`, `position_id`, `venue`, `meme`, `quote` (type names), `residual_meme`, `residual_quote`, `liquidity`, `fee_split` |
+| `VaultCreated` | `migrate` | `vault_id`, `launch_id`, `pool_id`, `position_id`, `venue`, `meme`, `quote` (type names), `residual_meme`, `residual_quote`, `liquidity`, `fee_split` |
 | `FeesCollected` | nonzero collection | `vault_id`, `gross_meme`, `gross_quote`, `protocol_destination` (none when held for a partner), `protocol_meme`, `protocol_quote`, `creator_*`, `auto_lp_*`, `rewards_*`, `burn_meme` (burned), `burn_quote` (waits), `recipient_meme`, `recipient_quote` (split order) |
 | `AutoLpPositionOpened` | first Cetus collection with both auto-LP balances nonzero | `vault_id`, `position_id` |
-| `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `meme_pending`, `quote_pending` |
+| `AutoLiquidityAdded` | auto-LP added something | `vault_id`, `meme_amount`, `quote_amount`, `auto_lp_meme_pending`, `auto_lp_quote_pending` |
 | `CreatorFeesClaimed` | creator LP-fee claim | `vault_id`, `meme_amount`, `quote_amount` |
-| `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `quote_pending` |
+| `BuybackBurned` | buyback | `vault_id`, `quote_spent`, `meme_burned`, `burn_quote_pending` |
 | `RoundPublished` | round publication (after `delayed_action::ActionApplied` for the round slot) | `vault_id`, `round_id`, `number`, `start_checkpoint`, `end_checkpoint`, `claim_deadline_at_ms`, `root`, `manifest_digest`, `leaf_count`, `meme_amount`, `quote_amount`, `meme_unallocated`, `quote_unallocated`, `treasury`, `gas_reserve_amount` |
 | `GasReserveSettled` | gas settlement | `vault_id`, `round_id`, `number`, `treasury`, `reimbursement_amount`, `reserve_returned`, `quote_unallocated` |
 | `RoundClosed` | deadline recovery | `vault_id`, `round_id`, `number`, `meme_returned`, `quote_returned`, `gas_reserve_returned` |
 | `RewardPaid` | reward claim | `round_id`, `index`, `beneficiary`, `meme_amount`, `quote_amount`, `meme_remaining`, `quote_remaining` |
 | `ProtocolFeesClaimed` | residual claim | `vault_id`, `meme`, `quote` (type names), `claimant`, `meme_amount`, `quote_amount` |
-| `ProtocolLpFeesClaimed` | partner payout | `vault_id`, `protocol_destination`, `protocol_meme`, `protocol_quote`, `partner_meme`, `partner_quote` |
+| `ProtocolLpFeesClaimed` | partner payout | `vault_id`, `protocol_destination`, `blast_meme`, `blast_quote` (Blast's part, net of the partner's), `partner_meme`, `partner_quote` |
 
 Event order inside one call: a collection emits `FeesCollected`, then possibly
 `AutoLpPositionOpened`, then possibly `AutoLiquidityAdded`; a split update adds
@@ -801,9 +803,8 @@ is nonzero), and `blast_fun::events::Migrated` before `VaultCreated`.
 
 #### Replaying a vault from events
 
-Start a vault at `VaultCreated`: its `fee_split`, residuals, `pool_id`, `position_id`.
-`VaultCreated` has no launch ID; link it through `Migrated.launch_id` in the same transaction, or
-through the `meme` type. On Cetus, `position_id` is the `CetusLPBurnProof`, not the burned Cetus
+Start a vault at `VaultCreated`: its `launch_id`, `fee_split`, residuals, `pool_id`,
+`position_id`. On Cetus, `position_id` is the `CetusLPBurnProof`, not the burned Cetus
 position. Position principal is `Migrated.meme − residual_meme` and `Migrated.quote −
 residual_quote`. Then reduce:
 
@@ -811,14 +812,14 @@ residual_quote`. Then reduce:
   `burn_meme` left the supply (or went to `@0x0`); if `protocol_destination` is none, add
   `protocol_*` to the held partner balance; recipient `i` of the split in force received
   `recipient_meme[i]` and `recipient_quote[i]`.
-- `AutoLiquidityAdded`: auto-LP balances become `meme_pending`/`quote_pending`; principal rises by
+- `AutoLiquidityAdded`: auto-LP balances become `auto_lp_meme_pending`/`auto_lp_quote_pending`; principal rises by
   the added amounts. It can appear without `FeesCollected`, when only earlier leftovers were added.
 - `delayed::DelayedApplied` with key `blast_fun_migrators::vault::FeeSplitKey` and the vault's ID as
   `owner`: adopt its `value` as the split.
 - `CreatorFeesClaimed`, `ProtocolFeesClaimed`, `ProtocolLpFeesClaimed`: the matching balances become
   zero (each claim takes everything). `CreatorFeesClaimed` names no recipient; the coins go wherever
   the PTB sends them.
-- `BuybackBurned`: `burn_quote` becomes `quote_pending`; `meme_burned` left the supply (or went to
+- `BuybackBurned`: `burn_quote` becomes `burn_quote_pending`; `meme_burned` left the supply (or went to
   `@0x0`).
 - `delayed_action::ActionScheduled`, `ActionCancelled`, `ActionApplied` with key
   `blast_fun_migrators::vault::RoundPublicationKey`: track the vault's scheduled round or notice
@@ -852,6 +853,7 @@ Blast admin abort with plain numeric codes from the named module.
 | `migrate` | `EZeroLiquidity` (2, module `vault`) | The seed produced no liquidity; nothing to fix by retrying. |
 | creator claim, split update | code 22 from the launchpad's `launch` module | Use the launch's live `CurveFeeCap`. |
 | creator claim | `ENoCreatorFees` (1, module `vault`) | Collect first, or wait for fees. |
+| creator claim, split schedule or cancel | `EWrongLaunch` (15, module `vault`) | Pass the launch whose ID is the vault's `launch_id`. |
 | split update, policy | code 20 (`EUnchanged`) from Blast admin's `delayed` module (`delayed_map` for a coin override, clear or coin notice; `delayed_action` for the upgrade notice) | Change the value or the notice; clear only a coin that has a pair. |
 | apply, cancel (split, policy, upgrades) | codes 17 (`ENotReady`), 18 (`ENoPending`), 22 (`EWrongChange`) from Blast admin: 17 from `delayed`, or from `delayed_map` for an early coin override or clear; 18 from the type's own module (`delayed`, `delayed_map` or `delayed_action`); 22 from `delayed_action` | Wait for `ready_at_ms`; check a proposal is pending; use the call matching the pending action or notice change. |
 | split construction | codes 6, 7, 8, 24 from the launchpad's `allocation` module; 0 from its `bps` module | Nonzero destination, sum exactly 10,000, at most 16 recipients, no duplicates, each BPS ≤ 10,000. |
@@ -912,7 +914,7 @@ The Cetus migration liquidity is burned through Cetus LP Burn. The Bluefin posit
 auto-LP position have no removal path in the current code, which an upgrade of this package could
 change.
 
-**How do I find a launch's vault and pool?** Scan `VaultCreated` events for the `meme` type name;
+**How do I find a launch's vault and pool?** Scan `VaultCreated` events for the `launch_id`;
 the match gives `vault_id`, `pool_id`, and `position_id`. The vault's type is
 `LpVault<Meme, Quote>`, and its `pool_id` field also names the pool.
 

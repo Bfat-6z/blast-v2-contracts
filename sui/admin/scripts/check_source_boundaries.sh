@@ -260,7 +260,7 @@ expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy
   schedule_delay take_action
 expect_delayed_surface delayed_set admission_ready_at_ms apply_add apply_delay cancel_add cancel_delay \
   contains delay_ms destroy is_guarded members new pending_count pending_delay remove schedule_add schedule_delay
-expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay delay_ms destroy \
+expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay delay_ms \
   entry_proposal_notice entry_proposal_value new pending pending_delay schedule schedule_delay value
 
 version_file="$package_dir/sources/operational_version.move"

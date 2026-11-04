@@ -163,19 +163,19 @@ package_surface="$(for source in "$SOURCE_DIR"/*.move; do
 done | LC_ALL=C sort)"
 require_text "$package_surface" \
     "the package's public and package functions must have exactly the pinned signatures" <<'EOF'
-blast_events:package:fun auto_liquidity_added( vault_id: ID, meme_amount: u64, quote_amount: u64, meme_pending: u64, quote_pending: u64, )
+blast_events:package:fun auto_liquidity_added( vault_id: ID, meme_amount: u64, quote_amount: u64, auto_lp_meme_pending: u64, auto_lp_quote_pending: u64, )
 blast_events:package:fun auto_lp_position_opened(vault_id: ID, position_id: ID)
-blast_events:package:fun buyback_burned( vault_id: ID, quote_spent: u64, meme_burned: u64, quote_pending: u64, )
+blast_events:package:fun buyback_burned( vault_id: ID, quote_spent: u64, meme_burned: u64, burn_quote_pending: u64, )
 blast_events:package:fun cetus_pool_reserved<Meme, Quote>(pool_creation_cap_id: ID, tick_spacing: u32)
 blast_events:package:fun creator_fees_claimed(vault_id: ID, meme_amount: u64, quote_amount: u64)
 blast_events:package:fun fees_collected( vault_id: ID, gross_meme: u64, gross_quote: u64, protocol_destination: Option<address>, protocol_meme: u64, protocol_quote: u64, creator_meme: u64, creator_quote: u64, auto_lp_meme: u64, auto_lp_quote: u64, rewards_meme: u64, rewards_quote: u64, burn_meme: u64, burn_quote: u64, recipient_meme: vector<u64>, recipient_quote: vector<u64>, )
 blast_events:package:fun gas_reserve_settled( vault_id: ID, round_id: ID, number: u64, treasury: address, reimbursement_amount: u64, reserve_returned: u64, quote_unallocated: u64, )
 blast_events:package:fun protocol_fees_claimed<Meme, Quote>( vault_id: ID, claimant: address, meme_amount: u64, quote_amount: u64, )
-blast_events:package:fun protocol_lp_fees_claimed( vault_id: ID, protocol_destination: address, protocol_meme: u64, protocol_quote: u64, partner_meme: u64, partner_quote: u64, )
+blast_events:package:fun protocol_lp_fees_claimed( vault_id: ID, protocol_destination: address, blast_meme: u64, blast_quote: u64, partner_meme: u64, partner_quote: u64, )
 blast_events:package:fun reward_paid( round_id: ID, index: u64, beneficiary: address, meme_amount: u64, quote_amount: u64, meme_remaining: u64, quote_remaining: u64, )
 blast_events:package:fun round_closed( vault_id: ID, round_id: ID, number: u64, meme_returned: u64, quote_returned: u64, gas_reserve_returned: u64, )
 blast_events:package:fun round_published( vault_id: ID, round_id: ID, number: u64, start_checkpoint: u64, end_checkpoint: u64, claim_deadline_at_ms: u64, root: vector<u8>, manifest_digest: vector<u8>, leaf_count: u64, meme_amount: u64, quote_amount: u64, meme_unallocated: u64, quote_unallocated: u64, treasury: address, gas_reserve_amount: u64, )
-blast_events:package:fun vault_created<Meme, Quote, Venue>( vault_id: ID, pool_id: ID, position_id: ID, residual_meme: u64, residual_quote: u64, liquidity: u128, fee_split: FeeSplit, )
+blast_events:package:fun vault_created<Meme, Quote, Venue>( vault_id: ID, launch_id: ID, pool_id: ID, position_id: ID, residual_meme: u64, residual_quote: u64, liquidity: u128, fee_split: FeeSplit, )
 blast_fun_migrators:package:fun advance(self: &mut PackageVersion)
 blast_fun_migrators:package:fun assert_current(self: &PackageVersion)
 blast_fun_migrators:package:fun assert_next(self: &PackageVersion)
@@ -510,8 +510,8 @@ done
 VAULT_FACTS="$(move_facts "$VAULT_SOURCE")"
 [[ "$VAULT_FACTS" != *MALFORMED* ]] || fail "the Move reader rejected vault.move"
 [[ "$(move_production_type LpVault <<<"$VAULT_FACTS")" \
-    == 'struct LpVault<phantom Meme, phantom Quote> has key { id: UID, pool_id: ID, partner_id: Option<ID>, protocol_meme_residual: Balance<Meme>, protocol_quote_residual: Balance<Quote>, unpaid_protocol_meme: Balance<Meme>, unpaid_protocol_quote: Balance<Quote>, fee_split: Delayed<FeeSplitKey, FeeSplit>, creator_meme: Balance<Meme>, creator_quote: Balance<Quote>, auto_lp_meme: Balance<Meme>, auto_lp_quote: Balance<Quote>, rewards_meme: Balance<Meme>, rewards_quote: Balance<Quote>, burn_quote: Balance<Quote>, next_round: u64, last_checkpoint: Option<u64>, round_publication: DelayedAction<RoundPublicationKey, RoundTerms>, }' ]] || \
-    fail "LpVault must hold only its position key space, the pool binding, the launch's partner, the protocol residuals, Blast's LP fees held for the partner, its fee split, the split balances, the round cursor, and the delayed round publication"
+    == 'struct LpVault<phantom Meme, phantom Quote> has key { id: UID, launch_id: ID, pool_id: ID, partner_id: Option<ID>, protocol_meme_residual: Balance<Meme>, protocol_quote_residual: Balance<Quote>, unpaid_protocol_meme: Balance<Meme>, unpaid_protocol_quote: Balance<Quote>, fee_split: Delayed<FeeSplitKey, FeeSplit>, creator_meme: Balance<Meme>, creator_quote: Balance<Quote>, auto_lp_meme: Balance<Meme>, auto_lp_quote: Balance<Quote>, rewards_meme: Balance<Meme>, rewards_quote: Balance<Quote>, burn_quote: Balance<Quote>, next_round: u64, last_checkpoint: Option<u64>, round_publication: DelayedAction<RoundPublicationKey, RoundTerms>, }' ]] || \
+    fail "LpVault must hold only its position key space, its launch, the pool binding, the launch's partner, the protocol residuals, Blast's LP fees held for the partner, its fee split, the split balances, the round cursor, and the delayed round publication"
 vault_body() {
     awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name && $6 == 0 { print $10 }' <<<"$VAULT_FACTS" \
         | tr -d '[:space:]' | sed 's/,)/)/g'
@@ -522,7 +522,7 @@ vault_body() {
 [[ "$(vault_body create)" \
     == 'transfer::share_object(new(launch,venue,pool_id,position,liquidity,protocol_meme_residual,protocol_quote_residual,ctx));' ]] \
     && [[ "$(vault_body new)" \
-    == 'assert!(liquidity>0,EZeroLiquidity);letposition_id=object::id(&position);letid=object::new(ctx);letround_publication=delayed_action::new(RoundPublicationKey(),&id,DEFAULT_ROUND_NOTICE_MS);letfee_split=delayed::new(FeeSplitKey(),&id,launch.lp_fee_split(),DEFAULT_FEE_SPLIT_DELAY_MS);letmutvault=LpVault{id,pool_id,partner_id:launch.partner_id(),protocol_meme_residual,protocol_quote_residual,unpaid_protocol_meme:balance::zero(),unpaid_protocol_quote:balance::zero(),fee_split,creator_meme:balance::zero(),creator_quote:balance::zero(),auto_lp_meme:balance::zero(),auto_lp_quote:balance::zero(),rewards_meme:balance::zero(),rewards_quote:balance::zero(),burn_quote:balance::zero(),next_round:0,last_checkpoint:option::none(),round_publication,};vault.id.add_dynamic_object_field(PositionKey<Venue>(),position);blast_events::vault_created<Meme,Quote,Venue>(vault.id.to_inner(),pool_id,position_id,vault.protocol_meme_residual.value(),vault.protocol_quote_residual.value(),liquidity,vault.fee_split.value());vault' ]] || \
+    == 'assert!(liquidity>0,EZeroLiquidity);letposition_id=object::id(&position);letid=object::new(ctx);letround_publication=delayed_action::new(RoundPublicationKey(),&id,DEFAULT_ROUND_NOTICE_MS);letfee_split=delayed::new(FeeSplitKey(),&id,launch.lp_fee_split(),DEFAULT_FEE_SPLIT_DELAY_MS);letmutvault=LpVault{id,launch_id:object::id(launch),pool_id,partner_id:launch.partner_id(),protocol_meme_residual,protocol_quote_residual,unpaid_protocol_meme:balance::zero(),unpaid_protocol_quote:balance::zero(),fee_split,creator_meme:balance::zero(),creator_quote:balance::zero(),auto_lp_meme:balance::zero(),auto_lp_quote:balance::zero(),rewards_meme:balance::zero(),rewards_quote:balance::zero(),burn_quote:balance::zero(),next_round:0,last_checkpoint:option::none(),round_publication,};vault.id.add_dynamic_object_field(PositionKey<Venue>(),position);blast_events::vault_created<Meme,Quote,Venue>(vault.id.to_inner(),vault.launch_id,pool_id,position_id,vault.protocol_meme_residual.value(),vault.protocol_quote_residual.value(),liquidity,vault.fee_split.value());vault' ]] || \
     fail "vault::create must share only what vault::new builds: the launch's partner and fee split, empty balances, no round, and the attached position"
 [[ "$(awk -F'\t' '$1 == "FN" && $3 == "public" && $6 == 0 { print $2 }' <<<"$VAULT_FACTS" \
     | LC_ALL=C sort | tr '\n' ' ')" \
@@ -593,21 +593,22 @@ in_order \
 # `Delayed`, which rejects an unchanged proposal and records the lifecycle. Readiness is checked
 # without mutation before adapters collect every position fee under the old split.
 [[ "$(move_production_type FeeSplitKey <<<"$VAULT_FACTS")" == 'struct FeeSplitKey() has copy, drop, store;' ]] \
-    && [[ "$(vault_body schedule_fee_split)" == 'migrators_version.assert_current();launch.assert_curve_fee_cap(curve_fee_cap);self.fee_split.schedule(proposed,delay_ms,clock);' ]] \
+    && [[ "$(vault_body schedule_fee_split)" == 'migrators_version.assert_current();assert!(self.launch_id==object::id(launch),EWrongLaunch);launch.assert_curve_fee_cap(curve_fee_cap);self.fee_split.schedule(proposed,delay_ms,clock);' ]] \
     || fail "creator schedules must authenticate, then propose through the vault's keyed Delayed"
-[[ "$(vault_body cancel_fee_split)" == 'migrators_version.assert_current();launch.assert_curve_fee_cap(curve_fee_cap);self.fee_split.cancel();' ]] \
+[[ "$(vault_body cancel_fee_split)" == 'migrators_version.assert_current();assert!(self.launch_id==object::id(launch),EWrongLaunch);launch.assert_curve_fee_cap(curve_fee_cap);self.fee_split.cancel();' ]] \
     && [[ "$(vault_body assert_fee_split_ready)" == 'self.fee_split.assert_ready(clock);' ]] \
     && [[ "$(vault_body apply_fee_split)" == 'self.fee_split.apply(clock);' ]] || \
     fail "creator cancellation and package-only application must preserve delayed policy semantics"
 in_order \
     'migrators_version.assert_current();' \
+    'assert!(self.launch_id==object::id(launch),EWrongLaunch);' \
     'launch.assert_curve_fee_cap(curve_fee_cap);' \
     'assert!(self.creator_meme.value()>0||self.creator_quote.value()>0,ENoCreatorFees);' \
     'letmeme=self.creator_meme.withdraw_all().into_coin(ctx);' \
     'letquote=self.creator_quote.withdraw_all().into_coin(ctx);' \
     'blast_events::creator_fees_claimed(' \
     <<<"$(vault_body claim_creator_fees)" || \
-    fail "creator claims must check the generation, then the live curve-fee cap, then a nonzero balance, and pay the whole creator balance"
+    fail "creator claims must check the generation, then the vault's launch, then the live curve-fee cap, then a nonzero balance, and pay the whole creator balance"
 [[ "$(vault_body fund_round)" == 'self.next_round=self.next_round+1;self.last_checkpoint=option::some(end_checkpoint);(self.rewards_meme.split(meme_amount),self.rewards_quote.split(quote_amount))' ]] || \
     fail "vault::fund_round must advance the round cursor and reserve only from the rewards balances"
 [[ "$(vault_body restore_rewards)" == 'self.rewards_meme.join(meme);self.rewards_quote.join(quote);' ]] || \
@@ -695,7 +696,7 @@ require_pattern "$VAULT_SOURCE" 'protocol_quote_residual\.withdraw_all' \
 # T-013: VaultCreated is a direct event emitted only after the pool binding and position custody
 # it records are written.
 [[ "$(vault_body new)" == 'assert!(liquidity>0,EZeroLiquidity);'* ]] \
-    && in_order 'assert!(liquidity>0,EZeroLiquidity);' 'LpVault{id,pool_id,' 'vault.id.add_dynamic_object_field(' 'blast_events::vault_created<' \
+    && in_order 'assert!(liquidity>0,EZeroLiquidity);' 'LpVault{id,launch_id:object::id(launch),pool_id,' 'vault.id.add_dynamic_object_field(' 'blast_events::vault_created<' \
         <<<"$(vault_body new)" || fail "VaultCreated must follow the liquidity check, the pool binding, and the position attachment"
 require_exact_count 'PackageVersion' 1 \
     "vault must take only the Migrators generation, never a Launchpad PackageVersion" \
@@ -705,7 +706,7 @@ require_pattern "$VAULT_SOURCE" 'blast_fun_migrators::PackageVersion as Migrator
 require_exact_count '&AdminWitness<' 2 \
     "vault Launchpad authority must be exactly the protocol residual claim and the buyback" \
     <(production_section "$VAULT_SOURCE")
-require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-14 for its residual, creator, liquidity, buyback, partner, round-terms, round-slot, and gas-reserve checks" <<'EOF'
+require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-15 for its residual, creator, liquidity, buyback, partner, round-terms, round-slot, gas-reserve, and launch-binding checks" <<'EOF'
 0 ENothingClaimable No protocol migration residuals are available to claim.
 1 ENoCreatorFees No creator LP fees are available to claim.
 2 EZeroLiquidity Migration position must hold liquidity.
@@ -721,6 +722,7 @@ require_errors "$VAULT_SOURCE" "vault must use sequential codes 0-14 for its res
 12 EZeroClaimWindow Claim window must be positive.
 13 EWrongRoundProposal The pending round publication is the other kind: a round, or a notice change.
 14 EGasReserveTooLarge Gas reserve must be at most 10% of the round's holder Quote.
+15 EWrongLaunch The launch is not the one whose migration created this vault.
 EOF
 
 # === Holder rewards ===
@@ -1224,7 +1226,7 @@ package_admin_body() {
     && [[ "$(move_production_type DefaultSharesKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct DefaultSharesKey() has copy, drop, store;' ]] \
     && [[ "$(move_production_type CoinSharesKey <<<"$LP_FEE_POLICY_FACTS")" == 'struct CoinSharesKey() has copy, drop, store;' ]] || \
     fail "LpFeePolicy must store its destination and defaults as keyed Delayed values and its per-coin overrides as one keyed DelayedMap"
-[[ "$(policy_body new)" == 'assert!(@blast_lp_fee_destination!=@0x0,EInvalidProtocolDestination);letid=object::new(ctx);LpFeePolicy{destination:delayed::new(ProtocolDestinationKey(),&id,destination,delay_ms),defaults:delayed::new(DefaultSharesKey(),&id,defaults,delay_ms),coins:delayed_map::new(CoinSharesKey(),&id,delay_ms,ctx),id,}' ]] \
+[[ "$(policy_body new)" == 'assert!(destination!=@0x0,EInvalidProtocolDestination);letid=object::new(ctx);LpFeePolicy{destination:delayed::new(ProtocolDestinationKey(),&id,destination,delay_ms),defaults:delayed::new(DefaultSharesKey(),&id,defaults,delay_ms),coins:delayed_map::new(CoinSharesKey(),&id,delay_ms,ctx),id,}' ]] \
     && [[ "$(policy_body schedule_coin_shares)" == 'migrators_version.assert_current();letmeme=type_name::with_original_ids<Meme>();self.coins.schedule(meme,option::some(SharePair{meme_bps,quote_bps}),clock);' ]] \
     && [[ "$(policy_body schedule_clear_coin_shares)" == 'migrators_version.assert_current();self.coins.schedule(type_name::with_original_ids<Meme>(),option::none(),clock);' ]] \
     && [[ "$(policy_body schedule_coin_shares_delay)" == 'migrators_version.assert_current();self.coins.schedule_delay(delay_ms,clock);' ]] \

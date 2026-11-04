@@ -82,7 +82,10 @@ policy before the chosen delay and release.
    sale the venue rejects refunds only at its liquidity deadline. Allow
    only Quote types whose deny-list and pause controls Blast accepts (owner,
    2026-10-02): payouts are pushed, so a denied fee recipient blocks that vault's
-   collection and a denied raise recipient blocks migration until the LP deadline.
+   collection and a denied raise recipient blocks migration until the LP deadline. On
+   Cetus and Bluefin a denied fee recipient also blocks the re-split that would remove it,
+   because those venues collect under the old split first (ADR 0134, accepted trust
+   boundaries).
    Create sale coins through Coin Registry without regulation. Finalization
    enforces confirmed `Unregulated` status and rejects legacy `Unknown` status,
    which can conceal an existing deny cap. Accept each presale partner deal, once it is registered

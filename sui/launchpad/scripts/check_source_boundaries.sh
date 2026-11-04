@@ -1437,7 +1437,7 @@ fi
 # and commits Migrated. Only order anchors are pinned.
 if [[ "$(launch_functions_containing 'self.migration_witness == type_name::with_original_ids<Witness>()')" != 'migrate treasury_cap_mut ' ]] \
   || [[ "$(launch_functions_containing 'self.lifecycle = Lifecycle::Migrated;')" != 'migrate ' ]] \
-  || [[ "$(move_production_type Migrated <<<"$events_facts")" != 'struct Migrated has copy, drop { launch_id: ID, meme: u64, quote: u64, disposed_meme: u64, total_supply_after: u64, }' ]] \
+  || [[ "$(move_production_type Migrated <<<"$events_facts")" != 'struct Migrated has copy, drop { launch_id: ID, meme_amount: u64, quote_amount: u64, disposed_meme: u64, total_supply_after: u64, }' ]] \
   || [[ "$(move_production_signature migrate <<<"$launch_facts")" != 'fun migrate<Meme, Quote, Witness: drop>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, currency: &mut Currency<Meme>, _: Witness, ctx: &mut TxContext, ): (Balance<Meme>, Balance<Quote>)' ]] \
   || ! in_order \
     'package_version.assert_current();' \

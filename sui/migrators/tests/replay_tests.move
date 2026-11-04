@@ -1326,6 +1326,7 @@ fun bought(self: &mut Replay, bytes: vector<u8>) {
 fun vault_created(self: &mut Replay, bytes: vector<u8>) {
     let mut r = bcs::new(bytes);
     self.binding.vault_id = r.peel_id();
+    assert_eq!(r.peel_id(), self.launch_id);
     self.binding.pool_id = r.peel_id();
     self.binding.position_id = r.peel_id();
     self.venue = r.peel_type_name();

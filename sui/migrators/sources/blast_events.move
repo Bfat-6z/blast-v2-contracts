@@ -13,6 +13,7 @@ module blast_fun_migrators::blast_events;
 /// it holds from migration.
 public struct VaultCreated has copy, drop {
     vault_id: ID,
+    launch_id: ID,
     pool_id: ID,
     position_id: ID,
     venue: TypeName,
@@ -52,17 +53,17 @@ public struct AutoLiquidityAdded has copy, drop {
     vault_id: ID,
     meme_amount: u64,
     quote_amount: u64,
-    meme_pending: u64,
-    quote_pending: u64,
+    auto_lp_meme_pending: u64,
+    auto_lp_quote_pending: u64,
 }
 
 /// A buyback admin swapped `quote_spent` of the burn Quote for `meme_burned` Meme and burned it;
-/// `quote_pending` still waits.
+/// `burn_quote_pending` still waits.
 public struct BuybackBurned has copy, drop {
     vault_id: ID,
     quote_spent: u64,
     meme_burned: u64,
-    quote_pending: u64,
+    burn_quote_pending: u64,
 }
 
 /// The vault opened the separate position auto-LP adds to.
@@ -140,12 +141,12 @@ public struct ProtocolFeesClaimed has copy, drop {
 }
 
 /// A partnered vault paid the Blast LP fees it held: `partner_meme` and `partner_quote` to the
-/// launch's partner, and the rest, `protocol_meme` and `protocol_quote`, to `protocol_destination`.
+/// launch's partner, and the rest, `blast_meme` and `blast_quote`, to `protocol_destination`.
 public struct ProtocolLpFeesClaimed has copy, drop {
     vault_id: ID,
     protocol_destination: address,
-    protocol_meme: u64,
-    protocol_quote: u64,
+    blast_meme: u64,
+    blast_quote: u64,
     partner_meme: u64,
     partner_quote: u64,
 }
@@ -163,6 +164,7 @@ public struct CetusPoolReserved has copy, drop {
 /// Emits creation of one venue-sealed LP vault, its attached position, and its fee split.
 public(package) fun vault_created<Meme, Quote, Venue>(
     vault_id: ID,
+    launch_id: ID,
     pool_id: ID,
     position_id: ID,
     residual_meme: u64,
@@ -172,6 +174,7 @@ public(package) fun vault_created<Meme, Quote, Venue>(
 ) {
     sui::event::emit(VaultCreated {
         vault_id,
+        launch_id,
         pool_id,
         position_id,
         venue: type_name::with_original_ids<Venue>(),
@@ -228,9 +231,9 @@ public(package) fun buyback_burned(
     vault_id: ID,
     quote_spent: u64,
     meme_burned: u64,
-    quote_pending: u64,
+    burn_quote_pending: u64,
 ) {
-    sui::event::emit(BuybackBurned { vault_id, quote_spent, meme_burned, quote_pending });
+    sui::event::emit(BuybackBurned { vault_id, quote_spent, meme_burned, burn_quote_pending });
 }
 
 /// Emits one nonzero auto-LP addition and the amounts still waiting.
@@ -238,15 +241,15 @@ public(package) fun auto_liquidity_added(
     vault_id: ID,
     meme_amount: u64,
     quote_amount: u64,
-    meme_pending: u64,
-    quote_pending: u64,
+    auto_lp_meme_pending: u64,
+    auto_lp_quote_pending: u64,
 ) {
     sui::event::emit(AutoLiquidityAdded {
         vault_id,
         meme_amount,
         quote_amount,
-        meme_pending,
-        quote_pending,
+        auto_lp_meme_pending,
+        auto_lp_quote_pending,
     });
 }
 
@@ -379,16 +382,16 @@ public(package) fun protocol_fees_claimed<Meme, Quote>(
 public(package) fun protocol_lp_fees_claimed(
     vault_id: ID,
     protocol_destination: address,
-    protocol_meme: u64,
-    protocol_quote: u64,
+    blast_meme: u64,
+    blast_quote: u64,
     partner_meme: u64,
     partner_quote: u64,
 ) {
     sui::event::emit(ProtocolLpFeesClaimed {
         vault_id,
         protocol_destination,
-        protocol_meme,
-        protocol_quote,
+        blast_meme,
+        blast_quote,
         partner_meme,
         partner_quote,
     });

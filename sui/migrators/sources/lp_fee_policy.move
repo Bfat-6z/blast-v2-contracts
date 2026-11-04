@@ -243,7 +243,7 @@ fun new(
     delay_ms: u64,
     ctx: &mut TxContext,
 ): LpFeePolicy {
-    assert!(@blast_lp_fee_destination != @0x0, EInvalidProtocolDestination);
+    assert!(destination != @0x0, EInvalidProtocolDestination);
     let id = object::new(ctx);
 
     LpFeePolicy {

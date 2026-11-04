@@ -8,6 +8,8 @@ module blast_fun_migrators::admin_delay_security_tests;
 
 const START: u64 = 1_234;
 const DELAY: u64 = 172_800_000;
+/// The sender whose address the zero-fee fixture policy uses as its genesis destination.
+const ADMIN: address = @0xAD;
 
 // === Test-Only Types ===
 
@@ -242,7 +244,7 @@ fun exercise(setting: Setting, case: Case) {
 }
 
 fun start(setting: Setting): Fixture {
-    let mut ctx = sui::tx_context::dummy();
+    let mut ctx = sui::tx_context::new_from_hint(ADMIN, 0, 0, 0, 0);
     let version = package_version::new_for_testing(&mut ctx);
     let mut clock = sui::clock::create_for_testing(&mut ctx);
     clock.set_for_testing(START);

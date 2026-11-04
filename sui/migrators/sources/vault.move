@@ -67,6 +67,8 @@ public struct RoundTerms has copy, drop, store {
 /// publish it; at most one round is scheduled at a time.
 public struct LpVault<phantom Meme, phantom Quote> has key {
     id: UID,
+    /// The launch whose migration created the vault; every launch-gated call checks it.
+    launch_id: ID,
     pool_id: ID,
     /// The Blast partner the launch named, paid its cut of Blast's LP fees. It never changes.
     partner_id: Option<ID>,
@@ -101,6 +103,7 @@ public fun schedule_fee_split<Meme, Quote>(
     clock: &Clock,
 ) {
     migrators_version.assert_current();
+    assert!(self.launch_id == object::id(launch), EWrongLaunch);
     launch.assert_curve_fee_cap(curve_fee_cap);
 
     self.fee_split.schedule(proposed, delay_ms, clock);
@@ -114,6 +117,7 @@ public fun cancel_fee_split<Meme, Quote>(
     curve_fee_cap: &CurveFeeCap<Meme>,
 ) {
     migrators_version.assert_current();
+    assert!(self.launch_id == object::id(launch), EWrongLaunch);
     launch.assert_curve_fee_cap(curve_fee_cap);
 
     self.fee_split.cancel();
@@ -190,6 +194,7 @@ public fun claim_creator_fees<Meme, Quote>(
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
     migrators_version.assert_current();
+    assert!(self.launch_id == object::id(launch), EWrongLaunch);
     launch.assert_curve_fee_cap(curve_fee_cap);
     assert!(self.creator_meme.value() > 0 || self.creator_quote.value() > 0, ENoCreatorFees);
 
@@ -716,6 +721,7 @@ fun new<Meme, Quote, Venue, Position: key + store>(
     );
     let mut vault = LpVault {
         id,
+        launch_id: object::id(launch),
         pool_id,
         partner_id: launch.partner_id(),
         protocol_meme_residual,
@@ -738,6 +744,7 @@ fun new<Meme, Quote, Venue, Position: key + store>(
 
     blast_events::vault_created<Meme, Quote, Venue>(
         vault.id.to_inner(),
+        vault.launch_id,
         pool_id,
         position_id,
         vault.protocol_meme_residual.value(),
@@ -924,6 +931,9 @@ const EWrongRoundProposal: vector<u8> =
 
 #[error(code = 14)]
 const EGasReserveTooLarge: vector<u8> = b"Gas reserve must be at most 10% of the round's holder Quote.";
+
+#[error(code = 15)]
+const EWrongLaunch: vector<u8> = b"The launch is not the one whose migration created this vault.";
 
 // === Imports ===
 

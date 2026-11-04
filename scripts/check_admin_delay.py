@@ -225,7 +225,7 @@ require(primitive['assert_ready'][0], 'self: &Delayed<K, T>', 'clock: &Clock')
 require(primitive['assert_ready'][1], 'self.pending.is_some()', 'errors::no_pending!()', 'assert_ready_at(')
 assert 'self.pending =' not in primitive['assert_ready'][1]
 for package, module, version, authority in (
-    ('migrators', 'vault', 'migrators_version', 'launch.assert_curve_fee_cap(curve_fee_cap);'),
+    ('migrators', 'vault', 'migrators_version', 'assert!(self.launch_id == object::id(launch), EWrongLaunch); launch.assert_curve_fee_cap(curve_fee_cap);'),
     ('presale', 'presale_vault', 'package_version', 'self.assert_cap(cap);'),
 ):
     fs = functions(package, module)
