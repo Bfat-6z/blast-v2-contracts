@@ -100,6 +100,11 @@ funSUI supply, anyone can cover the gap in one call and every exit reopens witho
 an upgrade. Any excess above the supply plus the reserve moves to blast custody at
 the next refresh.
 
+**Unusable rate entries.** An exchange-rate entry with a zero component counts as
+missing, exactly like a safe-mode epoch. Native pricing would value such an entry at
+one MIST per pool token, possibly below the cached rate, which could trip the fun
+backing check. `create` rejects it, and refresh keeps the cached rate.
+
 **Gates.** The source-boundary script pins the publication path, the delayed
 upgrade slot and its exact actions, the absence of policy narrowing, pause scope
 and release, and that every public function receiving the version checks it first.

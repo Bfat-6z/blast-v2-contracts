@@ -583,7 +583,10 @@ fun resolve_fun_receipts(
     };
 }
 
-/// Returns whether the pool has an exchange-rate entry for `epoch` and, if so, its primitives.
+/// Returns whether the pool has a usable exchange-rate entry for `epoch`, and its primitives.
+///
+/// An entry with a zero component counts as missing, exactly like a safe-mode epoch: the
+/// vault keeps its cached rate rather than valuing stake at one MIST per pool token.
 fun exchange_rate_at(
     system_state: &mut SuiSystemState,
     pool_id: &ID,
@@ -593,8 +596,9 @@ fun exchange_rate_at(
     if (!rates.contains(epoch)) return (false, 0, 0);
 
     let rate = &rates[epoch];
+    let (rate_sui, rate_pool_tokens) = (rate.sui_amount(), rate.pool_token_amount());
 
-    (true, rate.sui_amount(), rate.pool_token_amount())
+    (math::is_usable_rate(rate_sui, rate_pool_tokens), rate_sui, rate_pool_tokens)
 }
 
 /// Moves fun assets above the funSUI supply plus the rounding reserve into blast custody.

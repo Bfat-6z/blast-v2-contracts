@@ -4978,10 +4978,11 @@ Every vault call except `blast_sui::vault::create`,
 1. If the validator has left the active set, both ledgers unwind every native
    position into liquid SUI and the vault becomes `unwind_only` (emits
    `NativeStakeUnwound`). That refresh and every later one skip steps 2 and 3.
-2. If the pool has an exchange-rate entry for the current epoch, the vault
-   caches it (`rate_epoch`, `rate_sui`, `rate_pool_tokens`) and converts every
-   arrived blast pending receipt into the active position. Without an entry (a
-   safe-mode epoch), it keeps the cached rate, which never exceeds the live one.
+2. If the pool has a usable exchange-rate entry (both components positive) for
+   the current epoch, the vault caches it (`rate_epoch`, `rate_sui`,
+   `rate_pool_tokens`) and converts every arrived blast pending receipt into the
+   active position. Without one (a safe-mode epoch, or an entry with a zero
+   component), it keeps the cached rate, which never exceeds the live one.
 3. Both ledgers are revalued at the cached rate. With a current entry, arrived
    fun receipts convert oldest-first while fun custody's buffer `A_f - F`,
    minus the conversion's worst-case rounding loss
@@ -5191,8 +5192,9 @@ blastSUI). BPS are out of 10,000.
 - **Redemption fee**: default 2 BPS, maximum 100 BPS (1%), changed by `FeeAdmin`
   only after the applied notice (48 hours from creation). Zero is the only
   fee-free setting.
-- **Rate fallback**: when a cached rate component is zero, one pool token counts
-  as one MIST.
+- **Rate fallback**: an exchange-rate entry with a zero component counts as
+  missing, like a safe-mode epoch, so the vault keeps its cached rate and never
+  caches a zero component.
 - **Dust**: every rounding favors the vault's remaining holders: share minting
   rounds down, redemption gross rounds down, the fee rounds up, and pool-token
   valuations round down. Over-withdrawn SUI stays liquid in the ledger.
