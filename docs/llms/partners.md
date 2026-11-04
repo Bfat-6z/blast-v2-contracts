@@ -95,6 +95,24 @@ to `now` plus `blast_partners::blast_partners::delay_ms()`: the partner stays
 accepted for seven more days. A partner is accepted while the field exists and
 `now < value`.
 
+**Shared acceptance list.** `blast_partners::partner_list::PartnerList` is the
+same acceptance rule as one embeddable value, for a product to keep inside its
+own config. It maps each partner's ID to the time, in Unix epoch milliseconds,
+it stops being accepted (`u64::MAX` until removed), held in a `Table`, and
+records the `owner` object that embeds it. It has no authority of its own: only
+the embedding module can reach it mutably, so that product decides who may
+change it.
+
+- `blast_partners::partner_list::new` creates an empty list for an owner.
+- `blast_partners::partner_list::add` accepts a `Partner` at once, cancelling a
+  pending removal or accepting a removed partner again; it aborts when the
+  partner is already accepted with no removal pending.
+- `blast_partners::partner_list::remove` keeps a partner accepted until `now`
+  plus `delay_ms()`; it aborts unless the partner is accepted now with no
+  removal pending.
+- `blast_partners::partner_list::assert_accepted` aborts unless the list
+  accepts the partner now.
+
 ### Flows
 
 #### Become a partner (company)
@@ -237,6 +255,13 @@ Every event is emitted directly (no envelope).
   `delayed::DelayedApplied` (previous and new value, notice). Replaying them per
   `owner` and key reconstructs the applied and pending terms; `blast_partners`
   emits no event of its own for them.
+- `blast_partners::partner_list::PartnerAdded`: emitted by
+  `blast_partners::partner_list::add`. Fields: `owner` (the object embedding
+  the list), `partner_id`.
+- `blast_partners::partner_list::PartnerRemoved`: emitted by
+  `blast_partners::partner_list::remove`. Fields: `owner`, `partner_id`,
+  `acceptance_ends_at_ms` (exclusive). Replaying both per `owner` gives that
+  list's accepted partners.
 - `blast_partners::blast_partners::PartnerPaid<T>`: emitted by
   `blast_partners::blast_partners::pay` when it sends a positive amount. Fields:
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
@@ -257,8 +282,13 @@ Every event is emitted directly (no envelope).
 | 1 | `EShareAboveMax` | `register`, `schedule_share` | share at most 8,000 BPS |
 | 2 | `EUnchanged` | `schedule_share`, `schedule_cap` (value equals the pending proposal), `set_recipient` (same recipient) | pass a different value; to restart a pending proposal with the same value, cancel it first |
 | 3 | `ENotLiveCap` | `set_recipient` | use the partner's applied cap; a ready but unapplied cap is refused until `apply_cap` |
+| 4 | `EPartnerNotAccepted` | `partner_list::assert_accepted`, `partner_list::remove` | name a partner the list accepts now |
 
-These four are raised in module `blast_partners`. The share and cap calls also
+The codes come from the package registry `blast_partners::errors`. Codes 0 to 3
+are raised in module `blast_partners`; `partner_list::add` and
+`partner_list::remove` also raise `EUnchanged` (adding an accepted partner, or
+removing one whose removal is pending), and code 4 is raised in module
+`partner_list`. The share and cap calls also
 abort in module `blast_admin::delayed` with `blast_admin`'s error codes:
 `ENotReady` (17, `apply_share` or `apply_cap` before `ready_at_ms`),
 `ENoPending` (18, apply or cancel with nothing proposed), `EInvalidDelay` (19, a

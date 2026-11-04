@@ -111,7 +111,7 @@ fun registration_accepts_a_zero_share_and_the_maximum_share() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EShareAboveMax, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::EShareAboveMax, location = blast_partners::blast_partners)]
 fun registration_rejects_a_share_one_above_the_maximum() {
     let mut fixture = start();
 
@@ -121,7 +121,7 @@ fun registration_rejects_a_share_one_above_the_maximum() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EInvalidRecipient, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::EInvalidRecipient, location = blast_partners::blast_partners)]
 fun registration_rejects_a_zero_recipient() {
     let mut fixture = start();
 
@@ -131,7 +131,7 @@ fun registration_rejects_a_zero_recipient() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EInvalidRecipient, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::EInvalidRecipient, location = blast_partners::blast_partners)]
 fun a_zero_recipient_precedes_a_share_above_the_maximum() {
     let mut fixture = start();
 
@@ -320,7 +320,7 @@ fun scheduling_the_applied_share_is_refused() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EUnchanged, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::EUnchanged, location = blast_partners::blast_partners)]
 fun repeating_the_pending_share_is_refused() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
@@ -336,7 +336,7 @@ fun repeating_the_pending_share_is_refused() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EShareAboveMax, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::EShareAboveMax, location = blast_partners::blast_partners)]
 fun a_scheduled_share_one_above_the_maximum_is_refused() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
@@ -492,7 +492,7 @@ fun a_reissued_cap_goes_live_only_when_applied_after_the_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::ENotLiveCap, location = blast_partners::blast_partners)]
 fun the_replaced_cap_is_refused_once_the_reissue_is_applied() {
     let mut fixture = start();
     let old_cap = fixture.register(RECIPIENT, 2_500);
@@ -512,7 +512,7 @@ fun the_replaced_cap_is_refused_once_the_reissue_is_applied() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::ENotLiveCap, location = blast_partners::blast_partners)]
 fun a_reissued_cap_is_refused_before_the_notice() {
     let mut fixture = start();
     let old_cap = fixture.register(RECIPIENT, 2_500);
@@ -531,7 +531,7 @@ fun a_reissued_cap_is_refused_before_the_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::ENotLiveCap, location = blast_partners::blast_partners)]
 fun a_ready_cap_cannot_set_the_recipient_before_application() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
@@ -549,7 +549,7 @@ fun a_ready_cap_cannot_set_the_recipient_before_application() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::ENotLiveCap, location = blast_partners::blast_partners)]
 /// A newer reissue supersedes a pending one, whose cap never goes live.
 fun a_superseded_reissue_never_goes_live() {
     let mut fixture = start();
@@ -588,7 +588,7 @@ fun scheduling_the_applied_cap_is_refused() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EUnchanged, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::EUnchanged, location = blast_partners::blast_partners)]
 fun repeating_the_pending_cap_is_refused() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
@@ -860,7 +860,7 @@ fun the_live_cap_sets_the_recipient_at_once() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::ENotLiveCap, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::ENotLiveCap, location = blast_partners::blast_partners)]
 fun another_partners_cap_precedes_an_invalid_recipient() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
@@ -879,7 +879,7 @@ fun another_partners_cap_precedes_an_invalid_recipient() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EInvalidRecipient, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::EInvalidRecipient, location = blast_partners::blast_partners)]
 fun a_zero_recipient_is_refused() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
@@ -895,7 +895,7 @@ fun a_zero_recipient_is_refused() {
 }
 
 #[test]
-#[expected_failure(abort_code = partners::EUnchanged, location = blast_partners::blast_partners)]
+#[expected_failure(abort_code = blast_partners::errors::EUnchanged, location = blast_partners::blast_partners)]
 fun the_current_recipient_is_refused() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);

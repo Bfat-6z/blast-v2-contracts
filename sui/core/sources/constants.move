@@ -1,14 +1,21 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Package-wide core constants exposed as zero-cost macros.
+/// Core constants exposed as zero-cost macros. The basis-points denominator and Blast's LP-fee
+/// share maximum are public, so every launch package uses the one value.
 module blast_core::constants;
 
 // === Package Constants ===
 
 /// Denominator for rates expressed in basis points.
-macro public(package) fun basis_points_denominator(): u64 {
+public macro fun basis_points_denominator(): u64 {
     10_000
+}
+
+/// Blast's largest share of each asset in a vault's LP fees, in basis points. `vault_terms`
+/// enforces it when a sale or issuer seals a vault's terms.
+public macro fun max_lp_fee_bps(): u64 {
+    3_000
 }
 
 /// Maximum routes in one fee split, so 16 recipients still fit beside the four special kinds.
@@ -26,6 +33,16 @@ macro public(package) fun max_vesting_duration_ms(): u64 {
 /// Byte length of a Blake2b-256 digest: Merkle roots, leaves, and proof siblings.
 macro public(package) fun digest_length(): u64 {
     32
+}
+
+/// The lowest sqrt price, Q64.64, the Cetus and Bluefin `tick_math` modules accept.
+macro public(package) fun min_sqrt_price_x64(): u128 {
+    4_295_048_016
+}
+
+/// The highest sqrt price, Q64.64, the Cetus and Bluefin `tick_math` modules accept.
+macro public(package) fun max_sqrt_price_x64(): u128 {
+    79_226_673_515_401_279_992_447_579_055
 }
 
 /// Notice every treasury change waits from publication: the genesis destination is compiled, so

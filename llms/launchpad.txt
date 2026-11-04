@@ -1724,10 +1724,15 @@ values between product and venue calls.
   remainder: every part takes its floor, an optional named part takes its ceiling, and the
   leftover units go one each to the largest remaining remainders, earlier parts first. The parts
   always sum to the amount.
-- `payout::pay_or_vest` pays an amount to a destination as a coin, or, given
-  `payout::VestingTerms`, locks it in an irrevocable, shared `blast_fun_linear_vesting::Vesting`
-  schedule that starts at the payout and returns its ID. A zero amount sends nothing. Each product
-  keeps its own recipient lists and shares.
+- Every launch package uses one basis-points denominator, `blast_core::constants::basis_points_denominator`
+  (10,000), and one cap on Blast's share of LP fees, `blast_core::constants::max_lp_fee_bps`
+  (3,000 per asset). Both are public compile-time macros.
+- A `payout::Recipient`, built with `payout::recipient`, is a nonzero destination address and
+  optional `payout::VestingTerms` (from `payout::vesting_terms`); the zero address aborts.
+  `payout::pay_or_vest` pays an amount to a recipient as a coin or, when it vests, locks the amount
+  in an irrevocable, shared `blast_fun_linear_vesting::Vesting` schedule that starts at the payout
+  and returns its ID. A zero amount sends and locks nothing. Each product keeps its own recipient
+  lists and shares.
 
 ### Fee splits
 
@@ -1765,7 +1770,8 @@ address with `blast_treasury::destination`.
 - `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
   split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
   `migration::vault_terms`, under the issuing package's witness, builds them; a standalone vault's issuer
-  builds its own the same way.
+  builds its own the same way. It aborts when either of Blast's LP-fee shares exceeds 3,000 basis
+  points, so every sealed term is within the cap.
 - At migration the product creates a `migration::Migration` with `migration::new`, sealed by its own witness, holding the
   pool's Meme and Quote and terms the same package witness sealed. Only the stored venue can consume it,
   with `migration::redeem`; any other venue aborts.
@@ -1775,6 +1781,17 @@ address with `blast_treasury::destination`.
   the vault's package witness and sale.
 
 None of these values can be dropped, copied, or stored, so the PTB that creates one must consume it.
+
+### Pool seed price
+
+`migration::sqrt_price_x64` derives the price a concentrated-liquidity venue (Cetus or Bluefin)
+seeds a migrated pool at, from the migration's atomic Meme and Quote amounts:
+`floor(sqrt(B / A) * 2^64)`, where B / A is Quote / Meme when Meme is coin A and Meme / Quote
+otherwise. Display decimals never enter it, and the divisor amount must be positive.
+`migration::is_seedable_price` says whether both venues can seed a full-range pool at that price:
+it must lie within half of their shared sqrt-price range (from 2 x 4,295,048,016 to
+79,226,673,515,401,279,992,447,579,055 / 2). A product uses it to refuse a sale that could never
+migrate. Both are pure reads anyone may call.
 
 ### Merkle proofs
 
@@ -1893,6 +1910,24 @@ Adding applies at once (and cancels a pending removal). Removing sets the value
 to `now` plus `blast_partners::blast_partners::delay_ms()`: the partner stays
 accepted for seven more days. A partner is accepted while the field exists and
 `now < value`.
+
+**Shared acceptance list.** `blast_partners::partner_list::PartnerList` is the
+same acceptance rule as one embeddable value, for a product to keep inside its
+own config. It maps each partner's ID to the time, in Unix epoch milliseconds,
+it stops being accepted (`u64::MAX` until removed), held in a `Table`, and
+records the `owner` object that embeds it. It has no authority of its own: only
+the embedding module can reach it mutably, so that product decides who may
+change it.
+
+- `blast_partners::partner_list::new` creates an empty list for an owner.
+- `blast_partners::partner_list::add` accepts a `Partner` at once, cancelling a
+  pending removal or accepting a removed partner again; it aborts when the
+  partner is already accepted with no removal pending.
+- `blast_partners::partner_list::remove` keeps a partner accepted until `now`
+  plus `delay_ms()`; it aborts unless the partner is accepted now with no
+  removal pending.
+- `blast_partners::partner_list::assert_accepted` aborts unless the list
+  accepts the partner now.
 
 ### Flows
 
@@ -2036,6 +2071,13 @@ Every event is emitted directly (no envelope).
   `delayed::DelayedApplied` (previous and new value, notice). Replaying them per
   `owner` and key reconstructs the applied and pending terms; `blast_partners`
   emits no event of its own for them.
+- `blast_partners::partner_list::PartnerAdded`: emitted by
+  `blast_partners::partner_list::add`. Fields: `owner` (the object embedding
+  the list), `partner_id`.
+- `blast_partners::partner_list::PartnerRemoved`: emitted by
+  `blast_partners::partner_list::remove`. Fields: `owner`, `partner_id`,
+  `acceptance_ends_at_ms` (exclusive). Replaying both per `owner` gives that
+  list's accepted partners.
 - `blast_partners::blast_partners::PartnerPaid<T>`: emitted by
   `blast_partners::blast_partners::pay` when it sends a positive amount. Fields:
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
@@ -2056,8 +2098,13 @@ Every event is emitted directly (no envelope).
 | 1 | `EShareAboveMax` | `register`, `schedule_share` | share at most 8,000 BPS |
 | 2 | `EUnchanged` | `schedule_share`, `schedule_cap` (value equals the pending proposal), `set_recipient` (same recipient) | pass a different value; to restart a pending proposal with the same value, cancel it first |
 | 3 | `ENotLiveCap` | `set_recipient` | use the partner's applied cap; a ready but unapplied cap is refused until `apply_cap` |
+| 4 | `EPartnerNotAccepted` | `partner_list::assert_accepted`, `partner_list::remove` | name a partner the list accepts now |
 
-These four are raised in module `blast_partners`. The share and cap calls also
+The codes come from the package registry `blast_partners::errors`. Codes 0 to 3
+are raised in module `blast_partners`; `partner_list::add` and
+`partner_list::remove` also raise `EUnchanged` (adding an accepted partner, or
+removing one whose removal is pending), and code 4 is raised in module
+`partner_list`. The share and cap calls also
 abort in module `blast_admin::delayed` with `blast_admin`'s error codes:
 `ENotReady` (17, `apply_share` or `apply_cap` before `ready_at_ms`),
 `ENoPending` (18, apply or cancel with nothing proposed), `EInvalidDelay` (19, a
@@ -4085,6 +4132,8 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 8 | `EWrongVenue` | Only the venue the sale stored can redeem its migration. |
 | 9 | `EWrongOwner` | The owner proof must name the vault's package witness and sale. |
 | 10 | `EWrongPackageWitness` | The vault terms must be sealed by the package witness creating the migration. |
+| 11 | `EInvalidLpFeeBps` | Blast's LP-fee share of each asset must be at most 3,000 basis points. |
+| 12 | `EInvalidRecipient` | A payout recipient must be a nonzero address. |
 
 ### `blast_core::blast_core_events`
 
@@ -4228,16 +4277,28 @@ public fun apportion(rates: vector<Bps>, total: u64, rounded_up: Option<u64>): v
 
 ### `blast_core::constants`
 
-Package-wide core constants exposed as zero-cost macros.
+Core constants exposed as zero-cost macros. The basis-points denominator and Blast's LP-fee share maximum are public, so every launch package uses the one value.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/constants.move
 
+#### Functions
+
+```move
+/// Denominator for rates expressed in basis points.
+public fun basis_points_denominator(): u64
+
+/// Blast's largest share of each asset in a vault's LP fees, in basis points. `vault_terms`
+/// enforces it when a sale or issuer seals a vault's terms.
+public fun max_lp_fee_bps(): u64
+```
+
 #### Constants
 
-- `basis_points_denominator: u64 = 10_000`: Denominator for rates expressed in basis points.
 - `max_routes: u64 = 20`: Maximum routes in one fee split, so 16 recipients still fit beside the four special kinds. Every collection pays them in the same transaction.
 - `max_vesting_duration_ms: u64 = 1 << 63`: A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292 million years, the schedule's end still fits in u64, so payout cannot overflow creating it.
 - `digest_length: u64 = 32`: Byte length of a Blake2b-256 digest: Merkle roots, leaves, and proof siblings.
+- `min_sqrt_price_x64: u128 = 4_295_048_016`: The lowest sqrt price, Q64.64, the Cetus and Bluefin `tick_math` modules accept.
+- `max_sqrt_price_x64: u128 = 79_226_673_515_401_279_992_447_579_055`: The highest sqrt price, Q64.64, the Cetus and Bluefin `tick_math` modules accept.
 - `initial_treasury_delay_ms: u64 = 48 * 60 * 60 * 1_000`: Notice every treasury change waits from publication: the genesis destination is compiled, so no setup needs a zero notice.
 
 ### `blast_core::fee_split`
@@ -4356,7 +4417,7 @@ public fun verify(
 
 ### `blast_core::migration`
 
-The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.
+The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.  The module also derives the price a concentrated-liquidity venue seeds the pool at, and whether both such venues can seed it, so a product can refuse a sale that could never migrate.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration.move
 
@@ -4421,7 +4482,7 @@ public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName
 
 /// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
 /// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
-/// most 10,000; the issuer enforces its own policy maximum.
+/// most `constants::max_lp_fee_bps!()`, 3,000 basis points, so a vault trusts sealed terms.
 public fun vault_terms<PackageWitness: drop>(
     _: PackageWitness,
     origin: ID,
@@ -4466,6 +4527,17 @@ public fun partner_id(self: &VaultTerms): Option<ID>
 
 /// Whether the migration residuals go to Blast rather than the owner.
 public fun has_protocol_residuals(self: &VaultTerms): bool
+
+/// The pool's seed price from the migration's atomic amounts, `floor(sqrt(B / A) * 2^64)` in the
+/// Q64.64 form concentrated-liquidity venues take: B / A is Quote / Meme when Meme is coin A, and
+/// Meme / Quote otherwise. Display decimals never enter it. The divisor amount must be positive.
+public fun sqrt_price_x64(meme_amount: u64, quote_amount: u64, meme_is_coin_a: bool): u128
+
+/// Whether Cetus and Bluefin can both seed a full-range pool at `sqrt_price_x64`. Both venues
+/// share the same `tick_math` sqrt-price bounds; halving the range keeps the price inside any
+/// full range aligned inward to a tick spacing. The bounds are reciprocal, so either coin order
+/// agrees.
+public fun is_seedable_price(sqrt_price_x64: u128): bool
 ```
 
 ### `blast_core::owner_proof`
@@ -4496,7 +4568,7 @@ public fun assert_terms(self: OwnerProof, terms: &migration::VaultTerms)
 
 ### `blast_core::payout`
 
-The one way Blast sends coins to people: an amount paid outright, or locked in an irrevocable linear vesting schedule. Each product keeps its own recipient lists and shares.
+The one way Blast sends coins to people: an amount paid outright, or locked in an irrevocable linear vesting schedule. A `Recipient` says which of the two a destination gets; each product keeps its own recipient lists and shares.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/payout.move
 
@@ -4510,6 +4582,13 @@ public struct VestingTerms has copy, drop, store {
     period_duration_ms: u64,
     periods: u64,
 }
+
+/// Where a payout goes and how: outright, or locked under `vesting_terms` from the moment it is
+/// paid.
+public struct Recipient has copy, drop, store {
+    destination: address,
+    vesting_terms: Option<VestingTerms>,
+}
 ```
 
 #### Functions
@@ -4519,14 +4598,20 @@ public struct VestingTerms has copy, drop, store {
 /// create the schedule. Product limits on the duration belong to creation tooling.
 public fun vesting_terms(cliff_delay_ms: u64, period_duration_ms: u64, periods: u64): VestingTerms
 
-/// Pays `amount` of `balance` to `destination`: outright, or locked in an irrevocable linear
-/// schedule starting now when `vesting` is set, returning the schedule's ID. A zero amount sends
-/// nothing.
+/// A recipient at the nonzero `destination`, paid outright without `vesting_terms` and locked
+/// under them otherwise.
+public fun recipient(destination: address, vesting_terms: Option<VestingTerms>): Recipient
+
+/// The address the recipient's payouts go to, or vest for.
+public fun destination(self: &Recipient): address
+
+/// Pays `amount` of `balance` to `recipient`: outright, or locked in an irrevocable linear
+/// schedule starting now when it vests, returning the schedule's ID. A zero amount sends and
+/// locks nothing.
 public fun pay_or_vest<Asset>(
     balance: &mut Balance<Asset>,
     amount: u64,
-    destination: address,
-    vesting: Option<VestingTerms>,
+    recipient: &Recipient,
     clock: &Clock,
     ctx: &mut TxContext,
 ): Option<ID>
@@ -5334,6 +5419,16 @@ Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 
+Abort codes: this package aborts with the numeric codes below from whichever module detects the failure; the abort location names that module.
+
+| Code | Constant | Meaning |
+| --- | --- | --- |
+| 0 | `EInvalidRecipient` | A partner's recipient must not be the zero address. |
+| 1 | `EShareAboveMax` | A partner's share must be at most 80% of Blast's fee. |
+| 2 | `EUnchanged` | An update must change the value it sets or proposes. |
+| 3 | `ENotLiveCap` | Only the partner's applied cap may set its recipient. |
+| 4 | `EPartnerNotAccepted` | The partner list does not accept the partner now. |
+
 ### `blast_partners::blast_partners`
 
 Blast partner codes, shared by every Blast product.  A partner is one deal: it is paid a share of the fee Blast charges on every trade that names it, in the same transaction. A company holds one `PartnerCap` for all its deals, each a separate partner with its own share. Blast's partner administrator registers partners under a cap, proposes each one's share, and can propose moving a partner to another cap; the cap's holder sets where each of its partners is paid. Initial terms apply at registration. A later share or cap applies only when someone applies it, no sooner than `PARTNER_CHANGE_DELAY_MS` after it was proposed. That notice is fixed: this module never changes it, and the package is published immutable. The recipient the cap holder sets applies at once.  Products call `pay` with Blast's own fee on a trade. `pay` emits `PartnerPaid` for what the partner received; the product records the trade and the amount in its own event. Share and cap lifecycle events come from `blast_admin::delayed`, keyed by `ShareKey` and `CapKey` and owned by the partner.
@@ -5456,20 +5551,67 @@ public struct PartnerPaid<phantom T> has copy, drop {
 }
 ```
 
-#### Errors
-
-| Constant | Code | Message |
-| --- | --- | --- |
-| `EInvalidRecipient` | 0 | A partner's recipient must not be the zero address. |
-| `EShareAboveMax` | 1 | A partner's share must be at most 80% of Blast's fee. |
-| `EUnchanged` | 2 | An update must change the value it sets or proposes. |
-| `ENotLiveCap` | 3 | Only the partner's applied cap may set its recipient. |
-
 #### Constants
 
-- `PARTNER_CHANGE_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The fixed notice before a share or a cap Blast proposes can apply.
+- `PARTNER_CHANGE_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The fixed notice before a share or a cap Blast proposes can apply, and how long a partner a `partner_list::PartnerList` removes stays accepted.
 - `MAX_SHARE_BPS: u64 = 8_000`: The largest share of Blast's fee one partner may earn: 80%.
 - `BASIS_POINTS: u64 = 10_000`: Basis points in one whole.
+
+### `blast_partners::partner_list`
+
+The partners one Blast product accepts, one list per product.  A product embeds a `PartnerList` in the object holding its policy and alone decides who may change it: the list has `store` and no authority of its own, so only the embedding module can reach it mutably. Adding a partner accepts it at once. Removing one keeps it accepted for the fixed notice Blast gives for every change to a partner, `blast_partners::delay_ms()`, so anything built to name it keeps working that long. Sales and trades that already name a removed partner keep paying it; the list only gates naming it anew.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/partner_list.move
+
+#### Types
+
+```move
+/// The partners one product accepts: each partner's ID maps to the time, in Unix epoch
+/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the object that embeds the list, named
+/// by its events.
+public struct PartnerList has store {
+    owner: ID,
+    acceptance_ends_at_ms: Table<ID, u64>,
+}
+```
+
+#### Functions
+
+```move
+/// An empty list embedded in `owner`.
+public fun new(owner: &UID, ctx: &mut TxContext): PartnerList
+
+/// Accepts `partner` at once. Adding a partner whose removal is pending cancels the removal;
+/// adding a removed partner accepts it again. Aborts when it is already accepted with no removal
+/// pending.
+public fun add(self: &mut PartnerList, partner: &blast_partners::Partner)
+
+/// Stops accepting `partner_id` once the fixed notice, `blast_partners::delay_ms()`, has passed
+/// from now. Aborts unless the partner is accepted now with no removal pending.
+public fun remove(self: &mut PartnerList, partner_id: ID, clock: &Clock)
+
+/// Aborts unless the list accepts `partner_id` now: it was added, and any removal's notice has
+/// not yet passed.
+public fun assert_accepted(self: &PartnerList, partner_id: ID, clock: &Clock)
+```
+
+#### Events
+
+```move
+/// The owner's list accepts the partner from now on.
+public struct PartnerAdded has copy, drop {
+    owner: ID,
+    partner_id: ID,
+}
+
+/// The owner's list accepts the partner until `acceptance_ends_at_ms` (Unix epoch milliseconds),
+/// exclusive.
+public struct PartnerRemoved has copy, drop {
+    owner: ID,
+    partner_id: ID,
+    acceptance_ends_at_ms: u64,
+}
+```
 
 ## API reference: `blast_admin` (Administration)
 

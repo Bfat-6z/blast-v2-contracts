@@ -266,6 +266,24 @@ to `now` plus `blast_partners::blast_partners::delay_ms()`: the partner stays
 accepted for seven more days. A partner is accepted while the field exists and
 `now < value`.
 
+**Shared acceptance list.** `blast_partners::partner_list::PartnerList` is the
+same acceptance rule as one embeddable value, for a product to keep inside its
+own config. It maps each partner's ID to the time, in Unix epoch milliseconds,
+it stops being accepted (`u64::MAX` until removed), held in a `Table`, and
+records the `owner` object that embeds it. It has no authority of its own: only
+the embedding module can reach it mutably, so that product decides who may
+change it.
+
+- `blast_partners::partner_list::new` creates an empty list for an owner.
+- `blast_partners::partner_list::add` accepts a `Partner` at once, cancelling a
+  pending removal or accepting a removed partner again; it aborts when the
+  partner is already accepted with no removal pending.
+- `blast_partners::partner_list::remove` keeps a partner accepted until `now`
+  plus `delay_ms()`; it aborts unless the partner is accepted now with no
+  removal pending.
+- `blast_partners::partner_list::assert_accepted` aborts unless the list
+  accepts the partner now.
+
 ### Flows
 
 #### Become a partner (company)
@@ -408,6 +426,13 @@ Every event is emitted directly (no envelope).
   `delayed::DelayedApplied` (previous and new value, notice). Replaying them per
   `owner` and key reconstructs the applied and pending terms; `blast_partners`
   emits no event of its own for them.
+- `blast_partners::partner_list::PartnerAdded`: emitted by
+  `blast_partners::partner_list::add`. Fields: `owner` (the object embedding
+  the list), `partner_id`.
+- `blast_partners::partner_list::PartnerRemoved`: emitted by
+  `blast_partners::partner_list::remove`. Fields: `owner`, `partner_id`,
+  `acceptance_ends_at_ms` (exclusive). Replaying both per `owner` gives that
+  list's accepted partners.
 - `blast_partners::blast_partners::PartnerPaid<T>`: emitted by
   `blast_partners::blast_partners::pay` when it sends a positive amount. Fields:
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
@@ -428,8 +453,13 @@ Every event is emitted directly (no envelope).
 | 1 | `EShareAboveMax` | `register`, `schedule_share` | share at most 8,000 BPS |
 | 2 | `EUnchanged` | `schedule_share`, `schedule_cap` (value equals the pending proposal), `set_recipient` (same recipient) | pass a different value; to restart a pending proposal with the same value, cancel it first |
 | 3 | `ENotLiveCap` | `set_recipient` | use the partner's applied cap; a ready but unapplied cap is refused until `apply_cap` |
+| 4 | `EPartnerNotAccepted` | `partner_list::assert_accepted`, `partner_list::remove` | name a partner the list accepts now |
 
-These four are raised in module `blast_partners`. The share and cap calls also
+The codes come from the package registry `blast_partners::errors`. Codes 0 to 3
+are raised in module `blast_partners`; `partner_list::add` and
+`partner_list::remove` also raise `EUnchanged` (adding an accepted partner, or
+removing one whose removal is pending), and code 4 is raised in module
+`partner_list`. The share and cap calls also
 abort in module `blast_admin::delayed` with `blast_admin`'s error codes:
 `ENotReady` (17, `apply_share` or `apply_cap` before `ready_at_ms`),
 `ENoPending` (18, apply or cancel with nothing proposed), `EInvalidDelay` (19, a
@@ -505,6 +535,16 @@ where you like); Blast takes no cut of it.
 Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
+
+Abort codes: this package aborts with the numeric codes below from whichever module detects the failure; the abort location names that module.
+
+| Code | Constant | Meaning |
+| --- | --- | --- |
+| 0 | `EInvalidRecipient` | A partner's recipient must not be the zero address. |
+| 1 | `EShareAboveMax` | A partner's share must be at most 80% of Blast's fee. |
+| 2 | `EUnchanged` | An update must change the value it sets or proposes. |
+| 3 | `ENotLiveCap` | Only the partner's applied cap may set its recipient. |
+| 4 | `EPartnerNotAccepted` | The partner list does not accept the partner now. |
 
 ### `blast_partners::blast_partners`
 
@@ -628,20 +668,67 @@ public struct PartnerPaid<phantom T> has copy, drop {
 }
 ```
 
-#### Errors
-
-| Constant | Code | Message |
-| --- | --- | --- |
-| `EInvalidRecipient` | 0 | A partner's recipient must not be the zero address. |
-| `EShareAboveMax` | 1 | A partner's share must be at most 80% of Blast's fee. |
-| `EUnchanged` | 2 | An update must change the value it sets or proposes. |
-| `ENotLiveCap` | 3 | Only the partner's applied cap may set its recipient. |
-
 #### Constants
 
-- `PARTNER_CHANGE_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The fixed notice before a share or a cap Blast proposes can apply.
+- `PARTNER_CHANGE_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000`: The fixed notice before a share or a cap Blast proposes can apply, and how long a partner a `partner_list::PartnerList` removes stays accepted.
 - `MAX_SHARE_BPS: u64 = 8_000`: The largest share of Blast's fee one partner may earn: 80%.
 - `BASIS_POINTS: u64 = 10_000`: Basis points in one whole.
+
+### `blast_partners::partner_list`
+
+The partners one Blast product accepts, one list per product.  A product embeds a `PartnerList` in the object holding its policy and alone decides who may change it: the list has `store` and no authority of its own, so only the embedding module can reach it mutably. Adding a partner accepts it at once. Removing one keeps it accepted for the fixed notice Blast gives for every change to a partner, `blast_partners::delay_ms()`, so anything built to name it keeps working that long. Sales and trades that already name a removed partner keep paying it; the list only gates naming it anew.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/partner_list.move
+
+#### Types
+
+```move
+/// The partners one product accepts: each partner's ID maps to the time, in Unix epoch
+/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the object that embeds the list, named
+/// by its events.
+public struct PartnerList has store {
+    owner: ID,
+    acceptance_ends_at_ms: Table<ID, u64>,
+}
+```
+
+#### Functions
+
+```move
+/// An empty list embedded in `owner`.
+public fun new(owner: &UID, ctx: &mut TxContext): PartnerList
+
+/// Accepts `partner` at once. Adding a partner whose removal is pending cancels the removal;
+/// adding a removed partner accepts it again. Aborts when it is already accepted with no removal
+/// pending.
+public fun add(self: &mut PartnerList, partner: &blast_partners::Partner)
+
+/// Stops accepting `partner_id` once the fixed notice, `blast_partners::delay_ms()`, has passed
+/// from now. Aborts unless the partner is accepted now with no removal pending.
+public fun remove(self: &mut PartnerList, partner_id: ID, clock: &Clock)
+
+/// Aborts unless the list accepts `partner_id` now: it was added, and any removal's notice has
+/// not yet passed.
+public fun assert_accepted(self: &PartnerList, partner_id: ID, clock: &Clock)
+```
+
+#### Events
+
+```move
+/// The owner's list accepts the partner from now on.
+public struct PartnerAdded has copy, drop {
+    owner: ID,
+    partner_id: ID,
+}
+
+/// The owner's list accepts the partner until `acceptance_ends_at_ms` (Unix epoch milliseconds),
+/// exclusive.
+public struct PartnerRemoved has copy, drop {
+    owner: ID,
+    partner_id: ID,
+    acceptance_ends_at_ms: u64,
+}
+```
 
 ## API reference: `blast_admin` (Administration)
 
