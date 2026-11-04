@@ -28,7 +28,8 @@ fi
 mapfile -t move_files < <(find sources tests -type f -name '*.move' -print | sort)
 mapfile -t source_files < <(find sources -type f -name '*.move' -print | sort)
 
-# Launchpad errors have one registry; event payload construction stays in events.move.
+# Launchpad errors have one registry; raw event payloads are constructed and emitted only in
+# events.move, with no envelope.
 for move_file in "${source_files[@]}"; do
   if [[ "$move_file" != sources/lib/errors.move ]] \
     && rg -n '#\[error\(|^[[:space:]]*const E[A-Z]' "$move_file"; then
@@ -36,7 +37,7 @@ for move_file in "${source_files[@]}"; do
     failures=$((failures + 1))
   fi
   if [[ "$move_file" != sources/lib/events.move ]] \
-    && rg -n 'blast_events::emit_event' "$move_file"; then
+    && rg -n '\bevent::emit\b|\bblast_events\b|\bemit_event\b' "$move_file"; then
     echo "${move_file}: construct event payloads only in sources/lib/events.move." >&2
     failures=$((failures + 1))
   fi
@@ -300,85 +301,79 @@ if rg -n '^[[:space:]]+[a-z_]+_bps: Bps,' sources/lib/events.move; then
   failures=$((failures + 1))
 fi
 
-blast_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/blast_fun.move)"
+blast_facts="$(move_facts sources/blast_fun.move)"
 
-# The OTW creates one owned Publication. Only validated custody intake may consume it and share
-# PackageVersion; publication must not supply a usable generation before custody is sealed.
+# The OTW hands the deployer one owned generic Publication; blast_admin::package_admin::wrap seals
+# the native capabilities and shares PackageVersion<BLAST_FUN>, fully paused. This package keeps no
+# publication, version, pause, or custody state of its own, and its marker module only pins and
+# constructs the unpause witness.
 if [[ ! -f sources/blast_fun.move ]] \
-  || ! rg -Fq 'public struct BLAST_FUN() has drop;' sources/blast_fun.move \
-  || ! rg -U -q \
-    'public struct PackageVersion has key \{\s*id: UID,\s*paused: u8,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
-    sources/blast_fun.move \
-  || ! rg -U -q \
-    'public struct Publication has key \{\s*id: UID,\s*publisher: Publisher,\s*generation: OperationalVersion<BLAST_FUN>,\s*\}' \
-    <<<"$blast_production" \
-  || ! rg -q '^const PACKAGE_VERSION: u64 = 1;$' sources/blast_fun.move \
-  || ! rg -q '^const NEXT_PACKAGE_VERSION: u64 = 2;$' sources/blast_fun.move \
-  || [[ "$(rg -c '^(public struct|fun) ' <<<"$blast_production")" != 4 ]] \
-  || [[ "$(rg -c '^fun init\(' <<<"$blast_production")" != 1 ]] \
-  || [[ "$(rg -c '^public\(package\) fun (destroy|share_version|assert_current|assert_next|advance|assert_not_paused|clear_pause_bits)\(' <<<"$blast_production")" != 7 ]] \
-  || rg -n '^public\(package\) fun activate\(' <<<"$blast_production" \
-  || ! rg -Fq 'self.generation.assert_current(PACKAGE_VERSION);' sources/blast_fun.move \
-  || ! rg -Fq 'self.generation.assert_next(NEXT_PACKAGE_VERSION);' sources/blast_fun.move \
-  || ! rg -Fq 'self.generation.advance(&self.id, NEXT_PACKAGE_VERSION);' sources/blast_fun.move \
-  || ! rg -Fq 'let generation = operational_version::new(&otw);' sources/blast_fun.move \
-  || rg -n '\.checked_add\(' <<<"$blast_production"; then
-  echo 'blast_fun.move must own the unique publication proof and the guarded generation container.' >&2
+  || [[ -e sources/package_admin.move || -e sources/blast_fun_domain.move ]] \
+  || [[ "$(move_production_type BLAST_FUN <<<"$blast_facts")" != 'struct BLAST_FUN() has drop;' ]] \
+  || [[ "$(move_production_type UnpauseWitness <<<"$blast_facts")" != 'struct UnpauseWitness() has drop;' ]] \
+  || [[ "$(awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' <<<"$blast_facts" | LC_ALL=C sort | tr '\n' ' ')" != 'BLAST_FUN UnpauseWitness ' ]] \
+  || [[ "$(move_production_functions <<<"$blast_facts")" != 'clear_pause_bits:package:0 init:private:0 ' ]] \
+  || [[ "$(move_production_body init <<<"$blast_facts")" \
+    != 'package_version::new_publication<_, UnpauseWitness>(otw, constants::valid_pause_bits!(), ctx).keep(ctx);' ]] \
+  || [[ "$(move_production_function_contract clear_pause_bits <<<"$blast_facts")" \
+    != 'package:0:0:fun clear_pause_bits( unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_FUN>>, package_admin: &PackageAdmin<BLAST_FUN>, package_version: &mut PackageVersion<BLAST_FUN>, bits: u8, )' ]] \
+  || [[ "$(move_production_body clear_pause_bits <<<"$blast_facts")" \
+    != 'package_admin.clear_pause_bits(unpause_admin, UnpauseWitness(), package_version, bits);' ]] \
+  || rg -n '\b(OperationalVersion|operational_version|upgrade_custody|UpgradeCustody|Publication \{)\b' sources --glob '*.move' \
+  || rg -n '^public struct (Publication|PackageVersion|PackageAdmin)\b' sources --glob '*.move'; then
+  echo 'blast_fun.move must pin and alone construct the unpause witness over the generic publication, version, and administration.' >&2
   failures=$((failures + 1))
 fi
 
-# Exact construction and intake paths keep a later helper from bypassing publication custody.
-if [[ "$(move_production_body init <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'let generation = operational_version::new(&otw); let publisher = sui::package::claim(otw, ctx); transfer::transfer(Publication { id: object::new(ctx), publisher, generation }, ctx.sender());' ]] \
-  || [[ "$(move_production_body destroy <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'let Publication { id, publisher, generation } = self; id.delete(); (publisher, generation)' ]] \
-  || [[ "$(move_production_body share_version <<<"$(move_facts sources/blast_fun.move)")" \
-    != 'transfer::share_object(PackageVersion { paused: constants::valid_pause_bits!(), id: object::new(ctx), generation });' ]] \
-  || [[ "$(rg -c '^public\(package\) fun ' <<<"$blast_production")" != 7 ]] \
-  || [[ "$(rg -l '\bshare_version\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
-    != 'sources/blast_fun.move sources/package_admin.move ' ]]; then
-  echo 'Only wrap may activate the unique publication proof after sealing native capability custody.' >&2
-  failures=$((failures + 1))
-fi
-
-# Administration is the shared blast_admin ACL. This package only declares its roles, one
-# ability-free type per administrator concern (ADR 0094), and creates no administration state.
+# Administration is the shared blast_admin ACL. Package roles are blast_admin's generic
+# `{Upgrade,Pause,Unpause,Cancel}Admin<BLAST_FUN>`; product roles are blast_core::blast_domain's.
 if [[ -e sources/acl.move || -e sources/blast_acl.move ]]; then
   echo 'Launchpad must not reintroduce a local ACL implementation.' >&2
   failures=$((failures + 1))
 fi
 
-if rg -n '^public struct (ACL|Authority|ProtocolAuthority|SuperAdminCap|AdminCap|AdminWitness)\b' \
+if rg -n '^public struct (ACL|Authority|ProtocolAuthority|SuperAdminCap|AdminCap|AdminWitness|UpgradeAdmin|CreatorAdmin|TreasuryAdmin|FeeAdmin|ListingAdmin|AdapterAdmin|ClaimSignerAdmin|PauseAdmin|UnpauseAdmin|CancelAdmin)\b' \
   sources --glob '*.move'; then
-  echo 'Administration types must come from blast_admin, never from a local copy.' >&2
+  echo 'Administration types and roles must come from blast_admin and blast_core, never from a local copy.' >&2
   failures=$((failures + 1))
 fi
 
 launchpad_roles=(
-  UpgradeAdmin
   CreatorAdmin
   TreasuryAdmin
   FeeAdmin
   ListingAdmin
   AdapterAdmin
   ClaimSignerAdmin
-  PauseAdmin
-  UnpauseAdmin
   CancelAdmin
+  'UnpauseAdmin<BLAST_FUN>'
 )
 launchpad_role_pattern="$(IFS='|'; echo "${launchpad_roles[*]}")"
 
-if [[ ! -f sources/blast_fun_domain.move ]] \
-  || [[ "$(move_facts sources/blast_fun_domain.move | move_normalized_source)" \
-    != "module blast_fun::blast_fun_domain;$(printf ' public struct %s()' "${launchpad_roles[@]}")" ]]; then
-  echo 'blast_fun_domain.move must declare exactly the ten reviewed ability-free roles and nothing else: no init, constant, function, or import.' >&2
+# Product roles resolve to blast_core::blast_domain and the package role to blast_admin's generic
+# one, so a same-named local or foreign role fails here.
+role_import_violations="$(for file in "${source_files[@]}"; do
+  role_source="$(move_facts "$file" | move_normalized_source)"
+  if rg -q 'AdminWitness<(CreatorAdmin|TreasuryAdmin|FeeAdmin|ListingAdmin|AdapterAdmin|ClaimSignerAdmin|CancelAdmin)>' <<<"$role_source" \
+    && ! rg -q 'use blast_core::\{[^;]*\bblast_domain::' <<<"$role_source"; then
+    echo "  ${file}: product roles must come from blast_core::blast_domain"
+  fi
+  if rg -q 'UnpauseAdmin<BLAST_FUN>' <<<"$role_source" \
+    && ! rg -q 'use blast_admin::\{[^;]*\bpackage_admin::\{[^}]*\bUnpauseAdmin\b' <<<"$role_source"; then
+    echo "  ${file}: the unpause role must be blast_admin::package_admin::UnpauseAdmin<BLAST_FUN>"
+  fi
+done)"
+
+if [[ -n "$role_import_violations" ]]; then
+  printf '%s\n' "$role_import_violations"
+  echo 'Launchpad roles must be blast_core product roles and blast_admin generic package roles.' >&2
   failures=$((failures + 1))
 fi
 
 # The witness type is each administrator action's role check, so every witness a source names is
 # borrowed and names one concrete Launchpad role; a generic or foreign role fails here.
 admin_witness_violations="$(for file in "${source_files[@]}"; do
-  move_facts "$file" | move_normalized_source | { rg -o '&?AdminWitness<[^>]*>' || true; } \
+  move_facts "$file" | move_normalized_source | { rg -o '&?AdminWitness<[A-Za-z]*(<BLAST_FUN>)?>' || true; } \
     | { rg -v -x "&AdminWitness<(${launchpad_role_pattern})>" || true; } | sed "s|^|  ${file}: |"
 done)"
 
@@ -395,7 +390,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
     $1 == "FN" && $6 == 0 && index($9, "AdminWitness<") > 0 {
       rest = $9
       roles = ""
-      while (match(rest, /AdminWitness<[^>]*>/)) {
+      while (match(rest, /AdminWitness<[A-Za-z]*(<BLAST_FUN>)?>/)) {
         roles = roles (roles == "" ? "" : ",") substr(rest, RSTART + 13, RLENGTH - 14)
         rest = substr(rest, RSTART + RLENGTH)
       }
@@ -405,7 +400,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'blast_fun:pause:PauseAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_protocol_lp_fees:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:cancel_venue:CancelAdmin launch_config:cancel_venue_delay:CancelAdmin launch_config:remove_partner:FeeAdmin launch_config:remove_venue:AdapterAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_protocol_lp_fees:FeeAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:schedule_venue:AdapterAdmin launch_config:schedule_venue_delay:AdapterAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin package_admin:authorize_upgrade:UpgradeAdmin package_admin:cancel_upgrade_action:CancelAdmin package_admin:commit_upgrade_and_advance:UpgradeAdmin package_admin:make_immutable:UpgradeAdmin package_admin:schedule_make_immutable:UpgradeAdmin package_admin:schedule_upgrade:UpgradeAdmin package_admin:schedule_upgrade_delay:UpgradeAdmin package_admin:unpause:UnpauseAdmin runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:cancel_treasury:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin runtime_config:schedule_treasury:TreasuryAdmin ' ]]; then
+  'blast_fun:clear_pause_bits:UnpauseAdmin<BLAST_FUN> launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_protocol_lp_fees:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:cancel_venue:CancelAdmin launch_config:cancel_venue_delay:CancelAdmin launch_config:remove_partner:FeeAdmin launch_config:remove_venue:AdapterAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_protocol_lp_fees:FeeAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:schedule_venue:AdapterAdmin launch_config:schedule_venue_delay:AdapterAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin launch_config:unpause:UnpauseAdmin<BLAST_FUN> runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))
@@ -421,58 +416,22 @@ if rg -U -n 'fun init\([^)]*\) \{[^}]*events::' sources --glob '*.move' \
   failures=$((failures + 1))
 fi
 
-package_admin_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources/package_admin.move)"
-
-# Unpausing is the release gate: only package_admin::unpause clears pause bits, after the
-# version check and the guarded-notice check over every publication-owned policy.
+# Unpausing is the release gate: only launch_config::unpause clears pause bits, through the marker
+# module's witness, after the version check and the guarded-notice check over both configurations.
 if [[ "$(rg -l '\bclear_pause_bits\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
-    != 'sources/blast_fun.move sources/package_admin.move ' ]] \
-  || [[ "$(move_production_body unpause <<<"$(move_facts sources/package_admin.move)")" \
-    != 'package_version.assert_current(); assert!( self.upgrade.is_guarded() && runtime_config.is_guarded() && launch_config.is_guarded(), blast_fun::errors::unguarded_notice!(), ); package_version.clear_pause_bits(bits);' ]]; then
-  echo 'Only package_admin::unpause may clear pause bits, after every notice is guarded.' >&2
+    != 'sources/blast_fun.move sources/launch_config.move ' ]] \
+  || [[ "$(move_production_function_contract unpause <<<"$(move_facts sources/launch_config.move)")" \
+    != 'public:0:0:fun unpause( self: &LaunchConfig, runtime_config: &RuntimeConfig, unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_FUN>>, package_admin: &PackageAdmin<BLAST_FUN>, package_version: &mut PackageVersion<BLAST_FUN>, bits: u8, )' ]] \
+  || [[ "$(move_production_body unpause <<<"$(move_facts sources/launch_config.move)")" \
+    != 'package_version.assert_current(constants::generation!()); assert!( self.is_guarded() && runtime_config.is_guarded(), blast_fun::errors::unguarded_notice!(), ); blast_fun::blast_fun::clear_pause_bits(unpause_admin, package_admin, package_version, bits);' ]] \
+  || rg -n '\bpackage_admin::pause\(|\bset_pause_bits\(' sources --glob '*.move'; then
+  echo 'Only launch_config::unpause may clear pause bits, after every notice is guarded; pausing is blast_admin::package_admin::pause.' >&2
   failures=$((failures + 1))
 fi
 
-# Custody scheduling, exact action matching, and cancellation are checked by check_admin_delay.py.
-# The upgrade operation stores the primitive's one-shot action slot: no separate notice or
-# proposal field, and no notice-only placeholder action.
-
-# Every governed custody transition asserts the current generation first, before
-# it reaches the shared custody value. Commit-and-advance is the post-upgrade
-# finalizer and instead proves the exact next generation first. No path narrows
-# the upgrade policy: a narrowed cap could never commit and advance again, which
-# would end upgradeability silently.
-# Wrapping delegates Publisher and UpgradeCap provenance wholly to shared custody.
-if [[ "$(move_production_body wrap <<<"$(move_facts sources/package_admin.move)")" \
-    != 'let (publisher, generation) = publication.destroy(); let id = object::new(ctx); let custody = upgrade_custody::new<BLAST_FUN>(id.to_inner(), publisher, upgrade_cap); let upgrade = delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS); transfer::share_object(PackageAdmin { id, custody, upgrade }); generation.share_version(ctx);' ]] \
-  || [[ "$(move_production_type PackageAdmin <<<"$(move_facts sources/package_admin.move)")" \
-    != 'struct PackageAdmin has key { id: UID, custody: UpgradeCustody<BLAST_FUN>, upgrade: DelayedAction<UpgradeKey, UpgradeAction>, }' ]] \
-  || [[ "$(move_production_type UpgradeAction <<<"$(move_facts sources/package_admin.move)")" \
-    != 'enum UpgradeAction has copy, drop, store { Upgrade(vector<u8>), MakeImmutable, }' ]] \
-  || [[ "$(rg -c 'package_version\.assert_current\(\);' <<<"$package_admin_production")" != 8 ]] \
-  || [[ "$(move_facts sources/package_admin.move \
-    | awk -F'\t' '$1 == "FN" && $2 == "commit_upgrade_and_advance" { print $10 }')" \
-    != 'package_version.assert_next();'* ]] \
-  || rg -n '\brestrict_to_' sources \
-  || ! rg -Fxq 'use fun blast_fun::blast_fun::share_version as OperationalVersion.share_version;' sources/package_admin.move \
-  || move_facts sources/package_admin.move | awk -F'\t' '$1 == "NORM"' \
-    | sed 's/use fun blast_fun::blast_fun::share_version as OperationalVersion\.share_version;//g' | rg -q '\w as \w' \
-  || ! rg -Fq 'self.custody.commit_upgrade(custodian_id, receipt);' sources/package_admin.move \
-  || ! rg -Fq 'package_version.advance();' sources/package_admin.move \
-  || rg -n '\bpackage::(version|only_(additive|dep)_upgrades|make_immutable)\(' \
-    <<<"$package_admin_production" \
-  || rg -n 'admin_authorization|governance_cutover' sources/package_admin.move \
-  || rg -U -n '^(public|entry|public\(package\)) fun [^(]+\([^)]*\): (&)?(Publisher|UpgradeCap)' \
-    <<<"$package_admin_production" \
-  || rg -n 'transfer::(public_)?transfer|burn_publisher' \
-    <<<"$package_admin_production"; then
-  echo 'Package administration must seal custody, check the version first, and expose no capability escape.' >&2
-  failures=$((failures + 1))
-fi
-
-# Reusable custody, generation, policy, and immutability facts are emitted by
+# Reusable custody, generation, pause, policy, and immutability facts are emitted by
 # blast_admin. No copy may reappear in this package's event registry.
-if rg -n '^public struct (PackageAdminCreated|UpgradeAuthorized|UpgradeCommitted|UpgradePolicyRestricted|UpgradeCapDestroyed|PackageVersionAdvanced)\b' \
+if rg -n '^public struct (Paused|Unpaused|PackageAdminCreated|UpgradeAuthorized|UpgradeCommitted|UpgradePolicyRestricted|UpgradeCapDestroyed|PackageVersionAdvanced)\b' \
   sources/lib/events.move \
   || rg -n 'PackageAdminAuthorizationDisabled|admin_authorization_enabled' \
     sources/lib/events.move; then
@@ -683,79 +642,24 @@ if [[ "$(rg -c '^[[:space:]]+quote_fee_bps: Bps,' sources/curve.move)" != 3 ]] \
   failures=$((failures + 1))
 fi
 
-fees_facts="$(move_facts sources/fees.move)"
-fees_source="$(move_normalized_source <<<"$fees_facts")"
-
-if [[ ! -f sources/fees.move ]] \
-  || [[ "$(move_production_functions <<<"$fees_facts")" \
-    != 'accrue:package:0 accrue_protocol_fees:package:0 claim_creator_fees:package:0 claim_protocol_fees:package:0 new:package:0 ' ]] \
-  || [[ "$(move_production_type FeeLedger <<<"$fees_facts")" \
-    != 'struct FeeLedger<phantom Meme, phantom Quote> has store { protocol_meme: Balance<Meme>, creator_meme: Balance<Meme>, protocol_quote: Balance<Quote>, creator_quote: Balance<Quote>, protocol_sui: Balance<SUI>, }' ]] \
-  || [[ "$(move_production_signature new <<<"$fees_facts")" \
-    != 'fun new<Meme, Quote>(creation_fee: Balance<SUI>): FeeLedger<Meme, Quote>' ]] \
-  || rg -q '\b(UID|key|transfer::|CreatorClaim|ed25519|recipient|launch_id)\b' <<<"$fees_source" \
-  || rg -q '\b(creator_authority|CreatorCap|CurveFeeCap|BlastMetadataCap)\b' <<<"$fees_source" \
-  || rg -q 'fee_balance_overflow|std::u64::max_value|max_balance' <<<"$fees_source" \
-  || rg -q 'set_creator_fee_split|sui::event|events::' <<<"$fees_source"; then
-  echo 'fees.move must remain an embedded supply-conserved ledger of both parties trade fees and every Blast fee, exposing only its five approved package functions to the embedding launch.' >&2
-  failures=$((failures + 1))
-fi
-
-# Ledger custody has exactly one release path per owner, so the module may not
-# reach a stored balance through an alias, a module-form call, a destructuring
-# bind, or any framework helper other than the zero constructor.
-if rg -q '(^| )use fun ' <<<"$fees_source" \
-  || rg -q '\blet FeeLedger\b' <<<"$fees_source" \
-  || [[ "$(count_occurrences 'FeeLedger \{' <<<"$fees_source")" != 1 ]] \
-  || [[ "$(count_occurrences 'balance::[a-z_0-9]+\(' <<<"$fees_source")" \
-    != "$(count_occurrences 'balance::zero\(\)' <<<"$fees_source")" ]] \
-  || rg -q '\b(into_balance|borrow_mut|destroy_zero|withdraw)\(' <<<"$fees_source"; then
-  echo 'fees.move must reach its five stored balances only through the approved receiver-style operations, never through aliases, module-form calls, or destructuring.' >&2
-  failures=$((failures + 1))
-fi
-
-# Each owner's claim releases only its own two balances, and accrual splits the protocol share
-# (rounded up) into the protocol buckets and the exact remainder into the creator's.
-fee_ledger_violations=''
-
-check_fee_function() {
-  local name="$1" expected_signature="$2" expected_operations="$3" operations
-
-  operations="$(move_production_body "$name" <<<"$fees_facts" | move_balance_operations)"
-  if [[ "$(move_production_signature "$name" <<<"$fees_facts")" != "$expected_signature" ]] \
-    || [[ "$operations" != "$expected_operations" ]]; then
-    fee_ledger_violations+="  ${name} changed its signature or operates on '${operations}' instead of '${expected_operations}'"$'\n'
-  fi
-}
-
-check_fee_function claim_creator_fees \
-  'fun claim_creator_fees<Meme, Quote>( self: &mut FeeLedger<Meme, Quote>, ctx: &mut TxContext, ): (Coin<Meme>, Coin<Quote>)' \
-  'creator_meme.value creator_meme.withdraw_all creator_quote.value creator_quote.withdraw_all '
-
-check_fee_function claim_protocol_fees \
-  'fun claim_protocol_fees<Meme, Quote>( self: &mut FeeLedger<Meme, Quote>, ): (Balance<Meme>, Balance<Quote>, Balance<SUI>)' \
-  'protocol_meme.value protocol_meme.withdraw_all protocol_quote.value protocol_quote.withdraw_all protocol_sui.value protocol_sui.withdraw_all '
-
-check_fee_function accrue \
-  'fun accrue<Meme, Quote>( self: &mut FeeLedger<Meme, Quote>, mut meme_fee: Balance<Meme>, mut quote_fee: Balance<Quote>, protocol_fee_share_bps: Bps, ): (u64, u64, u64, u64)' \
-  'creator_meme.join creator_quote.join protocol_meme.join protocol_quote.join '
-
-check_fee_function accrue_protocol_fees \
-  'fun accrue_protocol_fees<Meme, Quote>( self: &mut FeeLedger<Meme, Quote>, meme: Balance<Meme>, quote: Balance<Quote>, )' \
-  'protocol_meme.join protocol_quote.join '
-
-fees_accrue_body="$(move_production_body accrue <<<"$fees_facts")"
-
-if ! rg -Fq 'let protocol_meme_amount = protocol_fee_share_bps.apply_up(meme_fee.value()); let protocol_quote_amount = protocol_fee_share_bps.apply_up(quote_fee.value()); let protocol_meme = meme_fee.split(protocol_meme_amount); let protocol_quote = quote_fee.split(protocol_quote_amount);' \
-    <<<"$fees_accrue_body" \
-  || ! rg -Fq 'self.protocol_meme.join(protocol_meme); self.creator_meme.join(meme_fee); self.protocol_quote.join(protocol_quote); self.creator_quote.join(quote_fee);' \
-    <<<"$fees_accrue_body"; then
-  fee_ledger_violations+='  accrue must round the protocol share up and join each half only to its own bucket'$'\n'
-fi
-
-if [[ -n "$fee_ledger_violations" ]]; then
-  printf '%s' "$fee_ledger_violations"
-  echo "Fee state splits on the policy-issued protocol share and releases each owner's balances only through its own full claim." >&2
+# Blast's fees on a launch live in blast_core's protocol-fee Ledger, sealed by the launch's
+# PackageWitness and bound to its partner at creation; the creator's trade-fee share stays in two
+# launch balances. Only the trade accrual, the creator claim, and migration touch them, and each
+# trade rounds Blast's share up through `Ledger::take_cut`.
+launch_fee_facts="$(move_facts sources/launch.move)"
+if [[ -e sources/fees.move ]] \
+  || rg -n '\bFeeLedger\b|\bfee_ledger\b' sources --glob '*.move' \
+  || ! rg -Fq 'protocol_fees: Ledger<Meme, Quote>,' sources/launch.move \
+  || ! rg -Fq 'creator_meme_fees: Balance<Meme>,' sources/launch.move \
+  || ! rg -Fq 'creator_quote_fees: Balance<Quote>,' sources/launch.move \
+  || [[ "$(move_production_body accrue_trade_fees <<<"$launch_fee_facts")" \
+    != 'let (protocol_meme, protocol_quote) = self.protocol_fees.take_cut(&mut meme_fee, &mut quote_fee, protocol_fee_share_bps, protocol_fee_share_bps); let (creator_meme, creator_quote) = (meme_fee.value(), quote_fee.value()); self.creator_meme_fees.join(meme_fee); self.creator_quote_fees.join(quote_fee); (protocol_meme, creator_meme, protocol_quote, creator_quote)' ]] \
+  || [[ "$(awk -F'\t' '$1 == "FN" && $6 == 0 && $10 ~ /self\.creator_(meme|quote)_fees\./ { print $2 }' <<<"$launch_fee_facts" | LC_ALL=C sort | tr '\n' ' ')" \
+    != 'accrue_trade_fees claim_creator_fees ' ]] \
+  || [[ "$(awk -F'\t' '$1 == "FN" && $6 == 0 && $10 ~ /self\s*\.protocol_fees\s*\./ { print $2 }' <<<"$launch_fee_facts" | LC_ALL=C sort | tr '\n' ' ')" \
+    != 'accrue_trade_fees claim_protocol_fees claim_protocol_fees_with_partner migrate ' ]] \
+  || [[ "$(count_occurrences 'protocol_fees::new\(PackageWitness\(\), id\.to_inner\(\), partner_id\)' <<<"$(move_production_body finalize <<<"$launch_fee_facts")")" != 1 ]]; then
+  echo "Blast's launch fees must sit in the core Ledger sealed by PackageWitness and the creator's in its own balances, each reached only by its accrual, claim, and migration." >&2
   failures=$((failures + 1))
 fi
 
@@ -771,10 +675,10 @@ events_facts="$(move_facts sources/lib/events.move)"
 if rg -q '\b(RuntimeConfigCreated|CreatorClaimSigner[A-Z]\w*|ProtocolFeeShare[A-Z]\w*|Treasury(Scheduled|Changed|Cancelled))\b' <<<"$events_facts" \
   || ! rg -Fq 'creator_claim_signers: DelayedSet<ClaimSignerKey, vector<u8>>,' sources/runtime_config.move \
   || ! rg -Fq 'protocol_fee_share_bps: Delayed<ProtocolFeeShareKey, Bps>,' sources/runtime_config.move \
-  || ! rg -Fq 'treasury: Delayed<TreasuryKey, address>,' sources/runtime_config.move \
+  || rg -q '\b(treasury|Treasury)' <<<"$runtime_config_source" \
   || rg -q '\bcreator_claim_signer_public_key\b' sources \
   || rg -n 'events::' <<<"$runtime_config_source"; then
-  echo 'Runtime config must emit no consumer event: the claim signers, protocol fee share and treasury each store the primitive keyed by its own operation.' >&2
+  echo 'Runtime config must emit no consumer event and hold no treasury: the claim signers and protocol fee share each store the primitive keyed by its own operation.' >&2
   failures=$((failures + 1))
 fi
 
@@ -788,8 +692,8 @@ core_singleton_bodies="$(
 
 if [[ -f sources/creator_claim_config.move || -f sources/trade_fee_config.move ]] \
   || rg -n '\b(CreatorClaimConfig|TradeFeeConfig)\b' sources tests \
-  || [[ "$(count_occurrences 'transfer::share_object' <<<"$core_singleton_bodies")" != 4 ]]; then
-  echo 'Core must keep exactly its four shared protocol singletons besides the launch terminal sink; the ACL is shared by blast_admin.' >&2
+  || [[ "$(count_occurrences 'transfer::share_object' <<<"$core_singleton_bodies")" != 2 ]]; then
+  echo 'Core must keep exactly its two shared configuration singletons besides the launch registry and terminal sink; the ACL, version, and package administration are shared by blast_admin.' >&2
   failures=$((failures + 1))
 fi
 
@@ -803,7 +707,7 @@ launch_config_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 # it. Every delayed policy, venue admission included, stores the primitive keyed by its own
 # operation, and every one of them is in the unpause guard.
 if [[ ! -f sources/launch_config.move ]] \
-  || [[ "$(move_production_function_contract schedule_protocol_allocation <<<"$launch_config_facts")" != 'public:0:0:fun schedule_protocol_allocation( self: &mut LaunchConfig, package_version: &PackageVersion, _: &AdminWitness<TreasuryAdmin>,'* ]] \
+  || [[ "$(move_production_function_contract schedule_protocol_allocation <<<"$launch_config_facts")" != 'public:0:0:fun schedule_protocol_allocation( self: &mut LaunchConfig, package_version: &PackageVersion<BLAST_FUN>, _: &AdminWitness<TreasuryAdmin>,'* ]] \
   || [[ "$(move_production_type LaunchConfig <<<"$launch_config_facts")" \
     != 'struct LaunchConfig has key { id: UID, meme_decimals: VecSet<u8>, quotes: Table<TypeName, bool>, trade_fees: Delayed<TradeFeesKey, TradeFees>, venues: DelayedSet<VenueKey, TypeName>, protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>, protocol_lp_fees: Delayed<ProtocolLpFeesKey, ProtocolLpFees>, creation_fee: Delayed<CreationFeeKey, u64>, }' ]] \
   || [[ "$(move_production_type ProtocolLpFees <<<"$launch_config_facts")" \
@@ -815,7 +719,7 @@ if [[ ! -f sources/launch_config.move ]] \
   || [[ "$(move_production_body max_lp_fee_bps <<<"$(move_facts sources/lib/constants.move)")" != '3_000' ]] \
   || [[ "$(count_occurrences 'ProtocolLpFees \{ meme_bps, quote_bps \}' <<<"$launch_config_source")" != 2 ]] \
   || [[ "$(move_production_body schedule_protocol_lp_fees <<<"$launch_config_facts")" \
-    != 'package_version.assert_current(); self.protocol_lp_fees.schedule(new_protocol_lp_fees(meme_bps, quote_bps), delay_ms, clock);' ]] \
+    != 'package_version.assert_current(constants::generation!()); self.protocol_lp_fees.schedule(new_protocol_lp_fees(meme_bps, quote_bps), delay_ms, clock);' ]] \
   || ! rg -Fq 'protocol_lp_fees: delayed::new(ProtocolLpFeesKey(), &id, protocol_lp_fees, delay_ms)' <<<"$launch_config_source" \
   || ! rg -Fq 'new_protocol_lp_fees(bps::new(1_500), bps::new(1_500))' <<<"$(move_production_body init <<<"$launch_config_facts")" \
   || [[ "$(move_production_function_contract protocol_lp_fees <<<"$launch_config_facts")" \
@@ -847,7 +751,7 @@ launch_config_partner_writers="$(awk -F'\t' '
 ' <<<"$launch_config_facts" | sort | tr '\n' ' ')"
 launch_config_ungated="$(awk -F'\t' '
   $1 == "FN" && $6 == 0 && ($2 == "apply_creation_fee" || $2 == "add_partner" || $2 == "remove_partner") \
-    && $10 !~ /^package_version\.assert_current\(\);/ { print $2 }
+    && $10 !~ /^package_version\.assert_current\(constants::generation!\(\)\);/ { print $2 }
 ' <<<"$launch_config_facts")"
 
 if [[ "$launch_config_fee_writers" != 'apply_creation_fee ' ]] \
@@ -1022,7 +926,7 @@ launch_new_body="$(move_production_body new <<<"$launch_facts")"
 launch_finalize_body="$(move_production_body finalize <<<"$launch_facts")"
 launch_creation_ungated="$(awk -F'\t' '
   $1 == "FN" && $6 == 0 && $2 ~ /^(set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_opening_round|set_partner|finalize|share)$/ {
-    if ($9 !~ /[(,] package_version: &PackageVersion,/ || $10 !~ /^package_version\.assert_current\(\);/) print $2
+    if ($9 !~ /[(,] package_version: &PackageVersion<BLAST_FUN>,/ || $10 !~ /^package_version\.assert_current\(constants::generation!\(\)\);/) print $2
   }
 ' <<<"$launch_facts")"
 launch_initializer_functions="$(awk -F'\t' '
@@ -1034,8 +938,8 @@ if [[ ! -f sources/launch.move ]] \
   || [[ "$(move_production_type LaunchInitializer <<<"$launch_facts")" != 'struct LaunchInitializer<phantom Meme, phantom Quote> {'* ]] \
   || [[ "$launch_initializer_functions" != 'finalize:public new:public set_allocation_plan:public set_graduation_target:public set_lp_fee_split:public set_opening_round:public set_partner:public set_virtual_quote:public ' ]] \
   || [[ "$(move_production_type LaunchInitializer <<<"$launch_facts")" != 'struct LaunchInitializer<phantom Meme, phantom Quote> { ticket: LaunchTicket<Meme>, treasury_cap: TreasuryCap<Meme>, venue: TypeName,'* ]] \
-  || [[ "$(move_production_function_contract new <<<"$launch_facts")" != 'public:0:0:fun new<Meme, Quote>( ticket: LaunchTicket<Meme>, treasury_cap: TreasuryCap<Meme>, package_version: &PackageVersion, config: &LaunchConfig, venue_ticket: VenueTicket<Meme, Quote>, ): LaunchInitializer<Meme, Quote>' ]] \
-  || [[ "$launch_new_body" != 'package_version.assert_current(); package_version.assert_not_paused(constants::create_pause_bit!()); assert!( type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(), blast_fun::errors::invalid_meme_quote_pair!(), ); let venue = venue_ticket.redeem_ticket(); let (quote_fee_bps, meme_fee_bps) = config.snapshot_for_launch<Quote>(venue, ticket.decimals()); LaunchInitializer {'* ]] \
+  || [[ "$(move_production_function_contract new <<<"$launch_facts")" != 'public:0:0:fun new<Meme, Quote>( ticket: LaunchTicket<Meme>, treasury_cap: TreasuryCap<Meme>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, venue_ticket: VenueTicket<Meme, Quote>, ): LaunchInitializer<Meme, Quote>' ]] \
+  || [[ "$launch_new_body" != 'package_version.assert_current(constants::generation!()); package_version.assert_not_paused(constants::create_pause_bit!()); assert!( type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(), blast_fun::errors::invalid_meme_quote_pair!(), ); let venue = venue_ticket.redeem_ticket(); let (quote_fee_bps, meme_fee_bps) = config.snapshot_for_launch<Quote>(venue, ticket.decimals()); LaunchInitializer {'* ]] \
   || [[ "$(launch_functions_containing 'treasury_cap')" != 'finalize new ' ]] \
   || [[ "$(launch_functions_containing '.redeem_ticket(')" != 'new ' ]] \
   || [[ "$(count_occurrences 'let LaunchInitializer \{' <<<"$launch_source")" != 1 ]] \
@@ -1043,11 +947,11 @@ if [[ ! -f sources/launch.move ]] \
   || [[ "$launch_finalize_body" != *'ticket.destroy(treasury_cap, currency, atomic_supply);'* ]] \
   || rg -q '\b(Witness|migration_witness|MigrationWitness|pool_tick_spacing|pool_fee_rate|pool_tier|treasury_cap_mut|invalid_migration_witness)\b' \
     <<<"$launch_source$(move_normalized_source <<<"$events_facts")" \
-  || [[ "$(move_production_function_contract finalize <<<"$launch_facts")" != 'public:0:0:fun finalize<Meme, Quote>( self: LaunchInitializer<Meme, Quote>, package_version: &PackageVersion, registry: &mut LaunchRegistry, currency: &mut Currency<Meme>, config: &LaunchConfig, creation_fee: Coin<SUI>, ): Launch<Meme, Quote>' ]] \
-  || [[ "$(move_production_function_contract set_partner <<<"$launch_facts")" != 'public:0:0:fun set_partner<Meme, Quote>( self: &mut LaunchInitializer<Meme, Quote>, package_version: &PackageVersion, config: &LaunchConfig, partner: &Partner, clock: &Clock, )' ]] \
+  || [[ "$(move_production_function_contract finalize <<<"$launch_facts")" != 'public:0:0:fun finalize<Meme, Quote>( self: LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, registry: &mut LaunchRegistry, currency: &mut Currency<Meme>, config: &LaunchConfig, creation_fee: Coin<SUI>, ): Launch<Meme, Quote>' ]] \
+  || [[ "$(move_production_function_contract set_partner <<<"$launch_facts")" != 'public:0:0:fun set_partner<Meme, Quote>( self: &mut LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, partner: &Partner, clock: &Clock, )' ]] \
   || ! in_order 'config.assert_partner(' 'self.partner_id = option::some(partner_id);' \
     <<<"$(move_production_body set_partner <<<"$launch_facts")" \
-  || [[ "$launch_finalize_body" != 'package_version.assert_current(); package_version.assert_not_paused(constants::create_pause_bit!());'* ]] \
+  || [[ "$launch_finalize_body" != 'package_version.assert_current(constants::generation!()); package_version.assert_not_paused(constants::create_pause_bit!());'* ]] \
   || [[ "$launch_finalize_body" == *'.is_some()'* ]] \
   || ! in_order \
     'invalid_creation_fee!()' \
@@ -1063,8 +967,8 @@ if [[ ! -f sources/launch.move ]] \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
   || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, metadata_cap_reassignment, curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
-  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
-  || [[ "$launch_finalize_body" != *'fee_ledger: fees::new(creation_fee),'* ]] \
+  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let mut protocol_fees = protocol_fees::new(PackageWitness(), id.to_inner(), partner_id); protocol_fees.accrue_sui(creation_fee); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
+  || [[ "$launch_finalize_body" != *'protocol_fees, creator_meme_fees: balance::zero(), creator_quote_fees: balance::zero(),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \
   || rg -q '\bmetadata_cap\.(extract|swap|fill)\(|option::(some|none)\(metadata_cap\)|\bMetadataCap<Meme>\)' \
@@ -1081,13 +985,13 @@ fi
 # creation: the split is set once on the initializer, and finalize stores all three unchanged. No
 # getter exposes them; only `migrate` reads them, into the vault terms and the hand-off it seals.
 if [[ "$(launch_functions_containing 'self.lp_fee_split = ')" != 'set_lp_fee_split ' ]] \
-  || [[ "$(move_production_function_contract set_lp_fee_split <<<"$launch_facts")" != 'public:0:0:fun set_lp_fee_split<Meme, Quote>( self: &mut LaunchInitializer<Meme, Quote>, package_version: &PackageVersion, lp_fee_split: FeeSplit, )' ]] \
+  || [[ "$(move_production_function_contract set_lp_fee_split <<<"$launch_facts")" != 'public:0:0:fun set_lp_fee_split<Meme, Quote>( self: &mut LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, lp_fee_split: FeeSplit, )' ]] \
   || [[ "$(count_occurrences '\.lp_fee_split = ' <<<"$launch_source")" != 1 ]] \
   || [[ "$(count_occurrences '\.(venue|partner_id) = ' <<<"$launch_source")" != 1 ]] \
   || [[ "$(launch_functions_containing 'self.lp_fee_split')" != 'migrate set_lp_fee_split ' ]] \
   || [[ "$(launch_functions_containing 'self.venue')" != 'migrate ' ]] \
-  || [[ "$(launch_functions_containing 'self.partner_id')" != 'claim_protocol_fees claim_protocol_fees_with_partner migrate set_partner ' ]] \
-  || ! rg -Fq 'use blast_core::{ bps::Bps, fee_split::FeeSplit,' <<<"$launch_source" \
+  || [[ "$(launch_functions_containing 'self.partner_id')" != 'migrate set_partner ' ]] \
+  || ! rg -Fq 'bps::Bps, fee_split::FeeSplit,' <<<"$launch_source" \
   || [[ -n "$(move_facts sources/launch.move | awk -F'\t' '
     $1 == "FN" && $6 == 0 && $3 == "public" && $9 ~ /\): (FeeSplit|TypeName|Option<ID>|\(u32, u64\))$/ { print $2 }
   ')" ]] \
@@ -1106,18 +1010,17 @@ for authority_spec in \
   'self.blast_metadata_cap_id = |apply_metadata_cap_reassignment claim_creator_caps ' \
   'self.creator.extract()|claim_creator_caps ' \
   'self.creator = |apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment ' \
-  'self.fee_ledger.claim_creator_fees(|claim_creator_fees ' \
-  'self.fee_ledger.claim_protocol_fees(|claim_protocol_fees claim_protocol_fees_with_partner ' \
-  'partner.pay(|claim_protocol_fees_with_partner ' \
-  'runtime_config.treasury()|claim_protocol_fees claim_protocol_fees_with_partner ' \
-  'pay_treasury(|claim_protocol_fees claim_protocol_fees_with_partner ' \
+  'self.creator_meme_fees.withdraw_all(|claim_creator_fees ' \
+  'self.creator_quote_fees.withdraw_all(|claim_creator_fees ' \
+  'self.protocol_fees.pay(|claim_protocol_fees ' \
+  'self.protocol_fees.pay_with_partner(|claim_protocol_fees_with_partner ' \
   'self.partner_id = |set_partner ' \
   'self.assert_curve_fee_cap(|claim_creator_fees prove_owner ' \
   'owner_proof::new(|prove_owner ' \
-  'PackageWitness()|migrate prove_owner ' \
+  'PackageWitness()|finalize migrate prove_owner ' \
   'self.assert_metadata_update(|set_description set_icon_url set_name ' \
   '&self.metadata_cap|set_description set_icon_url set_name ' \
-  'transfer::public_transfer(|apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment migrate pay pay_treasury ' \
+  'transfer::public_transfer(|apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment migrate ' \
   '.opening_round_meme.pay(|deliver_opening_round ' \
   '.opening_round_quote.pay(|deliver_opening_round ' \
   '.allocated_meme.pay(|migrate ' \
@@ -1133,23 +1036,23 @@ done
 # The owner proof is the curve-fee cap's only reach outside the launch: `prove_owner` checks the
 # version, then the live cap through the private `assert_curve_fee_cap`, before it seals a proof
 # for this launch under the package witness. The witness is a drop-only struct that no function
-# returns or takes, constructed only inside `migrate` and `prove_owner`, so no other package can
-# seal this launchpad's terms, hand-offs, or proofs.
+# returns or takes, constructed only inside `finalize` (to seal the launch's fee ledger), `migrate`,
+# and `prove_owner`, so no other package can seal this launchpad's ledger, terms, hand-offs, or proofs.
 if [[ "$(move_production_function_contract prove_owner <<<"$launch_facts")" \
-    != 'public:0:0:fun prove_owner<Meme, Quote>( self: &Launch<Meme, Quote>, package_version: &PackageVersion, curve_fee_cap: &CurveFeeCap<Meme>, ): OwnerProof' ]] \
+    != 'public:0:0:fun prove_owner<Meme, Quote>( self: &Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, curve_fee_cap: &CurveFeeCap<Meme>, ): OwnerProof' ]] \
   || [[ "$(move_production_body prove_owner <<<"$launch_facts")" \
-    != 'package_version.assert_current(); self.assert_curve_fee_cap(curve_fee_cap); owner_proof::new(PackageWitness(), self.id.to_inner())' ]] \
+    != 'package_version.assert_current(constants::generation!()); self.assert_curve_fee_cap(curve_fee_cap); owner_proof::new(PackageWitness(), self.id.to_inner())' ]] \
   || [[ "$(move_production_function_contract assert_curve_fee_cap <<<"$launch_facts")" \
     != 'private:0:0:fun assert_curve_fee_cap<Meme, Quote>( self: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, )' ]] \
   || [[ "$(move_production_body assert_curve_fee_cap <<<"$launch_facts")" \
     != 'assert!( self.curve_fee_cap_id.contains(&object::id(curve_fee_cap)), blast_fun::errors::creator_cap_not_live!(), );' ]] \
   || [[ "$(move_production_type PackageWitness <<<"$launch_facts")" != 'struct PackageWitness() has drop;' ]] \
-  || [[ "$(count_occurrences '\bPackageWitness\b' <<<"$launch_source")" != 4 ]] \
-  || [[ "$(count_occurrences '\bPackageWitness\(\)' <<<"$launch_source")" != 4 ]] \
+  || [[ "$(count_occurrences '\bPackageWitness\b' <<<"$launch_source")" != 5 ]] \
+  || [[ "$(count_occurrences '\bPackageWitness\(\)' <<<"$launch_source")" != 5 ]] \
   || [[ -n "$(awk -F'\t' '$1 == "FN" && $9 ~ /PackageWitness/ { print $2 }' <<<"$launch_facts")" ]] \
   || [[ "$(rg -l '\bPackageWitness\b' sources --glob '*.move' | tr '\n' ' ')" != 'sources/launch.move ' ]] \
   || [[ "$(rg -l '\bowner_proof::' sources --glob '*.move' | tr '\n' ' ')" != 'sources/launch.move ' ]]; then
-  launch_authority_violations+='  the owner proof must check the version and the live curve-fee cap, and the drop-only PackageWitness must be constructed only by migrate and prove_owner'$'\n'
+  launch_authority_violations+='  the owner proof must check the version and the live curve-fee cap, and the drop-only PackageWitness must be constructed only by finalize, migrate, and prove_owner'$'\n'
 fi
 # Each creator-cap reassignment stores the primitive's one-shot action slot, whose action is the
 # recipient; only the ready action reaches the reassignment that records new authority.
@@ -1166,35 +1069,24 @@ if [[ "$(rg -l '\bnew_curve_fee_cap\b' sources | sort | tr '\n' ' ')" \
     != 'sources/creator_authority.move sources/launch.move ' ]] \
   || [[ "$(rg -l '\bnew_metadata_cap\b' sources | sort | tr '\n' ' ')" \
     != 'sources/creator_authority.move sources/launch.move ' ]] \
-  || [[ "$(rg -l '\.claim_(creator|protocol)_fees\((ctx)?\)' sources | tr '\n' ' ')" != 'sources/launch.move ' ]]; then
+  || [[ "$(rg -l '\.(protocol|creator_(meme|quote))_fees\.' sources | tr '\n' ' ')" != 'sources/launch.move ' ]]; then
   launch_authority_violations+='  creator capability constructors or ledger claims are reachable outside creator_authority.move and launch.move'$'\n'
 fi
 
 # Blast's fee claims are permissionless, so no caller input may choose the payee: each pays the
-# partner the launch names and the RuntimeConfig treasury, through one helper that sends only
-# positive balances, three payouts before the claim event (ADR 0105).
+# launch's sealed core Ledger to the core Treasury, the partner bound at creation first (ADR 0105),
+# and every transfer the launch makes goes through blast_core::payout.
 if [[ "$(move_production_signature claim_protocol_fees <<<"$launch_facts")" \
-    != 'fun claim_protocol_fees<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, runtime_config: &RuntimeConfig, ctx: &mut TxContext, )' ]] \
+    != 'fun claim_protocol_fees<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, treasury: &Treasury, ctx: &mut TxContext, )' ]] \
   || [[ "$(move_production_signature claim_protocol_fees_with_partner <<<"$launch_facts")" \
-    != 'fun claim_protocol_fees_with_partner<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, runtime_config: &RuntimeConfig, partner: &Partner, ctx: &mut TxContext, )' ]] \
-  || [[ "$(move_production_function_contract pay <<<"$launch_facts")" \
-    != 'private:0:0:fun pay<Asset>(self: &mut Balance<Asset>, amount: u64, recipient: address, ctx: &mut TxContext)' ]] \
-  || [[ "$(move_production_body pay <<<"$launch_facts")" \
-    != 'if (amount > 0) transfer::public_transfer(self.split(amount).into_coin(ctx), recipient);' ]] \
-  || [[ "$(move_production_function_contract pay_treasury <<<"$launch_facts")" \
-    != 'private:0:0:fun pay_treasury<T>(fee: Balance<T>, treasury: address, ctx: &mut TxContext)' ]] \
-  || [[ "$(move_production_body pay_treasury <<<"$launch_facts")" \
-    != 'if (fee.value() == 0) return fee.destroy_zero(); transfer::public_transfer(fee.into_coin(ctx), treasury);' ]]; then
-  launch_authority_violations+='  a protocol fee claim takes a caller-chosen payee or authority, or the treasury payout changed'$'\n'
-fi
-
-# Each claim body is pinned whole, so the payee of every payout is the RuntimeConfig treasury the
-# claim reads and records, never the sender or a constant, with all three payouts before the event.
-if [[ "$(move_production_body claim_protocol_fees <<<"$launch_facts" | move_semantic_shape)" \
-    != 'package_version.assert_current();assert!(self.partner_id.is_none(),blast_fun::errors::partner_mismatch!());let blast_treasury = runtime_config.treasury();let(meme_fees,quote_fees,sui_fees)= self.fee_ledger.claim_protocol_fees();let(treasury_meme,treasury_quote,treasury_sui)=(meme_fees.value(),quote_fees.value(),sui_fees.value());pay_treasury(meme_fees,blast_treasury,ctx);pay_treasury(quote_fees,blast_treasury,ctx);pay_treasury(sui_fees,blast_treasury,ctx);events::protocol_fees_claimed(self.id.to_inner(),blast_treasury,treasury_meme,treasury_quote,treasury_sui,0,0,0);' ]] \
+    != 'fun claim_protocol_fees_with_partner<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, treasury: &Treasury, partner: &Partner, ctx: &mut TxContext, )' ]] \
+  || [[ "$(move_production_body claim_protocol_fees <<<"$launch_facts" | move_semantic_shape)" \
+    != 'package_version.assert_current(constants::generation!());self.protocol_fees.pay(treasury,ctx);' ]] \
   || [[ "$(move_production_body claim_protocol_fees_with_partner <<<"$launch_facts" | move_semantic_shape)" \
-    != 'package_version.assert_current();assert!(self.partner_id.contains(&object::id(partner)),blast_fun::errors::partner_mismatch!());let blast_treasury = runtime_config.treasury();let(mut meme_fees,mut quote_fees,mut sui_fees)= self.fee_ledger.claim_protocol_fees();let partner_meme = partner.pay(&mut meme_fees,ctx);let partner_quote = partner.pay(&mut quote_fees,ctx);let partner_sui = partner.pay(&mut sui_fees,ctx);let(treasury_meme,treasury_quote,treasury_sui)=(meme_fees.value(),quote_fees.value(),sui_fees.value());pay_treasury(meme_fees,blast_treasury,ctx);pay_treasury(quote_fees,blast_treasury,ctx);pay_treasury(sui_fees,blast_treasury,ctx);events::protocol_fees_claimed(self.id.to_inner(),blast_treasury,treasury_meme,treasury_quote,treasury_sui,partner_meme,partner_quote,partner_sui);' ]]; then
-  launch_authority_violations+='  a protocol fee claim must pay each balance to the RuntimeConfig treasury it records, after the partner and before the claim event'$'\n'
+    != 'package_version.assert_current(constants::generation!());self.protocol_fees.pay_with_partner(treasury,partner,ctx);' ]] \
+  || ! rg -Fxq 'use fun blast_core::payout::pay as Balance.pay;' sources/launch.move \
+  || [[ -n "$(move_production_function_contract pay <<<"$launch_facts")$(move_production_function_contract pay_treasury <<<"$launch_facts")" ]]; then
+  launch_authority_violations+='  a protocol fee claim must pay the sealed core Ledger to the core Treasury with no caller-chosen payee, and launch payouts must use blast_core::payout'$'\n'
 fi
 
 # Records a violation, labelled with its ticket, for every needle not used by exactly the
@@ -1222,10 +1114,10 @@ check_launch_needles T-004 \
   'curve::cap_buy_quote_input(|buy_from_curve ' \
   'curve::quote_buy(|buy_from_curve ' \
   'transfer::share_object(self)|share ' \
-  'events::launch_shared(|share ' \
-  'events::bought(|buy_from_curve '
+  'events::launch_shared<Meme, Quote>(|share ' \
+  'events::bought<Meme, Quote>(|buy_from_curve '
 if ! in_order \
-  'package_version.assert_current();' \
+  'package_version.assert_current(constants::generation!());' \
   'self.public_start_ms.is_some()' \
   'self.creator.extract()' \
   <<<"$(move_production_body claim_creator_caps <<<"$launch_facts")"; then
@@ -1297,8 +1189,8 @@ if [[ -n "$launch_authority_violations" ]]; then
   failures=$((failures + 1))
 fi
 
-if [[ "$(launch_functions_containing 'events::migration_allocation_paid(')" != 'migrate ' ]] \
-  || [[ "$(launch_functions_containing 'events::migrated(')" != 'migrate ' ]]; then
+if [[ "$(launch_functions_containing 'events::migration_allocation_paid<Meme, Quote>(')" != 'migrate ' ]] \
+  || [[ "$(launch_functions_containing 'events::migrated<Meme, Quote>(')" != 'migrate ' ]]; then
   echo 'Allocation payouts and the migration must be replayed only by migrate.' >&2
   failures=$((failures + 1))
 fi
@@ -1314,13 +1206,13 @@ fi
 version_guard_violations="$(
   for move_file in "${source_files[@]}"; do
     move_facts "$move_file" | awk -F'\t' -v file="$move_file" '
-      $1 == "FN" && $6 == 0 && $9 ~ /[(,] package_version: &PackageVersion,/ {
-        if ($10 ~ /^package_version\.assert_current\(\);/) gated[$2] = 1
+      $1 == "FN" && $6 == 0 && $9 ~ /[(,] package_version: &PackageVersion<BLAST_FUN>,/ {
+        if ($10 ~ /^package_version\.assert_current\(constants::generation!\(\)\);/) gated[$2] = 1
         else pending[$2] = $10
       }
       $1 == "FN" && $6 == 0 && $3 == "public" \
         && ($9 ~ /: &mut (Launch|Currency)</ || $9 ~ /: &mut (LaunchConfig|RuntimeConfig|PackageAdmin),/) \
-        && $9 !~ /[(,] package_version: &(mut )?PackageVersion,/ {
+        && $9 !~ /[(,] package_version: &(mut )?PackageVersion<BLAST_FUN>,/ {
         print "  " file ": " $2 " reaches mutable shared state without PackageVersion"
       }
       END {
@@ -1500,23 +1392,23 @@ fi
 # only party that can redeem it, so no caller witness is checked. Only order anchors are pinned.
 launch_migrate_shape="$(move_production_body migrate <<<"$launch_facts" | move_semantic_shape)"
 if [[ "$(launch_functions_containing 'self.lifecycle = Lifecycle::Migrated;')" != 'migrate ' ]] \
-  || [[ "$(move_production_type Migrated <<<"$events_facts")" != 'struct Migrated has copy, drop { launch_id: ID, meme_amount: u64, quote_amount: u64, disposed_meme: u64, total_supply_after: u64, }' ]] \
-  || [[ "$(move_production_function_contract migrate <<<"$launch_facts")" != 'public:0:0:fun migrate<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion, config: &LaunchConfig, currency: &mut Currency<Meme>, ctx: &mut TxContext, ): Migration<Meme, Quote>' ]] \
-  || [[ "$launch_migrate_shape" != 'package_version.assert_current();package_version.assert_not_paused(constants::migration_pause_bit!());assert!(self.lifecycle == Lifecycle::MigrationReady,blast_fun::errors::invalid_launch_lifecycle!());let(protocol_meme_bps,protocol_quote_bps)= config.protocol_lp_fees();let plan = self.allocation_plan;'* ]] \
+  || [[ "$(move_production_type Migrated <<<"$events_facts")" != 'struct Migrated<phantom Meme, phantom Quote> has copy, drop { launch_id: ID, meme_amount: u64, quote_amount: u64, disposed_meme: u64, total_supply_after: u64, }' ]] \
+  || [[ "$(move_production_function_contract migrate <<<"$launch_facts")" != 'public:0:0:fun migrate<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, ctx: &mut TxContext, ): Migration<Meme, Quote>' ]] \
+  || [[ "$launch_migrate_shape" != 'package_version.assert_current(constants::generation!());package_version.assert_not_paused(constants::migration_pause_bit!());assert!(self.lifecycle == Lifecycle::MigrationReady,blast_fun::errors::invalid_launch_lifecycle!());let(protocol_meme_bps,protocol_quote_bps)= config.protocol_lp_fees();let plan = self.allocation_plan;'* ]] \
   || [[ "$(count_occurrences 'config\.protocol_lp_fees\(\)' <<<"$launch_migrate_shape")" != 1 ]] \
   || ! in_order \
     'let plan = self.allocation_plan;' \
-    'events::migration_allocation_paid(' \
-    'self.fee_ledger.accrue_protocol_fees(' \
+    'events::migration_allocation_paid<Meme,Quote>(' \
+    'self.protocol_fees.accrue(' \
     'self.allocated_meme.split(protocol_meme_amount)' \
     'self.real_quote_reserve.split(protocol_quote_amount)' \
-    'events::protocol_fees_accrued(' \
+    'events::protocol_fees_accrued<Meme,Quote>(' \
     'let meme = self.allocated_meme.withdraw_all();' \
     'let quote = self.real_quote_reserve.withdraw_all();' \
     'self.pending_burn.withdraw_all()' \
     'self.meme_reserve.withdraw_all()' \
     'self.lifecycle = Lifecycle::Migrated;' \
-    'events::migrated(' \
+    'events::migrated<Meme,Quote>(' \
     'let terms = migration::vault_terms(PackageWitness(),self.id.to_inner(),self.lp_fee_split,protocol_meme_bps,protocol_quote_bps,self.partner_id,migration::residuals_to_protocol());' \
     <<<"$launch_migrate_shape" \
   || [[ "$launch_migrate_shape" != *';migration::new(PackageWitness(),meme,quote,self.venue,terms)' ]] \
@@ -1541,14 +1433,10 @@ events_follow_mutations() {
 if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'events::launch_ticket_created<' \
   || ! events_follow_mutations sources/launch.move finalize \
     'ticket.destroy(' 'Launch{' 'events::launch_created<' \
-  || ! events_follow_mutations sources/launch.move claim_protocol_fees \
-    'self.fee_ledger.claim_protocol_fees(' 'events::protocol_fees_claimed(' \
-  || ! events_follow_mutations sources/launch.move claim_protocol_fees_with_partner \
-    'self.fee_ledger.claim_protocol_fees(' 'events::protocol_fees_claimed(' \
   || ! events_follow_mutations sources/launch.move apply_curve_fee_cap_reassignment \
-    'self.curve_fee_cap_id = option::some(' 'transfer::public_transfer(' 'events::curve_fee_cap_reassigned(' \
+    'self.curve_fee_cap_id = option::some(' 'transfer::public_transfer(' 'events::curve_fee_cap_reassigned<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch.move apply_metadata_cap_reassignment \
-    'self.blast_metadata_cap_id = option::some(' 'transfer::public_transfer(' 'events::metadata_cap_reassigned(' \
+    'self.blast_metadata_cap_id = option::some(' 'transfer::public_transfer(' 'events::metadata_cap_reassigned<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch_config.move add_partner \
     '.add_dynamic_field(' 'events::partner_added(' \
   || ! events_follow_mutations sources/launch_config.move remove_partner \
@@ -1557,25 +1445,25 @@ if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'eve
     'self.real_quote_reserve.join(' \
     'self.meme_reserve.split(' \
     'self.lifecycle = Lifecycle::MigrationReady;' \
-    'self.fee_ledger.accrue(' \
-    'events::bought(' \
+    'self.accrue_trade_fees(' \
+    'events::bought<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch.move share \
-    'self.public_start_ms = option::some(' 'events::launch_shared(' 'transfer::share_object(' \
+    'self.public_start_ms = option::some(' 'events::launch_shared<Meme,Quote>(' 'transfer::share_object(' \
   || ! events_follow_mutations sources/launch.move join_opening_round \
-    'self.opening_round_quote.join(' 'events::opening_round_joined(' \
+    'self.opening_round_quote.join(' 'events::opening_round_joined<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch.move settle_opening_round \
-    'self.lifecycle = Lifecycle::Live;' 'self.opening_round_quote.join(' 'events::opening_round_settled(' \
+    'self.lifecycle = Lifecycle::Live;' 'self.opening_round_quote.join(' 'events::opening_round_settled<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch.move deliver_opening_round \
     '.remove_dynamic_field' 'self.opening_round_bids = ' 'self.opening_round_quote.pay(' \
-    'events::opening_round_delivered(' \
+    'events::opening_round_delivered<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch.move migrate \
     'self.allocated_meme.pay(meme,destination,ctx);' \
     'self.real_quote_reserve.pay(quote,destination,ctx);' \
-    'events::migration_allocation_paid(' \
-    'self.fee_ledger.accrue_protocol_fees(' \
-    'events::protocol_fees_accrued(' \
+    'events::migration_allocation_paid<Meme,Quote>(' \
+    'self.protocol_fees.accrue(' \
+    'events::protocol_fees_accrued<Meme,Quote>(' \
     'currency.burn_balance(' \
-    'events::migrated('; then
+    'events::migrated<Meme,Quote>('; then
   echo 'Every replay-schema success event must follow the state write or native transfer it records.' >&2
   failures=$((failures + 1))
 fi

@@ -137,11 +137,11 @@ Upgrade rules depend on the package lineage.
 ### Events
 
 - Query events by their Move type, named with the `original-id`.
-- `blast_fun`, `blast_sui`, and `blast_boosts_aftermath` wrap every payload in
-  the `Event<T>` envelope of their own `blast_events` module (for example
-  `blast_fun::blast_events::Event`), so the event type is
+- `blast_sui` and `blast_boosts_aftermath` wrap every payload in the `Event<T>`
+  envelope of their own `blast_events` module (for example
+  `blast_sui::blast_events::Event`), so the event type is
   `<original-id>::blast_events::Event<<original-id>::<module>::<Payload>>`.
-  Every other package emits payload structs directly.
+  Every other package, the launchpad included, emits payload structs directly.
 - Sui orders events by checkpoint, transaction, and event index within the
   transaction; payloads carry no sequence numbers of their own.
 - The reference lists every event struct under its module with its fields.
@@ -2101,8 +2101,7 @@ Every event is emitted directly (no envelope).
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
   its own event in the same transaction:
   `blast_boosts_aftermath::events::PartnerFeePaid` (Boosts),
-  `blast_fun::events::ProtocolFeesClaimed` (launch claims),
-  `blast_core::blast_core_events::ProtocolFeesPaid` (LP vaults),
+  `blast_core::blast_core_events::ProtocolFeesPaid` (launch claims and LP vaults),
   and `blast_presale::blast_presale::ProtocolFeesPaid` (presale raise fee).
   `blast_fun::events::LaunchCreated` and
   `blast_presale::blast_presale::PresaleOpened` record the partner a launch or

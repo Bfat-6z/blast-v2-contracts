@@ -126,7 +126,7 @@ fun upgrade_wrong_digest() {
         .admin
         .authorize_upgrade(
             &r.version,
-            &blast_acl::witness_for_testing<UpgradeAdmin>(),
+            &blast_acl::witness_for_testing<UpgradeAdmin<BLAST_FUN_MIGRATORS>>(),
             vector::tabulate!(32, |_| 1u8),
             &r.clock
         ));
@@ -154,7 +154,7 @@ fun upgrade_digest_rejects_0_bytes() {
         .admin
         .schedule_upgrade(
             &r.version,
-            &blast_acl::witness_for_testing<UpgradeAdmin>(),
+            &blast_acl::witness_for_testing<UpgradeAdmin<BLAST_FUN_MIGRATORS>>(),
             vector::tabulate!(0, |_| 0u8),
             &r.clock
         );
@@ -170,7 +170,7 @@ fun upgrade_digest_rejects_31_bytes() {
         .admin
         .schedule_upgrade(
             &r.version,
-            &blast_acl::witness_for_testing<UpgradeAdmin>(),
+            &blast_acl::witness_for_testing<UpgradeAdmin<BLAST_FUN_MIGRATORS>>(),
             vector::tabulate!(31, |_| 0u8),
             &r.clock
         );
@@ -186,7 +186,7 @@ fun upgrade_digest_rejects_33_bytes() {
         .admin
         .schedule_upgrade(
             &r.version,
-            &blast_acl::witness_for_testing<UpgradeAdmin>(),
+            &blast_acl::witness_for_testing<UpgradeAdmin<BLAST_FUN_MIGRATORS>>(),
             vector::tabulate!(33, |_| 0u8),
             &r.clock
         );
@@ -238,13 +238,13 @@ fun start(): Fixture {
 }
 
 fun schedule(f: &mut Fixture, immutable: bool) {
-    let admin = blast_acl::witness_for_testing<UpgradeAdmin>();
+    let admin = blast_acl::witness_for_testing<UpgradeAdmin<BLAST_FUN_MIGRATORS>>();
     if (immutable) f.admin.schedule_make_immutable(&f.version, &admin, &f.clock)
     else f.admin.schedule_upgrade(&f.version, &admin, digest(), &f.clock);
 }
 
 fun apply(f: &mut Fixture, immutable: bool) {
-    let admin = blast_acl::witness_for_testing<UpgradeAdmin>();
+    let admin = blast_acl::witness_for_testing<UpgradeAdmin<BLAST_FUN_MIGRATORS>>();
     if (immutable) f.admin.make_immutable(&f.version, &admin, &f.clock)
     else {
         let ticket = f.admin.authorize_upgrade(&f.version, &admin, digest(), &f.clock);
@@ -254,15 +254,15 @@ fun apply(f: &mut Fixture, immutable: bool) {
 }
 
 fun cancel(f: &mut Fixture) {
-    f.admin.cancel_upgrade_action(&f.version, &blast_acl::witness_for_testing<CancelAdmin>());
+    f.admin.cancel_upgrade_action(&f.version, &blast_acl::witness_for_testing<CancelAdmin<BLAST_FUN_MIGRATORS>>());
 }
 
 fun digest(): vector<u8> { vector::tabulate!(32, |_| 0u8) }
 
 // === Imports ===
 
-use blast_fun_migrators::{blast_fun_migrators::{Self as package_version, PackageVersion}, package_admin::{Self, PackageAdmin}};
-use blast_fun::blast_fun_domain::{CancelAdmin, UpgradeAdmin};
+use blast_fun_migrators::{blast_fun_migrators::{Self as package_version, BLAST_FUN_MIGRATORS, PackageVersion}, package_admin::{Self, PackageAdmin}};
+use blast_admin::package_admin::{CancelAdmin, UpgradeAdmin};
 use blast_admin::blast_acl;
 use std::unit_test::{assert_eq, destroy};
 use sui::clock::Clock;

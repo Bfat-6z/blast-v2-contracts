@@ -60,7 +60,7 @@ public struct TestVenue() has drop;
 /// Configured cold policy and one clock standing at the public start time.
 public struct OpeningRoundFixture {
     scenario: Scenario,
-    package_version: PackageVersion,
+    package_version: PackageVersion<BLAST_FUN>,
     registry: LaunchRegistry,
     config: LaunchConfig,
     runtime_config: RuntimeConfig,
@@ -69,26 +69,22 @@ public struct OpeningRoundFixture {
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[test, expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun security_pause_blocks_join_with_a_valid_bid() {
     let mut fixture = start();
     fixture.open(MIN_ROUND_DURATION_MS);
-    fixture
-        .package_version
-        .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    fixture.pause(2);
     fixture.join(ALICE, ALICE_BID);
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[test, expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun security_pause_blocks_settlement_of_a_funded_opening_round() {
     let mut fixture = start();
     fixture.open(MIN_ROUND_DURATION_MS);
     fixture.join(ALICE, ALICE_BID);
     fixture.set_time(ROUND_ENDS_AT_MS);
-    fixture
-        .package_version
-        .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    fixture.pause(2);
     fixture.settle(KEEPER);
     fixture.end();
 }
@@ -98,12 +94,8 @@ fun security_partial_unpause_restores_join_and_settle_and_full_pause_preserves_d
     let mut fixture = start();
     fixture.open(MIN_ROUND_DURATION_MS);
     fixture.join(ALICE, ALICE_BID);
-    fixture
-        .package_version
-        .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
-    fixture
-        .package_version
-        .clear_pause_bits(2);
+    fixture.pause(7);
+    fixture.clear_pause_bits(2);
     fixture.join(BOB, BOB_BID);
     fixture.set_time(ROUND_ENDS_AT_MS);
     fixture.settle(KEEPER);
@@ -115,9 +107,7 @@ fun security_partial_unpause_restores_join_and_settle_and_full_pause_preserves_d
         bps::new(QUOTE_FEE_BPS),
         bps::new(MEME_FEE_BPS)
     );
-    fixture
-        .package_version
-        .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 2);
+    fixture.pause(2);
     fixture.deliver(KEEPER, ALICE);
     fixture.deliver(KEEPER, BOB);
     fixture.next_tx!(KEEPER, |f| {
@@ -239,7 +229,7 @@ fun creator_and_public_bids_accumulate_per_bidder() {
     let launch_id = object::id(&launch);
 
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundJoined>()),
+        bcs::to_bytes(&only_event<OpeningRoundJoined<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         u64_payload(launch_id, vector[ALICE_BID, ALICE_BID]),
     );
     fixture.share(launch);
@@ -248,7 +238,7 @@ fun creator_and_public_bids_accumulate_per_bidder() {
     fixture.join(BOB, BOB_BID);
 
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundJoined>()),
+        bcs::to_bytes(&only_event<OpeningRoundJoined<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         u64_payload(launch_id, vector[BOB_BID, 3 * ALICE_BID + BOB_BID]),
     );
     fixture.next_tx!(ALICE, |f| {
@@ -455,16 +445,16 @@ fun settlement_at_the_end_buys_once_with_the_whole_pot_and_opens_trading() {
         bps::new(MEME_FEE_BPS),
     );
 
-    let bought = event::events_by_type<Event<Bought>>();
+    let bought = event::events_by_type<Bought<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>();
     assert_eq!(bought.length(), 1);
-    let mut fields = sui::bcs::new(bcs::to_bytes(&bought[0].unwrap()));
+    let mut fields = sui::bcs::new(bcs::to_bytes(&bought[0]));
     fields.peel_address();
     assert_eq!(fields.peel_u64(), pot);
     assert_eq!(fields.peel_u64(), meme_out_gross);
     assert_eq!(fields.peel_u64(), meme_out_net);
     assert_eq!(fields.peel_u64(), 0);
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundSettled>()),
+        bcs::to_bytes(&only_event<OpeningRoundSettled<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         u64_payload(launch_id, vector[pot, meme_out_net, 0]),
     );
     fixture.next_tx!(KEEPER, |f| {
@@ -493,9 +483,9 @@ fun empty_round_settles_live_without_a_purchase() {
     fixture.set_time(ROUND_ENDS_AT_MS);
     fixture.settle(KEEPER);
 
-    assert_eq!(event::events_by_type<Event<Bought>>().length(), 0);
+    assert_eq!(event::events_by_type<Bought<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>().length(), 0);
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundSettled>()),
+        bcs::to_bytes(&only_event<OpeningRoundSettled<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         u64_payload(launch_id, vector[0, 0, 0]),
     );
     fixture.next_tx!(KEEPER, |f| {
@@ -516,9 +506,9 @@ fun pot_too_small_to_buy_is_refunded_whole() {
     fixture.set_time(ROUND_ENDS_AT_MS);
     fixture.settle(KEEPER);
 
-    assert_eq!(event::events_by_type<Event<Bought>>().length(), 0);
+    assert_eq!(event::events_by_type<Bought<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>().length(), 0);
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundSettled>()),
+        bcs::to_bytes(&only_event<OpeningRoundSettled<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         u64_payload(launch_id, vector[1, 0, 1]),
     );
     fixture.next_tx!(KEEPER, |f| {
@@ -607,11 +597,11 @@ fun terminal_zero_output_opening_round_graduates_and_delivers_only_excess_quote(
     fixture.settle(KEEPER);
 
     assert_eq!(
-        bcs::to_bytes(&only_event<Bought>()),
+        bcs::to_bytes(&only_event<Bought<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         u64_payload(launch_id, vector[2, 0, 0, 98, 0, 0, 0, 1, CURVE_MEME, 1]),
     );
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundSettled>()),
+        bcs::to_bytes(&only_event<OpeningRoundSettled<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         u64_payload(launch_id, vector[100, 0, 98]),
     );
     fixture.next_tx!(KEEPER, |f| {
@@ -623,12 +613,12 @@ fun terminal_zero_output_opening_round_graduates_and_delivers_only_excess_quote(
 
     fixture.deliver(KEEPER, ALICE);
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundDelivered>()),
+        bcs::to_bytes(&only_event<OpeningRoundDelivered<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         delivered_bytes(launch_id, ALICE, vector[40, 0, 39]),
     );
     fixture.deliver(KEEPER, BOB);
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundDelivered>()),
+        bcs::to_bytes(&only_event<OpeningRoundDelivered<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         delivered_bytes(launch_id, BOB, vector[60, 0, 59]),
     );
     fixture.next_tx!(KEEPER, |f| {
@@ -668,7 +658,7 @@ fun deliveries_pay_each_bidder_the_same_price_and_the_last_takes_the_remainder()
     assert!(meme % 3 != 0);
     fixture.deliver(KEEPER, ALICE);
     assert_eq!(
-        bcs::to_bytes(&only_event<OpeningRoundDelivered>()),
+        bcs::to_bytes(&only_event<OpeningRoundDelivered<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>()),
         delivered_bytes(launch_id, ALICE, vector[ALICE_BID, alice_share, 0]),
     );
     fixture.next_tx!(KEEPER, |f| {
@@ -830,7 +820,7 @@ fun migrate(
 
 fun start(): OpeningRoundFixture {
     let mut scenario = test_scenario::begin(PROTOCOL_ADMIN);
-    let package_version = package_version::new_for_testing(scenario.ctx());
+    let package_version = package_version::version_for_testing(scenario.ctx());
     let registry = launch::registry_for_testing(scenario.ctx());
     launch_config::init_zero_fees_for_testing(scenario.ctx());
     let runtime_config = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
@@ -1021,7 +1011,7 @@ fun buy(self: &mut OpeningRoundFixture, sender: address, quote_in: u64, min_meme
 /// Checks this transaction's only `LaunchCreated` event names `launch_id` and `opening_round_ms`,
 /// which the free creation's fee (8 bytes) and the absent partner (1) follow.
 fun assert_launch_created(launch_id: ID, opening_round_duration_ms: u64) {
-    let created = bcs::to_bytes(&only_event<LaunchCreated>());
+    let created = bcs::to_bytes(&only_event<LaunchCreated<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>>());
     let tail = created.length() - 17;
 
     assert_eq!(vector::tabulate!(32, |i| created[i]), bcs::to_bytes(&launch_id));
@@ -1045,10 +1035,10 @@ fun delivered_bytes(launch_id: ID, bidder: address, fields: vector<u64>): vector
 
 /// This transaction's only event of type `T`.
 fun only_event<T: copy + drop>(): T {
-    let mut events = event::events_by_type<Event<T>>();
+    let mut events = event::events_by_type<T>();
     assert_eq!(events.length(), 1);
 
-    events.pop_back().unwrap()
+    events.pop_back()
 }
 
 /// Whether `owner` holds any Meme coin.
@@ -1084,23 +1074,36 @@ fun end(self: OpeningRoundFixture) {
     destroy(self);
 }
 
+/// Sets `bits` through the generic administration, as a pause administrator would.
+fun pause_bits(self: &mut OpeningRoundFixture, bits: u8) {
+    blast_admin::package_admin::pause(
+        &mut self.package_version,
+        &blast_acl::witness_for_testing<PauseAdmin<BLAST_FUN>>(),
+        bits,
+    );
+}
+
+/// Clears `bits` through the generic administration without the release notice checks.
+fun clear_bits(self: &mut OpeningRoundFixture, bits: u8) {
+    let ctx = self.scenario.ctx();
+    blast_fun::blast_fun::clear_pause_bits_for_testing(&mut self.package_version, bits, ctx);
+}
+
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_admin::{blast_acl, package_admin::PauseAdmin, package_version::PackageVersion};
 
-use blast_core::{bps, fee_split, migration};
+use blast_core::{bps, fee_split, migration, blast_domain::{AdapterAdmin, FeeAdmin, ListingAdmin}};
 
 use blast_fun::{
     allocation::{Self, AllocationPlan},
-    blast_events::Event,
-    blast_fun_domain::{AdapterAdmin, FeeAdmin, ListingAdmin},
     creator_authority,
     curve,
     events::{Bought, LaunchCreated, OpeningRoundDelivered, OpeningRoundJoined, OpeningRoundSettled},
     launch::{Self, Launch, LaunchRegistry},
     launch_config::{Self, LaunchConfig},
     launch_ticket::{Self, LaunchTicket},
-    blast_fun::{Self as package_version, PackageVersion},
+    blast_fun::{Self as package_version, BLAST_FUN},
     runtime_config::{Self, RuntimeConfig},
 };
 
@@ -1114,6 +1117,10 @@ use sui::{
     test_scenario::{Self, Scenario},
     test_utils,
 };
+
+use fun pause_bits as OpeningRoundFixture.pause;
+
+use fun clear_bits as OpeningRoundFixture.clear_pause_bits;
 
 use fun put_back as Launch.put_back;
 

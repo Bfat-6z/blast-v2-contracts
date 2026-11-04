@@ -171,12 +171,12 @@ blast_fun_migrators:package:fun destroy( self: Publication ): (Publisher, Operat
 blast_fun_migrators:package:fun share_version( generation: OperationalVersion<BLAST_FUN_MIGRATORS>, ctx: &mut TxContext )
 bluefin:public:fun buyback_and_burn<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
 bluefin:public:fun collect_fees<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
-bluefin:public:fun migrate<Meme, Quote>( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &PackageVersion, config: &LaunchConfig, currency: &mut Currency<Meme>, quote_currency: &Currency<Quote>, venue_config: &VenueConfig, bluefin_config: &mut GlobalConfig, registry: &mut VaultRegistry, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, creation_fee: Coin<SUI>, clock: &Clock, ctx: &mut TxContext, )
+bluefin:public:fun migrate<Meme, Quote>( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, quote_currency: &Currency<Quote>, venue_config: &VenueConfig, bluefin_config: &mut GlobalConfig, registry: &mut VaultRegistry, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, creation_fee: Coin<SUI>, clock: &Clock, ctx: &mut TxContext, )
 bluefin:public:fun prepare<Meme, Quote>( migrators_version: &MigratorsVersion, venue_config: &mut VenueConfig, _: &TreasuryCap<Meme>, tick_spacing: u32, fee_rate: u64, ): VenueTicket<Meme, Quote>
 bluefin:public:fun settle_and_apply_fee_split<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun buyback_and_burn<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, pool: &mut Pool<CoinA, CoinB>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun collect_fees<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
-cetus:public:fun migrate<Meme, Quote, CoinA, CoinB>( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &PackageVersion, config: &LaunchConfig, currency: &mut Currency<Meme>, venue_config: &VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, burn_manager: &mut BurnManager, registry: &mut VaultRegistry, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, clock: &Clock, ctx: &mut TxContext, )
+cetus:public:fun migrate<Meme, Quote, CoinA, CoinB>( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, venue_config: &VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, burn_manager: &mut BurnManager, registry: &mut VaultRegistry, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun prepare<Meme, Quote>( migrators_version: &MigratorsVersion, venue_config: &mut VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, treasury_cap: &mut TreasuryCap<Meme>, tick_spacing: u32, ctx: &mut TxContext, ): VenueTicket<Meme, Quote>
 cetus:public:fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
 constants:package:fun auto_lp_margin(): u256
@@ -191,13 +191,13 @@ migration_math:package:fun auto_lp_fixed_side( sqrt_lower: u128, sqrt_price: u12
 migration_math:package:fun seed_fixed_side( preferred: bool, available_a: u64, available_b: u64, needed_a: u64, needed_b: u64, ): bool
 migration_math:package:fun sqrt_price_x64( meme_amount: u64, quote_amount: u64, meme_is_coin_a: bool, ): u128
 package_admin:public:fun apply_upgrade_delay( self: &mut PackageAdmin, package_version: &PackageVersion, clock: &Clock )
-package_admin:public:fun authorize_upgrade( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock, ): UpgradeTicket
-package_admin:public:fun cancel_upgrade_action( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin> )
-package_admin:public:fun commit_upgrade_and_advance( self: &mut PackageAdmin, package_version: &mut PackageVersion, _: &AdminWitness<UpgradeAdmin>, receipt: UpgradeReceipt, )
-package_admin:public:fun make_immutable( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock )
-package_admin:public:fun schedule_make_immutable( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, clock: &Clock )
-package_admin:public:fun schedule_upgrade( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, digest: vector<u8>, clock: &Clock )
-package_admin:public:fun schedule_upgrade_delay( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin>, delay_ms: u64, clock: &Clock )
+package_admin:public:fun authorize_upgrade( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>, digest: vector<u8>, clock: &Clock, ): UpgradeTicket
+package_admin:public:fun cancel_upgrade_action( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<CancelAdmin<BLAST_FUN_MIGRATORS>> )
+package_admin:public:fun commit_upgrade_and_advance( self: &mut PackageAdmin, package_version: &mut PackageVersion, _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>, receipt: UpgradeReceipt, )
+package_admin:public:fun make_immutable( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>, clock: &Clock )
+package_admin:public:fun schedule_make_immutable( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>, clock: &Clock )
+package_admin:public:fun schedule_upgrade( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>, digest: vector<u8>, clock: &Clock )
+package_admin:public:fun schedule_upgrade_delay( self: &mut PackageAdmin, package_version: &PackageVersion, _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>, delay_ms: u64, clock: &Clock )
 package_admin:public:fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxContext)
 venue_config:package:fun add_object<Key: copy + drop + store, Object: key + store>( self: &mut VenueConfig, key: Key, object: Object, )
 venue_config:package:fun add_value<Key: copy + drop + store, Value: store>( self: &mut VenueConfig, key: Key, value: Value, )
@@ -575,7 +575,7 @@ EOF
 for entry in prepare migrate collect_fees settle_and_apply_fee_split buyback_and_burn; do
     case "$entry" in
         prepare) expected="( migrators_version: &MigratorsVersion, venue_config: &mut VenueConfig," ;;
-        migrate) expected="( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &PackageVersion, config: &LaunchConfig, currency: &mut Currency<Meme>," ;;
+        migrate) expected="( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>," ;;
         collect_fees|settle_and_apply_fee_split) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>," ;;
         buyback_and_burn) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>," ;;
         *) fail "unhandled venue entry ${entry}" ;;
@@ -732,7 +732,7 @@ EOF
 for entry in prepare migrate collect_fees settle_and_apply_fee_split buyback_and_burn; do
     case "$entry" in
         prepare) expected="( migrators_version: &MigratorsVersion, venue_config: &mut VenueConfig," ;;
-        migrate) expected="( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &PackageVersion, config: &LaunchConfig, currency: &mut Currency<Meme>," ;;
+        migrate) expected="( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>," ;;
         collect_fees|settle_and_apply_fee_split) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>," ;;
         buyback_and_burn) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>," ;;
         *) fail "unhandled venue entry ${entry}" ;;
@@ -889,29 +889,28 @@ if rg -n 'fun (grant_admin|revoke_admin|sign_in)\(' "$SOURCE_DIR"; then
     fail "Migrators must not manage administrators"
 fi
 
-# The roles are the Launchpad and core domains' ability-free role types, which their gates pin.
-LAUNCHPAD_ROLES="$(move_facts "$PACKAGE_DIR/../launchpad/sources/blast_fun_domain.move" \
-    | awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' | paste -sd '|')"
+# The roles are blast_admin's generic package roles over this package's marker and the core
+# domain's ability-free role types, which their gates pin.
+LAUNCHPAD_ROLES='UpgradeAdmin<BLAST_FUN_MIGRATORS>|CancelAdmin<BLAST_FUN_MIGRATORS>'
 CORE_ROLES="$(move_facts "$PACKAGE_DIR/../core/sources/blast_domain.move" \
     | awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' | paste -sd '|')"
 [[ -n "$LAUNCHPAD_ROLES" && -n "$CORE_ROLES" ]] || fail "the Launchpad and core role types must be readable"
-if rg -n "^public struct (${LAUNCHPAD_ROLES}|${CORE_ROLES})\\b" "$SOURCE_DIR"; then
+if rg -n "^public struct (UpgradeAdmin|CancelAdmin|${CORE_ROLES})\\b" "$SOURCE_DIR"; then
     fail "Migrators must take the Launchpad's and core's roles, never declare a same-named copy"
 fi
 # The witness type is each administrator action's role check, so every witness a source names is
 # borrowed and names one concrete role; a generic or foreign role fails here.
 admin_witness_violations="$(for source in "$SOURCE_DIR"/*.move; do
-    move_norm "$source" | { rg -o '&?AdminWitness<[^>]*>' || true; } \
+    move_norm "$source" | { rg -o '&?AdminWitness<[A-Za-z]*(<BLAST_FUN_MIGRATORS>)?>' || true; } \
         | { rg -v -x "&AdminWitness<(${LAUNCHPAD_ROLES}|${CORE_ROLES})>" || true; } \
         | sed "s|^|$(basename "$source"): |"
 done)"
 [[ -z "$admin_witness_violations" ]] || \
     fail "every administrator witness must be a borrowed AdminWitness of one concrete role: ${admin_witness_violations}"
-# Upgrade custody takes the Launchpad's roles; the buybacks take the core buyback role, the one
-# `blast_vault::vault::take_buyback_quote` requires.
-[[ "$(move_norm "$SOURCE_DIR/package_admin.move" | rg -o 'use blast_fun::blast_fun_domain::\{[^}]*\};')" \
-    == 'use blast_fun::blast_fun_domain::{CancelAdmin, UpgradeAdmin};' ]] || \
-    fail "package_admin must take its roles from the Launchpad domain"
+# Upgrade custody takes blast_admin's generic package roles; the buybacks take the core buyback
+# role, the one `blast_vault::vault::take_buyback_quote` requires.
+move_norm "$SOURCE_DIR/package_admin.move" | rg -q 'package_admin::\{CancelAdmin, UpgradeAdmin\},' || \
+    fail "package_admin must take its roles from blast_admin::package_admin"
 for module in bluefin cetus; do
     move_norm "$SOURCE_DIR/${module}.move" | rg -q 'use blast_core::\{ blast_domain::BuybackAdmin,' \
         && ! move_norm "$SOURCE_DIR/${module}.move" | rg -q 'blast_fun_domain' || \
@@ -948,11 +947,11 @@ if rg -U -n '^public fun [^(]+\([^)]*\): (&)?(Publisher|UpgradeCap)' \
 fi
 CUSTODY_ROLE_GATES="$(move_facts "$SOURCE_DIR/package_admin.move" | awk -F'\t' '
     $1 == "FN" && ($2 == "authorize_upgrade" || $2 == "commit_upgrade_and_advance") \
-        && index($9, "_: &AdminWitness<UpgradeAdmin>,") > 0 { count++ }
+        && index($9, "_: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,") > 0 { count++ }
     END { print count + 0 }
 ')"
 [[ "${CUSTODY_ROLE_GATES:-0}" -eq 2 ]] || \
-    fail "every governed custody transition must require Launchpad's upgrade-admin role"
+    fail "every governed custody transition must require the package's upgrade-admin role"
 # Upgrade authorization checks the current generation first, so a retired generation cannot
 # authorize, and the finalizer proves the exact next generation first.
 [[ "$(move_facts "$SOURCE_DIR/package_admin.move" \
@@ -972,7 +971,7 @@ admin_roles="$(for source in "$SOURCE_DIR"/*.move; do
         $1 == "FN" && $6 == 0 && index($9, "AdminWitness<") > 0 {
             rest = $9
             roles = ""
-            while (match(rest, /AdminWitness<[^>]*>/)) {
+            while (match(rest, /AdminWitness<[A-Za-z]*(<BLAST_FUN_MIGRATORS>)?>/)) {
                 roles = roles (roles == "" ? "" : ",") substr(rest, RSTART + 13, RLENGTH - 14)
                 rest = substr(rest, RSTART + RLENGTH)
             }
@@ -984,13 +983,13 @@ require_text "$admin_roles" \
     "every administrator action must take exactly its pinned role witness" <<'ROLES'
 bluefin:buyback_and_burn:BuybackAdmin
 cetus:buyback_and_burn:BuybackAdmin
-package_admin:authorize_upgrade:UpgradeAdmin
-package_admin:cancel_upgrade_action:CancelAdmin
-package_admin:commit_upgrade_and_advance:UpgradeAdmin
-package_admin:make_immutable:UpgradeAdmin
-package_admin:schedule_make_immutable:UpgradeAdmin
-package_admin:schedule_upgrade:UpgradeAdmin
-package_admin:schedule_upgrade_delay:UpgradeAdmin
+package_admin:authorize_upgrade:UpgradeAdmin<BLAST_FUN_MIGRATORS>
+package_admin:cancel_upgrade_action:CancelAdmin<BLAST_FUN_MIGRATORS>
+package_admin:commit_upgrade_and_advance:UpgradeAdmin<BLAST_FUN_MIGRATORS>
+package_admin:make_immutable:UpgradeAdmin<BLAST_FUN_MIGRATORS>
+package_admin:schedule_make_immutable:UpgradeAdmin<BLAST_FUN_MIGRATORS>
+package_admin:schedule_upgrade:UpgradeAdmin<BLAST_FUN_MIGRATORS>
+package_admin:schedule_upgrade_delay:UpgradeAdmin<BLAST_FUN_MIGRATORS>
 ROLES
 # ADR 0134 permits delayed immutability. While upgradeable, every commit advances the
 # generation, so the policy must remain compatible: narrower policies cannot change

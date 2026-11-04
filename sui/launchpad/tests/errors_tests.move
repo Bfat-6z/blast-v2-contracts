@@ -7,26 +7,17 @@ module blast_fun::errors_tests;
 // === Tests ===
 
 #[test]
-fun configuration_error_registry_is_stable() {
+/// Pins every launchpad abort code; pause, version, and upgrade aborts are `blast_admin`'s and
+/// fee-payout aborts are `blast_core`'s.
+fun error_registry_is_stable() {
     assert_eq!(blast_fun::errors::invalid_trade_fee_bps!(), 0);
     assert_eq!(blast_fun::errors::decimals_not_allowed!(), 1);
     assert_eq!(blast_fun::errors::venue_not_allowed!(), 2);
     assert_eq!(blast_fun::errors::invalid_venue!(), 3);
-    assert_eq!(blast_fun::errors::unchanged!(), 21);
-    assert_eq!(blast_fun::errors::invalid_creation_fee!(), 32);
-    assert_eq!(blast_fun::errors::invalid_lp_fee_bps!(), 43);
-}
-
-#[test]
-fun allocation_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::invalid_protocol_allocation!(), 4);
     assert_eq!(blast_fun::errors::invalid_destination!(), 5);
     assert_eq!(blast_fun::errors::invalid_shares!(), 6);
     assert_eq!(blast_fun::errors::recipient_capacity_reached!(), 7);
-}
-
-#[test]
-fun launch_intake_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::invalid_sell_burn_bps!(), 8);
     assert_eq!(blast_fun::errors::invalid_initial_meme_supply!(), 9);
     assert_eq!(blast_fun::errors::invalid_meme_quote_pair!(), 10);
@@ -34,28 +25,13 @@ fun launch_intake_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::invalid_opening_round!(), 12);
     assert_eq!(blast_fun::errors::invalid_graduation_target!(), 13);
     assert_eq!(blast_fun::errors::invalid_launch_lifecycle!(), 14);
-    assert_eq!(blast_fun::errors::partner_not_accepted!(), 33);
-}
-
-#[test]
-fun trade_and_fee_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::slippage_exceeded!(), 15);
     assert_eq!(blast_fun::errors::zero_trade_output!(), 16);
-    assert_eq!(blast_fun::errors::nothing_accrued!(), 19);
-    assert_eq!(blast_fun::errors::partner_mismatch!(), 34);
-    assert_eq!(blast_fun::errors::invalid_protocol_fee_share!(), 42);
-}
-
-#[test]
-fun opening_round_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::opening_round_ended!(), 17);
     assert_eq!(blast_fun::errors::opening_round_not_ended!(), 18);
-    assert_eq!(blast_fun::errors::zero_opening_round_bid!(), 31);
-}
-
-#[test]
-fun creator_authority_error_registry_is_stable() {
+    assert_eq!(blast_fun::errors::nothing_accrued!(), 19);
     assert_eq!(blast_fun::errors::creator_cap_not_live!(), 20);
+    assert_eq!(blast_fun::errors::unchanged!(), 21);
     assert_eq!(blast_fun::errors::invalid_creator_recipient!(), 22);
     assert_eq!(blast_fun::errors::invalid_account_commitment!(), 23);
     assert_eq!(blast_fun::errors::invalid_creator_claim_public_key!(), 24);
@@ -65,21 +41,13 @@ fun creator_authority_error_registry_is_stable() {
     assert_eq!(blast_fun::errors::invalid_creator_claim_signature!(), 28);
     assert_eq!(blast_fun::errors::quote_not_allowed!(), 29);
     assert_eq!(blast_fun::errors::invalid_virtual_quote!(), 30);
-    assert_eq!(blast_fun::errors::too_many_claim_signers!(), 40);
-}
-
-#[test]
-fun pause_error_registry_is_stable() {
-    assert_eq!(blast_fun::errors::invalid_pause_bits!(), 35);
-    assert_eq!(blast_fun::errors::pause_unchanged!(), 36);
-    assert_eq!(blast_fun::errors::paused!(), 37);
-    assert_eq!(blast_fun::errors::unguarded_notice!(), 41);
-}
-
-#[test]
-fun upgrade_error_registry_is_stable() {
-    assert_eq!(blast_fun::errors::wrong_upgrade_action!(), 38);
-    assert_eq!(blast_fun::errors::invalid_digest!(), 39);
+    assert_eq!(blast_fun::errors::zero_opening_round_bid!(), 31);
+    assert_eq!(blast_fun::errors::invalid_creation_fee!(), 32);
+    assert_eq!(blast_fun::errors::partner_not_accepted!(), 33);
+    assert_eq!(blast_fun::errors::too_many_claim_signers!(), 34);
+    assert_eq!(blast_fun::errors::unguarded_notice!(), 35);
+    assert_eq!(blast_fun::errors::invalid_protocol_fee_share!(), 36);
+    assert_eq!(blast_fun::errors::invalid_lp_fee_bps!(), 37);
 }
 
 // === Imports ===

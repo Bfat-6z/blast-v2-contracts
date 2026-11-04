@@ -134,11 +134,11 @@ Upgrade rules depend on the package lineage.
 ### Events
 
 - Query events by their Move type, named with the `original-id`.
-- `blast_fun`, `blast_sui`, and `blast_boosts_aftermath` wrap every payload in
-  the `Event<T>` envelope of their own `blast_events` module (for example
-  `blast_fun::blast_events::Event`), so the event type is
+- `blast_sui` and `blast_boosts_aftermath` wrap every payload in the `Event<T>`
+  envelope of their own `blast_events` module (for example
+  `blast_sui::blast_events::Event`), so the event type is
   `<original-id>::blast_events::Event<<original-id>::<module>::<Payload>>`.
-  Every other package emits payload structs directly.
+  Every other package, the launchpad included, emits payload structs directly.
 - Sui orders events by checkpoint, transaction, and event index within the
   transaction; payloads carry no sequence numbers of their own.
 - The reference lists every event struct under its module with its fields.

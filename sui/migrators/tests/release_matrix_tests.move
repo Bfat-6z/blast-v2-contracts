@@ -11,7 +11,7 @@ module blast_fun_migrators::release_matrix_tests;
 
 public struct MatrixFixture {
     scenario: Scenario,
-    version: PackageVersion,
+    version: PackageVersion<BLAST_FUN>,
     config: LaunchConfig,
     registry: VaultRegistry,
     vault_version: VaultVersion<BLAST_VAULT_PACKAGE>,
@@ -62,7 +62,7 @@ fun start(): MatrixFixture {
     let ctx = scenario.ctx();
 
     MatrixFixture {
-        version: package_version::new_for_testing(ctx),
+        version: package_version::version_for_testing(ctx),
         config: launch_config::new_zero_fees_for_testing(ctx),
         registry: blast_vault_package::empty_registry_for_testing(ctx),
         vault_version: blast_vault_package::version_for_testing(ctx),
@@ -76,7 +76,7 @@ fun admit_launch_venue<Venue: drop>(self: &mut MatrixFixture) {
         .config
         .set_venue_allowed_for_testing<Venue>(
             &self.version,
-            &blast_acl::witness_for_testing<AdapterAdmin>(),
+            &blast_acl::witness_for_testing<VaultAdapterAdmin>(),
             true,
             self.scenario.ctx(),
         );
@@ -108,14 +108,13 @@ const ADMIN: address = @0xAD;
 use blast_admin::{
     blast_acl,
     delayed_set::SetApplied,
-    package_version::PackageVersion as VaultVersion
+    package_version::{PackageVersion, PackageVersion as VaultVersion}
 };
 
 use blast_core::blast_domain::AdapterAdmin as VaultAdapterAdmin;
 
 use blast_fun::{
-    blast_fun::{Self as package_version, PackageVersion},
-    blast_fun_domain::AdapterAdmin,
+    blast_fun::{Self as package_version, BLAST_FUN},
     launch_config::{Self, LaunchConfig}
 };
 

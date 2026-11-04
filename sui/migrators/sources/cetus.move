@@ -99,7 +99,7 @@ public fun prepare<Meme, Quote>(
 public fun migrate<Meme, Quote, CoinA, CoinB>(
     launch: &mut Launch<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    package_version: &PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<Meme>,
     venue_config: &VenueConfig,
@@ -586,7 +586,7 @@ use blast_core::{
     migration::{Self, VenueTicket}
 };
 
-use blast_fun::{blast_fun::PackageVersion, launch::Launch, launch_config::LaunchConfig};
+use blast_fun::{blast_fun::BLAST_FUN, launch::Launch, launch_config::LaunchConfig};
 
 use blast_fun_migrators::{
     blast_events,

@@ -13,7 +13,7 @@ module blast_fun_migrators::launch_fixture;
 /// Every object a venue route reads, held unshared so each test states only its own delta.
 public struct LaunchFixture {
     scenario: Scenario,
-    version: PackageVersion,
+    version: PackageVersion<BLAST_FUN>,
     migrators_version: MigratorsVersion,
     config: LaunchConfig,
     runtime: RuntimeConfig,
@@ -33,7 +33,7 @@ public struct LaunchFixture {
 public fun start<Quote, Venue: drop>(): LaunchFixture {
     let mut scenario = test_scenario::begin(ADMIN);
     let ctx = scenario.ctx();
-    let version = package_version::new_for_testing(ctx);
+    let version = package_version::version_for_testing(ctx);
     let mut config = launch_config::new_zero_fees_for_testing(ctx);
     config.set_quote_allowed<Quote>(&version, &blast_acl::witness_for_testing<ListingAdmin>(), true);
     venue_config::init_for_testing(ctx);
@@ -222,7 +222,7 @@ public fun take_venue_config(self: &LaunchFixture): VenueConfig {
 public fun migration_inputs(
     self: &mut LaunchFixture,
 ): (
-    &PackageVersion,
+    &PackageVersion<BLAST_FUN>,
     &LaunchConfig,
     &mut VaultRegistry,
     &VaultVersion<BLAST_VAULT_PACKAGE>,
@@ -264,7 +264,7 @@ public fun scenario(self: &LaunchFixture): &Scenario { &self.scenario }
 
 public fun ctx(self: &mut LaunchFixture): &mut TxContext { self.scenario.ctx() }
 
-public fun version(self: &LaunchFixture): &PackageVersion { &self.version }
+public fun version(self: &LaunchFixture): &PackageVersion<BLAST_FUN> { &self.version }
 
 public fun migrators_version(self: &LaunchFixture): &MigratorsVersion { &self.migrators_version }
 
@@ -352,9 +352,10 @@ const TARGET: u64 = 25_000_000;
 
 // === Imports ===
 
-use blast_admin::{blast_acl, package_version::PackageVersion as VaultVersion};
+use blast_admin::{blast_acl, package_version::{PackageVersion, PackageVersion as VaultVersion}};
 
 use blast_core::{
+    blast_domain::{AdapterAdmin, FeeAdmin, ListingAdmin},
     blast_treasury::{Self, Treasury},
     bps,
     fee_split::FeeSplit,
@@ -363,8 +364,7 @@ use blast_core::{
 
 use blast_fun::{
     allocation,
-    blast_fun::{Self as package_version, PackageVersion},
-    blast_fun_domain::{AdapterAdmin, FeeAdmin, ListingAdmin},
+    blast_fun::{Self as package_version, BLAST_FUN},
     creator_authority::{Self, CurveFeeCap},
     launch::{Self, Launch, LaunchRegistry},
     launch_config::{Self, LaunchConfig},

@@ -75,7 +75,7 @@ public struct InitFixture {
 /// Cold-policy administration under each setter's own role.
 public struct ConfigFixture {
     scenario: Scenario,
-    package_version: package_version::PackageVersion,
+    package_version: PackageVersion<BLAST_FUN>,
     config: launch_config::LaunchConfig,
     clock: Clock,
 }
@@ -226,7 +226,7 @@ fun stale_package_version_rejects_protocol_allocation_before_its_bounds() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.set_protocol_allocation_for_testing(10_000, 10_000);
     });
@@ -317,7 +317,7 @@ fun stale_package_version_rejects_protocol_lp_fees_before_their_bounds() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.set_protocol_lp_fees_for_testing(10_000, 10_000);
     });
@@ -446,7 +446,7 @@ fun stale_package_version_rejects_decimals_before_the_unchanged_check() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = listing_admin();
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, true);
     });
@@ -510,7 +510,7 @@ fun admin_allows_quote_for_launch_snapshot() {
         let (_, _) = f.config.snapshot_for_launch<TEST_QUOTE>(test_venue(), MEME_DECIMALS);
 
         assert_eq!(f.config.allowed_quote_count_for_testing(), 1);
-        assert_eq!(bcs::to_bytes(&collect_one<events::QuoteSet>()), quote_set_bytes(true));
+        assert_eq!(bcs::to_bytes(&collect_one<events::QuoteSet<TEST_QUOTE>>()), quote_set_bytes(true));
     });
 
     fixture.end();
@@ -526,7 +526,7 @@ fun disallowing_a_quote_removes_it_from_future_launches() {
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, true);
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, false);
 
-        let set = collect<events::QuoteSet>();
+        let set = collect<events::QuoteSet<TEST_QUOTE>>();
 
         assert_eq!(f.config.allowed_quote_count_for_testing(), 0);
         assert_eq!(set.length(), 2);
@@ -638,7 +638,7 @@ fun stale_package_version_rejects_quote_before_the_set_update() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = listing_admin();
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, false);
     });
@@ -809,7 +809,7 @@ fun stale_package_version_rejects_trade_fees_before_their_bounds() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = fee_admin();
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f
             .config
@@ -1047,7 +1047,7 @@ fun stale_package_version_rejects_a_venue_before_its_type_check() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = adapter_admin();
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.config.set_venue_allowed_for_testing<bool>(&f.package_version, &admin_witness, true, f.ctx!());
     });
@@ -1134,7 +1134,7 @@ fun creation_fee_checks_the_version_before_the_current_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.set_creation_fee_for_testing(0);
     });
@@ -1272,7 +1272,7 @@ fun adding_a_partner_checks_the_version_first() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let partner = f.new_partner();
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.add_partner(&partner);
         destroy(partner);
@@ -1287,7 +1287,7 @@ fun removing_a_partner_checks_the_version_before_the_list() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let partner = f.new_partner();
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.remove_partner(&partner);
         destroy(partner);
@@ -1315,13 +1315,11 @@ fun u64_bytes(value: u64): vector<u8> {
 
 /// Expected `QuoteSet` bytes for the test quote.
 fun quote_set_bytes(allowed: bool): vector<u8> {
-    let mut expected = bcs::to_bytes(&type_name::with_original_ids<TEST_QUOTE>());
-    expected.append(bcs::to_bytes(&allowed));
-    expected
+    bcs::to_bytes(&allowed)
 }
 
 fun collect<T: copy + drop>(): vector<T> {
-    event::events_by_type<Event<T>>().map!(|event| event.unwrap())
+    event::events_by_type<T>()
 }
 
 fun collect_one<T: copy + drop>(): T {
@@ -1378,7 +1376,7 @@ fun start_init(): InitFixture {
 /// A configuration whose every change waits `NOTICE_MS`, with the clock at `NOW_AT_MS`.
 fun start_with_notices(): ConfigFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    let package_version = package_version::new_for_testing(scenario.ctx());
+    let package_version = package_version::version_for_testing(scenario.ctx());
     let config = launch_config::new_zero_fees_for_testing(scenario.ctx());
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(NOW_AT_MS);
@@ -1389,7 +1387,7 @@ fun start_with_notices(): ConfigFixture {
 /// The shared configuration exactly as package initialization leaves it.
 fun start(): ConfigFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    let package_version = package_version::new_for_testing(scenario.ctx());
+    let package_version = package_version::version_for_testing(scenario.ctx());
     launch_config::init_zero_fees_for_testing(scenario.ctx());
 
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -1506,14 +1504,13 @@ use blast_admin::{
     blast_acl::{Self, AdminWitness},
     delayed::DelayedApplied,
     delayed_set::{MemberRemoved, SetApplied},
+    package_version::PackageVersion
 };
 
-use blast_core::bps;
+use blast_core::{bps, blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin}};
 
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},
-    blast_events::Event,
-    blast_fun_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
     constants,
     events,
     launch_config::{
@@ -1527,7 +1524,7 @@ use blast_fun::{
         TradeFeesKey,
         VenueKey,
     },
-    blast_fun::{Self as package_version},
+    blast_fun::{Self as package_version, BLAST_FUN},
 };
 
 use blast_partners::blast_partners::{Self as partners, Partner};

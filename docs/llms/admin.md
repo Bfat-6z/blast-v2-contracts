@@ -47,8 +47,8 @@ Same-named roles in different packages are different types.
 
 | Package | Declared in | Roles |
 | --- | --- | --- |
-| `blast_fun` (launchpad) | `blast_fun_domain` | `blast_fun_domain::UpgradeAdmin` (govern upgrade notice, authorize and commit upgrades, make a package immutable), `blast_fun_domain::CreatorAdmin` (revoke and reissue a launch's creator caps), `blast_fun_domain::TreasuryAdmin` (where Blast is paid, Blast's share of future launches), `blast_fun_domain::FeeAdmin` (creation and trade fees, fee share, Blast's LP-fee share of new vaults, partners new launches may name), `blast_fun_domain::ListingAdmin` (Quotes and Meme decimals new launches may use), `blast_fun_domain::AdapterAdmin` (venues new launches may use), `blast_fun_domain::ClaimSignerAdmin` (propose and revoke the keys that sign account claims, and their notice), `blast_fun_domain::PauseAdmin`, `blast_fun_domain::UnpauseAdmin`, `blast_fun_domain::CancelAdmin` |
-| `blast_fun_migrators` | declares none | uses the launchpad's `UpgradeAdmin` (its own delay policy and upgrades) and `CancelAdmin` (pending administration); its buybacks take `blast_core::blast_domain::BuybackAdmin` |
+| `blast_fun` (launchpad) | declares none | the generic `blast_admin::package_admin::UpgradeAdmin<M>`, `blast_admin::package_admin::PauseAdmin<M>`, `blast_admin::package_admin::UnpauseAdmin<M>` and `blast_admin::package_admin::CancelAdmin<M>` for `blast_fun::blast_fun::BLAST_FUN`, and the product roles of `blast_core::blast_domain` (`CreatorAdmin`, `TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `ClaimSignerAdmin`, `CancelAdmin`) |
+| `blast_fun_migrators` | declares none | the generic `UpgradeAdmin<M>` (its own delay policy and upgrades) and `CancelAdmin<M>` (pending administration) for its marker `blast_fun_migrators::blast_fun_migrators::BLAST_FUN_MIGRATORS`; its buybacks take `blast_core::blast_domain::BuybackAdmin` |
 | `blast_sui` | `blast_sui_domain` | `blast_sui_domain::UpgradeAdmin` (attach package capabilities; authorize, commit, restrict, or seal upgrades), `blast_sui_domain::FeeAdmin` (blastSUI redemption fee) |
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
 | `blast_boosts_aftermath` | declares none | uses the four Boosts core roles |
@@ -180,7 +180,6 @@ genuine one-time witness, so the value can only be created in that package's
 
 | Package | Version object |
 | --- | --- |
-| `blast_fun` | `blast_fun::blast_fun::PackageVersion` |
 | `blast_fun_migrators` | `blast_fun_migrators::blast_fun_migrators::PackageVersion` |
 | `blast_sui` | `blast_sui_package::PackageVersion` |
 | `blast_boosts_aftermath` | `blast_boosts_aftermath::blast_boosts_aftermath::Protocol` |
@@ -205,7 +204,7 @@ that takes it and must call the latest package version.
 `UpgradeCap` (version 1) after checking both belong to the package of `M`.
 Neither can leave the custody. The consumer's shared `PackageAdmin` wraps it and
 gates authorization behind its upgrade role. Boosts receipt commit instead carries
-the native authorized receipt. Wrap in launchpad, presale and migrators consumes their
+the native authorized receipt. Wrap in presale and migrators consumes their
 unique Publication and matching fresh UpgradeCap. Publication carries
 provenance only and is permanently consumed at wrap. Ordinary ACL operations
 configure policies using each publication-owned policy operation's initial zero notice; upgrade
@@ -217,7 +216,6 @@ use its own Publisher and UpgradeCap directly:
 
 | Package | Custody object | Transitions exposed |
 | --- | --- | --- |
-| `blast_fun` | `blast_fun::package_admin::PackageAdmin` | `blast_fun::package_admin::wrap`, `blast_fun::package_admin::authorize_upgrade`, `blast_fun::package_admin::commit_upgrade_and_advance`, `blast_fun::package_admin::make_immutable` |
 | `blast_fun_migrators` | `blast_fun_migrators::package_admin::PackageAdmin` | `blast_fun_migrators::package_admin::wrap`, `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance`, delayed `blast_fun_migrators::package_admin::make_immutable` |
 | `blast_sui` | `blast_sui::package_admin::PackageAdmin` | `blast_sui::package_admin::new`, `blast_sui::package_admin::add_capability`, `blast_sui::package_admin::share`, `blast_sui::package_admin::authorize_upgrade`, `blast_sui::package_admin::commit_upgrade_and_advance`, `blast_sui::package_admin::restrict_to_additive`, `blast_sui::package_admin::make_immutable`, `blast_sui::package_admin::has_upgrade_cap` |
 | `blast_boosts_aftermath` | `blast_boosts_aftermath::package_admin::PackageAdmin` | `blast_boosts_aftermath::package_admin::wrap`, `blast_boosts_aftermath::package_admin::authorize_upgrade`, `blast_boosts_aftermath::package_admin::commit_upgrade`, `blast_boosts_aftermath::package_admin::activate_upgrade`, `blast_boosts_aftermath::package_admin::make_immutable` |
@@ -239,8 +237,8 @@ and have no custody at all.
 
 `package_version` and `blast_admin::package_admin` implement, once, the
 publication, operational generation, pause bits and 48-hour upgrade custody that
-an upgradeable package needs, typed by the package's one-time witness `M`. No
-package uses them yet; the launchpad, presale and migrators still carry their own
+an upgradeable package needs, typed by the package's one-time witness `M`. The
+vault and the launchpad use them; presale and migrators still carry their own
 copies (see "Upgrade custody").
 
 **Roles.** `blast_admin::package_admin` declares four ability-free roles generic

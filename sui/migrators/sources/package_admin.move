@@ -39,7 +39,7 @@ public struct PackageAdmin has key {
 public fun schedule_upgrade(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
-    _: &AdminWitness<UpgradeAdmin>,
+    _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,
     digest: vector<u8>,
     clock: &Clock
 ) {
@@ -54,7 +54,7 @@ public fun schedule_upgrade(
 public fun schedule_make_immutable(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
-    _: &AdminWitness<UpgradeAdmin>,
+    _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,
     clock: &Clock
 ) {
     package_version.assert_current();
@@ -66,7 +66,7 @@ public fun schedule_make_immutable(
 public fun cancel_upgrade_action(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
-    _: &AdminWitness<CancelAdmin>
+    _: &AdminWitness<CancelAdmin<BLAST_FUN_MIGRATORS>>
 ) {
     package_version.assert_current();
 
@@ -91,7 +91,7 @@ public fun wrap(publication: Publication, upgrade_cap: UpgradeCap, ctx: &mut TxC
 public fun authorize_upgrade(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
-    _: &AdminWitness<UpgradeAdmin>,
+    _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,
     digest: vector<u8>,
     clock: &Clock,
 ): UpgradeTicket {
@@ -113,7 +113,7 @@ public fun authorize_upgrade(
 public fun commit_upgrade_and_advance(
     self: &mut PackageAdmin,
     package_version: &mut PackageVersion,
-    _: &AdminWitness<UpgradeAdmin>,
+    _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,
     receipt: UpgradeReceipt,
 ) {
     package_version.assert_next();
@@ -128,7 +128,7 @@ public fun commit_upgrade_and_advance(
 public fun make_immutable(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
-    _: &AdminWitness<UpgradeAdmin>,
+    _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,
     clock: &Clock
 ) {
     package_version.assert_current();
@@ -144,7 +144,7 @@ public fun make_immutable(
 public fun schedule_upgrade_delay(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
-    _: &AdminWitness<UpgradeAdmin>,
+    _: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,
     delay_ms: u64,
     clock: &Clock
 ) {
@@ -177,7 +177,7 @@ public fun upgrade_delay_ms(self: &PackageAdmin): u64 {
 public fun authorize_upgrade_for_testing(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
-    admin: &AdminWitness<UpgradeAdmin>,
+    admin: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,
     digest: vector<u8>,
     ctx: &mut TxContext,
 ): UpgradeTicket {
@@ -194,7 +194,7 @@ public fun authorize_upgrade_for_testing(
 public fun make_immutable_for_testing(
     self: &mut PackageAdmin,
     package_version: &PackageVersion,
-    admin: &AdminWitness<UpgradeAdmin>,
+    admin: &AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>>,
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
@@ -242,10 +242,9 @@ use blast_admin::{
     blast_acl::AdminWitness,
     delayed_action::{Self, DelayedAction},
     operational_version::OperationalVersion,
+    package_admin::{CancelAdmin, UpgradeAdmin},
     upgrade_custody::{Self, UpgradeCustody},
 };
-
-use blast_fun::blast_fun_domain::{CancelAdmin, UpgradeAdmin};
 
 use sui::{
     clock::Clock,

@@ -144,44 +144,20 @@ const EInvalidCreationFee: u64 = 32;
 const EPartnerNotAccepted: u64 = 33;
 
 #[test_only]
-/// The call does not name exactly the launch's partner.
-const EPartnerMismatch: u64 = 34;
-
-#[test_only]
-/// The pause bits are zero or unsupported by this package.
-const EInvalidPauseBits: u64 = 35;
-
-#[test_only]
-/// The requested pause change does not alter the active bits.
-const EPauseUnchanged: u64 = 36;
-
-#[test_only]
-/// The operation is paused.
-const EPaused: u64 = 37;
-
-#[test_only]
-/// The ready action does not match the requested upgrade digest or immutability.
-const EWrongUpgradeAction: u64 = 38;
-
-#[test_only]
-/// The package digest is not 32 bytes.
-const EInvalidDigest: u64 = 39;
-
-#[test_only]
 /// The account-claim signer set already holds its most live and pending keys.
-const ETooManyClaimSigners: u64 = 40;
+const ETooManyClaimSigners: u64 = 34;
 
 #[test_only]
 /// Unpausing needs every policy notice nonzero, with no pending zero notice or admission.
-const EUnguardedNotice: u64 = 41;
+const EUnguardedNotice: u64 = 35;
 
 #[test_only]
 /// Blast's share of the trade fee exceeds its 7,000 bps maximum.
-const EInvalidProtocolFeeShare: u64 = 42;
+const EInvalidProtocolFeeShare: u64 = 36;
 
 #[test_only]
 /// Blast's LP-fee share exceeds its 3,000 bps maximum for either asset.
-const EInvalidLpFeeBps: u64 = 43;
+const EInvalidLpFeeBps: u64 = 37;
 
 macro public(package) fun invalid_trade_fee_bps(): u64 { 0 }
 
@@ -251,22 +227,10 @@ macro public(package) fun invalid_creation_fee(): u64 { 32 }
 
 macro public(package) fun partner_not_accepted(): u64 { 33 }
 
-macro public(package) fun partner_mismatch(): u64 { 34 }
+macro public(package) fun too_many_claim_signers(): u64 { 34 }
 
-macro public(package) fun invalid_pause_bits(): u64 { 35 }
+macro public(package) fun unguarded_notice(): u64 { 35 }
 
-macro public(package) fun pause_unchanged(): u64 { 36 }
+macro public(package) fun invalid_protocol_fee_share(): u64 { 36 }
 
-macro public(package) fun paused(): u64 { 37 }
-
-macro public(package) fun wrong_upgrade_action(): u64 { 38 }
-
-macro public(package) fun invalid_digest(): u64 { 39 }
-
-macro public(package) fun too_many_claim_signers(): u64 { 40 }
-
-macro public(package) fun unguarded_notice(): u64 { 41 }
-
-macro public(package) fun invalid_protocol_fee_share(): u64 { 42 }
-
-macro public(package) fun invalid_lp_fee_bps(): u64 { 43 }
+macro public(package) fun invalid_lp_fee_bps(): u64 { 37 }

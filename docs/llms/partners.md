@@ -290,8 +290,7 @@ Every event is emitted directly (no envelope).
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
   its own event in the same transaction:
   `blast_boosts_aftermath::events::PartnerFeePaid` (Boosts),
-  `blast_fun::events::ProtocolFeesClaimed` (launch claims),
-  `blast_core::blast_core_events::ProtocolFeesPaid` (LP vaults),
+  `blast_core::blast_core_events::ProtocolFeesPaid` (launch claims and LP vaults),
   and `blast_presale::blast_presale::ProtocolFeesPaid` (presale raise fee).
   `blast_fun::events::LaunchCreated` and
   `blast_presale::blast_presale::PresaleOpened` record the partner a launch or

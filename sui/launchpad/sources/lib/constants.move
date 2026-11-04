@@ -6,6 +6,11 @@ module blast_fun::constants;
 
 // === Package Constants ===
 
+/// The package generation this bytecode serves.
+macro public(package) fun generation(): u64 {
+    1
+}
+
 /// Stops launch creation, finalization, and sharing.
 macro public(package) fun create_pause_bit(): u8 {
     1

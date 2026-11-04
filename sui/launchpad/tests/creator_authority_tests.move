@@ -28,7 +28,7 @@ public struct OTHER_MEME() has drop;
 /// A runtime configuration whose first signer is live and a clock at `NOW_AT_MS`.
 public struct ClaimFixture {
     scenario: Scenario,
-    package_version: PackageVersion,
+    package_version: PackageVersion<BLAST_FUN>,
     config: RuntimeConfig,
     clock: Clock,
 }
@@ -351,7 +351,7 @@ macro fun claim_ctx($fixture: &mut ClaimFixture): &mut TxContext {
 
 fun start(): ClaimFixture {
     let mut scenario = test_scenario::begin(ADMIN);
-    let package_version = package_version::new_for_testing(scenario.ctx());
+    let package_version = package_version::version_for_testing(scenario.ctx());
     let config = runtime_config::new_zero_fee_share_with_signer_for_testing(signer_public_key(), scenario.ctx());
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(NOW_AT_MS);
@@ -444,12 +444,13 @@ fun untagged_signature(): vector<u8> {
 
 // === Imports ===
 
-use blast_admin::blast_acl;
+use blast_core::blast_domain::ClaimSignerAdmin;
+
+use blast_admin::{blast_acl, package_version::PackageVersion};
 
 use blast_fun::{
-    blast_fun_domain::ClaimSignerAdmin,
     creator_authority::{Self, CreatorRecipient},
-    blast_fun::{Self as package_version, PackageVersion},
+    blast_fun::{Self as package_version, BLAST_FUN},
     runtime_config::{Self, RuntimeConfig},
 };
 

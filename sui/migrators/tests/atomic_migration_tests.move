@@ -350,7 +350,7 @@ fun zero_liquidity_aborts_the_migration() {
 /// shares the vault from the redeemed terms; it returns no protected value.
 public fun mock_adapter(
     launch: &mut Launch<ATOMIC_MIGRATION_TESTS, QUOTE>,
-    version: &PackageVersion,
+    version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
     registry: &mut VaultRegistry,
@@ -366,7 +366,7 @@ public fun mock_adapter(
 /// attached, then shares the vault and the pool.
 fun mock_adapter_with(
     launch: &mut Launch<ATOMIC_MIGRATION_TESTS, QUOTE>,
-    version: &PackageVersion,
+    version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
     registry: &mut VaultRegistry,
@@ -574,7 +574,7 @@ const EUnexpectedSuccess: vector<u8> = b"The guarded operation unexpectedly retu
 
 // === Imports ===
 
-use blast_admin::{blast_acl, package_version::PackageVersion as VaultVersion};
+use blast_admin::{blast_acl, package_version::{PackageVersion, PackageVersion as VaultVersion}};
 
 use blast_core::{
     blast_domain::BuybackAdmin,
@@ -586,7 +586,7 @@ use blast_core::{
 };
 
 use blast_fun::{
-    blast_fun::PackageVersion,
+    blast_fun::BLAST_FUN,
     launch::{Self, Launch},
     launch_config::LaunchConfig
 };

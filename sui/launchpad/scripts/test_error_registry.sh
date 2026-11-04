@@ -20,10 +20,10 @@ expect_failure() {
   printf 'Rejected %s.\n' "$1"
 }
 
-sed -i '/assert_eq!(blast_fun::errors::partner_mismatch!(), 37);/d' "$scratch/tests/errors_tests.move"
+sed -i '/assert_eq!(blast_fun::errors::invalid_lp_fee_bps!(), 37);/d' "$scratch/tests/errors_tests.move"
 expect_failure 'a missing pin'
 cp "$package_dir/tests/errors_tests.move" "$scratch/tests/"
-sed -i 's/partner_mismatch!(), 37/partner_not_accepted!(), 36/' "$scratch/tests/errors_tests.move"
+sed -i 's/invalid_lp_fee_bps!(), 37/invalid_protocol_fee_share!(), 36/' "$scratch/tests/errors_tests.move"
 expect_failure 'an equal-count duplicate replacing a pin'
 cp "$package_dir/tests/errors_tests.move" "$scratch/tests/"
 printf '\nmacro public(package) fun unpinned(): u64 { 38 }\n' >>"$scratch/sources/lib/errors.move"
