@@ -142,7 +142,7 @@ wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
    shared; no operational PackageVersion exists yet.
 2. Call `blast_presale::package_admin::wrap` with Publication by value and the matching
    never-upgraded UpgradeCap. It consumes Publication permanently, seals native
-   custody and shares PackageVersion. Publication-owned policy operations start with zero notice. All operations start paused (combined mask = 11).
+   custody and shares PackageVersion. Publication-owned policy operations start with zero notice. All operations start paused (combined mask = 7).
 3. Grant the required roles on the real Blast ACL. Configure destinations, fees
    and reviewed adapter admission through the ordinary schedule/apply operations
    with Clock. At zero delay these can run in one PTB. Quote admission uses its
@@ -151,7 +151,7 @@ wins. Nobody can withdraw a commitment while the sale is `Open` or `Funded`.
    role to schedule and apply its intended value and next notice. Upgrade custody
    already holds its 48-hour notice from publication.
    Read back every operation's notice and configured value before release.
-5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 11) with
+5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 7) with
    `blast_presale::package_admin::unpause`. Unpause is immediate once every notice is guarded:
    the fee destination, the fee rates and the adapter set each need a nonzero applied notice, no
    pending proposal that would set it to zero, and no pending adapter admission. Otherwise it

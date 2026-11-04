@@ -125,7 +125,7 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
     w.change_role("PauseAdmin", true)?;
     w.change_role("UnpauseAdmin", true)?;
     // A set oracle keeps expected transitions independent of the contract's bitwise formulas.
-    let states: [&[u8]; 8] = [&[], &[1], &[2], &[1, 2], &[8], &[1, 8], &[2, 8], &[1, 2, 8]];
+    let states: [&[u8]; 8] = [&[], &[1], &[2], &[1, 2], &[4], &[1, 4], &[2, 4], &[1, 2, 4]];
     let sale = w.open_sale(&Terms::standard(Route::Bluefin))?;
     let watched = [w.version, w.acl, w.admin_cap, w.creation_policy, w.fee_policy,
         w.venue_config, w.custody, sale.presale, sale.cap, sale.currency];
@@ -142,7 +142,7 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
             let before: BTreeSet<_> = flags.iter().copied().collect();
             for bits in 0..=u8::MAX {
                 for pausing in [true, false] {
-                    let requested: BTreeSet<_> = [1u8, 2, 8].into_iter()
+                    let requested: BTreeSet<_> = [1u8, 2, 4].into_iter()
                         .filter(|flag| (bits / flag) % 2 == 1).collect();
                     let after: BTreeSet<u8> = if pausing {
                         before.union(&requested).copied().collect()
@@ -225,7 +225,7 @@ fn presale_pause_roles_revocation_and_failed_sequences_preserve_state_and_events
     for (sequence, code) in [
         (vec![(true, 1), (true, 1)], PAUSE_UNCHANGED),
         (vec![(true, 1), (false, 1), (false, 1)], PAUSE_UNCHANGED),
-        (vec![(true, 1), (true, 5)], INVALID_PAUSE_BITS),
+        (vec![(true, 1), (true, 9)], INVALID_PAUSE_BITS),
     ] {
         let mut b = ProgrammableTransactionBuilder::new();
         for (pausing, bits) in sequence {
@@ -238,8 +238,8 @@ fn presale_pause_roles_revocation_and_failed_sequences_preserve_state_and_events
     }
 
     // Interleaved successful commands preserve native event order and replay to the final mask.
-    let steps = [(true, 1, 1), (true, 3, 3), (false, 9, 2),
-        (true, 8, 10), (false, 2, 8), (false, 9, 0)];
+    let steps = [(true, 1, 1), (true, 3, 3), (false, 5, 2),
+        (true, 4, 6), (false, 2, 4), (false, 5, 0)];
     let mut b = ProgrammableTransactionBuilder::new();
     for &(pausing, bits, _) in &steps {
         w.append_pause(&mut b, pausing, bits, if pausing { "PauseAdmin" } else { "UnpauseAdmin" })?;
@@ -787,7 +787,7 @@ impl World {
         ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
         let version = versions[0];
         let (_, paused, generation): (ObjectID, u8, u64) = bcs::from_bytes(&h.contents(version))?;
-        ensure!(paused == 11 && generation == 1);
+        ensure!(paused == 7 && generation == 1);
         ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap_id));
         let custody = wrapped.created(&h, "package_admin", "PackageAdmin");
         ensure!(custody.len() == 1);
@@ -820,7 +820,7 @@ impl World {
         call(&mut b, presale, "fee_policy", "schedule_fees", vec![], vec![fees, version_arg, fee_admin, zero_bps, zero_bps, zero_bps, zero_bps, next_delay, clock]);
         call(&mut b, presale, "fee_policy", "apply_fees", vec![], vec![fees, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
-        h.unpause(presale, "blast_presale_domain", admin, &admin_published, version, custody[0], [fee_policy[0], creation_policy[0]], 11)?;
+        h.unpause(presale, "blast_presale_domain", admin, &admin_published, version, custody[0], [fee_policy[0], creation_policy[0]], 7)?;
         ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
         Ok(World {

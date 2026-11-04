@@ -54,7 +54,7 @@
   documentation. Same-meaning duplicates merge (`EPositionPoolMismatch`,
   `EWrongPartner`, `EWrongPresaleCap`); Aftermath's `EWrongVault` becomes
   `ENotAftermathVault`. `blast_presale::constants` names the pause bits
-  (create 1, commit 2, migration 8), protocol limits and venue facts
+  (create 1, commit 2, migration 4, the launchpad's layout), protocol limits and venue facts
 
 Amended by [ADR 0117](0117-presale-versioning-and-activation.md): new publications
 use compatible upgrades and custody-gated operational versioning. The earlier

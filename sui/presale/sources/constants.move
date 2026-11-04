@@ -16,9 +16,9 @@ macro public(package) fun commit_pause_bit(): u8 {
     2
 }
 
-/// Stops LP migration. Bit 4 is unassigned.
+/// Stops LP migration.
 macro public(package) fun migration_pause_bit(): u8 {
-    8
+    4
 }
 
 /// Every supported presale pause flag.

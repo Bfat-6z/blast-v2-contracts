@@ -22,8 +22,8 @@ public struct MIGRATOR() has drop;
 fun pause_bit_layout_is_stable() {
     assert_eq!(constants::create_pause_bit!(), 1);
     assert_eq!(constants::commit_pause_bit!(), 2);
-    assert_eq!(constants::migration_pause_bit!(), 8);
-    assert_eq!(constants::valid_pause_bits!(), 11);
+    assert_eq!(constants::migration_pause_bit!(), 4);
+    assert_eq!(constants::valid_pause_bits!(), 7);
 }
 
 #[test]
@@ -55,7 +55,7 @@ fun unpausing_zero_bits_is_rejected() {
 )]
 fun unsupported_unpause_bits_are_rejected() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
-    version.clear_pause_bits(4);
+    version.clear_pause_bits(8);
     destroy(version);
 }
 
@@ -74,8 +74,8 @@ fun stale_generation_is_rejected_before_the_notice_gate() {
 #[test]
 fun unpause_releases_once_every_notice_is_guarded() {
     let mut f = release_fixture();
-    f.unpause(11);
-    f.version.assert_not_paused(11);
+    f.unpause(7);
+    f.version.assert_not_paused(7);
     f.end();
 }
 
@@ -129,7 +129,7 @@ fun unpause_rejects_a_pending_zero_upgrade_notice() {
 fun pause_sets_only_requested_bits_and_unpause_clears_only_requested_bits() {
     let mut version = marker::new_for_testing(&mut tx_context::dummy());
     version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 1 | 2);
-    version.assert_not_paused(8);
+    version.assert_not_paused(4);
     version.clear_pause_bits(1);
     version.assert_not_paused(1);
     let paused = sui::event::events_by_type<marker::Paused>();
@@ -200,11 +200,11 @@ fun unpausing_an_already_clear_bit_is_rejected() {
 
 #[test]
 fun every_disjoint_u8_query_is_allowed_in_every_reachable_state() {
-    vector[0u64, 1, 2, 3, 8, 9, 10, 11].do!(|initial| {
+    vector[0u64, 1, 2, 3, 4, 5, 6, 7].do!(|initial| {
         let version = version_in_state(initial as u8);
         256u64.do!(|query| {
             // An independent per-flag oracle covers zero and unsupported query bits too.
-            let overlaps = vector[1u64, 2, 8].any!(
+            let overlaps = vector[1u64, 2, 4].any!(
                 |flag| (initial / *flag) % 2 == 1 && (query / *flag) % 2 == 1
             );
             if (!overlaps) {
@@ -238,8 +238,8 @@ fun paused_state_1_rejects_overlapping_mask_3() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_1_rejects_overlapping_mask_9() {
-    assert_guard_rejects_mask(1, 9);
+fun paused_state_1_rejects_overlapping_mask_5() {
+    assert_guard_rejects_mask(1, 5);
 }
 
 #[test]
@@ -247,8 +247,8 @@ fun paused_state_1_rejects_overlapping_mask_9() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_1_rejects_overlapping_mask_11() {
-    assert_guard_rejects_mask(1, 11);
+fun paused_state_1_rejects_overlapping_mask_7() {
+    assert_guard_rejects_mask(1, 7);
 }
 
 #[test]
@@ -274,8 +274,8 @@ fun paused_state_2_rejects_overlapping_mask_3() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_2_rejects_overlapping_mask_10() {
-    assert_guard_rejects_mask(2, 10);
+fun paused_state_2_rejects_overlapping_mask_6() {
+    assert_guard_rejects_mask(2, 6);
 }
 
 #[test]
@@ -283,8 +283,8 @@ fun paused_state_2_rejects_overlapping_mask_10() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_2_rejects_overlapping_mask_11() {
-    assert_guard_rejects_mask(2, 11);
+fun paused_state_2_rejects_overlapping_mask_7() {
+    assert_guard_rejects_mask(2, 7);
 }
 
 #[test]
@@ -319,8 +319,8 @@ fun paused_state_3_rejects_overlapping_mask_3() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_3_rejects_overlapping_mask_9() {
-    assert_guard_rejects_mask(3, 9);
+fun paused_state_3_rejects_overlapping_mask_5() {
+    assert_guard_rejects_mask(3, 5);
 }
 
 #[test]
@@ -328,8 +328,8 @@ fun paused_state_3_rejects_overlapping_mask_9() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_3_rejects_overlapping_mask_10() {
-    assert_guard_rejects_mask(3, 10);
+fun paused_state_3_rejects_overlapping_mask_6() {
+    assert_guard_rejects_mask(3, 6);
 }
 
 #[test]
@@ -337,8 +337,8 @@ fun paused_state_3_rejects_overlapping_mask_10() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_3_rejects_overlapping_mask_11() {
-    assert_guard_rejects_mask(3, 11);
+fun paused_state_3_rejects_overlapping_mask_7() {
+    assert_guard_rejects_mask(3, 7);
 }
 
 #[test]
@@ -346,8 +346,8 @@ fun paused_state_3_rejects_overlapping_mask_11() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_8_rejects_overlapping_mask_8() {
-    assert_guard_rejects_mask(8, 8);
+fun paused_state_4_rejects_overlapping_mask_4() {
+    assert_guard_rejects_mask(4, 4);
 }
 
 #[test]
@@ -355,8 +355,8 @@ fun paused_state_8_rejects_overlapping_mask_8() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_8_rejects_overlapping_mask_9() {
-    assert_guard_rejects_mask(8, 9);
+fun paused_state_4_rejects_overlapping_mask_5() {
+    assert_guard_rejects_mask(4, 5);
 }
 
 #[test]
@@ -364,8 +364,8 @@ fun paused_state_8_rejects_overlapping_mask_9() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_8_rejects_overlapping_mask_10() {
-    assert_guard_rejects_mask(8, 10);
+fun paused_state_4_rejects_overlapping_mask_6() {
+    assert_guard_rejects_mask(4, 6);
 }
 
 #[test]
@@ -373,8 +373,8 @@ fun paused_state_8_rejects_overlapping_mask_10() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_8_rejects_overlapping_mask_11() {
-    assert_guard_rejects_mask(8, 11);
+fun paused_state_4_rejects_overlapping_mask_7() {
+    assert_guard_rejects_mask(4, 7);
 }
 
 #[test]
@@ -382,8 +382,8 @@ fun paused_state_8_rejects_overlapping_mask_11() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_9_rejects_overlapping_mask_1() {
-    assert_guard_rejects_mask(9, 1);
+fun paused_state_5_rejects_overlapping_mask_1() {
+    assert_guard_rejects_mask(5, 1);
 }
 
 #[test]
@@ -391,8 +391,8 @@ fun paused_state_9_rejects_overlapping_mask_1() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_9_rejects_overlapping_mask_3() {
-    assert_guard_rejects_mask(9, 3);
+fun paused_state_5_rejects_overlapping_mask_3() {
+    assert_guard_rejects_mask(5, 3);
 }
 
 #[test]
@@ -400,8 +400,8 @@ fun paused_state_9_rejects_overlapping_mask_3() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_9_rejects_overlapping_mask_8() {
-    assert_guard_rejects_mask(9, 8);
+fun paused_state_5_rejects_overlapping_mask_4() {
+    assert_guard_rejects_mask(5, 4);
 }
 
 #[test]
@@ -409,8 +409,8 @@ fun paused_state_9_rejects_overlapping_mask_8() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_9_rejects_overlapping_mask_9() {
-    assert_guard_rejects_mask(9, 9);
+fun paused_state_5_rejects_overlapping_mask_5() {
+    assert_guard_rejects_mask(5, 5);
 }
 
 #[test]
@@ -418,8 +418,8 @@ fun paused_state_9_rejects_overlapping_mask_9() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_9_rejects_overlapping_mask_10() {
-    assert_guard_rejects_mask(9, 10);
+fun paused_state_5_rejects_overlapping_mask_6() {
+    assert_guard_rejects_mask(5, 6);
 }
 
 #[test]
@@ -427,8 +427,8 @@ fun paused_state_9_rejects_overlapping_mask_10() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_9_rejects_overlapping_mask_11() {
-    assert_guard_rejects_mask(9, 11);
+fun paused_state_5_rejects_overlapping_mask_7() {
+    assert_guard_rejects_mask(5, 7);
 }
 
 #[test]
@@ -436,8 +436,8 @@ fun paused_state_9_rejects_overlapping_mask_11() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_10_rejects_overlapping_mask_2() {
-    assert_guard_rejects_mask(10, 2);
+fun paused_state_6_rejects_overlapping_mask_2() {
+    assert_guard_rejects_mask(6, 2);
 }
 
 #[test]
@@ -445,8 +445,8 @@ fun paused_state_10_rejects_overlapping_mask_2() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_10_rejects_overlapping_mask_3() {
-    assert_guard_rejects_mask(10, 3);
+fun paused_state_6_rejects_overlapping_mask_3() {
+    assert_guard_rejects_mask(6, 3);
 }
 
 #[test]
@@ -454,8 +454,8 @@ fun paused_state_10_rejects_overlapping_mask_3() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_10_rejects_overlapping_mask_8() {
-    assert_guard_rejects_mask(10, 8);
+fun paused_state_6_rejects_overlapping_mask_4() {
+    assert_guard_rejects_mask(6, 4);
 }
 
 #[test]
@@ -463,8 +463,8 @@ fun paused_state_10_rejects_overlapping_mask_8() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_10_rejects_overlapping_mask_9() {
-    assert_guard_rejects_mask(10, 9);
+fun paused_state_6_rejects_overlapping_mask_5() {
+    assert_guard_rejects_mask(6, 5);
 }
 
 #[test]
@@ -472,8 +472,8 @@ fun paused_state_10_rejects_overlapping_mask_9() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_10_rejects_overlapping_mask_10() {
-    assert_guard_rejects_mask(10, 10);
+fun paused_state_6_rejects_overlapping_mask_6() {
+    assert_guard_rejects_mask(6, 6);
 }
 
 #[test]
@@ -481,8 +481,8 @@ fun paused_state_10_rejects_overlapping_mask_10() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_10_rejects_overlapping_mask_11() {
-    assert_guard_rejects_mask(10, 11);
+fun paused_state_6_rejects_overlapping_mask_7() {
+    assert_guard_rejects_mask(6, 7);
 }
 
 #[test]
@@ -490,8 +490,8 @@ fun paused_state_10_rejects_overlapping_mask_11() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_11_rejects_overlapping_mask_1() {
-    assert_guard_rejects_mask(11, 1);
+fun paused_state_7_rejects_overlapping_mask_1() {
+    assert_guard_rejects_mask(7, 1);
 }
 
 #[test]
@@ -499,8 +499,8 @@ fun paused_state_11_rejects_overlapping_mask_1() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_11_rejects_overlapping_mask_2() {
-    assert_guard_rejects_mask(11, 2);
+fun paused_state_7_rejects_overlapping_mask_2() {
+    assert_guard_rejects_mask(7, 2);
 }
 
 #[test]
@@ -508,8 +508,8 @@ fun paused_state_11_rejects_overlapping_mask_2() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_11_rejects_overlapping_mask_3() {
-    assert_guard_rejects_mask(11, 3);
+fun paused_state_7_rejects_overlapping_mask_3() {
+    assert_guard_rejects_mask(7, 3);
 }
 
 #[test]
@@ -517,8 +517,8 @@ fun paused_state_11_rejects_overlapping_mask_3() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_11_rejects_overlapping_mask_8() {
-    assert_guard_rejects_mask(11, 8);
+fun paused_state_7_rejects_overlapping_mask_4() {
+    assert_guard_rejects_mask(7, 4);
 }
 
 #[test]
@@ -526,8 +526,8 @@ fun paused_state_11_rejects_overlapping_mask_8() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_11_rejects_overlapping_mask_9() {
-    assert_guard_rejects_mask(11, 9);
+fun paused_state_7_rejects_overlapping_mask_5() {
+    assert_guard_rejects_mask(7, 5);
 }
 
 #[test]
@@ -535,8 +535,8 @@ fun paused_state_11_rejects_overlapping_mask_9() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_11_rejects_overlapping_mask_10() {
-    assert_guard_rejects_mask(11, 10);
+fun paused_state_7_rejects_overlapping_mask_6() {
+    assert_guard_rejects_mask(7, 6);
 }
 
 #[test]
@@ -544,8 +544,8 @@ fun paused_state_11_rejects_overlapping_mask_10() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun paused_state_11_rejects_overlapping_mask_11() {
-    assert_guard_rejects_mask(11, 11);
+fun paused_state_7_rejects_overlapping_mask_7() {
+    assert_guard_rejects_mask(7, 7);
 }
 
 #[test]
@@ -580,8 +580,8 @@ fun unsupported_query_bits_do_not_hide_paused_state_3() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun unsupported_query_bits_do_not_hide_paused_state_8() {
-    assert_guard_rejects_mask(8, 255);
+fun unsupported_query_bits_do_not_hide_paused_state_4() {
+    assert_guard_rejects_mask(4, 255);
 }
 
 #[test]
@@ -589,8 +589,8 @@ fun unsupported_query_bits_do_not_hide_paused_state_8() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun unsupported_query_bits_do_not_hide_paused_state_9() {
-    assert_guard_rejects_mask(9, 255);
+fun unsupported_query_bits_do_not_hide_paused_state_5() {
+    assert_guard_rejects_mask(5, 255);
 }
 
 #[test]
@@ -598,8 +598,8 @@ fun unsupported_query_bits_do_not_hide_paused_state_9() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun unsupported_query_bits_do_not_hide_paused_state_10() {
-    assert_guard_rejects_mask(10, 255);
+fun unsupported_query_bits_do_not_hide_paused_state_6() {
+    assert_guard_rejects_mask(6, 255);
 }
 
 #[test]
@@ -607,8 +607,8 @@ fun unsupported_query_bits_do_not_hide_paused_state_10() {
     abort_code = blast_presale::errors::EPaused,
     location = blast_presale::blast_presale_package,
 )]
-fun unsupported_query_bits_do_not_hide_paused_state_11() {
-    assert_guard_rejects_mask(11, 255);
+fun unsupported_query_bits_do_not_hide_paused_state_7() {
+    assert_guard_rejects_mask(7, 255);
 }
 
 // === Test Helpers ===
@@ -622,7 +622,7 @@ fun release_fixture(): ReleaseFixture {
 fun release_fixture_with(creation_policy: CreationPolicy): ReleaseFixture {
     let ctx = &mut tx_context::dummy();
     let mut version = marker::new_for_testing(ctx);
-    version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 11);
+    version.pause(&blast_acl::witness_for_testing<PauseAdmin>(), 7);
 
     ReleaseFixture {
         version,

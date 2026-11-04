@@ -37,7 +37,7 @@ policy before the chosen delay and release.
 4. From the effects of step 3, verify that `PackageAdmin` is shared and that the
    `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
    unchanged at compatible (`0`). Record the newly shared `PackageVersion` from
-   these finalization effects; its initial pause mask must be 11. Verify zero notice
+   these finalization effects; its initial pause mask must be 7. Verify zero notice
    on publication-owned policy and 48 hours on upgrade custody. Verify that wrapping
    consumed the Publication. From the publish effects, record the shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
 5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
@@ -64,7 +64,7 @@ policy before the chosen delay and release.
    notice
    (172,800,000 ms = 48 hours for the R2 rollout) and read each notice back.
    Upgrade custody already holds 48 hours; do not propose it again (an unchanged
-   notice aborts). Then grant UnpauseAdmin and clear the selected bits (all = 11)
+   notice aborts). Then grant UnpauseAdmin and clear the selected bits (all = 7)
    with `package_admin::unpause`, passing the shared PackageAdmin, PackageVersion,
    FeePolicy and CreationPolicy. It aborts with `EUnguardedNotice` while any of
    those notices is zero, a pending proposal would set one to zero, or an adapter
