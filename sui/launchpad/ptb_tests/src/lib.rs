@@ -213,21 +213,42 @@ impl UnlinkedPackage {
     }
 }
 
-/// Compile simulator packages with an explicit nonzero genesis recipient, restoring the source.
+/// Compile simulator packages with an explicit nonzero genesis recipient, restoring the sources.
+/// The launchpad and `blast_core` both declare `blast_treasury`, and a build rejects one named
+/// address with two values, so the root and both of those manifests are rewritten together.
 /// Callers hold BUILD_LOCK until compilation completes.
-struct GenesisFixture { path: PathBuf, original: String }
+struct GenesisFixture { originals: Vec<(PathBuf, String)> }
 impl GenesisFixture {
     fn configure(package: &Path) -> Result<Self> {
-        let path = package.join("Move.toml");
-        let original = std::fs::read_to_string(&path)?;
-        let fixture = original.replace("blast_treasury = \"0x0\"", &format!("blast_treasury = \"{TEST_GENESIS_RECIPIENT}\""))
-            .replace("blast_lp_fee_destination = \"0x0\"", &format!("blast_lp_fee_destination = \"{TEST_GENESIS_RECIPIENT}\""));
-        std::fs::write(&path, fixture)?;
-        Ok(Self { path, original })
+        let mut manifests = vec![package.join("Move.toml")];
+        for declaring in ["core", "launchpad"] {
+            let manifest = sui_dir().join(declaring).join("Move.toml");
+            if !manifests.iter().any(|path| same_file(path, &manifest)) {
+                manifests.push(manifest);
+            }
+        }
+        let mut fixture = Self { originals: Vec::new() };
+        for path in manifests {
+            let original = std::fs::read_to_string(&path)?;
+            let rewritten = original.replace("blast_treasury = \"0x0\"", &format!("blast_treasury = \"{TEST_GENESIS_RECIPIENT}\""));
+            if rewritten != original {
+                std::fs::write(&path, rewritten)?;
+                fixture.originals.push((path, original));
+            }
+        }
+        Ok(fixture)
     }
 }
 impl Drop for GenesisFixture {
-    fn drop(&mut self) { std::fs::write(&self.path, &self.original).expect("restore genesis fixture manifest"); }
+    fn drop(&mut self) {
+        for (path, original) in &self.originals {
+            std::fs::write(path, original).expect("restore genesis fixture manifest");
+        }
+    }
+}
+
+fn same_file(left: &Path, right: &Path) -> bool {
+    matches!((left.canonicalize(), right.canonicalize()), (Ok(left), Ok(right)) if left == right)
 }
 
 /// Appends `package_admin::unpause`, which clears `bits` only while every notice of the package is
@@ -353,7 +374,8 @@ pub struct DelayedSet<E> {
 pub type RuntimeConfigContents = (ObjectID, DelayedSet<Vec<u8>>, Delayed<u64>, Delayed<SuiAddress>);
 
 /// A `LaunchConfig` in BCS field order: meme decimals, the quote `Table` (id, size), trade fees
-/// (quote, meme), migration witnesses, protocol allocation (meme, quote) and creation fee.
+/// (quote, meme), admitted venues, protocol allocation (meme, quote), Blast's LP-fee share of new
+/// vaults (meme, quote) and creation fee.
 pub type LaunchConfigContents = (
     ObjectID,
     Vec<u8>,
@@ -361,8 +383,17 @@ pub type LaunchConfigContents = (
     Delayed<(u64, u64)>,
     DelayedSet<String>,
     Delayed<(u64, u64)>,
+    Delayed<(u64, u64)>,
     Delayed<u64>,
 );
+
+/// A `blast_vault::blast_vault_package::VaultRegistry` in BCS field order: its id and the
+/// admitted venues.
+pub type VaultRegistryContents = (ObjectID, DelayedSet<String>);
+
+/// A `blast_admin::package_version::PackageVersion<M>` in BCS field order: id, defined pause
+/// bits, paused bits, the unpause witness type and the generation.
+pub type GenericPackageVersionContents = (ObjectID, u8, u8, String, u64);
 
 /// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
@@ -373,8 +404,8 @@ pub struct DelayedAction<A> {
     pub pending: Option<Proposal<Change<A>>>,
 }
 
-/// Mirrors `blast_fun_migrators::vault::RoundTerms` and `blast_presale::presale_vault::RoundTerms`,
-/// the terms a vault's round-publication slot holds until anyone publishes the round.
+/// Mirrors `blast_vault::vault::RoundTerms`, the terms a vault's round-publication slot holds until
+/// anyone publishes the round.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct RoundTerms {
     pub number: u64,
@@ -388,6 +419,74 @@ pub struct RoundTerms {
     pub gas_reserve_amount: u64,
     pub claim_window_duration_ms: u64,
     pub expected_treasury: SuiAddress,
+}
+
+/// Mirrors `blast_core::fee_split::Destination`; its BCS tag is the variant index.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Destination {
+    Address(SuiAddress),
+    Owner,
+    AutoLp,
+    HolderRewards,
+    Burn,
+}
+
+/// Mirrors `blast_core::fee_split::Route`; its `Bps` is one `u64`.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
+pub struct Route {
+    pub destination: Destination,
+    pub bps: u64,
+}
+
+/// Mirrors `blast_core::fee_split::FeeSplit`: routes in apportionment order.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, PartialEq)]
+pub struct FeeSplit {
+    pub routes: Vec<Route>,
+}
+
+impl FeeSplit {
+    pub fn new(routes: impl IntoIterator<Item = (Destination, u64)>) -> Self {
+        Self { routes: routes.into_iter().map(|(destination, bps)| Route { destination, bps }).collect() }
+    }
+
+    /// Every collection wholly to one address.
+    pub fn single(destination: SuiAddress) -> Self {
+        Self::new([(Destination::Address(destination), 10_000)])
+    }
+
+    /// The weight of the route to `destination`, zero when the split has none.
+    pub fn bps_of(&self, destination: &Destination) -> u64 {
+        self.routes.iter().find(|route| route.destination == *destination).map_or(0, |route| route.bps)
+    }
+
+    /// Builds the split through `blast_core`'s public constructors, as a client would, with every
+    /// value its own pure input.
+    pub fn arg(&self, b: &mut ProgrammableTransactionBuilder, core: ObjectID) -> Result<Argument> {
+        let mut routes = Vec::new();
+        for route in &self.routes {
+            let destination = match &route.destination {
+                Destination::Address(address) => {
+                    let address = b.pure_bytes(bcs::to_bytes(address)?, true);
+                    call(b, core, "fee_split", "address_destination", vec![], vec![address])
+                }
+                Destination::Owner => call(b, core, "fee_split", "owner_destination", vec![], vec![]),
+                Destination::AutoLp => call(b, core, "fee_split", "auto_lp_destination", vec![], vec![]),
+                Destination::HolderRewards => call(b, core, "fee_split", "holder_rewards_destination", vec![], vec![]),
+                Destination::Burn => call(b, core, "fee_split", "burn_destination", vec![], vec![]),
+            };
+            let bps = unique_bps(b, core, route.bps)?;
+            routes.push(call(b, core, "fee_split", "route", vec![], vec![destination, bps]));
+        }
+        let route_type = sui_types::parse_sui_type_tag(&format!("{core}::fee_split::Route"))?;
+        let routes = b.command(sui_types::transaction::Command::make_move_vec(Some(route_type.into()), routes));
+        Ok(call(b, core, "fee_split", "new", vec![], vec![routes]))
+    }
+}
+
+/// A `blast_core::bps::Bps` from its own pure input, never shared with an equal value.
+pub fn unique_bps(b: &mut ProgrammableTransactionBuilder, core: ObjectID, value: u64) -> Result<Argument> {
+    let value = b.pure_bytes(bcs::to_bytes(&value)?, true);
+    Ok(call(b, core, "bps", "new", vec![], vec![value]))
 }
 
 /// Mirrors each package's `package_admin::UpgradeAction`.
@@ -482,6 +581,15 @@ impl Outcome {
             self.error
         );
         self
+    }
+
+    /// Whether this transaction consumed the input `id`: deleted it, or wrapped it into another
+    /// object.
+    pub fn consumed(&self, id: ObjectID) -> bool {
+        let effects = &self.effects;
+        effects.deleted().iter().any(|object| object.0 == id)
+            || effects.wrapped().iter().any(|object| object.0 == id)
+            || effects.unwrapped_then_deleted().iter().any(|object| object.0 == id)
     }
 
     /// IDs of created objects whose type is `module::name`.
@@ -751,7 +859,12 @@ impl Harness {
     }
 
     /// Configures initial admission and seals custody; operations remain paused until release.
-    pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome, admin: ObjectID, admin_publication: &Outcome, quote: sui_types::TypeTag, witness: sui_types::TypeTag) -> Result<(ObjectID, ObjectID)> {
+    /// `venue` is the one venue witness type admitted; `core` is the `blast_core` package whose
+    /// `Bps` the launchpad's settings take.
+    #[allow(clippy::too_many_arguments)]
+    pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome, admin: ObjectID, admin_publication: &Outcome,
+        core: ObjectID, quote: sui_types::TypeTag, venue: sui_types::TypeTag,
+    ) -> Result<(ObjectID, ObjectID)> {
         assert!(publication.created(self, "blast_fun", "PackageVersion").is_empty());
         let config_id = publication.created(self, "launch_config", "LaunchConfig")[0];
         let runtime_id = publication.created(self, "runtime_config", "RuntimeConfig")[0];
@@ -800,16 +913,17 @@ impl Harness {
         let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "AdapterAdmin")?;
         let allowed = b.pure(true)?;
         call(&mut b, package, "launch_config", "set_quote_allowed", vec![quote], vec![config, version_arg, listing, allowed]);
-        call(&mut b, package, "launch_config", "schedule_migration_witness", vec![witness.clone()], vec![config, version_arg, adapter, clock]);
-        call(&mut b, package, "launch_config", "apply_migration_witness", vec![witness], vec![config, version_arg, clock]);
+        // At the zero publication notice a venue's schedule and apply share one PTB.
+        call(&mut b, package, "launch_config", "schedule_venue", vec![venue.clone()], vec![config, version_arg, adapter, clock]);
+        call(&mut b, package, "launch_config", "apply_venue", vec![venue], vec![config, version_arg, clock]);
         let delay = b.pure(172_800_000u64)?;
-        call(&mut b, package, "launch_config", "schedule_migration_delay", vec![], vec![config, version_arg, adapter, delay, clock]);
-        call(&mut b, package, "launch_config", "apply_migration_delay", vec![], vec![config, version_arg, clock]);
+        call(&mut b, package, "launch_config", "schedule_venue_delay", vec![], vec![config, version_arg, adapter, delay, clock]);
+        call(&mut b, package, "launch_config", "apply_venue_delay", vec![], vec![config, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
         // Raise every remaining publication notice from zero to 48 hours, keeping each published
         // value, through ordinary ACL roles: at zero applied notice schedule and apply share a PTB.
         // `package_admin::unpause` refuses while any notice is unguarded.
-        let (_, _, _, trade_fees, _, allocation, creation_fee): LaunchConfigContents =
+        let (_, _, _, trade_fees, _, allocation, lp_fees, creation_fee): LaunchConfigContents =
             bcs::from_bytes(&self.contents(config_id)).context("decode LaunchConfig")?;
         let (_, _, fee_share, _): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode RuntimeConfig")?;
@@ -823,12 +937,14 @@ impl Harness {
         let signer_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "ClaimSignerAdmin")?;
         let bps = |b: &mut ProgrammableTransactionBuilder, value: u64| -> Result<Argument> {
             let value = b.pure(value)?;
-            Ok(call(b, package, "bps", "new", vec![], vec![value]))
+            Ok(call(b, core, "bps", "new", vec![], vec![value]))
         };
         let quote_fee = bps(&mut b, trade_fees.value.0)?;
         let meme_fee = bps(&mut b, trade_fees.value.1)?;
         let meme_allocation = bps(&mut b, allocation.value.0)?;
         let quote_allocation = bps(&mut b, allocation.value.1)?;
+        let meme_lp_fee = bps(&mut b, lp_fees.value.0)?;
+        let quote_lp_fee = bps(&mut b, lp_fees.value.1)?;
         let share = bps(&mut b, fee_share.value)?;
         let creation_fee = b.pure(creation_fee.value)?;
         let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
@@ -837,6 +953,8 @@ impl Harness {
         call(&mut b, package, "launch_config", "apply_trade_fees", vec![], vec![config_arg, version_arg, clock]);
         call(&mut b, package, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_role, meme_allocation, quote_allocation, delay, clock]);
         call(&mut b, package, "launch_config", "apply_protocol_allocation", vec![], vec![config_arg, version_arg, clock]);
+        call(&mut b, package, "launch_config", "schedule_protocol_lp_fees", vec![], vec![config_arg, version_arg, fee, meme_lp_fee, quote_lp_fee, delay, clock]);
+        call(&mut b, package, "launch_config", "apply_protocol_lp_fees", vec![], vec![config_arg, version_arg, clock]);
         call(&mut b, package, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, creation_fee, delay, clock]);
         call(&mut b, package, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
         call(&mut b, package, "runtime_config", "schedule_protocol_fee_share", vec![], vec![runtime, version_arg, fee, share, delay, clock]);
@@ -846,16 +964,18 @@ impl Harness {
         call(&mut b, package, "runtime_config", "schedule_creator_claim_signer_delay", vec![], vec![runtime, version_arg, signer_role, delay, clock]);
         call(&mut b, package, "runtime_config", "apply_creator_claim_signer_delay", vec![], vec![runtime, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
-        let (_, _, _, trade_fees, witnesses, allocation, creation_fee): LaunchConfigContents =
+        let (_, _, _, trade_fees, venues, allocation, lp_fees, creation_fee): LaunchConfigContents =
             bcs::from_bytes(&self.contents(config_id)).context("decode configured LaunchConfig")?;
         let (_, signers, fee_share, treasury): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode configured RuntimeConfig")?;
-        let applied = [trade_fees.delay_ms, allocation.delay_ms, creation_fee.delay_ms, fee_share.delay_ms, treasury.delay_ms];
-        let pending = [trade_fees.pending.is_some(), allocation.pending.is_some(), creation_fee.pending.is_some(),
-            fee_share.pending.is_some(), treasury.pending.is_some()];
+        let applied = [trade_fees.delay_ms, allocation.delay_ms, lp_fees.delay_ms, creation_fee.delay_ms,
+            fee_share.delay_ms, treasury.delay_ms];
+        let pending = [trade_fees.pending.is_some(), allocation.pending.is_some(), lp_fees.pending.is_some(),
+            creation_fee.pending.is_some(), fee_share.pending.is_some(), treasury.pending.is_some()];
         ensure!(applied.iter().all(|delay| *delay == PUBLICATION_UPGRADE_NOTICE_MS) && !pending.contains(&true),
             "every launchpad setting waits the 48-hour notice with nothing pending");
-        for set in [(witnesses.delay_ms, witnesses.admissions.len(), witnesses.pending_delay.is_some()),
+        ensure!(venues.members.len() == 1, "the launch config admits the one venue");
+        for set in [(venues.delay_ms, venues.admissions.len(), venues.pending_delay.is_some()),
             (signers.delay_ms, signers.admissions.len(), signers.pending_delay.is_some())] {
             ensure!(set == (PUBLICATION_UPGRADE_NOTICE_MS, 0, false), "every launchpad set waits 48 hours with nothing pending");
         }
@@ -866,6 +986,16 @@ impl Harness {
     pub fn configuration_admin(&mut self, admin: ObjectID, publication: &Outcome, package: ObjectID,
         domain: &str, roles: &[&str],
     ) -> Result<ObjectID> {
+        let roles = roles
+            .iter()
+            .map(|role| Ok(sui_types::parse_sui_type_tag(&format!("{package}::{domain}::{role}"))?))
+            .collect::<Result<Vec<_>>>()?;
+        self.grant_roles(admin, publication, &roles)
+    }
+
+    /// Grants a fresh `AdminCap` for the sender each role type in `roles` through the configured
+    /// root, as production administration does.
+    pub fn grant_roles(&mut self, admin: ObjectID, publication: &Outcome, roles: &[sui_types::TypeTag]) -> Result<ObjectID> {
         let acl = publication.created(self, "blast_acl", "ACL")[0];
         let root = publication.created(self, "blast_acl", "SuperAdminCap")[0];
         let mut b = ProgrammableTransactionBuilder::new();
@@ -881,8 +1011,7 @@ impl Harness {
         let root_arg = b.obj(self.owned(root))?;
         let cap_id = b.pure(cap)?;
         for role in roles {
-            let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::{role}"))?;
-            call(&mut b, admin, "blast_acl", "grant_role", vec![role], vec![acl_arg, root_arg, cap_id]);
+            call(&mut b, admin, "blast_acl", "grant_role", vec![role.clone()], vec![acl_arg, root_arg, cap_id]);
         }
         self.impersonate_cap_owner(root, b.finish())?.assert_success();
         Ok(cap)
@@ -891,11 +1020,92 @@ impl Harness {
     pub fn configuration_witness(&self, b: &mut ProgrammableTransactionBuilder, admin: ObjectID,
         publication: &Outcome, cap: ObjectID, package: ObjectID, domain: &str, role: &str,
     ) -> Result<Argument> {
+        let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::{role}"))?;
+        self.sign_in_as(b, admin, publication, cap, role)
+    }
+
+    /// Signs `cap` in to the ACL as `role`; the witness authorizes only that role.
+    pub fn sign_in_as(&self, b: &mut ProgrammableTransactionBuilder, admin: ObjectID, publication: &Outcome,
+        cap: ObjectID, role: sui_types::TypeTag,
+    ) -> Result<Argument> {
         let acl = publication.created(self, "blast_acl", "ACL")[0];
         let acl_arg = b.obj(self.shared(acl, false))?;
         let cap_arg = b.obj(self.owned(cap))?;
-        let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::{role}"))?;
         Ok(call(b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, cap_arg]))
+    }
+
+    /// Wraps the vault package's publication with its never-upgraded cap through `blast_admin`'s
+    /// generic custody. The package version starts fully paused and the registry admits no venue
+    /// at a zero admission notice, so nothing is released yet (see `release_vault`).
+    pub fn wrap_vault(&mut self, admin: ObjectID, vault: ObjectID, publication: &Outcome) -> Result<VaultStack> {
+        let registry = publication.created(self, "blast_vault_package", "VaultRegistry");
+        ensure!(registry.len() == 1 && self.object(registry[0]).is_shared(), "publication shares one VaultRegistry");
+        let (registry_id, venues): VaultRegistryContents = bcs::from_bytes(&self.contents(registry[0]))?;
+        ensure!(registry_id == registry[0] && venues.members.is_empty() && venues.delay_ms == 0,
+            "publication lists no venue at a zero admission notice");
+        let bootstrap = publication.created(self, "package_version", "Publication");
+        let cap = publication.created(self, "package", "UpgradeCap");
+        ensure!(bootstrap.len() == 1 && cap.len() == 1, "one publication and one upgrade cap");
+        ensure!(self.object(bootstrap[0]).owner().get_address_owner_address()? == self.sender, "the publisher keeps the publication");
+        let marker = sui_types::parse_sui_type_tag(&format!("{vault}::blast_vault_package::BLAST_VAULT_PACKAGE"))?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let bootstrap_arg = b.obj(self.owned(bootstrap[0]))?;
+        let cap_arg = b.obj(self.owned(cap[0]))?;
+        call(&mut b, admin, "package_admin", "wrap", vec![marker], vec![bootstrap_arg, cap_arg]);
+        let wrapped = self.execute(b.finish())?;
+        wrapped.assert_success();
+        ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
+        ensure!(wrapped.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>() == cap, "custody seals the cap");
+        let version = wrapped.created(self, "package_version", "PackageVersion");
+        let custody = wrapped.created(self, "package_admin", "PackageAdmin");
+        ensure!(version.len() == 1 && custody.len() == 1);
+        ensure!(self.object(version[0]).is_shared() && self.object(custody[0]).is_shared());
+        let (_, valid, paused, unpause_witness, generation): GenericPackageVersionContents =
+            bcs::from_bytes(&self.contents(version[0])).context("decode the vault PackageVersion")?;
+        ensure!((valid, paused, generation) == (1, 1, 1), "the vault version starts fully paused at generation 1");
+        ensure!(unpause_witness.ends_with("::blast_vault_package::UnpauseWitness"), "{unpause_witness}");
+        self.assert_publication_upgrade_notice(custody[0])?;
+
+        Ok(VaultStack { package: vault, version: version[0], custody: custody[0], registry: registry[0] })
+    }
+
+    /// Lists each of `venues` in the vault registry at the zero publication notice while the
+    /// package is paused, raises the admission notice to 48 hours, and unpauses the package
+    /// through its own unpause, through real ACL roles: `blast_core`'s `AdapterAdmin` and the
+    /// vault package's `UnpauseAdmin`.
+    pub fn release_vault(&mut self, admin: ObjectID, admin_publication: &Outcome, core: ObjectID, stack: &VaultStack,
+        venues: &[sui_types::TypeTag],
+    ) -> Result<()> {
+        let adapter_role = sui_types::parse_sui_type_tag(&format!("{core}::blast_domain::AdapterAdmin"))?;
+        let unpause_role = stack.unpause_role(admin)?;
+        let cap = self.grant_roles(admin, admin_publication, &[adapter_role.clone(), unpause_role.clone()])?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let adapter = self.sign_in_as(&mut b, admin, admin_publication, cap, adapter_role)?;
+        let registry = b.obj(self.shared(stack.registry, true))?;
+        let version = b.obj(self.shared(stack.version, false))?;
+        let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
+        for venue in venues {
+            call(&mut b, stack.package, "blast_vault_package", "schedule_venue", vec![venue.clone()], vec![registry, adapter, version, clock]);
+            call(&mut b, stack.package, "blast_vault_package", "apply_venue", vec![venue.clone()], vec![registry, version, clock]);
+        }
+        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
+        call(&mut b, stack.package, "blast_vault_package", "schedule_venue_delay", vec![], vec![registry, adapter, version, delay, clock]);
+        call(&mut b, stack.package, "blast_vault_package", "apply_venue_delay", vec![], vec![registry, version, clock]);
+        self.execute(b.finish())?.assert_success();
+        let (_, listed): VaultRegistryContents = bcs::from_bytes(&self.contents(stack.registry))?;
+        ensure!(listed.members.len() == venues.len(), "every venue is listed");
+        ensure!((listed.delay_ms, listed.admissions.len(), listed.pending_delay.is_some()) == (PUBLICATION_UPGRADE_NOTICE_MS, 0, false),
+            "the registry waits 48 hours with nothing pending");
+
+        let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.sign_in_as(&mut b, admin, admin_publication, cap, unpause_role)?;
+        stack.append_unpause(self, &mut b, witness, 1)?;
+        self.execute(b.finish())?.assert_success();
+        let (_, _, paused, _, _): GenericPackageVersionContents = bcs::from_bytes(&self.contents(stack.version))?;
+        ensure!(paused == 0, "the vault package is released");
+        assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
+        Ok(())
     }
 
     /// Decodes any package's `PackageAdmin`: its id, sealed Publisher, sealed caps and upgrade slot.
@@ -1031,6 +1241,126 @@ impl Harness {
 
         Ok(outcome)
     }
+}
+
+/// The shared objects of a wrapped `blast_vault` package.
+pub struct VaultStack {
+    pub package: ObjectID,
+    /// `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>`.
+    pub version: ObjectID,
+    /// `blast_admin::package_admin::PackageAdmin<BLAST_VAULT_PACKAGE>`.
+    pub custody: ObjectID,
+    pub registry: ObjectID,
+}
+
+impl VaultStack {
+    /// `blast_admin::package_admin::UnpauseAdmin<BLAST_VAULT_PACKAGE>`.
+    pub fn unpause_role(&self, admin: ObjectID) -> Result<sui_types::TypeTag> {
+        Ok(sui_types::parse_sui_type_tag(&format!(
+            "{admin}::package_admin::UnpauseAdmin<{}::blast_vault_package::BLAST_VAULT_PACKAGE>",
+            self.package,
+        ))?)
+    }
+
+    /// Appends `blast_vault_package::unpause`, which clears `bits` only while the registry's
+    /// admission notice and the package's upgrade notice are guarded.
+    pub fn append_unpause(&self, h: &Harness, b: &mut ProgrammableTransactionBuilder, witness: Argument, bits: u8) -> Result<()> {
+        let registry = b.obj(h.shared(self.registry, false))?;
+        let custody = b.obj(h.shared(self.custody, false))?;
+        let version = b.obj(h.shared(self.version, true))?;
+        let bits = b.pure(bits)?;
+        call(b, self.package, "blast_vault_package", "unpause", vec![], vec![registry, witness, custody, version, bits]);
+        Ok(())
+    }
+}
+
+/// The Blast packages every world publishes first: the ACL, partners, vesting, and `blast_core`,
+/// whose initializer shares the `Treasury`.
+pub struct CoreStack {
+    pub admin: ObjectID,
+    pub admin_publication: Outcome,
+    pub partners: ObjectID,
+    pub vesting: ObjectID,
+    pub core: ObjectID,
+    pub core_publication: Outcome,
+    /// `blast_core::blast_treasury::Treasury`, shared at publication.
+    pub treasury: ObjectID,
+    sources: Vec<(PathBuf, ObjectID)>,
+}
+
+impl CoreStack {
+    /// Every local source published so far with its simulator ID, for `build`.
+    pub fn linked(&self) -> Vec<(&Path, ObjectID)> {
+        self.sources.iter().map(|(source, id)| (source.as_path(), *id)).collect()
+    }
+
+    /// Compiles `package` linked to this stack and publishes it.
+    pub fn publish(&self, h: &mut Harness, package: &Path, work: &Path) -> Result<(ObjectID, Outcome)> {
+        h.publish(build(package, &self.linked(), work)?)
+    }
+}
+
+/// The core stack and the launchpad linked to it.
+pub struct Stack {
+    pub base: CoreStack,
+    pub launchpad: ObjectID,
+    pub launchpad_code: CompiledPackage,
+    pub launchpad_publication: Outcome,
+    launchpad_source: PathBuf,
+}
+
+impl std::ops::Deref for Stack {
+    type Target = CoreStack;
+
+    fn deref(&self) -> &CoreStack {
+        &self.base
+    }
+}
+
+impl Stack {
+    /// Every local source published so far, the launchpad included, for `build`.
+    pub fn linked(&self) -> Vec<(&Path, ObjectID)> {
+        let mut linked = self.base.linked();
+        linked.push((self.launchpad_source.as_path(), self.launchpad));
+        linked
+    }
+
+    /// Compiles `package` linked to this stack, the launchpad included, and publishes it.
+    pub fn publish(&self, h: &mut Harness, package: &Path, work: &Path) -> Result<(ObjectID, Outcome)> {
+        h.publish(build(package, &self.linked(), work)?)
+    }
+}
+
+/// Publishes the ACL, partners, vesting and `blast_core`, each linked to the ones before it.
+pub fn publish_core_stack(h: &mut Harness, work: &Path) -> Result<CoreStack> {
+    let sui = sui_dir();
+    let mut sources: Vec<(PathBuf, ObjectID)> = Vec::new();
+    let publish = |h: &mut Harness, sources: &[(PathBuf, ObjectID)], name: &str| -> Result<(ObjectID, Outcome)> {
+        let linked: Vec<(&Path, ObjectID)> = sources.iter().map(|(source, id)| (source.as_path(), *id)).collect();
+        h.publish(build(&sui.join(name), &linked, work)?)
+    };
+    let (admin, admin_publication) = publish(h, &sources, "admin")?;
+    sources.push((sui.join("admin"), admin));
+    let (partners, _) = publish(h, &sources, "partners")?;
+    sources.push((sui.join("partners"), partners));
+    let (vesting, _) = h.publish(build_vesting(work)?)?;
+    sources.push((vesting_dir()?, vesting));
+    let (core, core_publication) = publish(h, &sources, "core")?;
+    sources.push((sui.join("core"), core));
+    let treasury = core_publication.created(h, "blast_treasury", "Treasury");
+    ensure!(treasury.len() == 1 && h.object(treasury[0]).is_shared(), "core shares one Treasury");
+
+    Ok(CoreStack { admin, admin_publication, partners, vesting, core, core_publication, treasury: treasury[0], sources })
+}
+
+/// Publishes the core stack and the launchpad linked to it. Nothing is wrapped or configured.
+pub fn publish_stack(h: &mut Harness, work: &Path) -> Result<Stack> {
+    let base = publish_core_stack(h, work)?;
+    let launchpad_source = sui_dir().join("launchpad");
+    let launchpad_code = build(&launchpad_source, &base.linked(), work)?;
+    let (launchpad, launchpad_publication) = h.publish(launchpad_code.clone())?;
+
+    Ok(Stack { base, launchpad, launchpad_code, launchpad_publication, launchpad_source })
 }
 
 /// The failure a rolled-back transaction must report.
