@@ -98,10 +98,15 @@ product imports the vault or a venue, and no venue imports a product.
 
 A venue first prepares the coin while its supply is still unminted: it reserves any venue
 pool-creation capability against the coin's `TreasuryCap`, records the pool tier, and returns a
-non-droppable venue ticket sealed by its own witness. The product's `new` redeems the ticket, checks
+non-droppable venue ticket sealed by its own witness and typed by the exact Meme and Quote pair it
+prepared, so a ticket cannot start a sale of another coin or Quote whose migration would then find
+no reserved pool authority. Preparation takes the coin's `TreasuryCap`, so only the coin's holder
+can record its venue state. The product's `new` redeems the ticket, checks
 its venue against its own delayed migrator allowlist, and stores it. The ordering is the same for both products:
-the launch ticket lends its `TreasuryCap` for preparation, and its supply recheck at `destroy` still
-guarantees the exact supply.
+the launchpad's coin template hands the creator the `TreasuryCap` beside the launch ticket, as a
+presale creator already holds it, because a programmable transaction cannot pass a reference one
+call returns into another; `launch::new` takes the cap by value, and the ticket's supply recheck at
+`destroy` still guarantees the exact supply.
 
 At migration the product runs its own checks and payouts, then returns a non-droppable `Migration`
 hand-off carrying the pool's Meme and Quote, the stored venue, and the new vault's terms, sealed by
@@ -212,9 +217,12 @@ gates and the affected tests, and deletes what it replaces.
    protocol-fee ledger, the treasury, Merkle, roles, events and errors.
 3. `blast_vault`: the migrators vault and holder rewards ported onto core types, with a one-time
    differential fixture against today's launchpad and presale fee collections.
-4. The hand-off and owner proof in both products.
+4. The hand-off and owner proof in both products. The existing venue modules redeem the hand-off
+   and build `blast_vault` vaults in the same change, so both old vaults, both holder-reward
+   engines, the LP-fee policy and the Merkle copies are deleted here, after the one-time
+   differential fixture against them (owner decision, 2026-11-04).
 5. `blast_venues`: Cetus and Bluefin from the migrators, Aftermath from presale, one venue math
-   module; the migrators package is removed.
+   module, and standalone vault creation; the migrators package is removed.
 6. The Aftermath DAO presale vendor redeems the hand-off.
 7. Product slimming: both products adopt the generic version, core roles, numeric errors and raw
    events, and delete their copies.
