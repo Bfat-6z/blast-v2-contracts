@@ -96,7 +96,7 @@ fun unchanged_value_and_notice_rejected() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale_vault::EWrongPresaleCap,
+    abort_code = blast_presale::errors::EWrongPresaleCap,
     location = blast_presale::presale_vault,
 )]
 fun wrong_cap_precedes_unchanged_validation() {
@@ -105,7 +105,7 @@ fun wrong_cap_precedes_unchanged_validation() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale_vault::EWrongPresaleCap,
+    abort_code = blast_presale::errors::EWrongPresaleCap,
     location = blast_presale::presale_vault,
 )]
 fun wrong_cap_precedes_no_pending_cancel() {
@@ -226,7 +226,7 @@ fun delay_only_change_is_announced_and_does_not_change_recipients() {
 
 #[test]
 #[expected_failure(
-    abort_code = presale_vault::EWrongPresaleCap,
+    abort_code = blast_presale::errors::EWrongPresaleCap,
     location = blast_presale::presale_vault,
 )]
 fun standalone_vault_has_no_creator_cap_authority() {
@@ -246,7 +246,10 @@ fun standalone_vault_has_no_creator_cap_authority() {
 }
 
 #[test]
-#[expected_failure(abort_code = presale::EInvalidFeeSplit, location = blast_presale::blast_presale)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFeeSplit,
+    location = blast_presale::blast_presale,
+)]
 fun scheduling_rechecks_a_split_built_without_the_current_rules() {
     let mut f = start();
     schedule(&mut f, presale::fee_split_unchecked_for_testing(vector[], bps::new(9_999)), NOTICE);

@@ -48,7 +48,10 @@ fun skipped_days_allow_a_new_daily_interval_with_an_independent_claim_window() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EEmptyInterval, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EEmptyInterval,
+    location = blast_presale::presale_vault,
+)]
 fun a_daily_interval_cannot_be_empty() {
     let mut fixture = start_daily_rewards();
     fixture.publish(0, 10, 10);
@@ -56,7 +59,10 @@ fun a_daily_interval_cannot_be_empty() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EEmptyInterval, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EEmptyInterval,
+    location = blast_presale::presale_vault,
+)]
 fun a_daily_interval_cannot_be_reversed() {
     let mut fixture = start_daily_rewards();
     fixture.publish(0, 11, 10);

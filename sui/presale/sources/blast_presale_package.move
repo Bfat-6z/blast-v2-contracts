@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Canonical publication custody and operational generation.
 ///
 /// The one-time witness seeds the generation and claims the Publisher. Both stay in owned
@@ -14,8 +16,6 @@ const PACKAGE_VERSION: u64 = 1;
 
 /// The generation this bytecode hands over to in a governed upgrade.
 const NEXT_PACKAGE_VERSION: u64 = 2;
-
-const VALID_PAUSE_BITS: u8 = 11;
 
 // === Public Types ===
 
@@ -62,8 +62,11 @@ fun init(otw: BLAST_PRESALE_PACKAGE, ctx: &mut TxContext) {
 public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: u8) {
     self.assert_current();
 
-    assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
-    assert!((self.paused | bits) != self.paused, EPauseUnchanged);
+    assert!(
+        bits != 0 && (bits & constants::valid_pause_bits!()) == bits,
+        blast_presale::errors::invalid_pause_bits!(),
+    );
+    assert!((self.paused | bits) != self.paused, blast_presale::errors::pause_unchanged!());
     self.paused = self.paused | bits;
 
     sui::event::emit(Paused { bits, paused: self.paused });
@@ -73,8 +76,11 @@ public fun pause(self: &mut PackageVersion, _: &AdminWitness<PauseAdmin>, bits: 
 
 /// Clears only the requested bits once `package_admin::unpause` has checked every notice.
 public(package) fun clear_pause_bits(self: &mut PackageVersion, bits: u8) {
-    assert!(bits != 0 && (bits & VALID_PAUSE_BITS) == bits, EInvalidPauseBits);
-    assert!((self.paused & bits) != 0, EPauseUnchanged);
+    assert!(
+        bits != 0 && (bits & constants::valid_pause_bits!()) == bits,
+        blast_presale::errors::invalid_pause_bits!(),
+    );
+    assert!((self.paused & bits) != 0, blast_presale::errors::pause_unchanged!());
     self.paused = self.paused ^ (self.paused & bits);
 
     sui::event::emit(Unpaused { bits, paused: self.paused });
@@ -82,7 +88,7 @@ public(package) fun clear_pause_bits(self: &mut PackageVersion, bits: u8) {
 
 /// Rejects a paused operation before its lifecycle or economic checks.
 public(package) fun assert_not_paused(self: &PackageVersion, bit: u8) {
-    assert!((self.paused & bit) == 0, EPaused);
+    assert!((self.paused & bit) == 0, blast_presale::errors::paused!());
 }
 
 /// Consumes the unique publication for package-admin custody intake.
@@ -101,7 +107,7 @@ public(package) fun share_version(
     ctx: &mut TxContext,
 ) {
     transfer::share_object(PackageVersion {
-        paused: VALID_PAUSE_BITS,
+        paused: constants::valid_pause_bits!(),
         id: object::new(ctx),
         generation
     });
@@ -168,19 +174,10 @@ public fun publisher_for_testing(ctx: &mut TxContext): Publisher {
     sui::package::test_claim(BLAST_PRESALE_PACKAGE(), ctx)
 }
 
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidPauseBits: vector<u8> = b"Select nonzero pause bits supported by this package.";
-#[error(code = 1)]
-const EPauseUnchanged: vector<u8> = b"The requested pause change must alter the active bits.";
-#[error(code = 2)]
-const EPaused: vector<u8> = b"This operation is paused.";
-
 // === Imports ===
 
 use blast_admin::{blast_acl::AdminWitness, operational_version::{Self, OperationalVersion}};
 
-use blast_presale::blast_presale_domain::PauseAdmin;
+use blast_presale::{blast_presale_domain::PauseAdmin, constants};
 
 use sui::package::Publisher;

@@ -264,7 +264,7 @@ fun finalize_rejects_another_migrators_sale() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// Blast must allow this migrator's witness before it can create a sale.

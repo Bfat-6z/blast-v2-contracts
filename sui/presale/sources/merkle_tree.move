@@ -24,8 +24,8 @@ public(package) fun verify(
     proof: &vector<vector<u8>>,
 ): bool {
     if (
-        root.length() != DIGEST_LENGTH
-            || digest.length() != DIGEST_LENGTH
+        root.length() != constants::digest_length!()
+            || digest.length() != constants::digest_length!()
             || leaves == 0
             || index >= leaves
     ) {
@@ -34,7 +34,7 @@ public(package) fun verify(
 
     if (
         proof.length() != proof_depth(leaves)
-            || !proof.all!(|sibling| sibling.length() == DIGEST_LENGTH)
+            || !proof.all!(|sibling| sibling.length() == constants::digest_length!())
     ) return false;
 
     proof.do_ref!(|sibling| {
@@ -43,11 +43,6 @@ public(package) fun verify(
     });
 
     digest == root
-}
-
-/// The byte length of every root, leaf digest, and proof sibling.
-public(package) fun digest_length(): u64 {
-    DIGEST_LENGTH
 }
 
 // === Private Functions ===
@@ -64,10 +59,8 @@ fun proof_depth(leaves: u64): u64 {
     depth
 }
 
-// === Constants ===
-
-const DIGEST_LENGTH: u64 = 32;
-
 // === Imports ===
+
+use blast_presale::constants;
 
 use sui::hash;

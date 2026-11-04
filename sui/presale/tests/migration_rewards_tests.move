@@ -314,7 +314,10 @@ fun a_partner_payout_with_nothing_held_moves_nothing() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EWrongPartner, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongPartner,
+    location = blast_presale::presale_vault,
+)]
 /// Only the partner the sale named can be paid from its vault, even with nothing held.
 fun a_vault_cannot_pay_another_partner() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -328,7 +331,10 @@ fun a_vault_cannot_pay_another_partner() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EWrongPartner, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongPartner,
+    location = blast_presale::presale_vault,
+)]
 /// A vault whose sale named no partner pays Blast at each collection and has no partner payout.
 fun a_vault_without_a_partner_has_no_partner_payout() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -403,7 +409,10 @@ fun the_admin_changes_a_vaults_lp_fee_rates() {
 }
 
 #[test]
-#[expected_failure(abort_code = fee_policy::EInvalidFees, location = blast_presale::fee_policy)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidFees,
+    location = blast_presale::fee_policy,
+)]
 /// A vault's LP rates keep the policy's 3,000 BPS maximum.
 fun a_vaults_lp_fee_rate_above_the_maximum_is_rejected() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -514,7 +523,10 @@ fun a_remainder_tie_goes_to_the_fee_recipient_before_holders() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EWrongPresaleCap, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongPresaleCap,
+    location = blast_presale::presale_vault,
+)]
 /// Only the presale's own creator capability reaches the migration residuals.
 fun another_presale_cap_cannot_claim_migration_residuals() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -567,7 +579,10 @@ fun a_vault_without_a_presale_takes_the_policys_lp_rates() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EWrongPresaleCap, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongPresaleCap,
+    location = blast_presale::presale_vault,
+)]
 /// A vault created without a presale has no creator capability, so no `PresaleCap` reaches it.
 fun no_presale_cap_reaches_a_vault_without_a_presale() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -587,7 +602,10 @@ fun no_presale_cap_reaches_a_vault_without_a_presale() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EZeroLiquidity, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EZeroLiquidity,
+    location = blast_presale::presale_vault,
+)]
 fun a_vault_without_a_presale_needs_liquidity() {
     let mut scenario = test_scenario::begin(CREATOR);
     let policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
@@ -648,7 +666,7 @@ fun a_vault_without_a_presale_pays_its_partner_its_cut_of_blasts_lp_fees() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EPartnerNotAccepted,
+    abort_code = blast_presale::errors::EPartnerNotAccepted,
     location = blast_presale::creation_policy,
 )]
 /// A vault created without a presale cannot name a partner Blast does not accept.
@@ -668,7 +686,10 @@ fun a_vault_without_a_presale_cannot_name_an_unaccepted_partner() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EWrongRound, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongRound,
+    location = blast_presale::holder_rewards,
+)]
 fun a_round_must_use_the_vaults_next_number() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut vault = scenario.funded_holder_vault();
@@ -679,7 +700,7 @@ fun a_round_must_use_the_vaults_next_number() {
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::EOverlappingInterval,
+    abort_code = blast_presale::errors::EOverlappingInterval,
     location = blast_presale::holder_rewards,
 )]
 /// A new daily interval may skip checkpoints but cannot overlap a funded round.
@@ -693,7 +714,10 @@ fun a_round_cannot_overlap_checkpoints() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EAlreadyClaimed, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EAlreadyClaimed,
+    location = blast_presale::holder_rewards,
+)]
 fun a_holder_reward_cannot_be_claimed_twice() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
@@ -707,7 +731,10 @@ fun a_holder_reward_cannot_be_claimed_twice() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EEmptyClaim, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EEmptyClaim,
+    location = blast_presale::holder_rewards,
+)]
 /// A claim leaf must pay something; an empty one is a claim error, not a round-budget one.
 fun a_holder_reward_claim_must_pay_a_positive_amount() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -721,7 +748,10 @@ fun a_holder_reward_claim_must_pay_a_positive_amount() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EInvalidProof, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EInvalidProof,
+    location = blast_presale::holder_rewards,
+)]
 /// A relayer cannot redirect a committed reward to another beneficiary.
 fun a_holder_reward_cannot_be_redirected() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -755,7 +785,10 @@ fun a_holder_reward_can_be_claimed_until_the_deadline() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EClaimsClosed, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EClaimsClosed,
+    location = blast_presale::holder_rewards,
+)]
 /// From the deadline, claims stop so that closing the round cannot race them.
 fun a_holder_reward_cannot_be_claimed_at_the_deadline() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -769,7 +802,10 @@ fun a_holder_reward_cannot_be_claimed_at_the_deadline() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EMemeRewardsUnsupported, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EMemeRewardsUnsupported,
+    location = blast_presale::presale_vault,
+)]
 /// Holder Meme fees go to the treasury, so a round cannot promise Meme.
 fun a_round_cannot_pay_meme() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -814,7 +850,7 @@ fun an_unclaimed_round_returns_to_the_vault_after_its_deadline() {
 
 #[test]
 #[expected_failure(
-    abort_code = rewards::EClaimsStillOpen,
+    abort_code = blast_presale::errors::EClaimsStillOpen,
     location = blast_presale::holder_rewards,
 )]
 fun a_round_cannot_close_before_its_claim_deadline() {
@@ -827,7 +863,10 @@ fun a_round_cannot_close_before_its_claim_deadline() {
 }
 
 #[test]
-#[expected_failure(abort_code = rewards::EWrongVault, location = blast_presale::holder_rewards)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EWrongVault,
+    location = blast_presale::holder_rewards,
+)]
 /// A round's leftovers can only return to the vault that funded it.
 fun a_round_cannot_close_into_another_vault() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -840,7 +879,10 @@ fun a_round_cannot_close_into_another_vault() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::EZeroClaimWindow, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::EZeroClaimWindow,
+    location = blast_presale::presale_vault,
+)]
 fun a_round_needs_a_positive_claim_window() {
     let mut scenario = test_scenario::begin(CREATOR);
     let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
@@ -915,7 +957,10 @@ fun merkle_proofs_reject_malformed_digests_and_wrong_depth() {
 }
 
 #[test]
-#[expected_failure(abort_code = vault::ENoMigrationResiduals, location = blast_presale::presale_vault)]
+#[expected_failure(
+    abort_code = blast_presale::errors::ENoMigrationResiduals,
+    location = blast_presale::presale_vault,
+)]
 fun a_valid_creator_cap_cannot_claim_empty_migration_residuals() {
     let mut ctx = sui::tx_context::dummy();
     let presale_id = object::id_from_address(@0xCAFE);

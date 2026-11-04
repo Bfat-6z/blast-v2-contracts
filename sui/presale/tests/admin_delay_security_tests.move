@@ -40,73 +40,157 @@ public struct CoinB has drop {}
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun fees_early() { exercise(Setting::Fees, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun fees_replacement_restarts_notice() { exercise(Setting::Fees, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
 fun fees_cancelled() { exercise(Setting::Fees, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
 fun fees_replay() { exercise(Setting::Fees, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun fees_stale_schedule() { exercise(Setting::Fees, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun fees_stale_apply() { exercise(Setting::Fees, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun fees_stale_cancel() { exercise(Setting::Fees, Case::StaleCancel); }
 
 #[test]
 fun fees_boundaries_and_cancel_reschedule() { exercise(Setting::Fees, Case::Success); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun destination_early() { exercise(Setting::Destination, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun destination_replacement_restarts_notice() { exercise(Setting::Destination, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
 fun destination_cancelled() { exercise(Setting::Destination, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
 fun destination_replay() { exercise(Setting::Destination, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun destination_stale_schedule() { exercise(Setting::Destination, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun destination_stale_apply() { exercise(Setting::Destination, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun destination_stale_cancel() { exercise(Setting::Destination, Case::StaleCancel); }
 
 #[test]
 fun destination_boundaries_and_cancel_reschedule() { exercise(Setting::Destination, Case::Success); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun vault_fees_early() { exercise(Setting::VaultFees, Case::Early); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENotReady,
+    location = blast_admin::delayed,
+)]
 fun vault_fees_replacement() { exercise(Setting::VaultFees, Case::Replacement); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
 fun vault_fees_cancelled() { exercise(Setting::VaultFees, Case::Cancelled); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::ENoPending,
+    location = blast_admin::delayed,
+)]
 fun vault_fees_replay() { exercise(Setting::VaultFees, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun vault_fees_stale_schedule() { exercise(Setting::VaultFees, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun vault_fees_stale_apply() { exercise(Setting::VaultFees, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::operational_version,
+)]
 fun vault_fees_stale_cancel() { exercise(Setting::VaultFees, Case::StaleCancel); }
 
 #[test]

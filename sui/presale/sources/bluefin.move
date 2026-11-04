@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Permissionless Bluefin migration and LP-fee collection for configured presales.
 module blast_presale::bluefin;
 
@@ -30,12 +32,15 @@ public fun new<Meme, Quote>(
 
     assert!(
         tick_spacing > 0
-            && tick_spacing <= MAX_TICK_SPACING
+            && tick_spacing <= constants::bluefin_max_tick_spacing!()
             && pool_fee_rate > 0
-            && pool_fee_rate <= MAX_POOL_FEE_RATE,
-        EInvalidTier,
+            && pool_fee_rate <= constants::bluefin_max_fee_rate!(),
+        blast_presale::errors::invalid_tier!(),
     );
-    assert!(currency.symbol().length() <= MAX_MEME_SYMBOL_LENGTH, ESymbolTooLong);
+    assert!(
+        currency.symbol().length() <= constants::max_meme_symbol_length!(),
+        blast_presale::errors::symbol_too_long!(),
+    );
 
     venue_config.add_pool_tier<Meme, Quote, _>(&Venue(), tick_spacing, pool_fee_rate);
 
@@ -135,7 +140,10 @@ public fun new_vault<Meme, Quote>(
     package_version.assert_current();
 
     creation_policy.assert_allowed<Quote, Witness>();
-    assert!(position.pool_id() == object::id(pool), EPositionPoolMismatch);
+    assert!(
+        position.pool_id() == object::id(pool),
+        blast_presale::errors::position_pool_mismatch!(),
+    );
 
     let liquidity = position.liquidity();
 
@@ -166,7 +174,7 @@ public fun collect_fees<Meme, Quote>(
 ) {
     package_version.assert_current();
 
-    assert!(vault.pool_id() == object::id(pool), EPositionPoolMismatch);
+    assert!(vault.pool_id() == object::id(pool), blast_presale::errors::position_pool_mismatch!());
 
     let (_, _, meme, quote) = pool::collect_fee(
         clock,
@@ -242,31 +250,12 @@ fun fixes_meme<Meme, Quote>(
     if (needed_meme <= source_meme && needed_quote <= source_quote) prefer_meme else !prefer_meme
 }
 
-// === Constants ===
-
-const MAX_TICK_SPACING: u32 = 400;
-const MAX_POOL_FEE_RATE: u64 = 20_000;
-
-/// Bluefin stores the pool name, built from this symbol, twice in every `Position`; the
-/// bound keeps a migrated position inside Sui's object size limit (ADR 0088).
-const MAX_MEME_SYMBOL_LENGTH: u64 = 32;
-
-// === Errors ===
-
-#[error(code = 0)]
-const EPositionPoolMismatch: vector<u8> = b"Pool must be the one holding the position.";
-
-#[error(code = 1)]
-const EInvalidTier: vector<u8> = b"Bluefin tier needs tick spacing 1..=400 and fee rate 1..=20,000.";
-
-#[error(code = 2)]
-const ESymbolTooLong: vector<u8> = b"The Meme symbol must be at most 32 bytes for Bluefin migration.";
-
 // === Imports ===
 
 use blast_presale::{
     blast_presale::{Self as presale, FeeSplit, Presale, PresaleInitializer},
     blast_presale_package::PackageVersion,
+    constants,
     creation_policy::CreationPolicy,
     fee_policy::FeePolicy,
     migration_math,

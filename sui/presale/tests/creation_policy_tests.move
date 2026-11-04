@@ -27,7 +27,7 @@ public struct MIGRATOR() has drop;
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EQuoteNotAllowed,
+    abort_code = blast_presale::errors::EQuoteNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// Publication shares one policy that allows no Quote type and no migrator.
@@ -75,7 +75,7 @@ fun the_admin_allows_a_quote_and_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EQuoteNotAllowed,
+    abort_code = blast_presale::errors::EQuoteNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// Allowing one Quote type allows no other.
@@ -88,7 +88,7 @@ fun allowing_one_quote_allows_no_other() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// An allowed Quote type is not enough without an allowed migrator.
@@ -106,7 +106,7 @@ fun an_allowed_quote_still_needs_an_allowed_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EQuoteNotAllowed,
+    abort_code = blast_presale::errors::EQuoteNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// Disallowing a Quote type emits it and stops later creations from raising it.
@@ -128,7 +128,7 @@ fun disallowing_a_quote_stops_later_creations() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EMigrationWitnessNotAllowed,
+    abort_code = blast_presale::errors::EMigrationWitnessNotAllowed,
     location = blast_presale::creation_policy,
 )]
 /// Disallowing a migrator emits it and stops later creations through it.
@@ -157,7 +157,7 @@ fun disallowing_a_migrator_stops_later_creations() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EAllowanceUnchanged,
+    abort_code = blast_presale::errors::EAllowanceUnchanged,
     location = blast_presale::creation_policy,
 )]
 fun an_allowed_quote_cannot_be_allowed_again() {
@@ -173,7 +173,7 @@ fun an_allowed_quote_cannot_be_allowed_again() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EAllowanceUnchanged,
+    abort_code = blast_presale::errors::EAllowanceUnchanged,
     location = blast_presale::creation_policy,
 )]
 fun an_unlisted_quote_cannot_be_disallowed() {
@@ -231,7 +231,7 @@ fun an_unlisted_migrator_cannot_be_disallowed() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidMigrationWitness,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make a primitive, so allowing one would let anyone create and migrate sales.
@@ -253,7 +253,7 @@ fun a_primitive_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidMigrationWitness,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make a vector of droppable values, so it is rejected like a primitive.
@@ -274,7 +274,7 @@ fun a_vector_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidMigrationWitness,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make `TypeName` with `type_name::with_original_ids`, so a stdlib type is rejected.
@@ -296,7 +296,7 @@ fun a_stdlib_type_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidMigrationWitness,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make an `Option<MIGRATOR>` with `option::none`, so a generic stdlib type wrapping
@@ -318,7 +318,7 @@ fun an_option_of_a_witness_cannot_be_allowed_as_a_migrator() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EInvalidMigrationWitness,
+    abort_code = blast_presale::errors::EInvalidMigrationWitness,
     location = blast_presale::creation_policy,
 )]
 /// Any caller can make an `ID` with `object::id_from_address`, so a Sui framework type is rejected.
@@ -382,7 +382,7 @@ fun an_added_partner_is_accepted_at_once() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EPartnerNotAccepted,
+    abort_code = blast_presale::errors::EPartnerNotAccepted,
     location = blast_presale::creation_policy,
 )]
 /// A partner the administrator never added cannot be named.
@@ -397,7 +397,7 @@ fun an_unlisted_partner_is_not_accepted() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EPartnerNotAccepted,
+    abort_code = blast_presale::errors::EPartnerNotAccepted,
     location = blast_presale::creation_policy,
 )]
 /// A removed partner stays accepted until one millisecond before Blast's partner notice ends, and
@@ -461,7 +461,7 @@ fun re_adding_a_removed_partner_accepts_it_again() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EAllowanceUnchanged,
+    abort_code = blast_presale::errors::EAllowanceUnchanged,
     location = blast_presale::creation_policy,
 )]
 fun an_accepted_partner_cannot_be_added_again() {
@@ -478,7 +478,7 @@ fun an_accepted_partner_cannot_be_added_again() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EAllowanceUnchanged,
+    abort_code = blast_presale::errors::EAllowanceUnchanged,
     location = blast_presale::creation_policy,
 )]
 /// A pending removal cannot be restarted to push its notice back.
@@ -498,7 +498,7 @@ fun a_removed_partner_cannot_be_removed_again() {
 
 #[test]
 #[expected_failure(
-    abort_code = creation_policy::EPartnerNotAccepted,
+    abort_code = blast_presale::errors::EPartnerNotAccepted,
     location = blast_presale::creation_policy,
 )]
 fun an_unlisted_partner_cannot_be_removed() {

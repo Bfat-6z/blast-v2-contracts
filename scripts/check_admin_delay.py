@@ -149,7 +149,14 @@ for package, module, actions in [
         'sell': 'constants::trading_pause_bit!()',
         'migrate': 'constants::migration_pause_bit!()',
     }),
-    ('presale', 'blast_presale', {'new': 1, 'share': 1, 'commit_open': 2, 'commit_allowlisted': 2, 'commit_uncapped': 2, 'migrate': 8}),
+    ('presale', 'blast_presale', {
+        'new': 'constants::create_pause_bit!()',
+        'share': 'constants::create_pause_bit!()',
+        'commit_open': 'constants::commit_pause_bit!()',
+        'commit_allowlisted': 'constants::commit_pause_bit!()',
+        'commit_uncapped': 'constants::commit_pause_bit!()',
+        'migrate': 'constants::migration_pause_bit!()',
+    }),
 ]:
     fs = functions(package, module)
     for name, bit in actions.items():
@@ -259,6 +266,9 @@ for package, module, rewards, version, treasury in (
     ('migrators', 'vault', 'blast_holder_rewards', 'migrators_version', 'lp_fee_policy.protocol_destination()'),
     ('presale', 'presale_vault', 'holder_rewards', 'package_version', 'fee_policy.destination()'),
 ):
+    # Migrators raises module-local named errors; presale raises its numeric registry macros.
+    error = (lambda name: name) if package == 'migrators' else (
+        lambda name: 'errors::' + re.sub(r'(?<!^)(?=[A-Z])', '_', name[1:]).lower() + '!()')
     source = module_path(package, module).read_text()
     require(source, 'round_publication: DelayedAction<RoundPublicationKey, RoundTerms>,',
             'public struct RoundPublicationKey() has copy, drop, store;', 'DEFAULT_ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;')
@@ -269,9 +279,9 @@ for package, module, rewards, version, treasury in (
     require(slot['apply_round_publication_delay'][1], 'self.round_publication.apply_delay(clock)')
     for name, kind in (('cancel_round_publication', 'is_some'), ('cancel_round_publication_delay', 'is_none')):
         body = slot[name][1]
-        require(body, f'proposal.proposal_value().action().{kind}()', 'EWrongRoundProposal', 'self.round_publication.cancel()')
-        assert body.index('EWrongRoundProposal') < body.index('self.round_publication.cancel()'), (package, name)
-    require(slot['new_round_terms'][1], 'EInvalidCommitment', 'EInvalidLeafCount', 'EEmptyBudget',
+        require(body, f'proposal.proposal_value().action().{kind}()', error('EWrongRoundProposal'), 'self.round_publication.cancel()')
+        assert body.index(error('EWrongRoundProposal')) < body.index('self.round_publication.cancel()'), (package, name)
+    require(slot['new_round_terms'][1], error('EInvalidCommitment'), error('EInvalidLeafCount'), error('EEmptyBudget'),
             'start_checkpoint < end_checkpoint', 'quote_amount.checked_add(gas_reserve_amount).is_some()',
             'expected_treasury != @0x0', 'claim_window_duration_ms > 0')
     visibility = {row[1]: row[2] for row in facts(package, module) if row[0] == 'FN' and row[5] == '0'}
@@ -298,7 +308,7 @@ for package, module, rewards, version, treasury in (
     assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps), package
     signature, body = flows['publish_round']
     assert not re.search(r'\b(u64|address|vector<u8>)\b', signature), (package, signature)
-    steps = ['vault.take_round_publication(clock);', treasury, '== terms.expected_treasury(), ETreasuryChanged);',
+    steps = ['vault.take_round_publication(clock);', treasury, f"== terms.expected_treasury(), {error('ETreasuryChanged')});",
              'assert_fundable(vault, &terms);', '.checked_add(terms.claim_window_duration_ms())', 'vault.fund_round(']
     require(body, *steps)
     assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps), package

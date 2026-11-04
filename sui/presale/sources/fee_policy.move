@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the module's abort location.
+#[allow(lint(abort_without_constant))]
 /// Blast's fees on presales: a share of every successful raise, of every token supply, and of
 /// every collected LP fee.
 ///
@@ -101,7 +103,7 @@ public fun schedule_destination(
 ) {
     package_version.assert_current();
 
-    assert!(destination != @0x0, EInvalidDestination);
+    assert!(destination != @0x0, blast_presale::errors::invalid_destination!());
 
     self.destination.schedule(destination, delay_ms, clock);
 }
@@ -139,10 +141,11 @@ public(package) fun protocol_fees(
     lp_fee_quote_bps: Bps,
 ): ProtocolFees {
     assert!(
-        raise_bps.value() <= MAX_RAISE_BPS && token_bps.value() <= MAX_TOKEN_BPS
-            && lp_fee_meme_bps.value() <= MAX_LP_FEE_BPS
-            && lp_fee_quote_bps.value() <= MAX_LP_FEE_BPS,
-        EInvalidFees,
+        raise_bps.value() <= constants::max_raise_bps!()
+            && token_bps.value() <= constants::max_token_bps!()
+            && lp_fee_meme_bps.value() <= constants::max_lp_fee_bps!()
+            && lp_fee_quote_bps.value() <= constants::max_lp_fee_bps!(),
+        blast_presale::errors::invalid_fees!(),
     );
 
     ProtocolFees { raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps }
@@ -194,7 +197,7 @@ fun new(
     delay_ms: u64,
     ctx: &mut TxContext,
 ): FeePolicy {
-    assert!(@blast_treasury != @0x0, EInvalidDestination);
+    assert!(@blast_treasury != @0x0, blast_presale::errors::invalid_destination!());
     let id = object::new(ctx);
 
     FeePolicy {
@@ -291,26 +294,6 @@ public fun destroy_for_testing(self: FeePolicy) {
     id.delete();
 }
 
-// === Constants ===
-
-/// Blast's largest share of a sale's raise.
-const MAX_RAISE_BPS: u64 = 1_000;
-
-/// Blast's largest share of a sale's tokens.
-const MAX_TOKEN_BPS: u64 = 1_000;
-
-/// Blast's largest share of each LP fee, Meme and Quote.
-const MAX_LP_FEE_BPS: u64 = 3_000;
-
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidFees: vector<u8> =
-    b"Blast's raise and token shares must be at most 1,000 BPS and each LP fee at most 3,000.";
-
-#[error(code = 1)]
-const EInvalidDestination: vector<u8> = b"The protocol destination must be a nonzero address.";
-
 // === Imports ===
 
 use blast_admin::{
@@ -323,5 +306,6 @@ use sui::clock::Clock;
 use blast_presale::{
     blast_presale_domain::{CancelAdmin, FeeAdmin, TreasuryAdmin},
     blast_presale_package::{PackageVersion},
-    bps::{Self, Bps}
+    bps::{Self, Bps},
+    constants
 };

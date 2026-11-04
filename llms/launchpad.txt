@@ -150,11 +150,11 @@ Upgrade rules depend on the package lineage.
 A failed call returns a Move abort naming the module and function that aborted
 and a `u64` code. Blast uses two styles:
 
-- **Named errors** (`#[error]` constants): `blast_presale`, `blast_partners`,
+- **Named errors** (`#[error]` constants): `blast_partners`,
   `blast_fun_migrators`, and `blast_aftermath_dao_presale`. Sui's RPC and SDKs
   decode these into the constant's name and message; the reference lists each
   module's constants with their messages.
-- **Numeric codes**: `blast_fun`, `blast_sui`, `blast_boosts_core`,
+- **Numeric codes**: `blast_fun`, `blast_presale`, `blast_sui`, `blast_boosts_core`,
   `blast_boosts_aftermath`, and `blast_admin` abort with small integers. Look the
   number up in that package's abort-code table in the reference.
 

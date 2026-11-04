@@ -14,7 +14,7 @@ fun constructor_accepts_the_complete_closed_range() {
 }
 
 #[test]
-#[expected_failure(abort_code = bps::EInvalidBps, location = blast_presale::bps)]
+#[expected_failure(abort_code = blast_presale::errors::EInvalidBps, location = blast_presale::bps)]
 fun constructor_rejects_the_first_value_above_one_hundred_percent() {
     bps::new(10_001);
 }
