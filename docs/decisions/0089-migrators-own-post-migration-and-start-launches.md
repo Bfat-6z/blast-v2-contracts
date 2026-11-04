@@ -2,6 +2,7 @@
 
 - Status: accepted; amended by [0107](0107-partner-cut-of-lp-fees.md): a partnered launch's
   vault holds Blast's LP fees until anyone pays the partner its cut and Blast the rest
+- Superseded by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-09-24
 - Amends: [0076](0076-native-v2-and-auto-lp.md) (auto-LP),
   [0082](0082-revocable-creator-and-lp-fee-capabilities.md), and

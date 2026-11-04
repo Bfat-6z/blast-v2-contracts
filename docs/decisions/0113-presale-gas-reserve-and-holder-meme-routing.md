@@ -1,6 +1,7 @@
 # 0113: Presale gas reserve and holder Meme routing
 
 - Status: accepted
+- Superseded by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-10-10
 - Amends: [0099](0099-standalone-overflow-presale.md)
 

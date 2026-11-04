@@ -4,6 +4,7 @@
   its cut of Blast's LP fees on the sale's vault; amended by
   [0110](0110-presale-initializer-and-early-close.md): `set_partner` acts on the
   `PresaleInitializer`, so `finalize` fixes the partner before the sale exists
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-10-05
 - Amends: [0095](0095-partner-codes.md), whose partners earned only on Boosts and
   the launchpad; [0101](0101-presale-protocol-fees.md), which paid Blast's fees

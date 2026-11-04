@@ -1,6 +1,7 @@
 # 0001: Sui package and module layout
 
 - Status: proposed
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-08-22
 - Amended by: [0042](0042-key-only-shared-launch.md),
   [0048](0048-sui-package-workspace.md)

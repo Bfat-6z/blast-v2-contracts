@@ -21,6 +21,7 @@
 > historical for both.
 
 - Status: accepted; new-lineage admission and fee custody amended by [0088](0088-reusable-launch-accounting-and-atomic-migration.md)
+- Superseded by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-08-29
 - Amends: [0010](0010-migration-and-venue-adapters.md),
   [0011](0011-event-schema-and-replay.md),

@@ -46,7 +46,7 @@ Each ADR carries a `## Sources` table mapping the short refs it uses to full com
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [0001](0001-sui-package-and-module-layout.md) | Sui package and module layout | proposed |
+| [0001](0001-sui-package-and-module-layout.md) | Sui package and module layout | proposed; amended by 0137 |
 | [0002](0002-coin-creation-and-currency-authority.md) | Coin creation, currency authority, and the launch transaction sequence | proposed |
 | [0003](0003-treasury-cap-lifetime-and-burn.md) | TreasuryCap lifetime and the two burn moments | superseded by 0023 and 0026 |
 | [0004](0004-bonding-curve.md) | Constant-product bonding curve | proposed |
@@ -55,11 +55,11 @@ Each ADR carries a `## Sources` table mapping the short refs it uses to full com
 | [0007](0007-acl-pause-and-versioning.md) | Capability ACL, pause scope, and versioning | proposed |
 | [0008](0008-creator-identity-and-claims.md) | Creator assignment, social claims, and replay-safe signatures | superseded by 0013 |
 | [0009](0009-referrals-and-revshare.md) | Referral attribution and weekly RevShare settlement | proposed |
-| [0010](0010-migration-and-venue-adapters.md) | Migration routes and venue adapters | proposed |
+| [0010](0010-migration-and-venue-adapters.md) | Migration routes and venue adapters | proposed; amended by 0137 |
 | [0011](0011-event-schema-and-replay.md) | Event schema, replay, and the operation-to-rule checklist | proposed |
 | [0012](0012-flywheel-features.md) | Flywheel feature dispositions | proposed |
 | [0013](0013-creator-fee-authority-and-x-claims.md) | Creator fee authority and X account claims | **accepted** |
-| [0014](0014-typed-creator-cap-and-diagnostic-modules.md) | Coin-typed creator authority and diagnostic modules | **accepted** |
+| [0014](0014-typed-creator-cap-and-diagnostic-modules.md) | Coin-typed creator authority and diagnostic modules | **accepted; amended by 0137** |
 | [0015](0015-protocol-authority-and-x-signer-state.md) | Protocol authority and minimal X signer state | **accepted** |
 | [0016](0016-unified-creator-cap-claim-and-suins-periphery.md) | Unified CreatorCap claim and SuiNS periphery | **accepted** |
 | [0017](0017-coin-type-domain-for-x-creator-claims.md) | Coin-type domain for X creator claims | **accepted** |
@@ -89,7 +89,7 @@ Each ADR carries a `## Sources` table mapping the short refs it uses to full com
 | [0041](0041-launch-config-owned-trade-fees.md) | LaunchConfig-owned trade fees | **accepted** |
 | [0042](0042-key-only-shared-launch.md) | Key-only shared launch publication | **accepted; amended by 0088** |
 | [0043](0043-versioned-launch-trading-and-atomic-migration.md) | Versioned launch trading and atomic migration | **accepted; amended by 0088** |
-| [0044](0044-validated-basis-points-unit.md) | Validated basis-points unit | **accepted** |
+| [0044](0044-validated-basis-points-unit.md) | Validated basis-points unit | **accepted; superseded by 0137** |
 | [0045](0045-single-package-version.md) | Single package version | **accepted** |
 | [0046](0046-witness-authorized-migration-redemption.md) | Witness-authorized migration redemption | **accepted; amended by 0088** |
 | [0047](0047-coin-registry-authoritative-supply-mode.md) | Coin Registry authoritative supply mode | **accepted; supply-mode timing amended by 0088** |
@@ -98,7 +98,7 @@ Each ADR carries a `## Sources` table mapping the short refs it uses to full com
 | [0050](0050-module-local-package-version-constant.md) | Module-local package-version constant | **accepted; amended in place 2026-10-02: the constant lives in the marker module** |
 | [0051](0051-generated-meme-package-template.md) | Generated Meme package template | **accepted; publish-time immutability amended by 0088; package renamed by 0108** |
 | [0053](0053-single-validator-funsui-and-blastsui.md) | Single-validator `funSUI` and `blastSUI` | **accepted; authority and receipt `DisplayCap` custody amended by 0060, 0061, and 0097** |
-| [0054](0054-v3-dex-migrators-and-locked-lp-fees.md) | V3 DEX migrators, exact seed pricing, and locked LP fees | **accepted; new-lineage admission and fee custody amended by 0088** |
+| [0054](0054-v3-dex-migrators-and-locked-lp-fees.md) | V3 DEX migrators, exact seed pricing, and locked LP fees | **accepted; new-lineage admission and fee custody amended by 0088; superseded by 0137** |
 | [0056](0056-bounded-pending-stake-vector.md) | Bounded pending-stake vector in custody ledgers | **accepted** |
 | [0057](0057-admin-pinned-venue-tiers.md) | Admin-pinned venue tiers for permissionless migration | superseded by 0089 |
 | [0058](0058-eventless-package-initialization.md) | Eventless package initialization | **accepted** |
@@ -130,34 +130,34 @@ Each ADR carries a `## Sources` table mapping the short refs it uses to full com
 | [0085](0085-explorer-visible-type-naming.md) | Explorer-visible type naming: every on-chain type names Blast | **accepted** |
 | [0086](0086-maintenance-reserve-ceiling.md) | Maintenance reserve ceiling: `max_reserve_bps` of notional, clamped credits, priced-after-release, no admin release | **accepted** |
 | [0087](0087-vault-issuance-activated-in-one-transaction.md) | Vault issuance activated in one transaction: `issue` returns a hot-potato issuance, `initialize` returns the Vault, no optional activation fields | **accepted** |
-| [0088](0088-reusable-launch-accounting-and-atomic-migration.md) | Reusable launch accounting and atomic migration | **accepted; amended by 0089, 0090, and 0093; rewritten in place 2026-09-22: push payouts, no digests, venue selection, or type-guaranteed ID bindings, one linear migration value, creator-selected target, one-time-witness Meme; amended the same day: upgradeable migrators, ticket-bound adapter with venue preparation, adapter-supplied pool ID; amended 2026-09-23: Aftermath, MMT, and Turbos adapters removed; venue-operator trust assumptions and the migrators upgrade-policy rule recorded** |
-| [0089](0089-migrators-own-post-migration-and-start-launches.md) | One migrators package owns everything after migration and starts every launch | **accepted; amended by 0090, 0091, and 0107** |
+| [0088](0088-reusable-launch-accounting-and-atomic-migration.md) | Reusable launch accounting and atomic migration | **accepted; amended by 0089, 0090, and 0093; rewritten in place 2026-09-22: push payouts, no digests, venue selection, or type-guaranteed ID bindings, one linear migration value, creator-selected target, one-time-witness Meme; amended the same day: upgradeable migrators, ticket-bound adapter with venue preparation, adapter-supplied pool ID; amended 2026-09-23: Aftermath, MMT, and Turbos adapters removed; venue-operator trust assumptions and the migrators upgrade-policy rule recorded; amended by 0137** |
+| [0089](0089-migrators-own-post-migration-and-start-launches.md) | One migrators package owns everything after migration and starts every launch | **accepted; amended by 0090, 0091, and 0107; superseded by 0137** |
 | [0090](0090-minimal-launchpad-surface.md) | A minimal launchpad surface | **accepted; amended by 0092 and 0093** |
 | [0091](0091-fee-split-buyback-and-burn.md) | A burn part in the LP-fee split, bought back by a buyback administrator | **accepted; amended by 0094 and 0100; amended in place 2026-10-27: buybacks spend an administrator-chosen amount** |
 | [0092](0092-creator-picks-the-virtual-quote.md) | The creator picks the virtual Quote reserve; launch config only admits Quotes | **accepted** |
 | [0093](0093-optional-opening-round.md) | An optional opening round replaces purchase protection | **accepted** |
-| [0094](0094-one-role-per-administrator-action.md) | One role per administrator action | **accepted; role bits, checks, and gate map superseded by 0097** |
+| [0094](0094-one-role-per-administrator-action.md) | One role per administrator action | **accepted; role bits, checks, and gate map superseded by 0097; amended by 0137** |
 | [0095](0095-partner-codes.md) | Partner codes in one immutable package: a share of Blast's fee paid to the named partner on every trade, with a forced seven-day delay on Blast's powers | proposed; amended by 0106 and 0107 |
-| [0097](0097-one-singleton-acl-with-typed-roles.md) | One singleton ACL with typed roles | **proposed; amended in place 2026-10-02: Publisher read, witness-seeded versions, publication-record gate** |
+| [0097](0097-one-singleton-acl-with-typed-roles.md) | One singleton ACL with typed roles | **proposed; amended in place 2026-10-02: Publisher read, witness-seeded versions, publication-record gate; amended by 0137** |
 | [0098](0098-launch-creation-fee-and-partners.md) | One partner per launch shares the launch's creation, curve, and one-time Meme/Quote migration fees | **accepted; amended by 0105 and 0107** |
-| [0099](0099-standalone-overflow-presale.md) | Standalone overflow presales with per-sale caps, proportional fills, LP-gated claims, and refund liveness | **accepted; amended by 0101, 0102, 0104, 0110, and 0111** |
+| [0099](0099-standalone-overflow-presale.md) | Standalone overflow presales with per-sale caps, proportional fills, LP-gated claims, and refund liveness | **accepted; amended by 0101, 0102, 0104, 0110, and 0111; amended by 0137** |
 | [0100](0100-single-cetus-route-with-checked-retype.md) | One Cetus route per operation, generic over the pool's coin order, with a checked dynamic-field retype | **accepted** |
-| [0101](0101-presale-protocol-fees.md) | Admin-set presale fees on the raise, token supply, and LP fees, snapshotted at creation; LP rates adjustable per vault | **proposed; amended by 0106, 0107, and 0109** |
+| [0101](0101-presale-protocol-fees.md) | Admin-set presale fees on the raise, token supply, and LP fees, snapshotted at creation; LP rates adjustable per vault | **proposed; amended by 0106, 0107, and 0109; superseded by 0137** |
 | [0102](0102-presale-creation-allowlists.md) | Admin-set allowlists of the Quote types and migration witnesses new presales may use | **proposed; amended by 0104 and 0106** |
 | [0103](0103-mainnet-only.md) | Mainnet only: no testnet builds, pins, scripts, harness environment, or rehearsals | **accepted** |
-| [0104](0104-external-presale-migrators-and-vendor-packages.md) | Public presale creation and migration for external migrators; partner one-off packages under `sui/vendors` | **proposed; amended by 0110** |
+| [0104](0104-external-presale-migrators-and-vendor-packages.md) | Public presale creation and migration for external migrators; partner one-off packages under `sui/vendors` | **proposed; amended by 0110; amended by 0137** |
 | [0105](0105-permissionless-launch-fee-claims.md) | Permissionless launch fee claims paying the partner and a `RuntimeConfig` treasury the `TreasuryAdmin` rotates | **proposed** |
-| [0106](0106-presale-partners.md) | One partner per presale, named at creation, earns a share of Blast's raise share, paid permissionlessly after migration | **proposed; amended by 0107 and 0110** |
-| [0107](0107-partner-cut-of-lp-fees.md) | A launch's or a sale's partner earns its cut of Blast's LP fees, held in the vault on collection and paid permissionlessly | **proposed** |
+| [0106](0106-presale-partners.md) | One partner per presale, named at creation, earns a share of Blast's raise share, paid permissionlessly after migration | **proposed; amended by 0107 and 0110; amended by 0137** |
+| [0107](0107-partner-cut-of-lp-fees.md) | A launch's or a sale's partner earns its cut of Blast's LP fees, held in the vault on collection and paid permissionlessly | **proposed; superseded by 0137** |
 | [0108](0108-standalone-coin-template.md) | A standalone coin template with creator-chosen supply, supply mode, and capability recipients; `meme_template` becomes `launch_ticket_template` | **proposed** |
-| [0109](0109-vaults-without-a-presale.md) | A team that adds its own liquidity locks the position in a `Vault` with zero presale IDs, for the same fee split, Blast LP fees, and holder rewards; `Vault` becomes `Vault` | **proposed** |
+| [0109](0109-vaults-without-a-presale.md) | A team that adds its own liquidity locks the position in a `Vault` with zero presale IDs, for the same fee split, Blast LP fees, and holder rewards; `Vault` becomes `Vault` | **proposed; superseded by 0137** |
 | [0110](0110-presale-initializer-and-early-close.md) | Presales are created through a `PresaleInitializer` hot potato; the hard cap is a sale setting independent of the uncapped phase, and a sale whose hard cap closes it when filled settles as soon as its raise is full | **proposed; amended by 0111** |
-| [0111](0111-venue-owned-presale-pool-tiers.md) | A presale's pool tier belongs to its venue: Cetus and Bluefin record it in `VenueConfig` and emit `venue_config::PoolTierReserved<Meme, Quote, Venue>`; the sale and `PresaleCreated` carry none | **proposed** |
+| [0111](0111-venue-owned-presale-pool-tiers.md) | A presale's pool tier belongs to its venue: Cetus and Bluefin record it in `VenueConfig` and emit `venue_config::PoolTierReserved<Meme, Quote, Venue>`; the sale and `PresaleCreated` carry none | **proposed; superseded by 0137** |
 | [0112](0112-daily-holder-reward-intervals.md) | Daily holder-reward intervals | **accepted** |
-| [0113](0113-presale-gas-reserve-and-holder-meme-routing.md) | Presale gas reserve and holder Meme routing | **accepted** |
+| [0113](0113-presale-gas-reserve-and-holder-meme-routing.md) | Presale gas reserve and holder Meme routing | **accepted; superseded by 0137** |
 | [0114](0114-launchpad-custody-before-activation.md) | Launchpad custody before activation | **accepted** |
 | [0115](0115-venue-policy-from-the-bound-clearing-house.md) | Venue policy read live from the bound clearing house: margin ratios, pause, freeze and oracle routing are venue facts; account checkpoints and lot size stay exact | **accepted** |
-| [0116](0116-aftermath-adapter-with-vault-addressed-dao-fees.md) | Aftermath adapter in the presale: a 50/50 pool behind Aftermath's DAO-fee pool paying the vault's own address, whose fee coins the vault receives; the reservation binds to the sale at `finalize`, the owner cap is the vault's position, and the LP coin goes to `0x0` | accepted |
+| [0116](0116-aftermath-adapter-with-vault-addressed-dao-fees.md) | Aftermath adapter in the presale: a 50/50 pool behind Aftermath's DAO-fee pool paying the vault's own address, whose fee coins the vault receives; the reservation binds to the sale at `finalize`, the owner cap is the vault's position, and the LP coin goes to `0x0` | accepted; superseded by 0137 |
 
 ADRs 0013–0035, 0038–0056, 0058–0067, 0069, 0073, 0074, 0076–0080, 0082, and 0085–0089 are accepted subject to the amendments shown above; ADR 0088 supersedes 0036, 0068, 0081, and 0083, and ADR 0089 supersedes 0057 and 0075. ADR 0074 accepts the Aftermath dependency and raw-field normalization while retaining its live evidence gate; ADR 0037 is superseded by 0043, and ADRs 0070–0072 are superseded by 0073. ADR 0021 accepts the pure curve formulas and
 package boundary, while ADR 0022 accepts the trade-fee ceiling, live global split
@@ -434,7 +434,7 @@ in its owning ADR.
 None is treated as established until its named compile, localnet, or integration
 test passes, and none is asserted as a cited fact in the records.
 
-| [0117](0117-presale-versioning-and-activation.md) | Presale versioning and custody before activation | **accepted** |
+| [0117](0117-presale-versioning-and-activation.md) | Presale versioning and custody before activation | **accepted; amended by 0137** |
 | [0118](0118-limit-priced-vault-orders-and-a-widening-unwind-bound.md) | Limit-priced vault orders and a widening unwind bound | **proposed** |
 | [0119](0119-execution-priced-order-caps-and-minimum-lot-closes.md) | Execution-priced order caps and minimum-lot closes | **accepted** |
 | [0120](0120-priority-gas-for-emergency-reductions-and-unwind.md) | Priority gas for emergency reductions and unwind | **accepted** |
@@ -446,7 +446,8 @@ test passes, and none is asserted as a cited fact in the records.
 | [0127](0127-emergency-rebalance-mark-divergence.md) | Emergency rebalance admission during mark divergence | **accepted** |
 | [0128](0128-reserve-aware-rebalance-increases.md) | Reserve-aware rebalance increases | **accepted** |
 | [0130](0130-protected-permissionless-shutdown.md) | Protected permissionless shutdown of a size-locked Boost | **accepted** |
-| [0134](0134-delayed-administration-pause-and-table-acl.md) | Delayed administration, pause, and a Table-backed ACL | proposed |
+| [0134](0134-delayed-administration-pause-and-table-acl.md) | Delayed administration, pause, and a Table-backed ACL | proposed; amended by 0137 |
+| [0137](0137-shared-launch-stack-core-vault-and-venues.md) | Shared launch stack: core, vault, and venues | proposed |
 
 ## Consolidated utility packages
 

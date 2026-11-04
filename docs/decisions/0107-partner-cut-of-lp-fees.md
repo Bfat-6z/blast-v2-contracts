@@ -1,6 +1,7 @@
 # 0107: Partners earn a cut of Blast's LP fees after migration
 
 - Status: proposed
+- Superseded by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-10-05
 - Amends: [0098](0098-launch-creation-fee-and-partners.md), which left a
   launch's recurring LP fees outside its partner's cut;

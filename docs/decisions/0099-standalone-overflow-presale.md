@@ -1,6 +1,7 @@
 # 0099: Standalone overflow presale
 
 - Status: accepted
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-09-29
 - Amended: 2026-10-20 (owner request): presale finalization requires confirmed
   unregulated sale coins on chain; regulated and unknown legacy currencies are

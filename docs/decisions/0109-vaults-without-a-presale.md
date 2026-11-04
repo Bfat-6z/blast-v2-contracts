@@ -1,6 +1,7 @@
 # 0109: Vaults without a presale
 
 - Status: proposed
+- Superseded by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-10-06
 - Amends: [0101](0101-presale-protocol-fees.md), whose vaults existed only after a
   presale migration

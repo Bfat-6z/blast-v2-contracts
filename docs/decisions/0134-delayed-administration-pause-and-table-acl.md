@@ -1,6 +1,7 @@
 # 0134: Delayed administration, pause, and a Table-backed ACL
 
 - Status: accepted
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-10-31
 - Amended: 2026-11-02 — operation-owned notices, delayed creator splits, and bonding reward custody
 - Amended: 2026-11-03 — keyed delayed primitives in four modules that own their lifecycle events, a

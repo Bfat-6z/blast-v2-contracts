@@ -3,6 +3,7 @@
 - Status: accepted; amended by [0089](0089-migrators-own-post-migration-and-start-launches.md)
   (recurring LP-fee routing and policy move to the migrators, launches start in the adapter
   through a launch initializer, and the creator chooses the pool tier)
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-09-22
 - Revised: 2026-09-22, rewritten in place after the founder rulings of the same day, then
   amended the same day after the real Cetus and Bluefin bytecode was run locally against the

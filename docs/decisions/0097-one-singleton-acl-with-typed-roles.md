@@ -1,6 +1,7 @@
 # 0097: One singleton ACL with typed roles
 
 - Status: proposed
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-09-27
 - Amended in place: 2026-10-02 (admin package review) — Publisher read access,
   UID-bound generation advance, and the publication-record gate

@@ -1,6 +1,7 @@
 # 0117: Presale versioning and custody before activation
 
 - Status: accepted
+- Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-10-20
 - Amends: [0099](0099-standalone-overflow-presale.md),
   [0104](0104-external-presale-migrators-and-vendor-packages.md)
