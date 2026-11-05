@@ -558,7 +558,8 @@ pub enum UpgradeAction {
     MakeImmutable,
 }
 
-/// A `PackageAdmin` in BCS field order, with its `UpgradeCustody` flattened.
+/// A `PackageAdmin` in BCS field order: id, sealed Publisher, `Option<UpgradeCap>` (none once
+/// immutable) and the upgrade `DelayedAction`.
 pub type PackageAdminContents = (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, DelayedAction<UpgradeAction>);
 
 /// Mirrors `blast_admin::delayed::DelayedScheduled<K, T>`.
