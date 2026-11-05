@@ -45,7 +45,7 @@ for file in "$sources"/*.move; do
 done
 
 # 2. Publication, version, pause, and upgrades are blast_admin's generic objects; only the
-#    presale's unpause clears bits, after every presale notice is guarded.
+#    presale's unpause clears bits, after every presale delay is guarded.
 python3 "$package_dir/scripts/check_version_boundaries.py"
 
 # 2b. Errors have one numeric registry; event payloads are raw structs emitted only by events.move,
@@ -143,7 +143,7 @@ if rg -n 'destination' "$sources/fee_policy.move" | rg -v '^\S*:[0-9]+:\s*///'; 
   fail "Blast's fees are paid to blast_core's treasury; the fee policy keeps no destination."
 fi
 if rg -n '\b(Pending|new_pending|take_ready|witness_delay_ms|pending_witness\w*|DelayOnly)\b|self\.(delay_ms|pending)\b' "$sources"/{fee_policy,creation_policy}.move; then
-  fail "Delayed operations keep no notice or proposal outside blast_admin's primitive."
+  fail "Delayed operations keep no delay or proposal outside blast_admin's primitive."
 fi
 if rg -n '^public struct \w*(Scheduled|Cancelled|Changed|DelayChanged|WitnessSet)\b' \
   "$sources"/{fee_policy,creation_policy}.move; then

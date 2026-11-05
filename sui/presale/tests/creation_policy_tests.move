@@ -398,9 +398,9 @@ fun an_unlisted_partner_is_not_accepted() {
     abort_code = blast_partners::errors::EPartnerNotAccepted,
     location = blast_partners::partner_list,
 )]
-/// A removed partner stays accepted until one millisecond before Blast's partner notice ends, and
+/// A removed partner stays accepted until one millisecond before Blast's partner delay ends, and
 /// is refused from then on.
-fun a_removed_partner_is_accepted_until_its_notice_ends() {
+fun a_removed_partner_is_accepted_until_its_delay_ends() {
     let mut ctx = tx_context::dummy();
     let (policy, partner_id) = policy_with_removed_partner(&mut ctx);
     let acceptance_ends_at_ms = REMOVED_AT_MS + partners::delay_ms();
@@ -438,7 +438,7 @@ fun re_adding_a_partner_cancels_its_removal() {
 }
 
 #[test]
-/// Adding a partner whose notice has ended accepts it again.
+/// Adding a partner whose delay has ended accepts it again.
 fun re_adding_a_removed_partner_accepts_it_again() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
@@ -481,7 +481,7 @@ fun an_accepted_partner_cannot_be_added_again() {
     abort_code = blast_partners::errors::EUnchanged,
     location = blast_partners::partner_list,
 )]
-/// A pending removal cannot be restarted to push its notice back.
+/// A pending removal cannot be restarted to push its delay back.
 fun a_removed_partner_cannot_be_removed_again() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);

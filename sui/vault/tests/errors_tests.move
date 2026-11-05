@@ -12,7 +12,7 @@ fun error_registry_is_stable() {
     let codes = vector[
         errors::invalid_witness!(),
         errors::unadmitted_venue!(),
-        errors::unguarded_notice!(),
+        errors::unguarded_delay!(),
         errors::invalid_protocol_bps!(),
         errors::zero_liquidity!(),
         errors::wrong_venue!(),

@@ -18,14 +18,14 @@
 /// are `copy`, so a venue that took them as an argument would let anyone who obtained a sale's
 /// terms create a second vault claiming that sale.
 ///
-/// An `AdapterAdmin` schedules an admission, anyone applies it once its notice has passed, a
+/// An `AdapterAdmin` schedules an admission, anyone applies it once its delay has passed, a
 /// `CancelAdmin` cancels it, and an `AdapterAdmin` removes a witness at once. Removing a venue
 /// stops it creating vaults; removing an issuer stops every vault for its sales, so a migration
 /// sealed by it can no longer complete. Existing vaults keep working either way.
 ///
-/// The admission notice starts at zero and admissions ignore the pause, so Blast lists the
-/// launchpad, presale, and venue witnesses and raises the notice while publication keeps the
-/// package paused; `unpause` refuses until that notice is guarded. The product and venue packages
+/// The admission delay starts at zero and admissions ignore the pause, so Blast lists the
+/// launchpad, presale, and venue witnesses and raises the delay while publication keeps the
+/// package paused; `unpause` refuses until that delay is guarded. The product and venue packages
 /// must therefore be published before the vault is unpaused.
 module blast_vault::blast_vault_package;
 
@@ -57,7 +57,7 @@ fun init(otw: BLAST_VAULT_PACKAGE, ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Schedules `Witness`'s admission after the applied notice. Framework and primitive types are
+/// Schedules `Witness`'s admission after the applied delay. Framework and primitive types are
 /// rejected because anyone can construct them.
 public fun schedule_witness<Witness: drop>(
     self: &mut VaultRegistry,
@@ -108,7 +108,7 @@ public fun remove_witness<Witness: drop>(
     self.witnesses.remove(type_name::with_original_ids<Witness>());
 }
 
-/// Schedules a new admission notice after the applied one.
+/// Schedules a new admission delay after the applied one.
 public fun schedule_witness_delay(
     self: &mut VaultRegistry,
     _: &AdminWitness<AdapterAdmin>,
@@ -121,7 +121,7 @@ public fun schedule_witness_delay(
     self.witnesses.schedule_delay(delay_ms, clock);
 }
 
-/// Applies a ready admission-notice change; anyone may call it.
+/// Applies a ready admission-delay change; anyone may call it.
 public fun apply_witness_delay(
     self: &mut VaultRegistry,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
@@ -132,7 +132,7 @@ public fun apply_witness_delay(
     self.witnesses.apply_delay(clock);
 }
 
-/// Cancels the pending admission-notice change, even a ready one.
+/// Cancels the pending admission-delay change, even a ready one.
 public fun cancel_witness_delay(
     self: &mut VaultRegistry,
     _: &AdminWitness<CancelAdmin>,
@@ -143,8 +143,8 @@ public fun cancel_witness_delay(
     self.witnesses.cancel_delay();
 }
 
-/// Clears pause bits once the witness admission notice is guarded; the generic administration
-/// then checks the upgrade notice and the pinned witness.
+/// Clears pause bits once the witness admission delay is guarded; the generic administration
+/// then checks the upgrade delay and the pinned witness.
 public fun unpause(
     self: &VaultRegistry,
     unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_VAULT_PACKAGE>>,
@@ -152,7 +152,7 @@ public fun unpause(
     package_version: &mut PackageVersion<BLAST_VAULT_PACKAGE>,
     bits: u8,
 ) {
-    assert!(self.witnesses.is_guarded(), blast_vault::errors::unguarded_notice!());
+    assert!(self.witnesses.is_guarded(), blast_vault::errors::unguarded_delay!());
 
     package_admin.clear_pause_bits(unpause_admin, PackageWitness(), package_version, bits);
 }
@@ -208,7 +208,7 @@ fun new_registry(ctx: &mut TxContext): VaultRegistry {
 // === Test-Only Functions ===
 
 #[test_only]
-/// An unshared registry with `Venue` and `Issuer` already admitted at the launch notice of zero.
+/// An unshared registry with `Venue` and `Issuer` already admitted at the launch delay of zero.
 public fun registry_for_testing<Venue, Issuer>(ctx: &mut TxContext): VaultRegistry {
     let mut registry = new_registry(ctx);
     let clock = sui::clock::create_for_testing(ctx);
@@ -224,7 +224,7 @@ public fun registry_for_testing<Venue, Issuer>(ctx: &mut TxContext): VaultRegist
 }
 
 #[test_only]
-/// An unshared registry as publication creates it: nothing admitted, at zero notice.
+/// An unshared registry as publication creates it: nothing admitted, at zero delay.
 public fun empty_registry_for_testing(ctx: &mut TxContext): VaultRegistry {
     new_registry(ctx)
 }

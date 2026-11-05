@@ -181,8 +181,8 @@ or `Funded`. The vault never closes and its position is never removed.
    fee_policy, bits)`. Unpause is immediate once every notice is guarded: the fee rates and
    the venue set each need a nonzero applied notice, no pending proposal that would set it to
    zero, and no pending venue admission; otherwise it aborts with
-   `blast_presale::errors::EUnguardedNotice` (0). The generic administration then requires the
-   upgrade notice to be guarded too (`blast_admin::errors::EUnguardedUpgradeNotice`).
+   `blast_presale::errors::EUnguardedDelay` (0). The generic administration then requires the
+   upgrade notice to be guarded too (`blast_admin::errors::EUnguardedUpgradeDelay`).
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
 policy or recreate Publication. An outstanding zero-delay proposal remains ready
@@ -935,7 +935,7 @@ maps each code to its name. Common ones by flow:
   then `blast_presale::errors::EPresaleStarted`, `blast_presale::errors::EProtocolFeesIncreased` (a shared sale's override raises a rate),
   `blast_presale::errors::EAboveFeePolicy`, `blast_presale::errors::EProtocolFeesUnchanged`, `blast_presale::errors::EInvalidFees`,
   `blast_presale::errors::EAllowanceUnchanged` (Quote already in that state), `blast_presale::errors::EInvalidVenue`,
-  `blast_presale::errors::EUnguardedNotice`, `blast_partners::errors::EUnchanged` (partner already
+  `blast_presale::errors::EUnguardedDelay`, `blast_partners::errors::EUnchanged` (partner already
   accepted, or its removal already pending); pause, unpause and upgrade aborts are the generic
   administration's (admin guide).
 - Delayed administration (policy fees, venue admission, upgrades): Blast admin's

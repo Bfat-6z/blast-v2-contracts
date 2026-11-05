@@ -8,10 +8,10 @@
 /// A product embeds a `PartnerList` in the object holding its policy and alone decides who may
 /// change it: the list has `store` and no authority of its own, so only the embedding module can
 /// reach it mutably. Adding a partner accepts it at once. Removing one keeps it accepted for the
-/// fixed notice Blast gives for every change to a partner, `blast_partners::delay_ms()`, so
+/// fixed delay Blast gives for every change to a partner, `blast_partners::delay_ms()`, so
 /// anything built to name it keeps working that long. Sales and trades that already name a
 /// removed partner keep paying it; the list only gates naming it anew. Destroying the list ends
-/// every acceptance at once, without the notice, so a product destroys it only with the object
+/// every acceptance at once, without the delay, so a product destroys it only with the object
 /// that embeds it.
 module blast_partners::partner_list;
 
@@ -52,7 +52,7 @@ public fun add(self: &mut PartnerList, partner: &Partner) {
     event::emit(PartnerAdded { owner: self.owner, partner_id });
 }
 
-/// Stops accepting `partner_id` once the fixed notice, `blast_partners::delay_ms()`, has passed
+/// Stops accepting `partner_id` once the fixed delay, `blast_partners::delay_ms()`, has passed
 /// from now. Aborts unless the partner is accepted now with no removal pending.
 public fun remove(self: &mut PartnerList, partner_id: ID, clock: &Clock) {
     let now_at_ms = clock.timestamp_ms();
@@ -66,7 +66,7 @@ public fun remove(self: &mut PartnerList, partner_id: ID, clock: &Clock) {
     event::emit(PartnerRemoved { owner: self.owner, partner_id, acceptance_ends_at_ms });
 }
 
-/// Aborts unless the list accepts `partner_id` now: it was added, and any removal's notice has
+/// Aborts unless the list accepts `partner_id` now: it was added, and any removal's delay has
 /// not yet passed.
 public fun assert_accepted(self: &PartnerList, partner_id: ID, clock: &Clock) {
     self.assert_accepted_at(partner_id, clock.timestamp_ms());

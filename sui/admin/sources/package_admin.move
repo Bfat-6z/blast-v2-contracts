@@ -18,7 +18,7 @@ module blast_admin::package_admin;
 
 // === Constants ===
 
-/// The notice every upgrade or immutability action waits from publication until changed.
+/// The delay every upgrade or immutability action waits from publication until changed.
 const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 /// The byte length of a package digest, the only length `schedule_upgrade` accepts.
@@ -35,7 +35,7 @@ public enum UpgradeAction has copy, drop, store {
     MakeImmutable,
 }
 
-/// Keys the delayed lifecycle of one package's upgrade actions and their notice.
+/// Keys the delayed lifecycle of one package's upgrade actions and their delay.
 public struct UpgradeKey<phantom OTW: drop>() has copy, drop, store;
 
 /// One package's shared administration, sealing its framework Publisher and UpgradeCap. It has no destructor:
@@ -48,7 +48,7 @@ public struct PackageAdmin<phantom OTW: drop> has key {
     upgrade: DelayedAction<UpgradeKey<OTW>, UpgradeAction>,
 }
 
-/// Schedules and executes the package's upgrades and immutability, and changes their notice.
+/// Schedules and executes the package's upgrades and immutability, and changes their delay.
 public struct UpgradeAdmin<phantom OTW>()
 
 /// May set the package's pause bits immediately, never clear them.
@@ -57,7 +57,7 @@ public struct PauseAdmin<phantom OTW>()
 /// May clear the package's pause bits, only through the package's own unpause.
 public struct UnpauseAdmin<phantom OTW>()
 
-/// May cancel the package's scheduled upgrade action or notice change.
+/// May cancel the package's scheduled upgrade action or delay change.
 public struct CancelAdmin<phantom OTW>()
 
 // === Public Functions ===
@@ -84,8 +84,8 @@ public fun wrap<OTW: drop>(
     transfer::share_object(package_admin);
 }
 
-/// Schedules one exact code digest under the applied notice, replacing any previous action.
-/// Changing the notice requires a separate notice-only proposal. Aborts once the package is
+/// Schedules one exact code digest under the applied delay, replacing any previous action.
+/// Changing the delay requires a separate delay-only proposal. Aborts once the package is
 /// immutable.
 public fun schedule_upgrade<OTW: drop>(
     self: &mut PackageAdmin<OTW>,
@@ -102,7 +102,7 @@ public fun schedule_upgrade<OTW: drop>(
     self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock);
 }
 
-/// Schedules the irreversible destruction of upgrade authority under the applied notice.
+/// Schedules the irreversible destruction of upgrade authority under the applied delay.
 /// Aborts once the package is immutable.
 public fun schedule_make_immutable<OTW: drop>(
     self: &mut PackageAdmin<OTW>,
@@ -114,7 +114,7 @@ public fun schedule_make_immutable<OTW: drop>(
     self.upgrade.schedule(UpgradeAction::MakeImmutable, clock);
 }
 
-/// Cancels the scheduled action or notice change, even after its execution threshold.
+/// Cancels the scheduled action or delay change, even after its execution threshold.
 public fun cancel_upgrade_action<OTW: drop>(
     self: &mut PackageAdmin<OTW>,
     _: &AdminWitness<CancelAdmin<OTW>>,
@@ -223,7 +223,7 @@ public fun make_immutable<OTW: drop, PackageWitness: drop>(
     );
 }
 
-/// Proposes only a new upgrade notice, ready after the applied one; replaces any pending
+/// Proposes only a new upgrade delay, ready after the applied one; replaces any pending
 /// upgrade or immutability action.
 public fun schedule_upgrade_delay<OTW: drop>(
     self: &mut PackageAdmin<OTW>,
@@ -234,7 +234,7 @@ public fun schedule_upgrade_delay<OTW: drop>(
     self.upgrade.schedule_delay(delay_ms, clock);
 }
 
-/// Applies a ready notice-only proposal; anyone may call it, and it cannot consume an action.
+/// Applies a ready delay-only proposal; anyone may call it, and it cannot consume an action.
 public fun apply_upgrade_delay<OTW: drop>(
     self: &mut PackageAdmin<OTW>,
     clock: &Clock,
@@ -252,8 +252,8 @@ public fun pause<OTW: drop>(
 }
 
 /// Clears the requested pause bits for the package's own unpause, which first checks its own
-/// configuration notices and then passes a value of its package witness, the type pinned at
-/// publication. Aborts while any upgrade notice still to come could be zero. Only the package's
+/// configuration delays and then passes a value of its package witness, the type pinned at
+/// publication. Aborts while any upgrade delay still to come could be zero. Only the package's
 /// own code constructs that type, so a role alone cannot skip its checks.
 public fun clear_pause_bits<OTW: drop, PackageWitness: drop>(
     self: &PackageAdmin<OTW>,
@@ -263,7 +263,7 @@ public fun clear_pause_bits<OTW: drop, PackageWitness: drop>(
     bits: u8,
 ) {
     package_version.assert_unpause_witness<_, PackageWitness>();
-    assert!(self.upgrade.is_guarded(), blast_admin::errors::unguarded_upgrade_notice!());
+    assert!(self.upgrade.is_guarded(), blast_admin::errors::unguarded_upgrade_delay!());
 
     package_version.clear_pause_bits(bits);
 }
@@ -299,20 +299,20 @@ public fun publisher_mut<OTW: drop, PackageWitness: drop>(
 
 // Readers
 
-/// The applied upgrade notice, in milliseconds.
+/// The applied upgrade delay, in milliseconds.
 public fun upgrade_delay_ms<OTW: drop>(self: &PackageAdmin<OTW>): u64 {
     self.upgrade.delay_ms()
 }
 
-/// The pending upgrade action or notice change, if any.
+/// The pending upgrade action or delay change, if any.
 public fun pending_upgrade<OTW: drop>(
     self: &PackageAdmin<OTW>,
 ): Option<Proposal<Change<UpgradeAction>>> {
     self.upgrade.pending()
 }
 
-/// True when every upgrade action still to come waits a nonzero notice.
-public fun is_upgrade_notice_guarded<OTW: drop>(
+/// True when every upgrade action still to come waits a nonzero delay.
+public fun is_upgrade_delay_guarded<OTW: drop>(
     self: &PackageAdmin<OTW>,
 ): bool {
     self.upgrade.is_guarded()
@@ -356,14 +356,14 @@ public fun upgrade_digest(self: &UpgradeAction): Option<vector<u8>> {
     }
 }
 
-/// The notice every package's upgrade actions wait from wrap until changed, in milliseconds.
+/// The delay every package's upgrade actions wait from wrap until changed, in milliseconds.
 public fun initial_upgrade_delay_ms(): u64 {
     INITIAL_UPGRADE_DELAY_MS
 }
 
 // === Private Functions ===
 
-/// Seals an already checked cap beside its Publisher, under the initial notice. The Publisher
+/// Seals an already checked cap beside its Publisher, under the initial delay. The Publisher
 /// needs no check: only the package's one-time witness could have claimed it.
 fun new<OTW: drop>(
     publisher: Publisher,

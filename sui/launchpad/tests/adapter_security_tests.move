@@ -100,7 +100,7 @@ fun exercise(case: Case) {
         return
     };
     if (case == Case::Success) {
-        // Cancelling A must not cancel B. Re-admission after removal gets a new full notice.
+        // Cancelling A must not cancel B. Re-admission after removal gets a new full delay.
         config.apply_venue<VenueB>(&version, &clock);
         config.schedule_venue<VenueA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 2 * DELAY);

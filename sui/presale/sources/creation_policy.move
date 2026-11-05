@@ -5,7 +5,7 @@
 #[allow(lint(abort_without_constant))]
 /// Blast's allowlists for new presales: the Quote coins a sale may raise, the venues whose tickets
 /// may start a sale, and the Blast partners a sale may name; and the presale's `unpause`, which
-/// reads these and the fee policy's notices.
+/// reads these and the fee policy's delays.
 ///
 /// A presale is checked once, when it is created. Later changes apply only to later sales, so a
 /// delisting never strands a live sale's commitments, blocks its migration, or stops paying its
@@ -22,7 +22,7 @@ public struct CreationPolicy has key {
     partners: PartnerList,
 }
 
-/// Keys the delayed lifecycle of venue admissions and their notice.
+/// Keys the delayed lifecycle of venue admissions and their delay.
 public struct VenueKey() has copy, drop, store;
 
 // === Private Initialization ===
@@ -53,9 +53,9 @@ public fun set_quote_allowed<Quote>(
     events::quote_set<Quote>(allowed);
 }
 
-/// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
+/// Admits a venue's witness type after the applied admission delay. An admitted venue's tickets
 /// start presales afterward, and only that venue redeems their migrations; existing sales keep
-/// their venue. Rescheduling a pending admission restarts its notice.
+/// their venue. Rescheduling a pending admission restarts its delay.
 ///
 /// `presale::new` and `presale::migrate` are public, so whoever can construct an admitted witness
 /// can open sales and redeem their liquidity. Admit only a struct whose defining module is the
@@ -123,7 +123,7 @@ public fun add_partner(
     self.partners.add(partner);
 }
 
-/// Stops new presales naming `partner` after the notice Blast gives for every change to a
+/// Stops new presales naming `partner` after the delay Blast gives for every change to a
 /// partner, `blast_partners::delay_ms()`. Sales that already name it keep paying it.
 public fun remove_partner(
     self: &mut CreationPolicy,
@@ -137,7 +137,7 @@ public fun remove_partner(
     self.partners.remove(object::id(partner), clock);
 }
 
-/// Proposes only the admission notice. Existing admission deadlines remain fixed.
+/// Proposes only the admission delay. Existing admission deadlines remain fixed.
 public fun schedule_venue_delay(
     self: &mut CreationPolicy,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
@@ -150,7 +150,7 @@ public fun schedule_venue_delay(
     self.venues.schedule_delay(delay_ms, clock);
 }
 
-/// Permissionlessly applies a ready admission-notice proposal.
+/// Permissionlessly applies a ready admission-delay proposal.
 public fun apply_venue_delay(
     self: &mut CreationPolicy,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
@@ -161,7 +161,7 @@ public fun apply_venue_delay(
     self.venues.apply_delay(clock);
 }
 
-/// Cancels only the admission-notice proposal.
+/// Cancels only the admission-delay proposal.
 public fun cancel_venue_delay(
     self: &mut CreationPolicy,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
@@ -172,10 +172,10 @@ public fun cancel_venue_delay(
     self.venues.cancel_delay();
 }
 
-/// Clears the requested pause bits once every presale notice is guarded: nonzero, with no
-/// pending change that would set one to zero and no pending admission. A notice left at its zero
+/// Clears the requested pause bits once every presale delay is guarded: nonzero, with no
+/// pending change that would set one to zero and no pending admission. A delay left at its zero
 /// publication value therefore blocks release instead of going live; the generic administration
-/// then checks the upgrade notice and the pinned witness. Settlement, cancellation, refunds and
+/// then checks the upgrade delay and the pinned witness. Settlement, cancellation, refunds and
 /// claims never require unpausing.
 public fun unpause(
     self: &CreationPolicy,
@@ -189,7 +189,7 @@ public fun unpause(
 
     assert!(
         self.is_guarded() && fee_policy.is_guarded(),
-        blast_presale::errors::unguarded_notice!(),
+        blast_presale::errors::unguarded_delay!(),
     );
 
     package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);
@@ -197,7 +197,7 @@ public fun unpause(
 
 // === Package Functions ===
 
-/// True when the venue allowlist's notice is guarded (see `unpause`).
+/// True when the venue allowlist's delay is guarded (see `unpause`).
 public(package) fun is_guarded(self: &CreationPolicy): bool {
     self.venues.is_guarded()
 }
@@ -269,13 +269,13 @@ public fun new_for_testing(ctx: &mut TxContext): CreationPolicy {
 }
 
 #[test_only]
-/// The allowlist exactly as publication creates it, at zero notice.
+/// The allowlist exactly as publication creates it, at zero delay.
 public fun new_publication_for_testing(ctx: &mut TxContext): CreationPolicy {
     new(0, ctx)
 }
 
-/// A policy that allows exactly `Quote` and `Venue`, admitted at zero notice before the 48-hour
-/// notice applies.
+/// A policy that allows exactly `Quote` and `Venue`, admitted at zero delay before the 48-hour
+/// delay applies.
 #[test_only]
 public fun allowing_for_testing<Quote, Venue>(ctx: &mut TxContext): CreationPolicy {
     let clock = sui::clock::create_for_testing(ctx);

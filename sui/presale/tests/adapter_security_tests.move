@@ -135,7 +135,7 @@ fun exercise(case: Case) {
         return
     };
     if (case == Case::Success) {
-        // Cancelling A must not cancel B. Re-admission after removal gets a new full notice.
+        // Cancelling A must not cancel B. Re-admission after removal gets a new full delay.
         config.apply_venue<AdapterB>(&version, &clock);
         config.schedule_venue<AdapterA>(&version, &admin, &clock);
         clock.set_for_testing(1234 + 2 * delay_ms());
@@ -155,7 +155,7 @@ fun exercise(case: Case) {
     destroy(clock);
 }
 
-/// Blast's 48-hour administrative notice.
+/// Blast's 48-hour administrative delay.
 fun delay_ms(): u64 {
     blast_admin::package_admin::initial_upgrade_delay_ms_for_testing()
 }

@@ -114,7 +114,7 @@ fun the_pool_reservation_records_the_pair_the_capability_and_the_tick_spacing() 
 }
 
 #[test]
-/// The vault registry admits the Cetus venue's witness at its publication notice of zero.
+/// The vault registry admits the Cetus venue's witness at its publication delay of zero.
 fun the_vault_registry_admits_the_cetus_venue() {
     let mut ctx = tx_context::dummy();
     let mut registry = blast_vault_package::empty_registry_for_testing(&mut ctx);

@@ -16,8 +16,8 @@ const EInvalidWitness: u64 = 0;
 const EUnadmittedVenue: u64 = 1;
 
 #[test_only]
-/// Unpause needs a nonzero witness admission notice and no pending admission.
-const EUnguardedNotice: u64 = 2;
+/// Unpause needs a nonzero witness admission delay and no pending admission.
+const EUnguardedDelay: u64 = 2;
 
 #[test_only]
 /// Blast's share must be at most 3,000 basis points per asset.
@@ -151,7 +151,7 @@ macro public(package) fun invalid_witness(): u64 { 0 }
 
 macro public(package) fun unadmitted_venue(): u64 { 1 }
 
-macro public(package) fun unguarded_notice(): u64 { 2 }
+macro public(package) fun unguarded_delay(): u64 { 2 }
 
 macro public(package) fun invalid_protocol_bps(): u64 { 3 }
 

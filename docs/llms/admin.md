@@ -254,7 +254,7 @@ one type; consumers store four:
 | --- | --- | --- |
 | `delayed::Delayed<K, T>` | an applied `value`, its applied `delay_ms`, at most one `delayed::Proposal<T>` | fees, shares, treasuries, destinations, fee splits |
 | `delayed_action::DelayedAction<K, A>` | an applied `delay_ms`, at most one `delayed::Proposal<delayed_action::Change<A>>` | one-shot actions: upgrades, immutability, creator-cap reassignment, holder-reward rounds, the root transfer |
-| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines (each a `delayed::Notice`), at most one proposed notice | witness and venue allowlists, the launchpad's account-claim signer keys |
+| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines (each a `delayed::PendingDelay`), at most one proposed notice | witness and venue allowlists, the launchpad's account-claim signer keys |
 | `delayed_map::DelayedMap<K, E, V>` | applied values by entry `E` in a `Table`, one applied `delay_ms`, at most one pending change per entry with a fixed deadline, at most one proposed notice | keyed values such as per-coin overrides |
 
 Every value carries an `owner` (the ID of the object that stores it) and a `key`
@@ -332,18 +332,18 @@ Every reader is read-only. The same name means the same concept on every type.
 | owner object ID, key | `delayed::owner`, `delayed::key` | `delayed_action::owner`, `delayed_action::key` | `delayed_set::owner`, `delayed_set::key` | `delayed_map::owner`, `delayed_map::key` |
 | applied state | `delayed::value` | none | `delayed_set::contains`, `delayed_set::members`, `delayed_set::member_count` | `delayed_map::value`, `delayed_map::contains`, `delayed_map::entry_count` |
 | applied notice | `delayed::delay_ms` | `delayed_action::delay_ms` | `delayed_set::delay_ms` | `delayed_map::delay_ms` |
-| pending proposal | `delayed::pending` | `delayed_action::pending`, `delayed_action::pending_action` | `delayed_set::is_pending`, `delayed_set::admission_notice`, `delayed_set::admission_ready_at_ms`, `delayed_set::pending_count` | `delayed_map::is_pending`, `delayed_map::pending`, `delayed_map::entry_ready_at_ms`, `delayed_map::pending_count` |
+| pending proposal | `delayed::pending` | `delayed_action::pending`, `delayed_action::pending_action` | `delayed_set::is_pending`, `delayed_set::admission_delay`, `delayed_set::admission_ready_at_ms`, `delayed_set::pending_count` | `delayed_map::is_pending`, `delayed_map::pending`, `delayed_map::entry_ready_at_ms`, `delayed_map::pending_count` |
 | ready now | `delayed::is_ready` | `delayed_action::is_ready` | `delayed_set::is_ready` (per member) | `delayed_map::is_ready` (per entry) |
 | pending notice change | in `delayed::pending` | `delayed_action::pending_delay`, `delayed_action::is_delay_ready` | `delayed_set::pending_delay`, `delayed_set::is_delay_ready` | `delayed_map::pending_delay`, `delayed_map::is_delay_ready` |
 | guarded | `delayed::is_guarded` | `delayed_action::is_guarded` | `delayed_set::is_guarded` | `delayed_map::is_guarded` |
 
 Value types: `delayed::Proposal` exposes `delayed::proposal_value`,
 `delayed::proposal_delay_ms` and `delayed::ready_at_ms` (also as `value`,
-`delay_ms` and `ready_at_ms` on the value); `delayed::Notice` exposes
-`delayed::notice_delay_ms` and `delayed::notice_ready_at_ms` (also as `delay_ms`
+`delay_ms` and `ready_at_ms` on the value); `delayed::PendingDelay` exposes
+`delayed::pending_delay_ms` and `delayed::pending_delay_ready_at_ms` (also as `delay_ms`
 and `ready_at_ms`); `delayed_map::EntryProposal` exposes
 `delayed_map::entry_proposal_value` (none clears) and
-`delayed_map::entry_proposal_notice`; `delayed_action::action`,
+`delayed_map::entry_proposal_delay`; `delayed_action::action`,
 `delayed_set::member`, `delayed_map::changed_entry` and
 `delayed_map::changed_value` read a change, each none for a notice change.
 `delayed_map::changed_value` returns `Option<Option<V>>`: `some(some(v))` sets
@@ -389,7 +389,7 @@ can also read object content over RPC, or replay events.
   `blast_admin::package_admin::pending_upgrade` (read its action with
   `delayed_action::action` and the digest with
   `blast_admin::package_admin::upgrade_digest`, none for immutability),
-  `blast_admin::package_admin::is_upgrade_notice_guarded`,
+  `blast_admin::package_admin::is_upgrade_delay_guarded`,
   `blast_admin::package_admin::has_upgrade_cap`,
   `blast_admin::package_admin::upgrade_cap_id`,
   `blast_admin::package_admin::current_package_id`,
@@ -486,7 +486,7 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 20 | `EPauseUnchanged` | `package_version` | pausing only bits already set, or clearing only bits already clear |
 | 21 | `EPaused` | `package_version` | the operation's pause bit is set; wait for Blast to unpause it |
 | 22 | `EWrongUpgradeAction` | `blast_admin::package_admin` | the ready action is not the upgrade of this digest (authorize) or not immutability (make immutable) |
-| 23 | `EUnguardedUpgradeNotice` | `blast_admin::package_admin` | clearing pause bits while the upgrade notice is zero or a pending change would make it zero |
+| 23 | `EUnguardedUpgradeDelay` | `blast_admin::package_admin` | clearing pause bits while the upgrade notice is zero or a pending change would make it zero |
 | 24 | `EInvalidPackageWitness` | `package_version` | the package witness type given to `new_publication` is a primitive, the package's OTW, or from another package |
 | 25 | `EWrongUnpauseWitness` | `package_version` | `clear_pause_bits` received a value of a type other than the package witness pinned at publication |
 | 26 | `EWrongPackageWitness` | `package_version` | `blast_admin::package_admin::publisher`, `blast_admin::package_admin::publisher_mut` or `blast_admin::package_admin::make_immutable` received a value of a type other than the package witness pinned at publication |

@@ -32,9 +32,9 @@ def require(text, *parts):
         assert part in text, f'missing {part}'
 
 
-def governed(package, module, fields, version='package_version', shared_notice=(), current='();'):
-    """Fields in `shared_notice` wait a notice shared with other entries, so their schedules
-    take no delay of their own; the shared notice is governed as `<field>_delay`."""
+def governed(package, module, fields, version='package_version', shared_delay=(), current='();'):
+    """Fields in `shared_delay` wait a delay shared with other entries, so their schedules
+    take no delay of their own; the shared delay is governed as `<field>_delay`."""
     fs = functions(package, module)
     for field, role in fields.items():
         for phase in ('schedule', 'apply', 'cancel'):
@@ -49,7 +49,7 @@ def governed(package, module, fields, version='package_version', shared_notice=(
                 require(signature, f'&AdminWitness<{role if phase == "schedule" else "CancelAdmin"}>')
                 if phase == 'schedule':
                     require(signature, 'clock: &Clock')
-                    if field in shared_notice:
+                    if field in shared_delay:
                         assert 'delay_ms: u64' not in signature, (module, name)
                     else:
                         require(signature, 'delay_ms: u64')
@@ -76,7 +76,7 @@ assert otw_fs['package_witness'][1] == 'PackageWitness()', otw_fs['package_witne
 for path in (ROOT / 'sui/launchpad/sources').rglob('*.move'):
     for name, (signature, _) in functions('launchpad', str(path.relative_to(ROOT / 'sui/launchpad/sources').with_suffix(''))).items():
         assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_fun', 'package_witness'), (path, name)
-# Only the launchpad's unpause clears bits, after checking every launchpad notice.
+# Only the launchpad's unpause clears bits, after checking every launchpad delay.
 callers = [(path, name) for path in (ROOT / 'sui/launchpad/sources').rglob('*.move')
            for name, (_, body) in functions('launchpad', str(path.relative_to(ROOT / 'sui/launchpad/sources').with_suffix(''))).items()
            if 'clear_pause_bits(' in body]
@@ -106,7 +106,7 @@ assert presale_otw_fs['package_witness'][1] == 'PackageWitness()', presale_otw_f
 for path in (ROOT / 'sui/presale/sources').rglob('*.move'):
     for name, (signature, _) in functions('presale', path.stem).items():
         assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_presale_package', 'package_witness'), (path, name)
-# Only the presale's unpause clears bits, after checking every presale notice.
+# Only the presale's unpause clears bits, after checking every presale delay.
 presale_callers = [(path.stem, name) for path in (ROOT / 'sui/presale/sources').rglob('*.move')
                    for name, (_, body) in functions('presale', path.stem).items() if 'clear_pause_bits(' in body]
 assert presale_callers == [('creation_policy', 'unpause')], presale_callers
@@ -201,7 +201,7 @@ for package, module, current, actions in [
         if name not in actions: assert 'assert_not_paused' not in body, (package, name)
 
 # The generic package administration every upgradeable package shares: role-gated, waits the
-# package's own upgrade notice, and keeps the native capabilities sealed.
+# package's own upgrade delay, and keeps the native capabilities sealed.
 generic = functions('admin', 'package_admin')
 generic_source = (ROOT / 'sui/admin/sources/package_admin.move').read_text()
 require(generic_source, 'upgrade: DelayedAction<UpgradeKey<OTW>, UpgradeAction>,',
@@ -316,7 +316,7 @@ for name in ('schedule_value', 'schedule_delay'):
 require(primitive['assert_ready'][0], 'self: &Delayed<K, T>', 'clock: &Clock')
 require(primitive['assert_ready'][1], 'self.pending.is_some()', 'errors::no_pending!()', 'assert_ready_at(')
 assert 'self.pending =' not in primitive['assert_ready'][1]
-# The vault's fee split waits its fixed notice under an owner proof the sale's product issues; each
+# The vault's fee split waits its fixed delay under an owner proof the sale's product issues; each
 # venue settles accrued fees under the current split before applying the next.
 fs = functions('vault', 'vault')
 require(module_path('vault', 'vault').read_text(), 'fee_split: Delayed<FeeSplitKey, FeeSplit>,')
@@ -339,15 +339,15 @@ for package, venue, settlement in (
         '.apply_fee_split(&Venue(), vault_version, clock)'), (package, venue)
 
 # Holder-reward rounds publish only from each vault's delayed action slot: RewardsAdmin schedules
-# checked terms and the notice, CancelAdmin cancels either kind, and anyone publishes a ready round
-# or applies a ready notice. The vault never lends the slot, and publication re-checks the terms.
+# checked terms and the delay, CancelAdmin cancels either kind, and anyone publishes a ready round
+# or applies a ready delay. The vault never lends the slot, and publication re-checks the terms.
 package, module, rewards, version = 'vault', 'vault', 'holder_rewards', 'package_version'
 error = lambda name: 'blast_vault::errors::' + re.sub(r'(?<!^)(?=[A-Z])', '_', name[1:]).lower() + '!()'
 current = 'package_version.assert_current(constants::version!());'
 if True:
     source = module_path(package, module).read_text()
     require(source, 'round_publication: DelayedAction<RoundPublicationKey, RoundTerms>,',
-            'public struct RoundPublicationKey() has copy, drop, store;', 'constants::round_notice_ms!(),')
+            'public struct RoundPublicationKey() has copy, drop, store;', 'constants::round_delay_ms!(),')
     slot = functions(package, module)
     require(slot['schedule_round_publication'][1], 'self.round_publication.schedule(terms, clock)')
     require(slot['take_round_publication'][1], 'self.round_publication.take_action(clock)')
@@ -395,7 +395,7 @@ if True:
     require(flows['cancel_round_delay'][1], 'vault.cancel_round_publication_delay()')
     assert not any('fund_round(' in body for name, (_, body) in flows.items() if name != 'publish_round')
 
-# Signer admission waits the set's notice and is capped; revocation stays immediate.
+# Signer admission waits the set's delay and is capped; revocation stays immediate.
 signer = functions('launchpad', 'runtime_config')
 require((ROOT / 'sui/launchpad/sources/runtime_config.move').read_text(),
         'creator_claim_signers: DelayedSet<ClaimSignerKey, vector<u8>>,')
@@ -443,10 +443,10 @@ for venue in ('bluefin', 'cetus'):
     for row in routes:
         require(row[8], 'migrators_version: &PackageVersion<BLAST_MIGRATORS>')
         assert row[9].startswith('migrators_version.assert_current(constants::version!());'), (venue, row[1])
-print('Per-operation notices, no bypass, delayed signer admission, and publication custody: OK')
+print('Per-operation delays, no bypass, delayed signer admission, and publication custody: OK')
 
-# Partner share and cap wait one fixed seven-day notice: PartnerAdmin proposes or cancels, anyone
-# applies, payments read the applied share with no Clock, and nothing can change the notice.
+# Partner share and cap wait one fixed seven-day delay: PartnerAdmin proposes or cancels, anyone
+# applies, payments read the applied share with no Clock, and nothing can change the delay.
 partners_source = module_path('partners', 'blast_partners').read_text()
 partners_production = partners_source.split('// === Test-Only Functions ===')[0]
 require(partners_source, 'share_bps: Delayed<ShareKey, u64>,', 'cap_id: Delayed<CapKey, ID>,',
@@ -476,4 +476,4 @@ for name in ('pay', 'set_recipient', 'register'):
 require(partner_fs['pay'][1], 'self.share_bps.value()')
 require(partner_fs['set_recipient'][1], 'self.cap_id.value()')
 assert not any(name.startswith('set_') and name != 'set_recipient' for name in partner_fs)
-print('Partner fixed notice, permissionless application, and Clock-free payment: OK')
+print('Partner fixed delay, permissionless application, and Clock-free payment: OK')

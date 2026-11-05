@@ -7,7 +7,7 @@ module blast_vault::vault_tests;
 // === Constants ===
 
 const ROUTE_RECIPIENT: address = @0xAD;
-const NOTICE_MS: u64 = 48 * 60 * 60 * 1_000;
+const DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Tests ===
 
@@ -451,7 +451,7 @@ fun another_sales_proof_cannot_claim() {
 }
 
 #[test]
-fun a_fee_split_change_waits_its_notice_and_applies_after_settling() {
+fun a_fee_split_change_waits_its_delay_and_applies_after_settling() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
@@ -467,7 +467,7 @@ fun a_fee_split_change_waits_its_notice_and_applies_after_settling() {
         rewards_split,
         f.clock(),
     );
-    f.clock_mut().increment_for_testing(NOTICE_MS);
+    f.clock_mut().increment_for_testing(DELAY_MS);
     vault.assert_fee_split_ready(f.clock());
     f.collect(&mut vault, 10, 10, scenario.ctx());
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
@@ -484,7 +484,7 @@ fun a_fee_split_change_waits_its_notice_and_applies_after_settling() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun a_fee_split_change_cannot_apply_before_its_notice() {
+fun a_fee_split_change_cannot_apply_before_its_delay() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
@@ -500,7 +500,7 @@ fun a_fee_split_change_cannot_apply_before_its_notice() {
         f.clock(),
     );
 
-    f.clock_mut().increment_for_testing(NOTICE_MS - 1);
+    f.clock_mut().increment_for_testing(DELAY_MS - 1);
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
 
     abort
@@ -525,7 +525,7 @@ fun the_owner_cancels_a_pending_fee_split() {
     );
     vault.cancel_fee_split(vault_fixture::owner_proof(), f.version());
 
-    f.clock_mut().increment_for_testing(NOTICE_MS);
+    f.clock_mut().increment_for_testing(DELAY_MS);
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
 
     abort
@@ -533,8 +533,8 @@ fun the_owner_cancels_a_pending_fee_split() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-/// The notice is fixed: a second fee-split change after an applied one still waits 48 hours.
-fun every_fee_split_change_waits_the_full_notice() {
+/// The delay is fixed: a second fee-split change after an applied one still waits 48 hours.
+fun every_fee_split_change_waits_the_full_delay() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
@@ -542,11 +542,11 @@ fun every_fee_split_change_waits_the_full_notice() {
     let mut vault = vault_fixture::take_vault(&scenario);
     let rewards_split = vault_fixture::single_route_split(fee_split::holder_rewards_destination());
     vault.schedule_fee_split(vault_fixture::owner_proof(), f.version(), rewards_split, f.clock());
-    f.clock_mut().increment_for_testing(NOTICE_MS);
+    f.clock_mut().increment_for_testing(DELAY_MS);
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
 
     vault.schedule_fee_split(vault_fixture::owner_proof(), f.version(), owner_split(), f.clock());
-    f.clock_mut().increment_for_testing(NOTICE_MS - 1);
+    f.clock_mut().increment_for_testing(DELAY_MS - 1);
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
 
     abort
@@ -554,19 +554,19 @@ fun every_fee_split_change_waits_the_full_notice() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-/// The notice is fixed: a second Blast-share change after an applied one still waits 48 hours.
-fun every_blast_share_change_waits_the_full_notice() {
+/// The delay is fixed: a second Blast-share change after an applied one still waits 48 hours.
+fun every_blast_share_change_waits_the_full_delay() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
     f.share_vault(&mut scenario, terms, 0, 0);
     let mut vault = vault_fixture::take_vault(&scenario);
     vault.schedule_protocol_bps(&fee_admin(), f.version(), bps::new(2_000), bps::new(2_000), f.clock());
-    f.clock_mut().increment_for_testing(NOTICE_MS);
+    f.clock_mut().increment_for_testing(DELAY_MS);
     vault.apply_protocol_bps(f.version(), f.clock());
 
     vault.schedule_protocol_bps(&fee_admin(), f.version(), bps::new(3_000), bps::new(3_000), f.clock());
-    f.clock_mut().increment_for_testing(NOTICE_MS - 1);
+    f.clock_mut().increment_for_testing(DELAY_MS - 1);
     vault.apply_protocol_bps(f.version(), f.clock());
 
     abort
@@ -575,7 +575,7 @@ fun every_blast_share_change_waits_the_full_notice() {
 // Blast's share
 
 #[test]
-fun blasts_share_changes_after_its_notice_and_governs_later_collections() {
+fun blasts_share_changes_after_its_delay_and_governs_later_collections() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, true, false);
@@ -589,7 +589,7 @@ fun blasts_share_changes_after_its_notice_and_governs_later_collections() {
         bps::new(1_000),
         f.clock(),
     );
-    f.clock_mut().increment_for_testing(NOTICE_MS);
+    f.clock_mut().increment_for_testing(DELAY_MS);
     vault.apply_protocol_bps(f.version(), f.clock());
     f.collect(&mut vault, 1_000, 1_000, scenario.ctx());
 
@@ -641,7 +641,7 @@ fun a_cancel_administrator_cancels_blasts_pending_share() {
     );
     vault.cancel_protocol_bps(&cancel_admin(), f.version());
 
-    f.clock_mut().increment_for_testing(NOTICE_MS);
+    f.clock_mut().increment_for_testing(DELAY_MS);
     vault.apply_protocol_bps(f.version(), f.clock());
 
     abort
@@ -1057,7 +1057,7 @@ fun the_admin_pause_stops_applying_blasts_share() {
         bps::new(2_000),
         f.clock(),
     );
-    f.clock_mut().increment_for_testing(NOTICE_MS);
+    f.clock_mut().increment_for_testing(DELAY_MS);
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
 
     vault.apply_protocol_bps(f.version(), f.clock());

@@ -158,7 +158,7 @@ fun stale_version_cannot_set_fees() {
 
 // === Test Helpers ===
 
-/// A fresh policy: zero rates under the 48-hour notice.
+/// A fresh policy: zero rates under the 48-hour delay.
 fun new_policy(): FeePolicy {
     let mut ctx = tx_context::dummy();
 

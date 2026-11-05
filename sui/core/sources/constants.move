@@ -46,8 +46,8 @@ macro public(package) fun max_sqrt_price_x64(): u128 {
     79_226_673_515_401_279_992_447_579_055
 }
 
-/// Notice every treasury change waits from publication: the genesis destination is compiled, so
-/// no setup needs a zero notice.
+/// PendingDelay every treasury change waits from publication: the genesis destination is compiled, so
+/// no setup needs a zero delay.
 macro public(package) fun initial_treasury_delay_ms(): u64 {
     48 * 60 * 60 * 1_000
 }

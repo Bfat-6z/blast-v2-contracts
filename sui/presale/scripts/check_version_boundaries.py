@@ -45,7 +45,7 @@ assert "package_version::new_publication<_, PackageWitness>(otw, constants::vali
 assert ".keep(ctx)" in init and "share_object" not in init
 assert set(name for name, _, _ in functions(otw)) == {"init", "package_witness"}
 assert "public(package) fun package_witness(): PackageWitness {" in otw
-# Only the presale's unpause clears bits, after checking every presale notice.
+# Only the presale's unpause clears bits, after checking every presale delay.
 callers = [(path.stem, name) for path in SOURCES.glob("*.move")
            for name, _, body in functions(path.read_text()) if "clear_pause_bits(" in body]
 assert callers == [("creation_policy", "unpause")], callers

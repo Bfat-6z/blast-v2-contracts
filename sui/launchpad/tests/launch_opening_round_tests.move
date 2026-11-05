@@ -1089,7 +1089,7 @@ fun pause_bits(self: &mut OpeningRoundFixture, bits: u8) {
     );
 }
 
-/// Clears `bits` through the generic administration without the release notice checks.
+/// Clears `bits` through the generic administration without the release delay checks.
 fun clear_bits(self: &mut OpeningRoundFixture, bits: u8) {
     let ctx = self.scenario.ctx();
     blast_fun::blast_fun::clear_pause_bits_for_testing(&mut self.package_version, bits, ctx);

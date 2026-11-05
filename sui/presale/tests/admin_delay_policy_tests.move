@@ -25,7 +25,7 @@ public struct AdminDelayFixture {
 // === Tests ===
 
 #[test]
-fun publication_setup_enables_different_notices_for_independent_operations() {
+fun publication_setup_enables_different_delays_for_independent_operations() {
     let mut fixture = start();
     fixture.run!(|f| {
         f.schedule_fee(123, 100);
@@ -49,7 +49,7 @@ fun publication_setup_enables_different_notices_for_independent_operations() {
     abort_code = blast_admin::errors::ENotReady,
     location = blast_admin::delayed,
 )]
-fun zero_next_delay_cannot_bypass_the_applied_notice() {
+fun zero_next_delay_cannot_bypass_the_applied_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
         f.schedule_fee(123, 100);
@@ -62,7 +62,7 @@ fun zero_next_delay_cannot_bypass_the_applied_notice() {
 }
 
 #[test]
-fun delay_only_change_keeps_the_value_and_cancel_keeps_the_notice() {
+fun delay_only_change_keeps_the_value_and_cancel_keeps_the_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
         f.schedule_fee(123, 100);
@@ -88,7 +88,7 @@ fun delay_only_change_keeps_the_value_and_cancel_keeps_the_notice() {
     abort_code = blast_admin::errors::ENotReady,
     location = blast_admin::delayed,
 )]
-fun replacing_a_ready_proposal_restarts_the_old_notice() {
+fun replacing_a_ready_proposal_restarts_the_old_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
         f.schedule_fee(123, 100);
@@ -121,7 +121,7 @@ fun stale_delay_change_rejects_before_other_validation() {
     abort_code = blast_admin::errors::ENotReady,
     location = blast_admin::delayed_set,
 )]
-fun a_fresh_adapter_type_cannot_bypass_the_admission_notice() {
+fun a_fresh_adapter_type_cannot_bypass_the_admission_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
         let witness = blast_acl::witness_for_testing<AdapterAdmin>();
@@ -159,7 +159,7 @@ fun old_admissions_preserve_a_new_policy_in_either_application_order() {
 }
 
 #[test]
-fun multiple_admissions_cannot_restore_a_superseded_notice() {
+fun multiple_admissions_cannot_restore_a_superseded_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
         let witness = blast_acl::witness_for_testing<AdapterAdmin>();
@@ -206,7 +206,7 @@ fun applying_an_old_admission_cannot_shorten_a_new_admissions_wait() {
 }
 
 #[test]
-fun cancelling_policy_does_not_cancel_admission_or_change_its_notice() {
+fun cancelling_policy_does_not_cancel_admission_or_change_its_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
         let witness = blast_acl::witness_for_testing<AdapterAdmin>();
@@ -277,7 +277,7 @@ fun cancel_fee(self: &mut AdminDelayFixture) {
 }
 fun fee(self: &AdminDelayFixture): u64 { self.runtime.fees().raise_bps().value() }
 
-/// Counts applied admission-notice changes, ignoring applied admissions.
+/// Counts applied admission-delay changes, ignoring applied admissions.
 fun migration_delay_changes(): u64 {
     sui::event::events_by_type<SetApplied<VenueKey, TypeName>>().count!(|applied| {
         let (_, _, change, _) = applied.set_applied_fields();

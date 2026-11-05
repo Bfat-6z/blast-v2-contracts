@@ -16,8 +16,8 @@ const NOW_AT_MS: u64 = 1_000_000;
 
 const EXPIRES_AT_MS: u64 = 2_000_000;
 
-/// The fixture's signer notice.
-const NOTICE_MS: u64 = 172_800_000;
+/// The fixture's signer delay.
+const DELAY_MS: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -237,7 +237,7 @@ fun account_claim_signed_by_the_second_admitted_key_issues_both_caps() {
 }
 
 #[test, expected_failure(abort_code = blast_fun::errors::EInvalidCreatorClaimSignature, location = blast_fun::creator_authority)]
-/// A pending key signs nothing until its notice has passed and it is applied.
+/// A pending key signs nothing until its delay has passed and it is applied.
 fun account_claim_rejects_an_attestation_from_a_pending_key() {
     let mut fixture = start();
 
@@ -377,14 +377,14 @@ fun claim_claim<Meme>(
     metadata_cap.destroy_metadata_cap();
 }
 
-/// Schedules `signer_public_key` and admits it once a synthetic clock has waited the notice,
+/// Schedules `signer_public_key` and admits it once a synthetic clock has waited the delay,
 /// leaving the fixture clock at `NOW_AT_MS` so attestations stay unexpired.
 fun claim_admit_creator_claim_signer(self: &mut ClaimFixture, signer_public_key: vector<u8>) {
     let admin_witness = blast_acl::witness_for_testing<ClaimSignerAdmin>();
     let mut admin_clock = clock::create_for_testing(self.scenario.ctx());
 
     self.config.schedule_creator_claim_signer(&self.package_version, &admin_witness, signer_public_key, &admin_clock);
-    admin_clock.set_for_testing(NOTICE_MS);
+    admin_clock.set_for_testing(DELAY_MS);
     self.config.apply_creator_claim_signer(&self.package_version, signer_public_key, &admin_clock);
     destroy(admin_clock);
 }

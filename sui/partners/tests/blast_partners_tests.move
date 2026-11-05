@@ -25,7 +25,7 @@ public struct Fixture {
 // === Tests ===
 
 #[test]
-/// The package is immutable, so this is the notice every partner is guaranteed.
+/// The package is immutable, so this is the delay every partner is guaranteed.
 fun later_share_and_cap_changes_wait_seven_days() {
     assert_eq!(partners::delay_ms(), 7 * 24 * 60 * 60 * 1_000);
 }
@@ -68,7 +68,7 @@ fun newly_registered_partner_receives_revenue_without_advancing_the_clock() {
 
 #[test]
 /// Registration records the recipient, and both initial terms are applied at once with
-/// the fixed notice and nothing pending; each delayed event is owned by the partner.
+/// the fixed delay and nothing pending; each delayed event is owned by the partner.
 fun registration_share_and_cap_are_live_immediately() {
     let mut fixture = start();
 
@@ -185,9 +185,9 @@ fun a_zero_recipient_precedes_a_share_above_the_maximum() {
 // --- Share ---
 
 #[test]
-/// A cut waits the full notice and then an explicit apply; until then the partner keeps
+/// A cut waits the full delay and then an explicit apply; until then the partner keeps
 /// earning its share. Proposal and application emit only the delayed events.
-fun a_scheduled_share_waits_for_explicit_application_after_the_notice() {
+fun a_scheduled_share_waits_for_explicit_application_after_the_delay() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
     fixture.set_time(PARTNER_CREATED_AT_MS + delay());
@@ -220,8 +220,8 @@ fun a_scheduled_share_waits_for_explicit_application_after_the_notice() {
 
 #[test]
 /// A replacement keeps the share in force, cancels the pending proposal and restarts the
-/// full notice; nothing Blast proposes applies sooner than the notice after its last proposal.
-fun a_new_schedule_replaces_a_pending_one_and_restarts_the_notice() {
+/// full delay; nothing Blast proposes applies sooner than the delay after its last proposal.
+fun a_new_schedule_replaces_a_pending_one_and_restarts_the_delay() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
     fixture.set_time(PARTNER_CREATED_AT_MS + delay());
@@ -295,8 +295,8 @@ fun cancelling_a_pending_cut_preserves_the_applied_share() {
 }
 
 #[test]
-/// Cancellation works after readiness, and a later proposal waits the full fixed notice again.
-fun ready_share_cancellation_and_a_later_proposal_keep_the_full_notice() {
+/// Cancellation works after readiness, and a later proposal waits the full fixed delay again.
+fun ready_share_cancellation_and_a_later_proposal_keep_the_full_delay() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
 
@@ -316,8 +316,8 @@ fun ready_share_cancellation_and_a_later_proposal_keep_the_full_notice() {
 }
 
 #[test]
-/// The partner itself, holding no role, applies a ready raise; the notice stays fixed.
-fun anyone_applies_a_ready_share_and_the_notice_stays_fixed() {
+/// The partner itself, holding no role, applies a ready raise; the delay stays fixed.
+fun anyone_applies_a_ready_share_and_the_delay_stays_fixed() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
 
@@ -395,7 +395,7 @@ fun a_scheduled_share_one_above_the_maximum_is_refused() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun share_application_refuses_before_the_notice() {
+fun share_application_refuses_before_the_delay() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
 
@@ -494,8 +494,8 @@ fun scheduling_rejects_an_unrepresentable_ready_time() {
 
 #[test]
 /// `is_share_ready` answers what `apply_share` would do: false with nothing proposed, before the
-/// notice, after cancellation, and once applied; true from the ready time on.
-fun share_readiness_follows_the_proposal_and_its_notice() {
+/// delay, after cancellation, and once applied; true from the ready time on.
+fun share_readiness_follows_the_proposal_and_its_delay() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
 
@@ -527,9 +527,9 @@ fun share_readiness_follows_the_proposal_and_its_notice() {
 }
 
 #[test]
-/// A ready time whose fixed notice no longer fits in a timestamp is not ready, as `apply_share`
+/// A ready time whose fixed delay no longer fits in a timestamp is not ready, as `apply_share`
 /// would abort.
-fun a_share_is_not_ready_once_its_notice_would_overflow() {
+fun a_share_is_not_ready_once_its_delay_would_overflow() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
 
@@ -548,7 +548,7 @@ fun a_share_is_not_ready_once_its_notice_would_overflow() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun share_application_refuses_once_its_notice_would_overflow() {
+fun share_application_refuses_once_its_delay_would_overflow() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
 
@@ -567,7 +567,7 @@ fun share_application_refuses_once_its_notice_would_overflow() {
 
 #[test]
 /// The old cap keeps working until the move is applied and not after; the new one the reverse.
-fun a_reissued_cap_goes_live_only_when_applied_after_the_notice() {
+fun a_reissued_cap_goes_live_only_when_applied_after_the_delay() {
     let mut fixture = start();
     let old_cap = fixture.register(RECIPIENT, 2_500);
 
@@ -624,7 +624,7 @@ fun the_replaced_cap_is_refused_once_the_reissue_is_applied() {
 
 #[test]
 #[expected_failure(abort_code = blast_partners::errors::ENotLiveCap, location = blast_partners::blast_partners)]
-fun a_reissued_cap_is_refused_before_the_notice() {
+fun a_reissued_cap_is_refused_before_the_delay() {
     let mut fixture = start();
     let old_cap = fixture.register(RECIPIENT, 2_500);
 
@@ -766,7 +766,7 @@ fun share_and_cap_proposals_apply_independently() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun cap_application_refuses_before_the_notice() {
+fun cap_application_refuses_before_the_delay() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
 
@@ -850,7 +850,7 @@ fun cap_cancellation_refuses_without_a_proposal() {
 #[test]
 /// A partner without a live cap, destroyed or never minted, strands nothing: it
 /// is still paid at its recipient, and Blast moves it to a new cap, which goes
-/// live once applied after the notice.
+/// live once applied after the delay.
 fun a_partner_without_a_live_cap_is_moved_to_a_new_one() {
     let mut fixture = start();
     fixture.register(RECIPIENT, 2_500).destroy_cap();
@@ -884,8 +884,8 @@ fun a_partner_without_a_live_cap_is_moved_to_a_new_one() {
 
 #[test]
 /// `is_cap_ready` answers what `apply_cap` would do: false with nothing proposed, before the
-/// notice, after cancellation, and once applied; true from the ready time on.
-fun cap_readiness_follows_the_proposal_and_its_notice() {
+/// delay, after cancellation, and once applied; true from the ready time on.
+fun cap_readiness_follows_the_proposal_and_its_delay() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
 
@@ -919,9 +919,9 @@ fun cap_readiness_follows_the_proposal_and_its_notice() {
 }
 
 #[test]
-/// A ready time whose fixed notice no longer fits in a timestamp is not ready, as `apply_cap`
+/// A ready time whose fixed delay no longer fits in a timestamp is not ready, as `apply_cap`
 /// would abort.
-fun a_cap_is_not_ready_once_its_notice_would_overflow() {
+fun a_cap_is_not_ready_once_its_delay_would_overflow() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
 
@@ -941,7 +941,7 @@ fun a_cap_is_not_ready_once_its_notice_would_overflow() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun cap_application_refuses_once_its_notice_would_overflow() {
+fun cap_application_refuses_once_its_delay_would_overflow() {
     let mut fixture = start();
     let cap = fixture.register(RECIPIENT, 2_500);
 

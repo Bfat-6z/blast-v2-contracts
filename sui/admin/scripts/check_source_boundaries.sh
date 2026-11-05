@@ -291,17 +291,17 @@ expect_delayed_surface() {
 # blast_admin is immutable and future packages may hold its types in other ways, so every delayed
 # type keeps a complete API: its destructor and read-only readers, pinned here.
 expect_delayed_surface delayed apply assert_ready cancel delay_ms destroy is_guarded is_ready key \
-  max_delay_ms new notice_delay_ms notice_ready_at_ms owner pending proposal_delay_ms proposal_value \
+  max_delay_ms new pending_delay_ms pending_delay_ready_at_ms owner pending proposal_delay_ms proposal_value \
   ready_at_ms schedule schedule_delay schedule_value value
 expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy is_delay_ready \
   is_guarded is_ready key new owner pending pending_action pending_delay schedule schedule_delay \
   take_action
-expect_delayed_surface delayed_set admission_notice admission_ready_at_ms apply_add apply_delay \
+expect_delayed_surface delayed_set admission_delay admission_ready_at_ms apply_add apply_delay \
   cancel_add cancel_delay contains delay_ms destroy is_delay_ready is_guarded is_pending is_ready \
   key member member_count members new owner pending_count pending_delay remove schedule_add \
   schedule_delay
 expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay changed_entry changed_value \
-  contains delay_ms destroy entry_count entry_proposal_notice entry_proposal_value entry_ready_at_ms \
+  contains delay_ms destroy entry_count entry_proposal_delay entry_proposal_value entry_ready_at_ms \
   is_delay_ready is_guarded is_pending is_ready key new owner pending pending_count pending_delay \
   schedule schedule_delay value
 for delayed_module in delayed delayed_action delayed_set delayed_map; do
@@ -357,7 +357,7 @@ expected_package_admin_public="$(printf '%s\n' \
   current_package_id \
   has_upgrade_cap \
   initial_upgrade_delay_ms \
-  is_upgrade_notice_guarded \
+  is_upgrade_delay_guarded \
   make_immutable \
   upgrade_cap_version \
   pause \

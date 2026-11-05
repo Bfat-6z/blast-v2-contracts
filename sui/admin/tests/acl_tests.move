@@ -43,7 +43,7 @@ fun init_shares_one_acl_and_delivers_its_root_to_the_configured_address_without_
 
     let effects = scenario.next_tx(@blast_acl_root);
     assert_eq!(effects.shared().length(), 1);
-    // The root transfer slot records its fixed notice.
+    // The root transfer slot records its fixed delay.
     assert_eq!(effects.num_user_events(), 1);
     assert_eq!(test_scenario::ids_for_address<SuperAdminCap>(PUBLISHER).length(), 0);
     let root = scenario.take_from_sender<SuperAdminCap>();

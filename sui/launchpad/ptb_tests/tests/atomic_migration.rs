@@ -129,7 +129,7 @@ struct World {
 const ADMIN_DELAY_MS: u64 = 172_800_000;
 
 #[test]
-fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()> {
+fn administration_delay_cancellation_revocation_and_ptb_rollback() -> Result<()> {
     let mut w = world("admin-security")?;
     w.change_role("CancelAdmin", true)?;
     let share = 6_000;
@@ -229,7 +229,7 @@ fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> 
         let apply = apply.finish();
         let watched = [w.config, w.version, w.acl, w.admin_cap];
         w.h.sim.advance_clock(Duration::from_millis(old_delay - 1));
-        // The first early step aborts: a notice change through the shared readiness check, an
+        // The first early step aborts: a delay change through the shared readiness check, an
         // admission in the set itself.
         let early_module = if policy_first { "delayed" } else { "delayed_set" };
         w.h.assert_rolled_back(apply.clone(),
@@ -238,7 +238,7 @@ fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> 
         w.h.sim.advance_clock(Duration::from_millis(1));
         let applied = w.h.execute(apply)?;
         applied.assert_success();
-        // The primitive records the notice change and each admission, in application order.
+        // The primitive records the delay change and each admission, in application order.
         assert!(applied.payload_names(w.blast).is_empty());
         let changes: Vec<SetApplied<String>> =
             applied.delayed("SetApplied", "launch_config", "VenueKey")?;

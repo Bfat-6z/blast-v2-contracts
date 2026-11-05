@@ -8,7 +8,7 @@ module blast_fun::launch;
 
 // === Constants ===
 
-/// Initial notice for each creator-cap reassignment: 48 hours in milliseconds.
+/// Initial delay for each creator-cap reassignment: 48 hours in milliseconds.
 const DEFAULT_CAP_REASSIGNMENT_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Public Types ===
@@ -387,7 +387,7 @@ public fun claim_creator_caps<Meme, Quote>(
     (curve_fee_cap, blast_metadata_cap)
 }
 
-/// Changes only this launch's curve-fee cap notice, after its applied notice.
+/// Changes only this launch's curve-fee cap delay, after its applied delay.
 /// Apply through `apply_curve_fee_cap_delay`; replaces any pending reassignment.
 public fun schedule_curve_fee_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
@@ -402,7 +402,7 @@ public fun schedule_curve_fee_cap_delay<Meme, Quote>(
 }
 
 /// Announces a replacement recipient without invalidating the current curve-fee cap, after
-/// the applied notice. Unclaimed curve fees follow the fresh cap when applied.
+/// the applied delay. Unclaimed curve fees follow the fresh cap when applied.
 public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -417,7 +417,7 @@ public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     self.curve_fee_cap_reassignment.schedule(recipient, clock);
 }
 
-/// Cancels the pending reassignment or notice change without affecting either live creator cap.
+/// Cancels the pending reassignment or delay change without affecting either live creator cap.
 public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -428,7 +428,7 @@ public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
     self.curve_fee_cap_reassignment.cancel();
 }
 
-/// Permissionlessly applies a ready curve-fee cap notice change.
+/// Permissionlessly applies a ready curve-fee cap delay change.
 public fun apply_curve_fee_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -461,7 +461,7 @@ public fun apply_curve_fee_cap_reassignment<Meme, Quote>(
     events::curve_fee_cap_reassigned<Meme, Quote>(self.id.to_inner(), curve_fee_cap_id, recipient);
 }
 
-/// Changes only this launch's metadata cap notice, after its applied notice.
+/// Changes only this launch's metadata cap delay, after its applied delay.
 /// Apply through `apply_metadata_cap_delay`; replaces any pending reassignment.
 public fun schedule_metadata_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
@@ -476,7 +476,7 @@ public fun schedule_metadata_cap_delay<Meme, Quote>(
 }
 
 /// Announces a replacement recipient without invalidating the current metadata cap, after
-/// the applied notice.
+/// the applied delay.
 public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -491,7 +491,7 @@ public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     self.metadata_cap_reassignment.schedule(recipient, clock);
 }
 
-/// Cancels the pending reassignment or notice change without affecting either live creator cap.
+/// Cancels the pending reassignment or delay change without affecting either live creator cap.
 public fun cancel_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -502,7 +502,7 @@ public fun cancel_metadata_cap_reassignment<Meme, Quote>(
     self.metadata_cap_reassignment.cancel();
 }
 
-/// Permissionlessly applies a ready metadata cap notice change.
+/// Permissionlessly applies a ready metadata cap delay change.
 public fun apply_metadata_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
     package_version: &PackageVersion<BLAST_FUN>,

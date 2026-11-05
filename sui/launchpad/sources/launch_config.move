@@ -108,7 +108,7 @@ public fun cancel_protocol_allocation(
 }
 
 /// Schedules Blast's share of each asset in the LP fees of vaults created afterward, each at most
-/// 3,000 bps, after the applied notice. Migrated launches' vaults keep the share they started with.
+/// 3,000 bps, after the applied delay. Migrated launches' vaults keep the share they started with.
 public fun schedule_protocol_lp_fees(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -272,7 +272,7 @@ public fun add_partner(
     self.partners.add(partner);
 }
 
-/// Stops new launches naming `partner` after the notice Blast gives for every change to a
+/// Stops new launches naming `partner` after the delay Blast gives for every change to a
 /// partner, `blast_partners::delay_ms()`. Launches that already name it keep paying it.
 public fun remove_partner(
     self: &mut LaunchConfig,
@@ -286,9 +286,9 @@ public fun remove_partner(
     self.partners.remove(object::id(partner), clock);
 }
 
-/// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
+/// Admits a venue's witness type after the applied admission delay. An admitted venue's tickets
 /// start launches, and only that venue redeems their migrations; existing launches keep their
-/// venue. Rescheduling a pending admission restarts its notice.
+/// venue. Rescheduling a pending admission restarts its delay.
 ///
 /// Primitive and framework types are rejected because anyone can construct them.
 public fun schedule_venue<Venue: drop>(
@@ -340,7 +340,7 @@ public fun remove_venue<Venue: drop>(
     self.venues.remove(type_name::with_original_ids<Venue>());
 }
 
-/// Proposes only the admission notice. Pending admissions keep their deadlines.
+/// Proposes only the admission delay. Pending admissions keep their deadlines.
 public fun schedule_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -353,7 +353,7 @@ public fun schedule_venue_delay(
     self.venues.schedule_delay(delay_ms, clock);
 }
 
-/// Permissionlessly applies a ready admission-notice proposal.
+/// Permissionlessly applies a ready admission-delay proposal.
 public fun apply_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -364,7 +364,7 @@ public fun apply_venue_delay(
     self.venues.apply_delay(clock);
 }
 
-/// Cancels only the admission-notice proposal.
+/// Cancels only the admission-delay proposal.
 public fun cancel_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -375,10 +375,10 @@ public fun cancel_venue_delay(
     self.venues.cancel_delay();
 }
 
-/// Clears the requested pause bits once every launchpad notice is guarded: nonzero, with no
-/// pending change that would set one to zero and no pending admission. A notice left at its zero
+/// Clears the requested pause bits once every launchpad delay is guarded: nonzero, with no
+/// pending change that would set one to zero and no pending admission. A delay left at its zero
 /// publication value therefore blocks release instead of going live; the generic administration
-/// then checks the upgrade notice and the pinned witness. Claims and opening-round delivery never
+/// then checks the upgrade delay and the pinned witness. Claims and opening-round delivery never
 /// require unpausing; settling an opening round needs the trading bit clear.
 public fun unpause(
     self: &LaunchConfig,
@@ -392,7 +392,7 @@ public fun unpause(
 
     assert!(
         self.is_guarded() && runtime_config.is_guarded(),
-        blast_fun::errors::unguarded_notice!(),
+        blast_fun::errors::unguarded_delay!(),
     );
 
     package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);
@@ -430,7 +430,7 @@ public(package) fun protocol_lp_fees(self: &LaunchConfig): (Bps, Bps) {
     (meme_bps, quote_bps)
 }
 
-/// True when every launch policy's notice is guarded (see `unpause`).
+/// True when every launch policy's delay is guarded (see `unpause`).
 public(package) fun is_guarded(self: &LaunchConfig): bool {
     self.trade_fees.is_guarded()
         && self.venues.is_guarded()
@@ -486,7 +486,7 @@ fun new(
 // === Test-Only Functions ===
 
 #[test_only]
-/// Reads the applied admission notice independently of pending admissions.
+/// Reads the applied admission delay independently of pending admissions.
 public fun venue_delay_ms_for_testing(self: &LaunchConfig): u64 {
     self.venues.delay_ms()
 }
@@ -581,7 +581,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-/// Explicit zero-fee fixture with the existing administrative notice.
+/// Explicit zero-fee fixture with the existing administrative delay.
 public fun new_zero_fees_for_testing(ctx: &mut TxContext): LaunchConfig {
     new(
         TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
@@ -593,7 +593,7 @@ public fun new_zero_fees_for_testing(ctx: &mut TxContext): LaunchConfig {
 }
 
 #[test_only]
-/// Shares a zero-fee genesis fixture without changing notice semantics.
+/// Shares a zero-fee genesis fixture without changing delay semantics.
 public fun init_zero_fees_for_testing(ctx: &mut TxContext) {
     transfer::share_object(new(
         TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },

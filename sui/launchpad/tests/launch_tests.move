@@ -69,8 +69,8 @@ const EXPECTED_POOL_MEME: u64 = 200_000_000__000_000_000;
 /// Blast's share of `MIGRATION_QUOTE_TARGET`.
 const EXPECTED_PROTOCOL_QUOTE: u64 = 625_000;
 
-/// The core treasury's applied notice for a destination change.
-const TREASURY_NOTICE_MS: u64 = 48 * 60 * 60 * 1_000;
+/// The core treasury's applied delay for a destination change.
+const TREASURY_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Test-Only Types ===
 
@@ -88,7 +88,7 @@ public struct TestVenue() has drop;
 public struct OtherVenue() has drop;
 
 /// Launch construction through configured cold policy and creator custody.
-/// One creator-cap proposal as the primitive records it; no recipient means a notice change.
+/// One creator-cap proposal as the primitive records it; no recipient means a delay change.
 public struct CapProposal has copy, drop {
     owner: ID,
     recipient: Option<address>,
@@ -732,7 +732,7 @@ fun security_partial_unpause_keeps_migrate_paused() {
 }
 
 #[test]
-fun security_old_creator_claims_during_notice_and_new_cap_gets_only_remaining_fees() {
+fun security_old_creator_claims_during_delay_and_new_cap_gets_only_remaining_fees() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
@@ -821,9 +821,9 @@ fun security_metadata_authority_stays_live_until_reassignment() {
             &f.package_version,
             &old_metadata,
             &mut currency,
-            b"During notice".to_string()
+            b"During delay".to_string()
         );
-        assert_eq!(currency.name(), b"During notice".to_string());
+        assert_eq!(currency.name(), b"During delay".to_string());
         f.clock.set_for_testing(172_800_000);
         launch.apply_metadata_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         assert!(
@@ -838,8 +838,8 @@ fun security_metadata_authority_stays_live_until_reassignment() {
         let launch = f.take_launch();
         let metadata = f.take_metadata_cap();
         let mut currency = f.take_currency();
-        launch.set_name(&f.package_version, &metadata, &mut currency, b"After notice".to_string());
-        assert_eq!(currency.name(), b"After notice".to_string());
+        launch.set_name(&f.package_version, &metadata, &mut currency, b"After delay".to_string());
+        assert_eq!(currency.name(), b"After delay".to_string());
         destroy(metadata);
         destroy(currency);
         launch.put_back();
@@ -1805,7 +1805,7 @@ fun buy_checks_the_version_first() {
 // --- Creator caps ---
 
 #[test]
-fun cap_notice_and_recipient_proposals_are_recorded_by_the_primitive() {
+fun cap_delay_and_recipient_proposals_are_recorded_by_the_primitive() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -1824,7 +1824,7 @@ fun cap_notice_and_recipient_proposals_are_recorded_by_the_primitive() {
             CapProposal { owner: launch_id, recipient: option::none(), delay_ms: 50, ready_at_ms: 172_800_010 },
         );
 
-        // Cancelling a notice change keeps each applied notice.
+        // Cancelling a delay change keeps each applied delay.
         launch.cancel_curve_fee_cap_reassignment(&f.package_version, &cancel_witness);
         launch.cancel_metadata_cap_reassignment(&f.package_version, &cancel_witness);
         assert_eq!(cancelled_cap_recipients<CurveFeeCapReassignment>(), vector[option::none()]);
@@ -1861,7 +1861,7 @@ fun cap_notice_and_recipient_proposals_are_recorded_by_the_primitive() {
 }
 
 #[test]
-fun cap_notice_change_preserves_creator_and_existing_caps() {
+fun cap_delay_change_preserves_creator_and_existing_caps() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -1912,7 +1912,7 @@ fun cap_notice_change_preserves_creator_and_existing_caps() {
 }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EWrongChange, location = blast_admin::delayed_action)]
-fun a_cap_notice_change_cannot_be_applied_as_a_reassignment() {
+fun a_cap_delay_change_cannot_be_applied_as_a_reassignment() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -1925,7 +1925,7 @@ fun a_cap_notice_change_cannot_be_applied_as_a_reassignment() {
 }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EWrongChange, location = blast_admin::delayed_action)]
-fun a_cap_reassignment_cannot_be_applied_as_a_notice_change() {
+fun a_cap_reassignment_cannot_be_applied_as_a_delay_change() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -1996,7 +1996,7 @@ fun metadata_cap_reassignment_preserves_the_wait_for_the_next_recipient() {
 }
 
 #[test]
-fun recipient_schedules_replace_pending_policy_without_adopting_its_notice() {
+fun recipient_schedules_replace_pending_policy_without_adopting_its_delay() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -2056,7 +2056,7 @@ fun policy_only_schedules_replace_recipients_and_preserve_the_creator_claim() {
 }
 
 #[test]
-fun recipient_schedules_preserve_zero_notice_across_repeated_reassignments() {
+fun recipient_schedules_preserve_zero_delay_across_repeated_reassignments() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -2085,7 +2085,7 @@ fun recipient_schedules_preserve_zero_notice_across_repeated_reassignments() {
 }
 
 #[test]
-fun recipient_schedules_allow_the_last_representable_application_with_their_notice() {
+fun recipient_schedules_allow_the_last_representable_application_with_their_delay() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -2146,7 +2146,7 @@ fun curve_fee_cap_schedule_checks_version_before_zero_recipient() {
 }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun curve_fee_cap_schedule_rejects_notice_overflow_at_its_deadline() {
+fun curve_fee_cap_schedule_rejects_delay_overflow_at_its_deadline() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -2163,7 +2163,7 @@ fun curve_fee_cap_schedule_rejects_notice_overflow_at_its_deadline() {
 }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun curve_fee_cap_delay_reduction_to_zero_waits_the_old_notice() {
+fun curve_fee_cap_delay_reduction_to_zero_waits_the_old_delay() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -2193,7 +2193,7 @@ fun metadata_cap_schedule_checks_version_before_zero_recipient() {
 }
 
 #[test, expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun metadata_cap_schedule_rejects_notice_overflow_at_its_deadline() {
+fun metadata_cap_schedule_rejects_delay_overflow_at_its_deadline() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -2210,7 +2210,7 @@ fun metadata_cap_schedule_rejects_notice_overflow_at_its_deadline() {
 }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun metadata_cap_delay_reduction_to_zero_waits_the_old_notice() {
+fun metadata_cap_delay_reduction_to_zero_waits_the_old_delay() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
@@ -4908,13 +4908,13 @@ fun launch_has_coin<T>(_: &LaunchFixture, owner: address): bool {
 }
 
 /// Points the core treasury at `destination` through its delayed change, as a treasury
-/// administrator would, advancing the fixture clock past its notice.
+/// administrator would, advancing the fixture clock past its delay.
 fun launch_rotate_treasury(self: &mut LaunchFixture, destination: address) {
     let now_ms = self.clock.timestamp_ms();
     self
         .treasury
-        .schedule_destination(&treasury_admin(), destination, TREASURY_NOTICE_MS, &self.clock);
-    self.clock.set_for_testing(now_ms + TREASURY_NOTICE_MS);
+        .schedule_destination(&treasury_admin(), destination, TREASURY_DELAY_MS, &self.clock);
+    self.clock.set_for_testing(now_ms + TREASURY_DELAY_MS);
     self.treasury.apply_destination(&self.clock);
 }
 
@@ -5122,7 +5122,7 @@ fun pause_bits(self: &mut LaunchFixture, bits: u8) {
     );
 }
 
-/// Clears `bits` through the generic administration without the release notice checks.
+/// Clears `bits` through the generic administration without the release delay checks.
 fun clear_bits(self: &mut LaunchFixture, bits: u8) {
     let ctx = self.scenario.ctx();
     blast_fun::blast_fun::clear_pause_bits_for_testing(&mut self.package_version, bits, ctx);

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Settings that change only after their applied notice, and the deadline rules every
+/// Settings that change only after their applied delay, and the deadline rules every
 /// delayed type shares.
 ///
-/// A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then
+/// A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied delay, then
 /// apply; cancellable until applied. Settings live here; one-shot actions in
 /// `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.
 ///
@@ -15,15 +15,15 @@
 /// it. Each delayed module emits every lifecycle fact of its type, generic in `K` and
 /// carrying `owner`; owners emit only their own side effects.
 ///
-/// Every change, a shorter notice included, waits the notice applied when it was scheduled.
-/// A notice can start at zero, so a schedule and its apply in one transaction then act as a
-/// setter; there is no other mutation path. No notice exceeds `max_delay_ms`, so a notice
+/// Every change, a shorter delay included, waits the delay applied when it was scheduled.
+/// A delay can start at zero, so a schedule and its apply in one transaction then act as a
+/// setter; there is no other mutation path. No delay exceeds `max_delay_ms`, so a delay
 /// can always be changed again. Readers need no Clock.
 module blast_admin::delayed;
 
 // === Public Types ===
 
-/// An applied setting, its applied notice and at most one proposed replacement.
+/// An applied setting, its applied delay and at most one proposed replacement.
 public struct Delayed<K: copy + drop + store, T: copy + drop + store> has store {
     owner: ID,
     key: K,
@@ -32,23 +32,23 @@ public struct Delayed<K: copy + drop + store, T: copy + drop + store> has store 
     pending: Option<Proposal<T>>,
 }
 
-/// A proposed value and the notice in force once it applies, ready from `ready_at_ms`.
+/// A proposed value and the delay in force once it applies, ready from `ready_at_ms`.
 public struct Proposal<T: copy + drop + store> has copy, drop, store {
     value: T,
     delay_ms: u64,
     ready_at_ms: u64,
 }
 
-/// A notice period and the time it elapses: the notice an admission or entry change waits,
-/// or a proposed next notice. Either is ready from `ready_at_ms`.
-public struct Notice has copy, drop, store {
+/// A delay period and the time it elapses: the delay an admission or entry change waits,
+/// or a proposed next delay. Either is ready from `ready_at_ms`.
+public struct PendingDelay has copy, drop, store {
     delay_ms: u64,
     ready_at_ms: u64,
 }
 
 // === Public Functions ===
 
-/// A setting in force at once; every later change waits the applied notice.
+/// A setting in force at once; every later change waits the applied delay.
 public fun new<K: copy + drop + store, T: copy + drop + store>(
     key: K,
     owner: &UID,
@@ -63,7 +63,7 @@ public fun new<K: copy + drop + store, T: copy + drop + store>(
     Delayed { owner, key, value, delay_ms, pending: option::none() }
 }
 
-/// The longest notice any delayed type accepts, in milliseconds.
+/// The longest delay any delayed type accepts, in milliseconds.
 public fun max_delay_ms(): u64 {
     MAX_DELAY_MS
 }
@@ -73,12 +73,12 @@ public fun value<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<
     self.value
 }
 
-/// The applied notice in milliseconds.
+/// The applied delay in milliseconds.
 public fun delay_ms<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): u64 {
     self.delay_ms
 }
 
-/// True when every change still to come waits a nonzero notice: the applied notice is nonzero
+/// True when every change still to come waits a nonzero delay: the applied delay is nonzero
 /// and no proposal would set it to zero.
 public fun is_guarded<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): bool {
     self.delay_ms > 0 && self.pending.is_none_or!(|proposal| proposal.delay_ms > 0)
@@ -91,9 +91,9 @@ public fun pending<K: copy + drop + store, T: copy + drop + store>(
     self.pending
 }
 
-/// Proposes `value` and the next notice `delay_ms`, ready after the applied notice, and
-/// returns when. A replaced proposal is cancelled and the full applied notice restarts.
-/// Aborts when the proposal would change neither the value nor the notice.
+/// Proposes `value` and the next delay `delay_ms`, ready after the applied delay, and
+/// returns when. A replaced proposal is cancelled and the full applied delay restarts.
+/// Aborts when the proposal would change neither the value nor the delay.
 public fun schedule<K: copy + drop + store, T: copy + drop + store>(
     self: &mut Delayed<K, T>,
     value: T,
@@ -111,7 +111,7 @@ public fun schedule<K: copy + drop + store, T: copy + drop + store>(
     ready_at_ms
 }
 
-/// Proposes only a new value, keeping the applied notice.
+/// Proposes only a new value, keeping the applied delay.
 public fun schedule_value<K: copy + drop + store, T: copy + drop + store>(
     self: &mut Delayed<K, T>,
     value: T,
@@ -121,7 +121,7 @@ public fun schedule_value<K: copy + drop + store, T: copy + drop + store>(
     self.schedule(value, delay_ms, clock)
 }
 
-/// Proposes only a new notice, keeping the applied value. A shorter notice, zero included,
+/// Proposes only a new delay, keeping the applied value. A shorter delay, zero included,
 /// still waits the applied one.
 public fun schedule_delay<K: copy + drop + store, T: copy + drop + store>(
     self: &mut Delayed<K, T>,
@@ -143,7 +143,7 @@ public fun assert_ready<K: copy + drop + store, T: copy + drop + store>(
     assert_ready_at(proposal.ready_at_ms, proposal.delay_ms, clock);
 }
 
-/// Applies the ready proposal's value and notice together and returns the new value.
+/// Applies the ready proposal's value and delay together and returns the new value.
 public fun apply<K: copy + drop + store, T: copy + drop + store>(
     self: &mut Delayed<K, T>,
     clock: &Clock,
@@ -166,7 +166,7 @@ public fun apply<K: copy + drop + store, T: copy + drop + store>(
     value
 }
 
-/// Discards the proposal, even a ready one, leaving the applied value and notice.
+/// Discards the proposal, even a ready one, leaving the applied value and delay.
 public fun cancel<K: copy + drop + store, T: copy + drop + store>(self: &mut Delayed<K, T>) {
     assert!(self.pending.is_some(), blast_admin::errors::no_pending!());
     self.cancel_replaced();
@@ -184,17 +184,17 @@ public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed
 /// The proposed value, or the proposed change for an action slot.
 public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T { self.value }
 
-/// The notice in force once the proposal applies.
+/// The delay in force once the proposal applies.
 public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64 { self.delay_ms }
 
 /// The Unix millisecond time from which the proposal can apply.
 public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64 { self.ready_at_ms }
 
-/// The notice waited, or the proposed next notice.
-public fun notice_delay_ms(self: &Notice): u64 { self.delay_ms }
+/// The delay waited, or the proposed next delay.
+public fun pending_delay_ms(self: &PendingDelay): u64 { self.delay_ms }
 
 /// The Unix millisecond time from which the change can apply.
-public fun notice_ready_at_ms(self: &Notice): u64 { self.ready_at_ms }
+public fun pending_delay_ready_at_ms(self: &PendingDelay): u64 { self.ready_at_ms }
 
 /// The ID of the object that stores this setting.
 public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID {
@@ -207,7 +207,7 @@ public fun key<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K,
 }
 
 /// Whether `apply` would succeed now: a proposal is pending, its `ready_at_ms` has passed, and
-/// its notice still fits in a Unix millisecond timestamp.
+/// its delay still fits in a Unix millisecond timestamp.
 public fun is_ready<K: copy + drop + store, T: copy + drop + store>(
     self: &Delayed<K, T>,
     clock: &Clock,
@@ -226,12 +226,12 @@ public(package) fun new_proposal<T: copy + drop + store>(
     Proposal { value, delay_ms, ready_at_ms }
 }
 
-/// A notice for another delayed module, built from an already checked deadline.
-public(package) fun new_notice(delay_ms: u64, ready_at_ms: u64): Notice {
-    Notice { delay_ms, ready_at_ms }
+/// A delay for another delayed module, built from an already checked deadline.
+public(package) fun new_pending_delay(delay_ms: u64, ready_at_ms: u64): PendingDelay {
+    PendingDelay { delay_ms, ready_at_ms }
 }
 
-/// Rejects a notice longer than `max_delay_ms`.
+/// Rejects a delay longer than `max_delay_ms`.
 public(package) fun assert_delay(delay_ms: u64) {
     assert!(delay_ms <= MAX_DELAY_MS, blast_admin::errors::invalid_delay!());
 }
@@ -251,7 +251,7 @@ public(package) fun ready_at_ms_after(
     ready_at_ms
 }
 
-/// Whether a change ready from `ready_at_ms` with next notice `next_delay_ms` applies now; the
+/// Whether a change ready from `ready_at_ms` with next delay `next_delay_ms` applies now; the
 /// predicate form of `assert_ready_at`.
 public(package) fun is_ready_at(ready_at_ms: u64, next_delay_ms: u64, clock: &Clock): bool {
     clock.timestamp_ms() >= ready_at_ms && clock.timestamp_ms().checked_add(next_delay_ms).is_some()
@@ -314,7 +314,7 @@ public fun delayed_destroyed_fields<K: copy + drop + store, T: copy + drop + sto
 
 // === Events ===
 
-/// A setting was created with its first applied value and notice.
+/// A setting was created with its first applied value and delay.
 public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -322,7 +322,7 @@ public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has
     delay_ms: u64,
 }
 
-/// A replacement value and next notice were proposed, ready from `ready_at_ms`.
+/// A replacement value and next delay were proposed, ready from `ready_at_ms`.
 public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -340,7 +340,7 @@ public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> h
     ready_at_ms: u64,
 }
 
-/// A ready proposal became the applied value and notice.
+/// A ready proposal became the applied value and delay.
 public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -357,14 +357,14 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
 
 // === Constants ===
 
-/// The longest notice any delayed value, action, set or map accepts: 30 days.
+/// The longest delay any delayed value, action, set or map accepts: 30 days.
 const MAX_DELAY_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 // === Imports ===
 
 public use fun proposal_value as Proposal.value;
 public use fun proposal_delay_ms as Proposal.delay_ms;
-public use fun notice_delay_ms as Notice.delay_ms;
-public use fun notice_ready_at_ms as Notice.ready_at_ms;
+public use fun pending_delay_ms as PendingDelay.delay_ms;
+public use fun pending_delay_ready_at_ms as PendingDelay.ready_at_ms;
 
 use sui::clock::Clock;

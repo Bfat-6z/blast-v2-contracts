@@ -77,7 +77,7 @@ const EPaused: u64 = 21;
 const EWrongUpgradeAction: u64 = 22;
 
 #[test_only]
-const EUnguardedUpgradeNotice: u64 = 23;
+const EUnguardedUpgradeDelay: u64 = 23;
 
 #[test_only]
 const EInvalidPackageWitness: u64 = 24;
@@ -134,7 +134,7 @@ macro public(package) fun paused(): u64 { 21 }
 
 macro public(package) fun wrong_upgrade_action(): u64 { 22 }
 
-macro public(package) fun unguarded_upgrade_notice(): u64 { 23 }
+macro public(package) fun unguarded_upgrade_delay(): u64 { 23 }
 
 macro public(package) fun invalid_package_witness(): u64 { 24 }
 

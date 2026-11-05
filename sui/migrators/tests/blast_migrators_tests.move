@@ -4,7 +4,7 @@
 #[test_only]
 /// The migrators package's publication through `blast_admin`'s generic administration: it defines
 /// no pause bits, emits nothing, and its custody binds only this package's own `UpgradeCap`. The
-/// generic upgrade, pause, and notice matrices belong to `blast_admin`.
+/// generic upgrade, pause, and delay matrices belong to `blast_admin`.
 module blast_migrators::blast_migrators_tests;
 
 // === Tests ===

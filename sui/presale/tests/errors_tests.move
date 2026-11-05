@@ -10,7 +10,7 @@ module blast_presale::errors_tests;
 /// Pins every registry code to its position, so a reorder or gap fails here first.
 fun error_registry_is_stable() {
     let codes = vector[
-        errors::unguarded_notice!(),
+        errors::unguarded_delay!(),
         errors::allowance_unchanged!(),
         errors::quote_not_allowed!(),
         errors::venue_not_allowed!(),

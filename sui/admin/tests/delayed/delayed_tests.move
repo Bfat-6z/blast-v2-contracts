@@ -6,7 +6,7 @@ module blast_admin::delayed_tests;
 
 // === Constants ===
 
-const NOTICE_MS: u64 = 172_800_000;
+const DELAY_MS: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -15,32 +15,32 @@ public struct Fee() has copy, drop, store;
 // === Tests ===
 
 #[test]
-fun creation_records_owner_key_value_and_notice() {
-    let setting = new_setting(7, NOTICE_MS);
+fun creation_records_owner_key_value_and_delay() {
+    let setting = new_setting(7, DELAY_MS);
 
     let created = collect<DelayedCreated<Fee, u64>>();
     let (owner, key, value, delay_ms) = created.delayed_created_fields();
     assert_eq!(owner, owner());
     assert_eq!(key, Fee());
     assert_eq!(value, 7);
-    assert_eq!(delay_ms, NOTICE_MS);
+    assert_eq!(delay_ms, DELAY_MS);
 
     setting.destroy();
 }
 
 #[test]
-fun zero_notice_schedules_and_applies_in_one_transaction() {
+fun zero_delay_schedules_and_applies_in_one_transaction() {
     let clock = clock_at(10);
     let mut setting = new_setting(7, 0);
 
     assert_eq!(setting.schedule_value(8, &clock), 10);
     assert_eq!(setting.apply(&clock), 8);
-    assert_eq!(setting.schedule_delay(NOTICE_MS, &clock), 10);
+    assert_eq!(setting.schedule_delay(DELAY_MS, &clock), 10);
     setting.apply(&clock);
 
     assert_eq!(setting.value(), 8);
-    assert_eq!(setting.delay_ms(), NOTICE_MS);
-    assert_eq!(setting.schedule_value(9, &clock), 10 + NOTICE_MS);
+    assert_eq!(setting.delay_ms(), DELAY_MS);
+    assert_eq!(setting.schedule_value(9, &clock), 10 + DELAY_MS);
 
     setting.cancel();
     setting.destroy();
@@ -50,10 +50,10 @@ fun zero_notice_schedules_and_applies_in_one_transaction() {
 #[test]
 fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
     let mut clock = clock_at(10);
-    let mut setting = new_setting(7, NOTICE_MS);
+    let mut setting = new_setting(7, DELAY_MS);
 
-    assert_eq!(setting.schedule_value(9, &clock), NOTICE_MS + 10);
-    clock.set_for_testing(NOTICE_MS + 10);
+    assert_eq!(setting.schedule_value(9, &clock), DELAY_MS + 10);
+    clock.set_for_testing(DELAY_MS + 10);
     assert_eq!(setting.value(), 7);
     assert_eq!(setting.pending().destroy_some().value(), 9);
 
@@ -64,7 +64,7 @@ fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
     assert_eq!(key, Fee());
     assert_eq!(previous_value, 7);
     assert_eq!(value, 9);
-    assert_eq!(delay_ms, NOTICE_MS);
+    assert_eq!(delay_ms, DELAY_MS);
     assert!(setting.pending().is_none());
 
     setting.destroy();
@@ -72,7 +72,7 @@ fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
 }
 
 #[test]
-fun value_and_notice_apply_together_and_a_shorter_notice_waits_the_applied_one() {
+fun value_and_delay_apply_together_and_a_shorter_delay_waits_the_applied_one() {
     let mut clock = clock_at(10);
     let mut setting = new_setting(1, 100);
 
@@ -96,7 +96,7 @@ fun value_and_notice_apply_together_and_a_shorter_notice_waits_the_applied_one()
 
 #[test]
 #[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
-fun reducing_the_notice_to_zero_still_waits_the_applied_notice() {
+fun reducing_the_delay_to_zero_still_waits_the_applied_delay() {
     let mut clock = clock_at(0);
     let mut setting = new_setting(7, 100);
     setting.schedule_delay(0, &clock);
@@ -108,18 +108,18 @@ fun reducing_the_notice_to_zero_still_waits_the_applied_notice() {
 }
 
 #[test]
-fun replacement_cancels_the_previous_proposal_and_restarts_the_notice() {
+fun replacement_cancels_the_previous_proposal_and_restarts_the_delay() {
     let mut clock = clock_at(0);
-    let mut setting = new_setting(0, NOTICE_MS);
+    let mut setting = new_setting(0, DELAY_MS);
     setting.schedule_value(1, &clock);
-    clock.set_for_testing(NOTICE_MS);
+    clock.set_for_testing(DELAY_MS);
 
-    assert_eq!(setting.schedule_value(2, &clock), 2 * NOTICE_MS);
+    assert_eq!(setting.schedule_value(2, &clock), 2 * DELAY_MS);
 
     let cancelled = collect<DelayedCancelled<Fee, u64>>();
     let (_, _, value, _, ready_at_ms) = cancelled.delayed_cancelled_fields();
     assert_eq!(value, 1);
-    assert_eq!(ready_at_ms, NOTICE_MS);
+    assert_eq!(ready_at_ms, DELAY_MS);
     assert_eq!(setting.pending().destroy_some().value(), 2);
 
     setting.cancel();
@@ -128,18 +128,18 @@ fun replacement_cancels_the_previous_proposal_and_restarts_the_notice() {
 }
 
 #[test]
-fun cancellation_after_readiness_preserves_the_applied_value_and_notice() {
+fun cancellation_after_readiness_preserves_the_applied_value_and_delay() {
     let mut clock = clock_at(0);
-    let mut setting = new_setting(3, NOTICE_MS);
+    let mut setting = new_setting(3, DELAY_MS);
     setting.schedule(5, 1, &clock);
-    clock.set_for_testing(NOTICE_MS + 1);
+    clock.set_for_testing(DELAY_MS + 1);
 
     setting.cancel();
 
     let (_, _, cancelled_value, _, _) = collect<DelayedCancelled<Fee, u64>>().delayed_cancelled_fields();
     assert_eq!(cancelled_value, 5);
     assert_eq!(setting.value(), 3);
-    assert_eq!(setting.delay_ms(), NOTICE_MS);
+    assert_eq!(setting.delay_ms(), DELAY_MS);
     assert!(setting.pending().is_none());
 
     setting.destroy();
@@ -150,7 +150,7 @@ fun cancellation_after_readiness_preserves_the_applied_value_and_notice() {
 #[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
 fun a_cancelled_proposal_cannot_be_cancelled_again() {
     let clock = clock_at(0);
-    let mut setting = new_setting(3, NOTICE_MS);
+    let mut setting = new_setting(3, DELAY_MS);
     setting.schedule_value(5, &clock);
     setting.cancel();
     assert!(setting.pending().is_none());
@@ -181,7 +181,7 @@ fun readiness_validation_is_repeatable_and_changes_nothing() {
 
 #[test]
 #[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed)]
-fun scheduling_the_applied_value_and_notice_rejects() {
+fun scheduling_the_applied_value_and_delay_rejects() {
     let clock = clock_at(0);
     let mut setting = new_setting(7, 10);
 
@@ -205,9 +205,9 @@ fun readiness_without_a_proposal_rejects() {
 #[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
 fun an_applied_proposal_cannot_be_replayed() {
     let mut clock = clock_at(0);
-    let mut setting = new_setting(0, NOTICE_MS);
+    let mut setting = new_setting(0, DELAY_MS);
     setting.schedule_value(1, &clock);
-    clock.set_for_testing(NOTICE_MS);
+    clock.set_for_testing(DELAY_MS);
     setting.apply(&clock);
 
     setting.apply(&clock);
@@ -218,7 +218,7 @@ fun an_applied_proposal_cannot_be_replayed() {
 #[test]
 #[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed)]
 fun cancellation_without_a_proposal_rejects() {
-    let mut setting = new_setting(0, NOTICE_MS);
+    let mut setting = new_setting(0, DELAY_MS);
 
     setting.cancel();
 
@@ -229,10 +229,10 @@ fun cancellation_without_a_proposal_rejects() {
 #[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
 fun one_millisecond_before_ready_rejects() {
     let mut clock = clock_at(0);
-    let mut setting = new_setting(0, NOTICE_MS);
+    let mut setting = new_setting(0, DELAY_MS);
     setting.schedule_value(1, &clock);
 
-    clock.set_for_testing(NOTICE_MS - 1);
+    clock.set_for_testing(DELAY_MS - 1);
     setting.apply(&clock);
 
     abort
@@ -242,7 +242,7 @@ fun one_millisecond_before_ready_rejects() {
 #[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
 fun a_setting_with_a_proposal_cannot_be_destroyed() {
     let clock = clock_at(0);
-    let mut setting = new_setting(0, NOTICE_MS);
+    let mut setting = new_setting(0, DELAY_MS);
     setting.schedule_value(1, &clock);
 
     setting.destroy();
@@ -265,26 +265,26 @@ fun the_largest_representable_deadline_is_valid() {
 }
 
 #[test]
-fun the_ceiling_notice_is_accepted_and_can_be_changed_again() {
+fun the_ceiling_delay_is_accepted_and_can_be_changed_again() {
     let mut clock = clock_at(1);
-    let mut setting = new_setting(7, NOTICE_MS);
+    let mut setting = new_setting(7, DELAY_MS);
     setting.schedule_delay(delayed::max_delay_ms(), &clock);
-    clock.set_for_testing(1 + NOTICE_MS);
+    clock.set_for_testing(1 + DELAY_MS);
     setting.apply(&clock);
     assert_eq!(setting.delay_ms(), delayed::max_delay_ms());
 
-    let ready_at_ms = setting.schedule_delay(NOTICE_MS, &clock);
+    let ready_at_ms = setting.schedule_delay(DELAY_MS, &clock);
     clock.set_for_testing(ready_at_ms);
     setting.apply(&clock);
 
-    assert_eq!(setting.delay_ms(), NOTICE_MS);
+    assert_eq!(setting.delay_ms(), DELAY_MS);
     setting.destroy();
     clock.destroy_for_testing();
 }
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
-fun creation_rejects_a_notice_above_the_ceiling() {
+fun creation_rejects_a_delay_above_the_ceiling() {
     let setting = new_setting(7, delayed::max_delay_ms() + 1);
 
     setting.destroy();
@@ -294,9 +294,9 @@ fun creation_rejects_a_notice_above_the_ceiling() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
-fun a_proposed_notice_above_the_ceiling_rejects() {
+fun a_proposed_delay_above_the_ceiling_rejects() {
     let clock = clock_at(1);
-    let mut setting = new_setting(7, NOTICE_MS);
+    let mut setting = new_setting(7, DELAY_MS);
 
     setting.schedule_delay(delayed::max_delay_ms() + 1, &clock);
 
@@ -316,7 +316,7 @@ fun scheduling_rejects_an_overflowing_deadline() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
-fun a_proposed_notice_must_fit_at_its_earliest_application() {
+fun a_proposed_delay_must_fit_at_its_earliest_application() {
     let clock = clock_at(std::u64::max_value!() - delayed::max_delay_ms());
     let mut setting = new_setting(7, 1);
 
@@ -327,7 +327,7 @@ fun a_proposed_notice_must_fit_at_its_earliest_application() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
-fun applying_late_rejects_a_now_unrepresentable_notice() {
+fun applying_late_rejects_a_now_unrepresentable_delay() {
     let start_ms = std::u64::max_value!() - delayed::max_delay_ms() - 2;
     let mut clock = clock_at(start_ms);
     let mut setting = new_setting(7, 1);
@@ -361,12 +361,12 @@ fun destruction_records_the_end_of_the_setting() {
 }
 
 #[test]
-fun a_setting_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal() {
+fun a_setting_is_guarded_only_with_a_nonzero_delay_and_no_zero_delay_proposal() {
     let clock = clock_at(0);
     let mut setting = new_setting(7, 0);
     assert!(!setting.is_guarded());
 
-    setting.schedule_delay(NOTICE_MS, &clock);
+    setting.schedule_delay(DELAY_MS, &clock);
     setting.apply(&clock);
     assert!(setting.is_guarded());
 
@@ -386,7 +386,7 @@ fun a_setting_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal(
 #[test]
 fun readers_report_owner_key_and_proposal_terms() {
     let clock = clock_at(10);
-    let mut setting = new_setting(7, NOTICE_MS);
+    let mut setting = new_setting(7, DELAY_MS);
     setting.schedule(8, 25, &clock);
 
     let proposal = setting.pending().destroy_some();
@@ -394,7 +394,7 @@ fun readers_report_owner_key_and_proposal_terms() {
     assert_eq!(setting.key(), Fee());
     assert_eq!(proposal.value(), 8);
     assert_eq!(proposal.delay_ms(), 25);
-    assert_eq!(proposal.ready_at_ms(), 10 + NOTICE_MS);
+    assert_eq!(proposal.ready_at_ms(), 10 + DELAY_MS);
     assert_eq!(delayed::max_delay_ms(), 30 * 24 * 60 * 60 * 1_000);
 
     setting.cancel();
@@ -405,13 +405,13 @@ fun readers_report_owner_key_and_proposal_terms() {
 #[test]
 fun a_setting_is_ready_exactly_when_apply_would_succeed() {
     let mut clock = clock_at(0);
-    let mut setting = new_setting(7, NOTICE_MS);
+    let mut setting = new_setting(7, DELAY_MS);
     assert!(!setting.is_ready(&clock));
 
     setting.schedule_value(8, &clock);
-    clock.set_for_testing(NOTICE_MS - 1);
+    clock.set_for_testing(DELAY_MS - 1);
     assert!(!setting.is_ready(&clock));
-    clock.set_for_testing(NOTICE_MS);
+    clock.set_for_testing(DELAY_MS);
     assert!(setting.is_ready(&clock));
     setting.apply(&clock);
     assert!(!setting.is_ready(&clock));
@@ -421,8 +421,8 @@ fun a_setting_is_ready_exactly_when_apply_would_succeed() {
 }
 
 #[test]
-/// A proposed notice that would no longer fit at application time is not ready.
-fun a_setting_whose_next_notice_would_overflow_is_not_ready() {
+/// A proposed delay that would no longer fit at application time is not ready.
+fun a_setting_whose_next_delay_would_overflow_is_not_ready() {
     let mut clock = clock_at(0);
     let mut setting = new_setting(7, 0);
     setting.schedule_delay(delayed::max_delay_ms(), &clock);

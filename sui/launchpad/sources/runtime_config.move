@@ -30,7 +30,7 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Proposes admitting a backend key that may sign account claims, after the signer notice.
+/// Proposes admitting a backend key that may sign account claims, after the signer delay.
 /// Every admitted key signs with full authority, so admission waits; removal does not.
 public fun schedule_creator_claim_signer(
     self: &mut RuntimeConfig,
@@ -81,7 +81,7 @@ public fun cancel_creator_claim_signer(
     self.creator_claim_signers.cancel_add(signer_public_key);
 }
 
-/// Proposes the notice later signer admissions wait, after the applied one.
+/// Proposes the delay later signer admissions wait, after the applied one.
 public fun schedule_creator_claim_signer_delay(
     self: &mut RuntimeConfig,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -94,7 +94,7 @@ public fun schedule_creator_claim_signer_delay(
     self.creator_claim_signers.schedule_delay(delay_ms, clock);
 }
 
-/// Applies a ready signer notice; pending admissions keep their deadlines. Anyone may call.
+/// Applies a ready signer delay; pending admissions keep their deadlines. Anyone may call.
 public fun apply_creator_claim_signer_delay(
     self: &mut RuntimeConfig,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -105,7 +105,7 @@ public fun apply_creator_claim_signer_delay(
     self.creator_claim_signers.apply_delay(clock);
 }
 
-/// Discards a pending signer notice change.
+/// Discards a pending signer delay change.
 public fun cancel_creator_claim_signer_delay(
     self: &mut RuntimeConfig,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -169,7 +169,7 @@ public fun revoke_creator_claim_signer(
 
 // === Package Functions ===
 
-/// True when every runtime policy's notice is guarded (see `launch_config::unpause`).
+/// True when every runtime policy's delay is guarded (see `launch_config::unpause`).
 public(package) fun is_guarded(self: &RuntimeConfig): bool {
     self.creator_claim_signers.is_guarded() && self.protocol_fee_share_bps.is_guarded()
 }
@@ -241,7 +241,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-/// The configuration exactly as publication creates it, every notice at zero.
+/// The configuration exactly as publication creates it, every delay at zero.
 public fun new_publication_for_testing(ctx: &mut TxContext): RuntimeConfig {
     new(ctx)
 }
@@ -254,7 +254,7 @@ public fun new_zero_fee_share_for_testing(ctx: &mut TxContext): RuntimeConfig {
 
 #[test_only]
 /// Explicit zero-share fixture admitting `signer_public_key`, or no signer when it is empty,
-/// with the signer notice raised to two days.
+/// with the signer delay raised to two days.
 public fun new_zero_fee_share_with_signer_for_testing(
     signer_public_key: vector<u8>,
     ctx: &mut TxContext,

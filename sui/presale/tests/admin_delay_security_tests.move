@@ -46,7 +46,7 @@ fun fees_early() { exercise(Setting::Fees, Case::Early); }
     abort_code = blast_admin::errors::ENotReady,
     location = blast_admin::delayed,
 )]
-fun fees_replacement_restarts_notice() { exercise(Setting::Fees, Case::Replacement); }
+fun fees_replacement_restarts_delay() { exercise(Setting::Fees, Case::Replacement); }
 
 #[test]
 #[expected_failure(
@@ -94,7 +94,7 @@ fun exercise(setting: Setting, case: Case) {
     let initial = snapshot(&f, setting);
     if (case == Case::StaleSchedule) f.version.set_version_for_testing(2);
     schedule(&mut f, setting, 100);
-    assert_notice(&f, setting, 100, true);
+    assert_delay(&f, setting, 100, true);
     assert_eq!(snapshot(&f, setting), initial);
     f.clock.set_for_testing(START + delay_ms() - if (case == Case::Early) 1 else 0);
     assert_eq!(snapshot(&f, setting), initial);
@@ -105,14 +105,14 @@ fun exercise(setting: Setting, case: Case) {
         },
         Case::Replacement => {
             schedule(&mut f, setting, 200);
-            assert_notice(&f, setting, 200, true);
+            assert_delay(&f, setting, 200, true);
             f.clock.set_for_testing(START + 2 * delay_ms() - 1);
             apply(&mut f, setting);
             destroy(f);
         },
         Case::Cancelled => {
             cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false);
+            assert_delay(&f, setting, 100, false);
             assert_eq!(snapshot(&f, setting), initial);
             apply(&mut f, setting);
             destroy(f);
@@ -131,26 +131,26 @@ fun exercise(setting: Setting, case: Case) {
         Case::StaleCancel => {
             f.version.set_version_for_testing(2);
             cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false);
+            assert_delay(&f, setting, 100, false);
             destroy(f);
         },
         Case::Success => {
             // A ready proposal can still be cancelled; a later proposal receives a full delay.
             cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false);
+            assert_delay(&f, setting, 100, false);
             assert_eq!(snapshot(&f, setting), initial);
             schedule(&mut f, setting, 100);
-            assert_notice(&f, setting, 100, true);
+            assert_delay(&f, setting, 100, true);
             f.clock.set_for_testing(START + 2 * delay_ms());
             apply(&mut f, setting);
             assert_value(&f, setting, 100);
             // Replacement of a ready action keeps the applied value until explicit application.
             prepare_again(&mut f, setting);
             schedule(&mut f, setting, 200);
-            assert_notice(&f, setting, 200, true);
+            assert_delay(&f, setting, 200, true);
             f.clock.set_for_testing(START + 4 * delay_ms());
             schedule(&mut f, setting, 300);
-            assert_notice(&f, setting, 300, true);
+            assert_delay(&f, setting, 300, true);
             let before = snapshot(&f, setting);
             f.clock.set_for_testing(START + 5 * delay_ms() + 1);
             assert_eq!(snapshot(&f, setting), before);
@@ -233,8 +233,8 @@ fun expected(setting: Setting, n: u64): vector<u8> {
 fun assert_value(f: &Fixture, setting: Setting, n: u64) { assert_eq!(snapshot(f, setting), expected(setting, n)); }
 
 /// Checks the primitive's last scheduled or cancelled proposal for `setting`: its owner, value
-/// and full notice, and for a schedule its deadline a full notice from now.
-fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
+/// and full delay, and for a schedule its deadline a full delay from now.
+fun assert_delay(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
     let ready_at_ms = if (scheduled) option::some(f.clock.timestamp_ms() + delay_ms()) else option::none();
     match (setting) {
         Setting::Fees => assert_proposal<FeesKey, ProtocolFees>(
@@ -268,7 +268,7 @@ fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     bytes
 }
 
-/// Blast's 48-hour administrative notice.
+/// Blast's 48-hour administrative delay.
 fun delay_ms(): u64 {
     blast_admin::package_admin::initial_upgrade_delay_ms_for_testing()
 }

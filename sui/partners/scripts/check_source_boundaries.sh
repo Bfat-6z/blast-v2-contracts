@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Structural gates for blast_partners (ADR 0095): the fixed seven-day notice, PartnerAdmin
+# Structural gates for blast_partners (ADR 0095): the fixed seven-day delay, PartnerAdmin
 # proposals and cancellations, permissionless application, and Clock-free payment. The checks
 # live in the shared administration gate, which every fresh-stack package runs.
 set -euo pipefail

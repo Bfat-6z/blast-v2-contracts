@@ -23,21 +23,21 @@ macro public(package) fun valid_pause_bits(): u8 {
     blast_vault::constants::admin_pause_bit!()
 }
 
-/// Initial witness admission notice: zero, so Blast lists its products and venues at launch while
+/// Initial witness admission delay: zero, so Blast lists its products and venues at launch while
 /// publication keeps the package paused. `blast_vault_package::unpause` refuses until a nonzero
-/// notice applies.
+/// delay applies.
 macro public(package) fun witness_admission_delay_ms(): u64 {
     0
 }
 
-/// Fixed notice before a vault's fee split or Blast share changes; no call can change it.
+/// Fixed delay before a vault's fee split or Blast share changes; no call can change it.
 macro public(package) fun fee_change_delay_ms(): u64 {
     48 * 60 * 60 * 1_000
 }
 
-/// Initial notice before a scheduled holder-reward round may publish, or its next notice period
+/// Initial delay before a scheduled holder-reward round may publish, or its next delay period
 /// may change: 2 hours, so a cancel administrator can stop a bad round while daily rounds fit.
-macro public(package) fun round_notice_ms(): u64 {
+macro public(package) fun round_delay_ms(): u64 {
     2 * 60 * 60 * 1_000
 }
 

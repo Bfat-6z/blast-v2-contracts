@@ -20,7 +20,7 @@ const PACKAGE_ID: address = @0xa;
 /// Create 1, trade 2 and migrate 4, as both sale products define them.
 const VALID_PAUSE_BITS: u8 = 7;
 
-const NOTICE_MS: u64 = 48 * 60 * 60 * 1_000;
+const DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Test-Only Types ===
 
@@ -92,7 +92,7 @@ fun wrapping_shares_the_package_admin_and_a_fully_paused_version_and_consumes_th
     assert_eq!(emitted_policy, package::compatible_policy());
     assert!(package_admin.has_upgrade_cap());
     assert!(package_admin.publisher_for_testing().from_package<PACKAGE_MARKER>());
-    assert_eq!(package_admin.upgrade_for_testing().delay_ms(), NOTICE_MS);
+    assert_eq!(package_admin.upgrade_for_testing().delay_ms(), DELAY_MS);
     assert_eq!(package_version.paused_for_testing(), VALID_PAUSE_BITS);
     assert_eq!(package_version.valid_pause_bits_for_testing(), VALID_PAUSE_BITS);
     assert_eq!(package_version.version_for_testing(), 1);
@@ -246,7 +246,7 @@ fun wrap_rejects_a_cap_with_an_outstanding_authorization() {
 
 #[test]
 #[expected_failure(abort_code = errors::EUpgradeCapUnavailable, location = blast_admin::package_admin)]
-/// With a zero notice one transaction could authorize, then make the package immutable, then
+/// With a zero delay one transaction could authorize, then make the package immutable, then
 /// try to commit; the commit reports the missing cap.
 fun commit_is_rejected_after_immutability() {
     let mut owned = start();
@@ -404,11 +404,11 @@ fun scheduling_rejects_a_digest_that_is_not_32_bytes() {
 
 #[test]
 #[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
-fun an_upgrade_waits_the_48_hour_publication_notice() {
+fun an_upgrade_waits_the_48_hour_publication_delay() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS - 1);
+    fixture.clock.set_for_testing(DELAY_MS - 1);
 
     let ticket = fixture
         .package_admin
@@ -424,7 +424,7 @@ fun authorization_rejects_a_digest_other_than_the_scheduled_one() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     let ticket = fixture
         .package_admin
@@ -440,7 +440,7 @@ fun authorization_rejects_a_ready_immutability_action() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     let ticket = fixture
         .package_admin
@@ -456,7 +456,7 @@ fun immutability_rejects_a_ready_upgrade_action() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     fixture
         .package_admin
@@ -565,7 +565,7 @@ fun a_cancelled_upgrade_cannot_be_authorized() {
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
     fixture.package_admin.cancel_upgrade_action(&cancel_admin());
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     let ticket = fixture
         .package_admin
@@ -587,15 +587,15 @@ fun cancelling_with_nothing_scheduled_aborts() {
 }
 
 #[test]
-fun a_notice_change_waits_the_applied_notice_and_cancellation_keeps_it() {
+fun a_delay_change_waits_the_applied_delay_and_cancellation_keeps_it() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
     fixture.package_admin.cancel_upgrade_action(&cancel_admin());
-    assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), NOTICE_MS);
+    assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), DELAY_MS);
 
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 25, &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
     assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), 25);
@@ -604,11 +604,11 @@ fun a_notice_change_waits_the_applied_notice_and_cancellation_keeps_it() {
 
 #[test]
 #[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
-fun a_notice_reduction_cannot_be_applied_early() {
+fun a_delay_reduction_cannot_be_applied_early() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS - 1);
+    fixture.clock.set_for_testing(DELAY_MS - 1);
 
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
@@ -617,11 +617,11 @@ fun a_notice_reduction_cannot_be_applied_early() {
 
 #[test]
 #[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed_action)]
-fun a_ready_immutability_action_cannot_be_applied_as_a_notice_change() {
+fun a_ready_immutability_action_cannot_be_applied_as_a_delay_change() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
@@ -629,18 +629,18 @@ fun a_ready_immutability_action_cannot_be_applied_as_a_notice_change() {
 }
 
 #[test]
-fun an_upgrade_action_replaces_a_pending_notice_change() {
+fun an_upgrade_action_replaces_a_pending_delay_change() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 25, &fixture.clock);
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     let ticket = fixture
         .package_admin
         .authorize_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
 
-    assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), NOTICE_MS);
+    assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), DELAY_MS);
     destroy(ticket);
     owned.end();
 }
@@ -780,7 +780,7 @@ fun clearing_rejects_another_droppable_type_from_the_same_package() {
 
 #[test]
 #[expected_failure(abort_code = errors::EWrongUnpauseWitness, location = blast_admin::package_version)]
-fun the_witness_is_checked_before_the_upgrade_notice() {
+fun the_witness_is_checked_before_the_upgrade_delay() {
     let mut owned = start();
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
@@ -792,8 +792,8 @@ fun the_witness_is_checked_before_the_upgrade_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EUnguardedUpgradeNotice, location = blast_admin::package_admin)]
-fun clearing_rejects_a_pending_zero_upgrade_notice() {
+#[expected_failure(abort_code = errors::EUnguardedUpgradeDelay, location = blast_admin::package_admin)]
+fun clearing_rejects_a_pending_zero_upgrade_delay() {
     let mut owned = start();
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
@@ -805,13 +805,13 @@ fun clearing_rejects_a_pending_zero_upgrade_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EUnguardedUpgradeNotice, location = blast_admin::package_admin)]
-fun clearing_rejects_an_applied_zero_upgrade_notice() {
+#[expected_failure(abort_code = errors::EUnguardedUpgradeDelay, location = blast_admin::package_admin)]
+fun clearing_rejects_an_applied_zero_upgrade_delay() {
     let mut owned = start();
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
     fixture.clear(package_marker::package_witness(), 1);
@@ -820,8 +820,8 @@ fun clearing_rejects_an_applied_zero_upgrade_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EUnguardedUpgradeNotice, location = blast_admin::package_admin)]
-fun the_upgrade_notice_is_checked_before_the_bits() {
+#[expected_failure(abort_code = errors::EUnguardedUpgradeDelay, location = blast_admin::package_admin)]
+fun the_upgrade_delay_is_checked_before_the_bits() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
@@ -941,9 +941,9 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
     let fixture = &mut owned;
     let upgrade_cap_id = fixture.package_admin.upgrade_cap_id().destroy_some();
 
-    assert_eq!(package_admin::initial_upgrade_delay_ms(), NOTICE_MS);
-    assert_eq!(fixture.package_admin.upgrade_delay_ms(), NOTICE_MS);
-    assert!(fixture.package_admin.is_upgrade_notice_guarded());
+    assert_eq!(package_admin::initial_upgrade_delay_ms(), DELAY_MS);
+    assert_eq!(fixture.package_admin.upgrade_delay_ms(), DELAY_MS);
+    assert!(fixture.package_admin.is_upgrade_delay_guarded());
     assert!(fixture.package_admin.pending_upgrade().is_none());
     assert!(fixture.package_admin.has_upgrade_cap());
     assert_eq!(fixture.package_admin.current_package_id(), option::some(PACKAGE_ID.to_id()));
@@ -961,7 +961,7 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
     let action = fixture.package_admin.pending_upgrade().destroy_some().value().action().destroy_some();
     assert!(action.upgrade_digest().is_none());
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
-    assert!(!fixture.package_admin.is_upgrade_notice_guarded());
+    assert!(!fixture.package_admin.is_upgrade_delay_guarded());
     fixture.package_admin.cancel_upgrade_action(&cancel_admin());
 
     fixture.package_admin.make_immutable_for_testing(
@@ -1043,7 +1043,7 @@ fun immutability_rejects_a_witness_from_another_package() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     fixture
         .package_admin
@@ -1063,7 +1063,7 @@ fun immutability_rejects_another_droppable_type_from_the_same_package() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     fixture
         .package_admin

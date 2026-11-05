@@ -21,8 +21,8 @@ const PARTNER: address = @0x9A27;
 /// When the fixture clock removes a partner.
 const NOW_AT_MS: u64 = 1_000;
 
-/// The applied notice of every setting in `launch_config::new_zero_fees_for_testing`.
-const NOTICE_MS: u64 = 172_800_000;
+/// The applied delay of every setting in `launch_config::new_zero_fees_for_testing`.
+const DELAY_MS: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -326,16 +326,16 @@ fun stale_package_version_rejects_protocol_lp_fees_before_their_bounds() {
 }
 
 #[test]
-fun a_protocol_lp_fee_change_waits_its_applied_notice() {
-    let mut fixture = start_with_notices();
+fun a_protocol_lp_fee_change_waits_its_applied_delay() {
+    let mut fixture = start_with_delays();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_protocol_lp_fees(1_200, 900);
-        f.clock.set_for_testing(NOW_AT_MS + NOTICE_MS - 1);
+        f.clock.set_for_testing(NOW_AT_MS + DELAY_MS - 1);
 
         assert_eq!(f.config.protocol_lp_fees_values(), vector[0, 0]);
 
-        f.clock.set_for_testing(NOW_AT_MS + NOTICE_MS);
+        f.clock.set_for_testing(NOW_AT_MS + DELAY_MS);
         f.config.apply_protocol_lp_fees(&f.package_version, &f.clock);
 
         assert_eq!(f.config.protocol_lp_fees_values(), vector[1_200, 900]);
@@ -346,11 +346,11 @@ fun a_protocol_lp_fee_change_waits_its_applied_notice() {
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun a_protocol_lp_fee_change_cannot_apply_one_millisecond_early() {
-    let mut fixture = start_with_notices();
+    let mut fixture = start_with_delays();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_protocol_lp_fees(1_200, 900);
-        f.clock.set_for_testing(NOW_AT_MS + NOTICE_MS - 1);
+        f.clock.set_for_testing(NOW_AT_MS + DELAY_MS - 1);
 
         f.config.apply_protocol_lp_fees(&f.package_version, &f.clock);
     });
@@ -360,12 +360,12 @@ fun a_protocol_lp_fee_change_cannot_apply_one_millisecond_early() {
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun a_cancelled_protocol_lp_fee_change_never_applies() {
-    let mut fixture = start_with_notices();
+    let mut fixture = start_with_delays();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_protocol_lp_fees(1_200, 900);
         f.config.cancel_protocol_lp_fees(&f.package_version, &blast_acl::witness_for_testing<CancelAdmin>());
-        f.clock.set_for_testing(NOW_AT_MS + NOTICE_MS);
+        f.clock.set_for_testing(NOW_AT_MS + DELAY_MS);
 
         f.config.apply_protocol_lp_fees(&f.package_version, &f.clock);
     });
@@ -1187,7 +1187,7 @@ fun a_removed_partner_stays_accepted_for_the_partner_delay() {
 }
 
 #[test, expected_failure(abort_code = blast_partners::errors::EPartnerNotAccepted, location = blast_partners::partner_list)]
-fun a_removed_partner_is_refused_once_its_notice_ends() {
+fun a_removed_partner_is_refused_once_its_delay_ends() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
@@ -1373,8 +1373,8 @@ fun start_init(): InitFixture {
     InitFixture { scenario, config }
 }
 
-/// A configuration whose every change waits `NOTICE_MS`, with the clock at `NOW_AT_MS`.
-fun start_with_notices(): ConfigFixture {
+/// A configuration whose every change waits `DELAY_MS`, with the clock at `NOW_AT_MS`.
+fun start_with_delays(): ConfigFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     let package_version = package_version::version_for_testing(scenario.ctx());
     let config = launch_config::new_zero_fees_for_testing(scenario.ctx());
@@ -1442,7 +1442,7 @@ fun set_protocol_lp_fees_for_testing(self: &mut ConfigFixture, meme_bps: u64, qu
         );
 }
 
-/// Schedules Blast's LP-fee share as the fee admin, keeping the applied notice.
+/// Schedules Blast's LP-fee share as the fee admin, keeping the applied delay.
 fun schedule_protocol_lp_fees(self: &mut ConfigFixture, meme_bps: u64, quote_bps: u64) {
     self
         .config
@@ -1451,7 +1451,7 @@ fun schedule_protocol_lp_fees(self: &mut ConfigFixture, meme_bps: u64, quote_bps
             &fee_admin(),
             bps::new(meme_bps),
             bps::new(quote_bps),
-            NOTICE_MS,
+            DELAY_MS,
             &self.clock,
         );
 }

@@ -6,7 +6,7 @@ module blast_admin::delayed_set_tests;
 
 // === Constants ===
 
-const NOTICE_MS: u64 = 172_800_000;
+const DELAY_MS: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -15,15 +15,15 @@ public struct Witnesses() has copy, drop, store;
 // === Tests ===
 
 #[test]
-fun an_admission_waits_the_applied_notice_and_removal_is_immediate() {
+fun an_admission_waits_the_applied_delay_and_removal_is_immediate() {
     let mut clock = clock_at(0);
-    let mut set = new_witness_set(NOTICE_MS);
+    let mut set = new_witness_set(DELAY_MS);
 
-    assert_eq!(set.schedule_add(@0xA, &clock), NOTICE_MS);
+    assert_eq!(set.schedule_add(@0xA, &clock), DELAY_MS);
     assert!(!set.contains(&@0xA));
-    assert_eq!(set.admission_ready_at_ms(&@0xA), option::some(NOTICE_MS));
+    assert_eq!(set.admission_ready_at_ms(&@0xA), option::some(DELAY_MS));
 
-    clock.set_for_testing(NOTICE_MS);
+    clock.set_for_testing(DELAY_MS);
     set.apply_add(@0xA, &clock);
     assert!(set.contains(&@0xA));
     assert!(set.admission_ready_at_ms(&@0xA).is_none());
@@ -36,14 +36,14 @@ fun an_admission_waits_the_applied_notice_and_removal_is_immediate() {
     let (owner, _, member) = collect<MemberRemoved<Witnesses, address>>().member_removed_fields();
     assert_eq!(owner, owner());
     assert_eq!(member, @0xA);
-    assert_eq!(set.delay_ms(), NOTICE_MS);
+    assert_eq!(set.delay_ms(), DELAY_MS);
 
     set.destroy();
     clock.destroy_for_testing();
 }
 
 #[test]
-fun zero_notice_admissions_apply_in_one_transaction_before_the_notice_is_raised() {
+fun zero_delay_admissions_apply_in_one_transaction_before_the_delay_is_raised() {
     let clock = clock_at(3);
     let mut set = new_witness_set(0);
 
@@ -51,13 +51,13 @@ fun zero_notice_admissions_apply_in_one_transaction_before_the_notice_is_raised(
     set.apply_add(@0xA, &clock);
     set.schedule_add(@0xB, &clock);
     set.apply_add(@0xB, &clock);
-    set.schedule_delay(NOTICE_MS, &clock);
+    set.schedule_delay(DELAY_MS, &clock);
     set.apply_delay(&clock);
 
     assert!(set.contains(&@0xA) && set.contains(&@0xB));
     assert_eq!(set.members().length(), 2);
-    assert_eq!(set.delay_ms(), NOTICE_MS);
-    assert_eq!(set.schedule_add(@0xC, &clock), 3 + NOTICE_MS);
+    assert_eq!(set.delay_ms(), DELAY_MS);
+    assert_eq!(set.schedule_add(@0xC, &clock), 3 + DELAY_MS);
 
     set.cancel_add(@0xC);
     set.destroy();
@@ -65,7 +65,7 @@ fun zero_notice_admissions_apply_in_one_transaction_before_the_notice_is_raised(
 }
 
 #[test]
-fun admissions_keep_their_deadlines_across_notice_changes() {
+fun admissions_keep_their_deadlines_across_delay_changes() {
     let mut clock = clock_at(0);
     let mut set = new_witness_set(100);
     set.schedule_add(@0xA, &clock);
@@ -87,7 +87,7 @@ fun admissions_keep_their_deadlines_across_notice_changes() {
 }
 
 #[test]
-fun removal_discards_a_pending_admission_without_changing_the_notice() {
+fun removal_discards_a_pending_admission_without_changing_the_delay() {
     let clock = clock_at(0);
     let mut set = new_witness_set(100);
     set.schedule_add(@0xA, &clock);
@@ -105,7 +105,7 @@ fun removal_discards_a_pending_admission_without_changing_the_notice() {
 }
 
 #[test]
-fun rescheduling_a_pending_member_restarts_its_notice() {
+fun rescheduling_a_pending_member_restarts_its_delay() {
     let mut clock = clock_at(0);
     let mut set = new_witness_set(100);
     set.schedule_add(@0xA, &clock);
@@ -123,7 +123,7 @@ fun rescheduling_a_pending_member_restarts_its_notice() {
 
 #[test]
 /// Counts pending admissions only: a reschedule replaces one, and applying, cancelling or
-/// removing a member drops it, while admitted members and notice changes never count.
+/// removing a member drops it, while admitted members and delay changes never count.
 fun pending_count_counts_only_pending_admissions() {
     let clock = clock_at(0);
     let mut set = new_witness_set(0);
@@ -209,7 +209,7 @@ fun a_set_with_a_pending_admission_cannot_be_destroyed() {
 }
 
 #[test]
-fun a_replaced_notice_change_is_cancelled_first() {
+fun a_replaced_delay_change_is_cancelled_first() {
     let clock = clock_at(0);
     let mut set = new_witness_set(10);
     set.schedule_delay(20, &clock);
@@ -228,7 +228,7 @@ fun a_replaced_notice_change_is_cancelled_first() {
 }
 
 #[test]
-fun a_cancelled_admission_reports_the_notice_it_was_scheduled_with() {
+fun a_cancelled_admission_reports_the_delay_it_was_scheduled_with() {
     let mut clock = clock_at(0);
     let mut set = new_witness_set(10);
     set.schedule_add(@0xA, &clock);
@@ -259,7 +259,7 @@ fun cancelling_an_unscheduled_admission_rejects() {
 
 #[test]
 #[expected_failure(abort_code = errors::ENoPending, location = blast_admin::delayed_set)]
-fun cancelling_a_missing_notice_change_rejects() {
+fun cancelling_a_missing_delay_change_rejects() {
     let mut set = new_witness_set(10);
 
     set.cancel_delay();
@@ -269,7 +269,7 @@ fun cancelling_a_missing_notice_change_rejects() {
 
 #[test]
 #[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed_set)]
-fun a_set_with_a_pending_notice_change_cannot_be_destroyed() {
+fun a_set_with_a_pending_delay_change_cannot_be_destroyed() {
     let clock = clock_at(0);
     let mut set = new_witness_set(10);
     set.schedule_delay(20, &clock);
@@ -296,7 +296,7 @@ fun destruction_records_the_end_of_the_set_and_its_members() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
-fun creation_rejects_a_notice_above_the_ceiling() {
+fun creation_rejects_a_delay_above_the_ceiling() {
     let set = new_witness_set(delayed::max_delay_ms() + 1);
 
     set.destroy();
@@ -306,7 +306,7 @@ fun creation_rejects_a_notice_above_the_ceiling() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
-fun a_proposed_notice_above_the_ceiling_rejects() {
+fun a_proposed_delay_above_the_ceiling_rejects() {
     let clock = clock_at(0);
     let mut set = new_witness_set(10);
 
@@ -316,7 +316,7 @@ fun a_proposed_notice_above_the_ceiling_rejects() {
 }
 
 #[test]
-fun a_set_is_guarded_only_with_a_nonzero_notice_and_nothing_pending() {
+fun a_set_is_guarded_only_with_a_nonzero_delay_and_nothing_pending() {
     let clock = clock_at(0);
     let mut set = new_witness_set(0);
     assert!(!set.is_guarded());
@@ -338,7 +338,7 @@ fun a_set_is_guarded_only_with_a_nonzero_notice_and_nothing_pending() {
 }
 
 #[test]
-fun a_set_accepts_the_ceiling_notice() {
+fun a_set_accepts_the_ceiling_delay() {
     let set = new_witness_set(delayed::max_delay_ms());
 
     assert_eq!(set.delay_ms(), delayed::max_delay_ms());
@@ -346,17 +346,17 @@ fun a_set_accepts_the_ceiling_notice() {
 }
 
 #[test]
-fun readers_report_owner_key_and_a_pending_admissions_notice() {
+fun readers_report_owner_key_and_a_pending_admissions_delay() {
     let clock = clock_at(10);
-    let mut set = new_witness_set(NOTICE_MS);
+    let mut set = new_witness_set(DELAY_MS);
     set.schedule_add(@0xA, &clock);
 
-    let notice = set.admission_notice(&@0xA).destroy_some();
+    let delay = set.admission_delay(&@0xA).destroy_some();
     assert_eq!(set.owner(), owner());
     assert_eq!(set.key(), Witnesses());
-    assert_eq!(notice.delay_ms(), NOTICE_MS);
-    assert_eq!(notice.ready_at_ms(), 10 + NOTICE_MS);
-    assert!(set.admission_notice(&@0xB).is_none());
+    assert_eq!(delay.delay_ms(), DELAY_MS);
+    assert_eq!(delay.ready_at_ms(), 10 + DELAY_MS);
+    assert!(set.admission_delay(&@0xB).is_none());
 
     set.cancel_add(@0xA);
     set.destroy();
@@ -364,9 +364,9 @@ fun readers_report_owner_key_and_a_pending_admissions_notice() {
 }
 
 #[test]
-fun readers_report_pending_and_ready_admissions_and_notice_changes() {
+fun readers_report_pending_and_ready_admissions_and_delay_changes() {
     let mut clock = clock_at(0);
-    let mut set = new_witness_set(NOTICE_MS);
+    let mut set = new_witness_set(DELAY_MS);
     set.schedule_add(@0xA, &clock);
     set.schedule_delay(25, &clock);
 
@@ -375,7 +375,7 @@ fun readers_report_pending_and_ready_admissions_and_notice_changes() {
     assert!(!set.is_pending(&@0xB));
     assert!(!set.is_ready(&@0xA, &clock));
     assert!(!set.is_delay_ready(&clock));
-    clock.set_for_testing(NOTICE_MS);
+    clock.set_for_testing(DELAY_MS);
     assert!(set.is_ready(&@0xA, &clock));
     assert!(!set.is_ready(&@0xB, &clock));
     assert!(set.is_delay_ready(&clock));

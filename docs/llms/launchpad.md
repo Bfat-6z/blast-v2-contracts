@@ -561,7 +561,7 @@ A `PauseAdmin<BLAST_FUN>` calls `blast_admin::package_admin::pause` to set bits 
 at once; it emits `blast_admin::blast_admin_events::Paused<BLAST_FUN>`. Only
 `UnpauseAdmin<BLAST_FUN>` clears bits, with `launch_config::unpause`, which takes `LaunchConfig`,
 `PackageVersion` (mutable), the witness, `PackageAdmin<BLAST_FUN>`, and `RuntimeConfig`. It checks
-the current version, then aborts with `blast_fun::errors::EUnguardedNotice` unless every
+the current version, then aborts with `blast_fun::errors::EUnguardedDelay` unless every
 launchpad notice is guarded: the claim-signer set, the trade-fee share, trade fees, the venue set,
 the migration allocation, the LP-fee share, and the creation fee each have a nonzero applied notice,
 no pending proposal would set one to zero, and no venue or signer admission is pending. The generic
@@ -815,7 +815,7 @@ fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partner
 | any | 9 in `blast_admin::package_version` | call the launchpad's current package ID |
 | pause, unpause | 19 `EInvalidPauseBits`, 20 `EPauseUnchanged` from `blast_admin::package_version` | select nonzero supported bits that change the active mask |
 | create, buy, sell, join, settle, migrate | 21 `blast_admin::errors::EPaused` (`package_version`) | wait for an `UnpauseAdmin<BLAST_FUN>` to clear the operation's bit |
-| unpause | 32 `blast_fun::errors::EUnguardedNotice` (`launch_config`); 23 `EUnguardedUpgradeNotice` from `blast_admin::package_admin` | make every notice nonzero, cancel proposals that would zero one, settle pending admissions |
+| unpause | 32 `blast_fun::errors::EUnguardedDelay` (`launch_config`); 23 `EUnguardedUpgradeDelay` from `blast_admin::package_admin` | make every notice nonzero, cancel proposals that would zero one, settle pending admissions |
 | package administration | 22 `EWrongUpgradeAction`, 11 `EInvalidPackageDigest` from `blast_admin::package_admin` | execute the exact scheduled action; use a 32-byte digest |
 | delayed administration | 13 `ENotReady`, 14 `ENoPending`, 15 `EInvalidDelay`, 16 `EUnchanged`, 18 `EWrongChange` from Blast admin's delayed modules | wait for `ready_at_ms`; schedule before applying or cancelling; choose a notice of at most 30 days; change the value or notice; apply with the call matching the pending change |
 | publish | 7 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 20 `blast_fun::errors::EInvalidCreatorRecipient`, 21 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |

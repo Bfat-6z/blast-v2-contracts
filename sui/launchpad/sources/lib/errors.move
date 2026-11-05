@@ -136,8 +136,8 @@ const EInvalidCreationFee: u64 = 30;
 const ETooManyClaimSigners: u64 = 31;
 
 #[test_only]
-/// Unpausing needs every policy notice nonzero, with no pending zero notice or admission.
-const EUnguardedNotice: u64 = 32;
+/// Unpausing needs every policy delay nonzero, with no pending zero delay or admission.
+const EUnguardedDelay: u64 = 32;
 
 #[test_only]
 /// Blast's share of the trade fee exceeds its 7,000 bps maximum.
@@ -211,7 +211,7 @@ macro public(package) fun invalid_creation_fee(): u64 { 30 }
 
 macro public(package) fun too_many_claim_signers(): u64 { 31 }
 
-macro public(package) fun unguarded_notice(): u64 { 32 }
+macro public(package) fun unguarded_delay(): u64 { 32 }
 
 macro public(package) fun invalid_protocol_fee_share(): u64 { 33 }
 

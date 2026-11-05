@@ -172,7 +172,7 @@ fun prepare_checks_the_migrators_version_before_the_tier() {
 }
 
 #[test]
-/// The vault registry admits the Bluefin venue's witness at its publication notice of zero.
+/// The vault registry admits the Bluefin venue's witness at its publication delay of zero.
 fun the_vault_registry_admits_the_bluefin_venue() {
     let mut ctx = tx_context::dummy();
     let mut registry = blast_vault_package::empty_registry_for_testing(&mut ctx);

@@ -6,7 +6,7 @@
 /// Holder rewards: rounds funded from a vault's holder-reward route and paid by Merkle proof.
 ///
 /// Blast's off-chain system turns checkpointed holder balances into a Merkle allocation, and a
-/// `RewardsAdmin` schedules it as a round on the vault. Once the vault's round notice has elapsed,
+/// `RewardsAdmin` schedules it as a round on the vault. Once the vault's round delay has elapsed,
 /// anyone publishes it, reserving its Meme and Quote budget from the vault. Anyone can relay a
 /// proof afterwards; each leaf pays its committed beneficiary once, and anyone closes the round at
 /// its deadline, returning what is left to the vault.
@@ -32,8 +32,8 @@ public struct Round<phantom Meme, phantom Quote> has key {
 
 // === Public Functions ===
 
-/// Schedules a round's terms for publication after the vault's applied round notice, replacing
-/// any scheduled round or notice change. The terms' static checks run now; the round number,
+/// Schedules a round's terms for publication after the vault's applied round delay, replacing
+/// any scheduled round or delay change. The terms' static checks run now; the round number,
 /// interval, and budget are checked against the vault now to fail fast and again at publication.
 /// A zero reserve disables gas reimbursement. Gas attribution remains off chain.
 public fun schedule_round<Meme, Quote>(
@@ -73,7 +73,7 @@ public fun schedule_round<Meme, Quote>(
     vault.schedule_round_publication(terms, clock);
 }
 
-/// Publishes the scheduled round once its notice has elapsed: the treasury must still be the
+/// Publishes the scheduled round once its delay has elapsed: the treasury must still be the
 /// expected one, and the round's number, interval, and budget must still fit the vault. Funds
 /// holder claims and optional gas custody separately, with claims open for the scheduled window
 /// from now, and shares the round. Anyone may call it.
@@ -153,7 +153,7 @@ public fun cancel_round<Meme, Quote>(
     vault.cancel_round_publication();
 }
 
-/// Schedules a new round notice after the applied one, replacing any scheduled round.
+/// Schedules a new round delay after the applied one, replacing any scheduled round.
 public fun schedule_round_delay<Meme, Quote>(
     vault: &mut Vault<Meme, Quote>,
     _: &AdminWitness<RewardsAdmin>,
@@ -167,7 +167,7 @@ public fun schedule_round_delay<Meme, Quote>(
     vault.schedule_round_publication_delay(delay_ms, clock);
 }
 
-/// Applies a ready round-notice change; anyone may call it.
+/// Applies a ready round-delay change; anyone may call it.
 public fun apply_round_delay<Meme, Quote>(
     vault: &mut Vault<Meme, Quote>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
@@ -179,7 +179,7 @@ public fun apply_round_delay<Meme, Quote>(
     vault.apply_round_publication_delay(clock);
 }
 
-/// Cancels the pending round-notice change, even a ready one.
+/// Cancels the pending round-delay change, even a ready one.
 public fun cancel_round_delay<Meme, Quote>(
     vault: &mut Vault<Meme, Quote>,
     _: &AdminWitness<CancelAdmin>,

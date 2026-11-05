@@ -12,7 +12,7 @@
 /// one's share, and can propose moving a partner to another cap; the cap's holder
 /// sets where each of its partners is paid. Initial terms apply at registration.
 /// A later share or cap applies only when someone applies it, no sooner than
-/// `PARTNER_CHANGE_DELAY_MS` after it was proposed. That notice is fixed: this
+/// `PARTNER_CHANGE_DELAY_MS` after it was proposed. That delay is fixed: this
 /// module never changes it, and the package is published immutable. The
 /// recipient the cap holder sets applies at once.
 ///
@@ -80,8 +80,8 @@ public fun register(
 }
 
 /// Proposes `share_bps` as the partner's share, applicable by anyone after the fixed
-/// notice. A different proposal replaces a pending one and restarts the full notice;
-/// `cancel_share` discards one, even after its notice has elapsed. Proposing the
+/// delay. A different proposal replaces a pending one and restarts the full delay;
+/// `cancel_share` discards one, even after its delay has elapsed. Proposing the
 /// applied or the pending share aborts.
 public fun schedule_share(
     self: &mut Partner,
@@ -98,7 +98,7 @@ public fun schedule_share(
     self.share_bps.schedule_value(share_bps, clock);
 }
 
-/// Applies the proposed share once its notice has elapsed. Anyone may call, the partner included.
+/// Applies the proposed share once its delay has elapsed. Anyone may call, the partner included.
 public fun apply_share(self: &mut Partner, clock: &Clock) {
     self.share_bps.apply(clock);
 }
@@ -109,9 +109,9 @@ public fun cancel_share(self: &mut Partner, _: &AdminWitness<PartnerAdmin>) {
 }
 
 /// Proposes the cap `cap_id` to manage the partner, to replace a lost or stolen
-/// cap, applicable by anyone after the fixed notice. The applied cap keeps working
+/// cap, applicable by anyone after the fixed delay. The applied cap keeps working
 /// until then. A different proposal replaces a pending one and restarts the full
-/// notice; `cancel_cap` discards one, even after its notice has elapsed. Proposing
+/// delay; `cancel_cap` discards one, even after its delay has elapsed. Proposing
 /// the applied or the pending cap aborts.
 public fun schedule_cap(
     self: &mut Partner,
@@ -127,7 +127,7 @@ public fun schedule_cap(
     self.cap_id.schedule_value(cap_id, clock);
 }
 
-/// Applies the proposed managing cap once its notice has elapsed. Anyone may call.
+/// Applies the proposed managing cap once its delay has elapsed. Anyone may call.
 public fun apply_cap(self: &mut Partner, clock: &Clock) {
     self.cap_id.apply(clock);
 }
@@ -169,8 +169,8 @@ public fun pay<T>(self: &Partner, fee: &mut Balance<T>, ctx: &mut TxContext): u6
     amount
 }
 
-/// The fixed notice every change Blast makes to a partner waits. Products use it
-/// for their own notice, such as how long a partner they remove stays accepted.
+/// The fixed delay every change Blast makes to a partner waits. Products use it
+/// for their own delay, such as how long a partner they remove stays accepted.
 public fun delay_ms(): u64 {
     PARTNER_CHANGE_DELAY_MS
 }
@@ -196,7 +196,7 @@ public fun pending_share_bps(self: &Partner): Option<Proposal<u64>> {
 }
 
 /// Whether `apply_share` would succeed now: a share is proposed, its ready time has passed, and
-/// the fixed notice still fits in a Unix millisecond timestamp.
+/// the fixed delay still fits in a Unix millisecond timestamp.
 public fun is_share_ready(self: &Partner, clock: &Clock): bool {
     self.share_bps.is_ready(clock)
 }
@@ -212,14 +212,14 @@ public fun pending_cap_id(self: &Partner): Option<Proposal<ID>> {
 }
 
 /// Whether `apply_cap` would succeed now: a cap is proposed, its ready time has passed, and the
-/// fixed notice still fits in a Unix millisecond timestamp.
+/// fixed delay still fits in a Unix millisecond timestamp.
 public fun is_cap_ready(self: &Partner, clock: &Clock): bool {
     self.cap_id.is_ready(clock)
 }
 
 // === Private Functions ===
 
-/// A partner with `share_bps` and `cap_id` applied at once and the fixed notice.
+/// A partner with `share_bps` and `cap_id` applied at once and the fixed delay.
 fun new(recipient: address, share_bps: u64, cap_id: ID, ctx: &mut TxContext): Partner {
     let id = object::new(ctx);
 
@@ -245,7 +245,7 @@ public fun new_for_testing(recipient: address, share_bps: u64, ctx: &mut TxConte
 
 #[test_only]
 /// A partner whose applied share is `before`, with `after` proposed at `clock` and
-/// ready after the fixed notice, for products' own tests.
+/// ready after the fixed delay, for products' own tests.
 public fun new_scheduled_for_testing(
     recipient: address,
     before: u64,
@@ -285,7 +285,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 // === Constants ===
 
-/// The fixed notice before a share or a cap Blast proposes can apply, and how long a partner a
+/// The fixed delay before a share or a cap Blast proposes can apply, and how long a partner a
 /// `partner_list::PartnerList` removes stays accepted.
 const PARTNER_CHANGE_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 

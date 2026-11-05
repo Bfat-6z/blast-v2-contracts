@@ -3,7 +3,7 @@
 
 #[test_only]
 /// The presale's unpause: it clears bits through `blast_admin::package_admin` only while every
-/// presale notice is guarded. Pause-bit arithmetic and the upgrade notice are the generic
+/// presale delay is guarded. Pause-bit arithmetic and the upgrade delay are the generic
 /// administration's and are tested there.
 module blast_presale::pause_tests;
 
@@ -34,7 +34,7 @@ fun pause_bit_layout_is_stable() {
     abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
-fun stale_version_is_rejected_before_the_notice_gate() {
+fun stale_version_is_rejected_before_the_delay_gate() {
     let mut f = release_fixture_with(
         creation_policy::new_publication_for_testing(&mut tx_context::dummy()),
     );
@@ -44,7 +44,7 @@ fun stale_version_is_rejected_before_the_notice_gate() {
 }
 
 #[test]
-fun unpause_releases_once_every_notice_is_guarded() {
+fun unpause_releases_once_every_delay_is_guarded() {
     let mut f = release_fixture();
     f.unpause(constants::valid_pause_bits!());
     assert_eq!(f.version.paused_for_testing(), 0);
@@ -64,10 +64,10 @@ fun unpause_clears_only_the_requested_bits() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EUnguardedNotice,
+    abort_code = blast_presale::errors::EUnguardedDelay,
     location = blast_presale::creation_policy,
 )]
-fun unpause_rejects_the_zero_publication_notice() {
+fun unpause_rejects_the_zero_publication_delay() {
     let mut f = release_fixture_with(
         creation_policy::new_publication_for_testing(&mut tx_context::dummy()),
     );
@@ -77,18 +77,18 @@ fun unpause_rejects_the_zero_publication_notice() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EUnguardedNotice,
+    abort_code = blast_presale::errors::EUnguardedDelay,
     location = blast_presale::creation_policy,
 )]
-fun unpause_rejects_a_pending_change_to_a_zero_notice() {
-    let mut f = release_fixture().with_zero_notice_fees_proposal();
+fun unpause_rejects_a_pending_change_to_a_zero_delay() {
+    let mut f = release_fixture().with_zero_delay_fees_proposal();
     f.unpause(constants::create_pause_bit!());
     abort
 }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EUnguardedNotice,
+    abort_code = blast_presale::errors::EUnguardedDelay,
     location = blast_presale::creation_policy,
 )]
 fun unpause_rejects_a_pending_venue_admission() {
@@ -99,11 +99,11 @@ fun unpause_rejects_a_pending_venue_admission() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EUnguardedUpgradeNotice,
+    abort_code = blast_admin::errors::EUnguardedUpgradeDelay,
     location = blast_admin::package_admin,
 )]
-fun unpause_rejects_a_pending_zero_upgrade_notice() {
-    let mut f = release_fixture().with_zero_upgrade_notice_proposal();
+fun unpause_rejects_a_pending_zero_upgrade_delay() {
+    let mut f = release_fixture().with_zero_upgrade_delay_proposal();
     f.unpause(constants::create_pause_bit!());
     abort
 }
@@ -128,7 +128,7 @@ fun publication_wraps_into_a_fully_paused_version() {
 
 // === Test Helpers ===
 
-/// A fully paused version with the 48-hour upgrade notice and policies whose notices were raised
+/// A fully paused version with the 48-hour upgrade delay and policies whose delays were raised
 /// to two days.
 fun release_fixture(): ReleaseFixture {
     release_fixture_with(creation_policy::new_for_testing(&mut tx_context::dummy()))
@@ -147,7 +147,7 @@ fun release_fixture_with(creation_policy: CreationPolicy): ReleaseFixture {
     }
 }
 
-fun with_zero_notice_fees_proposal(self: ReleaseFixture): ReleaseFixture {
+fun with_zero_delay_fees_proposal(self: ReleaseFixture): ReleaseFixture {
     let ReleaseFixture { version, package_admin, mut fee_policy, creation_policy } = self;
     let clock = sui::clock::create_for_testing(&mut tx_context::dummy());
     fee_policy.schedule_fees(
@@ -178,7 +178,7 @@ fun with_pending_venue_admission(self: ReleaseFixture): ReleaseFixture {
     ReleaseFixture { version, package_admin, fee_policy, creation_policy }
 }
 
-fun with_zero_upgrade_notice_proposal(self: ReleaseFixture): ReleaseFixture {
+fun with_zero_upgrade_delay_proposal(self: ReleaseFixture): ReleaseFixture {
     let ReleaseFixture { version, mut package_admin, fee_policy, creation_policy } = self;
     let clock = sui::clock::create_for_testing(&mut tx_context::dummy());
     package_admin.schedule_upgrade_delay(

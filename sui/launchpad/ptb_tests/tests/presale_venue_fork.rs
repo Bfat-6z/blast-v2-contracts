@@ -23,7 +23,7 @@
 //! supplied plus residual reconciles exactly with the hand-off. The participant claims its tokens
 //! and overflow, real swaps accrue fees, permissionless collections pay every address route and
 //! grow the vault's holder-reward balances by the exact apportionment. A split change is proved
-//! with the `PresaleCap` and applied after the vault's notice; collection against another pool of
+//! with the `PresaleCap` and applied after the vault's delay; collection against another pool of
 //! the same type is refused, and the owner claims the migration residuals with an owner proof.
 //!
 //! A partnered Bluefin sale under nonzero Blast rates shows the fee ledger's two paths as PTB
@@ -42,7 +42,7 @@ use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock, time::Duration};
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
     CompiledPackage, Delayed, DelayedAction, DelayedApplied, Destination, Expected, FeeSplit,
-    GenericPackageVersionContents, Harness, Outcome, PUBLICATION_UPGRADE_NOTICE_MS, RoundTerms, UnlinkedPackage, VaultStack, append_presale_unpause, build,
+    GenericPackageVersionContents, Harness, Outcome, PUBLICATION_UPGRADE_DELAY_MS, RoundTerms, UnlinkedPackage, VaultStack, append_presale_unpause, build,
     build_unlinked, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
@@ -82,8 +82,8 @@ const HOLDER_REWARDS_BPS: u64 = 1_500;
 const DURATION_MS: u64 = 3_600_000;
 /// The shortest LP window `blast_presale::finalize` accepts: seven days.
 const LIQUIDITY_WINDOW_MS: u64 = 604_800_000;
-/// The vault's fixed notice for fee-split changes.
-const VAULT_FEE_NOTICE_MS: u64 = 172_800_000;
+/// The vault's fixed delay for fee-split changes.
+const VAULT_FEE_DELAY_MS: u64 = 172_800_000;
 
 /// Near-equal seed atoms from `fixside_sim.py`: fixing the larger side makes both venues demand
 /// `SMALL + 1` of the smaller side.
@@ -817,7 +817,7 @@ impl World {
         ensure!(package_witness.ends_with("::blast_presale_package::PackageWitness"), "{package_witness}");
         let package_admin = wrapped.created(&h, "package_admin", "PackageAdmin");
         ensure!(package_admin.len() == 1);
-        h.assert_publication_upgrade_notice(package_admin[0])?;
+        h.assert_publication_upgrade_delay(package_admin[0])?;
         let config_cap = h.configuration_admin(admin, admin_published, core, "blast_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let listing = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "ListingAdmin")?;
@@ -830,7 +830,7 @@ impl World {
         call(&mut b, presale, "creation_policy", "set_quote_allowed", vec![quote_type.clone()], vec![policy, version_arg, listing, allowed]);
         call(&mut b, presale, "creation_policy", "schedule_venue", vec![venue_type.clone()], vec![policy, version_arg, adapter, clock]);
         call(&mut b, presale, "creation_policy", "apply_venue", vec![venue_type], vec![policy, version_arg, clock]);
-        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
+        let delay = b.pure(PUBLICATION_UPGRADE_DELAY_MS)?;
         call(&mut b, presale, "creation_policy", "schedule_venue_delay", vec![], vec![policy, version_arg, adapter, delay, clock]);
         call(&mut b, presale, "creation_policy", "apply_venue_delay", vec![], vec![policy, version_arg, clock]);
         let fees = b.obj(h.shared(fee_policy[0], true))?;
@@ -892,7 +892,7 @@ impl World {
         Ok(())
     }
 
-    /// Schedules Blast's raise and token rates under the 48-hour notice, waits it out, and applies
+    /// Schedules Blast's raise and token rates under the 48-hour delay, waits it out, and applies
     /// them; LP-fee rates stay zero.
     fn set_protocol_rates(&mut self, raise_bps: u64, token_bps: u64) -> Result<()> {
         let mut b = ProgrammableTransactionBuilder::new();
@@ -902,11 +902,11 @@ impl World {
         let raise = self.bps(&mut b, raise_bps)?;
         let token = self.bps(&mut b, token_bps)?;
         let zero = self.bps(&mut b, 0)?;
-        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
+        let delay = b.pure(PUBLICATION_UPGRADE_DELAY_MS)?;
         let clock = self.clock(&mut b)?;
         call(&mut b, self.presale, "fee_policy", "schedule_fees", vec![], vec![fees, version, witness, raise, token, zero, zero, delay, clock]);
         self.h.execute(b.finish())?.assert_success();
-        self.h.sim.advance_clock(Duration::from_millis(PUBLICATION_UPGRADE_NOTICE_MS));
+        self.h.sim.advance_clock(Duration::from_millis(PUBLICATION_UPGRADE_DELAY_MS));
         let mut b = ProgrammableTransactionBuilder::new();
         let fees = self.shared(&mut b, self.fee_policy, true)?;
         let version = self.shared(&mut b, self.version, false)?;
@@ -1900,7 +1900,7 @@ impl World {
         Ok(fees)
     }
 
-    /// The owner proposes `split` with an owner proof; the vault's notice is fixed.
+    /// The owner proposes `split` with an owner proof; the vault's delay is fixed.
     fn schedule_split_pt(&self, sale: &Sale, m: &Migration, split: &FeeSplit) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
         let proof = self.prove_owner(&mut b, sale)?;
@@ -1917,7 +1917,7 @@ impl World {
         scheduled.assert_success();
         let pending = self.vault(m)?.fee_split;
         ensure!(pending.value == old.value, "scheduling retains the old routes");
-        ensure!(pending.pending.as_ref().is_some_and(|p| p.value == next_split() && p.delay_ms == VAULT_FEE_NOTICE_MS));
+        ensure!(pending.pending.as_ref().is_some_and(|p| p.value == next_split() && p.delay_ms == VAULT_FEE_DELAY_MS));
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
         let watched = [m.vault, m.pool, sale.currency];
         self.set_venue_version_for_fixture(2)?;
@@ -1934,7 +1934,7 @@ impl World {
         self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 14}, &watched, &owners)?;
         self.collect_impl(sale, m, true)?; // Settles under the OLD split, then applies the new one.
         let active = self.vault(m)?.fee_split;
-        ensure!(active.value == next_split() && active.delay_ms == VAULT_FEE_NOTICE_MS && active.pending.is_none());
+        ensure!(active.value == next_split() && active.delay_ms == VAULT_FEE_DELAY_MS && active.pending.is_none());
         self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
         self.collect(sale, m)?; // The same oracle now reads the applied split.
         self.report("48-hour owner-proved split: early apply rejected; later PTB abort restores fees/proposal; settled apply pays old routes; next collection uses new split".into());
@@ -2024,7 +2024,7 @@ impl World {
         moved.routes[1].bps += 1;
         let schedule = self.schedule_split_pt(sale, m, &moved)?;
         self.h.execute(schedule)?.assert_success();
-        self.h.sim.advance_clock(std::time::Duration::from_millis(VAULT_FEE_NOTICE_MS));
+        self.h.sim.advance_clock(std::time::Duration::from_millis(VAULT_FEE_DELAY_MS));
         let ready_wrong_pool = self.collect_route_pt(sale, m, other, true)?;
         self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.venues, module: self.route.module(), code}, &[m.vault, other, sale.currency], &owners)?;
         let mut b = ProgrammableTransactionBuilder::new();

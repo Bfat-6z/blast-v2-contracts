@@ -82,7 +82,7 @@ public struct RoundTerms has copy, drop, store {
 }
 
 /// Shared custody for one migrated sale's position and the balances its LP fees are split into.
-/// A holder-reward round waits in `round_publication` for its applied notice before anyone may
+/// A holder-reward round waits in `round_publication` for its applied delay before anyone may
 /// publish it; at most one round is scheduled at a time.
 public struct Vault<phantom Meme, phantom Quote> has key {
     id: UID,
@@ -147,7 +147,7 @@ public fun new<Meme, Quote, Venue>(
     let round_publication = delayed_action::new(
         RoundPublicationKey(),
         &id,
-        constants::round_notice_ms!(),
+        constants::round_delay_ms!(),
     );
     let protocol = protocol_fees::new(VaultWitness(), id.to_inner(), terms.partner_id());
 
@@ -480,7 +480,7 @@ public fun claim_owner_balances<Meme, Quote>(
     (meme, quote)
 }
 
-/// Proposes a new fee split with an owner proof, ready after the fixed 48-hour notice.
+/// Proposes a new fee split with an owner proof, ready after the fixed 48-hour delay.
 public fun schedule_fee_split<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     proof: OwnerProof,
@@ -509,7 +509,7 @@ public fun cancel_fee_split<Meme, Quote>(
 // Blast
 
 /// Proposes Blast's per-vault share, each asset at most 3,000 basis points, ready after the fixed
-/// 48-hour notice; it applies to fees collected after it is applied.
+/// 48-hour delay; it applies to fees collected after it is applied.
 public fun schedule_protocol_bps<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     _: &AdminWitness<FeeAdmin>,
@@ -623,8 +623,8 @@ public(package) fun new_round_terms(
     }
 }
 
-/// Schedules `terms` for publication after the applied round notice, replacing any scheduled
-/// round or notice change.
+/// Schedules `terms` for publication after the applied round delay, replacing any scheduled
+/// round or delay change.
 public(package) fun schedule_round_publication<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     terms: RoundTerms,
@@ -633,7 +633,7 @@ public(package) fun schedule_round_publication<Meme, Quote>(
     self.round_publication.schedule(terms, clock);
 }
 
-/// Consumes the scheduled round once its notice has elapsed and returns its terms.
+/// Consumes the scheduled round once its delay has elapsed and returns its terms.
 public(package) fun take_round_publication<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     clock: &Clock,
@@ -641,7 +641,7 @@ public(package) fun take_round_publication<Meme, Quote>(
     self.round_publication.take_action(clock)
 }
 
-/// Discards the scheduled round, even a ready one; aborts when a notice change is pending.
+/// Discards the scheduled round, even a ready one; aborts when a delay change is pending.
 public(package) fun cancel_round_publication<Meme, Quote>(self: &mut Vault<Meme, Quote>) {
     assert!(
         self.round_publication.pending().is_none_or!(|proposal| {
@@ -653,7 +653,7 @@ public(package) fun cancel_round_publication<Meme, Quote>(self: &mut Vault<Meme,
     self.round_publication.cancel();
 }
 
-/// Schedules a new round notice after the applied one, replacing any scheduled round.
+/// Schedules a new round delay after the applied one, replacing any scheduled round.
 public(package) fun schedule_round_publication_delay<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     delay_ms: u64,
@@ -662,7 +662,7 @@ public(package) fun schedule_round_publication_delay<Meme, Quote>(
     self.round_publication.schedule_delay(delay_ms, clock);
 }
 
-/// Applies the ready round-notice change.
+/// Applies the ready round-delay change.
 public(package) fun apply_round_publication_delay<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     clock: &Clock,
@@ -670,7 +670,7 @@ public(package) fun apply_round_publication_delay<Meme, Quote>(
     self.round_publication.apply_delay(clock);
 }
 
-/// Discards the pending round-notice change, even a ready one; aborts when a round is scheduled.
+/// Discards the pending round-delay change, even a ready one; aborts when a round is scheduled.
 public(package) fun cancel_round_publication_delay<Meme, Quote>(self: &mut Vault<Meme, Quote>) {
     assert!(
         self.round_publication.pending().is_none_or!(|proposal| {
@@ -846,7 +846,7 @@ public fun protocol_bps_for_testing<Meme, Quote>(self: &Vault<Meme, Quote>): (Bp
 }
 
 #[test_only]
-/// The round-publication slot: its applied notice and any scheduled round or notice.
+/// The round-publication slot: its applied delay and any scheduled round or delay.
 public fun round_publication_for_testing<Meme, Quote>(
     self: &Vault<Meme, Quote>,
 ): &DelayedAction<RoundPublicationKey, RoundTerms> {

@@ -6,7 +6,7 @@ module blast_admin::delayed_action_tests;
 
 // === Constants ===
 
-const NOTICE_MS: u64 = 172_800_000;
+const DELAY_MS: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -15,25 +15,25 @@ public struct Upgrade() has copy, drop, store;
 // === Tests ===
 
 #[test]
-fun an_action_waits_the_applied_notice_and_is_handed_back_once() {
+fun an_action_waits_the_applied_delay_and_is_handed_back_once() {
     let mut clock = clock_at(5);
-    let mut slot = new_slot(NOTICE_MS);
+    let mut slot = new_slot(DELAY_MS);
     let (_, _, created_delay_ms) = collect<ActionCreated<Upgrade, u64>>().action_created_fields();
-    assert_eq!(created_delay_ms, NOTICE_MS);
+    assert_eq!(created_delay_ms, DELAY_MS);
 
-    assert_eq!(slot.schedule(42, &clock), 5 + NOTICE_MS);
+    assert_eq!(slot.schedule(42, &clock), 5 + DELAY_MS);
     let scheduled = collect<ActionScheduled<Upgrade, u64>>();
     let (owner, _, change, delay_ms, ready_at_ms) = scheduled.action_scheduled_fields();
     assert_eq!(owner, owner());
     assert_eq!(change.action(), option::some(42));
-    assert_eq!(delay_ms, NOTICE_MS);
-    assert_eq!(ready_at_ms, 5 + NOTICE_MS);
+    assert_eq!(delay_ms, DELAY_MS);
+    assert_eq!(ready_at_ms, 5 + DELAY_MS);
 
-    clock.set_for_testing(5 + NOTICE_MS);
+    clock.set_for_testing(5 + DELAY_MS);
     assert_eq!(slot.take_action(&clock), 42);
     let (_, _, applied_change, _) = collect<ActionApplied<Upgrade, u64>>().action_applied_fields();
     assert_eq!(applied_change.action(), option::some(42));
-    assert_eq!(slot.delay_ms(), NOTICE_MS);
+    assert_eq!(slot.delay_ms(), DELAY_MS);
     assert!(slot.pending().is_none());
 
     slot.destroy();
@@ -41,7 +41,7 @@ fun an_action_waits_the_applied_notice_and_is_handed_back_once() {
 }
 
 #[test]
-fun a_notice_change_waits_the_applied_notice_and_replaces_a_pending_action() {
+fun a_delay_change_waits_the_applied_delay_and_replaces_a_pending_action() {
     let mut clock = clock_at(0);
     let mut slot = new_slot(100);
     slot.schedule(42, &clock);
@@ -68,7 +68,7 @@ fun a_notice_change_waits_the_applied_notice_and_replaces_a_pending_action() {
 
 #[test]
 #[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed_action)]
-fun a_notice_change_cannot_be_taken_as_an_action() {
+fun a_delay_change_cannot_be_taken_as_an_action() {
     let clock = clock_at(0);
     let mut slot = new_slot(0);
     slot.schedule_delay(10, &clock);
@@ -80,7 +80,7 @@ fun a_notice_change_cannot_be_taken_as_an_action() {
 
 #[test]
 #[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed_action)]
-fun an_action_cannot_be_applied_as_a_notice_change() {
+fun an_action_cannot_be_applied_as_a_delay_change() {
     let clock = clock_at(0);
     let mut slot = new_slot(0);
     slot.schedule(1, &clock);
@@ -92,7 +92,7 @@ fun an_action_cannot_be_applied_as_a_notice_change() {
 
 #[test]
 #[expected_failure(abort_code = errors::EUnchanged, location = blast_admin::delayed_action)]
-fun proposing_the_applied_notice_rejects() {
+fun proposing_the_applied_delay_rejects() {
     let clock = clock_at(0);
     let mut slot = new_slot(10);
 
@@ -155,7 +155,7 @@ fun the_change_kind_is_checked_before_readiness() {
 }
 
 #[test]
-fun an_applied_notice_change_records_the_new_notice() {
+fun an_applied_delay_change_records_the_new_delay() {
     let mut clock = clock_at(0);
     let mut slot = new_slot(10);
     slot.schedule_delay(20, &clock);
@@ -184,7 +184,7 @@ fun destruction_records_the_end_of_the_slot() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
-fun creation_rejects_a_notice_above_the_ceiling() {
+fun creation_rejects_a_delay_above_the_ceiling() {
     let slot = new_slot(delayed::max_delay_ms() + 1);
 
     slot.destroy();
@@ -194,7 +194,7 @@ fun creation_rejects_a_notice_above_the_ceiling() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
-fun a_proposed_notice_above_the_ceiling_rejects() {
+fun a_proposed_delay_above_the_ceiling_rejects() {
     let clock = clock_at(0);
     let mut slot = new_slot(10);
 
@@ -204,7 +204,7 @@ fun a_proposed_notice_above_the_ceiling_rejects() {
 }
 
 #[test]
-fun a_slot_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal() {
+fun a_slot_is_guarded_only_with_a_nonzero_delay_and_no_zero_delay_proposal() {
     let clock = clock_at(0);
     let mut slot = new_slot(0);
     assert!(!slot.is_guarded());
@@ -225,7 +225,7 @@ fun a_slot_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal() {
 }
 
 #[test]
-fun a_slot_accepts_the_ceiling_notice() {
+fun a_slot_accepts_the_ceiling_delay() {
     let slot = new_slot(delayed::max_delay_ms());
 
     assert_eq!(slot.delay_ms(), delayed::max_delay_ms());
@@ -234,19 +234,19 @@ fun a_slot_accepts_the_ceiling_notice() {
 
 #[test]
 fun readers_report_owner_and_key() {
-    let slot = new_slot(NOTICE_MS);
+    let slot = new_slot(DELAY_MS);
 
     assert_eq!(slot.owner(), owner());
     assert_eq!(slot.key(), Upgrade());
-    assert_eq!(slot.delay_ms(), NOTICE_MS);
+    assert_eq!(slot.delay_ms(), DELAY_MS);
 
     slot.destroy();
 }
 
 #[test]
-fun readers_split_a_pending_action_from_a_pending_notice_change() {
+fun readers_split_a_pending_action_from_a_pending_delay_change() {
     let mut clock = clock_at(10);
-    let mut slot = new_slot(NOTICE_MS);
+    let mut slot = new_slot(DELAY_MS);
     assert!(slot.pending_action().is_none());
     assert!(slot.pending_delay().is_none());
     assert!(!slot.is_ready(&clock));
@@ -254,19 +254,19 @@ fun readers_split_a_pending_action_from_a_pending_notice_change() {
     slot.schedule(5, &clock);
     assert_eq!(slot.pending_action(), option::some(5));
     assert!(slot.pending_delay().is_none());
-    clock.set_for_testing(10 + NOTICE_MS - 1);
+    clock.set_for_testing(10 + DELAY_MS - 1);
     assert!(!slot.is_ready(&clock));
-    clock.set_for_testing(10 + NOTICE_MS);
+    clock.set_for_testing(10 + DELAY_MS);
     assert!(slot.is_ready(&clock));
     assert!(!slot.is_delay_ready(&clock));
 
     slot.schedule_delay(25, &clock);
-    let notice = slot.pending_delay().destroy_some();
-    assert_eq!(notice.delay_ms(), 25);
-    assert_eq!(notice.ready_at_ms(), 10 + 2 * NOTICE_MS);
+    let delay = slot.pending_delay().destroy_some();
+    assert_eq!(delay.delay_ms(), 25);
+    assert_eq!(delay.ready_at_ms(), 10 + 2 * DELAY_MS);
     assert!(slot.pending_action().is_none());
     assert!(!slot.is_delay_ready(&clock));
-    clock.set_for_testing(10 + 2 * NOTICE_MS);
+    clock.set_for_testing(10 + 2 * DELAY_MS);
     assert!(slot.is_delay_ready(&clock));
     assert!(slot.is_ready(&clock));
 

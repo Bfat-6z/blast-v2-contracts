@@ -5255,7 +5255,7 @@ fun pause(version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>, bits: u8) {
 }
 
 /// Clears `bits` through the generic administration, as `creation_policy::unpause` does once every
-/// notice is guarded.
+/// delay is guarded.
 fun clear_pause_bits(version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>, bits: u8) {
     let package_admin = blast_presale_package::package_admin_for_testing(&mut tx_context::dummy());
     package_admin.clear_pause_bits(
