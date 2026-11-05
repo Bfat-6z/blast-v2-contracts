@@ -18,8 +18,8 @@ public struct AdminDelayFixture {
     scenario: Scenario,
     version: PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: Clock,
-    config: creation_policy::CreationPolicy,
-    runtime: fee_policy::FeePolicy,
+    config: CreationPolicy,
+    runtime: FeePolicy,
 }
 
 // === Tests ===
@@ -299,8 +299,8 @@ use blast_core::{blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin}, bps};
 
 use blast_presale::{
     blast_presale_package::{Self as marker, BLAST_PRESALE_PACKAGE},
-    creation_policy::{Self, VenueKey},
-    fee_policy
+    creation_policy::{Self, CreationPolicy, VenueKey},
+    fee_policy::{Self, FeePolicy}
 };
 
 use std::{type_name::TypeName, unit_test::{assert_eq, destroy}};

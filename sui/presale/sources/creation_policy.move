@@ -179,10 +179,10 @@ public fun cancel_venue_delay(
 /// claims never require unpausing.
 public fun unpause(
     self: &CreationPolicy,
-    fee_policy: &FeePolicy,
+    package_version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>,
     unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_PRESALE_PACKAGE>>,
     package_admin: &PackageAdmin<BLAST_PRESALE_PACKAGE>,
-    package_version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>,
+    fee_policy: &FeePolicy,
     bits: u8,
 ) {
     package_version.assert_current(constants::generation!());

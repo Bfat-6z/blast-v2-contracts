@@ -7,7 +7,6 @@ module blast_presale::admin_delay_security_tests;
 // === Constants ===
 
 const START: u64 = 1_234;
-const DELAY: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -97,7 +96,7 @@ fun exercise(setting: Setting, case: Case) {
     schedule(&mut f, setting, 100);
     assert_notice(&f, setting, 100, true);
     assert_eq!(snapshot(&f, setting), initial);
-    f.clock.set_for_testing(START + DELAY - if (case == Case::Early) 1 else 0);
+    f.clock.set_for_testing(START + delay_ms() - if (case == Case::Early) 1 else 0);
     assert_eq!(snapshot(&f, setting), initial);
     match (case) {
         Case::Early => {
@@ -107,7 +106,7 @@ fun exercise(setting: Setting, case: Case) {
         Case::Replacement => {
             schedule(&mut f, setting, 200);
             assert_notice(&f, setting, 200, true);
-            f.clock.set_for_testing(START + 2 * DELAY - 1);
+            f.clock.set_for_testing(START + 2 * delay_ms() - 1);
             apply(&mut f, setting);
             destroy(f);
         },
@@ -142,18 +141,18 @@ fun exercise(setting: Setting, case: Case) {
             assert_eq!(snapshot(&f, setting), initial);
             schedule(&mut f, setting, 100);
             assert_notice(&f, setting, 100, true);
-            f.clock.set_for_testing(START + 2 * DELAY);
+            f.clock.set_for_testing(START + 2 * delay_ms());
             apply(&mut f, setting);
             assert_value(&f, setting, 100);
             // Replacement of a ready action keeps the applied value until explicit application.
             prepare_again(&mut f, setting);
             schedule(&mut f, setting, 200);
             assert_notice(&f, setting, 200, true);
-            f.clock.set_for_testing(START + 4 * DELAY);
+            f.clock.set_for_testing(START + 4 * delay_ms());
             schedule(&mut f, setting, 300);
             assert_notice(&f, setting, 300, true);
             let before = snapshot(&f, setting);
-            f.clock.set_for_testing(START + 5 * DELAY + 1);
+            f.clock.set_for_testing(START + 5 * delay_ms() + 1);
             assert_eq!(snapshot(&f, setting), before);
             apply(&mut f, setting);
             assert_value(&f, setting, 300);
@@ -188,7 +187,7 @@ fun schedule(f: &mut Fixture, setting: Setting, n: u64) {
                     bps::new(n + 1),
                     bps::new(n + 2),
                     bps::new(n + 3),
-                    172_800_000,
+                    delay_ms(),
                     &f.clock
                 );
         },
@@ -236,7 +235,7 @@ fun assert_value(f: &Fixture, setting: Setting, n: u64) { assert_eq!(snapshot(f,
 /// Checks the primitive's last scheduled or cancelled proposal for `setting`: its owner, value
 /// and full notice, and for a schedule its deadline a full notice from now.
 fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
-    let ready_at_ms = if (scheduled) option::some(f.clock.timestamp_ms() + DELAY) else option::none();
+    let ready_at_ms = if (scheduled) option::some(f.clock.timestamp_ms() + delay_ms()) else option::none();
     match (setting) {
         Setting::Fees => assert_proposal<FeesKey, ProtocolFees>(
             sui::object::id(&f.policy),
@@ -259,7 +258,7 @@ fun assert_proposal<K: copy + drop + store, T: copy + drop + store>(
     };
     assert_eq!(actual_owner, owner);
     assert_eq!(bcs::to_bytes(&actual_value), value);
-    assert_eq!(delay_ms, DELAY);
+    assert_eq!(delay_ms, delay_ms());
     ready_at_ms.do!(|expected| assert_eq!(actual_ready_at_ms, expected));
 }
 
@@ -267,6 +266,11 @@ fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     let mut bytes = vector[];
     values.do!(|v| bytes.append(bcs::to_bytes(&v)));
     bytes
+}
+
+/// Blast's 48-hour administrative notice.
+fun delay_ms(): u64 {
+    blast_admin::package_admin::initial_upgrade_delay_ms_for_testing()
 }
 
 // === Imports ===

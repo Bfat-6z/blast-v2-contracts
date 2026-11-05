@@ -193,10 +193,10 @@ fun with_zero_upgrade_notice_proposal(self: ReleaseFixture): ReleaseFixture {
 
 fun unpause(self: &mut ReleaseFixture, bits: u8) {
     self.creation_policy.unpause(
-        &self.fee_policy,
+        &mut self.version,
         &blast_acl::witness_for_testing<UnpauseAdmin<BLAST_PRESALE_PACKAGE>>(),
         &self.package_admin,
-        &mut self.version,
+        &self.fee_policy,
         bits,
     );
 }

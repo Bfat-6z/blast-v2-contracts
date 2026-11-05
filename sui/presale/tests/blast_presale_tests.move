@@ -477,7 +477,7 @@ fun a_pending_policy_increase_does_not_raise_the_sales_immediate_fee_ceiling() {
         bps::new(0),
         bps::new(0),
         bps::new(0),
-        172_800_000,
+        blast_admin::package_admin::initial_upgrade_delay_ms_for_testing(),
         &clock,
     );
 
@@ -524,7 +524,7 @@ fun oversubscription_uses_one_fill_rate_and_refunds_the_rest() {
     assert_eq!(terms.origin(), fixture.presale_id);
     assert_eq!(
         terms.package_witness(),
-        type_name::with_original_ids<blast_presale_package::PackageWitness>(),
+        type_name::with_original_ids<PackageWitness>(),
     );
     assert_eq!(terms.fee_split(), creator_fee_split());
     let (protocol_meme_bps, protocol_quote_bps) = terms.protocol_bps();
@@ -5305,7 +5305,7 @@ use blast_presale::{
         RecipientShare,
         UncappedPhase
     },
-    blast_presale_package::{Self, BLAST_PRESALE_PACKAGE},
+    blast_presale_package::{Self, BLAST_PRESALE_PACKAGE, PackageWitness},
     constants,
     creation_policy::{Self, CreationPolicy},
     events::{

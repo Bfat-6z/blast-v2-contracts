@@ -6,7 +6,6 @@ module blast_presale::adapter_security_tests;
 
 // === Constants ===
 
-const DELAY: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -118,10 +117,10 @@ fun exercise(case: Case) {
         return
     };
     config.schedule_venue<AdapterB>(&version, &admin, &clock);
-    clock.set_for_testing(1234 + DELAY - if (case == Case::Early) 1 else 0);
+    clock.set_for_testing(1234 + delay_ms() - if (case == Case::Early) 1 else 0);
     if (case == Case::Replacement) {
         config.schedule_venue<AdapterA>(&version, &admin, &clock);
-        clock.set_for_testing(1234 + 2 * DELAY - 1);
+        clock.set_for_testing(1234 + 2 * delay_ms() - 1);
     };
     if (case == Case::StaleCancel || case == Case::StaleRemove || case == Case::StaleApply)
         version.set_generation_for_testing(2);
@@ -139,11 +138,11 @@ fun exercise(case: Case) {
         // Cancelling A must not cancel B. Re-admission after removal gets a new full notice.
         config.apply_venue<AdapterB>(&version, &clock);
         config.schedule_venue<AdapterA>(&version, &admin, &clock);
-        clock.set_for_testing(1234 + 2 * DELAY);
+        clock.set_for_testing(1234 + 2 * delay_ms());
         config.apply_venue<AdapterA>(&version, &clock);
         config.remove_venue<AdapterA>(&version, &admin);
         config.schedule_venue<AdapterA>(&version, &admin, &clock);
-        clock.set_for_testing(1234 + 3 * DELAY + 1);
+        clock.set_for_testing(1234 + 3 * delay_ms() + 1);
         config.apply_venue<AdapterA>(&version, &clock);
         config.assert_allowed<Quote>(type_name::with_original_ids<AdapterA>());
         config.assert_allowed<Quote>(type_name::with_original_ids<AdapterB>());
@@ -154,6 +153,11 @@ fun exercise(case: Case) {
     destroy(config);
     destroy(version);
     destroy(clock);
+}
+
+/// Blast's 48-hour administrative notice.
+fun delay_ms(): u64 {
+    blast_admin::package_admin::initial_upgrade_delay_ms_for_testing()
 }
 
 // === Imports ===

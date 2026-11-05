@@ -177,8 +177,8 @@ or `Funded`. The vault never closes and its position is never removed.
    schedule and apply its intended value and next notice. Upgrade custody already holds its 48-hour
    notice from wrap. Read back every operation's notice and configured value before release.
 5. Sign in as `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` and clear the intended bits (all = 7) with
-   `creation_policy::unpause(creation_policy, fee_policy, unpause_admin, package_admin,
-   package_version, bits)`. Unpause is immediate once every notice is guarded: the fee rates and
+   `creation_policy::unpause(creation_policy, package_version, unpause_admin, package_admin,
+   fee_policy, bits)`. Unpause is immediate once every notice is guarded: the fee rates and
    the venue set each need a nonzero applied notice, no pending proposal that would set it to
    zero, and no pending venue admission; otherwise it aborts with
    `blast_presale::errors::EUnguardedNotice` (0). The generic administration then requires the
@@ -641,8 +641,8 @@ that is neither admitted nor pending, aborts with code 20 from `delayed_set`.
 
 A `PauseAdmin<BLAST_PRESALE_PACKAGE>` calls `blast_admin::package_admin::pause` to set selected
 bits on the shared version. Only `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` may clear bits, with
-`creation_policy::unpause`, which takes the `CreationPolicy`, the `FeePolicy`, the `PackageAdmin`
-and the `PackageVersion` and first checks that every presale notice is guarded (see above). Bits:
+`creation_policy::unpause`, which takes the `CreationPolicy`, the `PackageVersion`, the
+`PackageAdmin` and the `FeePolicy` and first checks that every presale notice is guarded (see above). Bits:
 create is 1, commit is 2, migrate is 4. Pauses never expire; a paused call aborts with
 `blast_admin::errors::EPaused` from `blast_admin::package_version`, and pause and unpause events are
 `blast_admin::blast_admin_events::Paused` and `blast_admin::blast_admin_events::Unpaused`, typed

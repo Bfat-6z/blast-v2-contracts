@@ -69,8 +69,8 @@ policy before the chosen delay and release.
    next notice (172,800,000 ms = 48 hours) and read each notice back. Upgrade custody
    already holds 48 hours; do not propose it again (an unchanged notice aborts). Then grant
    `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` and clear the selected bits (all = 7) with
-   `creation_policy::unpause`, passing the shared CreationPolicy, FeePolicy, PackageAdmin and
-   PackageVersion. It aborts with `EUnguardedNotice` while either policy's notice is zero, a
+   `creation_policy::unpause`, passing the shared CreationPolicy, PackageVersion, PackageAdmin
+   and FeePolicy. It aborts with `EUnguardedNotice` while either policy's notice is zero, a
    pending proposal would set one to zero, or a venue admission is pending, and the generic
    administration aborts while the upgrade notice is unguarded. Unpause is immediate and
    needs no Clock. Pausing never resets a notice.
