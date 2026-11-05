@@ -65,6 +65,67 @@ fun a_destination_cannot_apply_before_its_notice() {
 }
 
 #[test]
+/// `is_destination_ready` answers what `apply_destination` would do: false with nothing scheduled,
+/// before the notice, after cancellation, and once applied; true from the ready time on.
+fun destination_readiness_follows_the_schedule_and_its_notice() {
+    let ctx = &mut tx_context::dummy();
+    let mut clock = clock::create_for_testing(ctx);
+    let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
+    assert!(!treasury.is_destination_ready(&clock));
+
+    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    clock.increment_for_testing(NOTICE_MS - 1);
+    assert!(!treasury.is_destination_ready(&clock));
+    clock.increment_for_testing(1);
+    assert!(treasury.is_destination_ready(&clock));
+    clock.increment_for_testing(1);
+    assert!(treasury.is_destination_ready(&clock));
+
+    treasury.cancel_destination(&blast_acl::witness_for_testing<CancelAdmin>());
+    assert!(!treasury.is_destination_ready(&clock));
+
+    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    clock.increment_for_testing(NOTICE_MS);
+    treasury.apply_destination(&clock);
+    assert!(!treasury.is_destination_ready(&clock));
+
+    destroy(treasury);
+    destroy(clock);
+}
+
+#[test]
+/// A ready time whose next notice no longer fits in a timestamp is not ready, as
+/// `apply_destination` would abort.
+fun a_destination_is_not_ready_once_its_next_notice_would_overflow() {
+    let ctx = &mut tx_context::dummy();
+    let mut clock = clock::create_for_testing(ctx);
+    let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
+    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+
+    clock.set_for_testing(std::u64::max_value!() - NOTICE_MS);
+    assert!(treasury.is_destination_ready(&clock));
+    clock.increment_for_testing(1);
+    assert!(!treasury.is_destination_ready(&clock));
+
+    destroy(treasury);
+    destroy(clock);
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
+fun a_destination_cannot_apply_once_its_next_notice_would_overflow() {
+    let ctx = &mut tx_context::dummy();
+    let mut clock = clock::create_for_testing(ctx);
+    let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
+    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+
+    clock.set_for_testing(std::u64::max_value!() - NOTICE_MS + 1);
+    treasury.apply_destination(&clock);
+
+    abort
+}
+
+#[test]
 #[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun a_cancelled_destination_cannot_apply() {
     let ctx = &mut tx_context::dummy();

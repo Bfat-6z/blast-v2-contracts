@@ -60,8 +60,11 @@ once its notice has passed (48 hours from publication); a Blast admin with
 `blast_domain::CancelAdmin` cancels it with `blast_treasury::cancel_destination`. Read the current
 address with `blast_treasury::destination`, the notice the next change waits with
 `blast_treasury::delay_ms`, and a scheduled change, as a `delayed::Proposal<address>`, with
-`blast_treasury::pending_destination`. The treasury is never deleted: every ledger pays through
-it.
+`blast_treasury::pending_destination`. `blast_treasury::is_destination_ready` takes the `Clock` and
+returns whether `blast_treasury::apply_destination` would succeed now: a change is scheduled, the
+clock reads its `ready_at_ms` or later, and the clock plus its next notice still fits in a `u64`;
+it returns false with nothing scheduled, before `ready_at_ms`, and after a cancel or an apply. The
+treasury is never deleted: every ledger pays through it.
 
 ### Migration hand-off and owner proof
 

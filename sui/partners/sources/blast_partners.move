@@ -195,6 +195,12 @@ public fun pending_share_bps(self: &Partner): Option<Proposal<u64>> {
     self.share_bps.pending()
 }
 
+/// Whether `apply_share` would succeed now: a share is proposed, its ready time has passed, and
+/// the fixed notice still fits in a Unix millisecond timestamp.
+public fun is_share_ready(self: &Partner, clock: &Clock): bool {
+    self.share_bps.is_ready(clock)
+}
+
 /// The ID of the applied cap, the only one that may set the recipient.
 public fun cap_id(self: &Partner): ID {
     self.cap_id.value()
@@ -203,6 +209,12 @@ public fun cap_id(self: &Partner): ID {
 /// The proposed managing cap's ID with its ready time, if any. It changes nothing until applied.
 public fun pending_cap_id(self: &Partner): Option<Proposal<ID>> {
     self.cap_id.pending()
+}
+
+/// Whether `apply_cap` would succeed now: a cap is proposed, its ready time has passed, and the
+/// fixed notice still fits in a Unix millisecond timestamp.
+public fun is_cap_ready(self: &Partner, clock: &Clock): bool {
+    self.cap_id.is_ready(clock)
 }
 
 // === Private Functions ===

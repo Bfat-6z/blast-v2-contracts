@@ -1590,8 +1590,11 @@ once its notice has passed (48 hours from publication); a Blast admin with
 `blast_domain::CancelAdmin` cancels it with `blast_treasury::cancel_destination`. Read the current
 address with `blast_treasury::destination`, the notice the next change waits with
 `blast_treasury::delay_ms`, and a scheduled change, as a `delayed::Proposal<address>`, with
-`blast_treasury::pending_destination`. The treasury is never deleted: every ledger pays through
-it.
+`blast_treasury::pending_destination`. `blast_treasury::is_destination_ready` takes the `Clock` and
+returns whether `blast_treasury::apply_destination` would succeed now: a change is scheduled, the
+clock reads its `ready_at_ms` or later, and the clock plus its next notice still fits in a `u64`;
+it returns false with nothing scheduled, before `ready_at_ms`, and after a cancel or an apply. The
+treasury is never deleted: every ledger pays through it.
 
 ### Migration hand-off and owner proof
 
@@ -1734,7 +1737,9 @@ needs no `Clock`; there is no initial waiting period. From then on:
    or `blast_partners::blast_partners::cancel_cap`, even after it is ready.
 4. From `ready_at_ms`, anyone may call `blast_partners::blast_partners::apply_share`
    or `blast_partners::blast_partners::apply_cap`, the partner included. Nothing
-   changes merely because time passes.
+   changes merely because time passes. `blast_partners::blast_partners::is_share_ready`
+   and `blast_partners::blast_partners::is_cap_ready` say whether that call would
+   succeed now.
 
 There is no delete: a partner exists forever, because launches, presales, and
 vaults bind its ID for good and pay Blast's held fees only with it. To switch it
@@ -1900,7 +1905,12 @@ Move callers read a partner with `blast_partners::blast_partners::recipient`,
 `blast_partners::blast_partners::pending_share_bps`,
 `blast_partners::blast_partners::cap_id` (applied), and
 `blast_partners::blast_partners::pending_cap_id`; each pending reader returns an
-`Option<delayed::Proposal<T>>`. The share readers keep the field's name,
+`Option<delayed::Proposal<T>>`. `blast_partners::blast_partners::is_share_ready`
+and `blast_partners::blast_partners::is_cap_ready` take the `Clock` and return
+whether `apply_share` or `apply_cap` would succeed now: a proposal is pending,
+the clock reads its `ready_at_ms` or later, and the clock plus the seven-day
+notice still fits in a `u64`. They return false with nothing proposed, before
+`ready_at_ms`, and after a cancel or an apply. The share readers keep the field's name,
 `share_bps`, the repository's term for a partner's share in basis points.
 `blast_partners::blast_partners::max_share_bps` returns the 8,000 BPS ceiling
 `register` and `schedule_share` enforce. Off chain, read the shared `Partner`
@@ -3192,6 +3202,10 @@ public fun delay_ms(self: &Treasury): u64
 
 /// The scheduled destination with its next notice and ready time, if any.
 public fun pending_destination(self: &Treasury): Option<blast_admin::delayed::Proposal<address>>
+
+/// Whether `apply_destination` would succeed now: a destination is scheduled, its ready time has
+/// passed, and its next notice still fits in a Unix millisecond timestamp.
+public fun is_destination_ready(self: &Treasury, clock: &Clock): bool
 
 /// Whether every change waits a nonzero notice.
 public fun is_guarded(self: &Treasury): bool
@@ -4559,11 +4573,19 @@ public fun share_bps(self: &Partner): u64
 /// The proposed share with its ready time, if any. It changes nothing until applied.
 public fun pending_share_bps(self: &Partner): Option<blast_admin::delayed::Proposal<u64>>
 
+/// Whether `apply_share` would succeed now: a share is proposed, its ready time has passed, and
+/// the fixed notice still fits in a Unix millisecond timestamp.
+public fun is_share_ready(self: &Partner, clock: &Clock): bool
+
 /// The ID of the applied cap, the only one that may set the recipient.
 public fun cap_id(self: &Partner): ID
 
 /// The proposed managing cap's ID with its ready time, if any. It changes nothing until applied.
 public fun pending_cap_id(self: &Partner): Option<blast_admin::delayed::Proposal<ID>>
+
+/// Whether `apply_cap` would succeed now: a cap is proposed, its ready time has passed, and the
+/// fixed notice still fits in a Unix millisecond timestamp.
+public fun is_cap_ready(self: &Partner, clock: &Clock): bool
 ```
 
 #### Events
