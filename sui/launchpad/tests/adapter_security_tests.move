@@ -43,16 +43,16 @@ fun venue_removed() { exercise(Case::Removed); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_set)]
 fun venue_replay() { exercise(Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun venue_stale_schedule() { exercise(Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun venue_stale_apply() { exercise(Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun venue_stale_cancel() { exercise(Case::StaleCancel); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun venue_stale_remove() { exercise(Case::StaleRemove); }
 
 #[test]

@@ -429,7 +429,7 @@ place. The opening-round balances awaiting delivery are untouched.
 #### Admin operations (Blast admin)
 
 Each setter takes the object it changes, `PackageVersion`, and the role's `AdminWitness`. Delayed
-schedules abort with code 20 from the Blast admin delayed module of their type (`delayed` for a
+schedules abort with code 16 from the Blast admin delayed module of their type (`delayed` for a
 setting, `delayed_set` for a venue or signer admission) when nothing would change; "Delayed
 administration" lists their events. The allow/remove toggles for Quotes and decimals instead abort
 inside `sui::vec_set` when the entry already has the requested state.
@@ -492,7 +492,7 @@ Each policy owns its applied notice. A value schedule takes the proposed value a
 `delay_ms`, but it is ready at `now + applied delay_ms`: passing zero cannot shorten the current
 wait. Application, by anyone with `Clock`, makes the value and the next notice active together.
 Rescheduling replaces the proposal and restarts the full applied notice. `CancelAdmin` can cancel
-even a ready proposal. A proposal that changes neither value nor notice aborts with code 20
+even a ready proposal. A proposal that changes neither value nor notice aborts with code 16
 (`EUnchanged`) from Blast admin. Every notice is at most `blast_admin::delayed::max_delay_ms` (30
 days). The admin guide documents these delayed primitives in full.
 
@@ -544,7 +544,7 @@ only a new notice with `launch::schedule_curve_fee_cap_delay` or
 replaces the other. After the notice anyone applies a reassignment with
 `launch::apply_curve_fee_cap_reassignment` or `launch::apply_metadata_cap_reassignment`, and a
 notice change with `launch::apply_curve_fee_cap_delay` or `launch::apply_metadata_cap_delay`;
-calling the other kind's apply aborts with code 22 from `delayed_action`. CancelAdmin cancels with
+calling the other kind's apply aborts with code 18 from `delayed_action`. CancelAdmin cancels with
 `launch::cancel_curve_fee_cap_reassignment` or `launch::cancel_metadata_cap_reassignment`.
 
 A reassignment mints a fresh cap, records it as the live one, sends it to the non-zero recipient, and
@@ -810,12 +810,12 @@ fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partner
 
 | Flow | Code, constant (module) | Fix |
 | --- | --- | --- |
-| any | 9 in `blast_admin::operational_version` | call the launchpad's current package ID |
-| pause, unpause | 23 `EInvalidPauseBits`, 24 `EPauseUnchanged` from `blast_admin::package_version` | select nonzero supported bits that change the active mask |
-| create, buy, sell, join, settle, migrate | 25 `blast_admin::errors::EPaused` (`package_version`) | wait for an `UnpauseAdmin<BLAST_FUN>` to clear the operation's bit |
-| unpause | 32 `blast_fun::errors::EUnguardedNotice` (`launch_config`); 27 `EUnguardedUpgradeNotice` from `blast_admin::package_admin` | make every notice nonzero, cancel proposals that would zero one, settle pending admissions |
-| package administration | 26 `EWrongUpgradeAction`, 13 `EInvalidPackageDigest` from `blast_admin::package_admin` | execute the exact scheduled action; use a 32-byte digest |
-| delayed administration | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin's delayed modules | wait for `ready_at_ms`; schedule before applying or cancelling; choose a notice of at most 30 days; change the value or notice; apply with the call matching the pending change |
+| any | 9 in `blast_admin::package_version` | call the launchpad's current package ID |
+| pause, unpause | 19 `EInvalidPauseBits`, 20 `EPauseUnchanged` from `blast_admin::package_version` | select nonzero supported bits that change the active mask |
+| create, buy, sell, join, settle, migrate | 21 `blast_admin::errors::EPaused` (`package_version`) | wait for an `UnpauseAdmin<BLAST_FUN>` to clear the operation's bit |
+| unpause | 32 `blast_fun::errors::EUnguardedNotice` (`launch_config`); 23 `EUnguardedUpgradeNotice` from `blast_admin::package_admin` | make every notice nonzero, cancel proposals that would zero one, settle pending admissions |
+| package administration | 22 `EWrongUpgradeAction`, 11 `EInvalidPackageDigest` from `blast_admin::package_admin` | execute the exact scheduled action; use a 32-byte digest |
+| delayed administration | 13 `ENotReady`, 14 `ENoPending`, 15 `EInvalidDelay`, 16 `EUnchanged`, 18 `EWrongChange` from Blast admin's delayed modules | wait for `ready_at_ms`; schedule before applying or cancelling; choose a notice of at most 30 days; change the value or notice; apply with the call matching the pending change |
 | publish | 7 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 20 `blast_fun::errors::EInvalidCreatorRecipient`, 21 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | prepare | `blast_migrators::errors::EInvalidTier`, `blast_migrators::errors::ESymbolTooLong`; Cetus aborts in its own modules | a tier within Bluefin's bounds and a Meme symbol of at most 32 bytes; a tick spacing Cetus registers and a pair it accepts |
 | start | 9 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |

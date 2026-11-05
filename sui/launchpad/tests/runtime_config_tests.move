@@ -100,7 +100,7 @@ fun protocol_fee_share_rejects_the_current_value() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun protocol_fee_share_checks_the_version_before_the_current_value() {
     let mut fixture = start();
 
@@ -125,7 +125,7 @@ fun a_signer_key_waits_the_notice_and_anyone_applies_it() {
 
         assert!(f.config.creator_claim_signers().is_empty());
         let (_, _, change, delay_ms, ready_at_ms) = scheduled_one().set_scheduled_fields();
-        assert_eq!(change.member_for_testing(), option::some(signer_public_key()));
+        assert_eq!(change.member(), option::some(signer_public_key()));
         assert_eq!(delay_ms, NOTICE_MS);
         assert_eq!(ready_at_ms, NOTICE_MS);
     });
@@ -136,7 +136,7 @@ fun a_signer_key_waits_the_notice_and_anyone_applies_it() {
 
         assert_eq!(f.config.creator_claim_signers(), vector[signer_public_key()]);
         let (_, _, change, delay_ms) = applied_one_signer().set_applied_fields();
-        assert_eq!(change.member_for_testing(), option::some(signer_public_key()));
+        assert_eq!(change.member(), option::some(signer_public_key()));
         assert_eq!(delay_ms, NOTICE_MS);
     });
 
@@ -165,7 +165,7 @@ fun zero_notice_bootstrap_admits_at_once_then_the_raised_notice_applies() {
 
     assert_eq!(signer_public_keys, vector[signer_public_key()]);
     let (_, _, change, delay_ms, ready_at_ms) = second_admission.set_scheduled_fields();
-    assert_eq!(change.member_for_testing(), option::some(second_signer_public_key()));
+    assert_eq!(change.member(), option::some(second_signer_public_key()));
     assert_eq!(delay_ms, NOTICE_MS);
     assert_eq!(ready_at_ms, 5 + NOTICE_MS);
 }
@@ -208,7 +208,7 @@ fun revoke_discards_a_pending_key_at_once() {
         assert!(f.config.creator_claim_signers().is_empty());
         assert!(event::events_by_type<MemberRemoved<ClaimSignerKey, vector<u8>>>().is_empty());
         let (_, _, change, _, ready_at_ms) = cancelled_one_signer().set_cancelled_fields();
-        assert_eq!(change.member_for_testing(), option::some(signer_public_key()));
+        assert_eq!(change.member(), option::some(signer_public_key()));
         assert_eq!(ready_at_ms, NOTICE_MS);
     });
 
@@ -267,7 +267,7 @@ fun claim_signer_rejects_a_key_that_is_not_32_bytes() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun claim_signer_checks_the_version_before_the_key_length() {
     let mut fixture = start();
 
@@ -325,7 +325,7 @@ fun a_full_cap_reschedules_a_pending_key_and_revocation_frees_a_slot() {
         let (_, _, _, _, ready_at_ms) = scheduled_one().set_scheduled_fields();
         assert_eq!(ready_at_ms, 4 * NOTICE_MS);
         let (_, _, change, _, cancelled_ready_at_ms) = cancelled_one_signer().set_cancelled_fields();
-        assert_eq!(change.member_for_testing(), option::some(third_signer_public_key()));
+        assert_eq!(change.member(), option::some(third_signer_public_key()));
         assert_eq!(cancelled_ready_at_ms, 3 * NOTICE_MS);
     });
 
@@ -354,7 +354,7 @@ fun cancel_admin_cancels_a_ready_signer_key() {
 
         assert!(f.config.creator_claim_signers().is_empty());
         let (_, _, change, _, _) = cancelled_one_signer().set_cancelled_fields();
-        assert_eq!(change.member_for_testing(), option::some(signer_public_key()));
+        assert_eq!(change.member(), option::some(signer_public_key()));
     });
 
     fixture.end();
@@ -370,7 +370,7 @@ fun the_signer_notice_follows_its_own_lifecycle() {
         f.schedule_creator_claim_signer_delay(NOTICE_MS / 2);
 
         let (_, _, change, delay_ms, ready_at_ms) = scheduled_one().set_scheduled_fields();
-        assert!(change.member_for_testing().is_none());
+        assert!(change.member().is_none());
         assert_eq!(delay_ms, NOTICE_MS / 2);
         assert_eq!(ready_at_ms, NOTICE_MS);
     });
@@ -388,7 +388,7 @@ fun the_signer_notice_follows_its_own_lifecycle() {
         f.schedule_creator_claim_signer_delay(NOTICE_MS);
         f.cancel_creator_claim_signer_delay();
         let (_, _, change, delay_ms, _) = cancelled_one_signer().set_cancelled_fields();
-        assert!(change.member_for_testing().is_none());
+        assert!(change.member().is_none());
         assert_eq!(delay_ms, NOTICE_MS);
     });
 

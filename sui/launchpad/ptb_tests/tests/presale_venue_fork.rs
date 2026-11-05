@@ -96,8 +96,8 @@ const BLUEFIN_NEAR_EQUAL_LIQUIDITY: u128 = 4_611_686_019_504_160_504;
 /// `blast_presale::errors` registry code, raised by `blast_presale`.
 const INVALID_LIFECYCLE: u64 = 11;
 /// `blast_admin::errors` codes, raised by the generic `package_version`.
-const INVALID_PAUSE_BITS: u64 = 23;
-const PAUSE_UNCHANGED: u64 = 24;
+const INVALID_PAUSE_BITS: u64 = 19;
+const PAUSE_UNCHANGED: u64 = 20;
 /// `blast_migrators::errors` registry codes, raised by its `cetus` and `bluefin` modules.
 const MIGRATORS_INVALID_COIN_ORDER: u64 = 0;
 const MIGRATORS_POSITION_POOL_MISMATCH: u64 = 1;
@@ -166,7 +166,7 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
                     let pt = w.pause_command(pausing, bits)?;
                     let rejected = if generation != 1 && !pausing {
                         stale += 1;
-                        Some(Expected::Abort { package: w.admin, module: "operational_version", code: 9 })
+                        Some(Expected::Abort { package: w.admin, module: "package_version", code: 9 })
                     } else if !(1..=7).contains(&bits) {
                         invalid += 1;
                         Some(Expected::Abort { package: w.admin, module: "package_version", code: INVALID_PAUSE_BITS })
@@ -1922,16 +1922,16 @@ impl World {
         let watched = [m.vault, m.pool, sale.currency];
         self.set_venue_generation_for_fixture(2)?;
         let stale = self.collect_route_pt(sale, m, m.pool, true)?;
-        self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "operational_version", code: 9}, &watched, &owners)?;
+        self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "package_version", code: 9}, &watched, &owners)?;
         self.set_venue_generation_for_fixture(1)?;
         let early = self.collect_route_pt(sale, m, m.pool, true)?;
-        self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 17}, &watched, &owners)?;
+        self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 13}, &watched, &owners)?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(old.delay_ms));
         self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
         self.swap(sale, m, Side::MemeIn, terms.lp_tokens() / 100)?;
         let mut rollback = self.collect_route_pt(sale, m, m.pool, true)?;
         rollback.commands.push(rollback.commands.last().expect("apply").clone());
-        self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 18}, &watched, &owners)?;
+        self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 14}, &watched, &owners)?;
         self.collect_impl(sale, m, true)?; // Settles under the OLD split, then applies the new one.
         let active = self.vault(m)?.fee_split;
         ensure!(active.value == next_split() && active.delay_ms == VAULT_FEE_NOTICE_MS && active.pending.is_none());

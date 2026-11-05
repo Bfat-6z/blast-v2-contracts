@@ -232,7 +232,7 @@ fun security_curve_fee_cap_replay() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun security_curve_fee_cap_stale_schedule() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -251,7 +251,7 @@ fun security_curve_fee_cap_stale_schedule() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun security_curve_fee_cap_stale_apply() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -272,7 +272,7 @@ fun security_curve_fee_cap_stale_apply() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun security_curve_fee_cap_stale_cancel() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -506,7 +506,7 @@ fun security_metadata_cap_replay() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun security_metadata_cap_stale_schedule() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -525,7 +525,7 @@ fun security_metadata_cap_stale_schedule() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun security_metadata_cap_stale_apply() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -546,7 +546,7 @@ fun security_metadata_cap_stale_apply() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun security_metadata_cap_stale_cancel() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -1300,7 +1300,7 @@ fun intake_rejects_a_ticket_whose_decimals_are_no_longer_allowed() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun set_virtual_quote_rejects_a_stale_generation() {
     let mut fixture = start();
 
@@ -1316,7 +1316,7 @@ fun set_virtual_quote_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun set_graduation_target_rejects_a_stale_generation() {
     let mut fixture = start();
 
@@ -1332,7 +1332,7 @@ fun set_graduation_target_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun set_allocation_plan_rejects_a_stale_generation() {
     let mut fixture = start();
 
@@ -1348,7 +1348,7 @@ fun set_allocation_plan_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun set_lp_fee_split_rejects_a_stale_generation() {
     let mut fixture = start();
 
@@ -1364,7 +1364,7 @@ fun set_lp_fee_split_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun set_opening_round_rejects_a_stale_generation() {
     let mut fixture = start();
 
@@ -1380,7 +1380,7 @@ fun set_opening_round_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun set_partner_checks_the_version_before_partner_admission() {
     let mut fixture = start();
 
@@ -1398,7 +1398,7 @@ fun set_partner_checks_the_version_before_partner_admission() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun finalize_checks_the_version_before_missing_settings() {
     let mut fixture = start();
 
@@ -1413,7 +1413,7 @@ fun finalize_checks_the_version_before_missing_settings() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun share_checks_the_version_before_already_shared_lifecycle() {
     let mut fixture = start();
 
@@ -1785,7 +1785,7 @@ fun owned_launch_rejects_public_sell_before_zero_input() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun buy_checks_the_version_first() {
     let mut fixture = start();
 
@@ -2128,7 +2128,7 @@ fun metadata_recipient_schedule_rejects_zero() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun curve_fee_cap_schedule_checks_version_before_zero_recipient() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
@@ -2175,7 +2175,7 @@ fun curve_fee_cap_delay_reduction_to_zero_waits_the_old_notice() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun metadata_cap_schedule_checks_version_before_zero_recipient() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
@@ -2368,7 +2368,7 @@ fun launcher_cannot_claim_another_address_creators_caps() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun creator_claim_checks_the_version_before_the_sender() {
     let mut fixture = start();
 
@@ -3432,7 +3432,7 @@ fun claim_protocol_fees_with_a_zero_share_partner_pays_nothing() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 /// A stale package is refused before the partner check, so old bytecode cannot claim.
 fun claim_protocol_fees_checks_the_version_before_the_partner() {
     let mut fixture = start();
@@ -3453,7 +3453,7 @@ fun claim_protocol_fees_checks_the_version_before_the_partner() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 /// A stale package is refused before the partner check, so old bytecode cannot pay a partner.
 fun claim_protocol_fees_with_partner_checks_the_version_before_the_partner() {
     let mut fixture = start();
@@ -4109,7 +4109,7 @@ fun only_the_stored_venue_redeems_the_migration() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun stale_package_version_aborts_migration_before_its_lifecycle_check() {
     let mut fixture = start();
 
@@ -4277,7 +4277,7 @@ fun a_retired_curve_fee_cap_cannot_prove_ownership() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun prove_owner_checks_the_version_before_the_cap() {
     let mut fixture = start();
 

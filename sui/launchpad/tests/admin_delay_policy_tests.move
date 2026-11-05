@@ -95,7 +95,7 @@ fun replacing_a_ready_proposal_restarts_the_old_notice() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun stale_delay_change_rejects_before_other_validation() {
     let mut fixture = start();
     fixture.run!(|f| {
@@ -258,7 +258,7 @@ fun fee(self: &AdminDelayFixture): u64 { self.config.creation_fee() }
 fun venue_delay_changes(): u64 {
     sui::event::events_by_type<SetApplied<VenueKey, TypeName>>().count!(|applied| {
         let (_, _, change, _) = applied.set_applied_fields();
-        change.member_for_testing().is_none()
+        change.member().is_none()
     })
 }
 

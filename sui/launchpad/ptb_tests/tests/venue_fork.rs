@@ -1668,18 +1668,18 @@ impl World {
                 .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, 2u64))?);
             self.h.insert(stale);
             let stale_apply = self.collect_pt(launch, m, m.pool, update)?;
-            self.h.assert_rolled_back(stale_apply, Expected::Abort {package: self.admin, module: "operational_version", code: 9},
+            self.h.assert_rolled_back(stale_apply, Expected::Abort {package: self.admin, module: "package_version", code: 9},
                 &[m.vault, m.pool, launch.currency], &watched_payees)?;
             self.h.insert(original);
             let early = self.collect_pt(launch, m, m.pool, update)?;
-            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 17 };
+            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 13 };
             self.h.assert_rolled_back(early, expected, &[m.vault, m.pool, launch.currency], &watched_payees)?;
             self.h.sim.advance_clock(std::time::Duration::from_millis(before.delay_ms));
             // A later failing command must roll back the ready application, venue collection,
             // payouts, and proposal consumption together.
             let mut rollback = self.collect_pt(launch, m, m.pool, update)?;
             rollback.commands.push(rollback.commands.last().expect("apply").clone());
-            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 18 };
+            let expected = Expected::Abort { package: self.admin, module: "delayed", code: 14 };
             self.h.assert_rolled_back(rollback, expected, &[m.vault, m.pool, launch.currency], &watched_payees)?;
         }
         let before = self.vault(m)?;
@@ -2231,7 +2231,7 @@ impl World {
         };
         self.h.sim.advance_clock(std::time::Duration::from_millis(ROUND_NOTICE_MS - 1));
         let pt = publish(self)?;
-        self.h.assert_rolled_back(pt, Expected::Abort { package: self.admin, module: "delayed", code: 17 }, &[m.vault], &[LP_PROTOCOL.into()])?;
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.admin, module: "delayed", code: 13 }, &[m.vault], &[LP_PROTOCOL.into()])?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(1));
         let outcome = self.h.execute(publish(self)?)?;
         outcome.assert_success();

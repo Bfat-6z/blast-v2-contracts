@@ -45,7 +45,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     call(&mut b, admin, "package_admin", "wrap", vec![launchpad_marker(blast)?], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
-        Expected::Abort { package: admin, module: "upgrade_custody", code: 12 },
+        Expected::Abort { package: admin, module: "package_admin", code: 10 },
         &[bootstrap, cap, foreign_cap, config],
         &[h.sender],
     )?;
@@ -95,7 +95,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     call(&mut b, admin, "package_admin", "wrap", vec![launchpad_marker(unwrapped)?], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
-        Expected::Abort { package: admin, module: "upgrade_custody", code: 12 },
+        Expected::Abort { package: admin, module: "package_admin", code: 10 },
         &[bootstrap, cap, config],
         &[h.sender],
     )?;
@@ -155,7 +155,7 @@ fn assert_vault_admission_waits_the_raised_notice(h: &mut Harness, admin: Object
         Ok(b.finish())
     };
     h.sim.advance_clock(std::time::Duration::from_millis(PUBLICATION_UPGRADE_NOTICE_MS - 1));
-    h.assert_rolled_back(apply(h)?, Expected::Abort { package: admin, module: "delayed_set", code: 17 }, &[vault.registry], &[])?;
+    h.assert_rolled_back(apply(h)?, Expected::Abort { package: admin, module: "delayed_set", code: 13 }, &[vault.registry], &[])?;
     h.sim.advance_clock(std::time::Duration::from_millis(1));
     h.execute(apply(h)?)?.assert_success();
     Ok(())
@@ -183,7 +183,7 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
     let config_arg = b.obj(h.shared(config, true))?;
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
-    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 17 }, &[config], &[])?;
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 13 }, &[config], &[])?;
     h.sim.advance_clock(std::time::Duration::from_millis(1));
     for must_abort in [true, false] {
         let mut b = ProgrammableTransactionBuilder::new();
@@ -197,7 +197,7 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
         call(&mut b, blast, "launch_config", "schedule_creation_fee", vec![], vec![config_arg, version_arg, fee, value, next_delay, clock]);
         if must_abort {
             call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
-            h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 17 }, &[config, cap], &[])?;
+            h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 13 }, &[config, cap], &[])?;
         } else {
             let applied = h.execute(b.finish())?;
             applied.assert_success();
@@ -332,7 +332,7 @@ fn assert_initial_partner_payment(
         call(&mut b, partners, "blast_partners", "apply_share", vec![], vec![partner_arg, clock]);
         Ok(b.finish())
     };
-    h.assert_rolled_back(apply(h)?, Expected::Abort { package: admin, module: "delayed", code: 17 }, &[partner], &[h.sender])?;
+    h.assert_rolled_back(apply(h)?, Expected::Abort { package: admin, module: "delayed", code: 13 }, &[partner], &[h.sender])?;
     h.sim.advance_clock(std::time::Duration::from_millis(1));
     let pending = Some(Proposal { value: 5_000, delay_ms: NOTICE, ready_at_ms });
     assert_eq!(bcs::from_bytes::<Partner>(&h.contents(partner))?.2.pending, pending);
@@ -341,7 +341,7 @@ fn assert_initial_partner_payment(
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut b, partners, "blast_partners", "apply_share", vec![], vec![partner_arg, clock]);
     call(&mut b, partners, "blast_partners", "apply_share", vec![], vec![partner_arg, clock]);
-    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 18 }, &[partner], &[h.sender])?;
+    h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "delayed", code: 14 }, &[partner], &[h.sender])?;
     let ready: Partner = bcs::from_bytes(&h.contents(partner))?;
     assert_eq!((ready.2.value, ready.2.pending), (8_000, pending));
 

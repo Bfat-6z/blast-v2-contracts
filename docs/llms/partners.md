@@ -314,9 +314,9 @@ are raised in module `blast_partners`; `partner_list::add` and
 removing one whose removal is pending), and code 4 is raised in module
 `partner_list`. The share and cap calls also
 abort in module `blast_admin::delayed` with `blast_admin`'s error codes:
-`ENotReady` (17, `apply_share` or `apply_cap` before `ready_at_ms`),
-`ENoPending` (18, apply or cancel with nothing proposed), `EInvalidDelay` (19, a
-`ready_at_ms` that would overflow) and `EUnchanged` (20, proposing the applied
+`ENotReady` (13, `apply_share` or `apply_cap` before `ready_at_ms`),
+`ENoPending` (14, apply or cancel with nothing proposed), `EInvalidDelay` (15, a
+`ready_at_ms` that would overflow) and `EUnchanged` (16, proposing the applied
 value). A product call that names a
 partner it does not accept, or passes the wrong `Partner` to a claim, aborts in
 that product's module with that product's own error.

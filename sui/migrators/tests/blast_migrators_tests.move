@@ -33,7 +33,7 @@ fun wrapping_the_publication_shares_an_unpaused_version_without_pause_bits() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EInvalidUpgradeCap,
-    location = blast_admin::upgrade_custody,
+    location = blast_admin::package_admin,
 )]
 /// The publication cannot seal another package's native upgrade authority.
 fun the_publication_rejects_another_packages_upgrade_cap() {

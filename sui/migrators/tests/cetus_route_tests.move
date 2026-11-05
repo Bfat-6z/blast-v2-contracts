@@ -115,7 +115,7 @@ fun the_vault_registry_admits_the_cetus_venue() {
 
     let admitted = event::events_by_type<SetApplied<WitnessesKey, TypeName>>().map!(|applied| {
         let (_, _, change, _) = applied.set_applied_fields();
-        change.member_for_testing().destroy_some()
+        change.member().destroy_some()
     });
     assert_eq!(admitted, vector[type_name::with_original_ids<Venue>()]);
     destroy(registry);

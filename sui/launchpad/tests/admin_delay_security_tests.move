@@ -54,13 +54,13 @@ fun protocol_share_cancelled() { exercise(Setting::ProtocolShare, Case::Cancelle
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun protocol_share_replay() { exercise(Setting::ProtocolShare, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun protocol_share_stale_schedule() { exercise(Setting::ProtocolShare, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun protocol_share_stale_apply() { exercise(Setting::ProtocolShare, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun protocol_share_stale_cancel() { exercise(Setting::ProtocolShare, Case::StaleCancel); }
 
 #[test]
@@ -78,13 +78,13 @@ fun trade_fees_cancelled() { exercise(Setting::TradeFees, Case::Cancelled); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun trade_fees_replay() { exercise(Setting::TradeFees, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun trade_fees_stale_schedule() { exercise(Setting::TradeFees, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun trade_fees_stale_apply() { exercise(Setting::TradeFees, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun trade_fees_stale_cancel() { exercise(Setting::TradeFees, Case::StaleCancel); }
 
 #[test]
@@ -102,13 +102,13 @@ fun allocation_cancelled() { exercise(Setting::Allocation, Case::Cancelled); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun allocation_replay() { exercise(Setting::Allocation, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun allocation_stale_schedule() { exercise(Setting::Allocation, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun allocation_stale_apply() { exercise(Setting::Allocation, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun allocation_stale_cancel() { exercise(Setting::Allocation, Case::StaleCancel); }
 
 #[test]
@@ -126,13 +126,13 @@ fun lp_fees_cancelled() { exercise(Setting::LpFees, Case::Cancelled); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun lp_fees_replay() { exercise(Setting::LpFees, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun lp_fees_stale_schedule() { exercise(Setting::LpFees, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun lp_fees_stale_apply() { exercise(Setting::LpFees, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun lp_fees_stale_cancel() { exercise(Setting::LpFees, Case::StaleCancel); }
 
 #[test]
@@ -150,13 +150,13 @@ fun creation_fee_cancelled() { exercise(Setting::CreationFee, Case::Cancelled); 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun creation_fee_replay() { exercise(Setting::CreationFee, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_stale_schedule() { exercise(Setting::CreationFee, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_stale_apply() { exercise(Setting::CreationFee, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_stale_cancel() { exercise(Setting::CreationFee, Case::StaleCancel); }
 
 #[test]

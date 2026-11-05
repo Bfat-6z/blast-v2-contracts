@@ -114,7 +114,7 @@ fun a_fee_update_must_change_the_rates() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_cannot_set_fees() {
     let mut package_version = blast_presale::blast_presale_package::version_for_testing(

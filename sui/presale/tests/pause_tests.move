@@ -32,7 +32,7 @@ fun pause_bit_layout_is_stable() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_generation_is_rejected_before_the_notice_gate() {
     let mut f = release_fixture_with(

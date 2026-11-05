@@ -67,9 +67,9 @@ const OPENING_ROUND_NOT_ENDED: u64 = 16;
 const INVALID_CREATOR_RECIPIENT: u64 = 20;
 const ZERO_OPENING_ROUND_BID: u64 = 29;
 /// `blast_admin::errors` codes, raised by `blast_admin::package_version`.
-const INVALID_PAUSE_BITS: u64 = 23;
-const PAUSE_UNCHANGED: u64 = 24;
-const PAUSED: u64 = 25;
+const INVALID_PAUSE_BITS: u64 = 19;
+const PAUSE_UNCHANGED: u64 = 20;
+const PAUSED: u64 = 21;
 /// `blast_core::errors::invalid_fee_split`.
 const INVALID_FEE_SPLIT: u64 = 4;
 /// The most routes one `blast_core` fee split holds.
@@ -137,7 +137,7 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS - 1));
     let watched = [w.runtime, w.config, w.acl, w.admin_cap];
     w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_protocol_fee_share", w.runtime)?,
-        Expected::Abort { package: w.admin, module: "delayed", code: 17 }, &watched, &[w.h.sender])?;
+        Expected::Abort { package: w.admin, module: "delayed", code: 13 }, &watched, &[w.h.sender])?;
     w.h.sim.advance_clock(Duration::from_millis(1));
 
     // Apply a ready fee share, emit its event, then fail a different not-ready action.
@@ -158,7 +158,7 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut b, w.blast, "runtime_config", "apply_protocol_fee_share", vec![], vec![runtime, version, clock]);
     call(&mut b, w.blast, "launch_config", "apply_creation_fee", vec![], vec![config, version, clock]);
-    w.h.assert_rolled_back(b.finish(), Expected::Abort { package: w.admin, module: "delayed", code: 17 }, &watched, &[w.h.sender])?;
+    w.h.assert_rolled_back(b.finish(), Expected::Abort { package: w.admin, module: "delayed", code: 13 }, &watched, &[w.h.sender])?;
 
     w.change_role("FeeAdmin", false)?;
     w.h.assert_rolled_back(w.schedule_fee_share(7_000)?,
@@ -167,7 +167,7 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     w.h.execute(w.apply_setting("runtime_config", "apply_protocol_fee_share", w.runtime)?)?.assert_success();
     assert_eq!(w.applied_fee_share()?, share);
     w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_protocol_fee_share", w.runtime)?,
-        Expected::Abort { package: w.admin, module: "delayed", code: 18 }, &watched, &[w.h.sender])?;
+        Expected::Abort { package: w.admin, module: "delayed", code: 14 }, &watched, &[w.h.sender])?;
 
     w.change_role("FeeAdmin", true)?;
     w.h.execute(w.schedule_fee_share(7_000)?)?.assert_success();
@@ -179,7 +179,7 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     call(&mut b, w.blast, "runtime_config", "cancel_protocol_fee_share", vec![], vec![runtime, version, cancel]);
     w.h.execute(b.finish())?.assert_success();
     w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_protocol_fee_share", w.runtime)?,
-        Expected::Abort { package: w.admin, module: "delayed", code: 18 }, &watched, &[w.h.sender])?;
+        Expected::Abort { package: w.admin, module: "delayed", code: 14 }, &watched, &[w.h.sender])?;
     assert_eq!(w.applied_fee_share()?, share);
     Ok(())
 }
@@ -233,7 +233,7 @@ fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> 
         // admission in the set itself.
         let early_module = if policy_first { "delayed" } else { "delayed_set" };
         w.h.assert_rolled_back(apply.clone(),
-            Expected::Abort { package: w.admin, module: early_module, code: 17 },
+            Expected::Abort { package: w.admin, module: early_module, code: 13 },
             &watched, &[w.h.sender])?;
         w.h.sim.advance_clock(Duration::from_millis(1));
         let applied = w.h.execute(apply)?;
@@ -282,7 +282,7 @@ fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> 
         let apply = b.finish();
         w.h.sim.advance_clock(Duration::from_millis(next_delay - 1));
         w.h.assert_rolled_back(apply.clone(),
-            Expected::Abort { package: w.admin, module: "delayed_set", code: 17 },
+            Expected::Abort { package: w.admin, module: "delayed_set", code: 13 },
             &watched, &[w.h.sender])?;
         w.h.sim.advance_clock(Duration::from_millis(1));
         w.h.execute(apply)?.assert_success();
@@ -352,7 +352,7 @@ fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> R
                     let pt = w.pause_command(pausing, bits)?;
                     let rejected = if generation != 1 && !pausing {
                         stale += 1;
-                        Some(Expected::Abort { package: w.admin, module: "operational_version", code: 9 })
+                        Some(Expected::Abort { package: w.admin, module: "package_version", code: 9 })
                     } else if !(1..=7).contains(&bits) {
                         invalid += 1;
                         Some(Expected::Abort { package: w.admin, module: "package_version", code: INVALID_PAUSE_BITS })
@@ -521,7 +521,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
         call(&mut b, w.blast, "launch", &format!("apply_{cap}_reassignment"),
             vec![launch.meme.clone(), sui()], vec![launch_arg, version, clock]);
         w.h.assert_rolled_back(b.finish(),
-            Expected::Abort { package: w.admin, module: "delayed", code: 17 }, &watched, &owners)?;
+            Expected::Abort { package: w.admin, module: "delayed", code: 13 }, &watched, &owners)?;
 
         w.change_role("CreatorAdmin", false)?;
         let mut b = ProgrammableTransactionBuilder::new();
@@ -664,7 +664,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let upgrade = b.finish();
     w.h.assert_rolled_back(
         upgrade.clone(),
-        Expected::Abort { package: w.admin, module: "delayed", code: 17 },
+        Expected::Abort { package: w.admin, module: "delayed", code: 13 },
         &[custody, w.version, w.admin_cap],
         &[w.h.sender],
     )?;

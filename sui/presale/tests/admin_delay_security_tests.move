@@ -65,21 +65,21 @@ fun fees_replay() { exercise(Setting::Fees, Case::Replay); }
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun fees_stale_schedule() { exercise(Setting::Fees, Case::StaleSchedule); }
 
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun fees_stale_apply() { exercise(Setting::Fees, Case::StaleApply); }
 
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun fees_stale_cancel() { exercise(Setting::Fees, Case::StaleCancel); }
 
