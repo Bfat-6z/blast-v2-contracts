@@ -211,16 +211,16 @@ fun new_registry(ctx: &mut TxContext): VaultRegistry {
 // === Test-Only Functions ===
 
 #[test_only]
-/// An unshared registry with `Venue` and `Issuer` already admitted at the launch delay of zero.
-public fun registry_for_testing<Venue, Issuer>(ctx: &mut TxContext): VaultRegistry {
+/// An unshared registry with `Venue` and `PackageWitness` already admitted at the launch delay of zero.
+public fun registry_for_testing<Venue, PackageWitness>(ctx: &mut TxContext): VaultRegistry {
     let mut registry = new_registry(ctx);
     let clock = sui::clock::create_for_testing(ctx);
     let venue = type_name::with_original_ids<Venue>();
     registry.witnesses.schedule_add(venue, &clock);
     registry.witnesses.apply_add(venue, &clock);
-    let issuer = type_name::with_original_ids<Issuer>();
-    registry.witnesses.schedule_add(issuer, &clock);
-    registry.witnesses.apply_add(issuer, &clock);
+    let package_witness = type_name::with_original_ids<PackageWitness>();
+    registry.witnesses.schedule_add(package_witness, &clock);
+    registry.witnesses.apply_add(package_witness, &clock);
     clock.destroy_for_testing();
 
     registry

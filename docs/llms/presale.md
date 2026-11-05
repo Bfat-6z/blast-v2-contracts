@@ -170,7 +170,7 @@ or `Funded`. The vault never closes and its position is never removed.
    through the ordinary schedule/apply operations with Clock. At zero delay these can run in one
    PTB. Quote admission and partners use their ordinary setters. No publication proof authorizes
    policy changes. Each venue that creates vaults, and the presale's own
-   `blast_presale::blast_presale_package::PackageWitness` as the issuer of its vault terms, must
+   `blast_presale::blast_presale_package::PackageWitness` as the package witness that seals its vault terms, must
    also be listed in the vault's `VaultRegistry` (`blast_vault_package::schedule_witness`), or its
    migrations abort.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own role to
@@ -455,7 +455,7 @@ Who may call: *anyone*, while `Funded`, until someone cancels. One keeper PTB, t
    package_version, treasury, partner)` (below).
 
 The venue creates the pool, builds the vault (which requires the `VaultRegistry` to admit the venue
-and the presale's `PackageWitness` as the issuer), attaches the position, and shares the vault.
+and the presale's `PackageWitness` as the sealing package witness), attaches the position, and shares the vault.
 Whatever the pool did not take waits in the vault as the owner's residuals. Nothing returns to the
 caller. Any venue failure rolls the whole transition back and leaves the sale `Funded`.
 
@@ -1030,7 +1030,7 @@ holds the sale token's `TreasuryCap`), one PTB:
 2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken, Quote,
    PackageWitness>(admin_cap, create_pool_cap)`, with the presale's package witness
    `blast_presale::blast_presale_package::PackageWitness` as `PackageWitness`, shares the
-   `PoolCreation<Lp, SaleToken>` bound to that issuer, emits
+   `PoolCreation<Lp, SaleToken>` bound to that package witness, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
    (`pool_creation_id`, `package_witness`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
    A primitive, standard-library, or framework `PackageWitness` aborts with

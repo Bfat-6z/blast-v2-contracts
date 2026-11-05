@@ -50,7 +50,7 @@ redeems its sales' migrations, keys its position inside the vault, and authorize
 collections. Blast admits each witness type in each product's venue list (the launchpad's
 `LaunchConfig`, so launches may start on it) and in the vault's `VaultRegistry` (so it may create
 vaults), which must also list each product's package witness, for launches
-`blast_fun::blast_fun::PackageWitness`, as the issuer of its sales' vault terms.
+`blast_fun::blast_fun::PackageWitness`, as the package witness that seals its sales' vault terms.
 
 #### Who may call what
 
@@ -172,7 +172,7 @@ Inside the venue call, in order:
    handed-off balances. It never adopts an existing pool.
 5. Burns the position through Cetus LP Burn; Cetus records the liquidity as permanently locked.
 6. Creates the vault from the terms with `blast_vault::vault::new` (aborts unless the registry
-   admits `blast_migrators::cetus::Venue` and the terms' issuer), attaches the `CetusLPBurnProof`
+   admits `blast_migrators::cetus::Venue` and the terms' package witness), attaches the `CetusLPBurnProof`
    and Cetus's leftover coins with `blast_vault::vault::share_with_position`, and shares the vault.
    The leftovers are migration residuals, settled by the terms.
 

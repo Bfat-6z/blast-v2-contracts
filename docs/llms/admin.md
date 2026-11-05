@@ -338,14 +338,14 @@ Every reader is read-only. The same name means the same concept on every type.
 | guarded | `delayed::is_guarded` | `delayed_action::is_guarded` | `delayed_set::is_guarded` | `delayed_map::is_guarded` |
 
 Value types: `delayed::Proposal` exposes `delayed::proposal_value`,
-`delayed::proposal_delay_ms` and `delayed::ready_at_ms` (also as `value`,
+`delayed::proposal_delay_ms` and `delayed::proposal_ready_at_ms` (also as `value`,
 `delay_ms` and `ready_at_ms` on the value); `delayed::PendingDelay` exposes
 `delayed::pending_delay_ms` and `delayed::pending_delay_ready_at_ms` (also as `delay_ms`
 and `ready_at_ms`); `delayed_map::EntryProposal` exposes
 `delayed_map::entry_proposal_value` (none clears) and
 `delayed_map::entry_proposal_delay`; `delayed_action::action`,
 `delayed_set::member`, `delayed_map::changed_entry` and
-`delayed_map::changed_value` read a change, each none for a notice change.
+`delayed_map::changed_value` read a change, each none for a delay change.
 `delayed_map::changed_value` returns `Option<Option<V>>`: `some(some(v))` sets
 the entry to `v` and `some(none)` clears it.
 

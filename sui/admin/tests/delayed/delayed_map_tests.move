@@ -63,7 +63,6 @@ fun clearing_is_a_delayed_change_that_removes_the_entry() {
     map.apply(@0xA, &clock);
     assert!(map.value(&@0xA).is_none());
 
-    assert!(map.value(&@0xA).is_none());
     destroy(map);
     clock.destroy_for_testing();
 }

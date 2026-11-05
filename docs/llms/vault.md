@@ -7,7 +7,7 @@ venue's liquidity position with no removal path, so the liquidity is locked for 
 every LP-fee collection: Blast's share first, then the sale's fee split across the owner, auto-LP,
 holder rewards, burn, and address routes. It also pays holder-reward rounds by Merkle proof. Only
 an admitted venue's code can create a vault or move its fees, and only from terms an admitted
-issuer sealed; integrators reach a vault through the
+package witness sealed; integrators reach a vault through the
 venue's calls, and call the owner, round, and payout functions on it directly.
 
 ### Objects and authority
@@ -29,7 +29,7 @@ venue's calls, and call the owner, round, and payout functions on it directly.
   creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
   witness.
 
-Blast admins hold these roles: `VenueAdmin` admits and removes venue and issuer witnesses; `FeeAdmin` changes Blast's
+Blast admins hold these roles: `VenueAdmin` admits and removes venue and package witnesses; `FeeAdmin` changes Blast's
 per-vault share; `RewardsAdmin` schedules rounds and settles gas reserves; `BuybackAdmin` spends
 the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 
@@ -115,7 +115,7 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 - Witness admissions start at zero notice, so Blast lists its products and venues at launch while
   the package is still paused; Blast then raises the notice before unpausing. Afterwards each
   admission and notice change waits the applied notice. Removing a witness takes effect at once:
-  a removed venue creates no more vaults, and a removed issuer's sales can no longer migrate.
+  a removed venue creates no more vaults, and a removed package witness's sales can no longer migrate.
 - Fee-split and Blast-share changes always wait 48 hours; no call changes that notice.
 - A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
 - Claims are open while the clock is before the deadline; a round closes at or after it.
@@ -146,7 +146,7 @@ the `UpgradeCap`; no later upgrade or repair is possible.
   length, then the ASCII name, with the original package ID written without `0x`) followed by the
   sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
   0x2::derived_object::DerivedObjectKey<blast_vault::vault::VaultKey>, bcs(key))`. The launchpad's
-  issuer is `blast_fun::blast_fun::PackageWitness` and the presale's
+  sealing package witness is `blast_fun::blast_fun::PackageWitness` and the presale's
   `blast_presale::blast_presale_package::PackageWitness`. Each sale has exactly one vault; a
   second `blast_vault::vault::new` for the same terms aborts in `sui::derived_object`.
 
