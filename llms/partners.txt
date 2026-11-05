@@ -1196,7 +1196,7 @@ public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T
 public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64
 
 /// The Unix millisecond time from which the proposal can apply.
-public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
+public fun proposal_ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
 
 /// The delay waited, or the proposed next delay.
 public fun pending_delay_ms(self: &PendingDelay): u64

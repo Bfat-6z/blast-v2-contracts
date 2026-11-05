@@ -350,7 +350,7 @@ or `Funded`. The vault never closes and its position is never removed.
    through the ordinary schedule/apply operations with Clock. At zero delay these can run in one
    PTB. Quote admission and partners use their ordinary setters. No publication proof authorizes
    policy changes. Each venue that creates vaults, and the presale's own
-   `blast_presale::blast_presale_package::PackageWitness` as the issuer of its vault terms, must
+   `blast_presale::blast_presale_package::PackageWitness` as the package witness that seals its vault terms, must
    also be listed in the vault's `VaultRegistry` (`blast_vault_package::schedule_witness`), or its
    migrations abort.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own role to
@@ -635,7 +635,7 @@ Who may call: *anyone*, while `Funded`, until someone cancels. One keeper PTB, t
    package_version, treasury, partner)` (below).
 
 The venue creates the pool, builds the vault (which requires the `VaultRegistry` to admit the venue
-and the presale's `PackageWitness` as the issuer), attaches the position, and shares the vault.
+and the presale's `PackageWitness` as the sealing package witness), attaches the position, and shares the vault.
 Whatever the pool did not take waits in the vault as the owner's residuals. Nothing returns to the
 caller. Any venue failure rolls the whole transition back and leaves the sale `Funded`.
 
@@ -1210,7 +1210,7 @@ holds the sale token's `TreasuryCap`), one PTB:
 2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken, Quote,
    PackageWitness>(admin_cap, create_pool_cap)`, with the presale's package witness
    `blast_presale::blast_presale_package::PackageWitness` as `PackageWitness`, shares the
-   `PoolCreation<Lp, SaleToken>` bound to that issuer, emits
+   `PoolCreation<Lp, SaleToken>` bound to that package witness, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
    (`pool_creation_id`, `package_witness`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
    A primitive, standard-library, or framework `PackageWitness` aborts with
@@ -1370,7 +1370,7 @@ redeems its sales' migrations, keys its position inside the vault, and authorize
 collections. Blast admits each witness type in each product's venue list (the launchpad's
 `LaunchConfig`, so launches may start on it) and in the vault's `VaultRegistry` (so it may create
 vaults), which must also list each product's package witness, for launches
-`blast_fun::blast_fun::PackageWitness`, as the issuer of its sales' vault terms.
+`blast_fun::blast_fun::PackageWitness`, as the package witness that seals its sales' vault terms.
 
 #### Who may call what
 
@@ -1492,7 +1492,7 @@ Inside the venue call, in order:
    handed-off balances. It never adopts an existing pool.
 5. Burns the position through Cetus LP Burn; Cetus records the liquidity as permanently locked.
 6. Creates the vault from the terms with `blast_vault::vault::new` (aborts unless the registry
-   admits `blast_migrators::cetus::Venue` and the terms' issuer), attaches the `CetusLPBurnProof`
+   admits `blast_migrators::cetus::Venue` and the terms' package witness), attaches the `CetusLPBurnProof`
    and Cetus's leftover coins with `blast_vault::vault::share_with_position`, and shares the vault.
    The leftovers are migration residuals, settled by the terms.
 
@@ -1772,7 +1772,7 @@ venue's liquidity position with no removal path, so the liquidity is locked for 
 every LP-fee collection: Blast's share first, then the sale's fee split across the owner, auto-LP,
 holder rewards, burn, and address routes. It also pays holder-reward rounds by Merkle proof. Only
 an admitted venue's code can create a vault or move its fees, and only from terms an admitted
-issuer sealed; integrators reach a vault through the
+package witness sealed; integrators reach a vault through the
 venue's calls, and call the owner, round, and payout functions on it directly.
 
 ### Objects and authority
@@ -1794,7 +1794,7 @@ venue's calls, and call the owner, round, and payout functions on it directly.
   creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
   witness.
 
-Blast admins hold these roles: `VenueAdmin` admits and removes venue and issuer witnesses; `FeeAdmin` changes Blast's
+Blast admins hold these roles: `VenueAdmin` admits and removes venue and package witnesses; `FeeAdmin` changes Blast's
 per-vault share; `RewardsAdmin` schedules rounds and settles gas reserves; `BuybackAdmin` spends
 the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 
@@ -1880,7 +1880,7 @@ shares the `Round`, and emits `blast_vault_events::RoundPublished`.
 - Witness admissions start at zero notice, so Blast lists its products and venues at launch while
   the package is still paused; Blast then raises the notice before unpausing. Afterwards each
   admission and notice change waits the applied notice. Removing a witness takes effect at once:
-  a removed venue creates no more vaults, and a removed issuer's sales can no longer migrate.
+  a removed venue creates no more vaults, and a removed package witness's sales can no longer migrate.
 - Fee-split and Blast-share changes always wait 48 hours; no call changes that notice.
 - A round waits the vault's round notice, 2 hours at creation, before anyone may publish it.
 - Claims are open while the clock is before the deadline; a round closes at or after it.
@@ -1911,7 +1911,7 @@ the `UpgradeCap`; no later upgrade or repair is possible.
   length, then the ASCII name, with the original package ID written without `0x`) followed by the
   sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
   0x2::derived_object::DerivedObjectKey<blast_vault::vault::VaultKey>, bcs(key))`. The launchpad's
-  issuer is `blast_fun::blast_fun::PackageWitness` and the presale's
+  sealing package witness is `blast_fun::blast_fun::PackageWitness` and the presale's
   `blast_presale::blast_presale_package::PackageWitness`. Each sale has exactly one vault; a
   second `blast_vault::vault::new` for the same terms aborts in `sui::derived_object`.
 
@@ -5842,7 +5842,7 @@ public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T
 public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64
 
 /// The Unix millisecond time from which the proposal can apply.
-public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
+public fun proposal_ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
 
 /// The delay waited, or the proposed next delay.
 public fun pending_delay_ms(self: &PendingDelay): u64
