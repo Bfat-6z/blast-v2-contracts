@@ -237,7 +237,7 @@ public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: Delayed
 }
 
 /// How many members are admitted.
-public fun member_count<K: copy + drop + store, E: copy + drop + store>(
+public fun length<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
 ): u64 {
     self.members.length()

@@ -330,7 +330,7 @@ Every reader is read-only. The same name means the same concept on every type.
 | Concept | `Delayed` | `DelayedAction` | `DelayedSet` | `DelayedMap` |
 | --- | --- | --- | --- | --- |
 | owner object ID, key | `delayed::owner`, `delayed::key` | `delayed_action::owner`, `delayed_action::key` | `delayed_set::owner`, `delayed_set::key` | `delayed_map::owner`, `delayed_map::key` |
-| applied state | `delayed::value` | none | `delayed_set::contains`, `delayed_set::members`, `delayed_set::member_count` | `delayed_map::value`, `delayed_map::contains`, `delayed_map::entry_count` |
+| applied state | `delayed::value` | none | `delayed_set::contains`, `delayed_set::members`, `delayed_set::length` | `delayed_map::value`, `delayed_map::contains`, `delayed_map::length` |
 | applied notice | `delayed::delay_ms` | `delayed_action::delay_ms` | `delayed_set::delay_ms` | `delayed_map::delay_ms` |
 | pending proposal | `delayed::pending` | `delayed_action::pending`, `delayed_action::pending_action` | `delayed_set::is_pending`, `delayed_set::admission_delay`, `delayed_set::admission_ready_at_ms`, `delayed_set::pending_count` | `delayed_map::is_pending`, `delayed_map::pending`, `delayed_map::entry_ready_at_ms`, `delayed_map::pending_count` |
 | ready now | `delayed::is_ready` | `delayed_action::is_ready` | `delayed_set::is_ready` (per member) | `delayed_map::is_ready` (per entry) |

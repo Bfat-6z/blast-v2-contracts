@@ -189,7 +189,7 @@ fun a_new_list_names_its_owner_and_holds_no_entry() {
     let partner_id = object::id(&partner);
 
     assert_eq!(list.owner(), owner.to_inner());
-    assert_eq!(list.entry_count(), 0);
+    assert_eq!(list.length(), 0);
     assert!(!list.contains(partner_id));
     assert!(!list.is_accepted(partner_id, &clock));
     end(owner, list, partner, clock);
@@ -202,7 +202,7 @@ fun readers_follow_an_entry_through_add_and_removal() {
     list.add(&partner);
 
     assert!(list.contains(partner_id));
-    assert_eq!(list.entry_count(), 1);
+    assert_eq!(list.length(), 1);
     assert_eq!(list.acceptance_ends_at_ms(partner_id), std::u64::max_value!());
     assert!(list.is_accepted(partner_id, &clock));
 
@@ -216,7 +216,7 @@ fun readers_follow_an_entry_through_add_and_removal() {
     assert!(!list.is_accepted(partner_id, &clock));
     // A removed partner keeps its entry.
     assert!(list.contains(partner_id));
-    assert_eq!(list.entry_count(), 1);
+    assert_eq!(list.length(), 1);
     end(owner, list, partner, clock);
 }
 

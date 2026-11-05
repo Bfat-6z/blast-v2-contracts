@@ -335,7 +335,7 @@ fun readers_report_owner_key_counts_and_guard() {
     assert_eq!(map.key(), Overrides());
     assert!(map.contains(&@0xA));
     assert!(!map.contains(&@0xB));
-    assert_eq!(map.entry_count(), 1);
+    assert_eq!(map.length(), 1);
     assert_eq!(map.pending_count(), 0);
     assert!(map.is_guarded());
 

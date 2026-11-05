@@ -289,7 +289,7 @@ public fun contains<K: copy + drop + store, E: copy + drop + store, V: copy + dr
 }
 
 /// How many entries have an applied value.
-public fun entry_count<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+public fun length<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): u64 {
     self.entries.length()

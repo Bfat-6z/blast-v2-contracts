@@ -298,10 +298,10 @@ expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy
   take_action
 expect_delayed_surface delayed_set admission_delay admission_ready_at_ms apply_add apply_delay \
   cancel_add cancel_delay contains delay_ms destroy is_delay_ready is_guarded is_pending is_ready \
-  key member member_count members new owner pending_count pending_delay remove schedule_add \
+  key member length members new owner pending_count pending_delay remove schedule_add \
   schedule_delay
 expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay changed_entry changed_value \
-  contains delay_ms destroy entry_count entry_proposal_delay entry_proposal_value entry_ready_at_ms \
+  contains delay_ms destroy length entry_proposal_delay entry_proposal_value entry_ready_at_ms \
   is_delay_ready is_guarded is_pending is_ready key new owner pending pending_count pending_delay \
   schedule schedule_delay value
 for delayed_module in delayed delayed_action delayed_set delayed_map; do

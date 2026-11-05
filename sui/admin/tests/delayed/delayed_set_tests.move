@@ -370,7 +370,7 @@ fun readers_report_pending_and_ready_admissions_and_delay_changes() {
     set.schedule_add(@0xA, &clock);
     set.schedule_delay(25, &clock);
 
-    assert_eq!(set.member_count(), 0);
+    assert_eq!(set.length(), 0);
     assert!(set.is_pending(&@0xA));
     assert!(!set.is_pending(&@0xB));
     assert!(!set.is_ready(&@0xA, &clock));
@@ -382,7 +382,7 @@ fun readers_report_pending_and_ready_admissions_and_delay_changes() {
 
     set.apply_add(@0xA, &clock);
     set.apply_delay(&clock);
-    assert_eq!(set.member_count(), 1);
+    assert_eq!(set.length(), 1);
     assert!(!set.is_pending(&@0xA));
     assert!(!set.is_delay_ready(&clock));
 
