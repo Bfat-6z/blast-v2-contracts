@@ -811,9 +811,9 @@ impl World {
         let versions = wrapped.created(&h, "package_version", "PackageVersion");
         ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
         let version = versions[0];
-        let (_, valid, paused, package_witness, version): GenericPackageVersionContents =
+        let (_, valid, paused, package_witness, stored_version): GenericPackageVersionContents =
             bcs::from_bytes(&h.contents(version))?;
-        ensure!((valid, paused, version) == (7, 7, 1), "the presale starts fully paused at version 1");
+        ensure!((valid, paused, stored_version) == (7, 7, 1), "the presale starts fully paused at version 1");
         ensure!(package_witness.ends_with("::blast_presale_package::PackageWitness"), "{package_witness}");
         let package_admin = wrapped.created(&h, "package_admin", "PackageAdmin");
         ensure!(package_admin.len() == 1);

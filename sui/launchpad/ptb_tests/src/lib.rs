@@ -928,7 +928,7 @@ impl Harness {
         // The publication pins the package witness; the version starts at 1 only at wrap.
         let (bootstrap_id, publisher, valid_pause_bits, unpause_witness):
             (ObjectID, (ObjectID, String, String), u8, String) = bcs::from_bytes(&self.contents(bootstrap[0]))?;
-        let version = 1u64;
+        let expected_version = 1u64;
         assert_eq!(valid_pause_bits, 7, "the launchpad defines Create, Trading and Migrate");
         assert!(unpause_witness.ends_with("::blast_fun::PackageWitness"), "{unpause_witness}");
         let cap_contents = self.contents(cap[0]);
@@ -957,7 +957,7 @@ impl Harness {
         let (version_id, valid, paused, witness, active_version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
         assert_eq!((version_id, valid, paused, witness, active_version),
-            (version[0], 7, 7, unpause_witness, version));
+            (version[0], 7, 7, unpause_witness, expected_version));
         let (_, signers, _): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode fresh RuntimeConfig")?;
         assert!(signers.members.is_empty() && signers.admissions.is_empty(), "publication admits no claim signer");
@@ -1133,9 +1133,9 @@ impl Harness {
         let package_admin = wrapped.created(self, "package_admin", "PackageAdmin");
         ensure!(version.len() == 1 && package_admin.len() == 1);
         ensure!(self.object(version[0]).is_shared() && self.object(package_admin[0]).is_shared());
-        let (_, valid, paused, unpause_witness, version): GenericPackageVersionContents =
+        let (_, valid, paused, unpause_witness, stored_version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the vault PackageVersion")?;
-        ensure!((valid, paused, version) == (1, 1, 1), "the vault version starts fully paused at version 1");
+        ensure!((valid, paused, stored_version) == (1, 1, 1), "the vault version starts fully paused at version 1");
         ensure!(unpause_witness.ends_with("::blast_vault_package::PackageWitness"), "{unpause_witness}");
         self.assert_publication_upgrade_delay(package_admin[0])?;
 
@@ -1217,9 +1217,9 @@ impl Harness {
         let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
         ensure!(version.len() == 1 && package_admin.len() == 1);
         ensure!(self.object(version[0]).is_shared() && self.object(package_admin[0]).is_shared());
-        let (_, valid, paused, package_witness, version): GenericPackageVersionContents =
+        let (_, valid, paused, package_witness, stored_version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the migrators PackageVersion")?;
-        ensure!((valid, paused, version) == (0, 0, 1), "the migrators version defines no pause bits at version 1");
+        ensure!((valid, paused, stored_version) == (0, 0, 1), "the migrators version defines no pause bits at version 1");
         ensure!(package_witness.ends_with("::blast_migrators::PackageWitness"), "{package_witness}");
         self.assert_publication_upgrade_delay(package_admin[0])?;
         Ok(version[0])
