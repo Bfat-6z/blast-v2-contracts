@@ -918,6 +918,45 @@ fun cap_readiness_follows_the_proposal_and_its_notice() {
     fixture.end();
 }
 
+#[test]
+/// A ready time whose fixed notice no longer fits in a timestamp is not ready, as `apply_cap`
+/// would abort.
+fun a_cap_is_not_ready_once_its_notice_would_overflow() {
+    let mut fixture = start();
+    let cap = fixture.register(RECIPIENT, 2_500);
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        fixture.set_time(std::u64::max_value!() - delay());
+        assert!(partner.is_cap_ready(&fixture.clock));
+        fixture.advance(1);
+        assert!(!partner.is_cap_ready(&fixture.clock));
+        fixture.return_partner(partner);
+    });
+
+    cap.destroy_cap();
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
+fun cap_application_refuses_once_its_notice_would_overflow() {
+    let mut fixture = start();
+    let cap = fixture.register(RECIPIENT, 2_500);
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        fixture.set_time(std::u64::max_value!() - delay() + 1);
+        partner.apply_cap(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    cap.destroy_cap();
+    fixture.end();
+}
+
 // --- One cap, many partners ---
 
 #[test]
