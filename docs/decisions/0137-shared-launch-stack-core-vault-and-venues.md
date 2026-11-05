@@ -307,34 +307,34 @@ borrows its own `Publisher` from `PackageAdmin`. One witness per purpose would b
 say the same thing, and each would need its own pin.
 
 **One package administration.** Every upgradeable package uses the generic
-`PackageVersion<Marker>` and `PackageAdmin<Marker>` and the package roles generic over its marker;
+`PackageVersion<OTW>` and `PackageAdmin<OTW>` and the package roles generic over its one-time witness (OTW);
 the products' own package-administration modules, version objects and role sets are deleted, and
 product roles come from `blast_core::blast_domain`. `blast_admin`'s former operational-version and
 upgrade-custody modules fold into those two types, whose only constructor, `package_admin::wrap`,
 consumes the package's unique `Publication`, so no package can
-build a second version or custody object.
+build a second version or PackageAdmin.
 
 **`UpgradeAction` is `Upgrade(digest)` or `MakeImmutable`, with no repair action.** The generic
-`PackageAdmin` reads no consumer generation, so a release that compiled the wrong generation
+`PackageAdmin` reads no consumer version, so a release that compiled the wrong version
 constant is corrected by scheduling the next upgrade under the same notice. A separate repair action
 would be a second way to install code, with its own notice to audit.
 
 **No upgrade-policy narrowing.** The additive and dependency-only restrictions are removed. Under
-either policy a release cannot change existing modules, so it cannot compile the next generation,
+either policy a release cannot change existing modules, so it cannot compile the next version,
 and after the next `commit_upgrade_and_advance` every version-gated call would abort forever.
 `make_immutable` is the one terminal action, behind the upgrade notice.
 
 **`make_immutable` is guarded by the package itself** (owner, 2026-11-05).
 `blast_admin::package_admin::make_immutable` takes the package's own witness and its live
 `PackageVersion`, so only code in the package can end its upgrades, through a wrapper that first
-checks its compiled generation. A release that forgot its generation bump fails that check and can
+checks its compiled version. A release that forgot its version bump fails that check and can
 never be made immutable. Only the vault has the wrapper (`blast_vault_package::make_immutable`,
 for #195); any other package adds one by upgrade if it ever needs it.
 
 **The migrators package has no pause bits.** Its version starts unpaused and it has no unpause.
 Migration stops with each product's migration bit and buyback with the vault's admin bit.
 Residual risk, accepted: `prepare`, fee collection and the settled fee-split update have no
-emergency stop of their own; only a delayed upgrade that advances the generation retires them.
+emergency stop of their own; only a delayed upgrade that advances the version retires them.
 Collection must never freeze, and these calls move only a vault's own fees under its stored split.
 
 **Complete public API in the immutable packages** (owner rule, 2026-11-05). `blast_admin`,
@@ -346,8 +346,8 @@ that reason, although it has no consumer and was first slated for deletion. `Own
 **The vault is upgradeable now and made immutable after audit** (#195). It publishes
 compatible-upgradeable so an audit finding can still be fixed, and schedules `make_immutable` after
 the audit and a quiet period, executed through its own wrapper. Until then a vault upgrade forces a migrators relink in the same release window: a compatible
-`blast_migrators` upgrade that rebinds the vault address and bumps `constants::generation`, since
-every `commit_upgrade_and_advance` advances the stored generation. The venues call version-gated
+`blast_migrators` upgrade that rebinds the vault address and bumps `constants::version`, since
+every `commit_upgrade_and_advance` advances the stored version. The venues call version-gated
 vault functions, so migration and fee collection abort until the relink lands.
 
 `blast_sui` and boosts are outside this stack and adopt the generic administration separately
@@ -365,8 +365,8 @@ vault functions, so migration and fee collection abort until the relink lands.
   products unpause. `deployments/README.md` owns the runbook.
 - Forced relinks: admin, partners and core force nothing; a vault upgrade forces a migrators relink;
   a migrators, product or vendor release forces nothing.
-- The SDK, indexer and admin console read `PackageVersion<Marker>` and `PackageAdmin<Marker>`
-  object types, `blast_admin_events::Paused<Marker>` for every pause, migrators events under
+- The SDK, indexer and admin console read `PackageVersion<OTW>` and `PackageAdmin<OTW>`
+  object types, `blast_admin_events::Paused<OTW>` for every pause, migrators events under
   `blast_migrators::events`, and a two-call migration PTB.
 - Implementation steps 5 and 6 above are replaced by this amendment: there is no `blast_venues`
   package, no standalone vault creation, and the vendor redeems the hand-off as a venue.
