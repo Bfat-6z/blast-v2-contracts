@@ -8,7 +8,7 @@ and the shared launch stack of
 Record the result in the format [`deployments/README.md`](../../deployments/README.md)
 requires.
 
-**Publish → wrap → verify custody → admit the venues in each product and the
+**Publish → wrap → verify the PackageAdmin → admit the venues in each product and the
 vault → release the products and the vault.**
 
 ## 1. Prepare and publish

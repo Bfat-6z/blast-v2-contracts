@@ -174,7 +174,7 @@ or `Funded`. The vault never closes and its position is never removed.
    also be listed in the vault's `VaultRegistry` (`blast_vault_package::schedule_witness`), or its
    migrations abort.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own role to
-   schedule and apply its intended value and next notice. Upgrade custody already holds its 48-hour
+   schedule and apply its intended value and next notice. The PackageAdmin already holds its 48-hour
    notice from wrap. Read back every operation's notice and configured value before release.
 5. Sign in as `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` and clear the intended bits (all = 7) with
    `creation_policy::unpause(creation_policy, package_version, unpause_admin, package_admin,
@@ -617,7 +617,7 @@ and commit each action under the stored upgrade notice. Blast's fee destination 
 treasury's own delayed setting (core guide).
 
 Publication-owned policy singletons start with zero notice for ordinary
-role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
+role-authorized setup; the PackageAdmin starts at 172,800,000 ms (48 hours), so
 no upgrade or immutability action can run without notice, even during setup. Configure
 and apply each other operation's intended notice, and drain or cancel all earlier setup
 proposals before release. `creation_policy::unpause` enforces the minimum: it aborts unless the

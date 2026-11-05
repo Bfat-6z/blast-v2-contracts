@@ -597,8 +597,8 @@ impl World {
         let issuer_type = tag(&format!("{blast}::blast_fun::PackageWitness"));
         let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
         h.release_vault(admin, admin_published, core, &vault_stack, &[venue_type.clone(), issuer_type])?;
-        let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, case.quote(), venue_type)?;
-        h.unpause_launchpad(blast, admin, admin_published, version, custody, runtime, config, 7)?;
+        let (version, package_admin) = h.wrap_launchpad(blast, published, admin, admin_published, core, case.quote(), venue_type)?;
+        h.unpause_launchpad(blast, admin, admin_published, version, package_admin, runtime, config, 7)?;
         let (fixture, project_token) = if burnable {
             ("fixture/burnable_project", "burnable_token::BURNABLE_TOKEN")
         } else {

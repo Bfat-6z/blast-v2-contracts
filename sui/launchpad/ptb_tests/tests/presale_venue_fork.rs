@@ -142,7 +142,7 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
     let states: [&[u8]; 8] = [&[], &[1], &[2], &[1, 2], &[4], &[1, 4], &[2, 4], &[1, 2, 4]];
     let sale = w.open_sale(&Terms::standard(Route::Bluefin))?;
     let watched = [w.version, w.acl, w.admin_cap, w.creation_policy, w.fee_policy,
-        w.venue_config, w.custody, sale.presale, sale.cap, sale.currency];
+        w.venue_config, w.package_admin, sale.presale, sale.cap, sale.currency];
     let mut successes = 0;
     let mut invalid = 0;
     let mut unchanged = 0;
@@ -709,7 +709,7 @@ struct World {
     acl: ObjectID,
     root: ObjectID,
     admin_cap: ObjectID,
-    custody: ObjectID,
+    package_admin: ObjectID,
     venue_config: ObjectID,
     creation_policy: ObjectID,
     fee_policy: ObjectID,
@@ -815,9 +815,9 @@ impl World {
             bcs::from_bytes(&h.contents(version))?;
         ensure!((valid, paused, version) == (7, 7, 1), "the presale starts fully paused at version 1");
         ensure!(package_witness.ends_with("::blast_presale_package::PackageWitness"), "{package_witness}");
-        let custody = wrapped.created(&h, "package_admin", "PackageAdmin");
-        ensure!(custody.len() == 1);
-        h.assert_publication_upgrade_notice(custody[0])?;
+        let package_admin = wrapped.created(&h, "package_admin", "PackageAdmin");
+        ensure!(package_admin.len() == 1);
+        h.assert_publication_upgrade_notice(package_admin[0])?;
         let config_cap = h.configuration_admin(admin, admin_published, core, "blast_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let listing = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "ListingAdmin")?;
@@ -840,7 +840,7 @@ impl World {
         call(&mut b, presale, "fee_policy", "schedule_fees", vec![], vec![fees, version_arg, fee_admin, zero_bps, zero_bps, zero_bps, zero_bps, delay, clock]);
         call(&mut b, presale, "fee_policy", "apply_fees", vec![], vec![fees, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
-        h.unpause_presale(presale, admin, admin_published, version, custody[0], creation_policy[0], fee_policy[0], 7)?;
+        h.unpause_presale(presale, admin, admin_published, version, package_admin[0], creation_policy[0], fee_policy[0], 7)?;
         ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
         Ok(World {
@@ -860,7 +860,7 @@ impl World {
             acl: admin_published.created(&h, "blast_acl", "ACL")[0],
             root: admin_published.created(&h, "blast_acl", "SuperAdminCap")[0],
             admin_cap: config_cap,
-            custody: custody[0],
+            package_admin: package_admin[0],
             venue_config: venue_config[0],
             creation_policy: creation_policy[0],
             fee_policy: fee_policy[0],
@@ -968,7 +968,7 @@ impl World {
     fn append_pause(&self, b: &mut ProgrammableTransactionBuilder, pause: bool, bits: u8, role: &str) -> Result<()> {
         let witness = self.sign_in(b, role)?;
         if !pause {
-            return append_presale_unpause(&self.h, b, self.presale, self.custody, self.version, witness,
+            return append_presale_unpause(&self.h, b, self.presale, self.package_admin, self.version, witness,
                 self.creation_policy, self.fee_policy, bits);
         }
         let version = b.obj(self.h.shared(self.version, true))?;

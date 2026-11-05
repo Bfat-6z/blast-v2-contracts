@@ -8,7 +8,7 @@ for audit finding L-1, and by
 [ADR 0134](../../docs/decisions/0134-delayed-administration-pause-and-table-acl.md)
 for delayed policy and paused release.
 
-**Publish → wrap → verify custody → configure while paused → verify notices → unpause.**
+**Publish → wrap → verify the PackageAdmin → configure while paused → verify notices → unpause.**
 Publication creates an owned `blast_admin::package_version::Publication<BLAST_FUN>`
 retaining the canonical Publisher and initial version. It creates no
 `PackageVersion`, so Move cannot satisfy the required input to launch creation
@@ -104,10 +104,10 @@ Require all of the following and retain the readbacks:
   one shared `<blast_admin>::package_admin::PackageAdmin<...::BLAST_FUN>` and one
   shared `<blast_admin>::package_version::PackageVersion<...::BLAST_FUN>`. Take their IDs
   from this transaction's effects. The consumed Publication cannot be reused.
-- Its `UpgradeCustodyCreated<BLAST_FUN>` event, emitted by the resolved
+- Its `PackageAdminCreated<BLAST_FUN>` event, emitted by the resolved
   `blast_admin::blast_admin_events` module with the launchpad's canonical
   `<original-package-id>::blast_fun::BLAST_FUN` type argument, records the
-  exact `custodian_id`, `publisher_id`, `upgrade_cap_id`, `package_id`,
+  exact `package_admin_id`, `publisher_id`, `upgrade_cap_id`, `package_id`,
   `upgrade_cap_version = 1`, and `policy = 0` identified above.
 - `sui client object <package-admin-id> --json` confirms shared ownership and
   nested custody containing that Publisher and exactly that UpgradeCap in
@@ -119,7 +119,7 @@ Require all of the following and retain the readbacks:
   Trading and Migrate), and the pinned unpause witness
   `<original-package-id>::blast_fun::PackageWitness`. An aborted wrap leaves the
   Publication and cap unchanged and creates neither shared output.
-- Publication-owned policies start at zero notice. Upgrade custody starts at
+- Publication-owned policies start at zero notice. The PackageAdmin starts at
   48 hours. Verify that neither has a pending proposal. This setup state is not
   the approved release policy.
 
@@ -148,7 +148,7 @@ Read back the chosen values, routes and applied-value events.
 
 Before release, apply or cancel every outstanding zero-notice proposal, including
 each independent adapter admission. Configure and read back each operation's
-intended notice (172,800,000 ms = 48 hours for this rollout). Upgrade custody
+intended notice (172,800,000 ms = 48 hours for this rollout). The PackageAdmin
 already holds 48 hours; do not propose it again (an unchanged notice aborts).
 Raising a notice never rewrites an earlier proposal's deadline or proposed next
 notice. Record all applied notices and pending-proposal state. The release call
@@ -182,7 +182,7 @@ PTB. It advances the stored version by one, so the new bytecode must compile
 `constants::version!()` one higher. There
 is no separate activation transaction or raw-cap escape path.
 
-The generic custody is tested in `blast_admin`; the launchpad's publication,
+The generic PackageAdmin is tested in `blast_admin`; the launchpad's publication,
 wrap, and unpause guard are tested here. Use `scripts/test_admin_delay.sh`,
 which substitutes fixture named addresses:
 

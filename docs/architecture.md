@@ -367,7 +367,7 @@ Each protected operation owns its applied notice, initially zero for publication
 policy. A proposal binds its value, next notice and a deadline derived from the old
 applied notice. Application commits both fields; cancellation preserves both applied
 fields. Delay-only changes follow the same timelock, with no immediate setter or
-bypass. Upgrade custody persists its own notice independently of other policy.
+bypass. The PackageAdmin persists its own notice independently of other policy.
 `blast_admin::delayed` stores settings as `Delayed`, one-shot actions as
 `DelayedAction` and venue allowlists as `DelayedSet`, each keyed by an
 owner-defined type and owner object ID; it emits every lifecycle event, so owners

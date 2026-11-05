@@ -355,7 +355,7 @@ math_body() {
 # raw payload typed by the pair's phantom `Meme` and `Quote`, as in `blast_vault_events`, with
 # exactly one emitting helper. Vault creation, LP-fee collection,
 # auto-LP, buybacks, owner claims, and holder rewards are `blast_vault` events, and delayed
-# settings and upgrade custody record their lifecycle through `blast_admin`, so no migrator event
+# settings and the PackageAdmin record their lifecycle through `blast_admin`, so no migrator event
 # may restate them.
 [[ "$(move_facts "$EVENTS_SOURCE" | awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' \
     | LC_ALL=C sort | tr '\n' ' ')" == 'BluefinPoolTierRecorded CetusPoolReserved ' ]] || \

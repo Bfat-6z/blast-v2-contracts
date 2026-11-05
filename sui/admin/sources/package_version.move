@@ -163,15 +163,15 @@ public(package) fun into_version<OTW: drop>(
     (publisher, version)
 }
 
-/// Records the new version beside the administration `custodian_id` that wraps it, then shares it
+/// Records the new version beside the administration `package_admin_id` that wraps it, then shares it
 /// so the package's operations can read it.
 public(package) fun share<OTW: drop>(
     self: PackageVersion<OTW>,
-    custodian_id: ID,
+    package_admin_id: ID,
 ) {
     blast_admin_events::package_version_created<OTW>(
         self.id.to_inner(),
-        custodian_id,
+        package_admin_id,
         self.valid_pause_bits,
         self.paused,
         self.package_witness,

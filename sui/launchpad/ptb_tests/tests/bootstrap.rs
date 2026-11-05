@@ -54,8 +54,8 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
     let runtime = publication.created(&h, "runtime_config", "RuntimeConfig")[0];
     let venue = parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?;
-    let (version, custody) = h.wrap_launchpad(blast, publication, admin, admin_publication, core, parse_sui_type_tag("0x2::sui::SUI")?, venue.clone())?;
-    h.unpause_launchpad(blast, admin, admin_publication, version, custody, runtime, config, 7)?;
+    let (version, package_admin) = h.wrap_launchpad(blast, publication, admin, admin_publication, core, parse_sui_type_tag("0x2::sui::SUI")?, venue.clone())?;
+    h.unpause_launchpad(blast, admin, admin_publication, version, package_admin, runtime, config, 7)?;
     h.shared(version, false);
     assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
     // Simulacrum resolves historical owned inputs; test_scenario covers repeated intake.
@@ -127,7 +127,7 @@ fn assert_vault_release_waits_for_the_notice(h: &mut Harness, admin: ObjectID, p
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: vault.package, module: "blast_vault_package", code: 2 },
-        &[vault.registry, vault.custody, vault.version, cap],
+        &[vault.registry, vault.package_admin, vault.version, cap],
         &[h.sender],
     )?;
     h.release_vault(admin, publication, core, vault, &[venue])

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 #[test_only]
-/// The generic publication, version, pause and upgrade-custody lifecycle every upgradeable
+/// The generic publication, version, pause and PackageAdmin lifecycle every upgradeable
 /// package shares, exercised with the `0xa` test one-time witness (OTW).
 module blast_admin::package_admin_tests;
 
@@ -61,30 +61,30 @@ fun the_publication_holds_the_otw_packages_publisher() {
 }
 
 #[test]
-fun wrapping_shares_custody_and_a_fully_paused_version_and_consumes_the_publication() {
+fun wrapping_shares_the_package_admin_and_a_fully_paused_version_and_consumes_the_publication() {
     let mut fixture = start_published();
     let publication = fixture.take_publication();
     let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), fixture.scenario.ctx());
 
     package_admin::wrap(publication, upgrade_cap, fixture.scenario.ctx());
     let created = blast_admin_events::collect_one<
-        UpgradeCustodyCreated<PACKAGE_MARKER>,
+        PackageAdminCreated<PACKAGE_MARKER>,
     >(0);
 
     fixture.scenario.next_tx(PUBLISHER);
     let package_admin = fixture.scenario.take_shared<PackageAdmin<PACKAGE_MARKER>>();
     let package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
     let (
-        emitted_custodian_id,
+        emitted_package_admin_id,
         emitted_publisher_id,
         emitted_upgrade_cap_id,
         emitted_package_id,
         emitted_upgrade_cap_version,
         emitted_policy,
-    ) = created.upgrade_custody_created_fields();
+    ) = created.package_admin_created_fields();
 
     assert!(!fixture.scenario.has_most_recent_for_sender<Publication<PACKAGE_MARKER>>());
-    assert_eq!(emitted_custodian_id, object::id(&package_admin));
+    assert_eq!(emitted_package_admin_id, object::id(&package_admin));
     assert_eq!(emitted_publisher_id, object::id(package_admin.publisher_for_testing()));
     assert_eq!(emitted_upgrade_cap_id, package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(emitted_package_id, PACKAGE_ID.to_id());
@@ -231,7 +231,7 @@ fun wrap_rejects_an_already_upgraded_cap() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidUpgradeCap, location = blast_admin::package_admin)]
-/// A cap with an outstanding ticket reports no package, so it cannot enter custody.
+/// A cap with an outstanding ticket reports no package, so it cannot enter a PackageAdmin.
 fun wrap_rejects_a_cap_with_an_outstanding_authorization() {
     let mut fixture = start_published();
     let publication = fixture.take_publication();
@@ -292,28 +292,28 @@ fun a_compatible_upgrade_commits_and_advances_one_version_together() {
     >(0);
 
     let (
-        authorized_custodian_id,
+        authorized_package_admin_id,
         authorized_cap_id,
         authorized_package_id,
         authorized_upgrade_cap_version,
         authorized_policy,
         authorized_digest,
     ) = authorized.upgrade_authorized_fields();
-    assert_eq!(authorized_custodian_id, fixture.package_admin.id_for_testing());
+    assert_eq!(authorized_package_admin_id, fixture.package_admin.id_for_testing());
     assert_eq!(authorized_cap_id, fixture.package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(authorized_package_id, PACKAGE_ID.to_id());
     assert_eq!(authorized_upgrade_cap_version, 1);
     assert_eq!(authorized_policy, package::compatible_policy());
     assert_eq!(authorized_digest, package_digest());
     let (
-        committed_custodian_id,
+        committed_package_admin_id,
         committed_cap_id,
         committed_original_package_id,
         committed_package_id,
         previous_upgrade_cap_version,
         new_upgrade_cap_version,
     ) = committed.upgrade_committed_fields();
-    assert_eq!(committed_custodian_id, fixture.package_admin.id_for_testing());
+    assert_eq!(committed_package_admin_id, fixture.package_admin.id_for_testing());
     assert_eq!(committed_cap_id, fixture.package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(committed_original_package_id, PACKAGE_ID);
     assert_eq!(committed_package_id, fixture.package_admin.current_package_id().destroy_some());
@@ -487,9 +487,9 @@ fun package_admin_can_permanently_destroy_native_upgrade_authority() {
         UpgradeCapDestroyed<PACKAGE_MARKER>,
     >(0);
 
-    let (custodian_id, destroyed_cap_id, original_package_id, final_upgrade_cap_version, final_policy) =
+    let (package_admin_id, destroyed_cap_id, original_package_id, final_upgrade_cap_version, final_policy) =
         destroyed.upgrade_cap_destroyed_fields();
-    assert_eq!(custodian_id, fixture.package_admin.id_for_testing());
+    assert_eq!(package_admin_id, fixture.package_admin.id_for_testing());
     assert_eq!(destroyed_cap_id, upgrade_cap_id);
     assert_eq!(original_package_id, PACKAGE_ID);
     assert_eq!(final_upgrade_cap_version, 1);
@@ -1096,16 +1096,16 @@ fun wrap_emits_the_package_version_created_with_its_exact_payload() {
     fixture.scenario.next_tx(PUBLISHER);
     let package_admin = fixture.scenario.take_shared<PackageAdmin<PACKAGE_MARKER>>();
     let package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
-    let (package_version_id, custodian_id, valid_pause_bits, paused, package_witness, version) =
+    let (package_version_id, package_admin_id, valid_pause_bits, paused, package_witness, version) =
         created.package_version_created_fields();
     assert_eq!(package_version_id, object::id(&package_version));
-    assert_eq!(custodian_id, object::id(&package_admin));
+    assert_eq!(package_admin_id, object::id(&package_admin));
     assert_eq!(valid_pause_bits, VALID_PAUSE_BITS);
     assert_eq!(paused, VALID_PAUSE_BITS);
     assert_eq!(package_witness, type_name::with_defining_ids<PackageWitness>());
     assert_eq!(version, 1);
     let mut expected = bcs::to_bytes(&package_version_id);
-    expected.append(bcs::to_bytes(&custodian_id));
+    expected.append(bcs::to_bytes(&package_admin_id));
     expected.append(bcs::to_bytes(&valid_pause_bits));
     expected.append(bcs::to_bytes(&paused));
     expected.append(bcs::to_bytes(&package_witness));
@@ -1268,7 +1268,7 @@ use blast_admin::{
         UpgradeAuthorized,
         UpgradeCapDestroyed,
         UpgradeCommitted,
-        UpgradeCustodyCreated,
+        PackageAdminCreated,
     },
     errors,
     package_admin::{Self, CancelAdmin, PackageAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin},

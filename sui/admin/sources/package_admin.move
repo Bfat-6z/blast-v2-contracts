@@ -11,7 +11,7 @@
 /// UpgradeCap, and the cap acts only through a scheduled upgrade or the one terminal
 /// `make_immutable`. Each role is generic over the package's OTW, so the ACL stores
 /// `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator
-/// never reaches another's custody. This package is immutable: no consumer bytecode version
+/// never reaches another's PackageAdmin. This package is immutable: no consumer bytecode version
 /// gates these calls, and a consumer whose new bytecode compiles the wrong version can still
 /// schedule a repair.
 module blast_admin::package_admin;
@@ -38,7 +38,7 @@ public enum UpgradeAction has copy, drop, store {
 /// Keys the delayed lifecycle of one package's upgrade actions and their notice.
 public struct UpgradeKey<phantom OTW: drop>() has copy, drop, store;
 
-/// Shared custody for one package's framework Publisher and UpgradeCap. It has no destructor:
+/// One package's shared administration, sealing its framework Publisher and UpgradeCap. It has no destructor:
 /// deleting it would release or strand the native capabilities it seals.
 public struct PackageAdmin<phantom OTW: drop> has key {
     id: UID,
@@ -137,7 +137,7 @@ public fun authorize_upgrade<OTW: drop>(
         blast_admin::errors::wrong_upgrade_action!(),
     );
 
-    let custodian_id = self.id.to_inner();
+    let package_admin_id = self.id.to_inner();
     let upgrade_cap = self.upgrade_cap.borrow_mut();
     let upgrade_cap_id = object::id(upgrade_cap);
     let package_id = upgrade_cap.package();
@@ -147,7 +147,7 @@ public fun authorize_upgrade<OTW: drop>(
     let ticket = upgrade_cap.authorize(policy, digest);
 
     blast_admin_events::upgrade_authorized<OTW>(
-        custodian_id,
+        package_admin_id,
         upgrade_cap_id,
         package_id,
         upgrade_cap_version,
@@ -170,7 +170,7 @@ public fun commit_upgrade_and_advance<OTW: drop>(
 ) {
     assert!(self.upgrade_cap.is_some(), blast_admin::errors::upgrade_cap_unavailable!());
 
-    let custodian_id = self.id.to_inner();
+    let package_admin_id = self.id.to_inner();
     let upgrade_cap = self.upgrade_cap.borrow_mut();
     let upgrade_cap_id = object::id(upgrade_cap);
     let previous_upgrade_cap_version = upgrade_cap.version();
@@ -179,7 +179,7 @@ public fun commit_upgrade_and_advance<OTW: drop>(
     upgrade_cap.commit(receipt);
 
     blast_admin_events::upgrade_committed<OTW>(
-        custodian_id,
+        package_admin_id,
         upgrade_cap_id,
         type_name::original_id<OTW>(),
         new_package_id,
@@ -286,7 +286,7 @@ public fun publisher<OTW: drop, PackageWitness: drop>(
 /// `&mut Publisher` such as `sui::display_registry::new_with_publisher`. A Publisher has no
 /// `drop`, so a mutable reference cannot overwrite it, and the pinned framework has no call that
 /// moves a value out from behind one. If a later framework adds a generic swap, only the package
-/// holding its witness could use it, and the Publisher would then leave this custody.
+/// holding its witness could use it, and the Publisher would then leave this PackageAdmin.
 public fun publisher_mut<OTW: drop, PackageWitness: drop>(
     self: &mut PackageAdmin<OTW>,
     _: PackageWitness,
@@ -371,7 +371,7 @@ fun new<OTW: drop>(
     ctx: &mut TxContext,
 ): PackageAdmin<OTW> {
     let id = object::new(ctx);
-    let custodian_id = id.to_inner();
+    let package_admin_id = id.to_inner();
     let publisher_id = object::id(&publisher);
     let upgrade_cap_id = object::id(&upgrade_cap);
     let package_id = upgrade_cap.package();
@@ -381,8 +381,8 @@ fun new<OTW: drop>(
 
     let package_admin = PackageAdmin { id, publisher, upgrade_cap: option::some(upgrade_cap), upgrade };
 
-    blast_admin_events::upgrade_custody_created<OTW>(
-        custodian_id,
+    blast_admin_events::package_admin_created<OTW>(
+        package_admin_id,
         publisher_id,
         upgrade_cap_id,
         package_id,

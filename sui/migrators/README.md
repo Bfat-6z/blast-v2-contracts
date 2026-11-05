@@ -40,7 +40,7 @@ makes check the vault's.
 
 Publication transfers an owned `Publication<BLAST_MIGRATORS>`.
 `blast_admin::package_admin::wrap` consumes it with the matching fresh
-UpgradeCap and shares the version and the administration; upgrade custody
+UpgradeCap and shares the version and the administration; the PackageAdmin
 starts with a 48-hour notice. The package defines no pause bits: migration
 stops with the product's migration pause bit, and buybacks with the vault's
 admin pause bit (ADR 0134).

@@ -154,7 +154,7 @@ done
 if find "$package_dir/sources" -name '*.move' | grep -vE "^$package_dir/sources/([a-z_]+|delayed/delayed(_action|_set|_map)?)\.move$"; then
   fail "blast_admin sources must sit directly in sources/, or in sources/delayed/ for the delayed family."
 fi
-# Immutable once published: exactly these nine modules, so no second version, custody or
+# Immutable once published: exactly these nine modules, so no second version, PackageAdmin or
 # delayed type can be added without boundary review.
 actual_modules="$(find "$package_dir/sources" -name '*.move' -exec basename {} .move \; | sort)"
 expected_modules="$(printf '%s\n' $required_modules | sort)"
@@ -203,13 +203,13 @@ fi
 package_admin_file="$package_dir/sources/package_admin.move"
 if grep -rnE 'public(\(package\))?[[:space:]]+(entry[[:space:]]+)?fun[[:space:]]+[^ (]*(release|borrow|take|extract|transfer)[^ (]*' \
   "$package_admin_file"; then
-  fail "Package custody must expose no capability release or borrow path."
+  fail "PackageAdmin must expose no capability release or borrow path."
 fi
 if function_declarations "$package_admin_file" \
   | sed -nE 's/.*\)[[:space:]]*:[[:space:]]*([^{}]*)\{.*/\1/p' \
   | sed -E 's/&(mut[[:space:]]+)?Publisher//g' \
   | grep -Eq '(UpgradeCap|Publisher)([^A-Za-z0-9_]|$)'; then
-  fail "Custody APIs may return the Publisher only by reference and never an UpgradeCap."
+  fail "PackageAdmin APIs may return the Publisher only by reference and never an UpgradeCap."
 fi
 if grep -nE 'transfer::(public_)?transfer|burn_publisher' "$package_admin_file"; then
   fail "Sealed native capabilities must not leave PackageAdmin."

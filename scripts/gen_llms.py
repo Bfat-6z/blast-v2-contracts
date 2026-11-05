@@ -155,7 +155,7 @@ PRODUCTS = [
         "admin",
         "Administration",
         "Blast's administration on Sui: the shared ACL with typed roles, versions, and "
-        "upgrade custody that Blast's operators use",
+        "the PackageAdmin that Blast's operators use",
         ["admin.md"],
         ["sui/admin"],
     ),

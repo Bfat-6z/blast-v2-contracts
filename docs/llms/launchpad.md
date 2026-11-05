@@ -528,7 +528,7 @@ Account-claim signer keys form one set with its own notice, changed the same way
 `runtime_config::cancel_creator_claim_signer_delay`. Admitting a key waits that notice; revocation
 is immediate, so a rotation admits the new key before revoking the old one.
 
-Upgrade custody is `blast_admin`'s generic administration and starts with a 48-hour notice.
+The PackageAdmin is `blast_admin`'s generic administration and starts with a 48-hour notice.
 `blast_admin::package_admin::schedule_upgrade` takes an exact 32-byte digest;
 `blast_admin::package_admin::authorize_upgrade` consumes only that ready digest.
 `blast_admin::package_admin::schedule_make_immutable` schedules the end of upgrades, which

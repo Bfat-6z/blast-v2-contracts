@@ -141,12 +141,12 @@ printf '\npublic fun new<OTW: drop>(ctx: &mut TxContext): PackageVersion<OTW> { 
   >> "$case_dir/sources/package_version.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case public_custody_constructor)"
-printf '\npublic fun new_custody<OTW: drop>(publisher: Publisher, upgrade_cap: UpgradeCap, ctx: &mut TxContext): PackageAdmin<OTW> { new(publisher, upgrade_cap, ctx) }\n' \
+case_dir="$(new_case public_package_admin_constructor)"
+printf '\npublic fun new_package_admin<OTW: drop>(publisher: Publisher, upgrade_cap: UpgradeCap, ctx: &mut TxContext): PackageAdmin<OTW> { new(publisher, upgrade_cap, ctx) }\n' \
   >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case second_custody_constructor)"
+case_dir="$(new_case second_package_admin_constructor)"
 printf '\nfun rogue<OTW: drop>(publisher: Publisher, upgrade_cap: UpgradeCap, upgrade: DelayedAction<UpgradeKey<OTW>, UpgradeAction>, ctx: &mut TxContext): PackageAdmin<OTW> { PackageAdmin { id: object::new(ctx), publisher, upgrade_cap: option::some(upgrade_cap), upgrade } }\n' \
   >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
@@ -182,7 +182,7 @@ printf '\npublic entry fun rogue(self: &mut ACL) {}\n' \
   >> "$case_dir/sources/blast_acl.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case adds_custody_entry_path)"
+case_dir="$(new_case adds_package_admin_entry_path)"
 printf '\npublic entry fun rogue<OTW: drop>(self: &mut PackageAdmin<OTW>) {}\n' \
   >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
@@ -192,7 +192,7 @@ printf '\nentry fun rogue(self: &mut ACL) {}\n' \
   >> "$case_dir/sources/blast_acl.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case adds_bare_custody_entry_path)"
+case_dir="$(new_case adds_bare_package_admin_entry_path)"
 printf '\nentry fun rogue<OTW: drop>(self: &mut PackageAdmin<OTW>) {}\n' \
   >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"

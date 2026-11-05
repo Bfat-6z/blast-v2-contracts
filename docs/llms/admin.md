@@ -12,7 +12,7 @@ package administration that every upgradeable Blast package uses: a shared
 `PackageVersion<OTW>` that rejects calls into outdated bytecode and holds the
 package's pause bits, and a shared `PackageAdmin<OTW>` that seals the package's
 `Publisher` and `UpgradeCap` so upgrades happen only through role-gated,
-48-hour-notice calls and only the package itself can borrow its `Publisher`. No package can build a second version or custody object:
+48-hour-notice calls and only the package itself can borrow its `Publisher`. No package can build a second version or PackageAdmin:
 both are created only by `blast_admin::package_admin::wrap` from the package's
 own publication. Blast publishes `blast_admin` immutable (its `UpgradeCap` is
 destroyed in the publish transaction), so none of these rules can change.
@@ -148,7 +148,7 @@ what each transaction leaves on chain.
    `UpgradeCap`. Wrap aborts with code 10 unless the cap belongs to the OTW's
    package and was never upgraded (UpgradeCap version 1, no outstanding ticket). It
    seals both capabilities in the new `PackageAdmin<OTW>` with a 48-hour upgrade
-   notice (emits `UpgradeCustodyCreated`) and shares it beside the
+   notice (emits `PackageAdminCreated`) and shares it beside the
    `PackageVersion<OTW>` with every defined bit paused.
 
 #### Upgrade a package (Blast admin)
@@ -230,7 +230,7 @@ aborts with the same code 26 (`EWrongPackageWitness`). A `Publisher` has no `dro
 can overwrite or burn it, and the pinned framework has no call that moves a
 value out from behind a mutable reference. Should a later framework add a
 generic swap, only package `OTW` itself, the holder of its witness, could use it,
-and the Publisher would then leave this custody; no other caller can.
+and the Publisher would then leave this PackageAdmin; no other caller can.
 
 ### Version
 
@@ -406,7 +406,7 @@ one exit, wrap, keeps the Publisher in custody. `AdminCap` and a retired
 ### Events
 
 All `blast_admin` events are emitted directly (no envelope). ACL, version and
-custody events come from module `blast_admin_events` and carry no ACL ID because
+PackageAdmin events come from module `blast_admin_events` and carry no ACL ID because
 there is one ACL. Delayed lifecycle events come from the module that owns the
 type (`delayed`, `delayed_action`, `delayed_set` or `delayed_map`), are generic in
 the owner's key `K` and the value, action, member or entry types, and carry
@@ -420,8 +420,8 @@ the owner's key `K` and the value, action, member or entry types, and carry
 | `blast_admin_events::AdminDestroyed` | `destroy_admin_cap` | cap deleted; `was_active` and the roles it still held |
 | `blast_admin_events::SuperAdminTransferred` | `accept_super_admin_transfer` | old and new root cap IDs, recipient |
 | `blast_admin_events::SuperAdminCapDestroyed` | `destroy_retired_super_admin_cap` | retired root deleted |
-| `blast_admin_events::UpgradeCustodyCreated` | `blast_admin::package_admin::wrap` | `PackageAdmin<OTW>` created: Publisher, cap, package, UpgradeCap version, policy |
-| `blast_admin_events::PackageVersionCreated` | `blast_admin::package_admin::wrap` | `PackageVersion<OTW>` created beside its `PackageAdmin<OTW>` (`custodian_id`): defined and paused bits, package witness, version 1 |
+| `blast_admin_events::PackageAdminCreated` | `blast_admin::package_admin::wrap` | `PackageAdmin<OTW>` created: Publisher, cap, package, UpgradeCap version, policy |
+| `blast_admin_events::PackageVersionCreated` | `blast_admin::package_admin::wrap` | `PackageVersion<OTW>` created beside its `PackageAdmin<OTW>` (`package_admin_id`): defined and paused bits, package witness, version 1 |
 | `blast_admin_events::UpgradeAuthorized` | `blast_admin::package_admin::authorize_upgrade` | the exact digest authorized, from `current_package_id` |
 | `blast_admin_events::UpgradeCommitted` | `blast_admin::package_admin::commit_upgrade_and_advance` | new package ID and UpgradeCap version |
 | `blast_admin_events::VersionAdvanced` | `blast_admin::package_admin::commit_upgrade_and_advance` | version bump of package `OTW` |

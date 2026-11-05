@@ -277,7 +277,7 @@ pub fn append_presale_unpause(
     h: &Harness,
     b: &mut ProgrammableTransactionBuilder,
     presale: ObjectID,
-    custody: ObjectID,
+    package_admin: ObjectID,
     version: ObjectID,
     witness: Argument,
     creation_policy: ObjectID,
@@ -286,10 +286,10 @@ pub fn append_presale_unpause(
 ) -> Result<()> {
     let creation_policy = b.obj(h.shared(creation_policy, false))?;
     let version = b.obj(h.shared(version, true))?;
-    let custody = b.obj(h.shared(custody, false))?;
+    let package_admin = b.obj(h.shared(package_admin, false))?;
     let fee_policy = b.obj(h.shared(fee_policy, false))?;
     let bits = b.pure(bits)?;
-    call(b, presale, "creation_policy", "unpause", vec![], vec![creation_policy, version, witness, custody, fee_policy, bits]);
+    call(b, presale, "creation_policy", "unpause", vec![], vec![creation_policy, version, witness, package_admin, fee_policy, bits]);
     Ok(())
 }
 
@@ -317,7 +317,7 @@ pub fn append_launchpad_unpause(
     h: &Harness,
     b: &mut ProgrammableTransactionBuilder,
     blast: ObjectID,
-    custody: ObjectID,
+    package_admin: ObjectID,
     version: ObjectID,
     witness: Argument,
     runtime: ObjectID,
@@ -326,10 +326,10 @@ pub fn append_launchpad_unpause(
 ) -> Result<()> {
     let config = b.obj(h.shared(config, false))?;
     let runtime = b.obj(h.shared(runtime, false))?;
-    let custody = b.obj(h.shared(custody, false))?;
+    let package_admin = b.obj(h.shared(package_admin, false))?;
     let version = b.obj(h.shared(version, true))?;
     let bits = b.pure(bits)?;
-    call(b, blast, "launch_config", "unpause", vec![], vec![config, version, witness, custody, runtime, bits]);
+    call(b, blast, "launch_config", "unpause", vec![], vec![config, version, witness, package_admin, runtime, bits]);
     Ok(())
 }
 
@@ -910,7 +910,7 @@ impl Harness {
         Ok((published[0], outcome))
     }
 
-    /// Seals the launchpad's publication in `blast_admin`'s generic custody and configures initial
+    /// Seals the launchpad's publication in `blast_admin`'s generic PackageAdmin and configures initial
     /// admission; operations remain paused until release (see `unpause_launchpad`). `venue` is the
     /// one venue witness type admitted; `core` is the `blast_core` package whose `Bps` the
     /// launchpad's settings take and whose `blast_domain` roles they require.
@@ -1043,14 +1043,14 @@ impl Harness {
     /// launchpad notice guarded, without advancing the Clock.
     #[allow(clippy::too_many_arguments)]
     pub fn unpause_launchpad(&mut self, blast: ObjectID, admin: ObjectID, publication: &Outcome,
-        version: ObjectID, custody: ObjectID, runtime: ObjectID, config: ObjectID, bits: u8,
+        version: ObjectID, package_admin: ObjectID, runtime: ObjectID, config: ObjectID, bits: u8,
     ) -> Result<()> {
         let role = launchpad_role(admin, ObjectID::ZERO, blast, "UnpauseAdmin")?;
         let cap = self.grant_roles(admin, publication, std::slice::from_ref(&role))?;
         let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
         let mut b = ProgrammableTransactionBuilder::new();
         let witness = self.sign_in_as(&mut b, admin, publication, cap, role)?;
-        append_launchpad_unpause(self, &mut b, blast, custody, version, witness, runtime, config, bits)?;
+        append_launchpad_unpause(self, &mut b, blast, package_admin, version, witness, runtime, config, bits)?;
         self.execute(b.finish())?.assert_success();
         assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
         Ok(())
@@ -1130,16 +1130,16 @@ impl Harness {
         ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
         ensure!(wrapped.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>() == cap, "custody seals the cap");
         let version = wrapped.created(self, "package_version", "PackageVersion");
-        let custody = wrapped.created(self, "package_admin", "PackageAdmin");
-        ensure!(version.len() == 1 && custody.len() == 1);
-        ensure!(self.object(version[0]).is_shared() && self.object(custody[0]).is_shared());
+        let package_admin = wrapped.created(self, "package_admin", "PackageAdmin");
+        ensure!(version.len() == 1 && package_admin.len() == 1);
+        ensure!(self.object(version[0]).is_shared() && self.object(package_admin[0]).is_shared());
         let (_, valid, paused, unpause_witness, version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the vault PackageVersion")?;
         ensure!((valid, paused, version) == (1, 1, 1), "the vault version starts fully paused at version 1");
         ensure!(unpause_witness.ends_with("::blast_vault_package::PackageWitness"), "{unpause_witness}");
-        self.assert_publication_upgrade_notice(custody[0])?;
+        self.assert_publication_upgrade_notice(package_admin[0])?;
 
-        Ok(VaultStack { package: vault, version: version[0], custody: custody[0], registry: registry[0] })
+        Ok(VaultStack { package: vault, version: version[0], package_admin: package_admin[0], registry: registry[0] })
     }
 
     /// Lists each of `venues` in the vault registry at the zero publication notice while the
@@ -1182,14 +1182,14 @@ impl Harness {
     }
 
     /// Decodes any package's `PackageAdmin`: its id, sealed Publisher, sealed caps and upgrade slot.
-    pub fn package_admin(&self, custody: ObjectID) -> Result<PackageAdminContents> {
-        bcs::from_bytes(&self.contents(custody)).context("decode PackageAdmin")
+    pub fn package_admin(&self, package_admin: ObjectID) -> Result<PackageAdminContents> {
+        bcs::from_bytes(&self.contents(package_admin)).context("decode PackageAdmin")
     }
 
     /// A fresh `PackageAdmin` waits the 48-hour publication notice with nothing scheduled.
-    pub fn assert_publication_upgrade_notice(&self, custody: ObjectID) -> Result<()> {
-        let (admin_id, _, sealed_caps, upgrade) = self.package_admin(custody)?;
-        ensure!(admin_id == custody && upgrade.owner == custody && sealed_caps.len() == 1);
+    pub fn assert_publication_upgrade_notice(&self, package_admin: ObjectID) -> Result<()> {
+        let (admin_id, _, sealed_caps, upgrade) = self.package_admin(package_admin)?;
+        ensure!(admin_id == package_admin && upgrade.owner == package_admin && sealed_caps.len() == 1);
         ensure!(upgrade.pending.is_none(), "fresh custody has no scheduled action");
         ensure!(upgrade.delay_ms == PUBLICATION_UPGRADE_NOTICE_MS, "publication starts at the 48-hour upgrade notice");
         Ok(())
@@ -1214,14 +1214,14 @@ impl Harness {
         ensure!(outcome.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
         ensure!(outcome.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>() == cap, "custody seals the cap");
         let version = outcome.created(self, "package_version", "PackageVersion");
-        let custody = outcome.created(self, "package_admin", "PackageAdmin");
-        ensure!(version.len() == 1 && custody.len() == 1);
-        ensure!(self.object(version[0]).is_shared() && self.object(custody[0]).is_shared());
+        let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
+        ensure!(version.len() == 1 && package_admin.len() == 1);
+        ensure!(self.object(version[0]).is_shared() && self.object(package_admin[0]).is_shared());
         let (_, valid, paused, package_witness, version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the migrators PackageVersion")?;
         ensure!((valid, paused, version) == (0, 0, 1), "the migrators version defines no pause bits at version 1");
         ensure!(package_witness.ends_with("::blast_migrators::PackageWitness"), "{package_witness}");
-        self.assert_publication_upgrade_notice(custody[0])?;
+        self.assert_publication_upgrade_notice(package_admin[0])?;
         Ok(version[0])
     }
 
@@ -1230,14 +1230,14 @@ impl Harness {
     /// presale notice guarded, without advancing the Clock.
     #[allow(clippy::too_many_arguments)]
     pub fn unpause_presale(&mut self, presale: ObjectID, admin: ObjectID, publication: &Outcome,
-        version: ObjectID, custody: ObjectID, creation_policy: ObjectID, fee_policy: ObjectID, bits: u8,
+        version: ObjectID, package_admin: ObjectID, creation_policy: ObjectID, fee_policy: ObjectID, bits: u8,
     ) -> Result<()> {
         let role = presale_role(admin, ObjectID::ZERO, presale, "UnpauseAdmin")?;
         let cap = self.grant_roles(admin, publication, std::slice::from_ref(&role))?;
         let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
         let mut b = ProgrammableTransactionBuilder::new();
         let witness = self.sign_in_as(&mut b, admin, publication, cap, role)?;
-        append_presale_unpause(self, &mut b, presale, custody, version, witness, creation_policy, fee_policy, bits)?;
+        append_presale_unpause(self, &mut b, presale, package_admin, version, witness, creation_policy, fee_policy, bits)?;
         self.execute(b.finish())?.assert_success();
         assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
         Ok(())
@@ -1320,7 +1320,7 @@ pub struct VaultStack {
     /// `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>`.
     pub version: ObjectID,
     /// `blast_admin::package_admin::PackageAdmin<BLAST_VAULT_PACKAGE>`.
-    pub custody: ObjectID,
+    pub package_admin: ObjectID,
     pub registry: ObjectID,
 }
 
@@ -1337,10 +1337,10 @@ impl VaultStack {
     /// admission notice and the package's upgrade notice are guarded.
     pub fn append_unpause(&self, h: &Harness, b: &mut ProgrammableTransactionBuilder, witness: Argument, bits: u8) -> Result<()> {
         let registry = b.obj(h.shared(self.registry, false))?;
-        let custody = b.obj(h.shared(self.custody, false))?;
+        let package_admin = b.obj(h.shared(self.package_admin, false))?;
         let version = b.obj(h.shared(self.version, true))?;
         let bits = b.pure(bits)?;
-        call(b, self.package, "blast_vault_package", "unpause", vec![], vec![registry, witness, custody, version, bits]);
+        call(b, self.package, "blast_vault_package", "unpause", vec![], vec![registry, witness, package_admin, version, bits]);
         Ok(())
     }
 
