@@ -1,17 +1,23 @@
 # Blast migration venues
 
-This package holds the launchpad's Cetus and Bluefin venues. A venue takes part
-in a launch twice. In the launch's creation PTB its `prepare` borrows the coin's
+`blast_migrators` holds the Cetus and Bluefin venues both products migrate
+through: launchpad launches and presales alike. A venue takes part in a sale
+twice. In the sale's creation PTB its `prepare` borrows the coin's
 `TreasuryCap`, records the pool tier (Cetus also reserves pool creation), and
-returns a sealed `blast_core::migration::VenueTicket` that `launch::new` redeems
-and checks against `LaunchConfig`'s venue allowlist. At migration the venue
-redeems the sealed `Migration` that `launch::migrate` returns, creates the pool,
-and creates and shares the launch's `blast_vault::vault::Vault` in the same
-call. The vault, not this package, holds the position, the fee split, Blast's
-share, the partner hold, holder rewards, and the owner's balances
+returns a sealed `blast_core::migration::VenueTicket` that the product's `new`
+redeems and checks against its own venue allowlist. At migration the PTB calls
+the product's own `migrate`, which returns the sealed
+`blast_core::migration::Migration`, then passes it to the venue's `migrate`,
+which redeems it under its witness, creates the pool, and creates and shares
+the sale's `blast_vault::vault::Vault` in the same transaction. An unredeemed
+`Migration` aborts the transaction, so the two calls are atomic. The vault, not
+this package, holds the position, the fee split, Blast's share, the partner
+hold, holder rewards, and the owner's balances
 ([ADR 0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md)).
-The venues depend inward on the launchpad, `blast_core`, and `blast_vault`;
-none of them imports this package.
+The venues depend inward on `blast_core` and `blast_vault` only: they import
+no product, and no product imports them, so a product upgrade forces no relink
+here. A vault upgrade does, because the venues call version-gated vault
+functions.
 
 Use task-specific sources instead of a duplicated route, event, dependency, or
 error inventory:
@@ -24,32 +30,31 @@ error inventory:
 - `scripts/check_mainnet_abi.mjs` for live compatibility;
 - [release gates](../../docs/testing.md) for repository-wide evidence.
 
-Administration is not implemented here. Package upgrades take the launchpad's
-`blast_fun_domain` roles on the singleton Blast ACL, and buybacks take the
-shared `blast_core::blast_domain::BuybackAdmin`; the package declares no roles
-of its own. It does own an independent operational generation and its own
-sealed `PackageAdmin`, so advancing this package leaves the launchpad and the
-vault on their generations. Every venue call checks **this** package's
-generation; a call that also mutates the launchpad or the vault takes that
-package's version object too, because each package checks only the transitions
-it implements.
+Administration is `blast_admin`'s generic package administration:
+`PackageVersion<BLAST_MIGRATORS>` and `PackageAdmin<BLAST_MIGRATORS>`, under the
+package-scoped `blast_admin::package_admin` roles (`UpgradeAdmin`,
+`CancelAdmin`) typed by this package's marker. Buybacks take the shared
+`blast_core::blast_domain::BuybackAdmin`; the package declares no roles of its
+own. Every venue call checks **this** package's generation; the vault calls it
+makes check the vault's.
 
-Publication transfers an owned Publication holding the Publisher and initial
-generation. `package_admin::wrap` consumes it with the matching fresh UpgradeCap
-and shares the version; upgrade custody starts with a 48-hour notice. The
-package has no pause switch: migration stops with the launchpad's Migrate bit,
-and buybacks with the vault's admin pause bit (ADR 0134).
+Publication transfers an owned `Publication<BLAST_MIGRATORS>`.
+`blast_admin::package_admin::wrap` consumes it with the matching fresh
+UpgradeCap and shares the version and the administration; upgrade custody
+starts with a 48-hour notice. The package defines no pause bits: migration
+stops with the product's migration pause bit, and buybacks with the vault's
+admin pause bit (ADR 0134).
 
 ## LP fees after migration
 
 Anyone can call a venue's `collect_fees`. In one transaction it collects the
 position's fees and hands them to `blast_vault::vault::split_fees`, which pays
 Blast's share of each asset to the core `Treasury` (or holds it for the
-launch's partner) and splits the rest by the vault's `FeeSplit`:
+sale's partner) and splits the rest by the vault's `FeeSplit`:
 
 | Route | Where it goes |
 | --- | --- |
-| Owner | accrues in the vault; the holder of the launch's live `CurveFeeCap` claims it with `launch::prove_owner` and `blast_vault::vault::claim_owner_balances` |
+| Owner | accrues in the vault; the sale's owner claims it with an owner proof from the sale's product and `blast_vault::vault::claim_owner_balances` |
 | Auto-LP | added back at the pool's current price (Cetus: to a second position, because the migration position is burned through Cetus LP Burn; Bluefin: to the migration position); what the pool does not take waits for the next call |
 | Holder rewards | accrues in the vault for holder-reward rounds |
 | Burn | the Meme is burned at once (paid to `@0x0` when the supply is fixed); the Quote waits for a buyback |
@@ -71,8 +76,8 @@ The owner schedules or cancels a new split on the vault with an owner proof
 fixed 48 hours. Expiry leaves the old split active until anyone calls the
 venue's `settle_and_apply_fee_split`, which settles accrued fees under the old
 split before activating the stored replacement. Blast's share starts from
-`LaunchConfig`'s delayed `ProtocolLpFees` at migration, is capped at 30% per
-asset, and changes only per vault after the vault's fixed 48-hour notice.
+the product's LP-fee policy, sealed into the `Migration`'s vault terms, is capped
+at 30% per asset, and changes only per vault after the vault's fixed 48-hour notice.
 Because auto-LP adds at the current price, a caller can move the price around a
 collection and skim part of that call's auto-LP amount; frequent collection
 keeps each slice small (ADR 0089).

@@ -35,8 +35,9 @@ module blast_vault::blast_vault_package;
 /// The package's one-time witness and the marker of its version, publication, and roles.
 public struct BLAST_VAULT_PACKAGE() has drop;
 
-/// The witness `unpause` passes to clear pause bits; only this module constructs it.
-public struct UnpauseWitness() has drop;
+/// The package witness `blast_admin` pins at publication: `unpause` passes it to clear pause bits.
+/// Only this module constructs it, and it is never stored or returned.
+public struct PackageWitness() has drop;
 
 /// Keys the admitted witnesses' delayed lifecycle.
 public struct WitnessesKey() has copy, drop, store;
@@ -50,7 +51,7 @@ public struct VaultRegistry has key {
 // === Private Initialization ===
 
 fun init(otw: BLAST_VAULT_PACKAGE, ctx: &mut TxContext) {
-    package_version::new_publication<_, UnpauseWitness>(otw, constants::valid_pause_bits!(), ctx)
+    package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)
         .keep(ctx);
     transfer::share_object(new_registry(ctx));
 }
@@ -154,7 +155,7 @@ public fun unpause(
 ) {
     assert!(self.witnesses.is_guarded(), blast_vault::errors::unguarded_notice!());
 
-    package_admin.clear_pause_bits(unpause_admin, UnpauseWitness(), package_version, bits);
+    package_admin.clear_pause_bits(unpause_admin, PackageWitness(), package_version, bits);
 }
 
 // === Package Functions ===
@@ -218,7 +219,7 @@ public fun empty_registry_for_testing(ctx: &mut TxContext): VaultRegistry {
 #[test_only]
 /// An unshared, unpaused version for tests.
 public fun version_for_testing(ctx: &mut TxContext): PackageVersion<BLAST_VAULT_PACKAGE> {
-    package_version::new_for_testing<_, UnpauseWitness>(constants::valid_pause_bits!(), ctx)
+    package_version::new_for_testing<_, PackageWitness>(constants::valid_pause_bits!(), ctx)
 }
 
 // === Imports ===

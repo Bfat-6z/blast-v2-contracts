@@ -1,24 +1,25 @@
 # Migrator dependencies and release gates
 
 This is the reproducible package-id and dependency matrix for the one aggregate
-`blast_fun_migrators` package. It records what the venues link to, how that is
+`blast_migrators` package. It records what the venues link to, how that is
 re-verified against mainnet, and which gates must pass before release.
 
 ## Package boundary
 
 Cetus and Bluefin are the only venues (ADR 0088), as modules in one
-independently deployed package. The launchpad never imports this package; each
-venue module depends inward on the launchpad, `blast_core` and `blast_vault`,
-owns one sealed `Venue() has drop` witness, and, in the same Move call as the
-launchpad's `migrate`, redeems the hand-off and locks the position in a new
+independently deployed package that serves both products. No product imports
+this package and this package imports no product; each venue module depends
+inward on `blast_core` and `blast_vault`, owns one sealed `Venue() has drop`
+witness, and, in the same PTB as the product's own `migrate`, redeems the
+`Migration` it returned and locks the position in a new
 `blast_vault::vault::Vault` (ADR 0137). Aftermath, MMT, and Turbos were removed
 before publication together with their witnesses, local interfaces, and
 dependency pins.
 
-- **Release venue matrix.** A venue reaches a launch only through its own
-  witness: `prepare` issues the `blast_core::migration::VenueTicket` that
-  `launch::new` redeems, and `migrate` redeems the sealed `Migration` that
-  `launch::migrate` returns. The matrix is therefore exactly `cetus::Venue` and
+- **Release venue matrix.** A venue reaches a sale only through its own
+  witness: `prepare` issues the `blast_core::migration::VenueTicket` that the
+  product's `new` redeems, and `migrate` redeems the sealed `Migration` that the
+  product's `migrate` returned earlier in the PTB. The matrix is therefore exactly `cetus::Venue` and
   `bluefin::Venue`, each completing into `blast_vault` custody.
   `scripts/check_source_boundaries.sh` pins the package's exact module set and
   every module's public and package function set, so any added module or
@@ -33,30 +34,32 @@ dependency pins.
   generic plug-in constructor.
 - **One aggregate package.** Cetus and Bluefin ship together, so the release
   gate, dependency graph, and `UpgradeCap` lifecycle are shared.
-- **Vault custody.** Every migrated launch shares its own
+- **Vault custody.** Every migrated sale shares its own
   `blast_vault::vault::Vault<Meme, Quote>`, so unrelated fee collections never
   contend on the same Sui object. The venue position is a dynamic **object**
   field under the vault's `PositionKey<Venue>`, with no removal or transfer
   path; only code holding the venue's witness can borrow it. A venue creates a
   vault only while the vault's `VaultRegistry` admits its witness.
 - **Residuals.** Whatever the pool does not take at migration enters the vault
-  as protocol residuals under the launch's terms: paid to the core `Treasury` at
-  once, or held for the launch's partner payout. No venue stores a payout
+  under the sale's terms: paid to the core `Treasury` at
+  once or held for the sale's partner when the terms name Blast, or held for the
+  owner otherwise. No venue stores a payout
   address, burns a nonzero residual, or sends one to `0x0`.
-- **Vault-split LP fees.** The vault takes the launch's sealed terms: its
-  `FeeSplit`, its partner, and Blast's share snapshotted from `LaunchConfig`. A
+- **Vault-split LP fees.** The vault takes the sale's sealed terms: its
+  `FeeSplit`, its partner, and Blast's share snapshotted from the product's
+  LP-fee policy. A
   venue's permissionless collection hands both collected balances to
   `blast_vault::vault::split_fees`, which pays Blast's share and the address
   routes and credits the owner, auto-LP, holder-reward, and burn balances; the
   venue then adds the auto-LP balances back with the venue's own add-liquidity
   call. The owner schedules or cancels a split change on the vault with an owner
-  proof from `launch::prove_owner`; the notice is a fixed 48 hours. Ready
+  proof from the sale's product; the notice is a fixed 48 hours. Ready
   application is permissionless: the venue checks readiness, runs the same
   settlement under the old split, then applies the stored split with
   `blast_vault::vault::apply_fee_split`.
 - **Creator-chosen venue tiers.** The creator passes the pool tier to the
   venue's `prepare`, which validates it against the venue and records it in
-  `venue_config::VenueConfig` before `launch::new` redeems the ticket; migration
+  `venue_config::VenueConfig` before the product's `new` redeems the ticket; migration
   reads it from there and never trusts a migration caller. There are no
   administrator tier pins or compiled defaults. Cetus fixes the fee rate of each
   registered tick spacing, so `cetus::prepare` takes only the tick spacing;
@@ -79,9 +82,9 @@ dependency pins.
   its first add and attaches to the vault.
 - **Cetus pool-creation reservation.** Any Meme holder could pre-create the
   Cetus pool for a pair and tick spacing, so `cetus::prepare` reserves creation
-  before any Meme leaves the ticket: it mints the Meme type's single
+  before any Meme leaves the sale's custody: it mints the Meme type's single
   `factory::PoolCreationCap` from the coin's `TreasuryCap`, borrowed in the
-  launch's creation PTB, and registers the pair at the creator's tick spacing
+  sale's creation PTB, and registers the pair at the creator's tick spacing
   (Cetus admitted only 200 at 1% for permissioned SUI and USDC pairs on
   2026-09-22). The capability is a
   dynamic object field of `VenueConfig`, so it keeps its ID; only `cetus`
@@ -90,12 +93,12 @@ dependency pins.
   and never adopts an existing pool. Cetus's pool-manager role can also create a reserved
   pair's pool without the capability. That is a trust assumption on the venue
   operator: such a pool makes the pair's migration abort, and recovering the
-  launch would need a migrators upgrade.
-- **Direct events, no wrapper.** `blast_events.move` owns this package's typed
-  payloads and is its only module that calls `sui::event::emit`; vault and fee
-  events come from `blast_vault`. This package deliberately does **not** use the
-  launchpad's `blast_events::Event<T>` envelope, so native payload filtering
-  stays direct. Payloads carry no application sequence, revision, nonce, schema
+  sale would need a migrators upgrade.
+- **Direct events, no wrapper.** `events.move` owns this package's raw payloads,
+  typed by the pair's phantom `Meme` and `Quote` as in `blast_vault_events`, and
+  is its only module that calls `sui::event::emit`; vault and fee events come
+  from `blast_vault`. No envelope wraps them, so native payload filtering stays
+  direct. Payloads carry no application sequence, revision, nonce, schema
   version, or action tag.
 
 ## Live ABI verifier
@@ -303,9 +306,9 @@ upstream pins of Bluefin and its integer libraries, likewise overridden away.
 Only the addresses the aggregate package's own bytecode references enter the
 published linkage table:
 
-| Address | Referenced by `blast_fun_migrators` modules |
+| Address | Referenced by `blast_migrators` modules |
 | --- | --- |
-| `blast_admin`, `blast_core`, `blast_fun`, `blast_vault`, and `blast_fun_migrators` | yes |
+| `blast_admin`, `blast_core`, `blast_vault`, and `blast_migrators` | yes |
 | `0x1` MoveStdlib, `0x2` Sui framework | yes |
 | `bluefin_spot`, `cetus_clmm` | yes |
 | `integer_mate` `0x714a63a0dba6da4f017b42d5d0fb78867f18bcde904868e51d951a5a6f5b7f57` | yes, Bluefin full-range tick math |
@@ -386,8 +389,10 @@ deployment. No route may be skipped, and a skipped row is a release blocker, not
 a documentation footnote.
 
 Each fixture prepares its coin through the venue's `prepare` at a tier the venue
-accepts, records that `VenueConfig` stores that tier, and starts the launch with
-`launch::new`, which stores the venue.
+accepts, records that `VenueConfig` stores that tier, and starts the sale with
+the product's `new`, which stores the venue. Each migration fixture calls the
+product's `migrate` and passes the returned `Migration` to the venue's
+`migrate` in the same PTB.
 
 Each migration fixture must show:
 
@@ -417,8 +422,8 @@ disassemble`); the dev-inspect fixtures re-confirm it end to end:
 
 | Route | Orientation and authority |
 | --- | --- |
-| `prepare` | Records the creator's tick spacing for a coin in `Quote`, reserves the pair's Cetus pool creation, and returns the ticket; `launch::new` then aborts unless `LaunchConfig` admits `cetus::Venue` and the Quote |
-| `migrate` | Permissionless; type arguments `<Meme, Quote, CoinA, CoinB>` with the pool's coins in Cetus order (ADR 0100); burns the position through the shared `BurnManager` |
+| `prepare` | Records the creator's tick spacing for a coin in `Quote`, reserves the pair's Cetus pool creation, and returns the ticket; the product's `new` then aborts unless its venue list admits `cetus::Venue` and the Quote |
+| `migrate` | Permissionless; takes the product's `Migration` first; type arguments `<Meme, Quote, CoinA, CoinB>` with the pool's coins in Cetus order (ADR 0100); burns the position through the shared `BurnManager` |
 | `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and adds the auto-LP share back through `add_liquidity_fix_coin` / `repay_add_liquidity`, fixing the side `clmm_math::get_liquidity_by_amount` says the other balance covers |
 | `settle_and_apply_fee_split` | Permissionless ready stored proposal; settles under the applied split, then activates the accepted split and notice |
 | `buyback_and_burn` | Under the core `BuybackAdmin` role (ADR 0091); swaps the administrator's `quote_in` of the vault's burn Quote for Meme in its own pool through `flash_swap` / `swap_pay_amount` / `repay_flash_swap` at the widest sqrt-price limit, then burns the Meme if it reaches the administrator's minimum |
@@ -431,20 +436,20 @@ Each Cetus fixture must show:
   field, registers the pair at that tick spacing (aborting when Cetus refuses
   it), and emits `CetusPoolReserved`;
 - every route after `prepare` takes the pool's coins as `CoinA` and `CoinB` and
-  aborts with `EWrongCoinPair` unless they are exactly the launch's Meme and
+  aborts with `EWrongCoinPair` unless they are exactly the sale's Meme and
   Quote; migration first aborts with `EInvalidCoinOrder` unless Cetus's own
   `factory::is_right_order<CoinA, CoinB>` agrees with them, and creates the
-  pool only with the reserved `PoolCreationCap` at the launch's tick spacing,
+  pool only with the reserved `PoolCreationCap` at the sale's tick spacing,
   never adopting one;
 - liquidity is seeded with the exact handed-off balances, fixing the side with
   more atoms (Meme on a tie) unless `clmm_math::get_liquidity_by_amount` says it
   would overdraw the other balance, which nearly equal amounts can do by one
-  atom; whatever the venue does not take is the launch's protocol residual,
-  paid to the core `Treasury` or held in the vault for the partner, and supplied
+  atom; whatever the venue does not take is the sale's residual, settled by its
+  terms, and supplied
   principal plus residual reconciles exactly with the hand-off;
 - the position is burned with `lp_burn::burn_lp_v2`, its `CetusLPBurnProof`
   enters the vault under `PositionKey<cetus::Venue>`, the vault is shared with
-  the launch's fee split, and the caller receives no object;
+  the sale's fee split, and the caller receives no object;
 - the first auto-LP add opens one full-range position under
   `AutoLpPositionKey<cetus::Venue>` (`AutoLpPositionOpened`), and later adds and
   collections reuse it; and
@@ -457,8 +462,8 @@ Each Cetus fixture must show:
 
 | Route | Orientation and authority |
 | --- | --- |
-| `prepare` | Records the creator's tier for a coin in `Quote` and returns the ticket; aborts with `EInvalidTier` outside tick spacing 1–400 and fee rate 1–20,000, and `launch::new` then aborts unless `LaunchConfig` admits `bluefin::Venue` and the Quote |
-| `migrate` | Permissionless; creates `Pool<Meme, Quote>` with Meme as coin A |
+| `prepare` | Records the creator's tier for a coin in `Quote` and returns the ticket; aborts with `EInvalidTier` outside tick spacing 1–400 and fee rate 1–20,000 and with `ESymbolTooLong` above a 32-byte Meme symbol, and the product's `new` then aborts unless its venue list admits `bluefin::Venue` and the Quote |
+| `migrate` | Permissionless; takes the product's `Migration` first; creates `Pool<Meme, Quote>` with Meme as coin A |
 | `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and adds the auto-LP share back through `add_liquidity_with_fixed_amount`, fixing the side chosen from the pool's and the position's bound tick sqrt prices with a two-atom margin |
 | `settle_and_apply_fee_split` | Permissionless ready stored proposal; settles under the applied split, then activates the accepted split and notice |
 | `buyback_and_burn` | Under the core `BuybackAdmin` role (ADR 0091); swaps the administrator's `quote_in` of the vault's burn Quote for Meme in its own pool through `swap` at the widest sqrt-price limit, then burns the Meme if it reaches the administrator's minimum |
@@ -470,21 +475,21 @@ Each Bluefin fixture must show:
   and fee rate at most 20,000 (1027);
 - the pool is created with `create_pool_and_get_object<Meme, Quote, SUI>` at the
   balance-derived `sqrt_price_x64`, full-range ticks aligned inward to the
-  launch's spacing, and the caller's whole `Coin<SUI>` as the creation fee, which Bluefin
+  sale's spacing, and the caller's whole `Coin<SUI>` as the creation fee, which Bluefin
   accepts only at exactly its configured SUI amount (1038 for an unsupported fee
   coin, 1039 for any other amount); the Quote's shared `Currency` supplies coin
   B's symbol, decimals, and icon, while the Meme side passes its symbol (at most
-  32 bytes, bounded at launch intake) and an empty icon URL, so a Meme icon of
+  32 bytes, bounded by `prepare`) and an empty icon URL, so a Meme icon of
   about 256 KB still migrates;
 - liquidity is seeded with the exact handed-off balances, fixing the side with
   more atoms (Meme on a tie) unless Bluefin's `pool::get_liquidity_by_amount`
   says it would overdraw the other balance, which nearly equal amounts can do by
-  one atom; whatever the venue does not take is the launch's protocol residual,
-  paid to the core `Treasury` or held in the vault for the partner, with no
+  one atom; whatever the venue does not take is the sale's residual, settled by
+  its terms, with no
   utilization bound, and supplied principal plus residual reconciles exactly
   with the hand-off;
 - the position enters the vault under `PositionKey<bluefin::Venue>`, the vault and
-  the pool are shared, the vault holds the launch's fee split, and the caller
+  the pool are shared, the vault holds the sale's fee split, and the caller
   receives no object; and
 - collection and the settled update collect only that position on its own pool
   (another `Pool<Meme, Quote>` aborts with `EPositionPoolMismatch`), leave its
@@ -496,10 +501,11 @@ Each Bluefin fixture must show:
 The package stays upgradeable (ADR 0088): venues gate callers by package
 version, so the venues must be able to relink after a venue upgrade, and its
 `UpgradeCap` is never destroyed. Every migrators upgrade uses the compatible
-policy, which no path narrows, and must bump both generation constants in
-`blast_fun_migrators.move`: `commit_upgrade_and_advance` always advances the stored
-generation, so a build that keeps the old constants fails every generation
-check, `authorize_upgrade` included, and freezes the package. Source omission
+policy, which no path narrows, and must bump `constants::generation`:
+`blast_admin::package_admin::commit_upgrade_and_advance` always advances the
+stored generation, so a build that keeps the old constant fails every venue
+call's generation check until the next upgrade, which the generic
+administration can still schedule. Source omission
 does not make principal custody permanent while this package or `blast_vault`
 has an `UpgradeCap`: a compatible upgrade of either could add an extraction
 function, since the venue's witness borrows its position from the vault. The correct
@@ -517,14 +523,14 @@ Before release, in order:
    collection, and settled route-update route in every orientation: in the venue
    fork gate at a freshly refreshed snapshot, then as mainnet dry-runs; and
 4. the deployment runbook admits exactly `cetus::Venue` and `bluefin::Venue`,
-   in the launchpad's `LaunchConfig` (`launch_config::schedule_venue`, then
-   `apply_venue`) and in the vault's `VaultRegistry`
-   (`blast_vault_package::schedule_venue`, then `apply_venue`), each only after
+   in each product's venue list (the launchpad's `launch_config`, the presale's
+   `creation_policy`) and in the vault's `VaultRegistry`
+   (`blast_vault_package::schedule_witness`, then `apply_witness`), each only after
    that venue's preparation, migration routes, collection, and settled update
    are reviewed and its dev-inspect rows pass. No other venue witness exists in
    this package, and none is admitted.
 
-After release, before `launch_config::set_meme_decimals_allowed` admits a new Meme
+After release, before a product admits a new Meme
 precision, rerun the migration extremes at that precision (the smallest and
 largest LP Meme and LP Quote hand-offs, in each coin order) against real venue
 bytecode on each admitted venue.

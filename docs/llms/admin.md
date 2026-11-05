@@ -12,7 +12,7 @@ outdated bytecode, and an upgrade custody that seals a package's `Publisher` and
 `UpgradeCap` so upgrades happen only through role-gated calls. Blast publishes
 `blast_admin` immutable (its `UpgradeCap` is destroyed in the publish
 transaction), so none of these rules can change. The launchpad (`blast_fun`),
-migrators (`blast_fun_migrators`), Blast SUI (`blast_sui`), Boosts
+migrators (`blast_migrators`), Blast SUI (`blast_sui`), Boosts
 (`blast_boosts_core` and `blast_boosts_aftermath`), partners
 (`blast_partners`), and presales (`blast_presale`) use it.
 
@@ -48,7 +48,7 @@ Same-named roles in different packages are different types.
 | Package | Declared in | Roles |
 | --- | --- | --- |
 | `blast_fun` (launchpad) | declares none | the generic `blast_admin::package_admin::UpgradeAdmin<M>`, `blast_admin::package_admin::PauseAdmin<M>`, `blast_admin::package_admin::UnpauseAdmin<M>` and `blast_admin::package_admin::CancelAdmin<M>` for `blast_fun::blast_fun::BLAST_FUN`, and the product roles of `blast_core::blast_domain` (`CreatorAdmin`, `TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `ClaimSignerAdmin`, `CancelAdmin`) |
-| `blast_fun_migrators` | declares none | the generic `UpgradeAdmin<M>` (its own delay policy and upgrades) and `CancelAdmin<M>` (pending administration) for its marker `blast_fun_migrators::blast_fun_migrators::BLAST_FUN_MIGRATORS`; its buybacks take `blast_core::blast_domain::BuybackAdmin` |
+| `blast_migrators` | declares none | the generic `UpgradeAdmin<M>` (its own delay policy and upgrades) and `CancelAdmin<M>` (pending administration) for its marker `blast_migrators::blast_migrators::BLAST_MIGRATORS`; its buybacks take `blast_core::blast_domain::BuybackAdmin` |
 | `blast_sui` | `blast_sui_domain` | `blast_sui_domain::UpgradeAdmin` (attach package capabilities; authorize, commit, restrict, or seal upgrades), `blast_sui_domain::FeeAdmin` (blastSUI redemption fee) |
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
 | `blast_boosts_aftermath` | declares none | uses the four Boosts core roles |
@@ -180,7 +180,7 @@ genuine one-time witness, so the value can only be created in that package's
 
 | Package | Version object |
 | --- | --- |
-| `blast_fun_migrators` | `blast_fun_migrators::blast_fun_migrators::PackageVersion` |
+| `blast_migrators` | `blast_admin::package_version::PackageVersion`, typed `PackageVersion<BLAST_MIGRATORS>` |
 | `blast_sui` | `blast_sui_package::PackageVersion` |
 | `blast_boosts_aftermath` | `blast_boosts_aftermath::blast_boosts_aftermath::Protocol` |
 
@@ -216,7 +216,7 @@ use its own Publisher and UpgradeCap directly:
 
 | Package | Custody object | Transitions exposed |
 | --- | --- | --- |
-| `blast_fun_migrators` | `blast_fun_migrators::package_admin::PackageAdmin` | `blast_fun_migrators::package_admin::wrap`, `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance`, delayed `blast_fun_migrators::package_admin::make_immutable` |
+| `blast_migrators` | `blast_admin::package_admin::PackageAdmin`, typed `PackageAdmin<BLAST_MIGRATORS>` | `blast_admin::package_admin::wrap`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance`, delayed `blast_admin::package_admin::make_immutable` |
 | `blast_sui` | `blast_sui::package_admin::PackageAdmin` | `blast_sui::package_admin::new`, `blast_sui::package_admin::add_capability`, `blast_sui::package_admin::share`, `blast_sui::package_admin::authorize_upgrade`, `blast_sui::package_admin::commit_upgrade_and_advance`, `blast_sui::package_admin::restrict_to_additive`, `blast_sui::package_admin::make_immutable`, `blast_sui::package_admin::has_upgrade_cap` |
 | `blast_boosts_aftermath` | `blast_boosts_aftermath::package_admin::PackageAdmin` | `blast_boosts_aftermath::package_admin::wrap`, `blast_boosts_aftermath::package_admin::authorize_upgrade`, `blast_boosts_aftermath::package_admin::commit_upgrade`, `blast_boosts_aftermath::package_admin::activate_upgrade`, `blast_boosts_aftermath::package_admin::make_immutable` |
 
@@ -533,7 +533,7 @@ PTB built against an old package ID after an upgrade.
   not ownership, to know whether a cap works.
 - Role names repeat across packages (`UpgradeAdmin`, `FeeAdmin`). Always compare
   the full type name, including the package address.
-- After any upgrade of `blast_fun`, `blast_fun_migrators`, `blast_sui`, or
+- After any upgrade of `blast_fun`, `blast_migrators`, `blast_sui`, or
   `blast_boosts_aftermath`, PTBs pinned to the old package ID abort with code
   9.
 
@@ -561,8 +561,8 @@ package is a different type, so the transaction does not type-check.
 
 **Which Blast packages can still be upgraded?** Those whose `PackageAdmin` still
 holds an `UpgradeCap`: check each one's custody. `blast_admin`,
-`blast_partners`, and `blast_boosts_core` are immutable. `blast_fun_migrators`
-exposes no way to restrict or seal itself.
+`blast_partners`, and `blast_boosts_core` are immutable. `blast_migrators`
+exposes no way to restrict itself; only a delayed `make_immutable` seals it.
 
 **What stops a stale package version from moving funds?** Every protected call
 checks the shared generation against the generation compiled into the bytecode,

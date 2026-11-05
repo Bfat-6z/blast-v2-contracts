@@ -1,34 +1,35 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// A one-off `blast_presale` migrator built for a partner. The `AdminCap` creates each sale with
-/// the Aftermath pool-creation capability of its LP coin, which stays bound to that sale. Anyone
-/// may then migrate the funded sale into a 50/50 Aftermath weighted pool wrapped in Aftermath's
-/// DAO-fee pool, which pays a 2% fee on every swap, deposit, and withdrawal straight to the partner
-/// treasury. The treasury also receives each sale's `PresaleCap` and each DAO-fee pool's owner
-/// cap, with which it may change that pool's fee or recipient; the sale's LP is locked forever.
+/// A one-off presale venue built for a partner, over `blast_core` alone. The `AdminCap` prepares
+/// each sale token with the Aftermath pool-creation capability of its LP coin and receives the
+/// `VenueTicket` that `blast_presale::new` redeems, so the sale can migrate only here. Anyone may
+/// then migrate the funded sale: the PTB passes the `Migration` the presale's own `migrate`
+/// returned, and this module seeds a 50/50 Aftermath weighted pool wrapped in Aftermath's DAO-fee
+/// pool, which pays a 2% fee on every swap, deposit, and withdrawal straight to the partner
+/// treasury. The treasury also receives each DAO-fee pool's owner cap, with which it may change
+/// that pool's fee or recipient; the sale's LP is locked forever.
+///
+/// The package never imports a product, so a presale upgrade never strands it.
 module blast_aftermath_dao_presale::blast_aftermath_dao_presale;
 
 // === Public Types ===
 
-/// The package's sealed venue witness: it issues the ticket a sale redeems when `new` starts it and
+/// The package's sealed venue witness: it issues the ticket a sale redeems at creation and
 /// redeems that sale's migration hand-off. Only this module constructs it, so only `migrate` can
 /// release the sale's liquidity.
 public struct Venue() has drop;
 
 /// The package's only administrator, sent to the publisher at publication. Its one power is
-/// creating sales through `new` and `finalize`.
+/// preparing sale tokens through `prepare`.
 public struct AdminCap has key, store {
     id: UID,
 }
 
-/// Shared reservation of one sale's Aftermath pool creation: the `CreatePoolCapV2` of the fresh LP
-/// coin `Lp`, which only `migrate` of the sale `presale_id` can consume. A sale `new` started but
-/// finalized directly in `blast_presale` has none, so it can never migrate and refunds after its
-/// LP deadline.
-public struct PoolCreation<phantom Lp> has key {
+/// Shared reservation of one sale token's Aftermath pool creation: the `CreatePoolCapV2` of the
+/// fresh LP coin `Lp`, which only the migration of a `SaleToken` sale can consume.
+public struct PoolCreation<phantom Lp, phantom SaleToken> has key {
     id: UID,
-    presale_id: ID,
     create_pool_cap: CreatePoolCapV2,
 }
 
@@ -40,92 +41,44 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Starts a presale that migrates through this module, with a ticket for the pair this venue
-/// issues. Its pool's weights and fees are this module's constants, so the sale carries no pool
-/// terms. The sale is set like any other, then finalized only through this module's `finalize`,
-/// which reserves its pool creation. The `CreationPolicy` must admit `Venue`.
-public fun new<SaleToken, Quote>(
+/// Reserves `SaleToken`'s pool creation with `create_pool_cap`, minted by the fresh LP coin `Lp`,
+/// in a shared `PoolCreation`, and returns the ticket for a sale of `SaleToken` in `Quote` that
+/// migrates here. The pool's weights and fees are this module's constants, so the sale carries no
+/// pool terms. The presale's `CreationPolicy` must admit `Venue`.
+public fun prepare<Lp, SaleToken, Quote>(
     _: &AdminCap,
-    package_version: &PackageVersion,
-    treasury_cap: TreasuryCap<SaleToken>,
-    creation_policy: &CreationPolicy,
-    fee_policy: &FeePolicy,
-): PresaleInitializer<SaleToken, Quote> {
-    presale::new(
-        treasury_cap,
-        package_version,
-        migration::issue_ticket(Venue()),
-        creation_policy,
-        fee_policy,
-    )
-}
-
-/// Finalizes a sale `new` started, sends its `PresaleCap` to the treasury, and shares a
-/// `PoolCreation` binding `create_pool_cap`, minted by the fresh LP coin `Lp`, to it. Every LP fee
-/// its pool pays reaches the treasury, so this sets the sale's LP-fee split to name the treasury as
-/// its only route. The initializer must be one `new` started: another venue's sale could never
-/// consume the pool creation.
-public fun finalize<Lp, SaleToken, Quote>(
-    _: &AdminCap,
-    package_version: &PackageVersion,
-    mut initializer: PresaleInitializer<SaleToken, Quote>,
-    registry: &mut PresaleRegistry,
-    currency: &mut Currency<SaleToken>,
     create_pool_cap: CreatePoolCapV2,
     ctx: &mut TxContext,
-): Presale<SaleToken, Quote> {
-    assert!(initializer.venue() == type_name::with_original_ids<Venue>(), EWrongVenue);
+): VenueTicket<SaleToken, Quote> {
+    let pool_creation = PoolCreation<Lp, SaleToken> { id: object::new(ctx), create_pool_cap };
+    let pool_creation_id = object::id(&pool_creation);
 
-    initializer.set_fee_split(
-        package_version,
-        fee_split::new(vector[
-            fee_split::route(fee_split::address_destination(TREASURY), bps::new(ALL_BPS)),
-        ]),
-    );
-    let (sale, cap) = initializer.finalize(package_version, registry, currency, ctx);
-
-    let pool_creation = PoolCreation<Lp> {
-        id: object::new(ctx),
-        presale_id: object::id(&sale),
-        create_pool_cap,
-    };
-
-    event::emit(PoolCreationReserved<Lp, SaleToken, Quote> {
-        presale_id: pool_creation.presale_id,
-        pool_creation_id: object::id(&pool_creation),
-    });
-
-    transfer::public_transfer(cap, TREASURY);
     transfer::share_object(pool_creation);
+    event::emit(PoolCreationReserved<Lp, SaleToken, Quote> { pool_creation_id });
 
-    sale
+    migration::issue_ticket(Venue())
 }
 
 // `dao_fee_pool::new` creates the shared pool in this transaction.
-/// Anyone may migrate a funded sale `finalize` created, consuming the `PoolCreation` bound to it: it
-/// redeems the sale's hand-off, seeds a 50/50 Aftermath pool with all of the sale's LP tokens and
-/// Quote, wraps it in a DAO-fee pool paying the treasury, shares that pool, sends its owner cap to
-/// the treasury, and locks the LP at `BURN_ADDRESS`. No vault is created, so the hand-off's vault
-/// terms are dropped.
+/// Anyone may migrate a funded sale prepared here: it redeems `migration`, the hand-off the
+/// presale's own `migrate` returned earlier in the transaction, consumes the sale token's
+/// `PoolCreation`, seeds a 50/50 Aftermath pool with all of the sale's tokens and Quote, wraps it in
+/// a DAO-fee pool paying the treasury, shares that pool, sends its owner cap to the treasury, and
+/// locks the LP at `BURN_ADDRESS`. No vault is created, so the
+/// hand-off's vault terms are dropped after naming the sale in the event.
 #[allow(lint(share_owned))]
 public fun migrate<Lp, SaleToken, Quote>(
-    sale: &mut Presale<SaleToken, Quote>,
-    package_version: &PackageVersion,
-    pool_creation: PoolCreation<Lp>,
-    fee_policy: &FeePolicy,
+    migration: Migration<SaleToken, Quote>,
+    pool_creation: PoolCreation<Lp, SaleToken>,
     pool_registry: &mut PoolRegistry,
     dao_fee_version: &Version,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let PoolCreation { id, presale_id, create_pool_cap } = pool_creation;
-    assert!(presale_id == object::id(sale), EWrongPresale);
-    id.delete();
-
-    let (tokens, quote, _) = sale
-        .migrate(package_version, fee_policy, clock, ctx)
-        .redeem(Venue());
+    let (tokens, quote, terms) = migration.redeem(Venue());
     let (token_amount, quote_amount) = (tokens.value(), quote.value());
+
+    let PoolCreation { id, create_pool_cap } = pool_creation;
+    id.delete();
 
     let (pool, lp) = if (sorts_before<SaleToken, Quote>()) {
         create_pool<Lp, _, _>(
@@ -167,7 +120,7 @@ public fun migrate<Lp, SaleToken, Quote>(
     );
 
     event::emit(Migrated<Lp, SaleToken, Quote> {
-        presale_id: object::id(sale),
+        presale_id: terms.origin(),
         pool_id,
         dao_fee_pool_id: object::id(&dao_fee_pool),
         owner_cap_id: object::id(&owner_cap),
@@ -258,15 +211,11 @@ public fun sorts_before_for_testing<A, B>(): bool {
 }
 
 #[test_only]
-public fun pool_creation_presale_id_for_testing<Lp>(self: &PoolCreation<Lp>): ID {
-    self.presale_id
-}
-
-#[test_only]
-public fun pool_creation_reserved_fields<Lp, SaleToken, Quote>(
-    event: &PoolCreationReserved<Lp, SaleToken, Quote>,
-): (ID, ID) {
-    (event.presale_id, event.pool_creation_id)
+/// The `PoolCreationReserved` payload with this field, for comparing emitted events.
+public fun pool_creation_reserved_for_testing<Lp, SaleToken, Quote>(
+    pool_creation_id: ID,
+): PoolCreationReserved<Lp, SaleToken, Quote> {
+    PoolCreationReserved { pool_creation_id }
 }
 
 #[test_only]
@@ -301,16 +250,16 @@ public fun assert_dao_fee_short_circuit_for_testing() {
 
 // === Events ===
 
-/// `finalize` reserved the sale `presale_id`'s Aftermath pool creation for the LP coin `Lp` in the
-/// shared `pool_creation_id`, which its migration consumes.
+/// `prepare` reserved the sale token `SaleToken`'s Aftermath pool creation for the LP coin `Lp` in
+/// the shared `pool_creation_id`, which its migration consumes.
 public struct PoolCreationReserved<phantom Lp, phantom SaleToken, phantom Quote> has copy, drop {
-    presale_id: ID,
     pool_creation_id: ID,
 }
 
-/// A sale migrated into the Aftermath pool `pool_id`, which traders reach through the shared
-/// DAO-fee pool `dao_fee_pool_id`. The treasury holds that pool's owner cap `owner_cap_id`, and
-/// `BURN_ADDRESS` holds the LP coin `lp_coin_id`, which locks the sale's `lp` units forever.
+/// The sale `presale_id` migrated into the Aftermath pool `pool_id`, which traders reach through
+/// the shared DAO-fee pool `dao_fee_pool_id`. The treasury holds that pool's owner cap
+/// `owner_cap_id`, and `BURN_ADDRESS` holds the LP coin `lp_coin_id`, which locks the sale's `lp`
+/// units forever.
 public struct Migrated<phantom Lp, phantom SaleToken, phantom Quote> has copy, drop {
     presale_id: ID,
     pool_id: ID,
@@ -322,7 +271,7 @@ public struct Migrated<phantom Lp, phantom SaleToken, phantom Quote> has copy, d
 
 // === Constants ===
 
-/// Receives every sale's `PresaleCap` and every pool's DAO fees and owner cap.
+/// The partner treasury: receives every pool's DAO fees and owner cap.
 const TREASURY: address = @0x37cf46b499f740e653644bd2f7a8ed97f248e8b3c69d5d12c97d7845a54c0cd8;
 
 /// Owns every pool's LP coin. No one can sign for the zero address, so nothing it owns can ever
@@ -345,9 +294,6 @@ const BASE_SWAP_FEE: u64 = 100_000_000_000_000;
 
 const POOL_NAME: vector<u8> = b"Blast Presale Pool";
 
-/// The whole LP-fee split, which the treasury's address route takes.
-const ALL_BPS: u64 = 10_000;
-
 // === Errors ===
 
 #[error(code = 0)]
@@ -356,27 +302,14 @@ const EPoolMismatch: vector<u8> = b"The Aftermath pool must hold every sale toke
 #[error(code = 1)]
 const EDaoFeePoolMismatch: vector<u8> = b"The DAO-fee pool must charge this package's fee and pay the treasury.";
 
-#[error(code = 2)]
-const EWrongPresale: vector<u8> = b"The pool creation is bound to a different presale.";
-
-#[error(code = 3)]
-const EWrongVenue: vector<u8> = b"Only a sale this package's `new` started can be finalized here.";
-
 // === Imports ===
 
 use amm::{pool::{CreatePoolCapV2, Pool}, pool_factory, pool_registry::PoolRegistry};
 
-use blast_core::{bps, fee_split, migration};
-
-use blast_presale::{
-    blast_presale::{Self as presale, Presale, PresaleInitializer, PresaleRegistry},
-    blast_presale_package::PackageVersion,
-    creation_policy::CreationPolicy,
-    fee_policy::FeePolicy
-};
+use blast_core::migration::{Self, Migration, VenueTicket};
 
 use dao_fee_amm::{pool as dao_fee_pool, version::Version};
 
 use std::type_name;
 
-use sui::{clock::Clock, coin::{Coin, TreasuryCap}, coin_registry::Currency, event};
+use sui::{coin::Coin, event};

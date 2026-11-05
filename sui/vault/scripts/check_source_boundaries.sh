@@ -14,7 +14,7 @@ dependencies="$(sed -n '/^\[dependencies\]/,/^\[/p' Move.toml | grep -E '^[A-Za-
 [[ "$dependencies" == "blast_admin blast_core blast_partners " ]] \
   || fail "dependencies must be exactly blast_admin, blast_core, blast_partners (found: $dependencies)"
 
-if rg -n '\b(blast_fun|blast_presale|blast_fun_migrators|blast_venues|cetus_clmm|bluefin_spot|amm|dao_fee_amm)::' sources tests; then
+if rg -n '\b(blast_fun|blast_presale|blast_migrators|blast_venues|cetus_clmm|bluefin_spot|amm|dao_fee_amm)::' sources tests; then
   fail "the vault must not import a product or a venue"
 fi
 [[ "$(rg -l '^fun init\(' sources | tr '\n' ' ')" == "sources/blast_vault_package.move " ]] \

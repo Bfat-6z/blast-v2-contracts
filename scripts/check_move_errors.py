@@ -60,7 +60,7 @@ def mask_rust(source):
 # These venue objects require the transaction runtime and captured venue bytecode.
 # Pin the existing native oracles instead of pretending link-stub unit tests cover them.
 NATIVE_TESTS = {
-    ('blast_fun_migrators::cetus', 'EInvalidCoinOrder'): (
+    ('blast_migrators::errors', 'EInvalidCoinOrder'): (
         'venue_fork.rs', 'migration_failures_commit_nothing',
         'Expected::Abort { package: self.migrators, module: "cetus", code: INVALID_COIN_ORDER }',
         'const INVALID_COIN_ORDER: u64 = 0;', 0,
@@ -70,15 +70,10 @@ NATIVE_TESTS = {
         'Expected::Abort { package: self.presale, module: "cetus", code: INVALID_COIN_ORDER }',
         'const INVALID_COIN_ORDER: u64 = 49;', 49,
     ),
-    ('blast_fun_migrators::cetus', 'EPositionPoolMismatch'): (
+    ('blast_migrators::errors', 'EPositionPoolMismatch'): (
         'venue_fork.rs', 'other_pool_is_refused',
         'Expected::Abort { package: self.migrators, module, code }',
         'let code = if self.case.is_cetus() { 1 } else { 0 };', 1,
-    ),
-    ('blast_fun_migrators::bluefin', 'EPositionPoolMismatch'): (
-        'venue_fork.rs', 'other_pool_is_refused',
-        'Expected::Abort { package: self.migrators, module, code }',
-        'let code = if self.case.is_cetus() { 1 } else { 0 };', 0,
     ),
     ('blast_presale::errors', 'EPositionPoolMismatch'): (
         'presale_venue_fork.rs', 'other_pool_is_refused',

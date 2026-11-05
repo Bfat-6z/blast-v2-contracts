@@ -8,7 +8,7 @@
 /// prepared coin's pool tier) as dynamic fields, while preparing a coin. No entry is ever removed,
 /// replaced, or borrowed mutably. New venue modules add entries without changing this object's
 /// layout.
-module blast_fun_migrators::venue_config;
+module blast_migrators::venue_config;
 
 // === Public Types ===
 

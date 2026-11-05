@@ -2,9 +2,14 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 /// Package-wide migrator constants exposed as zero-cost macros.
-module blast_fun_migrators::constants;
+module blast_migrators::constants;
 
 // === Package Constants ===
+
+/// The package generation this bytecode serves.
+macro public(package) fun generation(): u64 {
+    1
+}
 
 /// Bluefin pool creation's own tick-spacing bound (`pool` aborts 1026 above it).
 macro public(package) fun bluefin_max_tick_spacing(): u32 {
@@ -14,6 +19,12 @@ macro public(package) fun bluefin_max_tick_spacing(): u32 {
 /// Bluefin pool creation's own fee-rate bound (`pool` aborts 1027 above it).
 macro public(package) fun bluefin_max_fee_rate(): u64 {
     20_000
+}
+
+/// Longest Meme symbol, in bytes, a Bluefin pool accepts: the pool and its position store the
+/// symbol, and the pool name repeats it, so a longer one would make the position too large.
+macro public(package) fun max_meme_symbol_length(): u64 {
+    32
 }
 
 /// Lowest sqrt price a Cetus or Bluefin swap accepts as its limit; buybacks selling Quote as coin A
@@ -33,15 +44,9 @@ macro public(package) fun q64_shift(): u8 {
     64
 }
 
-/// Fractional bits of the Q128 price ratio the seed sqrt price is taken from.
+/// Fractional bits of a Q128 value; a fixed-A auto-LP liquidity must stay below it.
 macro public(package) fun q128_shift(): u8 {
     128
-}
-
-/// Exponent of the integer square-root search's upper bound: a positive u64/u64 Q128 ratio is
-/// below 2^192, so its root is below 2^96.
-macro public(package) fun sqrt_upper_bound_shift(): u8 {
-    96
 }
 
 /// Atoms of the other asset kept in reserve beyond the estimate, covering the venue's own

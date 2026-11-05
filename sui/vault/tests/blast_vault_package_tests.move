@@ -247,7 +247,7 @@ fun a_move_standard_library_type_cannot_be_admitted() {
     let f = vault_fixture::start(&mut scenario);
     let mut registry = blast_vault_package::empty_registry_for_testing(scenario.ctx());
 
-    registry.schedule_witness<std::string::String>(&adapter_admin(), f.version(), f.clock());
+    registry.schedule_witness<String>(&adapter_admin(), f.version(), f.clock());
 
     abort
 }
@@ -399,6 +399,6 @@ use blast_vault::{
     }
 };
 
-use std::unit_test::{assert_eq, destroy};
+use std::{string::String, unit_test::{assert_eq, destroy}};
 
 use sui::{package, test_utils};

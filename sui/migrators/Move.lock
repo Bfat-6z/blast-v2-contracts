@@ -106,23 +106,17 @@ use_environment = "mainnet"
 manifest_digest = "9CE506844EBD14541322B1AA0DDCB6E887F311260F08F7DB7BD871A37987F635"
 deps = { blast_admin = "blast_admin", blast_fun_vesting = "blast_fun_vesting", blast_partners = "blast_partners", std = "MoveStdlib_2", sui = "Sui_2" }
 
-[pinned.mainnet.blast_fun]
-source = { local = "../launchpad" }
-use_environment = "mainnet"
-manifest_digest = "E12781373163C6F0BF389DA440468BA512094AE57D59065A7DFCEC565A42919D"
-deps = { blast_admin = "blast_admin", blast_core = "blast_core", blast_partners = "blast_partners", std = "MoveStdlib_2", sui = "Sui_2" }
-
-[pinned.mainnet.blast_fun_migrators]
-source = { root = true }
-use_environment = "mainnet"
-manifest_digest = "AA572BE8A971CDF790F0B44CE340E840AF380DAF0DE0D7C42EE389D88D20C056"
-deps = { BluefinSpot = "BluefinSpot", CetusClmm = "CetusClmm", CetusLpBurn = "CetusLpBurn", IntegerLibrary = "IntegerLibrary", IntegerMate = "IntegerMate_1", Sui = "Sui_2", blast_admin = "blast_admin", blast_core = "blast_core", blast_fun = "blast_fun", blast_vault = "blast_vault" }
-
 [pinned.mainnet.blast_fun_vesting]
 source = { local = "../vesting" }
 use_environment = "mainnet"
 manifest_digest = "E41BBD67BE8940D26C79D78B028477EF5B33BA217A1282C78ACB344CF8A5ECF6"
 deps = { std = "MoveStdlib_2", sui = "Sui_2" }
+
+[pinned.mainnet.blast_migrators]
+source = { root = true }
+use_environment = "mainnet"
+manifest_digest = "6719EF1E06CE1708756436CB6A2B95FE0FB9D8E7AAE199CBA14D7D6570190C3F"
+deps = { BluefinSpot = "BluefinSpot", CetusClmm = "CetusClmm", CetusLpBurn = "CetusLpBurn", IntegerLibrary = "IntegerLibrary", IntegerMate = "IntegerMate_1", Sui = "Sui_2", blast_admin = "blast_admin", blast_core = "blast_core", blast_vault = "blast_vault" }
 
 [pinned.mainnet.blast_partners]
 source = { local = "../partners" }
