@@ -39,7 +39,7 @@ admin_roles="$(for file in "$sources"/*.move; do
 done | sort)"
 [ "$admin_roles" == "$(printf '%s\n' 'blast_presale:set_protocol_fees:FeeAdmin' 'creation_policy:add_partner:FeeAdmin' 'creation_policy:cancel_venue:CancelAdmin' 'creation_policy:cancel_venue_delay:CancelAdmin' 'creation_policy:remove_partner:FeeAdmin' 'creation_policy:remove_venue:AdapterAdmin' 'creation_policy:schedule_venue:AdapterAdmin' 'creation_policy:schedule_venue_delay:AdapterAdmin' 'creation_policy:set_quote_allowed:ListingAdmin' 'creation_policy:unpause:UnpauseAdmin<BLAST_PRESALE_PACKAGE>' 'fee_policy:cancel_fees:CancelAdmin' 'fee_policy:schedule_fees:FeeAdmin' | sort)" ] || fail "Every administrator action must take its pinned role."
 for file in "$sources"/*.move; do
-  if production "$file" | rg -q 'AdminWitness<(FeeAdmin|CancelAdmin|AdapterAdmin|ListingAdmin)>'; then
+  if rg -q 'AdminWitness<(FeeAdmin|CancelAdmin|AdapterAdmin|ListingAdmin)>' <<<"$(production "$file")"; then
     rg -q 'blast_domain::' "$file" || fail "$(basename "$file") must take product roles from blast_core::blast_domain."
   fi
 done
@@ -59,7 +59,7 @@ for file in "$sources"/*.move; do
     events.move) ;;
     blast_presale.move)
       [ "$(production "$file" | rg -c 'event::emit\(')" == 1 ] \
-        && production "$file" | rg -q 'sui::event::emit\(PresaleCreated<SaleToken, Quote> \{' \
+        && rg -q 'sui::event::emit\(PresaleCreated<SaleToken, Quote> \{' <<<"$(production "$file")" \
         || fail "blast_presale emits only PresaleCreated directly; every other event goes through events.move."
       ;;
     *)
@@ -108,9 +108,9 @@ settle_body="$(sed -n '/^public fun settle</,/^}/p' <<<"$presale_production")"
 migrate_body="$(sed -n '/^public fun migrate</,/^}/p' <<<"$presale_production")"
 prove_owner_body="$(sed -n '/^public fun prove_owner</,/^}/p' <<<"$presale_production")"
 finalize_body="$(sed -n '/^public fun finalize</,/^}/p' <<<"$presale_production")"
-marker_production="$(production "$sources/blast_presale_package.move")"
-rg -q '^public struct PackageWitness\(\) has drop;$' <<<"$marker_production" \
-  && [ "$(rg -c 'PackageWitness\(\)' <<<"$marker_production")" == 2 ] \
+otw_production="$(production "$sources/blast_presale_package.move")"
+rg -q '^public struct PackageWitness\(\) has drop;$' <<<"$otw_production" \
+  && [ "$(rg -c 'PackageWitness\(\)' <<<"$otw_production")" == 2 ] \
   && [ "$(for file in "$sources"/*.move; do production "$file" | rg -c 'package_witness\(\)' || true; done | paste -sd+ | bc)" == 6 ] \
   && [ "$(production "$sources/creation_policy.move" | rg -c 'package_witness\(\)')" == 1 ] \
   && [ "$(rg -c 'blast_presale_package::package_witness\(\)' <<<"$presale_production")" == 4 ] \
