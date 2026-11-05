@@ -155,6 +155,42 @@ fn bluefin_with_sui_against_mainnet_bytecode() -> Result<()> {
     run(Case::Bluefin)
 }
 
+/// A public share sink must reject an existing shared input before attaching a second venue's
+/// key or emitting another VaultCreated. Run through the native PTB runtime, not test_scenario.
+#[test]
+fn a_rogue_venue_cannot_reshare_a_migrated_vault() -> Result<()> {
+    let mut w = World::new(Case::Bluefin)?;
+    let launch = w.start_launch(&initial_split())?;
+    w.graduate(&launch)?;
+    let mut migration = w.migrate(&launch)?;
+    w.swap(&launch, &migration, Side::QuoteIn, w.case.quote_unit())?;
+    w.collect(&launch, &mut migration, None)?;
+    let before = w.vault(&migration)?;
+    ensure!(before.auto_lp_quote > 0, "the victim holds auto-LP funds");
+    ensure!(before.venue == tag(&format!("{}::bluefin::Venue", w.migrators)).to_canonical_string(false));
+
+    let source = sui_dir().join("launchpad/ptb_tests/fixture/rogue_venue");
+    let work = blast_launchpad_ptb_tests::test_work_dir().join("rogue_venue");
+    let (rogue, _) = w.h.publish(build(&source, &[], &work)?)?;
+    let mut b = ProgrammableTransactionBuilder::new();
+    let witness = call(&mut b, rogue, "rogue_venue", "witness", vec![], vec![]);
+    let position = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "zero", vec![sui()], vec![]);
+    let meme = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "balance", "zero", vec![launch.meme.clone()], vec![]);
+    let quote = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "balance", "zero", vec![w.quote()], vec![]);
+    let vault = b.obj(w.h.shared(migration.vault, true))?;
+    let treasury = b.obj(w.h.shared(w.treasury, false))?;
+    let liquidity = b.pure(1u128)?;
+    call(&mut b, w.vault_package(), "vault", "share_with_position",
+        vec![launch.meme.clone(), w.quote(), tag(&format!("{rogue}::rogue_venue::Venue")),
+            tag("0x2::coin::Coin<0x2::sui::SUI>")],
+        vec![vault, witness, treasury, position, liquidity, meme, quote]);
+    w.h.assert_rolled_back(b.finish(),
+        Expected::Abort { package: w.vault_package(), module: "vault", code: 5 },
+        &[migration.vault, migration.position, migration.pool, w.treasury], &[w.h.sender])?;
+    ensure!(w.vault(&migration)? == before, "the rejected initialization preserves every vault field");
+    Ok(())
+}
+
 #[test]
 fn bluefin_quote_larger_seed_fixes_quote() -> Result<()> {
     let mut world = World::new(Case::Bluefin)?;
@@ -1903,7 +1939,7 @@ impl World {
             ensure!(names.first().map(String::as_str) == Some("FeesCollected"), "settles first: {names:?}");
             ensure!(fee_split_applied_after_settlement(&outcome, self.vault_package()), "settles before applying");
             let changed = &changed[0];
-            ensure!(changed.owner == m.vault && changed.previous_value == before.fee_split.value && changed.value == *split);
+            ensure!(changed.parent == m.vault && changed.previous_value == before.fee_split.value && changed.value == *split);
             ensure!(after.fee_split.value == *split && after.fee_split.pending.is_none() && changed.delay_ms == after.fee_split.delay_ms);
         } else {
             ensure!(after.fee_split == before.fee_split);
@@ -2039,7 +2075,7 @@ impl World {
         for key in ["CurveFeeCapReassignment", "CreatorMetadataCapReassignment"] {
             let proposals: Vec<ActionScheduled<SuiAddress>> = scheduled.delayed("ActionScheduled", "launch", key)?;
             ensure!(proposals.len() == 1);
-            ensure!(proposals[0].owner == launch.launch && proposals[0].change == Change::Action(SuiAddress::from(CAP_HOLDER)));
+            ensure!(proposals[0].parent == launch.launch && proposals[0].change == Change::Action(SuiAddress::from(CAP_HOLDER)));
             ensure!(proposals[0].delay_ms == 172_800_000, "recipient-only schedules retain the applied delay");
         }
         let pair = self.pair(launch);
@@ -2296,7 +2332,7 @@ impl World {
         let outcome = self.h.execute(b.finish())?;
         outcome.assert_success();
         let scheduled: Vec<ActionScheduled<RoundTerms>> = outcome.delayed("ActionScheduled", "vault", "RoundPublicationKey")?;
-        ensure!(scheduled.len() == 1 && scheduled[0].owner == m.vault && scheduled[0].ready_at_ms == now_at_ms + ROUND_DELAY_MS);
+        ensure!(scheduled.len() == 1 && scheduled[0].parent == m.vault && scheduled[0].ready_at_ms == now_at_ms + ROUND_DELAY_MS);
         ensure!(matches!(&scheduled[0].change, Change::Action(terms) if terms.number == 0
             && terms.root == root.to_vec() && terms.gas_reserve_amount == gas_reserve
             && terms.claim_window_duration_ms == claim_window_duration_ms
@@ -2612,6 +2648,7 @@ struct Ledger {
 struct Vault {
     id: ObjectID,
     terms: VaultTerms,
+    venue: String,
     pool_id: ObjectID,
     fee_split: Delayed<FeeSplit>,
     protocol_bps: Delayed<(u64, u64)>,

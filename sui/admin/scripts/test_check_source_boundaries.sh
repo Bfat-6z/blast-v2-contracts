@@ -165,7 +165,7 @@ rm "$case_dir/sources/delayed/delayed_map.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case map_without_readers)"
-edit 's/^public fun owner</fun owner</' "$case_dir/sources/delayed/delayed_map.move"
+edit 's/^public fun parent</fun parent</' "$case_dir/sources/delayed/delayed_map.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case second_mutable_publisher)"

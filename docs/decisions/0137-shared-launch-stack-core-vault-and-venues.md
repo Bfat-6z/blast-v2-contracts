@@ -117,7 +117,11 @@ venue, from creating Blast vaults with a Blast share and partner of its choosing
 
 Each product keeps its own creator authority (the launchpad's reassignable curve-fee cap, the
 presale's transferable cap). A product proves ownership to the vault with a non-droppable owner proof
-sealed by its witness, so the vault imports neither product.
+sealed by its witness, so the vault imports neither product. Terms, owner proofs, and protocol-fee
+ledgers borrow the originating object's `&UID` when issued and store its ID. The UID establishes
+access to that object's identity; the private package witness identifies the issuer, and the
+product still checks creator authority before issuing an owner proof. A bare ID remains suitable
+when naming another object, such as an admitted cap or a pool, rather than attesting an origin.
 
 ### Authority, posture, events and errors
 
@@ -320,6 +324,14 @@ and after the next `commit_upgrade_and_advance` every version-gated call would a
 checks its compiled version. A release that forgot its version bump fails that check and can
 never be made immutable. Only the vault has the wrapper (`blast_vault_package::make_immutable`,
 for #195); any other package adds one by upgrade if it ever needs it.
+
+**Each vault is permanently bound to its constructing venue** (owner, 2026-11-05).
+`new` stores the admitted venue witness's original `TypeName`. `share_with_position` checks
+that exact type before attaching a position, settling residuals, or emitting `VaultCreated`.
+Another admitted venue has no authority over this vault. The bound venue's position key is
+permanent and cannot be added twice, so initialization commits only once. Sui permits an
+already shared object to be re-shared; key-only custody and the sharing native do not establish
+freshness. The stored binding and the permanent position key enforce that lifecycle locally.
 
 **The migrators package has no pause bits.** Its version starts unpaused and it has no unpause.
 Migration stops with each product's migration bit and buyback with the vault's admin bit.

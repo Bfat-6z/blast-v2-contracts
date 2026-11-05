@@ -236,9 +236,10 @@ fun prepare_for<PackageWitness>(scenario: &mut Scenario): VenueTicket<SALE, QUOT
 /// Migrates the prepared sale with a test issuer's hand-off sealed for `venue`.
 fun migrate(scenario: &mut Scenario, venue: TypeName) {
     let pool_creation = scenario.take_shared<PoolCreation<LP, SALE>>();
+    let origin = object::new(scenario.ctx());
     let terms = migration::vault_terms(
         migration::test_issuer(),
-        @0x5A1E.to_id(),
+        &origin,
         fee_split::new(vector[
             fee_split::route(fee_split::owner_destination(), bps::new(10_000)),
         ]),
@@ -247,6 +248,7 @@ fun migrate(scenario: &mut Scenario, venue: TypeName) {
         option::none(),
         migration::residuals_to_owner(),
     );
+    origin.delete();
     let hand_off = migration::new(
         migration::test_issuer(),
         balance::create_for_testing<SALE>(1_000),

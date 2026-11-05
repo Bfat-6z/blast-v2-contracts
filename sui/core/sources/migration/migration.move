@@ -86,11 +86,12 @@ public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName 
 /// `redeem_ticket` stays the ticket's one consuming path.
 public fun ticket_venue<Meme, Quote>(self: &VenueTicket<Meme, Quote>): TypeName { self.venue }
 
-/// A vault's terms, sealed under the `PackageWitness` of the sale's product that owns `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
+/// A vault's terms, sealed under the sale product's `PackageWitness` by borrowing the sale's
+/// `origin` UID; owner proofs for the vault must come from the same witness. Each Blast share is at
 /// most `constants::max_lp_fee_bps!()`, 3,000 basis points, so a vault trusts sealed terms.
 public fun vault_terms<PackageWitness: drop>(
     _: PackageWitness,
-    origin: ID,
+    origin: &UID,
     fee_split: FeeSplit,
     protocol_meme_bps: Bps,
     protocol_quote_bps: Bps,
@@ -104,7 +105,7 @@ public fun vault_terms<PackageWitness: drop>(
     );
 
     VaultTerms {
-        origin,
+        origin: origin.to_inner(),
         package_witness: type_name::with_original_ids<PackageWitness>(),
         fee_split,
         protocol_meme_bps,

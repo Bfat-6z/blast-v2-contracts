@@ -60,10 +60,10 @@ fun the_admin_allows_a_quote_and_a_venue() {
 
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     assert_eq!(last_event<QuoteAllowed<QUOTE>>().quote_allowed_fields(), true);
-    let (owner, _, admission, _) = last_event<
+    let (parent, _, admission, _) = last_event<
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
-    assert_eq!(owner, object::id(&policy));
+    assert_eq!(parent, object::id(&policy));
     assert_eq!(admission.member(), option::some(type_name<VENUE>()));
 
     policy.destroy_for_testing();
@@ -141,10 +141,10 @@ fun disallowing_a_venue_stops_later_creations() {
         &mut sui::tx_context::dummy()
     );
 
-    let (owner, _, member) = last_event<
+    let (parent, _, member) = last_event<
         MemberRemoved<VenueKey, TypeName>,
     >().member_removed_fields();
-    assert_eq!(owner, object::id(&policy));
+    assert_eq!(parent, object::id(&policy));
     assert_eq!(member, type_name<VENUE>());
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     std::unit_test::destroy(package_version);
@@ -369,8 +369,8 @@ fun an_added_partner_is_accepted_at_once() {
     policy.add_partner(&package_version, &fee_admin(), &partner);
 
     policy.assert_partner_at(object::id(&partner), 0);
-    let (owner, added_id) = last_event<PartnerAdded>().partner_added_fields();
-    assert_eq!(owner, object::id(&policy));
+    let (parent, added_id) = last_event<PartnerAdded>().partner_added_fields();
+    assert_eq!(parent, object::id(&policy));
     assert_eq!(added_id, object::id(&partner));
     destroy(partner);
     policy.destroy_for_testing();
@@ -405,9 +405,9 @@ fun a_removed_partner_is_accepted_until_its_delay_ends() {
     let (policy, partner_id) = policy_with_removed_partner(&mut ctx);
     let acceptance_ends_at_ms = REMOVED_AT_MS + partners::delay_ms();
 
-    let (owner, removed_id, removed_acceptance_ends_at_ms) = last_event<PartnerRemoved>()
+    let (parent, removed_id, removed_acceptance_ends_at_ms) = last_event<PartnerRemoved>()
         .partner_removed_fields();
-    assert_eq!(owner, object::id(&policy));
+    assert_eq!(parent, object::id(&policy));
     assert_eq!(removed_id, partner_id);
     assert_eq!(removed_acceptance_ends_at_ms, acceptance_ends_at_ms);
     policy.assert_partner_at(partner_id, acceptance_ends_at_ms - 1);
@@ -535,10 +535,10 @@ fun stale_version_cannot_allow_quotes() {
 
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     assert_eq!(last_event<QuoteAllowed<QUOTE>>().quote_allowed_fields(), true);
-    let (owner, _, admission, _) = last_event<
+    let (parent, _, admission, _) = last_event<
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
-    assert_eq!(owner, object::id(&policy));
+    assert_eq!(parent, object::id(&policy));
     assert_eq!(admission.member(), option::some(type_name<VENUE>()));
 
     policy.destroy_for_testing();

@@ -10,7 +10,7 @@ module blast_admin::delayed_action;
 
 /// An applied delay and at most one proposed one-shot action or delay change.
 public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
     pending: Option<Proposal<Change<A>>>,
@@ -18,7 +18,7 @@ public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has 
 
 /// What a proposal does once applied.
 public enum Change<A: copy + drop + store> has copy, drop, store {
-    /// Hands the owner its action; the delay stays as applied.
+    /// Hands the embedding module its action; the delay stays as applied.
     Action(A),
     /// Changes only the delay, to the proposal's `delay_ms`.
     Delay,
@@ -29,15 +29,15 @@ public enum Change<A: copy + drop + store> has copy, drop, store {
 /// An action slot with nothing proposed; every action waits the applied delay.
 public fun new<K: copy + drop + store, A: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
 ): DelayedAction<K, A> {
     delayed::assert_delay(delay_ms);
-    let owner = owner.to_inner();
+    let parent = parent.to_inner();
 
-    sui::event::emit(ActionCreated<K, A> { owner, key, delay_ms });
+    sui::event::emit(ActionCreated<K, A> { parent, key, delay_ms });
 
-    DelayedAction { owner, key, delay_ms, pending: option::none() }
+    DelayedAction { parent, key, delay_ms, pending: option::none() }
 }
 
 /// The applied delay in milliseconds.
@@ -83,7 +83,7 @@ public fun schedule_delay<K: copy + drop + store, A: copy + drop + store>(
     self.propose(Change::Delay, delay_ms, clock)
 }
 
-/// Consumes the ready proposed action and returns it for the owner to perform.
+/// Consumes the ready proposed action and returns it for the embedding module to perform.
 /// Aborts when the proposal is a delay change.
 public fun take_action<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
@@ -112,9 +112,9 @@ public fun cancel<K: copy + drop + store, A: copy + drop + store>(self: &mut Del
 public fun destroy<K: copy + drop + store, A: copy + drop + store>(self: DelayedAction<K, A>) {
     assert!(self.pending.is_none(), blast_admin::errors::proposal_pending!());
 
-    let DelayedAction { owner, key, delay_ms: _, pending: _ } = self;
+    let DelayedAction { parent, key, delay_ms: _, pending: _ } = self;
 
-    sui::event::emit(ActionDestroyed<K, A> { owner, key });
+    sui::event::emit(ActionDestroyed<K, A> { parent, key });
 }
 
 /// The proposed action, or none for a delay change.
@@ -164,11 +164,11 @@ public fun is_delay_ready<K: copy + drop + store, A: copy + drop + store>(
 }
 
 /// The ID of the object that stores this action slot.
-public fun owner<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID {
-    self.owner
+public fun parent<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID {
+    self.parent
 }
 
-/// The owner-defined key of this action slot.
+/// The module-defined key of this action slot.
 public fun key<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): K {
     self.key
 }
@@ -186,7 +186,7 @@ fun propose<K: copy + drop + store, A: copy + drop + store>(
     self.cancel_replaced();
     self.pending.fill(delayed::new_proposal(change, delay_ms, ready_at_ms));
 
-    sui::event::emit(ActionScheduled { owner: self.owner, key: self.key, change, delay_ms, ready_at_ms });
+    sui::event::emit(ActionScheduled { parent: self.parent, key: self.key, change, delay_ms, ready_at_ms });
 
     ready_at_ms
 }
@@ -207,7 +207,7 @@ fun take_ready<K: copy + drop + store, A: copy + drop + store>(
     self.delay_ms = proposal.delay_ms();
 
     sui::event::emit(ActionApplied {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change,
         delay_ms: proposal.delay_ms(),
@@ -221,7 +221,7 @@ fun cancel_replaced<K: copy + drop + store, A: copy + drop + store>(self: &mut D
     let proposal = self.pending.extract();
 
     sui::event::emit(ActionCancelled {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: proposal.value(),
         delay_ms: proposal.delay_ms(),
@@ -235,42 +235,42 @@ fun cancel_replaced<K: copy + drop + store, A: copy + drop + store>(self: &mut D
 public fun action_created_fields<K: copy + drop + store, A: copy + drop + store>(
     self: &ActionCreated<K, A>,
 ): (ID, K, u64) {
-    (self.owner, self.key, self.delay_ms)
+    (self.parent, self.key, self.delay_ms)
 }
 
 #[test_only]
 public fun action_scheduled_fields<K: copy + drop + store, A: copy + drop + store>(
     self: &ActionScheduled<K, A>,
 ): (ID, K, Change<A>, u64, u64) {
-    (self.owner, self.key, self.change, self.delay_ms, self.ready_at_ms)
+    (self.parent, self.key, self.change, self.delay_ms, self.ready_at_ms)
 }
 
 #[test_only]
 public fun action_cancelled_fields<K: copy + drop + store, A: copy + drop + store>(
     self: &ActionCancelled<K, A>,
 ): (ID, K, Change<A>, u64, u64) {
-    (self.owner, self.key, self.change, self.delay_ms, self.ready_at_ms)
+    (self.parent, self.key, self.change, self.delay_ms, self.ready_at_ms)
 }
 
 #[test_only]
 public fun action_applied_fields<K: copy + drop + store, A: copy + drop + store>(
     self: &ActionApplied<K, A>,
 ): (ID, K, Change<A>, u64) {
-    (self.owner, self.key, self.change, self.delay_ms)
+    (self.parent, self.key, self.change, self.delay_ms)
 }
 
 #[test_only]
 public fun action_destroyed_fields<K: copy + drop + store, A: copy + drop + store>(
     self: &ActionDestroyed<K, A>,
 ): (ID, K) {
-    (self.owner, self.key)
+    (self.parent, self.key)
 }
 
 // === Events ===
 
 /// An action slot was created with its first applied delay.
 public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -278,7 +278,7 @@ public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + sto
 /// An action or delay change was proposed, ready from `ready_at_ms`; `delay_ms` is the
 /// delay in force once it applies.
 public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
@@ -287,16 +287,16 @@ public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> ha
 
 /// A proposed action or delay change was discarded, by cancellation or replacement.
 public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
     ready_at_ms: u64,
 }
 
-/// A ready action was handed to its owner, or a delay change applied.
+/// A ready action was handed to its embedding module, or a delay change applied.
 public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
@@ -304,7 +304,7 @@ public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has 
 
 /// An action slot was deleted with nothing pending.
 public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 

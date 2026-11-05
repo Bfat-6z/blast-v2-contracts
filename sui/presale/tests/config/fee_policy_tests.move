@@ -42,10 +42,10 @@ fun the_admin_sets_maximum_and_zero_rates() {
      &mut sui::tx_context::dummy());
 
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000));
-    let (owner, _, previous, applied, _) = last_event<
+    let (parent, _, previous, applied, _) = last_event<
         DelayedApplied<FeesKey, ProtocolFees>,
     >().delayed_applied_fields();
-    assert_eq!(owner, object::id(&policy));
+    assert_eq!(parent, object::id(&policy));
     assert_eq!(previous, fee_policy::protocol_fees_for_testing(0, 0, 0, 0));
     assert_eq!(applied, fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000));
 
@@ -133,10 +133,10 @@ fun stale_version_cannot_set_fees() {
      &mut sui::tx_context::dummy());
 
     assert_eq!(policy.fees(), fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000));
-    let (owner, _, previous, applied, _) = last_event<
+    let (parent, _, previous, applied, _) = last_event<
         DelayedApplied<FeesKey, ProtocolFees>,
     >().delayed_applied_fields();
-    assert_eq!(owner, object::id(&policy));
+    assert_eq!(parent, object::id(&policy));
     assert_eq!(previous, fee_policy::protocol_fees_for_testing(0, 0, 0, 0));
     assert_eq!(applied, fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000));
 

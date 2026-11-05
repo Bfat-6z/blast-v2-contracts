@@ -22,9 +22,9 @@ fun an_entry_waits_the_applied_delay_and_reads_stay_applied_until_apply() {
     assert_eq!(created_delay_ms, DELAY_MS);
 
     assert_eq!(map.schedule(@0xA, option::some(7), &clock), 5 + DELAY_MS);
-    let (owner, _, change, delay_ms, ready_at_ms) = collect<MapScheduled<Overrides, address, u64>>()
+    let (parent, _, change, delay_ms, ready_at_ms) = collect<MapScheduled<Overrides, address, u64>>()
         .map_scheduled_fields();
-    assert_eq!(owner, owner());
+    assert_eq!(parent, parent());
     assert_eq!(change.changed_entry(), option::some(@0xA));
     assert_eq!(change.changed_value(), option::some(option::some(7)));
     assert_eq!(delay_ms, DELAY_MS);
@@ -291,9 +291,9 @@ fun destroying_a_map_ends_its_remaining_entries_and_records_the_end() {
 
     map.destroy();
 
-    let (destroyed_owner, destroyed_key) = collect<MapDestroyed<Overrides, address, u64>>()
+    let (destroyed_parent, destroyed_key) = collect<MapDestroyed<Overrides, address, u64>>()
         .map_destroyed_fields();
-    assert_eq!(destroyed_owner, owner());
+    assert_eq!(destroyed_parent, parent());
     assert_eq!(destroyed_key, Overrides());
     clock.destroy_for_testing();
 }
@@ -321,7 +321,7 @@ fun a_map_with_a_pending_delay_change_cannot_be_destroyed() {
 }
 
 #[test]
-fun readers_report_owner_key_counts_and_guard() {
+fun readers_report_parent_key_counts_and_guard() {
     let mut clock = clock_at(0);
     let mut map = new_map(0);
     assert!(!map.is_guarded());
@@ -330,7 +330,7 @@ fun readers_report_owner_key_counts_and_guard() {
     map.schedule_delay(DELAY_MS, &clock);
     map.apply_delay(&clock);
 
-    assert_eq!(map.owner(), owner());
+    assert_eq!(map.parent(), parent());
     assert_eq!(map.key(), Overrides());
     assert!(map.contains(&@0xA));
     assert!(!map.contains(&@0xB));
@@ -382,15 +382,15 @@ fun readers_report_pending_and_ready_entry_changes_and_delay_changes() {
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.
-fun owner_uid(): UID {
+fun parent_uid(): UID {
     object::new(&mut tx_context::dummy())
 }
 
-fun owner(): ID {
-    let uid = owner_uid();
-    let owner = uid.to_inner();
+fun parent(): ID {
+    let uid = parent_uid();
+    let parent = uid.to_inner();
     uid.delete();
-    owner
+    parent
 }
 
 fun clock_at(timestamp_ms: u64): Clock {

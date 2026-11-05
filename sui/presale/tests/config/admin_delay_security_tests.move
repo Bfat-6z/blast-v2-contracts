@@ -232,7 +232,7 @@ fun expected(setting: Setting, n: u64): vector<u8> {
 
 fun assert_value(f: &Fixture, setting: Setting, n: u64) { assert_eq!(snapshot(f, setting), expected(setting, n)); }
 
-/// Checks the primitive's last scheduled or cancelled proposal for `setting`: its owner, value
+/// Checks the primitive's last scheduled or cancelled proposal for `setting`: its parent, value
 /// and full delay, and for a schedule its deadline a full delay from now.
 fun assert_delay(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
     let ready_at_ms = if (scheduled) option::some(f.clock.timestamp_ms() + delay_ms()) else option::none();
@@ -247,16 +247,16 @@ fun assert_delay(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
 
 /// A schedule when `ready_at_ms` is some, else a cancellation.
 fun assert_proposal<K: copy + drop + store, T: copy + drop + store>(
-    owner: ID,
+    parent: ID,
     value: vector<u8>,
     ready_at_ms: Option<u64>,
 ) {
-    let (actual_owner, _, actual_value, delay_ms, actual_ready_at_ms) = if (ready_at_ms.is_some()) {
+    let (actual_parent, _, actual_value, delay_ms, actual_ready_at_ms) = if (ready_at_ms.is_some()) {
         sui::event::events_by_type<DelayedScheduled<K, T>>().pop_back().delayed_scheduled_fields()
     } else {
         sui::event::events_by_type<DelayedCancelled<K, T>>().pop_back().delayed_cancelled_fields()
     };
-    assert_eq!(actual_owner, owner);
+    assert_eq!(actual_parent, parent);
     assert_eq!(bcs::to_bytes(&actual_value), value);
     assert_eq!(delay_ms, delay_ms());
     ready_at_ms.do!(|expected| assert_eq!(actual_ready_at_ms, expected));

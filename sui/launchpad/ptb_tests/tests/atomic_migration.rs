@@ -252,7 +252,7 @@ fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> 
             admitted.into_iter().chain(std::iter::once(SetChange::Delay)).collect()
         };
         assert_eq!(changes.iter().map(|applied| applied.change.clone()).collect::<Vec<_>>(), expected);
-        assert!(changes.iter().all(|applied| applied.owner == w.config));
+        assert!(changes.iter().all(|applied| applied.parent == w.config));
         assert_eq!(changes.iter().find(|applied| applied.change == SetChange::Delay).map(|applied| applied.delay_ms),
             Some(next_delay));
 
@@ -499,7 +499,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
         assert!(scheduled.payload_names(w.blast).is_empty());
         let proposals: Vec<ActionScheduled<SuiAddress>> = scheduled.delayed("ActionScheduled", "launch", key)?;
         assert_eq!(proposals, [ActionScheduled {
-            owner: launch.launch,
+            parent: launch.launch,
             key: false,
             change: Change::Action(recipient),
             delay_ms: ADMIN_DELAY_MS,
@@ -544,7 +544,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
         assert_eq!(applied.payload_names(w.blast), [reassigned_name]);
         let changes: Vec<ActionApplied<SuiAddress>> = applied.delayed("ActionApplied", "launch", key)?;
         assert_eq!(changes, [ActionApplied {
-            owner: launch.launch,
+            parent: launch.launch,
             key: false,
             change: Change::Action(recipient),
             delay_ms: ADMIN_DELAY_MS,
@@ -628,7 +628,7 @@ fn mixed_version_creation_rejects_each_stale_step_after_native_upgrade() -> Resu
         "{admin}::delayed_action::{name}<{admin}::package_admin::UpgradeKey<{original}::blast_fun::BLAST_FUN>, {admin}::package_admin::UpgradeAction>",
     ));
     let proposal = ActionScheduled {
-        owner: package_admin,
+        parent: package_admin,
         key: false,
         change: Change::Action(UpgradeAction::Upgrade(digest.to_vec())),
         delay_ms: ADMIN_DELAY_MS,
@@ -1302,7 +1302,7 @@ impl World {
 
     fn applied_fee_share(&self) -> Result<u64> {
         let (_, _, fee_share): RuntimeConfigContents = bcs::from_bytes(&self.h.contents(self.runtime))?;
-        assert_eq!(fee_share.owner, self.runtime);
+        assert_eq!(fee_share.parent, self.runtime);
         Ok(fee_share.value)
     }
 

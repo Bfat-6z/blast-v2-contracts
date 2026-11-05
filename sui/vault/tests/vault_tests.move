@@ -56,6 +56,132 @@ fun creation_emits_one_event_in_its_own_transaction() {
 }
 
 #[test]
+#[expected_failure(abort_code = blast_vault::errors::EWrongVenue, location = blast_vault::vault)]
+fun a_rogue_venue_cannot_share_a_fresh_vault() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
+    let vault = f.new_vault(terms);
+    let position = vault_fixture::new_position(scenario.ctx());
+
+    vault.share_with_position(
+        &vault_fixture::other_venue(),
+        f.treasury(),
+        position,
+        1,
+        balance::zero(),
+        balance::zero(),
+        scenario.ctx(),
+    );
+
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_vault::errors::EWrongVenue, location = blast_vault::vault)]
+fun another_admitted_venue_cannot_share_a_fresh_vault() {
+    let mut scenario = vault_fixture::begin();
+    let f = vault_fixture::start(&mut scenario);
+    // Both witness types are admitted, so registry membership cannot substitute for binding.
+    let mut registry = blast_vault_package::registry_for_testing<TestVenue, OtherVenue>(scenario.ctx());
+    let terms = f.terms_sealed_by(vault_fixture::venue(), owner_split());
+    let vault = vault::new<VAULT_FIXTURE, QUOTE, _>(
+        &mut registry,
+        &vault_fixture::venue(),
+        f.version(),
+        terms,
+        vault_fixture::pool_id(),
+    );
+    let position = vault_fixture::new_position(scenario.ctx());
+
+    vault.share_with_position(
+        &vault_fixture::other_venue(),
+        f.treasury(),
+        position,
+        1,
+        balance::zero(),
+        balance::zero(),
+        scenario.ctx(),
+    );
+
+    destroy(registry);
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_vault::errors::EWrongVenue, location = blast_vault::vault)]
+fun a_rogue_venue_cannot_reshare_an_existing_vault() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
+    f.share_vault(&mut scenario, terms, 5, 7);
+    let vault = vault_fixture::take_vault(&scenario);
+    let position = vault_fixture::new_position(scenario.ctx());
+
+    vault.share_with_position(
+        &vault_fixture::other_venue(),
+        f.treasury(),
+        position,
+        1,
+        balance::zero(),
+        balance::zero(),
+        scenario.ctx(),
+    );
+
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 0, location = sui::dynamic_field)]
+fun the_bound_venue_cannot_reshare_an_existing_vault() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
+    f.share_vault(&mut scenario, terms, 5, 7);
+    let vault = vault_fixture::take_vault(&scenario);
+    let position = vault_fixture::new_position(scenario.ctx());
+
+    vault.share_with_position(
+        &vault_fixture::venue(),
+        f.treasury(),
+        position,
+        1,
+        balance::zero(),
+        balance::zero(),
+        scenario.ctx(),
+    );
+
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_vault::errors::EWrongVenue, location = blast_vault::vault)]
+fun the_wrong_venue_is_reported_before_zero_liquidity() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
+    let vault = f.new_vault(terms);
+    let position = vault_fixture::new_position(scenario.ctx());
+
+    vault.share_with_position(
+        &vault_fixture::other_venue(),
+        f.treasury(),
+        position,
+        0,
+        balance::zero(),
+        balance::zero(),
+        scenario.ctx(),
+    );
+
+    f.end();
+    scenario.end();
+}
+
+#[test]
 fun protocol_residuals_without_a_partner_are_paid_to_the_treasury_at_creation() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
@@ -136,7 +262,7 @@ fun terms_at_the_blast_share_maximum_create_a_vault() {
 fun terms_sealed_by_an_unadmitted_issuer_cannot_create_a_vault() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let terms = vault_fixture::terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
+    let terms = f.terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
 
     destroy(f.new_vault(terms));
     f.end();
@@ -147,7 +273,7 @@ fun terms_sealed_by_an_unadmitted_issuer_cannot_create_a_vault() {
 fun an_admitted_venue_seals_its_own_standalone_terms() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let terms = vault_fixture::terms_sealed_by(vault_fixture::venue(), owner_split());
+    let terms = f.terms_sealed_by(vault_fixture::venue(), owner_split());
 
     destroy(f.new_vault(terms));
     f.end();
@@ -190,7 +316,7 @@ fun a_removed_issuer_cannot_create_vaults_for_its_sales() {
 fun an_unadmitted_venue_is_reported_before_an_unadmitted_issuer() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
-    let terms = vault_fixture::terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
+    let terms = f.terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
 
     destroy(f.new_vault_through(&vault_fixture::other_venue(), terms));
     f.end();
@@ -230,7 +356,7 @@ fun a_vault_id_derives_from_the_registry_the_sealing_issuer_and_the_sale() {
 
     let vault = f.new_vault(terms);
 
-    assert_eq!(object::id(&vault), f.derived_vault_id<SaleWitness>(vault_fixture::sale_id()));
+    assert_eq!(object::id(&vault), f.derived_vault_id<SaleWitness>(f.sale_id()));
     destroy(vault);
     f.end();
     scenario.end();
@@ -247,7 +373,7 @@ fun the_fixture_vault_id_is_pinned() {
 
     assert_eq!(
         object::id(&vault),
-        object::id_from_address(@0xd35a1d74f875890549d1059ec43b5bcc76919bad1aecfa13589e087efb4e409f),
+        object::id_from_address(@0x838c58a409bbf8f0d09e71f9d395bad05604f02fe8a372845b19383c6a203ae7),
     );
     destroy(vault);
     f.end();
@@ -276,12 +402,12 @@ fun the_same_sale_under_another_issuer_gets_another_vault() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let sale_terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
-    let venue_terms = vault_fixture::terms_sealed_by(vault_fixture::venue(), owner_split());
+    let venue_terms = f.terms_sealed_by(vault_fixture::venue(), owner_split());
     let sale_vault = f.new_vault(sale_terms);
 
     let venue_vault = f.new_vault(venue_terms);
 
-    assert_eq!(object::id(&venue_vault), f.derived_vault_id<TestVenue>(vault_fixture::sale_id()));
+    assert_eq!(object::id(&venue_vault), f.derived_vault_id<TestVenue>(f.sale_id()));
     assert!(object::id(&venue_vault) != object::id(&sale_vault));
     destroy(sale_vault);
     destroy(venue_vault);
@@ -424,7 +550,7 @@ fun the_owner_claims_its_fees_and_residuals_together() {
 
     let mut vault = vault_fixture::take_vault(&scenario);
     f.collect(&mut vault, 100, 200, scenario.ctx());
-    let (meme, quote) = vault.claim_owner_balances(vault_fixture::owner_proof(), f.version(), scenario.ctx());
+    let (meme, quote) = vault.claim_owner_balances(f.owner_proof(), f.version(), scenario.ctx());
     assert!(meme.value() == 105 && quote.value() == 207);
     assert_eq!(event::events_by_type<OwnerBalancesClaimed<VAULT_FIXTURE, QUOTE>>().length(), 1);
 
@@ -444,7 +570,7 @@ fun an_owner_claim_with_nothing_accrued_is_rejected() {
     f.share_vault(&mut scenario, terms, 0, 0);
     let mut vault = vault_fixture::take_vault(&scenario);
 
-    let (meme, quote) = vault.claim_owner_balances(vault_fixture::owner_proof(), f.version(), scenario.ctx());
+    let (meme, quote) = vault.claim_owner_balances(f.owner_proof(), f.version(), scenario.ctx());
 
     destroy(meme);
     destroy(quote);
@@ -459,7 +585,9 @@ fun another_sales_proof_cannot_claim() {
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
     f.share_vault(&mut scenario, terms, 5, 0);
     let mut vault = vault_fixture::take_vault(&scenario);
-    let proof = owner_proof::new(vault_fixture::sale_witness(), object::id_from_address(@0xB0B));
+    let other_sale = object::new(scenario.ctx());
+    let proof = owner_proof::new(vault_fixture::sale_witness(), &other_sale);
+    other_sale.delete();
 
     let (meme, quote) = vault.claim_owner_balances(proof, f.version(), scenario.ctx());
 
@@ -480,7 +608,7 @@ fun a_fee_split_change_waits_its_delay_and_applies_after_settling() {
     ]);
 
     vault.schedule_fee_split(
-        vault_fixture::owner_proof(),
+        f.owner_proof(),
         f.version(),
         rewards_split,
         f.clock(),
@@ -512,7 +640,7 @@ fun a_fee_split_change_cannot_apply_before_its_delay() {
         fee_split::route(fee_split::holder_rewards_destination(), bps::new(10_000)),
     ]);
     vault.schedule_fee_split(
-        vault_fixture::owner_proof(),
+        f.owner_proof(),
         f.version(),
         rewards_split,
         f.clock(),
@@ -536,12 +664,12 @@ fun the_owner_cancels_a_pending_fee_split() {
         fee_split::route(fee_split::holder_rewards_destination(), bps::new(10_000)),
     ]);
     vault.schedule_fee_split(
-        vault_fixture::owner_proof(),
+        f.owner_proof(),
         f.version(),
         rewards_split,
         f.clock(),
     );
-    vault.cancel_fee_split(vault_fixture::owner_proof(), f.version());
+    vault.cancel_fee_split(f.owner_proof(), f.version());
 
     f.clock_mut().increment_for_testing(DELAY_MS);
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
@@ -559,11 +687,11 @@ fun every_fee_split_change_waits_the_full_delay() {
     f.share_vault(&mut scenario, terms, 0, 0);
     let mut vault = vault_fixture::take_vault(&scenario);
     let rewards_split = vault_fixture::single_route_split(fee_split::holder_rewards_destination());
-    vault.schedule_fee_split(vault_fixture::owner_proof(), f.version(), rewards_split, f.clock());
+    vault.schedule_fee_split(f.owner_proof(), f.version(), rewards_split, f.clock());
     f.clock_mut().increment_for_testing(DELAY_MS);
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
 
-    vault.schedule_fee_split(vault_fixture::owner_proof(), f.version(), owner_split(), f.clock());
+    vault.schedule_fee_split(f.owner_proof(), f.version(), owner_split(), f.clock());
     f.clock_mut().increment_for_testing(DELAY_MS - 1);
     vault.apply_fee_split(&vault_fixture::venue(), f.version(), f.clock());
 
@@ -698,7 +826,7 @@ fun the_admin_pause_never_stops_collection_or_owner_claims() {
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
 
     f.collect(&mut vault, 10, 10, scenario.ctx());
-    let (meme, quote) = vault.claim_owner_balances(vault_fixture::owner_proof(), f.version(), scenario.ctx());
+    let (meme, quote) = vault.claim_owner_balances(f.owner_proof(), f.version(), scenario.ctx());
     assert!(meme.value() == 10 && quote.value() == 10);
 
     destroy(meme);
@@ -1118,7 +1246,7 @@ fun share_two_vaults(
     let terms = f.terms_for(owner_split(), 0, 0, false, false);
     f.share_vault(scenario, terms, 0, 0);
     let first_id = test_scenario::most_recent_id_shared<Vault<VAULT_FIXTURE, QUOTE>>().destroy_some();
-    let terms = vault_fixture::terms_sealed_by(vault_fixture::venue(), owner_split());
+    let terms = f.terms_sealed_by(vault_fixture::venue(), owner_split());
     f.share_vault(scenario, terms, 0, 0);
     let second_id = test_scenario::most_recent_id_shared<Vault<VAULT_FIXTURE, QUOTE>>().destroy_some();
 
@@ -1176,6 +1304,7 @@ use blast_vault::{
     vault_fixture::{
         Self,
         QUOTE,
+        OtherVenue,
         SaleWitness,
         TestPosition,
         TestVenue,

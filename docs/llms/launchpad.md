@@ -466,7 +466,7 @@ inside `sui::vec_set` when the entry already has the requested state.
   created keep the share they started with.
 - `launch_config::add_partner` (FeeAdmin), with a `Partner`: new launches may name it at once;
   cancels a pending removal. The config's `blast_partners::partner_list::PartnerList` emits
-  `blast_partners::partner_list::PartnerAdded` with the config as `owner`.
+  `blast_partners::partner_list::PartnerAdded` with the config as `parent`.
 - `launch_config::remove_partner` (FeeAdmin), with a `Partner` and `Clock`: new launches may still
   name it for `blast_partners::blast_partners::delay_ms` (seven days); launches that already name it
   keep paying it. Emits `blast_partners::partner_list::PartnerRemoved`.
@@ -507,7 +507,7 @@ days). The admin guide documents these delayed primitives in full.
 
 The delayed modules emit every schedule, cancel, and apply event; the launchpad emits none of its
 own for them. They are generic in the
-operation's key and value type and carry `owner` (the ID of the object that stores the field) and
+operation's key and value type and carry `parent` (the ID of the object that stores the field) and
 `key`: `delayed::DelayedScheduled`, `delayed::DelayedCancelled`, and `delayed::DelayedApplied` for a
 setting; `delayed_action::ActionScheduled`, `delayed_action::ActionCancelled`, and
 `delayed_action::ActionApplied` for upgrades and cap reassignments; `delayed_set::SetScheduled`,
@@ -764,7 +764,7 @@ keeps it in `VenueConfig` (see the venues guide).
 | Is this cap live? | its object ID equals `curve_fee_cap_id` or `creator_metadata_cap_id` |
 | Coin metadata, supply mode, total supply | the shared `Currency<Meme>` |
 
-A `delayed::Delayed` stores `owner`, `key`, the applied `value`, the applied `delay_ms`, and an
+A `delayed::Delayed` stores `parent`, `key`, the applied `value`, the applied `delay_ms`, and an
 optional `pending` proposal with the proposed `value`, next `delay_ms`, and `ready_at_ms`. Read the
 applied `value` for live economics. `LaunchConfig` holds `meme_decimals`, `quotes` (a `VecSet` of the
 Quote `TypeName`s with original IDs), `venues`, and the delayed `trade_fees`,

@@ -21,7 +21,8 @@ public struct LedgerPackageWitness() has drop;
 
 #[test]
 fun the_share_rounds_up_for_blast_and_leaves_the_rest_in_the_fee() {
-    let mut ledger = new_ledger(option::none());
+    let origin = object::new(&mut sui::tx_context::dummy());
+    let mut ledger = new_ledger(option::none(), &origin);
     let mut meme_fee = balance::create_for_testing<MEME>(1_001);
     let mut quote_fee = balance::create_for_testing<QUOTE>(3);
 
@@ -41,13 +42,15 @@ fun the_share_rounds_up_for_blast_and_leaves_the_rest_in_the_fee() {
     destroy(meme_fee);
     destroy(quote_fee);
     ledger.destroy_for_testing();
+    origin.delete();
 }
 
 #[test]
 fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
     let mut scenario = test_scenario::begin(@0x1);
+    let origin = object::new(scenario.ctx());
     let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
-    let mut ledger = new_ledger(option::none());
+    let mut ledger = new_ledger(option::none(), &origin);
     ledger.accrue(balance::create_for_testing(10), balance::create_for_testing(20));
     ledger.accrue_sui(balance::create_for_testing(30));
 
@@ -58,7 +61,7 @@ fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
     assert_eq!(paid.length(), 1);
     let (
         package_witness,
-        origin,
+        paid_origin,
         destination,
         meme,
         quote,
@@ -69,7 +72,7 @@ fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
         partner_sui,
     ) = paid[0].protocol_fees_paid_fields();
     assert_eq!(package_witness, type_name::with_original_ids<LedgerPackageWitness>());
-    assert_eq!(origin, sale_id());
+    assert_eq!(paid_origin, origin.to_inner());
     assert_eq!(destination, TREASURY);
     assert_eq!(vector[meme, quote, sui], vector[10, 20, 30]);
     assert!(partner_id.is_none());
@@ -86,15 +89,17 @@ fun a_ledger_without_a_partner_pays_everything_to_the_treasury() {
     destroy(sui_coin);
     destroy(treasury);
     ledger.destroy_for_testing();
+    origin.delete();
     scenario.end();
 }
 
 #[test]
 fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
     let mut scenario = test_scenario::begin(@0x1);
+    let origin = object::new(scenario.ctx());
     let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
     let partner = blast_partners::new_for_testing(PARTNER, 3_000, scenario.ctx());
-    let mut ledger = new_ledger(option::some(object::id(&partner)));
+    let mut ledger = new_ledger(option::some(object::id(&partner)), &origin);
     ledger.accrue(balance::create_for_testing(1_001), balance::create_for_testing(10));
     ledger.accrue_sui(balance::create_for_testing(100));
 
@@ -104,7 +109,7 @@ fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
     assert_eq!(paid.length(), 1);
     let (
         package_witness,
-        origin,
+        paid_origin,
         destination,
         meme,
         quote,
@@ -115,7 +120,7 @@ fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
         partner_sui,
     ) = paid[0].protocol_fees_paid_fields();
     assert_eq!(package_witness, type_name::with_original_ids<LedgerPackageWitness>());
-    assert_eq!(origin, sale_id());
+    assert_eq!(paid_origin, origin.to_inner());
     assert_eq!(destination, TREASURY);
     assert_eq!(partner_id, option::some(object::id(&partner)));
     // The partner's cut rounds down, so Blast keeps the remainder of each asset.
@@ -126,16 +131,18 @@ fun a_bound_partner_takes_its_cut_of_every_asset_before_the_treasury() {
     destroy(partner);
     destroy(treasury);
     ledger.destroy_for_testing();
+    origin.delete();
     scenario.end();
 }
 
 #[test]
 fun an_empty_ledger_sends_and_emits_nothing() {
     let mut scenario = test_scenario::begin(@0x1);
+    let origin = object::new(scenario.ctx());
     let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
     let partner = blast_partners::new_for_testing(PARTNER, 3_000, scenario.ctx());
-    let mut unbound = new_ledger(option::none());
-    let mut bound = new_ledger(option::some(object::id(&partner)));
+    let mut unbound = new_ledger(option::none(), &origin);
+    let mut bound = new_ledger(option::some(object::id(&partner)), &origin);
 
     unbound.pay(&treasury, scenario.ctx());
     bound.pay_with_partner(&treasury, &partner, scenario.ctx());
@@ -148,6 +155,7 @@ fun an_empty_ledger_sends_and_emits_nothing() {
     destroy(treasury);
     unbound.destroy_for_testing();
     bound.destroy_for_testing();
+    origin.delete();
     scenario.end();
 }
 
@@ -158,9 +166,10 @@ fun an_empty_ledger_sends_and_emits_nothing() {
 )]
 fun a_ledger_bound_to_a_partner_cannot_skip_its_cut() {
     let mut scenario = test_scenario::begin(@0x1);
+    let origin = object::new(scenario.ctx());
     let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
     let partner = blast_partners::new_for_testing(PARTNER, 3_000, scenario.ctx());
-    let mut ledger = new_ledger(option::some(object::id(&partner)));
+    let mut ledger = new_ledger(option::some(object::id(&partner)), &origin);
 
     ledger.pay(&treasury, scenario.ctx());
 
@@ -174,10 +183,11 @@ fun a_ledger_bound_to_a_partner_cannot_skip_its_cut() {
 )]
 fun a_ledger_pays_only_with_its_own_partner() {
     let mut scenario = test_scenario::begin(@0x1);
+    let origin = object::new(scenario.ctx());
     let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
     let named = blast_partners::new_for_testing(PARTNER, 3_000, scenario.ctx());
     let other = blast_partners::new_for_testing(PARTNER, 3_000, scenario.ctx());
-    let mut ledger = new_ledger(option::some(object::id(&named)));
+    let mut ledger = new_ledger(option::some(object::id(&named)), &origin);
 
     ledger.pay_with_partner(&treasury, &other, scenario.ctx());
 
@@ -190,31 +200,36 @@ fun a_ledger_pays_only_with_its_own_partner() {
     location = blast_core::protocol_fees,
 )]
 fun a_ledger_rejects_one_type_for_both_assets() {
+    let origin = object::new(&mut sui::tx_context::dummy());
     let witness = LedgerPackageWitness();
-    let ledger = protocol_fees::new<MEME, MEME, _>(witness, sale_id(), option::none());
+    let ledger = protocol_fees::new<MEME, MEME, _>(witness, &origin, option::none());
     ledger.destroy_for_testing();
+    origin.delete();
 }
 
 #[test]
 fun a_ledger_reads_its_witness_origin_and_partner() {
+    let origin = object::new(&mut sui::tx_context::dummy());
     let partner_id = object::id_from_address(PARTNER);
-    let bound = new_ledger(option::some(partner_id));
-    let unbound = new_ledger(option::none());
+    let bound = new_ledger(option::some(partner_id), &origin);
+    let unbound = new_ledger(option::none(), &origin);
 
     assert_eq!(bound.package_witness(), type_name::with_original_ids<LedgerPackageWitness>());
-    assert_eq!(bound.origin(), sale_id());
+    assert_eq!(bound.origin(), origin.to_inner());
     assert_eq!(bound.partner_id(), option::some(partner_id));
     assert!(unbound.partner_id().is_none());
 
     bound.destroy();
     unbound.destroy();
+    origin.delete();
 }
 
 #[test]
 fun a_paid_out_ledger_can_be_destroyed() {
     let mut scenario = test_scenario::begin(@0x1);
+    let origin = object::new(scenario.ctx());
     let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
-    let mut ledger = new_ledger(option::none());
+    let mut ledger = new_ledger(option::none(), &origin);
     ledger.accrue(balance::create_for_testing(10), balance::create_for_testing(20));
     ledger.accrue_sui(balance::create_for_testing(30));
     ledger.pay(&treasury, scenario.ctx());
@@ -222,6 +237,7 @@ fun a_paid_out_ledger_can_be_destroyed() {
     ledger.destroy();
 
     destroy(treasury);
+    origin.delete();
     scenario.end();
 }
 
@@ -231,10 +247,12 @@ fun a_paid_out_ledger_can_be_destroyed() {
     location = blast_core::protocol_fees,
 )]
 fun a_ledger_holding_meme_cannot_be_destroyed() {
-    let mut ledger = new_ledger(option::none());
+    let origin = object::new(&mut sui::tx_context::dummy());
+    let mut ledger = new_ledger(option::none(), &origin);
     ledger.accrue(balance::create_for_testing(1), balance::zero());
 
     ledger.destroy();
+    origin.delete();
 }
 
 #[test]
@@ -243,10 +261,12 @@ fun a_ledger_holding_meme_cannot_be_destroyed() {
     location = blast_core::protocol_fees,
 )]
 fun a_ledger_holding_quote_cannot_be_destroyed() {
-    let mut ledger = new_ledger(option::none());
+    let origin = object::new(&mut sui::tx_context::dummy());
+    let mut ledger = new_ledger(option::none(), &origin);
     ledger.accrue(balance::zero(), balance::create_for_testing(1));
 
     ledger.destroy();
+    origin.delete();
 }
 
 #[test]
@@ -255,10 +275,12 @@ fun a_ledger_holding_quote_cannot_be_destroyed() {
     location = blast_core::protocol_fees,
 )]
 fun a_ledger_holding_sui_cannot_be_destroyed() {
-    let mut ledger = new_ledger(option::none());
+    let origin = object::new(&mut sui::tx_context::dummy());
+    let mut ledger = new_ledger(option::none(), &origin);
     ledger.accrue_sui(balance::create_for_testing(1));
 
     ledger.destroy();
+    origin.delete();
 }
 
 // === Test Helpers ===
@@ -268,10 +290,8 @@ fun assert_balances(ledger: &Ledger<MEME, QUOTE>, meme: u64, quote: u64, sui: u6
     assert_eq!(vector[held_meme, held_quote, held_sui], vector[meme, quote, sui]);
 }
 
-fun sale_id(): ID { object::id_from_address(@0x5A1E) }
-
-fun new_ledger(partner_id: Option<ID>): Ledger<MEME, QUOTE> {
-    protocol_fees::new(LedgerPackageWitness(), sale_id(), partner_id)
+fun new_ledger(partner_id: Option<ID>, origin: &UID): Ledger<MEME, QUOTE> {
+    protocol_fees::new(LedgerPackageWitness(), origin, partner_id)
 }
 
 // === Imports ===

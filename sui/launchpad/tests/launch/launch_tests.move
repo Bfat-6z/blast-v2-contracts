@@ -93,7 +93,7 @@ public struct OtherVenue() has drop;
 /// Launch construction through configured cold policy and creator custody.
 /// One creator-cap proposal as the primitive records it; no recipient means a delay change.
 public struct CapProposal has copy, drop {
-    owner: ID,
+    parent: ID,
     recipient: Option<address>,
     delay_ms: u64,
     ready_at_ms: u64,
@@ -1846,11 +1846,11 @@ fun cap_delay_and_recipient_proposals_are_recorded_by_the_primitive() {
 
         assert_eq!(
             last_cap_proposal<CurveFeeCapReassignment>(),
-            CapProposal { owner: launch_id, recipient: option::none(), delay_ms: 25, ready_at_ms: 172_800_010 },
+            CapProposal { parent: launch_id, recipient: option::none(), delay_ms: 25, ready_at_ms: 172_800_010 },
         );
         assert_eq!(
             last_cap_proposal<CreatorMetadataCapReassignment>(),
-            CapProposal { owner: launch_id, recipient: option::none(), delay_ms: 50, ready_at_ms: 172_800_010 },
+            CapProposal { parent: launch_id, recipient: option::none(), delay_ms: 50, ready_at_ms: 172_800_010 },
         );
 
         // Cancelling a delay change keeps each applied delay.
@@ -1864,7 +1864,7 @@ fun cap_delay_and_recipient_proposals_are_recorded_by_the_primitive() {
         launch.schedule_curve_fee_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
         launch.schedule_creator_metadata_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
         let expected = CapProposal {
-            owner: launch_id,
+            parent: launch_id,
             recipient: option::some(NEW_CREATOR),
             delay_ms: 172_800_000,
             ready_at_ms: 172_800_010,
@@ -2036,7 +2036,7 @@ fun recipient_schedules_replace_pending_policy_without_adopting_its_delay() {
         launch.schedule_creator_metadata_cap_reassignment(&f.package_version, &creator_admin(), NEW_CREATOR, &f.clock);
 
         let expected = CapProposal {
-            owner: object::id(&launch),
+            parent: object::id(&launch),
             recipient: option::some(NEW_CREATOR),
             delay_ms: 172_800_000,
             ready_at_ms: 172_800_010,
@@ -2268,7 +2268,7 @@ fun creator_cap_reassignment_schedules_and_cancellations_record_each_recipient()
         assert_eq!(
             last_cap_proposal<CurveFeeCapReassignment>(),
             CapProposal {
-                owner: launch_id,
+                parent: launch_id,
                 recipient: option::some(NEW_CREATOR),
                 delay_ms: 172_800_000,
                 ready_at_ms: 172_801_234,
@@ -2277,7 +2277,7 @@ fun creator_cap_reassignment_schedules_and_cancellations_record_each_recipient()
         assert_eq!(
             last_cap_proposal<CreatorMetadataCapReassignment>(),
             CapProposal {
-                owner: launch_id,
+                parent: launch_id,
                 recipient: option::some(CREATOR),
                 delay_ms: 172_800_000,
                 ready_at_ms: 172_801_234,
@@ -5057,9 +5057,9 @@ fun assert_launch_lifecycle(
 /// The latest creator-cap proposal for the operation keyed by `K`.
 fun last_cap_proposal<K: copy + drop + store>(): CapProposal {
     let mut scheduled = event::events_by_type<ActionScheduled<K, address>>();
-    let (owner, _, change, delay_ms, ready_at_ms) = scheduled.pop_back().action_scheduled_fields();
+    let (parent, _, change, delay_ms, ready_at_ms) = scheduled.pop_back().action_scheduled_fields();
 
-    CapProposal { owner, recipient: change.action(), delay_ms, ready_at_ms }
+    CapProposal { parent, recipient: change.action(), delay_ms, ready_at_ms }
 }
 
 /// The recipients of the cancelled creator-cap proposals keyed by `K`, in order.

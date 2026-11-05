@@ -833,10 +833,10 @@ fun admin_allows_a_venue_and_the_primitive_records_its_original_type_name() {
 
         let admissions = event::events_by_type<SetApplied<VenueKey, TypeName>>();
         assert_eq!(admissions.length(), 1);
-        let (owner, _, change, _) = admissions[0].set_applied_fields();
+        let (parent, _, change, _) = admissions[0].set_applied_fields();
 
         assert_eq!(f.config.allowed_venue_count_for_testing(), 1);
-        assert_eq!(owner, object::id(&f.config));
+        assert_eq!(parent, object::id(&f.config));
         assert_eq!(change.member(), option::some(test_venue()));
     });
 
@@ -1498,7 +1498,7 @@ fun assert_partner_at(self: &mut ConfigFixture, partner_id: ID, at_ms: u64) {
     destroy(clock);
 }
 
-/// The leading bytes of a partner-list event of the configuration's list: its owner, the
+/// The leading bytes of a partner-list event of the configuration's list: its parent, the
 /// configuration, then the partner.
 fun partner_event_bytes(config: &LaunchConfig, partner_id: ID): vector<u8> {
     let mut expected = bcs::to_bytes(&object::id(config));

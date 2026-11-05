@@ -112,23 +112,25 @@ fun a_package_cannot_migrate_with_another_packages_terms() {
 #[test]
 /// A standalone issuer seals terms without a hand-off and issues the owner proofs for them.
 fun standalone_terms_verify_owner_proofs_from_their_issuer() {
+    let origin = sale_uid();
     let terms = migration::vault_terms(
         OtherPackageWitness(),
-        sale_id(),
+        &origin,
         owner_split(),
         bps::new(0),
         bps::new(0),
         option::none(),
         migration::residuals_to_owner(),
     );
+    origin.delete();
     assert!(terms.residuals().is_owner());
 
-    owner_proof::new(OtherPackageWitness(), sale_id()).assert_terms(&terms);
+    sale_proof(OtherPackageWitness()).assert_terms(&terms);
 }
 
 #[test]
 fun an_owner_proof_reads_its_package_witness_and_sale() {
-    let proof = owner_proof::new(TestPackageWitness(), sale_id());
+    let proof = sale_proof(TestPackageWitness());
 
     assert_eq!(proof.package_witness(), type_name::with_original_ids<TestPackageWitness>());
     assert_eq!(proof.origin(), sale_id());
@@ -139,7 +141,7 @@ fun an_owner_proof_reads_its_package_witness_and_sale() {
 fun the_sale_owner_proof_verifies_against_its_vault_terms() {
     let terms = sale_terms();
 
-    owner_proof::new(TestPackageWitness(), sale_id()).assert_terms(&terms);
+    sale_proof(TestPackageWitness()).assert_terms(&terms);
 }
 
 #[test]
@@ -148,7 +150,7 @@ fun the_sale_owner_proof_verifies_against_its_vault_terms() {
     location = blast_core::owner_proof,
 )]
 fun another_package_cannot_prove_ownership() {
-    owner_proof::new(OtherPackageWitness(), sale_id()).assert_terms(&sale_terms());
+    sale_proof(OtherPackageWitness()).assert_terms(&sale_terms());
 }
 
 #[test]
@@ -157,21 +159,28 @@ fun another_package_cannot_prove_ownership() {
     location = blast_core::owner_proof,
 )]
 fun another_sale_cannot_prove_ownership() {
-    let other_sale = object::id_from_address(@0xB0B);
-    owner_proof::new(TestPackageWitness(), other_sale).assert_terms(&sale_terms());
+    let mut ctx = sui::tx_context::dummy();
+    let sale = object::new(&mut ctx);
+    let other_sale = object::new(&mut ctx);
+    sale.delete();
+    let proof = owner_proof::new(TestPackageWitness(), &other_sale);
+    other_sale.delete();
+    proof.assert_terms(&sale_terms());
 }
 
 #[test]
 fun terms_at_the_lp_fee_maximum_are_sealed() {
+    let origin = sale_uid();
     let terms = migration::vault_terms(
         TestPackageWitness(),
-        sale_id(),
+        &origin,
         owner_split(),
         bps::new(constants::max_lp_fee_bps!()),
         bps::new(constants::max_lp_fee_bps!()),
         option::none(),
         migration::residuals_to_owner(),
     );
+    origin.delete();
     let (meme_share, quote_share) = terms.protocol_bps();
 
     assert_eq!(vector[meme_share.value(), quote_share.value()], vector[3_000, 3_000]);
@@ -180,44 +189,52 @@ fun terms_at_the_lp_fee_maximum_are_sealed() {
 #[test]
 #[expected_failure(abort_code = blast_core::errors::EInvalidLpFeeBps, location = blast_core::migration)]
 fun terms_reject_a_meme_share_above_the_lp_fee_maximum() {
-    migration::vault_terms(
+    let origin = sale_uid();
+    let terms = migration::vault_terms(
         TestPackageWitness(),
-        sale_id(),
+        &origin,
         owner_split(),
         bps::new(3_001),
         bps::new(0),
         option::none(),
         migration::residuals_to_owner(),
     );
+    origin.delete();
+    destroy(terms);
 }
 
 #[test]
 #[expected_failure(abort_code = blast_core::errors::EInvalidLpFeeBps, location = blast_core::migration)]
 fun terms_reject_a_quote_share_above_the_lp_fee_maximum() {
-    migration::vault_terms(
+    let origin = sale_uid();
+    let terms = migration::vault_terms(
         TestPackageWitness(),
-        sale_id(),
+        &origin,
         owner_split(),
         bps::new(0),
         bps::new(3_001),
         option::none(),
         migration::residuals_to_owner(),
     );
+    origin.delete();
+    destroy(terms);
 }
 
 #[test]
 /// The product-free seams: `TestIssuer` seals terms and owner proofs, and `TestVenue` redeems.
 fun the_test_issuer_hands_off_to_the_test_venue() {
+    let origin = sale_uid();
     let terms = migration::vault_terms(
         migration::test_issuer(),
-        sale_id(),
+        &origin,
         owner_split(),
         bps::new(1_500),
         bps::new(1_500),
         option::none(),
         migration::residuals_to_owner(),
     );
-    owner_proof::new(migration::test_issuer(), sale_id()).assert_terms(&terms);
+    origin.delete();
+    sale_proof(migration::test_issuer()).assert_terms(&terms);
     let ticket = migration::issue_ticket<MEME, QUOTE, _>(migration::test_venue());
     assert_eq!(ticket.redeem_ticket(), type_name::with_original_ids<TestVenue>());
 
@@ -345,22 +362,40 @@ fun seedability_agrees_for_both_coin_orders() {
 
 // === Test Helpers ===
 
-fun sale_id(): ID { object::id_from_address(@0x5A1E) }
+fun sale_id(): ID {
+    let origin = sale_uid();
+    let id = origin.to_inner();
+    origin.delete();
+    id
+}
+
+/// A dummy context derives the same first sale ID for terms and proofs.
+fun sale_uid(): UID { object::new(&mut sui::tx_context::dummy()) }
+
+fun sale_proof<PackageWitness: drop>(witness: PackageWitness): OwnerProof {
+    let origin = sale_uid();
+    let proof = owner_proof::new(witness, &origin);
+    origin.delete();
+    proof
+}
 
 fun owner_split(): FeeSplit {
     fee_split::new(vector[fee_split::route(fee_split::owner_destination(), bps::new(10_000))])
 }
 
 fun sale_terms(): VaultTerms {
-    migration::vault_terms(
+    let origin = sale_uid();
+    let terms = migration::vault_terms(
         TestPackageWitness(),
-        sale_id(),
+        &origin,
         owner_split(),
         bps::new(1_500),
         bps::new(1_000),
         option::none(),
         migration::residuals_to_protocol(),
-    )
+    );
+    origin.delete();
+    terms
 }
 
 fun new_migration(venue: TypeName): Migration<MEME, QUOTE> {
@@ -380,7 +415,7 @@ use blast_core::{
     constants,
     fee_split::{Self, FeeSplit},
     migration::{Self, Migration, TestIssuer, TestVenue, VaultTerms},
-    owner_proof
+    owner_proof::{Self, OwnerProof}
 };
 
 use std::{type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};

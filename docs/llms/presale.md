@@ -568,7 +568,7 @@ Integrators cannot call these; they explain state changes. Each takes the
 | `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate (`blast_presale::errors::EAboveFeePolicy`). Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`blast_presale::errors::EProtocolFeesIncreased` otherwise). Emits `blast_presale::events::ProtocolFeesChanged`. |
 | `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `blast_presale::events::QuoteAllowed`, typed by the Quote. |
 | `creation_policy::schedule_venue` | Schedules admission of a venue witness; rejects primitives, vectors, and `0x1`/`0x2` types (`blast_presale::errors::EInvalidVenue`). Anyone applies it once ready with `creation_policy::apply_venue`, which emits `delayed_set::SetApplied<creation_policy::VenueKey, TypeName>`. `creation_policy::remove_venue` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted venue) and cancels a pending admission. |
-| `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `blast_partners::partner_list::PartnerAdded` with the policy's ID as `owner`. |
+| `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `blast_partners::partner_list::PartnerAdded` with the policy's ID as `parent`. |
 | `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `blast_partners::partner_list::PartnerRemoved`. |
 | `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic version cutover, typed `<BLAST_PRESALE_PACKAGE>` (admin guide). |
 
@@ -599,7 +599,7 @@ Read the live notice before relying on a cancellation window.
 Each delayed field is a Blast admin delayed value: a `delayed::Delayed` setting, the
 `delayed_action::DelayedAction` upgrade slot, or the `delayed_set::DelayedSet` of venues. The
 module of each type emits every schedule, cancel and apply event; the presale package emits none
-of its own. The events are generic in the operation's key and value type and carry `owner` (the
+of its own. The events are generic in the operation's key and value type and carry `parent` (the
 ID of the object that stores the field) and `key`. A value schedule emits
 `delayed::DelayedScheduled` (after `delayed::DelayedCancelled` for a replaced proposal), a cancel
 emits `delayed::DelayedCancelled`, and an application emits `delayed::DelayedApplied` with the
@@ -849,7 +849,7 @@ Common answers:
 
 Other objects:
 
-Delayed policy fields are Blast admin `delayed::Delayed` values. A `Delayed<K, T>` contains `owner` (the ID of
+Delayed policy fields are Blast admin `delayed::Delayed` values. A `Delayed<K, T>` contains `parent` (the ID of
 the object that stores it), `key`, the applied `value`, applied `delay_ms`, and an optional `pending`
 proposal with the proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix milliseconds). Read the applied value even after a
 pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
@@ -887,7 +887,7 @@ except `blast_presale::blast_presale::PresaleCreated`, which stays beside the sa
 | Migrate | `blast_core::blast_core_events::ProtocolFeesPaid` (unpartnered, when Blast's fees are not both zero), `blast_presale::events::RaiseAllocated` (per raise recipient), `blast_presale::events::RecipientAllocated` (per token recipient), `blast_presale::events::PresaleMigrated`, then the venue's and the vault's events (`blast_vault_events::VaultCreated`) | Blast's payment (`origin` is the sale, `meme_amount` its tokens, `quote_amount` its Quote, `treasury` the payee); payouts with `vesting_id`; `venue` and LP amounts; the vault and its sealed terms. |
 | Partner pay | `blast_partners::blast_partners::PartnerPaid` (per asset with a positive cut), `blast_core::blast_core_events::ProtocolFeesPaid` | The partner's cut of each asset (`partner_meme_amount`, `partner_quote_amount`) and Blast's rest. |
 | Claim | `blast_presale::events::Claimed` | `tokens`, `quote_refund`, `remaining_participants`, `vesting_id`. |
-| Partner list | `blast_partners::partner_list::PartnerAdded`, `blast_partners::partner_list::PartnerRemoved` | `owner` is the `CreationPolicy`'s ID. |
+| Partner list | `blast_partners::partner_list::PartnerAdded`, `blast_partners::partner_list::PartnerRemoved` | `parent` is the `CreationPolicy`'s ID. |
 | Quote list | `blast_presale::events::QuoteAllowed` | Typed by the Quote; `allowed`. |
 | Vesting | `VestingCreated`, `VestingClaimed` (from `blast_fun_vesting`) | Schedule terms and releases. |
 

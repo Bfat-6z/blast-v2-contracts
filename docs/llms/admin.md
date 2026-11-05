@@ -257,13 +257,13 @@ one type; consumers store four:
 | `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions, each with a fixed `delayed::Deadline`, at most one proposed next delay (a `delayed::PendingDelay`) | witness and venue allowlists, the launchpad's account-claim signer keys |
 | `delayed_map::DelayedMap<K, E, V>` | applied values by entry `E` in a `Table`, one applied `delay_ms`, at most one pending change per entry with a fixed `delayed::Deadline`, at most one proposed next delay (a `delayed::PendingDelay`) | keyed values such as per-coin overrides |
 
-Every value carries an `owner` (the ID of the object that stores it) and a `key`
+Every value carries a `parent` (the ID of the object that stores it) and a `key`
 of type `K`. `delayed::new`, `delayed_action::new`, `delayed_set::new` and
-`delayed_map::new` take the owner object's `&UID`, which only the code creating
+`delayed_map::new` take the parent object's `&UID`, which only the code creating
 or holding that object has, so no package can attribute a value or its events to
 another package's object. Blast keys are structs without public constructors, so
 only their module can produce events under them. Partition delayed events by
-`owner`, then by `K`.
+`parent`, then by `K`.
 
 Rules shared by all four:
 
@@ -295,7 +295,7 @@ Rules shared by all four:
   the ceiling, or a deadline or the next notice would not fit in a `u64` millisecond
   timestamp.
 - **Destruction.** `delayed::destroy`, `delayed_action::destroy`,
-  `delayed_set::destroy` and `delayed_map::destroy` delete a value whose owner is
+  `delayed_set::destroy` and `delayed_map::destroy` delete a value whose parent is
   being deleted. Each aborts with code 17 while anything is pending, so every
   proposal ends in an event, and emits its module's `Destroyed` event.
   Destroying a set or map also ends its remaining members or entries.
@@ -303,11 +303,11 @@ Rules shared by all four:
 `Delayed`: `delayed::schedule` proposes a value and the next notice together;
 `delayed::schedule_value` keeps the notice; `delayed::schedule_delay` keeps the
 value. `delayed::assert_ready` checks readiness without changing anything, so an
-owner can settle accrued economics under the applied value before `delayed::apply`.
+embedding module can settle accrued economics under the applied value before `delayed::apply`.
 
 `DelayedAction`: `delayed_action::schedule` proposes an action under the applied
 notice; `delayed_action::schedule_delay` proposes only a notice change.
-`delayed_action::take_action` returns a ready action to its owner and aborts with
+`delayed_action::take_action` returns a ready action to its embedding module and aborts with
 code 18 when the proposal is a notice change; `delayed_action::apply_delay` does
 the reverse. `delayed_action::Change` is `Action(A)` or `Delay`.
 
@@ -329,7 +329,7 @@ Every reader is read-only. The same name means the same concept on every type.
 
 | Concept | `Delayed` | `DelayedAction` | `DelayedSet` | `DelayedMap` |
 | --- | --- | --- | --- | --- |
-| owner object ID, key | `delayed::owner`, `delayed::key` | `delayed_action::owner`, `delayed_action::key` | `delayed_set::owner`, `delayed_set::key` | `delayed_map::owner`, `delayed_map::key` |
+| parent object ID, key | `delayed::parent`, `delayed::key` | `delayed_action::parent`, `delayed_action::key` | `delayed_set::parent`, `delayed_set::key` | `delayed_map::parent`, `delayed_map::key` |
 | applied state | `delayed::value` | none | `delayed_set::contains`, `delayed_set::members`, `delayed_set::length` | `delayed_map::value`, `delayed_map::contains`, `delayed_map::length` |
 | applied delay | `delayed::delay_ms` | `delayed_action::delay_ms` | `delayed_set::delay_ms` | `delayed_map::delay_ms` |
 | pending proposal | `delayed::pending` | `delayed_action::pending`, `delayed_action::pending_action` | `delayed_set::is_pending`, `delayed_set::admission_deadline`, `delayed_set::admission_ready_at_ms`, `delayed_set::pending_count` | `delayed_map::is_pending`, `delayed_map::pending`, `delayed_map::entry_ready_at_ms`, `delayed_map::pending_count` |
@@ -412,8 +412,8 @@ All `blast_admin` events are emitted directly (no envelope). ACL, version and
 PackageAdmin events come from module `blast_admin_events` and carry no ACL ID because
 there is one ACL. Delayed lifecycle events come from the module that owns the
 type (`delayed`, `delayed_action`, `delayed_set` or `delayed_map`), are generic in
-the owner's key `K` and the value, action, member or entry types, and carry
-`owner` and `key`. Each map event's `change` names its entry.
+the embedding module's key `K` and the value, action, member or entry types, and carry
+`parent` and `key`. Each map event's `change` names its entry.
 
 | Event | Emitted by | Use |
 | --- | --- | --- |

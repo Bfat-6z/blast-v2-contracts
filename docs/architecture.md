@@ -59,6 +59,10 @@ preparation is possible without the product naming any venue. Migration is two
 calls: the product's `migrate` returns the `Migration`, and the next command
 passes it to the stored venue's `migrate`.
 
+The vault fixes its venue witness type at construction. Position attachment checks that exact
+type before any mutation, and its permanent position key prevents a second initialization. Sui
+permits re-sharing an already shared object, so sharing alone provides no lifecycle guard.
+
 The values crossing that boundary are non-droppable, so the transaction cannot end
 until the call that must consume each one has run.
 
@@ -366,9 +370,9 @@ applied notice. Application commits both fields; cancellation preserves both app
 fields. Delay-only changes follow the same timelock, with no immediate setter or
 bypass. The PackageAdmin persists its own notice independently of other policy.
 `blast_admin::delayed` stores settings as `Delayed`, one-shot actions as
-`DelayedAction` and venue allowlists as `DelayedSet`, each keyed by an
-owner-defined type and owner object ID; it emits every lifecycle event, so owners
-emit only their own side effects.
+`DelayedAction` and venue allowlists as `DelayedSet`, each keyed by a
+module-defined type and parent object ID. The primitives emit every lifecycle event;
+embedding modules emit only their own side effects.
 Settle or cancel all setup proposals, configure and verify every operation's intended
 notice, then unpause. New creator-cap operations begin at 48 hours; a vault's
 fee-split and Blast-share changes always wait a fixed 48 hours. The vault's venue

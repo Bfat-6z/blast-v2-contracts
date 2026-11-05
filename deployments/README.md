@@ -47,6 +47,8 @@ replace:
 
 ## Fresh launch stack
 
+Planned launch: **Monday, 9 November 2026**.
+
 The stack is the seven packages of ADR 0137 (amended 2026-11-05) plus the
 per-coin template and the vendor. `blast_admin`, `blast_partners` and
 `blast_core` publish immutable; `blast_vault`, `blast_fun`, `blast_presale` and

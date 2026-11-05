@@ -15,12 +15,12 @@ public struct Fee() has copy, drop, store;
 // === Tests ===
 
 #[test]
-fun creation_records_owner_key_value_and_delay() {
+fun creation_records_parent_key_value_and_delay() {
     let setting = new_setting(7, DELAY_MS);
 
     let created = collect<DelayedCreated<Fee, u64>>();
-    let (owner, key, value, delay_ms) = created.delayed_created_fields();
-    assert_eq!(owner, owner());
+    let (parent, key, value, delay_ms) = created.delayed_created_fields();
+    assert_eq!(parent, parent());
     assert_eq!(key, Fee());
     assert_eq!(value, 7);
     assert_eq!(delay_ms, DELAY_MS);
@@ -59,8 +59,8 @@ fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
 
     assert_eq!(setting.apply(&clock), 9);
     let applied = collect<DelayedApplied<Fee, u64>>();
-    let (owner, key, previous_value, value, delay_ms) = applied.delayed_applied_fields();
-    assert_eq!(owner, owner());
+    let (parent, key, previous_value, value, delay_ms) = applied.delayed_applied_fields();
+    assert_eq!(parent, parent());
     assert_eq!(key, Fee());
     assert_eq!(previous_value, 7);
     assert_eq!(value, 9);
@@ -356,8 +356,8 @@ fun destruction_records_the_end_of_the_setting() {
 
     setting.destroy();
 
-    let (setting_owner, _) = collect<DelayedDestroyed<Fee, u64>>().delayed_destroyed_fields();
-    assert_eq!(setting_owner, owner());
+    let (setting_parent, _) = collect<DelayedDestroyed<Fee, u64>>().delayed_destroyed_fields();
+    assert_eq!(setting_parent, parent());
 }
 
 #[test]
@@ -384,13 +384,13 @@ fun a_setting_is_guarded_only_with_a_nonzero_delay_and_no_zero_delay_proposal() 
 }
 
 #[test]
-fun readers_report_owner_key_and_proposal_terms() {
+fun readers_report_parent_key_and_proposal_terms() {
     let clock = clock_at(10);
     let mut setting = new_setting(7, DELAY_MS);
     setting.schedule(8, 25, &clock);
 
     let proposal = setting.pending().destroy_some();
-    assert_eq!(setting.owner(), owner());
+    assert_eq!(setting.parent(), parent());
     assert_eq!(setting.key(), Fee());
     assert_eq!(proposal.value(), 8);
     assert_eq!(proposal.delay_ms(), 25);
@@ -438,15 +438,15 @@ fun a_setting_whose_next_delay_would_overflow_is_not_ready() {
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.
-fun owner_uid(): UID {
+fun parent_uid(): UID {
     object::new(&mut tx_context::dummy())
 }
 
-fun owner(): ID {
-    let uid = owner_uid();
-    let owner = uid.to_inner();
+fun parent(): ID {
+    let uid = parent_uid();
+    let parent = uid.to_inner();
     uid.delete();
-    owner
+    parent
 }
 
 fun clock_at(timestamp_ms: u64): Clock {
@@ -456,7 +456,7 @@ fun clock_at(timestamp_ms: u64): Clock {
 }
 
 fun new_setting(value: u64, delay_ms: u64): Delayed<Fee, u64> {
-    let uid = owner_uid();
+    let uid = parent_uid();
     let setting = delayed::new(Fee(), &uid, value, delay_ms);
     uid.delete();
     setting

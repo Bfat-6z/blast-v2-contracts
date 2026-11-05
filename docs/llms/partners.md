@@ -32,7 +32,7 @@ immutable, so no one can shorten it.
   `delayed::Delayed<CapKey, ID>` value.
 
 A `delayed::Delayed<K, T>` comes from Blast's shared administration package
-`blast_admin` and has five fields in BCS order: `owner` (the `Partner`'s ID),
+`blast_admin` and has five fields in BCS order: `parent` (the `Partner`'s ID),
 `key` (`blast_partners::blast_partners::ShareKey` or
 `blast_partners::blast_partners::CapKey`, each a one-byte unit struct), `value`
 (the applied value), `delay_ms` (the notice), and `pending: Option<Proposal<T>>`.
@@ -105,11 +105,11 @@ own config. The launchpad embeds one in `launch_config::LaunchConfig` (its
 `partners` field), changed by the `FeeAdmin` role through
 `launch_config::add_partner` and `launch_config::remove_partner`. It maps each partner's ID to the time, in Unix epoch milliseconds,
 it stops being accepted (`u64::MAX` until removed), held in a `Table`, and
-records the `owner` object that embeds it. It has no authority of its own: only
+records the `parent` object that embeds it. It has no authority of its own: only
 the embedding module can reach it mutably, so that product decides who may
 change it.
 
-- `blast_partners::partner_list::new` creates an empty list for an owner.
+- `blast_partners::partner_list::new` creates an empty list for a parent.
 - `blast_partners::partner_list::add` accepts a `Partner` at once, cancelling a
   pending removal or accepting a removed partner again; it aborts when the
   partner is already accepted with no removal pending.
@@ -124,7 +124,7 @@ change it.
   `blast_partners::partner_list::acceptance_ends_at_ms` returns that entry's end
   time and aborts in `sui::dynamic_field` without one;
   `blast_partners::partner_list::length` counts entries, removed ones included;
-  `blast_partners::partner_list::owner` returns the embedding object's ID.
+  `blast_partners::partner_list::parent` returns the embedding object's ID.
 - `blast_partners::partner_list::destroy` deletes the list with every entry and
   emits `PartnerListDestroyed`. It ends every acceptance at once, without the
   notice, so a product destroys it only with the object that embeds it.
@@ -278,23 +278,23 @@ Every event is emitted directly (no envelope).
   `recipient`. The latest one per `partner_id` gives the recipient.
 - Share and cap lifecycle events come from `blast_admin`'s `delayed` module,
   generic in the key (`ShareKey` for the share, `CapKey` for the cap) and the
-  value type (`u64` or `ID`), with `owner` set to the `Partner`'s ID:
+  value type (`u64` or `ID`), with `parent` set to the `Partner`'s ID:
   `delayed::DelayedCreated` (registration: initial value and notice),
   `delayed::DelayedScheduled` (proposal: value, notice, `ready_at_ms`),
   `delayed::DelayedCancelled` (a cancel, or a proposal a new one replaced) and
   `delayed::DelayedApplied` (previous and new value, notice). Replaying them per
-  `owner` and key reconstructs the applied and pending terms; `blast_partners`
+  `parent` and key reconstructs the applied and pending terms; `blast_partners`
   emits no event of its own for them.
 - `blast_partners::partner_list::PartnerAdded`: emitted by
-  `blast_partners::partner_list::add`. Fields: `owner` (the object embedding
+  `blast_partners::partner_list::add`. Fields: `parent` (the object embedding
   the list), `partner_id`.
 - `blast_partners::partner_list::PartnerRemoved`: emitted by
-  `blast_partners::partner_list::remove`. Fields: `owner`, `partner_id`,
-  `acceptance_ends_at_ms` (exclusive). Replaying both per `owner` gives that
+  `blast_partners::partner_list::remove`. Fields: `parent`, `partner_id`,
+  `acceptance_ends_at_ms` (exclusive). Replaying both per `parent` gives that
   list's accepted partners.
 - `blast_partners::partner_list::PartnerListDestroyed`: emitted by
-  `blast_partners::partner_list::destroy`. Field: `owner`. From then on the
-  owner's list accepts no partner.
+  `blast_partners::partner_list::destroy`. Field: `parent`. From then on the
+  parent's list accepts no partner.
 - `blast_partners::blast_partners::PartnerPaid<T>`: emitted by
   `blast_partners::blast_partners::pay` when it sends a positive amount. Fields:
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in

@@ -535,7 +535,7 @@ public fun finalize<SaleToken, Quote>(
     let presale_cap_id = cap.id.to_inner();
     let fee_ledger = protocol_fees::new(
         blast_presale_package::package_witness(),
-        presale_id,
+        &id,
         partner_id,
     );
 
@@ -954,7 +954,7 @@ public fun migrate<SaleToken, Quote>(
 
     let terms = migration::vault_terms(
         blast_presale_package::package_witness(),
-        self.id.to_inner(),
+        &self.id,
         self.fee_split,
         self.protocol_fees.lp_fee_meme_bps(),
         self.protocol_fees.lp_fee_quote_bps(),
@@ -980,7 +980,7 @@ public fun prove_owner<SaleToken, Quote>(
     package_version.assert_current(constants::version!());
     self.assert_cap(cap);
 
-    owner_proof::new(blast_presale_package::package_witness(), self.id.to_inner())
+    owner_proof::new(blast_presale_package::package_witness(), &self.id)
 }
 
 /// Pays a migrated sale's Blast partner its cut of each of Blast's fees the migration held, rounded

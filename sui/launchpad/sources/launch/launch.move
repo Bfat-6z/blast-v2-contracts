@@ -271,7 +271,7 @@ public fun finalize<Meme, Quote>(
     let creation_fee_amount = creation_fee.value();
     let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(treasury_cap, currency, atomic_supply);
     let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>());
-    let mut protocol_fees = protocol_fees::new(package_witness(), id.to_inner(), partner_id);
+    let mut protocol_fees = protocol_fees::new(package_witness(), &id, partner_id);
     protocol_fees.accrue_sui(creation_fee);
     let curve_fee_cap_reassignment = delayed_action::new(
         CurveFeeCapReassignment(),
@@ -906,7 +906,7 @@ public fun migrate<Meme, Quote>(
 
     let terms = migration::vault_terms(
         package_witness(),
-        self.id.to_inner(),
+        &self.id,
         self.lp_fee_split,
         protocol_meme_bps,
         protocol_quote_bps,
@@ -926,7 +926,7 @@ public fun prove_owner<Meme, Quote>(
     package_version.assert_current(constants::version!());
     self.assert_curve_fee_cap(curve_fee_cap);
 
-    owner_proof::new(package_witness(), self.id.to_inner())
+    owner_proof::new(package_witness(), &self.id)
 }
 
 // === Private Functions ===

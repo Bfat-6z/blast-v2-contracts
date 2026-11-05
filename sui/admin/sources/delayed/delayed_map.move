@@ -16,7 +16,7 @@ public struct DelayedMap<
     E: copy + drop + store,
     V: copy + drop + store,
 > has store {
-    owner: ID,
+    parent: ID,
     key: K,
     entries: Table<E, V>,
     delay_ms: u64,
@@ -43,17 +43,17 @@ public enum MapChange<E: copy + drop + store, V: copy + drop + store> has copy, 
 /// An empty map; every entry change waits the applied delay.
 public fun new<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
     ctx: &mut TxContext,
 ): DelayedMap<K, E, V> {
     delayed::assert_delay(delay_ms);
-    let owner = owner.to_inner();
+    let parent = parent.to_inner();
 
-    sui::event::emit(MapCreated<K, E, V> { owner, key, delay_ms });
+    sui::event::emit(MapCreated<K, E, V> { parent, key, delay_ms });
 
     DelayedMap {
-        owner,
+        parent,
         key,
         entries: table::new(ctx),
         delay_ms,
@@ -109,7 +109,7 @@ public fun schedule<K: copy + drop + store, E: copy + drop + store, V: copy + dr
     self.pending.insert(entry, EntryProposal { value, deadline });
 
     sui::event::emit(MapScheduled {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: MapChange::Entry { entry, value },
         delay_ms: self.delay_ms,
@@ -136,7 +136,7 @@ public fun apply<K: copy + drop + store, E: copy + drop + store, V: copy + drop 
     value.do!(|value| self.entries.add(entry, value));
 
     sui::event::emit(MapApplied {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: MapChange::Entry { entry, value },
         delay_ms: deadline.delay_ms(),
@@ -166,7 +166,7 @@ public fun schedule_delay<K: copy + drop + store, E: copy + drop + store, V: cop
     self.pending_delay.fill(delayed::new_pending_delay(delay_ms, ready_at_ms));
 
     sui::event::emit(MapScheduled<K, E, V> {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: MapChange::Delay,
         delay_ms,
@@ -188,7 +188,7 @@ public fun apply_delay<K: copy + drop + store, E: copy + drop + store, V: copy +
     self.delay_ms = delay.delay_ms();
 
     sui::event::emit(MapApplied<K, E, V> {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: MapChange::Delay,
         delay_ms: delay.delay_ms(),
@@ -213,10 +213,10 @@ public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + dro
         blast_admin::errors::proposal_pending!(),
     );
 
-    let DelayedMap { owner, key, entries, .. } = self;
+    let DelayedMap { parent, key, entries, .. } = self;
     entries.drop();
 
-    sui::event::emit(MapDestroyed<K, E, V> { owner, key });
+    sui::event::emit(MapDestroyed<K, E, V> { parent, key });
 }
 
 /// The proposed value, or none when the change clears the entry.
@@ -267,13 +267,13 @@ public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store, V: cop
 }
 
 /// The ID of the object that stores this map.
-public fun owner<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+public fun parent<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): ID {
-    self.owner
+    self.parent
 }
 
-/// The owner-defined key of this map.
+/// The module-defined key of this map.
 public fun key<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): K {
@@ -343,7 +343,7 @@ fun cancel_entry_if_pending<K: copy + drop + store, E: copy + drop + store, V: c
     let (_, EntryProposal { value, deadline }) = self.pending.remove(&entry);
 
     sui::event::emit(MapCancelled {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: MapChange::Entry { entry, value },
         delay_ms: deadline.delay_ms(),
@@ -358,7 +358,7 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store, V: c
     let delay = self.pending_delay.extract();
 
     sui::event::emit(MapCancelled<K, E, V> {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: MapChange::Delay,
         delay_ms: delay.delay_ms(),
@@ -372,35 +372,35 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store, V: c
 public fun map_created_fields<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &MapCreated<K, E, V>,
 ): (ID, K, u64) {
-    (self.owner, self.key, self.delay_ms)
+    (self.parent, self.key, self.delay_ms)
 }
 
 #[test_only]
 public fun map_scheduled_fields<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &MapScheduled<K, E, V>,
 ): (ID, K, MapChange<E, V>, u64, u64) {
-    (self.owner, self.key, self.change, self.delay_ms, self.ready_at_ms)
+    (self.parent, self.key, self.change, self.delay_ms, self.ready_at_ms)
 }
 
 #[test_only]
 public fun map_cancelled_fields<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &MapCancelled<K, E, V>,
 ): (ID, K, MapChange<E, V>, u64, u64) {
-    (self.owner, self.key, self.change, self.delay_ms, self.ready_at_ms)
+    (self.parent, self.key, self.change, self.delay_ms, self.ready_at_ms)
 }
 
 #[test_only]
 public fun map_applied_fields<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &MapApplied<K, E, V>,
 ): (ID, K, MapChange<E, V>, u64) {
-    (self.owner, self.key, self.change, self.delay_ms)
+    (self.parent, self.key, self.change, self.delay_ms)
 }
 
 #[test_only]
 public fun map_destroyed_fields<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &MapDestroyed<K, E, V>,
 ): (ID, K) {
-    (self.owner, self.key)
+    (self.parent, self.key)
 }
 
 // === Events ===
@@ -411,7 +411,7 @@ public struct MapCreated<
     phantom E: copy + drop + store,
     phantom V: copy + drop + store,
 > has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -419,7 +419,7 @@ public struct MapCreated<
 /// An entry change or delay change was proposed, ready from `ready_at_ms`. `delay_ms` is
 /// the delay an entry change waits, or the proposed next delay.
 public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -429,7 +429,7 @@ public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: co
 /// A proposed change was discarded, by cancellation or replacement; its fields match its
 /// `MapScheduled`.
 public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -439,7 +439,7 @@ public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: co
 /// An entry was set or cleared, or a delay change applied; `delay_ms` matches its
 /// `MapScheduled`.
 public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -451,7 +451,7 @@ public struct MapDestroyed<
     phantom E: copy + drop + store,
     phantom V: copy + drop + store,
 > has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 

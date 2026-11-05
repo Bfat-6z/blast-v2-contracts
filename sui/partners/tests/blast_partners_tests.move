@@ -80,9 +80,9 @@ fun registration_share_and_cap_are_live_immediately() {
     let shares = event::events_by_type<DelayedCreated<ShareKey, u64>>();
     let caps = event::events_by_type<DelayedCreated<CapKey, ID>>();
     assert_eq!(vector[shares.length(), caps.length()], vector[1, 1]);
-    let (share_owner, _, share, share_delay_ms) = shares[0].delayed_created_fields();
-    let (cap_owner, _, live_cap, cap_delay_ms) = caps[0].delayed_created_fields();
-    assert_eq!(vector[share_owner, cap_owner], vector[id, id]);
+    let (share_parent, _, share, share_delay_ms) = shares[0].delayed_created_fields();
+    let (cap_parent, _, live_cap, cap_delay_ms) = caps[0].delayed_created_fields();
+    assert_eq!(vector[share_parent, cap_parent], vector[id, id]);
     assert_eq!(share, 2_500);
     assert_eq!(live_cap, object::id(&cap));
     assert_eq!(vector[share_delay_ms, cap_delay_ms], vector[delay(), delay()]);
@@ -196,8 +196,8 @@ fun a_scheduled_share_waits_for_explicit_application_after_the_delay() {
         let mut partner = fixture.take_partner();
         let scheduled_at = fixture.now();
         fixture.schedule_share(&mut partner, 1_000);
-        let (owner, _, proposed, proposed_delay_ms, ready_at_ms) = last_share_scheduled().delayed_scheduled_fields();
-        assert_eq!(owner, object::id(&partner));
+        let (parent, _, proposed, proposed_delay_ms, ready_at_ms) = last_share_scheduled().delayed_scheduled_fields();
+        assert_eq!(parent, object::id(&partner));
         assert_eq!(vector[proposed, proposed_delay_ms, ready_at_ms], vector[1_000, delay(), scheduled_at + delay()]);
         fixture.set_time(scheduled_at + delay() - 1);
         assert_eq!(partner.share_bps(), 2_500);
@@ -207,8 +207,8 @@ fun a_scheduled_share_waits_for_explicit_application_after_the_delay() {
         assert_eq!(partner.share_bps(), 1_000);
         let applied = event::events_by_type<DelayedApplied<ShareKey, u64>>();
         assert_eq!(applied.length(), 1);
-        let (owner, _, previous, value, applied_delay_ms) = applied[0].delayed_applied_fields();
-        assert_eq!(owner, object::id(&partner));
+        let (parent, _, previous, value, applied_delay_ms) = applied[0].delayed_applied_fields();
+        assert_eq!(parent, object::id(&partner));
         assert_eq!(vector[previous, value, applied_delay_ms], vector[2_500, 1_000, delay()]);
         assert_eq!(event::events_by_type<PartnerUpdated>().length(), 0);
         fixture.return_partner(partner);
@@ -282,8 +282,8 @@ fun cancelling_a_pending_cut_preserves_the_applied_share() {
         partner.cancel_share(&partner_admin());
         let cancelled = event::events_by_type<DelayedCancelled<ShareKey, u64>>();
         assert_eq!(cancelled.length(), 1);
-        let (owner, _, discarded, _, _) = cancelled[0].delayed_cancelled_fields();
-        assert_eq!(owner, object::id(&partner));
+        let (parent, _, discarded, _, _) = cancelled[0].delayed_cancelled_fields();
+        assert_eq!(parent, object::id(&partner));
         assert_eq!(discarded, 0);
         fixture.advance(10 * delay());
         assert_eq!(partner.share_bps(), 2_500);
@@ -577,8 +577,8 @@ fun a_reissued_cap_goes_live_only_when_applied_after_the_delay() {
         let new_cap = fixture.reissue_cap(&mut partner);
         let scheduled = event::events_by_type<DelayedScheduled<CapKey, ID>>();
         assert_eq!(scheduled.length(), 1);
-        let (owner, _, proposed, proposed_delay_ms, ready_at_ms) = scheduled[0].delayed_scheduled_fields();
-        assert_eq!(owner, object::id(&partner));
+        let (parent, _, proposed, proposed_delay_ms, ready_at_ms) = scheduled[0].delayed_scheduled_fields();
+        assert_eq!(parent, object::id(&partner));
         assert_eq!(proposed, object::id(&new_cap));
         assert_eq!(vector[proposed_delay_ms, ready_at_ms], vector[delay(), reissued_at + delay()]);
         fixture.set_time(reissued_at + delay() - 1);
@@ -970,9 +970,9 @@ fun one_cap_manages_every_partner_of_a_company() {
     let (other_id, _) = fixture.last_update().partner_updated_fields();
     let shares = event::events_by_type<DelayedCreated<ShareKey, u64>>();
     let caps = event::events_by_type<DelayedCreated<CapKey, ID>>();
-    let (share_owner, _, other_share, _) = shares[1].delayed_created_fields();
-    let (cap_owner, _, other_cap, _) = caps[1].delayed_created_fields();
-    assert_eq!(vector[share_owner, cap_owner], vector[other_id, other_id]);
+    let (share_parent, _, other_share, _) = shares[1].delayed_created_fields();
+    let (cap_parent, _, other_cap, _) = caps[1].delayed_created_fields();
+    assert_eq!(vector[share_parent, cap_parent], vector[other_id, other_id]);
     assert_eq!(other_share, 800);
     assert_eq!(other_cap, object::id(&cap));
 
