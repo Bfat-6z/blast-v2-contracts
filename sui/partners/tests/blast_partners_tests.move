@@ -30,6 +30,12 @@ fun later_share_and_cap_changes_wait_seven_days() {
     assert_eq!(partners::delay_ms(), 7 * 24 * 60 * 60 * 1_000);
 }
 
+#[test]
+/// The public maximum is the bound `register` and `schedule_share` enforce.
+fun the_maximum_share_is_eighty_percent() {
+    assert_eq!(partners::max_share_bps(), MAX_SHARE_BPS);
+}
+
 // --- Registration ---
 
 #[test]

@@ -19,7 +19,10 @@ values between product and venue calls.
   always sum to the amount.
 - Every launch package uses one basis-points denominator, `blast_core::constants::basis_points_denominator`
   (10,000), and one cap on Blast's share of LP fees, `blast_core::constants::max_lp_fee_bps`
-  (3,000 per asset). Both are public compile-time macros.
+  (3,000 per asset). The bounds core's constructors enforce are public too:
+  `blast_core::constants::max_routes` (20 routes per fee split) and
+  `blast_core::constants::max_vesting_duration_ms` (2^63 ms). All four are public compile-time
+  macros.
 - A `payout::Recipient`, built with `payout::recipient`, is a nonzero destination address and
   optional `payout::VestingTerms` (from `payout::vesting_terms`); the zero address aborts.
   `payout::pay_or_vest` pays an amount to a recipient as a coin or, when it vests, locks the amount
@@ -87,9 +90,9 @@ venue. `migration::venue`, `migration::balances` (the Meme and Quote amounts), a
 `migration::terms` read a migration; only `migration::redeem` releases its balances, and a copy of
 its terms authorizes nothing, since an admitted venue never takes terms from its caller and each
 sale has one vault. `migration::origin`, `migration::package_witness`, `migration::fee_split`,
-`migration::protocol_bps`, `migration::partner_id`, `migration::residuals`, and
-`migration::has_protocol_residuals` read terms; `migration::is_protocol` and `migration::is_owner`
-read a `migration::ResidualPolicy`. `owner_proof::package_witness` and `owner_proof::origin` read
+`migration::protocol_bps`, `migration::partner_id`, and `migration::residuals` read terms;
+`migration::is_protocol` and `migration::is_owner` read the `migration::ResidualPolicy` it
+returns. `owner_proof::package_witness` and `owner_proof::origin` read
 a proof.
 
 ### Pool seed price

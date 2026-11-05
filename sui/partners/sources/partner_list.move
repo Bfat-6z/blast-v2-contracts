@@ -99,7 +99,7 @@ public fun acceptance_ends_at_ms(self: &PartnerList, partner_id: ID): u64 {
 }
 
 /// The number of entries, removed partners included.
-public fun length(self: &PartnerList): u64 {
+public fun entry_count(self: &PartnerList): u64 {
     self.acceptance_ends_at_ms.length()
 }
 

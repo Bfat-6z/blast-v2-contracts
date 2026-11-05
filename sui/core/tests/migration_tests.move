@@ -75,7 +75,7 @@ fun the_stored_venue_redeems_the_balances_and_terms() {
     let (meme_share, quote_share) = terms.protocol_bps();
     assert_eq!(vector[meme_share, quote_share], vector[bps::new(1_500), bps::new(1_000)]);
     assert_eq!(terms.partner_id(), option::none());
-    assert!(terms.has_protocol_residuals());
+    assert!(terms.residuals().is_protocol());
     assert!(terms.fee_split().routes()[0].destination().is_owner());
 
     destroy(meme);
@@ -121,7 +121,7 @@ fun standalone_terms_verify_owner_proofs_from_their_issuer() {
         option::none(),
         migration::residuals_to_owner(),
     );
-    assert!(!terms.has_protocol_residuals());
+    assert!(terms.residuals().is_owner());
 
     owner_proof::new(OtherPackageWitness(), sale_id()).assert_terms(&terms);
 }

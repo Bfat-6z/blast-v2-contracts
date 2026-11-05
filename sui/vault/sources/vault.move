@@ -190,7 +190,7 @@ public fun share_with_position<Meme, Quote, Venue, Position: key + store>(
     let residual_quote_amount = residual_quote.value();
     let position_id = object::id(&position);
     self.id.add_dynamic_object_field(PositionKey<Venue>(), position);
-    if (self.terms.has_protocol_residuals()) {
+    if (self.terms.residuals().is_protocol()) {
         self.protocol.accrue(residual_meme, residual_quote);
         if (self.terms.partner_id().is_none()) self.protocol.pay(treasury, ctx);
     } else {

@@ -42,8 +42,8 @@ value is always `value`; a proposal changes nothing until it is applied, even af
 `blast_partners` exposes no call that changes them.
 
 Who may call: *anyone* may call `new_cap`, `destroy_cap` (on a cap they hold),
-`pay`, `apply_share`, `apply_cap`, `delay_ms`, and the readers under Reading
-state; the *cap holder* (the applied
+`pay`, `apply_share`, `apply_cap`, `delay_ms`, `max_share_bps`, and the readers
+under Reading state; the *cap holder* (the applied
 `PartnerCap`) may call `set_recipient`; a *Blast admin* with the `PartnerAdmin`
 role (through `blast_acl::sign_in`) may call `register`, `schedule_share`,
 `schedule_cap`, `cancel_share`, and `cancel_cap`.
@@ -119,7 +119,7 @@ change it.
   for a partner (accepted, removal pending, or removed);
   `blast_partners::partner_list::acceptance_ends_at_ms` returns that entry's end
   time and aborts in `sui::dynamic_field` without one;
-  `blast_partners::partner_list::length` counts entries, removed ones included;
+  `blast_partners::partner_list::entry_count` counts entries, removed ones included;
   `blast_partners::partner_list::owner` returns the embedding object's ID.
 - `blast_partners::partner_list::destroy` deletes the list with every entry and
   emits `PartnerListDestroyed`. It ends every acceptance at once, without the
@@ -239,8 +239,11 @@ Move callers read a partner with `blast_partners::blast_partners::recipient`,
 `blast_partners::blast_partners::pending_share_bps`,
 `blast_partners::blast_partners::cap_id` (applied), and
 `blast_partners::blast_partners::pending_cap_id`; each pending reader returns an
-`Option<delayed::Proposal<T>>`. Off chain, read the shared `Partner` object's
-content over RPC, or replay the events below.
+`Option<delayed::Proposal<T>>`. The share readers keep the field's name,
+`share_bps`, the repository's term for a partner's share in basis points.
+`blast_partners::blast_partners::max_share_bps` returns the 8,000 BPS ceiling
+`register` and `schedule_share` enforce. Off chain, read the shared `Partner`
+object's content over RPC, or replay the events below.
 
 - Applied share: `share_bps.value`.
 - Pending share: `share_bps.pending`, with its `value` and `ready_at_ms`;

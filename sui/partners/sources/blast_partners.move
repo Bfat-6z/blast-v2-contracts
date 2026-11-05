@@ -175,6 +175,11 @@ public fun delay_ms(): u64 {
     PARTNER_CHANGE_DELAY_MS
 }
 
+/// The largest share of Blast's fee one partner may earn, in basis points: 8,000.
+public fun max_share_bps(): u64 {
+    MAX_SHARE_BPS
+}
+
 /// Where the partner's share is sent now.
 public fun recipient(self: &Partner): address {
     self.recipient

@@ -25,6 +25,7 @@ fun a_new_destination_waits_the_applied_notice_and_anyone_applies_it() {
     clock.increment_for_testing(NOTICE_MS);
     treasury.apply_destination(&clock);
     assert_eq!(treasury.destination(), NEXT);
+    assert!(treasury.pending_destination().is_none());
 
     destroy(treasury);
     destroy(clock);

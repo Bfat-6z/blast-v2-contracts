@@ -176,11 +176,6 @@ public fun protocol_bps(self: &VaultTerms): (Bps, Bps) {
 /// The partner the sale named, if any.
 public fun partner_id(self: &VaultTerms): Option<ID> { self.partner_id }
 
-/// Whether the migration residuals go to Blast rather than the owner.
-public fun has_protocol_residuals(self: &VaultTerms): bool {
-    self.residuals == ResidualPolicy::Protocol
-}
-
 /// What happens to the migration residuals.
 public fun residuals(self: &VaultTerms): ResidualPolicy { self.residuals }
 
