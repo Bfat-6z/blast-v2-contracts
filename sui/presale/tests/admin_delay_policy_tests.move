@@ -237,7 +237,7 @@ fun end(self: AdminDelayFixture) {
 
 fun start(): AdminDelayFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    marker::init_for_testing(scenario.ctx());
+    otw::init_for_testing(scenario.ctx());
     creation_policy::init_for_testing(scenario.ctx());
     fee_policy::init_for_testing(scenario.ctx());
     scenario.next_tx(PUBLISHER);
@@ -298,7 +298,7 @@ use blast_admin::{
 use blast_core::{blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin}, bps};
 
 use blast_presale::{
-    blast_presale_package::{Self as marker, BLAST_PRESALE_PACKAGE},
+    blast_presale_package::{Self as otw, BLAST_PRESALE_PACKAGE},
     creation_policy::{Self, CreationPolicy, VenueKey},
     fee_policy::{Self, FeePolicy}
 };

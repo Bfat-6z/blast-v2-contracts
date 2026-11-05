@@ -113,7 +113,7 @@ fun unpause_rejects_a_pending_zero_upgrade_notice() {
 /// generic administration and the version with every presale bit paused.
 fun publication_wraps_into_a_fully_paused_version() {
     let mut scenario = test_scenario::begin(@0xD);
-    marker::init_for_testing(scenario.ctx());
+    otw::init_for_testing(scenario.ctx());
     scenario.next_tx(@0xD);
     let publication = scenario.take_from_sender<Publication<BLAST_PRESALE_PACKAGE>>();
     let upgrade_cap = sui::package::test_publish(@blast_presale.to_id(), scenario.ctx());
@@ -136,12 +136,12 @@ fun release_fixture(): ReleaseFixture {
 
 fun release_fixture_with(creation_policy: CreationPolicy): ReleaseFixture {
     let ctx = &mut tx_context::dummy();
-    let mut version = marker::version_for_testing(ctx);
+    let mut version = otw::version_for_testing(ctx);
     package_admin::pause(&mut version, &pause_admin(), constants::valid_pause_bits!());
 
     ReleaseFixture {
         version,
-        package_admin: marker::package_admin_for_testing(ctx),
+        package_admin: otw::package_admin_for_testing(ctx),
         fee_policy: fee_policy::new_zero_fees_for_testing(ctx),
         creation_policy,
     }
@@ -220,7 +220,7 @@ use blast_admin::{
 use blast_core::{blast_domain::{AdapterAdmin, FeeAdmin}, bps};
 
 use blast_presale::{
-    blast_presale_package::{Self as marker, BLAST_PRESALE_PACKAGE},
+    blast_presale_package::{Self as otw, BLAST_PRESALE_PACKAGE},
     constants,
     creation_policy::{Self, CreationPolicy},
     fee_policy::{Self, FeePolicy}

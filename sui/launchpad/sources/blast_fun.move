@@ -18,7 +18,7 @@ module blast_fun::blast_fun;
 
 // === Public Types ===
 
-/// The package's one-time witness and the marker of its version, publication, and roles.
+/// The package's one-time witness (OTW), typing its version, publication, and roles.
 public struct BLAST_FUN() has drop;
 
 /// The launchpad's package witness. Only this package constructs it, through `package_witness`;

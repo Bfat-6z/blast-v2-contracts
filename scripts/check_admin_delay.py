@@ -65,12 +65,12 @@ governed('launchpad', 'launch_config', {'creation_fee': 'FeeAdmin', 'trade_fees'
 assert 'treasury' not in functions('launchpad', 'runtime_config') and 'schedule_treasury' not in functions('launchpad', 'runtime_config')
 for name in ('package_admin', 'blast_fun_domain', 'fees', 'blast_events'):
     assert not list((ROOT / 'sui/launchpad/sources').rglob(f'{name}.move')), name
-marker = (ROOT / 'sui/launchpad/sources/blast_fun.move').read_text()
-require(marker, 'public struct BLAST_FUN() has drop;', 'public struct PackageWitness() has drop;',
+otw_source = (ROOT / 'sui/launchpad/sources/blast_fun.move').read_text()
+require(otw_source, 'public struct BLAST_FUN() has drop;', 'public struct PackageWitness() has drop;',
         'package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)')
-marker_fs = functions('launchpad', 'blast_fun')
-assert set(marker_fs) == {'init', 'package_witness'}, marker_fs
-assert marker_fs['package_witness'][1] == 'PackageWitness()', marker_fs['package_witness']
+otw_fs = functions('launchpad', 'blast_fun')
+assert set(otw_fs) == {'init', 'package_witness'}, otw_fs
+assert otw_fs['package_witness'][1] == 'PackageWitness()', otw_fs['package_witness']
 # The package witness is constructed only by its module; no launchpad function stores it, takes it,
 # or returns it except the package-only constructor.
 for path in (ROOT / 'sui/launchpad/sources').rglob('*.move'):
@@ -97,12 +97,12 @@ governed('presale', 'fee_policy', {'fees': 'FeeAdmin'}, current=PRESALE_CURRENT)
 assert not any('destination' in name for name in functions('presale', 'fee_policy'))
 for name in ('package_admin', 'blast_presale_domain', 'cetus', 'bluefin', 'aftermath', 'venue_config', 'migration_math'):
     assert not list((ROOT / 'sui/presale/sources').rglob(f'{name}.move')), name
-presale_marker = (ROOT / 'sui/presale/sources/blast_presale_package.move').read_text()
-require(presale_marker, 'public struct BLAST_PRESALE_PACKAGE() has drop;', 'public struct PackageWitness() has drop;',
+presale_otw_source = (ROOT / 'sui/presale/sources/blast_presale_package.move').read_text()
+require(presale_otw_source, 'public struct BLAST_PRESALE_PACKAGE() has drop;', 'public struct PackageWitness() has drop;',
         'package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)')
-presale_marker_fs = functions('presale', 'blast_presale_package')
-assert set(presale_marker_fs) == {'init', 'package_witness'}, presale_marker_fs
-assert presale_marker_fs['package_witness'][1] == 'PackageWitness()', presale_marker_fs['package_witness']
+presale_otw_fs = functions('presale', 'blast_presale_package')
+assert set(presale_otw_fs) == {'init', 'package_witness'}, presale_otw_fs
+assert presale_otw_fs['package_witness'][1] == 'PackageWitness()', presale_otw_fs['package_witness']
 for path in (ROOT / 'sui/presale/sources').rglob('*.move'):
     for name, (signature, _) in functions('presale', path.stem).items():
         assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_presale_package', 'package_witness'), (path, name)
@@ -204,10 +204,10 @@ for package, module, current, actions in [
 # package's own upgrade notice, and keeps the native capabilities sealed.
 generic = functions('admin', 'package_admin')
 generic_source = (ROOT / 'sui/admin/sources/package_admin.move').read_text()
-require(generic_source, 'upgrade: DelayedAction<UpgradeKey<PackageMarker>, UpgradeAction>,',
+require(generic_source, 'upgrade: DelayedAction<UpgradeKey<OTW>, UpgradeAction>,',
         'upgrade_cap: Option<UpgradeCap>,', 'const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;')
 for name in ('schedule_upgrade', 'schedule_make_immutable', 'authorize_upgrade', 'make_immutable', 'schedule_upgrade_delay'):
-    require(generic[name][0], '&AdminWitness<UpgradeAdmin<PackageMarker>>', 'clock: &Clock')
+    require(generic[name][0], '&AdminWitness<UpgradeAdmin<OTW>>', 'clock: &Clock')
 for name in ('schedule_upgrade', 'schedule_make_immutable'):
     assert 'delay_ms: u64' not in generic[name][0], name
     assert generic[name][1].startswith('assert!(self.upgrade_cap.is_some(), blast_admin::errors::upgrade_cap_unavailable!());'), name
@@ -219,7 +219,7 @@ for name, action, effect in [('authorize_upgrade', 'Upgrade(digest)', 'upgrade_c
     require(body, 'let action = self.upgrade.take_action(clock);')
     assert body.index('self.upgrade.take_action(clock)') < body.index(f'action == UpgradeAction::{action}') < body.index(effect), name
 # Only the package's own code, with its pinned package witness, ends its upgrades; checked first.
-require(generic['make_immutable'][0], '_: PackageWitness', 'package_version: &PackageVersion<PackageMarker>')
+require(generic['make_immutable'][0], '_: PackageWitness', 'package_version: &PackageVersion<OTW>')
 assert generic['make_immutable'][1].startswith('package_version.assert_package_witness<_, PackageWitness>();')
 # The vault (immutable after audit, #195) wraps it on its live generation only; the upgradeable
 # products add a wrapper only in a later upgrade if they ever need one.
@@ -230,27 +230,27 @@ require(body, 'package_admin.make_immutable(upgrade_admin, PackageWitness(), pac
 for package in ('launchpad', 'presale', 'migrators'):
     for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
         assert '.make_immutable(' not in path.read_text(), path
-require(generic['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin<PackageMarker>>')
+require(generic['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin<OTW>>')
 require(generic['cancel_upgrade_action'][1], 'self.upgrade.cancel()')
 require(generic['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
 require(generic['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
 assert 'AdminWitness' not in generic['apply_upgrade_delay'][0]
 commit = generic['commit_upgrade_and_advance']
-require(commit[0], '&AdminWitness<UpgradeAdmin<PackageMarker>>', 'package_version: &mut PackageVersion<PackageMarker>')
+require(commit[0], '&AdminWitness<UpgradeAdmin<OTW>>', 'package_version: &mut PackageVersion<OTW>')
 assert commit[1].index('upgrade_cap.commit(receipt);') < commit[1].index('package_version.advance();')
-require(generic['pause'][0], '&AdminWitness<PauseAdmin<PackageMarker>>')
-require(generic['clear_pause_bits'][0], '&AdminWitness<UnpauseAdmin<PackageMarker>>', '_: PackageWitness')
+require(generic['pause'][0], '&AdminWitness<PauseAdmin<OTW>>')
+require(generic['clear_pause_bits'][0], '&AdminWitness<UnpauseAdmin<OTW>>', '_: PackageWitness')
 # Only the package itself, holding its pinned package witness, borrows its Publisher, by reference.
-require(generic['publisher'][0], 'self: &PackageAdmin<PackageMarker>', '_: PackageWitness',
-        'package_version: &PackageVersion<PackageMarker>', '): &Publisher')
-require(generic['publisher_mut'][0], 'self: &mut PackageAdmin<PackageMarker>', '_: PackageWitness',
-        'package_version: &PackageVersion<PackageMarker>', '): &mut Publisher')
+require(generic['publisher'][0], 'self: &PackageAdmin<OTW>', '_: PackageWitness',
+        'package_version: &PackageVersion<OTW>', '): &Publisher')
+require(generic['publisher_mut'][0], 'self: &mut PackageAdmin<OTW>', '_: PackageWitness',
+        'package_version: &PackageVersion<OTW>', '): &mut Publisher')
 for name in ('publisher', 'publisher_mut'):
     assert generic[name][1].startswith('package_version.assert_package_witness<_, PackageWitness>();'), name
 clear = generic['clear_pause_bits'][1]
 assert clear.index('assert_unpause_witness') < clear.index('self.upgrade.is_guarded()') < clear.index('package_version.clear_pause_bits(bits)')
-require(generic['wrap'][0], 'publication: Publication<PackageMarker>', 'upgrade_cap: UpgradeCap')
-require(generic['new'][1], 'delayed_action::new(UpgradeKey<PackageMarker>(), &id, INITIAL_UPGRADE_DELAY_MS)')
+require(generic['wrap'][0], 'publication: Publication<OTW>', 'upgrade_cap: UpgradeCap')
+require(generic['new'][1], 'delayed_action::new(UpgradeKey<OTW>(), &id, INITIAL_UPGRADE_DELAY_MS)')
 assert {name for name, (_, body) in generic.items() if 'PackageAdmin {' in body} == {'new'}
 assert not any(re.search(r'\):\s*(Publisher|UpgradeCap|&\s*(mut\s+)?UpgradeCap)', signature) for signature, _ in generic.values())
 assert {name for name, (signature, _) in generic.items() if re.search(r'\):\s*&\s*mut\s+Publisher', signature)} == {'publisher_mut'}
@@ -263,19 +263,19 @@ assert 'MAX_ADMINS' not in acl and 'Timelocked' not in acl
 print('ADR 0134 administration boundaries: OK')
 
 # Publication proves unique native custody intake; it never authorizes policy changes.
-for package, marker in [('launchpad', 'blast_fun')]:
-    marker_fs = functions(package, marker)
-    source = (ROOT / 'sui' / package / 'sources' / f'{marker}.move').read_text()
+for package, otw_module in [('launchpad', 'blast_fun')]:
+    otw_fs = functions(package, otw_module)
+    source = (ROOT / 'sui' / package / 'sources' / f'{otw_module}.move').read_text()
     assert 'admin_delay' not in source
     # The generic `package_version::new_publication` claims the Publisher and seeds the version.
-    require(marker_fs['init'][1], '.keep(ctx)')
-    assert 'share_object' not in marker_fs['init'][1] and 'public struct Publication' not in source
-    assert marker_fs['init'][0].startswith('fun init(')
+    require(otw_fs['init'][1], '.keep(ctx)')
+    assert 'share_object' not in otw_fs['init'][1] and 'public struct Publication' not in source
+    assert otw_fs['init'][0].startswith('fun init(')
     for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
         production = path.read_text().split('// === Test-Only Functions ===')[0]
         assert 'Bootstrap' not in production, path
         assert 'set_now' not in production, path
-        if path.stem not in (marker, 'package_admin'):
+        if path.stem not in (otw_module, 'package_admin'):
             assert not re.search(r'\bPublication\b', production), path
         for name, (signature, body) in functions(package, str(path.relative_to(ROOT / 'sui' / package / 'sources').with_suffix(''))).items():
             if not re.search(r'\.schedule(_add|_value)?\(', body):
@@ -430,9 +430,9 @@ assert 'set_creator_claim_signer' not in signer
 # every public venue route checks this package's compiled generation before anything else.
 migrators_sources = ROOT / 'sui/migrators/sources'
 assert not (migrators_sources / 'package_admin.move').exists()
-marker_fs = functions('migrators', 'blast_migrators')
-assert set(marker_fs) == {'init'}, set(marker_fs)
-assert marker_fs['init'][1] == 'package_version::new_publication<_, PackageWitness>(otw, 0, ctx).keep(ctx);', marker_fs['init'][1]
+otw_fs = functions('migrators', 'blast_migrators')
+assert set(otw_fs) == {'init'}, set(otw_fs)
+assert otw_fs['init'][1] == 'package_version::new_publication<_, PackageWitness>(otw, 0, ctx).keep(ctx);', otw_fs['init'][1]
 for path in migrators_sources.rglob('*.move'):
     production = path.read_text().split('// === Test-Only Functions ===')[0]
     assert not re.search(r'\b(OperationalVersion|UpgradeCustody|DelayedAction|operational_version|upgrade_custody)\b', production), path

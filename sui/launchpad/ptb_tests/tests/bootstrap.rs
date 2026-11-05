@@ -8,7 +8,7 @@
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
     Delayed, DelayedApplied, DelayedScheduled, Expected, Harness, Outcome, PUBLICATION_UPGRADE_NOTICE_MS, Proposal,
-    TEST_GENESIS_RECIPIENT, VaultStack, call, launchpad_marker, launchpad_role, publish_stack, sui_dir,
+    TEST_GENESIS_RECIPIENT, VaultStack, call, launchpad_otw, launchpad_role, publish_stack, sui_dir,
 };
 use sui_types::{
     TypeTag,
@@ -42,7 +42,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let mut b = ProgrammableTransactionBuilder::new();
     let bootstrap_arg = b.obj(h.owned(bootstrap))?;
     let cap_arg = b.obj(h.owned(foreign_cap))?;
-    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_marker(blast)?], vec![bootstrap_arg, cap_arg]);
+    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_otw(blast)?], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: admin, module: "package_admin", code: 10 },
@@ -92,7 +92,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let mut b = ProgrammableTransactionBuilder::new();
     let bootstrap_arg = b.obj(h.owned(bootstrap))?;
     let cap_arg = b.obj(h.owned(cap))?;
-    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_marker(unwrapped)?], vec![bootstrap_arg, cap_arg]);
+    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_otw(unwrapped)?], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: admin, module: "package_admin", code: 10 },

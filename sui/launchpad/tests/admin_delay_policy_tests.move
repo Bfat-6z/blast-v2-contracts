@@ -218,7 +218,7 @@ fun end(self: AdminDelayFixture) {
 
 fun start(): AdminDelayFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    marker::init_for_testing(scenario.ctx());
+    otw::init_for_testing(scenario.ctx());
     launch_config::init_for_testing(scenario.ctx());
     runtime_config::init_for_testing(scenario.ctx());
     scenario.next_tx(PUBLISHER);
@@ -273,6 +273,6 @@ use blast_admin::{
 
 use blast_core::blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin};
 
-use blast_fun::{blast_fun::{Self as marker, BLAST_FUN}, launch_config::{Self, LaunchConfig, VenueKey}, runtime_config::{Self, RuntimeConfig}};
+use blast_fun::{blast_fun::{Self as otw, BLAST_FUN}, launch_config::{Self, LaunchConfig, VenueKey}, runtime_config::{Self, RuntimeConfig}};
 use std::{type_name::TypeName, unit_test::{assert_eq, destroy}};
 use sui::{clock::Clock, test_scenario::{Self, Scenario}};

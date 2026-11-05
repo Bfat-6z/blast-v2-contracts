@@ -51,7 +51,7 @@ including stored-generation mismatch, exact events and rollback. Real ACL tests
 cover role separation, wrong witness types, role and administrator revocation,
 and successful and failing multi-command sequences. The presale matrix also
 preserves a funded sale's balances, currency and capability. Pause bits live in
-the generic `blast_admin::package_version::PackageVersion<Marker>`, whose own
+the generic `blast_admin::package_version::PackageVersion<OTW>`, whose own
 tests cover the operation guard; each product's Move `pause_tests` covers its
 `unpause` notice gate. The administration source gate pins every protected
 operation's version/pause guard order and keeps settlement and exits available.

@@ -18,7 +18,7 @@ module blast_migrators::blast_migrators;
 
 // === Public Types ===
 
-/// The package's one-time witness and the marker of its version, administration, and roles.
+/// The package's one-time witness (OTW), typing its version, administration, and roles.
 public struct BLAST_MIGRATORS() has drop;
 
 /// The package witness `blast_admin` pins at publication, the one type that authorizes this

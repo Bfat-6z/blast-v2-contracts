@@ -307,7 +307,7 @@ blast_facts="$(move_facts sources/blast_fun.move)"
 # The OTW hands the deployer one owned generic Publication pinning the package witness;
 # blast_admin::package_admin::wrap seals the native capabilities and shares
 # PackageVersion<BLAST_FUN>, fully paused. This package keeps no publication, version, pause, or
-# custody state of its own; its marker module owns the package witness and its one package-only
+# custody state of its own; its one-time-witness module owns the package witness and its one package-only
 # constructor.
 if [[ ! -f sources/blast_fun.move ]] \
   || [[ -e sources/package_admin.move || -e sources/blast_fun_domain.move ]] \
@@ -1041,7 +1041,7 @@ for authority_spec in \
 done
 # The owner proof is the curve-fee cap's only reach outside the launch: `prove_owner` checks the
 # version, then the live cap through the private `assert_curve_fee_cap`, before it seals a proof
-# for this launch under the package witness. The witness is the marker module's drop-only struct,
+# for this launch under the package witness. The witness is the one-time-witness module's drop-only struct,
 # which no launch function returns or takes; launch.move obtains it only inside `finalize` (to seal
 # the launch's fee ledger), `migrate`, and `prove_owner`, and launch_config only inside `unpause`,
 # so no other package can seal this launchpad's ledger, terms, hand-offs, proofs, or pause release.

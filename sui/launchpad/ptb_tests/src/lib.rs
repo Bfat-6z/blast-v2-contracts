@@ -251,9 +251,9 @@ fn same_file(left: &Path, right: &Path) -> bool {
     matches!((left.canonicalize(), right.canonicalize()), (Ok(left), Ok(right)) if left == right)
 }
 
-/// `<presale>::blast_presale_package::BLAST_PRESALE_PACKAGE`, the presale's marker in
+/// `<presale>::blast_presale_package::BLAST_PRESALE_PACKAGE`, the presale's one-time witness (OTW) in
 /// `blast_admin`'s generic types.
-pub fn presale_marker(presale: ObjectID) -> Result<sui_types::TypeTag> {
+pub fn presale_otw(presale: ObjectID) -> Result<sui_types::TypeTag> {
     Ok(sui_types::parse_sui_type_tag(&format!("{presale}::blast_presale_package::BLAST_PRESALE_PACKAGE"))?)
 }
 
@@ -261,10 +261,10 @@ pub fn presale_marker(presale: ObjectID) -> Result<sui_types::TypeTag> {
 /// `PackageCancelAdmin` are `blast_admin`'s generic package roles over `BLAST_PRESALE_PACKAGE`;
 /// every other role is `blast_core::blast_domain`'s.
 pub fn presale_role(admin: ObjectID, core: ObjectID, presale: ObjectID, role: &str) -> Result<sui_types::TypeTag> {
-    let marker = format!("{presale}::blast_presale_package::BLAST_PRESALE_PACKAGE");
+    let otw = format!("{presale}::blast_presale_package::BLAST_PRESALE_PACKAGE");
     let tag = match role {
-        "UpgradeAdmin" | "PauseAdmin" | "UnpauseAdmin" => format!("{admin}::package_admin::{role}<{marker}>"),
-        "PackageCancelAdmin" => format!("{admin}::package_admin::CancelAdmin<{marker}>"),
+        "UpgradeAdmin" | "PauseAdmin" | "UnpauseAdmin" => format!("{admin}::package_admin::{role}<{otw}>"),
+        "PackageCancelAdmin" => format!("{admin}::package_admin::CancelAdmin<{otw}>"),
         _ => format!("{core}::blast_domain::{role}"),
     };
     Ok(sui_types::parse_sui_type_tag(&tag)?)
@@ -293,8 +293,8 @@ pub fn append_presale_unpause(
     Ok(())
 }
 
-/// `<blast>::blast_fun::BLAST_FUN`, the launchpad's marker in `blast_admin`'s generic types.
-pub fn launchpad_marker(blast: ObjectID) -> Result<sui_types::TypeTag> {
+/// `<blast>::blast_fun::BLAST_FUN`, the launchpad's one-time witness (OTW) in `blast_admin`'s generic types.
+pub fn launchpad_otw(blast: ObjectID) -> Result<sui_types::TypeTag> {
     Ok(sui_types::parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)
 }
 
@@ -935,7 +935,7 @@ impl Harness {
         let mut builder = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = builder.obj(self.owned(bootstrap[0]))?;
         let cap_arg = builder.obj(self.owned(cap[0]))?;
-        call(&mut builder, admin, "package_admin", "wrap", vec![launchpad_marker(package)?], vec![bootstrap_arg, cap_arg]);
+        call(&mut builder, admin, "package_admin", "wrap", vec![launchpad_otw(package)?], vec![bootstrap_arg, cap_arg]);
         let outcome = self.execute(builder.finish())?;
         outcome.assert_success();
         assert_eq!(outcome.effects.deleted().iter().map(|object| object.0).collect::<Vec<_>>(), vec![bootstrap_id]);
@@ -1120,11 +1120,11 @@ impl Harness {
         let cap = publication.created(self, "package", "UpgradeCap");
         ensure!(bootstrap.len() == 1 && cap.len() == 1, "one publication and one upgrade cap");
         ensure!(self.object(bootstrap[0]).owner().get_address_owner_address()? == self.sender, "the publisher keeps the publication");
-        let marker = sui_types::parse_sui_type_tag(&format!("{vault}::blast_vault_package::BLAST_VAULT_PACKAGE"))?;
+        let otw = sui_types::parse_sui_type_tag(&format!("{vault}::blast_vault_package::BLAST_VAULT_PACKAGE"))?;
         let mut b = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = b.obj(self.owned(bootstrap[0]))?;
         let cap_arg = b.obj(self.owned(cap[0]))?;
-        call(&mut b, admin, "package_admin", "wrap", vec![marker], vec![bootstrap_arg, cap_arg]);
+        call(&mut b, admin, "package_admin", "wrap", vec![otw], vec![bootstrap_arg, cap_arg]);
         let wrapped = self.execute(b.finish())?;
         wrapped.assert_success();
         ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
@@ -1204,11 +1204,11 @@ impl Harness {
         let cap = publication.created(self, "package", "UpgradeCap");
         ensure!(bootstrap.len() == 1 && cap.len() == 1, "one publication and one upgrade cap");
         ensure!(self.object(bootstrap[0]).owner().get_address_owner_address()? == self.sender, "the publisher keeps the publication");
-        let marker = sui_types::parse_sui_type_tag(&format!("{package}::blast_migrators::BLAST_MIGRATORS"))?;
+        let otw = sui_types::parse_sui_type_tag(&format!("{package}::blast_migrators::BLAST_MIGRATORS"))?;
         let mut b = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = b.obj(self.owned(bootstrap[0]))?;
         let cap_arg = b.obj(self.owned(cap[0]))?;
-        call(&mut b, admin, "package_admin", "wrap", vec![marker], vec![bootstrap_arg, cap_arg]);
+        call(&mut b, admin, "package_admin", "wrap", vec![otw], vec![bootstrap_arg, cap_arg]);
         let outcome = self.execute(b.finish())?;
         outcome.assert_success();
         ensure!(outcome.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");

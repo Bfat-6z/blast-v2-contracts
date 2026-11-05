@@ -18,7 +18,7 @@ module blast_presale::blast_presale_package;
 
 // === Public Types ===
 
-/// The package's one-time witness and the marker of its version, publication, and roles.
+/// The package's one-time witness (OTW), typing its version, publication, and roles.
 public struct BLAST_PRESALE_PACKAGE() has drop;
 
 /// The presale's one package witness, pinned at publication. It seals each sale's protocol-fee

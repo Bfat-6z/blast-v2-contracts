@@ -612,8 +612,8 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let custody_arg = schedule.obj(w.h.shared(custody, true))?;
     let proposed = schedule.pure(digest.to_vec())?;
     let clock = schedule.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-    let marker = w.marker()?;
-    call(&mut schedule, w.admin, "package_admin", "schedule_upgrade", vec![marker.clone()], vec![custody_arg, witness, proposed, clock]);
+    let otw = w.otw()?;
+    call(&mut schedule, w.admin, "package_admin", "schedule_upgrade", vec![otw.clone()], vec![custody_arg, witness, proposed, clock]);
     let schedule = schedule.finish();
     let (_, scheduled_at_ms): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
     let scheduled = w.h.execute(schedule.clone())?;
@@ -641,7 +641,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let mut cancel = ProgrammableTransactionBuilder::new();
     let witness = w.sign_in(&mut cancel, "PackageCancelAdmin")?;
     let custody_arg = cancel.obj(w.h.shared(custody, true))?;
-    call(&mut cancel, w.admin, "package_admin", "cancel_upgrade_action", vec![marker.clone()], vec![custody_arg, witness]);
+    call(&mut cancel, w.admin, "package_admin", "cancel_upgrade_action", vec![otw.clone()], vec![custody_arg, witness]);
     let cancelled = w.h.execute(cancel.finish())?;
     cancelled.assert_success();
     assert_eq!(cancelled.events.len(), 1);
@@ -658,9 +658,9 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let version = b.obj(w.h.shared(w.version, true))?;
     let digest = b.pure(digest.to_vec())?;
     let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-    let upgrade_ticket = call(&mut b, w.admin, "package_admin", "authorize_upgrade", vec![marker.clone()], vec![custody_arg, witness, digest, clock]);
+    let upgrade_ticket = call(&mut b, w.admin, "package_admin", "authorize_upgrade", vec![otw.clone()], vec![custody_arg, witness, digest, clock]);
     let receipt = b.upgrade(original, upgrade_ticket, code.dependencies, code.modules);
-    call(&mut b, w.admin, "package_admin", "commit_upgrade_and_advance", vec![marker], vec![custody_arg, witness, version, receipt]);
+    call(&mut b, w.admin, "package_admin", "commit_upgrade_and_advance", vec![otw], vec![custody_arg, witness, version, receipt]);
     let upgrade = b.finish();
     w.h.assert_rolled_back(
         upgrade.clone(),
@@ -1322,12 +1322,12 @@ impl World {
         }
         let version = b.obj(self.h.shared(self.version, true))?;
         let bits = b.pure(bits)?;
-        call(b, self.admin, "package_admin", "pause", vec![self.marker()?], vec![version, witness, bits]);
+        call(b, self.admin, "package_admin", "pause", vec![self.otw()?], vec![version, witness, bits]);
         Ok(())
     }
 
-    fn marker(&self) -> Result<TypeTag> {
-        blast_launchpad_ptb_tests::launchpad_marker(self.launchpad_origin)
+    fn otw(&self) -> Result<TypeTag> {
+        blast_launchpad_ptb_tests::launchpad_otw(self.launchpad_origin)
     }
 
     /// The version's id, paused bits and generation.

@@ -213,8 +213,8 @@ venue_config: dynamic_field::borrow as UID.dynamic_field
 venue_config: dynamic_object_field::add as UID.add_dynamic_object_field
 venue_config: dynamic_object_field::borrow as UID.dynamic_object_field
 EOF
-# Both versions are `blast_admin`'s generic `PackageVersion`, typed by the marker of the package
-# each route checks: this package's own for the guard, the vault package's for the vault calls.
+# Both versions are `blast_admin`'s generic `PackageVersion`, typed by the one-time witness (OTW)
+# of the package each route checks: this package's own for the guard, the vault package's for the vault calls.
 for module in bluefin cetus; do
     [[ "$(move_norm "$SOURCE_DIR/${module}.move" | rg -o 'use blast_admin::[^;]*;')" \
         == 'use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};' ]] || \
@@ -823,14 +823,14 @@ if rg -n '\b(OperationalVersion|UpgradeCustody|DelayedAction|operational_version
     fail "generation, custody, and upgrade machinery belong to blast_admin's generic administration"
 fi
 
-marker_facts="$(move_facts "$SOURCE_DIR/blast_migrators.move")"
-[[ "$marker_facts" != *MALFORMED* ]] || fail "the Move reader rejected blast_migrators.move"
-[[ "$(awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $8 }' <<<"$marker_facts" | LC_ALL=C sort | tr '\n' ';')" \
+otw_facts="$(move_facts "$SOURCE_DIR/blast_migrators.move")"
+[[ "$otw_facts" != *MALFORMED* ]] || fail "the Move reader rejected blast_migrators.move"
+[[ "$(awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $8 }' <<<"$otw_facts" | LC_ALL=C sort | tr '\n' ';')" \
     == 'struct BLAST_MIGRATORS() has drop;;struct PackageWitness() has drop;;' ]] \
-    && [[ "$(awk -F'\t' '$1 == "FN" && $6 == 0 { print $2 ":" $3 }' <<<"$marker_facts" | tr '\n' ' ')" == 'init:private ' ]] \
-    && [[ "$(awk -F'\t' '$1 == "FN" && $2 == "init" { print $10 }' <<<"$marker_facts" | tr -d '[:space:]')" \
+    && [[ "$(awk -F'\t' '$1 == "FN" && $6 == 0 { print $2 ":" $3 }' <<<"$otw_facts" | tr '\n' ' ')" == 'init:private ' ]] \
+    && [[ "$(awk -F'\t' '$1 == "FN" && $2 == "init" { print $10 }' <<<"$otw_facts" | tr -d '[:space:]')" \
         == 'package_version::new_publication<_,PackageWitness>(otw,0,ctx).keep(ctx);' ]] || \
-    fail "blast_migrators must declare only its marker and an unconstructed package witness, and init must keep a zero-bit publication"
+    fail "blast_migrators must declare only its one-time witness (OTW) and an unconstructed package witness, and init must keep a zero-bit publication"
 if rg -q 'PackageWitness\(\)' "$SOURCE_DIR" --glob '!blast_migrators.move' \
     || [[ "$(production_section "$SOURCE_DIR/blast_migrators.move" | grep -o 'PackageWitness()' | wc -l)" -ne 1 ]]; then
     fail "nothing may construct the package witness; the package defines no pause bits"

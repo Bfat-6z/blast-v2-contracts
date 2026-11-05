@@ -108,12 +108,12 @@ fun release_fixture(): ReleaseFixture {
 
 fun release_fixture_with(runtime_config: RuntimeConfig): ReleaseFixture {
     let ctx = &mut tx_context::dummy();
-    let mut version = marker::version_for_testing(ctx);
+    let mut version = otw::version_for_testing(ctx);
     package_admin::pause(&mut version, &pause_admin(), constants::valid_pause_bits!());
 
     ReleaseFixture {
         version,
-        package_admin: marker::package_admin_for_testing(ctx),
+        package_admin: otw::package_admin_for_testing(ctx),
         runtime_config,
         launch_config: launch_config::new_zero_fees_for_testing(ctx),
     }
@@ -206,7 +206,7 @@ use blast_admin::{
 use blast_core::{blast_domain::{ClaimSignerAdmin, FeeAdmin}, bps};
 
 use blast_fun::{
-    blast_fun::{Self as marker, BLAST_FUN},
+    blast_fun::{Self as otw, BLAST_FUN},
     constants,
     launch_config::{Self, LaunchConfig},
     runtime_config::{Self, RuntimeConfig}

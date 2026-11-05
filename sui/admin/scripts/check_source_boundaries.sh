@@ -329,9 +329,9 @@ expected_package_version_public="$(printf '%s\n' \
   | sort)"
 [[ "$actual_package_version_public" == "$expected_package_version_public" ]] \
   || fail "The production package-version surface changed without boundary review."
-grep -Fqx 'public struct PackageVersion<phantom PackageMarker: drop> has key {' "$package_version_file" \
-  || fail "PackageVersion must be a key-only shared object typed by its package marker."
-grep -Fqx 'public struct Publication<phantom PackageMarker: drop> has key {' "$package_version_file" \
+grep -Fqx 'public struct PackageVersion<phantom OTW: drop> has key {' "$package_version_file" \
+  || fail "PackageVersion must be a key-only shared object typed by its package one-time witness (OTW)."
+grep -Fqx 'public struct Publication<phantom OTW: drop> has key {' "$package_version_file" \
   || fail "Publication must be key-only so only its own module can deliver it."
 [[ "$(grep -Fxc '    package_witness: TypeName,' "$package_version_file")" -eq 2 ]] \
   || fail "Publication and PackageVersion must pin the package's exact package witness type."
@@ -376,8 +376,8 @@ expected_package_admin_public="$(printf '%s\n' \
   | sort)"
 [[ "$actual_package_admin_public" == "$expected_package_admin_public" ]] \
   || fail "The production package-administration surface changed without boundary review."
-grep -Fqx 'public struct PackageAdmin<phantom PackageMarker: drop> has key {' "$package_admin_file" \
-  || fail "PackageAdmin must be a key-only shared object typed by its package marker."
+grep -Fqx 'public struct PackageAdmin<phantom OTW: drop> has key {' "$package_admin_file" \
+  || fail "PackageAdmin must be a key-only shared object typed by its package one-time witness (OTW)."
 grep -Fq 'package_version.assert_unpause_witness<_, PackageWitness>();' "$package_admin_file" \
   || fail "clear_pause_bits must check the pinned package witness."
 [[ "$(function_declarations "$package_admin_file" | grep -cE '\)[[:space:]]*:[[:space:]]*&Publisher[[:space:]]*\{')" -eq 2 ]] \
@@ -390,8 +390,8 @@ sed -n '/^public fun make_immutable</,/^}/p' "$package_admin_file" \
   | grep -Fq 'package_version.assert_package_witness<_, PackageWitness>();' \
   || fail "make_immutable must check the pinned package witness before ending upgrades."
 for role in UpgradeAdmin PauseAdmin UnpauseAdmin CancelAdmin; do
-  grep -Fqx "public struct $role<phantom PackageMarker>()" "$package_admin_file" \
-    || fail "$role must be an ability-free role typed by its package marker."
+  grep -Fqx "public struct $role<phantom OTW>()" "$package_admin_file" \
+    || fail "$role must be an ability-free role typed by its package one-time witness (OTW)."
 done
 
 printf 'blast_admin source boundaries passed\n'

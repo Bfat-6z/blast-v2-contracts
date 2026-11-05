@@ -9,8 +9,8 @@ administrator holds roles, and a role is a Move type that a consumer package
 declares, so a role from one package can never act in another. The package also
 provides the delayed-notice primitives Blast's settings embed, and one generic
 package administration that every upgradeable Blast package uses: a shared
-`PackageVersion<M>` that rejects calls into outdated bytecode and holds the
-package's pause bits, and a shared `PackageAdmin<M>` that seals the package's
+`PackageVersion<OTW>` that rejects calls into outdated bytecode and holds the
+package's pause bits, and a shared `PackageAdmin<OTW>` that seals the package's
 `Publisher` and `UpgradeCap` so upgrades happen only through role-gated,
 48-hour-notice calls and only the package itself can borrow its `Publisher`. No package can build a second version or custody object:
 both are created only by `blast_admin::package_admin::wrap` from the package's
@@ -25,11 +25,12 @@ destroyed in the publish transaction), so none of these rules can change.
 | `blast_acl::SuperAdminCap` | owned, `key` only (cannot be transferred or wrapped by anyone) | Blast's cold root: `init` delivers it to the `blast_acl_root` address in `Move.toml`, not the publisher | grant and revoke admins and roles; start and cancel a root transfer |
 | `blast_acl::AdminCap` | owned, `key, store` (transferable, wrappable) | a Blast operator | nothing by itself; `blast_acl::sign_in` turns it into a role witness |
 | `blast_acl::AdminWitness<Role>` | transaction-local value, `drop` only | the PTB that signed in | the one role `Role` in every consumer call that takes `&AdminWitness<Role>` |
-| `package_version::Publication<M>` | owned, `key` only | the publisher, from the package's `init` until wrap | nothing but the one wrap of package `M` |
-| `package_version::PackageVersion<M>` | shared, `key` only, created at wrap | nobody | the generation and pause bits package `M`'s operations check |
-| `blast_admin::package_admin::PackageAdmin<M>` | shared, `key` only, created at wrap | nobody | package `M`'s sealed `Publisher` (borrowed only by `M` itself) and `UpgradeCap`, and its delayed upgrade decisions |
+| `package_version::Publication<OTW>` | owned, `key` only | the publisher, from the package's `init` until wrap | nothing but the one wrap of package `OTW` |
+| `package_version::PackageVersion<OTW>` | shared, `key` only, created at wrap | nobody | the generation and pause bits package `OTW`'s operations check |
+| `blast_admin::package_admin::PackageAdmin<OTW>` | shared, `key` only, created at wrap | nobody | package `OTW`'s sealed `Publisher` (borrowed only by `OTW` itself) and `UpgradeCap`, and its delayed upgrade decisions |
 
-`M` is the package's one-time witness type (its marker), for example the vault's
+`OTW` is the package's one-time witness type, named as in the framework's
+`sui::package::claim<OTW: drop>`, for example the vault's
 `blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE`.
 
 `ACL` fields: `super_admin_cap_id` (the one root cap that works), `admins` (a
@@ -50,12 +51,12 @@ or with different type arguments, are different roles.
 
 | Declared in | Roles | Used by |
 | --- | --- | --- |
-| `blast_admin::package_admin` | `blast_admin::package_admin::UpgradeAdmin<M>` (schedule, authorize and commit upgrades, schedule and execute immutability, change the upgrade notice), `blast_admin::package_admin::PauseAdmin<M>` (set pause bits), `blast_admin::package_admin::UnpauseAdmin<M>` (clear pause bits through the package's own unpause), `blast_admin::package_admin::CancelAdmin<M>` (cancel the pending upgrade action or notice change) | every upgradeable package, typed by its marker `M` |
+| `blast_admin::package_admin` | `blast_admin::package_admin::UpgradeAdmin<OTW>` (schedule, authorize and commit upgrades, schedule and execute immutability, change the upgrade notice), `blast_admin::package_admin::PauseAdmin<OTW>` (set pause bits), `blast_admin::package_admin::UnpauseAdmin<OTW>` (clear pause bits through the package's own unpause), `blast_admin::package_admin::CancelAdmin<OTW>` (cancel the pending upgrade action or notice change) | every upgradeable package, typed by its one-time witness `OTW` |
 | `blast_core::blast_domain` | `blast_domain::TreasuryAdmin`, `blast_domain::FeeAdmin`, `blast_domain::ListingAdmin`, `blast_domain::AdapterAdmin`, `blast_domain::RewardsAdmin`, `blast_domain::BuybackAdmin`, `blast_domain::CreatorAdmin`, `blast_domain::ClaimSignerAdmin`, `blast_domain::CancelAdmin` | the launch products, the vault and the migrators |
 | `blast_partners` | `blast_partners::blast_partners::PartnerAdmin` (register partners, schedule shares and caps) | partners |
 | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer`, `blast_boosts_core::blast_boosts_core::RiskAdmin`, `blast_boosts_core::blast_boosts_core::ShutdownAdmin`, `blast_boosts_core::blast_boosts_core::UpgradeAdmin` | Boosts |
 
-Two `CancelAdmin` roles exist by design: `blast_admin::package_admin::CancelAdmin<M>`
+Two `CancelAdmin` roles exist by design: `blast_admin::package_admin::CancelAdmin<OTW>`
 cancels one package's upgrade actions; `blast_domain::CancelAdmin` cancels product
 proposals.
 
@@ -77,8 +78,8 @@ seven days the nominee calls `blast_acl::accept_super_admin_transfer`, which
 mints a new `SuperAdminCap` to the nominee and makes the old one inert. The old
 holder may then delete it with `blast_acl::destroy_retired_super_admin_cap`.
 
-**Package.** Published (owned `Publication<M>`) → wrapped (shared
-`PackageAdmin<M>` and `PackageVersion<M>`, generation 1, every defined bit
+**Package.** Published (owned `Publication<OTW>`) → wrapped (shared
+`PackageAdmin<OTW>` and `PackageVersion<OTW>`, generation 1, every defined bit
 paused) → unpaused by the package's own `unpause` → upgraded any number of
 times (each commit advances the generation by exactly one) → optionally
 immutable. The cap's upgrade policy is never narrowed: it stays compatible (0,
@@ -102,7 +103,7 @@ what each transaction leaves on chain.
    `AdminWitness<Role>`.
 2. Pass the witness by reference to each consumer call that names that role, in
    the same PTB, for example `blast_admin::package_admin::pause` with
-   `AdminWitness<blast_admin::package_admin::PauseAdmin<M>>`. One witness serves
+   `AdminWitness<blast_admin::package_admin::PauseAdmin<OTW>>`. One witness serves
    any number of calls of the same role.
 3. A PTB that needs two roles signs in twice. The witness drops at the end of
    the transaction; it cannot be stored or sent.
@@ -135,26 +136,26 @@ what each transaction leaves on chain.
 1. The package's `init` calls `package_version::new_publication` with its
    one-time witness by value, the bits it defines (`valid_pause_bits`; zero
    defines none) and a second type argument, the package's package witness: a
-   struct of that package, other than its marker, whose value only the package's
+   struct of that package, other than its OTW, whose value only the package's
    own code constructs and never returns or stores. It is the one type that
    clears the package's pause bits and borrows its `Publisher`. The publication stores that exact type (with
-   defining IDs) and aborts with code 24 for a primitive, the marker itself, or a
+   defining IDs) and aborts with code 24 for a primitive, the OTW itself, or a
    type from another package. It then claims the package's `Publisher`, which the
    framework allows only with a genuine one-time witness, and
-   `package_version::keep` transfers the `Publication<M>` to the publisher.
+   `package_version::keep` transfers the `Publication<OTW>` to the publisher.
 2. In the publication PTB the publisher calls
    `blast_admin::package_admin::wrap` with that `Publication` and the fresh
-   `UpgradeCap`. Wrap aborts with code 10 unless the cap belongs to the marker's
+   `UpgradeCap`. Wrap aborts with code 10 unless the cap belongs to the OTW's
    package and was never upgraded (native version 1, no outstanding ticket). It
-   seals both capabilities in the new `PackageAdmin<M>` with a 48-hour upgrade
+   seals both capabilities in the new `PackageAdmin<OTW>` with a 48-hour upgrade
    notice (emits `UpgradeCustodyCreated`) and shares it beside the
-   `PackageVersion<M>` with every defined bit paused.
+   `PackageVersion<OTW>` with every defined bit paused.
 
 #### Upgrade a package (Blast admin)
 
-1. Sign in with `UpgradeAdmin<M>` and call
+1. Sign in with `UpgradeAdmin<OTW>` and call
    `blast_admin::package_admin::schedule_upgrade` with the shared
-   `PackageAdmin<M>`, the witness, the 32-byte digest and `Clock`. It replaces
+   `PackageAdmin<OTW>`, the witness, the 32-byte digest and `Clock`. It replaces
    any pending action or notice change and is ready after the applied notice.
    It aborts with code 12 once the package is immutable and with code 11 for a
    digest that is not 32 bytes.
@@ -164,7 +165,7 @@ what each transaction leaves on chain.
    digest) and returns an `UpgradeTicket` under the cap's current policy (emits
    `UpgradeAuthorized`); the native `Upgrade` command returns an
    `UpgradeReceipt`; `blast_admin::package_admin::commit_upgrade_and_advance`
-   takes the `PackageAdmin<M>`, the witness, the `PackageVersion<M>` by mutable
+   takes the `PackageAdmin<OTW>`, the witness, the `PackageVersion<OTW>` by mutable
    reference, and the receipt. It commits the receipt into the sealed cap and
    advances the stored generation by one in the same call (emits
    `UpgradeCommitted` and `OperationalVersionAdvanced`). Any failure rolls back
@@ -180,7 +181,7 @@ generation can still schedule and install a repair.
 `blast_admin::package_admin::make_immutable` destroy the `UpgradeCap` the same
 way (emits `UpgradeCapDestroyed`); the `Publisher` stays sealed. Once the cap is
 destroyed, both schedule calls abort with code 12. `make_immutable` also takes
-a value of the package witness and the `PackageVersion<M>`, and aborts with
+a value of the package witness and the `PackageVersion<OTW>`, and aborts with
 code 26 for any other type before it consumes the action. Only the package's
 own code can therefore end its upgrades. Each package that may end them wraps
 the call in a thin function that first runs
@@ -190,21 +191,21 @@ The launchpad, presale and migrators are upgradeable and have no such wrapper
 yet; one of their upgrades must add it before they can be made immutable.
 `blast_admin::package_admin::schedule_upgrade_delay` proposes only a new notice,
 which anyone applies with `blast_admin::package_admin::apply_upgrade_delay` once
-ready; `blast_admin::package_admin::cancel_upgrade_action` (`CancelAdmin<M>`)
+ready; `blast_admin::package_admin::cancel_upgrade_action` (`CancelAdmin<OTW>`)
 discards whatever is pending, even when ready.
 
 #### Pause and unpause a package (Blast admin)
 
-1. `blast_admin::package_admin::pause` with the `PackageVersion<M>` by mutable
-   reference, the `PauseAdmin<M>` witness and the bits sets them at once and emits
+1. `blast_admin::package_admin::pause` with the `PackageVersion<OTW>` by mutable
+   reference, the `PauseAdmin<OTW>` witness and the bits sets them at once and emits
    `blast_admin_events::Paused`.
 2. Clearing goes through the package's own `unpause`, which checks the package's
    own configuration notices, then calls
-   `blast_admin::package_admin::clear_pause_bits` with the `PackageAdmin<M>`, the
-   `UnpauseAdmin<M>` witness, a value of the package witness type pinned at
-   publication, the `PackageVersion<M>`, and the bits. Any other type aborts with
+   `blast_admin::package_admin::clear_pause_bits` with the `PackageAdmin<OTW>`, the
+   `UnpauseAdmin<OTW>` witness, a value of the package witness type pinned at
+   publication, the `PackageVersion<OTW>`, and the bits. Any other type aborts with
    code 25, including every other droppable type the package defines or returns,
-   so an `UnpauseAdmin<M>` cannot skip the package's own checks by calling
+   so an `UnpauseAdmin<OTW>` cannot skip the package's own checks by calling
    `blast_admin` directly. It then aborts with code 23 while any upgrade notice
    still to come could be zero, and emits `blast_admin_events::Unpaused`.
 
@@ -216,10 +217,10 @@ defined never aborts.
 
 #### Borrow the package's Publisher (the package's own code)
 
-`blast_admin::package_admin::publisher` takes the shared `PackageAdmin<M>`, a value
-of `M`'s package witness and the shared `PackageVersion<M>`, and returns
-`&Publisher`: the one `M`'s one-time witness claimed at publication. Only `M`'s
-own modules can construct that witness, so only package `M` can borrow its
+`blast_admin::package_admin::publisher` takes the shared `PackageAdmin<OTW>`, a value
+of `OTW`'s package witness and the shared `PackageVersion<OTW>`, and returns
+`&Publisher`: the one the `OTW` value claimed at publication. Only `OTW`'s
+own modules can construct that witness, so only package `OTW` can borrow its
 Publisher, for example to create a `sui::display::Display` or a transfer policy
 for its own types inside one of its functions. Any other type aborts with code
 26. `blast_admin::package_admin::publisher_mut` is the same call returning
@@ -228,17 +229,17 @@ for its own types inside one of its functions. Any other type aborts with code
 aborts with the same code 26 (`EWrongPackageWitness`). A `Publisher` has no `drop`, so neither reference
 can overwrite or burn it, and the pinned framework has no call that moves a
 value out from behind a mutable reference. Should a later framework add a
-generic swap, only package `M` itself, the holder of its witness, could use it,
+generic swap, only package `OTW` itself, the holder of its witness, could use it,
 and the Publisher would then leave this custody; no other caller can.
 
 ### Operational generation
 
 Every protected call of an upgradeable package passes its shared
-`PackageVersion<M>` and runs `package_version::assert_current` with the
+`PackageVersion<OTW>` and runs `package_version::assert_current` with the
 generation compiled into that bytecode, which aborts with code 9 unless it
 equals the stored one. The generation starts at 1 at wrap and changes only in
 `blast_admin::package_admin::commit_upgrade_and_advance`, by exactly one.
-`OperationalVersionAdvanced<M>` carries `container_id` (the `PackageVersion<M>`
+`OperationalVersionAdvanced<OTW>` carries `container_id` (the `PackageVersion<OTW>`
 ID), `original_package_id`, and the old and new generations. Integrators pass
 the version object as a shared, immutable input to every call that takes it and
 must call the latest package version.
@@ -417,13 +418,13 @@ the owner's key `K` and the value, action, member or entry types, and carry
 | `blast_admin_events::AdminDestroyed` | `destroy_admin_cap` | cap deleted; `was_active` and the roles it still held |
 | `blast_admin_events::SuperAdminTransferred` | `accept_super_admin_transfer` | old and new root cap IDs, recipient |
 | `blast_admin_events::SuperAdminCapDestroyed` | `destroy_retired_super_admin_cap` | retired root deleted |
-| `blast_admin_events::UpgradeCustodyCreated` | `blast_admin::package_admin::wrap` | `PackageAdmin<M>` created: Publisher, cap, package, native version, policy |
-| `blast_admin_events::PackageVersionCreated` | `blast_admin::package_admin::wrap` | `PackageVersion<M>` created beside its `PackageAdmin<M>` (`custodian_id`): defined and paused bits, package witness, generation 1 |
+| `blast_admin_events::UpgradeCustodyCreated` | `blast_admin::package_admin::wrap` | `PackageAdmin<OTW>` created: Publisher, cap, package, native version, policy |
+| `blast_admin_events::PackageVersionCreated` | `blast_admin::package_admin::wrap` | `PackageVersion<OTW>` created beside its `PackageAdmin<OTW>` (`custodian_id`): defined and paused bits, package witness, generation 1 |
 | `blast_admin_events::UpgradeAuthorized` | `blast_admin::package_admin::authorize_upgrade` | the exact digest authorized, from `current_package_id` |
 | `blast_admin_events::UpgradeCommitted` | `blast_admin::package_admin::commit_upgrade_and_advance` | new package ID and native version |
-| `blast_admin_events::OperationalVersionAdvanced` | `blast_admin::package_admin::commit_upgrade_and_advance` | generation bump of package `M` |
+| `blast_admin_events::OperationalVersionAdvanced` | `blast_admin::package_admin::commit_upgrade_and_advance` | generation bump of package `OTW` |
 | `blast_admin_events::UpgradeCapDestroyed` | `blast_admin::package_admin::make_immutable` | final native version and policy |
-| `blast_admin_events::Paused` | `blast_admin::package_admin::pause` | bits set on package `M`'s version and the resulting mask; the one pause event of every package |
+| `blast_admin_events::Paused` | `blast_admin::package_admin::pause` | bits set on package `OTW`'s version and the resulting mask; the one pause event of every package |
 | `blast_admin_events::Unpaused` | `blast_admin::package_admin::clear_pause_bits` | bits cleared and the resulting mask |
 | `delayed::DelayedCreated` | `delayed::new` | initial value and notice |
 | `delayed::DelayedScheduled` / `delayed::DelayedCancelled` | schedule, replace, cancel | proposed value, next notice, `ready_at_ms` |
@@ -484,11 +485,11 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 21 | `EPaused` | `package_version` | the operation's pause bit is set; wait for Blast to unpause it |
 | 22 | `EWrongUpgradeAction` | `blast_admin::package_admin` | the ready action is not the upgrade of this digest (authorize) or not immutability (make immutable) |
 | 23 | `EUnguardedUpgradeNotice` | `blast_admin::package_admin` | clearing pause bits while the upgrade notice is zero or a pending change would make it zero |
-| 24 | `EInvalidPackageWitness` | `package_version` | the package witness type given to `new_publication` is a primitive, the package's marker, or from another package |
+| 24 | `EInvalidPackageWitness` | `package_version` | the package witness type given to `new_publication` is a primitive, the package's OTW, or from another package |
 | 25 | `EWrongUnpauseWitness` | `package_version` | `clear_pause_bits` received a value of a type other than the package witness pinned at publication |
 | 26 | `EWrongPackageWitness` | `package_version` | `blast_admin::package_admin::publisher`, `blast_admin::package_admin::publisher_mut` or `blast_admin::package_admin::make_immutable` received a value of a type other than the package witness pinned at publication |
 
-A marker that is not a one-time witness aborts in the framework's
+An `OTW` that is not a genuine one-time witness aborts in the framework's
 `sui::package::claim` inside `package_version::new_publication`.
 
 The one an integrator most often meets is code 9 from `package_version`: a PTB
@@ -528,7 +529,7 @@ nomination emits `delayed_action::ActionScheduled` and is visible in
 
 **Can a role from one package authorize actions in another?** No. A consumer
 function names its role type in its signature, and a role type from another
-package, or the same generic role with another package's marker, is a different
+package, or the same generic role with another package's OTW, is a different
 type, so the transaction does not type-check.
 
 **How much notice is there before an upgrade?** The package's applied upgrade
@@ -547,7 +548,7 @@ commits the upgrade.
 digest, `UpgradeCommitted` with the new package ID, and
 `OperationalVersionAdvanced` with the new generation, all in one transaction.
 
-**Can someone forge a version bump event?** No. A `PackageVersion<M>` exists
-only through `M`'s own publication, which needs `M`'s one-time witness inside
+**Can someone forge a version bump event?** No. A `PackageVersion<OTW>` exists
+only through `OTW`'s own publication, which needs the `OTW` value inside
 its package `init`, and only `blast_admin::package_admin::commit_upgrade_and_advance`
 advances it.

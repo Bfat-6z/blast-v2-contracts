@@ -51,7 +51,7 @@ use blast_launchpad_ptb_tests::{
         UserFeeCollected, apportion, cetus_name, expected_sqrt_price, id, insert_snapshot, meme_is_cetus_a, sui, tag,
         venue_dependencies, venue_events,
     },
-    presale_marker, presale_role, publish_core_stack, sui_dir, unique_bps,
+    presale_otw, presale_role, publish_core_stack, sui_dir, unique_bps,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use sui_types::{
@@ -803,7 +803,7 @@ impl World {
         let mut b = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = b.obj(h.owned(bootstrap[0]))?;
         let upgrade_cap_arg = b.obj(h.owned(upgrade_cap[0]))?;
-        call(&mut b, admin, "package_admin", "wrap", vec![presale_marker(presale)?], vec![bootstrap_arg, upgrade_cap_arg]);
+        call(&mut b, admin, "package_admin", "wrap", vec![presale_otw(presale)?], vec![bootstrap_arg, upgrade_cap_arg]);
         let wrapped = h.execute(b.finish())?;
         wrapped.assert_success();
         ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
@@ -973,7 +973,7 @@ impl World {
         }
         let version = b.obj(self.h.shared(self.version, true))?;
         let bits = b.pure(bits)?;
-        call(b, self.admin, "package_admin", "pause", vec![presale_marker(self.presale)?], vec![version, witness, bits]);
+        call(b, self.admin, "package_admin", "pause", vec![presale_otw(self.presale)?], vec![version, witness, bits]);
         Ok(())
     }
 

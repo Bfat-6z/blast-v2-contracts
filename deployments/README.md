@@ -58,10 +58,10 @@ sequence:
 5. `blast_migrators`
 6. `launch_ticket_template` and the vendor
 
-Each upgradeable package's deployer receives an owned `Publication<Marker>`
+Each upgradeable package's deployer receives an owned `Publication<OTW>`
 pinning the package's `PackageWitness`. In a follow-up transaction,
 `blast_admin::package_admin::wrap` consumes it with the package's `UpgradeCap`,
-sharing `PackageAdmin<Marker>` and `PackageVersion<Marker>`. The vault and both
+sharing `PackageAdmin<OTW>` and `PackageVersion<OTW>`. The vault and both
 products start fully paused; the migrators package defines no pause bits and
 starts unpaused.
 

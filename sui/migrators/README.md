@@ -33,7 +33,7 @@ error inventory:
 Administration is `blast_admin`'s generic package administration:
 `PackageVersion<BLAST_MIGRATORS>` and `PackageAdmin<BLAST_MIGRATORS>`, under the
 package-scoped `blast_admin::package_admin` roles (`UpgradeAdmin`,
-`CancelAdmin`) typed by this package's marker. Buybacks take the shared
+`CancelAdmin`) typed by this package's one-time witness (OTW). Buybacks take the shared
 `blast_core::blast_domain::BuybackAdmin`; the package declares no roles of its
 own. Every venue call checks **this** package's generation; the vault calls it
 makes check the vault's.

@@ -3,7 +3,7 @@
 
 #[test_only]
 /// The generic publication, version, pause and upgrade-custody lifecycle every upgradeable
-/// package shares, exercised with the `0xa` test marker.
+/// package shares, exercised with the `0xa` test one-time witness (OTW).
 module blast_admin::package_admin_tests;
 
 // === Constants ===
@@ -14,7 +14,7 @@ const OTHER_SENDER: address = @0xAD;
 
 const OTHER_PACKAGE_ID: address = @0xBAD;
 
-/// The test marker's original package address.
+/// The test OTW's original package address.
 const PACKAGE_ID: address = @0xa;
 
 /// Create 1, trade 2 and migrate 4, as both sale products define them.
@@ -50,7 +50,7 @@ fun a_publication_cannot_supply_the_version_operations_require() {
 }
 
 #[test]
-fun the_publication_holds_the_marker_packages_publisher() {
+fun the_publication_holds_the_otw_packages_publisher() {
     let fixture = start_published();
 
     let publication = fixture.take_publication();
@@ -148,7 +148,7 @@ fun a_publication_rejects_an_unpause_witness_from_another_package() {
     let mut ctx = tx_context::dummy();
 
     let publication = package_version::new_publication<PACKAGE_MARKER, ForeignWitness>(
-        package_marker::marker(),
+        package_marker::otw(),
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -162,7 +162,7 @@ fun a_publication_rejects_a_primitive_package_witness() {
     let mut ctx = tx_context::dummy();
 
     let publication = package_version::new_publication<PACKAGE_MARKER, u8>(
-        package_marker::marker(),
+        package_marker::otw(),
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -172,11 +172,11 @@ fun a_publication_rejects_a_primitive_package_witness() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidPackageWitness, location = blast_admin::package_version)]
-fun a_publication_rejects_its_own_marker_as_the_package_witness() {
+fun a_publication_rejects_its_own_otw_as_the_package_witness() {
     let mut ctx = tx_context::dummy();
 
     let publication = package_version::new_publication<PACKAGE_MARKER, PACKAGE_MARKER>(
-        package_marker::marker(),
+        package_marker::otw(),
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -773,7 +773,7 @@ fun clearing_rejects_another_droppable_type_from_the_same_package() {
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
 
-    fixture.clear(other_package_marker::marker(), 1);
+    fixture.clear(other_package_marker::otw(), 1);
 
     owned.end();
 }
@@ -895,7 +895,7 @@ fun the_publisher_rejects_a_witness_from_another_package() {
 fun the_publisher_rejects_another_droppable_type_from_the_same_package() {
     let owned = start();
 
-    owned.package_admin.publisher(other_package_marker::marker(), &owned.package_version);
+    owned.package_admin.publisher(other_package_marker::otw(), &owned.package_version);
 
     owned.end();
 }
@@ -1016,7 +1016,7 @@ fun the_mutable_publisher_rejects_a_witness_from_another_package() {
 fun the_mutable_publisher_rejects_another_droppable_type_from_the_same_package() {
     let AdminFixture { mut package_admin, package_version, clock, ctx: _ } = start();
 
-    package_admin.publisher_mut(other_package_marker::marker(), &package_version);
+    package_admin.publisher_mut(other_package_marker::otw(), &package_version);
 
     destroy(package_admin);
     destroy(package_version);
@@ -1067,7 +1067,7 @@ fun immutability_rejects_another_droppable_type_from_the_same_package() {
 
     fixture
         .package_admin
-        .make_immutable(&upgrade_admin(), other_package_marker::marker(), &fixture.package_version, &fixture.clock);
+        .make_immutable(&upgrade_admin(), other_package_marker::otw(), &fixture.package_version, &fixture.clock);
 
     owned.end();
 }
@@ -1161,7 +1161,7 @@ fun one_packages_upgrade_role_cannot_sign_in_for_another_package() {
 
 // === Test Helpers ===
 
-/// Runs the marker's publication as its initializer would.
+/// Runs the OTW's publication as its initializer would.
 fun start_published(): WrapFixture {
     start_published_with(VALID_PAUSE_BITS)
 }
@@ -1169,7 +1169,7 @@ fun start_published(): WrapFixture {
 fun start_published_with(valid_pause_bits: u8): WrapFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     package_version::new_publication<PACKAGE_MARKER, PackageWitness>(
-        package_marker::marker(),
+        package_marker::otw(),
         valid_pause_bits,
         scenario.ctx(),
     )
@@ -1186,7 +1186,7 @@ fun take_publication(self: &WrapFixture): Publication<PACKAGE_MARKER> {
 fun start(): AdminFixture {
     let mut ctx = tx_context::dummy();
     let package_admin = package_admin::new_for_testing<PACKAGE_MARKER>(
-        package::test_claim(package_marker::marker(), &mut ctx),
+        package::test_claim(package_marker::otw(), &mut ctx),
         package::test_publish(PACKAGE_ID.to_id(), &mut ctx),
         &mut ctx,
     );

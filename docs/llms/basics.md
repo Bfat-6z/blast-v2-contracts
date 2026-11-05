@@ -106,7 +106,7 @@ Upgrade rules depend on the package lineage.
 | --- | --- | --- |
 | Immutable | `blast_admin`, `blast_partners`, `blast_core`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
-| Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<Marker>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<OTW>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events

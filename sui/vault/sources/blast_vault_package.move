@@ -31,7 +31,7 @@ module blast_vault::blast_vault_package;
 
 // === Public Types ===
 
-/// The package's one-time witness and the marker of its version, publication, and roles.
+/// The package's one-time witness (OTW), typing its version, publication, and roles.
 public struct BLAST_VAULT_PACKAGE() has drop;
 
 /// The package witness `blast_admin` pins at publication: `unpause` passes it to clear pause bits.

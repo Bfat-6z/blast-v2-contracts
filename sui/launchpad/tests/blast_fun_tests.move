@@ -59,7 +59,7 @@ macro fun next_tx(
 
 fun start(): PublicationFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    marker::init_for_testing(scenario.ctx());
+    otw::init_for_testing(scenario.ctx());
 
     scenario.next_tx(PUBLISHER);
     let publication = scenario.take_from_sender<Publication<BLAST_FUN>>();
@@ -100,7 +100,7 @@ fun end(self: PublicationFixture) {
 
 use blast_admin::{package_admin::{Self, PackageAdmin}, package_version::{PackageVersion, Publication}};
 
-use blast_fun::{blast_fun::{Self as marker, BLAST_FUN}, constants};
+use blast_fun::{blast_fun::{Self as otw, BLAST_FUN}, constants};
 
 use std::unit_test::{assert_eq, destroy};
 
