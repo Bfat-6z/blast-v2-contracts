@@ -159,12 +159,12 @@ fun prepare_checks_the_tier_before_the_symbol() {
 }
 
 #[test, expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
-fun prepare_checks_the_migrators_generation_before_the_tier() {
+fun prepare_checks_the_migrators_version_before_the_tier() {
     let mut f = start(symbol_of_length(33));
-    f.migrators_version.set_generation_for_testing(2);
+    f.migrators_version.set_version_for_testing(2);
 
     f.prepare(0, 0).redeem_ticket();
 

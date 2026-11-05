@@ -64,21 +64,21 @@ fun fees_replay() { exercise(Setting::Fees, Case::Replay); }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun fees_stale_schedule() { exercise(Setting::Fees, Case::StaleSchedule); }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun fees_stale_apply() { exercise(Setting::Fees, Case::StaleApply); }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun fees_stale_cancel() { exercise(Setting::Fees, Case::StaleCancel); }
@@ -92,7 +92,7 @@ fun fees_boundaries_and_cancel_reschedule() { exercise(Setting::Fees, Case::Succ
 fun exercise(setting: Setting, case: Case) {
     let mut f = start(setting);
     let initial = snapshot(&f, setting);
-    if (case == Case::StaleSchedule) f.version.set_generation_for_testing(2);
+    if (case == Case::StaleSchedule) f.version.set_version_for_testing(2);
     schedule(&mut f, setting, 100);
     assert_notice(&f, setting, 100, true);
     assert_eq!(snapshot(&f, setting), initial);
@@ -124,12 +124,12 @@ fun exercise(setting: Setting, case: Case) {
         },
         Case::StaleSchedule => destroy(f),
         Case::StaleApply => {
-            f.version.set_generation_for_testing(2);
+            f.version.set_version_for_testing(2);
             apply(&mut f, setting);
             destroy(f);
         },
         Case::StaleCancel => {
-            f.version.set_generation_for_testing(2);
+            f.version.set_version_for_testing(2);
             cancel(&mut f, setting);
             assert_notice(&f, setting, 100, false);
             destroy(f);

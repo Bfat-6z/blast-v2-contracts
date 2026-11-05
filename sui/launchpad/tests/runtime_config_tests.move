@@ -100,12 +100,12 @@ fun protocol_fee_share_rejects_the_current_value() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun protocol_fee_share_checks_the_version_before_the_current_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.set_protocol_fee_share_for_testing(bps::new(0));
     });
@@ -267,12 +267,12 @@ fun claim_signer_rejects_a_key_that_is_not_32_bytes() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun claim_signer_checks_the_version_before_the_key_length() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.schedule_creator_claim_signer(x"00");
     });

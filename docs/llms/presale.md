@@ -45,11 +45,11 @@ package's one-time witness and the type argument of its version, administration 
 Routine state-changing public calls below take `&PackageVersion<BLAST_PRESALE_PACKAGE>` immediately
 after their first object argument, including initializer setters, policy administration,
 migration, payouts, and `blast_presale::blast_presale::prove_owner`. It is a read-only shared input
-except during pause, unpause and upgrade commit-and-advance. A stale or future generation aborts in
+except during pause, unpause and upgrade commit-and-advance. A stale or future version aborts in
 `blast_admin::package_version` before effects. Pure value constructors, the initializer's
 `blast_presale::blast_presale::venue` getter and `blast_presale::blast_presale::destroy_cap` do not
 take it. Venue and vault calls take their own packages' versions, because each package checks only
-its own generation.
+its own version.
 
 ### Objects and authority
 
@@ -64,7 +64,7 @@ Shared singletons, created once at deployment (`PackageAdmin` and `PackageVersio
 - `blast_presale::blast_presale::PresaleRegistry`: every presale's object ID derives from it.
 - `blast_admin::package_admin::PackageAdmin<BLAST_PRESALE_PACKAGE>`: holds the package's Publisher
   and compatible upgrade cap.
-- `blast_admin::package_version::PackageVersion<BLAST_PRESALE_PACKAGE>`: the active generation and
+- `blast_admin::package_version::PackageVersion<BLAST_PRESALE_PACKAGE>`: the active version and
   pause bits.
 
 Calls also take objects from other packages:
@@ -160,7 +160,7 @@ or `Funded`. The vault never closes and its position is never removed.
 
 1. Publish the package. The deployer receives the unique
    `blast_admin::package_version::Publication<BLAST_PRESALE_PACKAGE>`, holding its canonical
-   Publisher, initial generation and pause bits. `FeePolicy`, `CreationPolicy` and
+   Publisher, initial version and pause bits. `FeePolicy`, `CreationPolicy` and
    `PresaleRegistry` are shared; no PackageVersion exists yet.
 2. Call `blast_admin::package_admin::wrap<BLAST_PRESALE_PACKAGE>` with the Publication by value and
    the matching never-upgraded UpgradeCap. It consumes the Publication permanently, seals native
@@ -562,7 +562,7 @@ Integrators cannot call these; they explain state changes. Each takes the
 | `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic version cutover, typed `<BLAST_PRESALE_PACKAGE>` (admin guide). |
 
 `blast_admin::package_admin::wrap` consumes the Publication and the never-upgraded matching cap
-once. Each upgrade raises the compiled generation and commits and advances the version in one
+once. Each upgrade raises the compiled version and commits and advances the version in one
 PTB; old bytecode then rejects the advanced version.
 
 ### Delayed administration

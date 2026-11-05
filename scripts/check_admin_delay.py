@@ -58,8 +58,8 @@ def governed(package, module, fields, version='package_version', shared_notice=(
 
 
 # The launchpad runs on the generic package administration: its version check names its compiled
-# generation, and Blast's fees go to the core treasury, so it governs no destination of its own.
-LAUNCHPAD_CURRENT = '(constants::generation!());'
+# version, and Blast's fees go to the core treasury, so it governs no destination of its own.
+LAUNCHPAD_CURRENT = '(constants::version!());'
 governed('launchpad', 'runtime_config', {'protocol_fee_share': 'FeeAdmin'}, current=LAUNCHPAD_CURRENT)
 governed('launchpad', 'launch_config', {'creation_fee': 'FeeAdmin', 'trade_fees': 'FeeAdmin', 'protocol_allocation': 'TreasuryAdmin', 'protocol_lp_fees': 'FeeAdmin'}, current=LAUNCHPAD_CURRENT)
 assert 'treasury' not in functions('launchpad', 'runtime_config') and 'schedule_treasury' not in functions('launchpad', 'runtime_config')
@@ -92,7 +92,7 @@ assert body.index('self.is_guarded() && runtime_config.is_guarded()') < body.ind
 require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')
 # The presale runs on the generic package administration too, and pays Blast's fees to the core
 # treasury, so it governs no destination of its own.
-PRESALE_CURRENT = '(constants::generation!());'
+PRESALE_CURRENT = '(constants::version!());'
 governed('presale', 'fee_policy', {'fees': 'FeeAdmin'}, current=PRESALE_CURRENT)
 assert not any('destination' in name for name in functions('presale', 'fee_policy'))
 for name in ('package_admin', 'blast_presale_domain', 'cetus', 'bluefin', 'aftermath', 'venue_config', 'migration_math'):
@@ -221,11 +221,11 @@ for name, action, effect in [('authorize_upgrade', 'Upgrade(digest)', 'upgrade_c
 # Only the package's own code, with its pinned package witness, ends its upgrades; checked first.
 require(generic['make_immutable'][0], '_: PackageWitness', 'package_version: &PackageVersion<OTW>')
 assert generic['make_immutable'][1].startswith('package_version.assert_package_witness<_, PackageWitness>();')
-# The vault (immutable after audit, #195) wraps it on its live generation only; the upgradeable
+# The vault (immutable after audit, #195) wraps it on its live version only; the upgradeable
 # products add a wrapper only in a later upgrade if they ever need one.
 signature, body = functions('vault', 'blast_vault_package')['make_immutable']
 require(signature, '&AdminWitness<UpgradeAdmin<BLAST_VAULT_PACKAGE>>', 'package_version: &PackageVersion<BLAST_VAULT_PACKAGE>')
-assert body.startswith('package_version.assert_current(constants::generation!());'), body
+assert body.startswith('package_version.assert_current(constants::version!());'), body
 require(body, 'package_admin.make_immutable(upgrade_admin, PackageWitness(), package_version, clock)')
 for package in ('launchpad', 'presale', 'migrators'):
     for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
@@ -322,7 +322,7 @@ fs = functions('vault', 'vault')
 require(module_path('vault', 'vault').read_text(), 'fee_split: Delayed<FeeSplitKey, FeeSplit>,')
 for name in ('schedule_fee_split', 'cancel_fee_split'):
     signature, body = fs[name]
-    assert body.startswith('package_version.assert_current(constants::generation!()); proof.assert_terms(&self.terms);'), name
+    assert body.startswith('package_version.assert_current(constants::version!()); proof.assert_terms(&self.terms);'), name
     require(signature, 'proof: OwnerProof')
     assert 'AdminWitness' not in signature and 'delay_ms' not in signature, name
 require(fs['schedule_fee_split'][1], 'self.fee_split.schedule_value(proposed, clock)')
@@ -343,7 +343,7 @@ for package, venue, settlement in (
 # or applies a ready notice. The vault never lends the slot, and publication re-checks the terms.
 package, module, rewards, version = 'vault', 'vault', 'holder_rewards', 'package_version'
 error = lambda name: 'blast_vault::errors::' + re.sub(r'(?<!^)(?=[A-Z])', '_', name[1:]).lower() + '!()'
-current = 'package_version.assert_current(constants::generation!());'
+current = 'package_version.assert_current(constants::version!());'
 if True:
     source = module_path(package, module).read_text()
     require(source, 'round_publication: DelayedAction<RoundPublicationKey, RoundTerms>,',
@@ -426,8 +426,8 @@ for name in ('apply_creator_claim_signer', 'apply_creator_claim_signer_delay'):
     assert 'AdminWitness' not in signer[name][0], name
 assert 'set_creator_claim_signer' not in signer
 # The migrators adopt blast_admin's generic administration: the publication defines no pause bits
-# and pins a package witness nothing constructs, no local custody or generation copy exists, and
-# every public venue route checks this package's compiled generation before anything else.
+# and pins a package witness nothing constructs, no local custody or version copy exists, and
+# every public venue route checks this package's compiled version before anything else.
 migrators_sources = ROOT / 'sui/migrators/sources'
 assert not (migrators_sources / 'package_admin.move').exists()
 otw_fs = functions('migrators', 'blast_migrators')
@@ -442,7 +442,7 @@ for venue in ('bluefin', 'cetus'):
     assert len(routes) == 5, venue
     for row in routes:
         require(row[8], 'migrators_version: &PackageVersion<BLAST_MIGRATORS>')
-        assert row[9].startswith('migrators_version.assert_current(constants::generation!());'), (venue, row[1])
+        assert row[9].startswith('migrators_version.assert_current(constants::version!());'), (venue, row[1])
 print('Per-operation notices, no bypass, delayed signer admission, and publication custody: OK')
 
 # Partner share and cap wait one fixed seven-day notice: PartnerAdmin proposes or cancels, anyone

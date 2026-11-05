@@ -10,7 +10,7 @@ amended by ADR 0134). Wrap starts fully paused with zero notice on publication-o
 policies and a 48-hour notice on upgrade custody; ordinary ACL operations configure
 policy before the chosen delay and release.
 
-1. Retire the previous generation's link when a release changes presale logic.
+1. Retire the previous version's link when a release changes presale logic.
    The live package, recorded in
    `deployments/sui/mainnet/2026-10-20-blast-presale-unregulated.json`, is sealed
    dependency-only and can never gain new logic, so such a release is a new
@@ -54,7 +54,7 @@ policy before the chosen delay and release.
    creates; `TreasuryAdmin`, with the treasury multisig, governs the core treasury's
    destination. Package roles are `blast_admin::package_admin`'s over
    `BLAST_PRESALE_PACKAGE`: `UpgradeAdmin` governs the upgrade notice and compatible upgrades
-   with atomic generation cutover, `PauseAdmin` and `UnpauseAdmin` set and clear pause bits,
+   with atomic version cutover, `PauseAdmin` and `UnpauseAdmin` set and clear pause bits,
    and `CancelAdmin` cancels upgrade actions. Grant both `CancelAdmin` roles and `PauseAdmin`
    to the independent incident-response multisig before release: revoking a role does not
    cancel its pending proposals, so cancellation must be available. Each call signs in with
@@ -115,7 +115,7 @@ with its amendments [0101](../../docs/decisions/0101-presale-protocol-fees.md),
 [0106](../../docs/decisions/0106-presale-partners.md), and
 [0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md).
 
-For later governed upgrades, increment `constants::generation`. Schedule the digest with
+For later governed upgrades, increment `constants::version`. Schedule the digest with
 `blast_admin::package_admin::schedule_upgrade` under `UpgradeAdmin<BLAST_PRESALE_PACKAGE>`,
 wait its snapshotted deadline, authorize it, execute the native upgrade, and call
 `blast_admin::package_admin::commit_upgrade_and_advance` with the receipt and mutable

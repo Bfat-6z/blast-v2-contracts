@@ -39,7 +39,7 @@ public fun schedule_creator_claim_signer(
     signer_public_key: vector<u8>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         signer_public_key.length() == constants::ed25519_public_key_length!(),
@@ -64,7 +64,7 @@ public fun apply_creator_claim_signer(
     signer_public_key: vector<u8>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creator_claim_signers.apply_add(signer_public_key, clock);
 }
@@ -76,7 +76,7 @@ public fun cancel_creator_claim_signer(
     _: &AdminWitness<CancelAdmin>,
     signer_public_key: vector<u8>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creator_claim_signers.cancel_add(signer_public_key);
 }
@@ -89,7 +89,7 @@ public fun schedule_creator_claim_signer_delay(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creator_claim_signers.schedule_delay(delay_ms, clock);
 }
@@ -100,7 +100,7 @@ public fun apply_creator_claim_signer_delay(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creator_claim_signers.apply_delay(clock);
 }
@@ -111,7 +111,7 @@ public fun cancel_creator_claim_signer_delay(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creator_claim_signers.cancel_delay();
 }
@@ -125,7 +125,7 @@ public fun schedule_protocol_fee_share(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self
         .protocol_fee_share_bps
@@ -138,7 +138,7 @@ public fun apply_protocol_fee_share(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_fee_share_bps.apply(clock);
 }
@@ -149,7 +149,7 @@ public fun cancel_protocol_fee_share(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_fee_share_bps.cancel();
 }
@@ -162,7 +162,7 @@ public fun revoke_creator_claim_signer(
     _: &AdminWitness<ClaimSignerAdmin>,
     signer_public_key: vector<u8>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creator_claim_signers.remove(signer_public_key);
 }

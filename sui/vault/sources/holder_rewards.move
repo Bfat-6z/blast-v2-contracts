@@ -53,7 +53,7 @@ public fun schedule_round<Meme, Quote>(
     expected_treasury: address,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
     let terms = vault::new_round_terms(
         number,
@@ -84,7 +84,7 @@ public fun publish_round<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
     let terms = vault.take_round_publication(clock);
     let treasury_address = treasury.destination();
@@ -148,7 +148,7 @@ public fun cancel_round<Meme, Quote>(
     _: &AdminWitness<CancelAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     vault.cancel_round_publication();
 }
@@ -161,7 +161,7 @@ public fun schedule_round_delay<Meme, Quote>(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
 
     vault.schedule_round_publication_delay(delay_ms, clock);
@@ -173,7 +173,7 @@ public fun apply_round_delay<Meme, Quote>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
 
     vault.apply_round_publication_delay(clock);
@@ -185,7 +185,7 @@ public fun cancel_round_delay<Meme, Quote>(
     _: &AdminWitness<CancelAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     vault.cancel_round_publication_delay();
 }
@@ -203,7 +203,7 @@ public fun claim<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     assert!(
         clock.timestamp_ms() < self.claim_deadline_at_ms,
         blast_vault::errors::claims_closed!(),
@@ -252,7 +252,7 @@ public fun settle_gas_reserve<Meme, Quote>(
     reimbursement_amount: u64,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
     assert!(self.vault_id == object::id(vault), blast_vault::errors::wrong_vault!());
     assert!(self.gas_reserve.is_some(), blast_vault::errors::reserve_settled!());
@@ -287,7 +287,7 @@ public fun close_round<Meme, Quote>(
     vault: &mut Vault<Meme, Quote>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     assert!(self.vault_id == object::id(vault), blast_vault::errors::wrong_vault!());
     assert!(
         clock.timestamp_ms() >= self.claim_deadline_at_ms,

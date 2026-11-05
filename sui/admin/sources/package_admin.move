@@ -11,8 +11,8 @@
 /// UpgradeCap, and the cap acts only through a scheduled upgrade or the one terminal
 /// `make_immutable`. Each role is generic over the package's OTW, so the ACL stores
 /// `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator
-/// never reaches another's custody. This package is immutable: no consumer bytecode generation
-/// gates these calls, and a consumer whose new bytecode compiles the wrong generation can still
+/// never reaches another's custody. This package is immutable: no consumer bytecode version
+/// gates these calls, and a consumer whose new bytecode compiles the wrong version can still
 /// schedule a repair.
 module blast_admin::package_admin;
 
@@ -25,7 +25,7 @@ const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 const PACKAGE_DIGEST_LENGTH: u64 = 32;
 
 /// The framework stamps a freshly published package's `UpgradeCap` with version one.
-const INITIAL_NATIVE_VERSION: u64 = 1;
+const INITIAL_UPGRADE_CAP_VERSION: u64 = 1;
 
 // === Public Types ===
 
@@ -73,7 +73,7 @@ public fun wrap<OTW: drop>(
 ) {
     assert!(
         upgrade_cap.package().to_address() == type_name::original_id<OTW>()
-            && upgrade_cap.version() == INITIAL_NATIVE_VERSION,
+            && upgrade_cap.version() == INITIAL_UPGRADE_CAP_VERSION,
         blast_admin::errors::invalid_upgrade_cap!(),
     );
 
@@ -141,7 +141,7 @@ public fun authorize_upgrade<OTW: drop>(
     let upgrade_cap = self.upgrade_cap.borrow_mut();
     let upgrade_cap_id = object::id(upgrade_cap);
     let package_id = upgrade_cap.package();
-    let native_version = upgrade_cap.version();
+    let upgrade_cap_version = upgrade_cap.version();
     let policy = upgrade_cap.policy();
 
     let ticket = upgrade_cap.authorize(policy, digest);
@@ -150,7 +150,7 @@ public fun authorize_upgrade<OTW: drop>(
         custodian_id,
         upgrade_cap_id,
         package_id,
-        native_version,
+        upgrade_cap_version,
         policy,
         *ticket.digest(),
     );
@@ -159,7 +159,7 @@ public fun authorize_upgrade<OTW: drop>(
 }
 
 /// Commits the native receipt into the sealed cap that authorized it, then advances the package
-/// version by one generation in the same call. The new bytecode must compile that generation; bytecode
+/// version by one in the same call. The new bytecode must compile that version; bytecode
 /// compiling any other fails every `assert_current`, while these calls stay available to schedule
 /// a repair.
 public fun commit_upgrade_and_advance<OTW: drop>(
@@ -173,7 +173,7 @@ public fun commit_upgrade_and_advance<OTW: drop>(
     let custodian_id = self.id.to_inner();
     let upgrade_cap = self.upgrade_cap.borrow_mut();
     let upgrade_cap_id = object::id(upgrade_cap);
-    let previous_native_version = upgrade_cap.version();
+    let previous_upgrade_cap_version = upgrade_cap.version();
     let new_package_id = receipt.package();
 
     upgrade_cap.commit(receipt);
@@ -183,7 +183,7 @@ public fun commit_upgrade_and_advance<OTW: drop>(
         upgrade_cap_id,
         type_name::original_id<OTW>(),
         new_package_id,
-        previous_native_version,
+        previous_upgrade_cap_version,
         upgrade_cap.version(),
     );
 
@@ -195,7 +195,7 @@ public fun commit_upgrade_and_advance<OTW: drop>(
 /// never narrowed in between. The package itself must pass its package witness (aborts with
 /// `EWrongPackageWitness` otherwise), so only its own code can end its upgrades. Each package
 /// that may end its upgrades wraps this call in a thin function that first runs
-/// `package_version.assert_current(constants::generation!())`, so only its live bytecode can.
+/// `package_version.assert_current(constants::version!())`, so only its live bytecode can.
 public fun make_immutable<OTW: drop, PackageWitness: drop>(
     self: &mut PackageAdmin<OTW>,
     _: &AdminWitness<UpgradeAdmin<OTW>>,
@@ -209,7 +209,7 @@ public fun make_immutable<OTW: drop, PackageWitness: drop>(
 
     let upgrade_cap = self.upgrade_cap.extract();
     let upgrade_cap_id = object::id(&upgrade_cap);
-    let final_native_version = upgrade_cap.version();
+    let final_upgrade_cap_version = upgrade_cap.version();
     let final_policy = upgrade_cap.policy();
 
     package::make_immutable(upgrade_cap);
@@ -218,7 +218,7 @@ public fun make_immutable<OTW: drop, PackageWitness: drop>(
         self.id.to_inner(),
         upgrade_cap_id,
         type_name::original_id<OTW>(),
-        final_native_version,
+        final_upgrade_cap_version,
         final_policy,
     );
 }
@@ -334,7 +334,7 @@ public fun current_package_id<OTW: drop>(self: &PackageAdmin<OTW>): Option<ID> {
 }
 
 /// The native upgrade count plus one, or none once the package is immutable.
-public fun native_version<OTW: drop>(self: &PackageAdmin<OTW>): Option<u64> {
+public fun upgrade_cap_version<OTW: drop>(self: &PackageAdmin<OTW>): Option<u64> {
     self.upgrade_cap.map_ref!(|upgrade_cap| upgrade_cap.version())
 }
 
@@ -375,7 +375,7 @@ fun new<OTW: drop>(
     let publisher_id = object::id(&publisher);
     let upgrade_cap_id = object::id(&upgrade_cap);
     let package_id = upgrade_cap.package();
-    let native_version = upgrade_cap.version();
+    let upgrade_cap_version = upgrade_cap.version();
     let policy = upgrade_cap.policy();
     let upgrade = delayed_action::new(UpgradeKey<OTW>(), &id, INITIAL_UPGRADE_DELAY_MS);
 
@@ -386,7 +386,7 @@ fun new<OTW: drop>(
         publisher_id,
         upgrade_cap_id,
         package_id,
-        native_version,
+        upgrade_cap_version,
         policy,
     );
 

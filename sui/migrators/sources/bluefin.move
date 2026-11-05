@@ -43,7 +43,7 @@ public fun prepare<Meme, Quote>(
     tick_spacing: u32,
     fee_rate: u64,
 ): VenueTicket<Meme, Quote> {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     assert!(
         tick_spacing > 0 && tick_spacing <= constants::bluefin_max_tick_spacing!() && fee_rate > 0
             && fee_rate <= constants::bluefin_max_fee_rate!(),
@@ -85,7 +85,7 @@ public fun migrate<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     let (meme, quote, terms) = migration.redeem(Venue());
 
     let PoolTier { tick_spacing, fee_rate } = *venue_config.value(PoolTierKey<Meme>());
@@ -147,7 +147,7 @@ public fun collect_fees<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
 
     self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
 }
@@ -164,7 +164,7 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     self.assert_fee_split_ready(clock);
 
     self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
@@ -189,7 +189,7 @@ public fun buyback_and_burn<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     assert!(self.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
 
     let (quote, receipt) = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);

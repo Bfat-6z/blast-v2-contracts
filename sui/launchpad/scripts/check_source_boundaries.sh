@@ -426,13 +426,13 @@ if [[ "$(for file in "${source_files[@]}"; do
   || [[ "$(move_production_function_contract unpause <<<"$(move_facts sources/launch_config.move)")" \
     != 'public:0:0:fun unpause( self: &LaunchConfig, package_version: &mut PackageVersion<BLAST_FUN>, unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_FUN>>, package_admin: &PackageAdmin<BLAST_FUN>, runtime_config: &RuntimeConfig, bits: u8, )' ]] \
   || [[ "$(move_production_body unpause <<<"$(move_facts sources/launch_config.move)")" \
-    != 'package_version.assert_current(constants::generation!()); assert!( self.is_guarded() && runtime_config.is_guarded(), blast_fun::errors::unguarded_notice!(), ); package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);' ]] \
+    != 'package_version.assert_current(constants::version!()); assert!( self.is_guarded() && runtime_config.is_guarded(), blast_fun::errors::unguarded_notice!(), ); package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);' ]] \
   || rg -n '\bpackage_admin::pause\(|\bset_pause_bits\(' sources --glob '*.move'; then
   echo 'Only launch_config::unpause may clear pause bits, after every notice is guarded; pausing is blast_admin::package_admin::pause.' >&2
   failures=$((failures + 1))
 fi
 
-# Reusable custody, generation, pause, policy, and immutability facts are emitted by
+# Reusable custody, version, pause, policy, and immutability facts are emitted by
 # blast_admin. No copy may reappear in this package's event registry.
 if rg -n '^public struct (Paused|Unpaused|PackageAdminCreated|UpgradeAuthorized|UpgradeCommitted|UpgradePolicyRestricted|UpgradeCapDestroyed|PackageVersionAdvanced)\b' \
   sources/lib/events.move \
@@ -722,7 +722,7 @@ if [[ ! -f sources/launch_config.move ]] \
   || rg -n 'fun (max_lp_fee_bps|basis_points_denominator|max_meme_symbol_length)\(' sources/lib/constants.move \
   || [[ "$(count_occurrences 'ProtocolLpFees \{ meme_bps, quote_bps \}' <<<"$launch_config_source")" != 2 ]] \
   || [[ "$(move_production_body schedule_protocol_lp_fees <<<"$launch_config_facts")" \
-    != 'package_version.assert_current(constants::generation!()); self.protocol_lp_fees.schedule(new_protocol_lp_fees(meme_bps, quote_bps), delay_ms, clock);' ]] \
+    != 'package_version.assert_current(constants::version!()); self.protocol_lp_fees.schedule(new_protocol_lp_fees(meme_bps, quote_bps), delay_ms, clock);' ]] \
   || ! rg -Fq 'protocol_lp_fees: delayed::new(ProtocolLpFeesKey(), &id, protocol_lp_fees, delay_ms)' <<<"$launch_config_source" \
   || ! rg -Fq 'new_protocol_lp_fees(bps::new(1_500), bps::new(1_500))' <<<"$(move_production_body init <<<"$launch_config_facts")" \
   || [[ "$(move_production_function_contract protocol_lp_fees <<<"$launch_config_facts")" \
@@ -755,7 +755,7 @@ launch_config_partner_writers="$(awk -F'\t' '
 ' <<<"$launch_config_facts" | sort | tr '\n' ' ')"
 launch_config_ungated="$(awk -F'\t' '
   $1 == "FN" && $6 == 0 && ($2 == "apply_creation_fee" || $2 == "add_partner" || $2 == "remove_partner") \
-    && $10 !~ /^package_version\.assert_current\(constants::generation!\(\)\);/ { print $2 }
+    && $10 !~ /^package_version\.assert_current\(constants::version!\(\)\);/ { print $2 }
 ' <<<"$launch_config_facts")"
 
 if [[ "$launch_config_fee_writers" != 'apply_creation_fee ' ]] \
@@ -924,7 +924,7 @@ launch_functions_containing() {
 }
 
 # A venue's pair-typed ticket starts a launch: `new` checks the version, then the create pause,
-# then the distinct pair, then redeems the ticket and checks this generation's Quote, venue, and
+# then the distinct pair, then redeems the ticket and checks this version's Quote, venue, and
 # decimal admissions, into an ability-less initializer reachable only through its setters and
 # `finalize`. The initializer holds the TreasuryCap without lending it; only `finalize` hands it
 # back to the ticket's re-checking `destroy`, after checking every setting, and keeps the native
@@ -933,7 +933,7 @@ launch_new_body="$(move_production_body new <<<"$launch_facts")"
 launch_finalize_body="$(move_production_body finalize <<<"$launch_facts")"
 launch_creation_ungated="$(awk -F'\t' '
   $1 == "FN" && $6 == 0 && $2 ~ /^(set_virtual_quote|set_graduation_target|set_allocation_plan|set_lp_fee_split|set_opening_round|set_partner|finalize|share)$/ {
-    if ($9 !~ /[(,] package_version: &PackageVersion<BLAST_FUN>,/ || $10 !~ /^package_version\.assert_current\(constants::generation!\(\)\);/) print $2
+    if ($9 !~ /[(,] package_version: &PackageVersion<BLAST_FUN>,/ || $10 !~ /^package_version\.assert_current\(constants::version!\(\)\);/) print $2
   }
 ' <<<"$launch_facts")"
 launch_initializer_functions="$(awk -F'\t' '
@@ -946,7 +946,7 @@ if [[ ! -f sources/launch.move ]] \
   || [[ "$launch_initializer_functions" != 'finalize:public new:public set_allocation_plan:public set_graduation_target:public set_lp_fee_split:public set_opening_round:public set_partner:public set_virtual_quote:public ' ]] \
   || [[ "$(move_production_type LaunchInitializer <<<"$launch_facts")" != 'struct LaunchInitializer<phantom Meme, phantom Quote> { ticket: LaunchTicket<Meme>, treasury_cap: TreasuryCap<Meme>, venue: TypeName,'* ]] \
   || [[ "$(move_production_function_contract new <<<"$launch_facts")" != 'public:0:0:fun new<Meme, Quote>( ticket: LaunchTicket<Meme>, treasury_cap: TreasuryCap<Meme>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, venue_ticket: VenueTicket<Meme, Quote>, ): LaunchInitializer<Meme, Quote>' ]] \
-  || [[ "$launch_new_body" != 'package_version.assert_current(constants::generation!()); package_version.assert_not_paused(constants::create_pause_bit!()); assert!( type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(), blast_fun::errors::invalid_meme_quote_pair!(), ); let venue = venue_ticket.redeem_ticket(); let (quote_fee_bps, meme_fee_bps) = config.snapshot_for_launch<Quote>(venue, ticket.decimals()); LaunchInitializer {'* ]] \
+  || [[ "$launch_new_body" != 'package_version.assert_current(constants::version!()); package_version.assert_not_paused(constants::create_pause_bit!()); assert!( type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(), blast_fun::errors::invalid_meme_quote_pair!(), ); let venue = venue_ticket.redeem_ticket(); let (quote_fee_bps, meme_fee_bps) = config.snapshot_for_launch<Quote>(venue, ticket.decimals()); LaunchInitializer {'* ]] \
   || [[ "$(launch_functions_containing 'treasury_cap')" != 'finalize new ' ]] \
   || [[ "$(launch_functions_containing '.redeem_ticket(')" != 'new ' ]] \
   || [[ "$(count_occurrences 'let LaunchInitializer \{' <<<"$launch_source")" != 1 ]] \
@@ -958,7 +958,7 @@ if [[ ! -f sources/launch.move ]] \
   || [[ "$(move_production_function_contract set_partner <<<"$launch_facts")" != 'public:0:0:fun set_partner<Meme, Quote>( self: &mut LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, partner: &Partner, clock: &Clock, )' ]] \
   || ! in_order 'config.assert_partner(' 'self.partner_id = option::some(partner_id);' \
     <<<"$(move_production_body set_partner <<<"$launch_facts")" \
-  || [[ "$launch_finalize_body" != 'package_version.assert_current(constants::generation!()); package_version.assert_not_paused(constants::create_pause_bit!());'* ]] \
+  || [[ "$launch_finalize_body" != 'package_version.assert_current(constants::version!()); package_version.assert_not_paused(constants::create_pause_bit!());'* ]] \
   || [[ "$launch_finalize_body" == *'.is_some()'* ]] \
   || ! in_order \
     'invalid_creation_fee!()' \
@@ -1048,7 +1048,7 @@ done
 if [[ "$(move_production_function_contract prove_owner <<<"$launch_facts")" \
     != 'public:0:0:fun prove_owner<Meme, Quote>( self: &Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, curve_fee_cap: &CurveFeeCap<Meme>, ): OwnerProof' ]] \
   || [[ "$(move_production_body prove_owner <<<"$launch_facts")" \
-    != 'package_version.assert_current(constants::generation!()); self.assert_curve_fee_cap(curve_fee_cap); owner_proof::new(package_witness(), self.id.to_inner())' ]] \
+    != 'package_version.assert_current(constants::version!()); self.assert_curve_fee_cap(curve_fee_cap); owner_proof::new(package_witness(), self.id.to_inner())' ]] \
   || [[ "$(move_production_function_contract assert_curve_fee_cap <<<"$launch_facts")" \
     != 'private:0:0:fun assert_curve_fee_cap<Meme, Quote>( self: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, )' ]] \
   || [[ "$(move_production_body assert_curve_fee_cap <<<"$launch_facts")" \
@@ -1088,9 +1088,9 @@ if [[ "$(move_production_signature claim_protocol_fees <<<"$launch_facts")" \
   || [[ "$(move_production_signature claim_protocol_fees_with_partner <<<"$launch_facts")" \
     != 'fun claim_protocol_fees_with_partner<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, treasury: &Treasury, partner: &Partner, ctx: &mut TxContext, )' ]] \
   || [[ "$(move_production_body claim_protocol_fees <<<"$launch_facts" | move_semantic_shape)" \
-    != 'package_version.assert_current(constants::generation!());self.protocol_fees.pay(treasury,ctx);' ]] \
+    != 'package_version.assert_current(constants::version!());self.protocol_fees.pay(treasury,ctx);' ]] \
   || [[ "$(move_production_body claim_protocol_fees_with_partner <<<"$launch_facts" | move_semantic_shape)" \
-    != 'package_version.assert_current(constants::generation!());self.protocol_fees.pay_with_partner(treasury,partner,ctx);' ]] \
+    != 'package_version.assert_current(constants::version!());self.protocol_fees.pay_with_partner(treasury,partner,ctx);' ]] \
   || ! rg -Fxq 'use fun payout::pay as Balance.pay;' sources/launch.move \
   || [[ -n "$(move_production_function_contract pay <<<"$launch_facts")$(move_production_function_contract pay_treasury <<<"$launch_facts")" ]]; then
   launch_authority_violations+='  a protocol fee claim must pay the sealed core Ledger to the core Treasury with no caller-chosen payee, and launch payouts must use blast_core::payout'$'\n'
@@ -1124,7 +1124,7 @@ check_launch_needles T-004 \
   'events::launch_shared<Meme, Quote>(|share ' \
   'events::bought<Meme, Quote>(|buy_from_curve '
 if ! in_order \
-  'package_version.assert_current(constants::generation!());' \
+  'package_version.assert_current(constants::version!());' \
   'self.public_start_ms.is_some()' \
   'self.creator.extract()' \
   <<<"$(move_production_body claim_creator_caps <<<"$launch_facts")"; then
@@ -1202,19 +1202,19 @@ if [[ "$(launch_functions_containing 'events::migration_allocation_paid<Meme, Qu
   failures=$((failures + 1))
 fi
 if rg -n '\bstate_version\b|launch_state_version' sources tests; then
-  echo 'PackageVersion must remain the only operational version; Launch state and events must not add another one.' >&2
+  echo 'PackageVersion must remain the only version; Launch state and events must not add another one.' >&2
   failures=$((failures + 1))
 fi
 
 # Every production function that takes the shared PackageVersion checks it as its first
 # statement, directly or by first calling a receiver helper that does, and no public function
 # reaching mutable shared state escapes that guard. Creation calls also check individually:
-# one PTB can mix generations even though the initializer cannot leave that transaction.
+# one PTB can mix versions even though the initializer cannot leave that transaction.
 version_guard_violations="$(
   for move_file in "${source_files[@]}"; do
     move_facts "$move_file" | awk -F'\t' -v file="$move_file" '
       $1 == "FN" && $6 == 0 && $9 ~ /[(,] package_version: &PackageVersion<BLAST_FUN>,/ {
-        if ($10 ~ /^package_version\.assert_current\(constants::generation!\(\)\);/) gated[$2] = 1
+        if ($10 ~ /^package_version\.assert_current\(constants::version!\(\)\);/) gated[$2] = 1
         else pending[$2] = $10
       }
       $1 == "FN" && $6 == 0 && $3 == "public" \
@@ -1402,7 +1402,7 @@ launch_migrate_shape="$(move_production_body migrate <<<"$launch_facts" | move_s
 if [[ "$(launch_functions_containing 'self.lifecycle = Lifecycle::Migrated;')" != 'migrate ' ]] \
   || [[ "$(move_production_type Migrated <<<"$events_facts")" != 'struct Migrated<phantom Meme, phantom Quote> has copy, drop { launch_id: ID, meme_amount: u64, quote_amount: u64, disposed_meme: u64, total_supply_after: u64, }' ]] \
   || [[ "$(move_production_function_contract migrate <<<"$launch_facts")" != 'public:0:0:fun migrate<Meme, Quote>( self: &mut Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, clock: &Clock, ctx: &mut TxContext, ): Migration<Meme, Quote>' ]] \
-  || [[ "$launch_migrate_shape" != 'package_version.assert_current(constants::generation!());package_version.assert_not_paused(constants::migration_pause_bit!());assert!(self.lifecycle == Lifecycle::MigrationReady,blast_fun::errors::invalid_launch_lifecycle!());let(protocol_meme_bps,protocol_quote_bps)= config.protocol_lp_fees();let plan = self.allocation_plan;'* ]] \
+  || [[ "$launch_migrate_shape" != 'package_version.assert_current(constants::version!());package_version.assert_not_paused(constants::migration_pause_bit!());assert!(self.lifecycle == Lifecycle::MigrationReady,blast_fun::errors::invalid_launch_lifecycle!());let(protocol_meme_bps,protocol_quote_bps)= config.protocol_lp_fees();let plan = self.allocation_plan;'* ]] \
   || [[ "$(count_occurrences 'config\.protocol_lp_fees\(\)' <<<"$launch_migrate_shape")" != 1 ]] \
   || ! in_order \
     'let plan = self.allocation_plan;' \

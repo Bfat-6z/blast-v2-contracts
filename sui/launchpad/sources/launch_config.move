@@ -79,7 +79,7 @@ public fun schedule_protocol_allocation(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let value = allocation::protocol_allocation(meme_bps, quote_bps);
     self.protocol_allocation.schedule(value, delay_ms, clock);
@@ -91,7 +91,7 @@ public fun apply_protocol_allocation(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_allocation.apply(clock);
 }
@@ -102,7 +102,7 @@ public fun cancel_protocol_allocation(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_allocation.cancel();
 }
@@ -118,7 +118,7 @@ public fun schedule_protocol_lp_fees(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_lp_fees.schedule(new_protocol_lp_fees(meme_bps, quote_bps), delay_ms, clock);
 }
@@ -129,7 +129,7 @@ public fun apply_protocol_lp_fees(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_lp_fees.apply(clock);
 }
@@ -140,7 +140,7 @@ public fun cancel_protocol_lp_fees(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_lp_fees.cancel();
 }
@@ -152,7 +152,7 @@ public fun set_meme_decimals_allowed(
     decimals: u8,
     allowed: bool,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     if (allowed) self.meme_decimals.insert(decimals) else self.meme_decimals.remove(&decimals);
 
@@ -166,7 +166,7 @@ public fun set_quote_allowed<Quote>(
     _: &AdminWitness<ListingAdmin>,
     allowed: bool,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let quote = type_name::with_original_ids<Quote>();
 
@@ -186,7 +186,7 @@ public fun schedule_trade_fees(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         quote_fee_bps.value() <= constants::max_trade_fee_bps!() && meme_fee_bps.value() <= constants::max_trade_fee_bps!(),
@@ -202,7 +202,7 @@ public fun apply_trade_fees(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.trade_fees.apply(clock);
 }
@@ -213,7 +213,7 @@ public fun cancel_trade_fees(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.trade_fees.cancel();
 }
@@ -228,7 +228,7 @@ public fun schedule_creation_fee(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         creation_fee <= constants::max_creation_fee_mist!(),
@@ -243,7 +243,7 @@ public fun apply_creation_fee(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creation_fee.apply(clock);
 }
@@ -254,7 +254,7 @@ public fun cancel_creation_fee(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creation_fee.cancel();
 }
@@ -267,7 +267,7 @@ public fun add_partner(
     _: &AdminWitness<FeeAdmin>,
     partner: &Partner,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.partners.add(partner);
 }
@@ -281,7 +281,7 @@ public fun remove_partner(
     partner: &Partner,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.partners.remove(object::id(partner), clock);
 }
@@ -297,7 +297,7 @@ public fun schedule_venue<Venue: drop>(
     _: &AdminWitness<AdapterAdmin>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let venue = type_name::with_original_ids<Venue>();
     assert!(!venue.is_primitive(), blast_fun::errors::invalid_venue!());
@@ -313,7 +313,7 @@ public fun apply_venue<Venue: drop>(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.apply_add(type_name::with_original_ids<Venue>(), clock);
 }
@@ -324,7 +324,7 @@ public fun cancel_venue<Venue: drop>(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.cancel_add(type_name::with_original_ids<Venue>());
 }
@@ -335,7 +335,7 @@ public fun remove_venue<Venue: drop>(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<AdapterAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.remove(type_name::with_original_ids<Venue>());
 }
@@ -348,7 +348,7 @@ public fun schedule_venue_delay(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.schedule_delay(delay_ms, clock);
 }
@@ -359,7 +359,7 @@ public fun apply_venue_delay(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.apply_delay(clock);
 }
@@ -370,7 +370,7 @@ public fun cancel_venue_delay(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.cancel_delay();
 }
@@ -388,7 +388,7 @@ public fun unpause(
     runtime_config: &RuntimeConfig,
     bits: u8,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         self.is_guarded() && runtime_config.is_guarded(),

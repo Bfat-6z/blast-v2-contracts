@@ -1659,7 +1659,7 @@ impl World {
             let pending = self.vault(m)?.fee_split;
             ensure!(pending.value == before.value && pending.delay_ms == before.delay_ms);
             ensure!(pending.pending.as_ref().is_some_and(|p| p.value == *split && p.delay_ms == VAULT_FEE_NOTICE_MS));
-            // Seed only fixture generation bytes; the public wrapper must reject before readiness.
+            // Seed only fixture version bytes; the public wrapper must reject before readiness.
             let original = self.h.object(self.migrators_version);
             let (id, valid, paused, witness, _): GenericPackageVersionContents =
                 bcs::from_bytes(&self.h.contents(self.migrators_version))?;

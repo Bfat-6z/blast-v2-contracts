@@ -218,7 +218,7 @@ fun protocol_allocation_rejects_quote_one_above_the_maximum() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -226,7 +226,7 @@ fun stale_package_version_rejects_protocol_allocation_before_its_bounds() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.set_protocol_allocation_for_testing(10_000, 10_000);
     });
@@ -309,7 +309,7 @@ fun protocol_lp_fees_reject_quote_one_above_the_maximum() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -317,7 +317,7 @@ fun stale_package_version_rejects_protocol_lp_fees_before_their_bounds() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.set_protocol_lp_fees_for_testing(10_000, 10_000);
     });
@@ -437,7 +437,7 @@ fun disallowing_an_unlisted_decimal_rejects_the_unchanged_set() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -446,7 +446,7 @@ fun stale_package_version_rejects_decimals_before_the_unchanged_check() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = listing_admin();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, true);
     });
@@ -629,7 +629,7 @@ fun disallowing_an_unlisted_quote_aborts() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -638,7 +638,7 @@ fun stale_package_version_rejects_quote_before_the_set_update() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = listing_admin();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, false);
     });
@@ -800,7 +800,7 @@ fun trade_fees_reject_unchanged_pair() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -809,7 +809,7 @@ fun stale_package_version_rejects_trade_fees_before_their_bounds() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = fee_admin();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f
             .config
@@ -1038,7 +1038,7 @@ fun disallowing_a_framework_type_reports_it_as_unlisted() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -1047,7 +1047,7 @@ fun stale_package_version_rejects_a_venue_before_its_type_check() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = adapter_admin();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.config.set_venue_allowed_for_testing<bool>(&f.package_version, &admin_witness, true, f.ctx!());
     });
@@ -1129,12 +1129,12 @@ fun creation_fee_rejects_the_current_value() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_checks_the_version_before_the_current_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.set_creation_fee_for_testing(0);
     });
@@ -1266,13 +1266,13 @@ fun removing_an_unknown_partner_aborts() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun adding_a_partner_checks_the_version_first() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let partner = f.new_partner();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.add_partner(&partner);
         destroy(partner);
@@ -1281,13 +1281,13 @@ fun adding_a_partner_checks_the_version_first() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun removing_a_partner_checks_the_version_before_the_list() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let partner = f.new_partner();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.remove_partner(&partner);
         destroy(partner);

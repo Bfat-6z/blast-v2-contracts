@@ -65,7 +65,7 @@ public fun prepare<Meme, Quote>(
     tick_spacing: u32,
     ctx: &mut TxContext,
 ): VenueTicket<Meme, Quote> {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     // Aborts unless Cetus registers the spacing.
     let _ = config::get_fee_rate(tick_spacing, cetus_config);
 
@@ -114,7 +114,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     assert!(
         factory::is_right_order<CoinA, CoinB>(),
         blast_migrators::errors::invalid_coin_order!(),
@@ -191,7 +191,7 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
 
     self.settle_fees(
@@ -221,7 +221,7 @@ public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
     self.assert_fee_split_ready(clock);
 
@@ -258,7 +258,7 @@ public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
     assert!(self.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
 

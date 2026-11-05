@@ -115,7 +115,7 @@ public fun new<Meme, Quote>(
     config: &LaunchConfig,
     venue_ticket: VenueTicket<Meme, Quote>,
 ): LaunchInitializer<Meme, Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::create_pause_bit!());
     assert!(
@@ -146,7 +146,7 @@ public fun set_virtual_quote<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     virtual_quote: u64,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.virtual_quote = option::some(virtual_quote);
 }
@@ -157,7 +157,7 @@ public fun set_graduation_target<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     graduation_target: u64,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.graduation_target = option::some(graduation_target);
 }
@@ -167,7 +167,7 @@ public fun set_allocation_plan<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     allocation_plan: AllocationPlan,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.allocation_plan = option::some(allocation_plan);
 }
@@ -177,7 +177,7 @@ public fun set_lp_fee_split<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     lp_fee_split: FeeSplit,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.lp_fee_split = option::some(lp_fee_split);
 }
@@ -189,7 +189,7 @@ public fun set_opening_round<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     opening_round_duration_ms: u64,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.opening_round_ms = opening_round_duration_ms;
 }
@@ -204,7 +204,7 @@ public fun set_partner<Meme, Quote>(
     partner: &Partner,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let partner_id = object::id(partner);
     config.assert_partner(partner_id, clock);
@@ -225,7 +225,7 @@ public fun finalize<Meme, Quote>(
     config: &LaunchConfig,
     creation_fee: Coin<SUI>,
 ): Launch<Meme, Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::create_pause_bit!());
     let LaunchInitializer {
@@ -341,7 +341,7 @@ public fun share<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::create_pause_bit!());
     assert!(self.public_start_ms.is_none(), blast_fun::errors::invalid_launch_lifecycle!());
@@ -364,7 +364,7 @@ public fun claim_creator_caps<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): (CurveFeeCap<Meme>, BlastMetadataCap<Meme>) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(self.public_start_ms.is_some(), blast_fun::errors::invalid_launch_lifecycle!());
 
@@ -396,7 +396,7 @@ public fun schedule_curve_fee_cap_delay<Meme, Quote>(
     delay_ms: u64,
     clock: &Clock
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.curve_fee_cap_reassignment.schedule_delay(delay_ms, clock);
 }
@@ -410,7 +410,7 @@ public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     recipient: address,
     clock: &Clock
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
 
@@ -423,7 +423,7 @@ public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.curve_fee_cap_reassignment.cancel();
 }
@@ -434,7 +434,7 @@ public fun apply_curve_fee_cap_delay<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.curve_fee_cap_reassignment.apply_delay(clock);
 }
@@ -447,7 +447,7 @@ public fun apply_curve_fee_cap_reassignment<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let recipient = self.curve_fee_cap_reassignment.take_action(clock);
 
@@ -470,7 +470,7 @@ public fun schedule_metadata_cap_delay<Meme, Quote>(
     delay_ms: u64,
     clock: &Clock
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.metadata_cap_reassignment.schedule_delay(delay_ms, clock);
 }
@@ -484,7 +484,7 @@ public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     recipient: address,
     clock: &Clock
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
 
@@ -497,7 +497,7 @@ public fun cancel_metadata_cap_reassignment<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.metadata_cap_reassignment.cancel();
 }
@@ -508,7 +508,7 @@ public fun apply_metadata_cap_delay<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.metadata_cap_reassignment.apply_delay(clock);
 }
@@ -521,7 +521,7 @@ public fun apply_metadata_cap_reassignment<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let recipient = self.metadata_cap_reassignment.take_action(clock);
 
@@ -593,7 +593,7 @@ public fun join_opening_round<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
@@ -626,7 +626,7 @@ public fun settle_opening_round<Meme, Quote>(
     runtime_config: &RuntimeConfig,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
@@ -658,7 +658,7 @@ public fun deliver_opening_round<Meme, Quote>(
     bidder: address,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         self.lifecycle != Lifecycle::OpeningRound,
@@ -687,7 +687,7 @@ public fun buy<Meme, Quote>(
     min_meme_out: u64,
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(self.lifecycle == Lifecycle::Live, blast_fun::errors::invalid_launch_lifecycle!());
@@ -714,7 +714,7 @@ public fun sell<Meme, Quote>(
     min_quote_out: u64,
     ctx: &mut TxContext,
 ): Coin<Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
@@ -775,7 +775,7 @@ public fun claim_creator_fees<Meme, Quote>(
     curve_fee_cap: &CurveFeeCap<Meme>,
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.assert_curve_fee_cap(curve_fee_cap);
     assert!(
@@ -799,7 +799,7 @@ public fun claim_protocol_fees<Meme, Quote>(
     treasury: &Treasury,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_fees.pay(treasury, ctx);
 }
@@ -813,7 +813,7 @@ public fun claim_protocol_fees_with_partner<Meme, Quote>(
     partner: &Partner,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_fees.pay_with_partner(treasury, partner, ctx);
 }
@@ -832,7 +832,7 @@ public fun migrate<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): Migration<Meme, Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::migration_pause_bit!());
     assert!(
@@ -919,7 +919,7 @@ public fun prove_owner<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     curve_fee_cap: &CurveFeeCap<Meme>,
 ): OwnerProof {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     self.assert_curve_fee_cap(curve_fee_cap);
 
     owner_proof::new(package_witness(), self.id.to_inner())
@@ -943,7 +943,7 @@ fun assert_metadata_update<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     blast_metadata_cap: &BlastMetadataCap<Meme>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     assert!(
         self.blast_metadata_cap_id.contains(&object::id(blast_metadata_cap)),
         blast_fun::errors::creator_cap_not_live!(),

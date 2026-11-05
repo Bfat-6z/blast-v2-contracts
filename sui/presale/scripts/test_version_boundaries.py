@@ -31,7 +31,7 @@ class VersionBoundaryTests(unittest.TestCase):
                 for name in functions:
                     with self.subTest(module=module, function=name):
                         start = original.index('public fun ' + name + '<') if ('public fun ' + name + '<') in original else original.index('public fun ' + name + '(')
-                        statement = 'package_version.assert_current(constants::generation!());'
+                        statement = 'package_version.assert_current(constants::version!());'
                         offset = original.index(statement, start)
                         path.write_text(original[:offset] + original[offset + len(statement):])
                         result = subprocess.run(['python3', str(check)], capture_output=True)

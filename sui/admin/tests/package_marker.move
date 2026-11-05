@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 #[test_only]
-/// Canonical package one-time witness (OTW) used by operational-version and custody tests.
+/// Canonical package one-time witness (OTW) used by version and custody tests.
 module 0xa::package_marker;
 
 // === Test-Only Types ===

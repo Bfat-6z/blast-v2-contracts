@@ -47,7 +47,7 @@ cargo test --locked --test presale_venue_fork presale_pause_ -- --test-threads=1
 ```
 
 Both exercise every reachable pause state and every `u8` input for both mutators,
-including stored-generation mismatch, exact events and rollback. Real ACL tests
+including stored-version mismatch, exact events and rollback. Real ACL tests
 cover role separation, wrong witness types, role and administrator revocation,
 and successful and failing multi-command sequences. The presale matrix also
 preserves a funded sale's balances, currency and capability. Pause bits live in

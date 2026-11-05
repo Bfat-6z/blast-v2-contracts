@@ -57,7 +57,7 @@ public fun schedule_fees(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let value = protocol_fees(raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps);
 
@@ -70,7 +70,7 @@ public fun apply_fees(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.fees.apply(clock);
 }
@@ -81,7 +81,7 @@ public fun cancel_fees(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.fees.cancel();
 }

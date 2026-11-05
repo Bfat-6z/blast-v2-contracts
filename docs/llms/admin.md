@@ -26,7 +26,7 @@ destroyed in the publish transaction), so none of these rules can change.
 | `blast_acl::AdminCap` | owned, `key, store` (transferable, wrappable) | a Blast operator | nothing by itself; `blast_acl::sign_in` turns it into a role witness |
 | `blast_acl::AdminWitness<Role>` | transaction-local value, `drop` only | the PTB that signed in | the one role `Role` in every consumer call that takes `&AdminWitness<Role>` |
 | `package_version::Publication<OTW>` | owned, `key` only | the publisher, from the package's `init` until wrap | nothing but the one wrap of package `OTW` |
-| `package_version::PackageVersion<OTW>` | shared, `key` only, created at wrap | nobody | the generation and pause bits package `OTW`'s operations check |
+| `package_version::PackageVersion<OTW>` | shared, `key` only, created at wrap | nobody | the version and pause bits package `OTW`'s operations check |
 | `blast_admin::package_admin::PackageAdmin<OTW>` | shared, `key` only, created at wrap | nobody | package `OTW`'s sealed `Publisher` (borrowed only by `OTW` itself) and `UpgradeCap`, and its delayed upgrade decisions |
 
 `OTW` is the package's one-time witness type, named as in the framework's
@@ -79,14 +79,14 @@ mints a new `SuperAdminCap` to the nominee and makes the old one inert. The old
 holder may then delete it with `blast_acl::destroy_retired_super_admin_cap`.
 
 **Package.** Published (owned `Publication<OTW>`) → wrapped (shared
-`PackageAdmin<OTW>` and `PackageVersion<OTW>`, generation 1, every defined bit
+`PackageAdmin<OTW>` and `PackageVersion<OTW>`, version 1, every defined bit
 paused) → unpaused by the package's own `unpause` → upgraded any number of
-times (each commit advances the generation by exactly one) → optionally
+times (each commit advances the version by exactly one) → optionally
 immutable. The cap's upgrade policy is never narrowed: it stays compatible (0,
 the policy after a plain publish) until `blast_admin::package_admin::make_immutable`
 destroys it, the one terminal upgrade action. Narrowing is deliberately absent:
 under an additive or dependency-only policy a release cannot change existing
-modules, so it could not compile the next generation, and after
+modules, so it could not compile the next version, and after
 `blast_admin::package_admin::commit_upgrade_and_advance` every version-gated call
 would abort forever.
 
@@ -146,7 +146,7 @@ what each transaction leaves on chain.
 2. In the publication PTB the publisher calls
    `blast_admin::package_admin::wrap` with that `Publication` and the fresh
    `UpgradeCap`. Wrap aborts with code 10 unless the cap belongs to the OTW's
-   package and was never upgraded (native version 1, no outstanding ticket). It
+   package and was never upgraded (UpgradeCap version 1, no outstanding ticket). It
    seals both capabilities in the new `PackageAdmin<OTW>` with a 48-hour upgrade
    notice (emits `UpgradeCustodyCreated`) and shares it beside the
    `PackageVersion<OTW>` with every defined bit paused.
@@ -167,15 +167,15 @@ what each transaction leaves on chain.
    `UpgradeReceipt`; `blast_admin::package_admin::commit_upgrade_and_advance`
    takes the `PackageAdmin<OTW>`, the witness, the `PackageVersion<OTW>` by mutable
    reference, and the receipt. It commits the receipt into the sealed cap and
-   advances the stored generation by one in the same call (emits
-   `UpgradeCommitted` and `OperationalVersionAdvanced`). Any failure rolls back
+   advances the stored version by one in the same call (emits
+   `UpgradeCommitted` and `VersionAdvanced`). Any failure rolls back
    the whole upgrade.
 
 From the next transaction, calls into the previous bytecode abort with code 9
-and the new bytecode, which must compile the next generation, is the only one
+and the new bytecode, which must compile the next version, is the only one
 that works. Because `blast_admin` is immutable, these administration calls check
-no consumer generation: a package whose new bytecode compiled the wrong
-generation can still schedule and install a repair.
+no consumer version: a package whose new bytecode compiled the wrong
+version can still schedule and install a repair.
 
 `blast_admin::package_admin::schedule_make_immutable` and
 `blast_admin::package_admin::make_immutable` destroy the `UpgradeCap` the same
@@ -185,7 +185,7 @@ a value of the package witness and the `PackageVersion<OTW>`, and aborts with
 code 26 for any other type before it consumes the action. Only the package's
 own code can therefore end its upgrades. Each package that may end them wraps
 the call in a thin function that first runs
-`package_version::assert_current(constants::generation!())`, so only its live
+`package_version::assert_current(constants::version!())`, so only its live
 bytecode can: the vault does, with `blast_vault::blast_vault_package::make_immutable`.
 The launchpad, presale and migrators are upgradeable and have no such wrapper
 yet; one of their upgrades must add it before they can be made immutable.
@@ -232,15 +232,15 @@ value out from behind a mutable reference. Should a later framework add a
 generic swap, only package `OTW` itself, the holder of its witness, could use it,
 and the Publisher would then leave this custody; no other caller can.
 
-### Operational generation
+### Version
 
 Every protected call of an upgradeable package passes its shared
 `PackageVersion<OTW>` and runs `package_version::assert_current` with the
-generation compiled into that bytecode, which aborts with code 9 unless it
-equals the stored one. The generation starts at 1 at wrap and changes only in
+version compiled into that bytecode, which aborts with code 9 unless it
+equals the stored one. The version starts at 1 at wrap and changes only in
 `blast_admin::package_admin::commit_upgrade_and_advance`, by exactly one.
-`OperationalVersionAdvanced<OTW>` carries `container_id` (the `PackageVersion<OTW>`
-ID), `original_package_id`, and the old and new generations. Integrators pass
+`VersionAdvanced<OTW>` carries `container_id` (the `PackageVersion<OTW>`
+ID), `original_package_id`, and the old and new versions. Integrators pass
 the version object as a shared, immutable input to every call that takes it and
 must call the latest package version.
 
@@ -379,7 +379,7 @@ can also read object content over RPC, or replay events.
   and the fixed `blast_acl::max_roles_per_admin` and
   `blast_acl::super_admin_transfer_delay_ms`. Role type-name strings use 64
   lowercase hex characters for the address, without `0x`.
-- Package version: `package_version::generation`, `package_version::valid_pause_bits`,
+- Package version: `package_version::version`, `package_version::valid_pause_bits`,
   `package_version::paused`, `package_version::is_paused` (any of the given bits
   set) and `package_version::package_witness`; a `Publication` exposes
   `package_version::publication_valid_pause_bits` and
@@ -393,7 +393,7 @@ can also read object content over RPC, or replay events.
   `blast_admin::package_admin::has_upgrade_cap`,
   `blast_admin::package_admin::upgrade_cap_id`,
   `blast_admin::package_admin::current_package_id`,
-  `blast_admin::package_admin::native_version` and
+  `blast_admin::package_admin::upgrade_cap_version` and
   `blast_admin::package_admin::upgrade_policy` (each none once immutable),
   `blast_admin::package_admin::publisher_id`, and
   `blast_admin::package_admin::initial_upgrade_delay_ms`.
@@ -420,12 +420,12 @@ the owner's key `K` and the value, action, member or entry types, and carry
 | `blast_admin_events::AdminDestroyed` | `destroy_admin_cap` | cap deleted; `was_active` and the roles it still held |
 | `blast_admin_events::SuperAdminTransferred` | `accept_super_admin_transfer` | old and new root cap IDs, recipient |
 | `blast_admin_events::SuperAdminCapDestroyed` | `destroy_retired_super_admin_cap` | retired root deleted |
-| `blast_admin_events::UpgradeCustodyCreated` | `blast_admin::package_admin::wrap` | `PackageAdmin<OTW>` created: Publisher, cap, package, native version, policy |
-| `blast_admin_events::PackageVersionCreated` | `blast_admin::package_admin::wrap` | `PackageVersion<OTW>` created beside its `PackageAdmin<OTW>` (`custodian_id`): defined and paused bits, package witness, generation 1 |
+| `blast_admin_events::UpgradeCustodyCreated` | `blast_admin::package_admin::wrap` | `PackageAdmin<OTW>` created: Publisher, cap, package, UpgradeCap version, policy |
+| `blast_admin_events::PackageVersionCreated` | `blast_admin::package_admin::wrap` | `PackageVersion<OTW>` created beside its `PackageAdmin<OTW>` (`custodian_id`): defined and paused bits, package witness, version 1 |
 | `blast_admin_events::UpgradeAuthorized` | `blast_admin::package_admin::authorize_upgrade` | the exact digest authorized, from `current_package_id` |
-| `blast_admin_events::UpgradeCommitted` | `blast_admin::package_admin::commit_upgrade_and_advance` | new package ID and native version |
-| `blast_admin_events::OperationalVersionAdvanced` | `blast_admin::package_admin::commit_upgrade_and_advance` | generation bump of package `OTW` |
-| `blast_admin_events::UpgradeCapDestroyed` | `blast_admin::package_admin::make_immutable` | final native version and policy |
+| `blast_admin_events::UpgradeCommitted` | `blast_admin::package_admin::commit_upgrade_and_advance` | new package ID and UpgradeCap version |
+| `blast_admin_events::VersionAdvanced` | `blast_admin::package_admin::commit_upgrade_and_advance` | version bump of package `OTW` |
+| `blast_admin_events::UpgradeCapDestroyed` | `blast_admin::package_admin::make_immutable` | final UpgradeCap version and policy |
 | `blast_admin_events::Paused` | `blast_admin::package_admin::pause` | bits set on package `OTW`'s version and the resulting mask; the one pause event of every package |
 | `blast_admin_events::Unpaused` | `blast_admin::package_admin::clear_pause_bits` | bits cleared and the resulting mask |
 | `delayed::DelayedCreated` | `delayed::new` | initial value and notice |
@@ -472,7 +472,7 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 6 | `EInvalidSuperAdminRecipient` | `blast_acl` | nominee is `0x0` or the sender; or publish with `blast_acl_root` left at `0x0` |
 | 7 | `ENotPendingSuperAdminRecipient` | `blast_acl` | accept from an address that is not the nominee, or with no nomination pending; checked before readiness |
 | 8 | `ESuperAdminCapStillActive` | `blast_acl` | destroying the active root |
-| 9 | `EOperationalVersionMismatch` | `package_version` | the call reached outdated bytecode; call the latest package version (or the upgrade did not compile the next generation) |
+| 9 | `EVersionMismatch` | `package_version` | the call reached outdated bytecode; call the latest package version (or the upgrade did not compile the next version) |
 | 10 | `EInvalidUpgradeCap` | `blast_admin::package_admin` | wrap received a cap for another package, an already upgraded cap, or one with an outstanding ticket |
 | 11 | `EInvalidPackageDigest` | `blast_admin::package_admin` | scheduling a digest that is not 32 bytes |
 | 12 | `EUpgradeCapUnavailable` | `blast_admin::package_admin` | the package was made immutable |
@@ -542,13 +542,13 @@ the package cannot be unpaused while any upgrade notice still to come could be z
 still holds an `UpgradeCap`. `blast_admin` and `blast_partners` are immutable.
 
 **What stops a stale package version from moving funds?** Every protected call
-checks the shared generation against the generation compiled into the bytecode,
-and the upgrade finalizer advances the generation in the same transaction that
+checks the shared version against the version compiled into the bytecode,
+and the upgrade finalizer advances the version in the same transaction that
 commits the upgrade.
 
 **What does an upgrade leave on chain?** `UpgradeAuthorized` with the exact
 digest, `UpgradeCommitted` with the new package ID, and
-`OperationalVersionAdvanced` with the new generation, all in one transaction.
+`VersionAdvanced` with the new version, all in one transaction.
 
 **Can someone forge a version bump event?** No. A `PackageVersion<OTW>` exists
 only through `OTW`'s own publication, which needs the `OTW` value inside

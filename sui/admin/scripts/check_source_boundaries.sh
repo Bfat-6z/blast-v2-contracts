@@ -219,7 +219,7 @@ if grep -rnE 'only_additive_upgrades|only_dep_upgrades|restrict_to' "$package_di
 fi
 grep -q '^    upgrade_cap: Option<UpgradeCap>,$' "$package_admin_file" \
   || fail "PackageAdmin must record irreversible cap absence with Option<UpgradeCap>."
-grep -q '^const INITIAL_NATIVE_VERSION: u64 = 1;$' "$package_admin_file" \
+grep -q '^const INITIAL_UPGRADE_CAP_VERSION: u64 = 1;$' "$package_admin_file" \
   || fail "Production intake must require a freshly published, never-upgraded native cap."
 [[ "$(production_lines "$package_admin_file" | grep -cE 'PackageAdmin[[:space:]]*\{[[:space:]]*id')" -eq 1 ]] \
   || fail "PackageAdmin must have exactly one private constructor path."
@@ -316,7 +316,7 @@ actual_package_version_public="$(externally_callable_function_names "$package_ve
 expected_package_version_public="$(printf '%s\n' \
   assert_current \
   assert_not_paused \
-  generation \
+  version \
   is_paused \
   keep \
   new_publication \
@@ -339,13 +339,13 @@ grep -Fqx 'public struct Publication<phantom OTW: drop> has key {' "$package_ver
   || fail "Clearing pause bits and borrowing the Publisher must each require the exact package witness."
 grep -Fq 'sui::package::claim(otw, ctx)' "$package_version_file" \
   || fail "A publication must be claimable only with the consumer package's one-time witness."
-if production_lines "$package_version_file" | grep -Eq 'fun[[:space:]]+(activate|set_generation|set_version)'; then
-  fail "The operational generation must expose no separate activation or arbitrary setter."
+if production_lines "$package_version_file" | grep -Eq 'fun[[:space:]]+(activate|set_version|set_version)'; then
+  fail "The version must expose no separate activation or arbitrary setter."
 fi
-[[ "$(non_test_lines "$package_version_file" | grep -cE 'self\.generation[[:space:]]*=[^=]')" -eq 1 ]] \
-  || fail "Only advance may move the operational generation, by exactly one."
-grep -Fq 'self.generation = previous_generation + 1;' "$package_version_file" \
-  || fail "advance must move the operational generation by exactly one."
+[[ "$(non_test_lines "$package_version_file" | grep -cE 'self\.version[[:space:]]*=[^=]')" -eq 1 ]] \
+  || fail "Only advance may move the version, by exactly one."
+grep -Fq 'self.version = previous_version + 1;' "$package_version_file" \
+  || fail "advance must move the version by exactly one."
 
 actual_package_admin_public="$(externally_callable_function_names "$package_admin_file" | sort)"
 expected_package_admin_public="$(printf '%s\n' \
@@ -359,7 +359,7 @@ expected_package_admin_public="$(printf '%s\n' \
   initial_upgrade_delay_ms \
   is_upgrade_notice_guarded \
   make_immutable \
-  native_version \
+  upgrade_cap_version \
   pause \
   pending_upgrade \
   publisher \

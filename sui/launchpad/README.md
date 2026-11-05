@@ -18,7 +18,7 @@ core protocol-fee ledger each launch holds.
 A governed upgrade is one transaction: authorize the digest, run the native
 Upgrade command, then call `blast_admin::package_admin::commit_upgrade_and_advance`,
 which commits the receipt to the same sealed cap and advances the operational
-generation. There is no separate activation step.
+version. There is no separate activation step.
 
 Use these sources instead of a duplicated module inventory:
 

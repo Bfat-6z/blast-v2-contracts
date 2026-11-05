@@ -23,7 +23,7 @@ call needs. The package imports no product and no product imports it.
 | Object | How many | What it does |
 | --- | --- | --- |
 | `blast_migrators::venue_config::VenueConfig` | singleton | Venue-owned records, written once per coin and never removed: each Cetus coin's `PoolCreationCap` and tick spacing, and each Bluefin coin's tier. |
-| `blast_admin::package_version::PackageVersion` | singleton, typed `PackageVersion<BLAST_MIGRATORS>` by `blast_migrators::blast_migrators::BLAST_MIGRATORS` | This package's operational generation; every venue call checks it first. It defines no pause bits. |
+| `blast_admin::package_version::PackageVersion` | singleton, typed `PackageVersion<BLAST_MIGRATORS>` by `blast_migrators::blast_migrators::BLAST_MIGRATORS` | This package's version; every venue call checks it first. It defines no pause bits. |
 | `blast_admin::package_admin::PackageAdmin` | singleton, typed `PackageAdmin<BLAST_MIGRATORS>` | Sealed custody of this package's `Publisher` and `UpgradeCap`, in Blast's generic package administration. |
 | `blast_vault::vault::Vault<Meme, Quote>` | one per migrated sale | Created and shared by `migrate`; holds the venue position and the fee balances (vault guide). |
 
@@ -105,7 +105,7 @@ admin signs in with `blast_acl::sign_in` on the shared `blast_acl::ACL` to get t
 
 Every venue call takes the migrators `PackageVersion<BLAST_MIGRATORS>` (shared) and checks it
 before anything else. Calls that also mutate the vault take the vault package's version too, because
-each package checks only its own generation.
+each package checks only its own version.
 
 #### Prepare a coin on Cetus (creator, inside the sale's creation PTB)
 
@@ -266,10 +266,10 @@ The package uses Blast's generic package administration, typed by
 `blast_migrators::blast_migrators::BLAST_MIGRATORS`. `blast_admin::package_admin::schedule_upgrade`
 announces an exact 32-byte digest. After the notice, `blast_admin::package_admin::authorize_upgrade`
 returns its upgrade ticket, and `blast_admin::package_admin::commit_upgrade_and_advance` commits the
-receipt and moves `PackageVersion<BLAST_MIGRATORS>` to the next generation in the same transaction.
-From then on every call to the old package's code aborts the generation check, so integrators must
+receipt and moves `PackageVersion<BLAST_MIGRATORS>` to the next version in the same transaction.
+From then on every call to the old package's code aborts the version check, so integrators must
 call the current package address; type names keep the original address. Upgrading this package
-leaves the products and the vault on their own generations; an upgrade of the vault requires a
+leaves the products and the vault on their own versions; an upgrade of the vault requires a
 relink of this package. `blast_admin::package_admin::schedule_make_immutable` schedules the end of upgrades, which
 `blast_admin::package_admin::make_immutable` executes only from this package's own code (a later
 upgrade must add that wrapper);

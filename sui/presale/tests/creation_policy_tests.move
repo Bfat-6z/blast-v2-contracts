@@ -515,7 +515,7 @@ fun an_unlisted_partner_cannot_be_removed() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_cannot_allow_quotes() {
@@ -524,7 +524,7 @@ fun stale_version_cannot_allow_quotes() {
     );
     let mut policy = allowing_nothing();
 
-    package_version.set_generation_for_testing(2);
+    package_version.set_version_for_testing(2);
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
@@ -548,7 +548,7 @@ fun stale_version_cannot_allow_quotes() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_cannot_accept_partners() {
@@ -557,7 +557,7 @@ fun stale_version_cannot_accept_partners() {
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
 
-    package_version.set_generation_for_testing(2);
+    package_version.set_version_for_testing(2);
     policy.add_partner(&package_version, &fee_admin(), &partner);
     abort
 }

@@ -79,7 +79,7 @@ fun wrapping_shares_custody_and_a_fully_paused_version_and_consumes_the_publicat
         emitted_publisher_id,
         emitted_upgrade_cap_id,
         emitted_package_id,
-        emitted_native_version,
+        emitted_upgrade_cap_version,
         emitted_policy,
     ) = created.upgrade_custody_created_fields();
 
@@ -88,14 +88,14 @@ fun wrapping_shares_custody_and_a_fully_paused_version_and_consumes_the_publicat
     assert_eq!(emitted_publisher_id, object::id(package_admin.publisher_for_testing()));
     assert_eq!(emitted_upgrade_cap_id, package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(emitted_package_id, PACKAGE_ID.to_id());
-    assert_eq!(emitted_native_version, 1);
+    assert_eq!(emitted_upgrade_cap_version, 1);
     assert_eq!(emitted_policy, package::compatible_policy());
     assert!(package_admin.has_upgrade_cap());
     assert!(package_admin.publisher_for_testing().from_package<PACKAGE_MARKER>());
     assert_eq!(package_admin.upgrade_for_testing().delay_ms(), NOTICE_MS);
     assert_eq!(package_version.paused_for_testing(), VALID_PAUSE_BITS);
     assert_eq!(package_version.valid_pause_bits_for_testing(), VALID_PAUSE_BITS);
-    assert_eq!(package_version.generation_for_testing(), 1);
+    assert_eq!(package_version.version_for_testing(), 1);
     package_version.assert_current(1);
 
     test_scenario::return_shared(package_admin);
@@ -271,7 +271,7 @@ fun commit_is_rejected_after_immutability() {
 }
 
 #[test]
-fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
+fun a_compatible_upgrade_commits_and_advances_one_version_together() {
     let mut owned = start();
     let fixture = &mut owned;
 
@@ -284,7 +284,7 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
         .package_admin
         .commit_upgrade_and_advance(&upgrade_admin(), &mut fixture.package_version, ticket.test_upgrade());
     let advanced = blast_admin_events::collect_one<
-        OperationalVersionAdvanced<PACKAGE_MARKER>,
+        VersionAdvanced<PACKAGE_MARKER>,
     >(0);
 
     let committed = blast_admin_events::collect_one<
@@ -295,14 +295,14 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
         authorized_custodian_id,
         authorized_cap_id,
         authorized_package_id,
-        authorized_native_version,
+        authorized_upgrade_cap_version,
         authorized_policy,
         authorized_digest,
     ) = authorized.upgrade_authorized_fields();
     assert_eq!(authorized_custodian_id, fixture.package_admin.id_for_testing());
     assert_eq!(authorized_cap_id, fixture.package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(authorized_package_id, PACKAGE_ID.to_id());
-    assert_eq!(authorized_native_version, 1);
+    assert_eq!(authorized_upgrade_cap_version, 1);
     assert_eq!(authorized_policy, package::compatible_policy());
     assert_eq!(authorized_digest, package_digest());
     let (
@@ -310,24 +310,24 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
         committed_cap_id,
         committed_original_package_id,
         committed_package_id,
-        previous_native_version,
-        new_native_version,
+        previous_upgrade_cap_version,
+        new_upgrade_cap_version,
     ) = committed.upgrade_committed_fields();
     assert_eq!(committed_custodian_id, fixture.package_admin.id_for_testing());
     assert_eq!(committed_cap_id, fixture.package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(committed_original_package_id, PACKAGE_ID);
     assert_eq!(committed_package_id, fixture.package_admin.current_package_id().destroy_some());
     assert!(committed_package_id != PACKAGE_ID.to_id());
-    assert_eq!(previous_native_version, 1);
-    assert_eq!(new_native_version, 2);
-    let (container_id, original_package_id, previous_generation, new_generation) = advanced
-        .operational_version_advanced_fields();
+    assert_eq!(previous_upgrade_cap_version, 1);
+    assert_eq!(new_upgrade_cap_version, 2);
+    let (container_id, original_package_id, previous_version, new_version) = advanced
+        .version_advanced_fields();
     assert_eq!(container_id, object::id(&fixture.package_version));
     assert_eq!(original_package_id, PACKAGE_ID);
-    assert_eq!(previous_generation, 1);
-    assert_eq!(new_generation, 2);
-    assert_eq!(fixture.package_admin.native_version().destroy_some(), 2);
-    assert_eq!(fixture.package_version.generation_for_testing(), 2);
+    assert_eq!(previous_version, 1);
+    assert_eq!(new_version, 2);
+    assert_eq!(fixture.package_admin.upgrade_cap_version().destroy_some(), 2);
+    assert_eq!(fixture.package_version.version_for_testing(), 2);
     fixture.package_version.assert_current(2);
 
     owned.end();
@@ -335,7 +335,7 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
 
 #[test]
 #[expected_failure(
-    abort_code = errors::EOperationalVersionMismatch,
+    abort_code = errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun a_committed_upgrade_disables_the_old_bytecode() {
@@ -353,11 +353,11 @@ fun a_committed_upgrade_disables_the_old_bytecode() {
 
 #[test]
 #[expected_failure(arithmetic_error, location = blast_admin::package_version)]
-/// Unreachable in practice; the whole commit aborts rather than wrap the generation.
-fun commit_aborts_at_the_end_of_the_generation_range() {
+/// Unreachable in practice; the whole commit aborts rather than wrap the version.
+fun commit_aborts_at_the_end_of_the_version_range() {
     let mut owned = start();
     let fixture = &mut owned;
-    fixture.package_version.set_generation_for_testing(std::u64::max_value!());
+    fixture.package_version.set_version_for_testing(std::u64::max_value!());
     let ticket = fixture.authorize(package_digest());
 
     fixture
@@ -487,12 +487,12 @@ fun package_admin_can_permanently_destroy_native_upgrade_authority() {
         UpgradeCapDestroyed<PACKAGE_MARKER>,
     >(0);
 
-    let (custodian_id, destroyed_cap_id, original_package_id, final_native_version, final_policy) =
+    let (custodian_id, destroyed_cap_id, original_package_id, final_upgrade_cap_version, final_policy) =
         destroyed.upgrade_cap_destroyed_fields();
     assert_eq!(custodian_id, fixture.package_admin.id_for_testing());
     assert_eq!(destroyed_cap_id, upgrade_cap_id);
     assert_eq!(original_package_id, PACKAGE_ID);
-    assert_eq!(final_native_version, 1);
+    assert_eq!(final_upgrade_cap_version, 1);
     assert_eq!(final_policy, package::compatible_policy());
     assert!(!fixture.package_admin.has_upgrade_cap());
     assert_eq!(object::id(fixture.package_admin.publisher_for_testing()), publisher_id);
@@ -911,7 +911,7 @@ fun the_publisher_rejects_a_primitive_witness() {
 }
 
 #[test]
-fun version_and_publication_readers_report_generation_bits_and_package_witness() {
+fun version_and_publication_readers_report_version_bits_and_package_witness() {
     let mut fixture = start_published();
     let publication = fixture.take_publication();
     let witness = type_name::with_defining_ids<PackageWitness>();
@@ -923,13 +923,13 @@ fun version_and_publication_readers_report_generation_bits_and_package_witness()
 
     fixture.scenario.next_tx(PUBLISHER);
     let mut package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
-    assert_eq!(package_version.generation(), 1);
+    assert_eq!(package_version.version(), 1);
     assert_eq!(package_version.valid_pause_bits(), VALID_PAUSE_BITS);
     assert_eq!(package_version.paused(), VALID_PAUSE_BITS);
     assert_eq!(package_version.package_witness(), witness);
     assert!(package_version.is_paused(2));
-    package_version.set_generation_for_testing(3);
-    assert_eq!(package_version.generation(), 3);
+    package_version.set_version_for_testing(3);
+    assert_eq!(package_version.version(), 3);
 
     test_scenario::return_shared(package_version);
     fixture.end();
@@ -947,7 +947,7 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
     assert!(fixture.package_admin.pending_upgrade().is_none());
     assert!(fixture.package_admin.has_upgrade_cap());
     assert_eq!(fixture.package_admin.current_package_id(), option::some(PACKAGE_ID.to_id()));
-    assert_eq!(fixture.package_admin.native_version(), option::some(1));
+    assert_eq!(fixture.package_admin.upgrade_cap_version(), option::some(1));
     assert_eq!(fixture.package_admin.upgrade_policy(), option::some(package::compatible_policy()));
     assert_eq!(
         fixture.package_admin.publisher_id(),
@@ -978,7 +978,7 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
     assert!(!fixture.package_admin.has_upgrade_cap());
     assert!(fixture.package_admin.upgrade_cap_id().is_none());
     assert!(fixture.package_admin.current_package_id().is_none());
-    assert!(fixture.package_admin.native_version().is_none());
+    assert!(fixture.package_admin.upgrade_cap_version().is_none());
     assert!(fixture.package_admin.upgrade_policy().is_none());
 
     owned.end();
@@ -1096,20 +1096,20 @@ fun wrap_emits_the_package_version_created_with_its_exact_payload() {
     fixture.scenario.next_tx(PUBLISHER);
     let package_admin = fixture.scenario.take_shared<PackageAdmin<PACKAGE_MARKER>>();
     let package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
-    let (package_version_id, custodian_id, valid_pause_bits, paused, package_witness, generation) =
+    let (package_version_id, custodian_id, valid_pause_bits, paused, package_witness, version) =
         created.package_version_created_fields();
     assert_eq!(package_version_id, object::id(&package_version));
     assert_eq!(custodian_id, object::id(&package_admin));
     assert_eq!(valid_pause_bits, VALID_PAUSE_BITS);
     assert_eq!(paused, VALID_PAUSE_BITS);
     assert_eq!(package_witness, type_name::with_defining_ids<PackageWitness>());
-    assert_eq!(generation, 1);
+    assert_eq!(version, 1);
     let mut expected = bcs::to_bytes(&package_version_id);
     expected.append(bcs::to_bytes(&custodian_id));
     expected.append(bcs::to_bytes(&valid_pause_bits));
     expected.append(bcs::to_bytes(&paused));
     expected.append(bcs::to_bytes(&package_witness));
-    expected.append(bcs::to_bytes(&generation));
+    expected.append(bcs::to_bytes(&version));
     assert_eq!(bcs::to_bytes(&created), expected);
 
     test_scenario::return_shared(package_admin);
@@ -1261,7 +1261,7 @@ use blast_admin::{
     blast_acl::{Self, AdminCap, AdminWitness},
     blast_admin_events::{
         Self,
-        OperationalVersionAdvanced,
+        VersionAdvanced,
         PackageVersionCreated,
         Paused,
         Unpaused,

@@ -10,7 +10,7 @@ module blast_migrators::blast_migrators_tests;
 // === Tests ===
 
 #[test]
-/// Wrapping the publication shares an unpaused version at generation one with no pause bits.
+/// Wrapping the publication shares an unpaused version at version one with no pause bits.
 fun wrapping_the_publication_shares_an_unpaused_version_without_pause_bits() {
     let mut scenario = test_scenario::begin(PUBLISHER);
     migrators_package::init_for_testing(scenario.ctx());
@@ -24,8 +24,8 @@ fun wrapping_the_publication_shares_an_unpaused_version_without_pause_bits() {
     let version = scenario.take_shared<PackageVersion<BLAST_MIGRATORS>>();
     assert_eq!(version.valid_pause_bits_for_testing(), 0);
     assert_eq!(version.paused_for_testing(), 0);
-    assert_eq!(version.generation_for_testing(), constants::generation!());
-    version.assert_current(constants::generation!());
+    assert_eq!(version.version_for_testing(), constants::version!());
+    version.assert_current(constants::version!());
     test_scenario::return_shared(version);
     scenario.end();
 }

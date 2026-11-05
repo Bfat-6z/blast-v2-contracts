@@ -40,7 +40,7 @@ public fun set_quote_allowed<Quote>(
     _: &AdminWitness<ListingAdmin>,
     allowed: bool,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let quote = type_name::with_original_ids<Quote>();
     assert!(
@@ -67,7 +67,7 @@ public fun schedule_venue<Venue: drop>(
     _: &AdminWitness<AdapterAdmin>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let venue = type_name::with_original_ids<Venue>();
     assert!(!venue.is_primitive(), blast_presale::errors::invalid_venue!());
@@ -83,7 +83,7 @@ public fun apply_venue<Venue: drop>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.apply_add(type_name::with_original_ids<Venue>(), clock);
 }
@@ -94,7 +94,7 @@ public fun cancel_venue<Venue: drop>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.cancel_add(type_name::with_original_ids<Venue>());
 }
@@ -105,7 +105,7 @@ public fun remove_venue<Venue: drop>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<AdapterAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.remove(type_name::with_original_ids<Venue>());
 }
@@ -118,7 +118,7 @@ public fun add_partner(
     _: &AdminWitness<FeeAdmin>,
     partner: &Partner,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.partners.add(partner);
 }
@@ -132,7 +132,7 @@ public fun remove_partner(
     partner: &Partner,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.partners.remove(object::id(partner), clock);
 }
@@ -145,7 +145,7 @@ public fun schedule_venue_delay(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.schedule_delay(delay_ms, clock);
 }
@@ -156,7 +156,7 @@ public fun apply_venue_delay(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.apply_delay(clock);
 }
@@ -167,7 +167,7 @@ public fun cancel_venue_delay(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.cancel_delay();
 }
@@ -185,7 +185,7 @@ public fun unpause(
     fee_policy: &FeePolicy,
     bits: u8,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         self.is_guarded() && fee_policy.is_guarded(),

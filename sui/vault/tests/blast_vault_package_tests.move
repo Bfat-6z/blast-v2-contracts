@@ -341,7 +341,7 @@ fun a_cancelled_admission_notice_change_cannot_apply() {
 }
 
 #[test]
-/// After its notice, the vault's own make_immutable on the live generation destroys the cap.
+/// After its notice, the vault's own make_immutable on the live version destroys the cap.
 fun the_vault_makes_itself_immutable_after_the_notice() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
@@ -360,17 +360,17 @@ fun the_vault_makes_itself_immutable_after_the_notice() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 /// Stale vault bytecode cannot end the package's upgrades.
-fun make_immutable_rejects_a_stale_generation() {
+fun make_immutable_rejects_a_stale_version() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let mut package_admin = new_package_admin(scenario.ctx());
     package_admin.schedule_make_immutable(&upgrade_admin(), f.clock());
     f.clock_mut().increment_for_testing(package_admin.upgrade_delay_ms());
-    f.version_mut().set_generation_for_testing(constants::generation!() + 1);
+    f.version_mut().set_version_for_testing(constants::version!() + 1);
 
     blast_vault_package::make_immutable(&mut package_admin, &upgrade_admin(), f.version(), f.clock());
 

@@ -35,7 +35,7 @@ const ENotPendingSuperAdminRecipient: u64 = 7;
 const ESuperAdminCapStillActive: u64 = 8;
 
 #[test_only]
-const EOperationalVersionMismatch: u64 = 9;
+const EVersionMismatch: u64 = 9;
 
 #[test_only]
 const EInvalidUpgradeCap: u64 = 10;
@@ -106,7 +106,7 @@ macro public(package) fun not_pending_super_admin_recipient(): u64 { 7 }
 
 macro public(package) fun super_admin_cap_still_active(): u64 { 8 }
 
-macro public(package) fun operational_version_mismatch(): u64 { 9 }
+macro public(package) fun version_mismatch(): u64 { 9 }
 
 macro public(package) fun invalid_upgrade_cap(): u64 { 10 }
 

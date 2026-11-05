@@ -65,7 +65,7 @@ public fun schedule_witness<Witness: drop>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let witness = type_name::with_original_ids<Witness>();
     assert!(!witness.is_primitive(), blast_vault::errors::invalid_witness!());
@@ -81,7 +81,7 @@ public fun apply_witness<Witness: drop>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.witnesses.apply_add(type_name::with_original_ids<Witness>(), clock);
 }
@@ -92,7 +92,7 @@ public fun cancel_witness<Witness: drop>(
     _: &AdminWitness<CancelAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.witnesses.cancel_add(type_name::with_original_ids<Witness>());
 }
@@ -103,7 +103,7 @@ public fun remove_witness<Witness: drop>(
     _: &AdminWitness<AdapterAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.witnesses.remove(type_name::with_original_ids<Witness>());
 }
@@ -116,7 +116,7 @@ public fun schedule_witness_delay(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.witnesses.schedule_delay(delay_ms, clock);
 }
@@ -127,7 +127,7 @@ public fun apply_witness_delay(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.witnesses.apply_delay(clock);
 }
@@ -138,7 +138,7 @@ public fun cancel_witness_delay(
     _: &AdminWitness<CancelAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.witnesses.cancel_delay();
 }
@@ -158,7 +158,7 @@ public fun unpause(
 }
 
 /// Ends the vault package's upgrades once its scheduled immutability action is ready (#195,
-/// after the audit). It runs only on the live generation; the generic administration then checks
+/// after the audit). It runs only on the live version; the generic administration then checks
 /// the package witness, consumes the action and destroys the UpgradeCap.
 public fun make_immutable(
     package_admin: &mut PackageAdmin<BLAST_VAULT_PACKAGE>,
@@ -166,7 +166,7 @@ public fun make_immutable(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_admin.make_immutable(upgrade_admin, PackageWitness(), package_version, clock);
 }

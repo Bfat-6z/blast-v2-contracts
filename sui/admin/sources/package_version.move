@@ -3,22 +3,22 @@
 
 // Shared package errors are zero-cost macros whose expanded literals trigger W04005.
 #[allow(lint(abort_without_constant))]
-/// One package's publication proof, operational generation and pause bits, typed by its
+/// One package's publication proof, version and pause bits, typed by its
 /// one-time witness.
 ///
 /// The consumer's initializer turns its one-time witness into an owned `Publication`, which
 /// `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused at
-/// generation one. The consumer compiles its own generation constant and checks it with
+/// version one. The consumer compiles its own version constant and checks it with
 /// `assert_current`; it also chooses which pause bits exist and pins its package witness, the one
 /// type whose value its own code passes to clear pause bits or to borrow its Publisher. Setting
-/// and clearing bits and advancing the generation are sealed here and reached only through
+/// and clearing bits and advancing the version are sealed here and reached only through
 /// `package_admin`'s role-gated calls, so no package can build a second version or move a
-/// generation by any other path.
+/// version by any other path.
 module blast_admin::package_version;
 
 // === Constants ===
 
-const INITIAL_GENERATION: u64 = 1;
+const INITIAL_VERSION: u64 = 1;
 
 // === Public Types ===
 
@@ -31,7 +31,7 @@ public struct Publication<phantom OTW: drop> has key {
     package_witness: TypeName,
 }
 
-/// The package's shared operational generation and pause bits. It has no destructor: every
+/// The package's shared version and pause bits. It has no destructor: every
 /// version-gated call of the package reads it.
 public struct PackageVersion<phantom OTW: drop> has key {
     id: UID,
@@ -42,8 +42,8 @@ public struct PackageVersion<phantom OTW: drop> has key {
     /// code passes to `package_admin::clear_pause_bits`, `package_admin::publisher` and
     /// `package_admin::make_immutable`.
     package_witness: TypeName,
-    /// The only generation whose compiled bytecode passes `assert_current`.
-    generation: u64,
+    /// The only version whose compiled bytecode passes `assert_current`.
+    version: u64,
 }
 
 // === Public Functions ===
@@ -78,14 +78,14 @@ public fun keep<OTW: drop>(self: Publication<OTW>, ctx: &mut TxContext) {
     transfer::transfer(self, ctx.sender());
 }
 
-/// Rejects callable bytecode whose compiled generation is not the active one.
+/// Rejects callable bytecode whose compiled version is not the active one.
 public fun assert_current<OTW: drop>(
     self: &PackageVersion<OTW>,
-    compiled_generation: u64,
+    compiled_version: u64,
 ) {
     assert!(
-        self.generation == compiled_generation,
-        blast_admin::errors::operational_version_mismatch!(),
+        self.version == compiled_version,
+        blast_admin::errors::version_mismatch!(),
     );
 }
 
@@ -97,9 +97,9 @@ public fun assert_not_paused<OTW: drop>(self: &PackageVersion<OTW>, bit: u8) {
 
 // Readers
 
-/// The active generation; only bytecode compiling it passes `assert_current`.
-public fun generation<OTW: drop>(self: &PackageVersion<OTW>): u64 {
-    self.generation
+/// The active version; only bytecode compiling it passes `assert_current`.
+public fun version<OTW: drop>(self: &PackageVersion<OTW>): u64 {
+    self.version
 }
 
 /// The pause bits the package defines.
@@ -143,7 +143,7 @@ public fun publication_package_witness<OTW: drop>(
 
 // === Package Functions ===
 
-/// Consumes the publication into the Publisher and an unshared version at the first generation
+/// Consumes the publication into the Publisher and an unshared version at the first version
 /// with every defined bit paused.
 public(package) fun into_version<OTW: drop>(
     self: Publication<OTW>,
@@ -157,7 +157,7 @@ public(package) fun into_version<OTW: drop>(
         valid_pause_bits,
         paused: valid_pause_bits,
         package_witness,
-        generation: INITIAL_GENERATION,
+        version: INITIAL_VERSION,
     };
 
     (publisher, version)
@@ -175,7 +175,7 @@ public(package) fun share<OTW: drop>(
         self.valid_pause_bits,
         self.paused,
         self.package_witness,
-        self.generation,
+        self.version,
     );
 
     transfer::share_object(self);
@@ -228,17 +228,17 @@ public(package) fun clear_pause_bits<OTW: drop>(
     blast_admin_events::unpaused<OTW>(self.id.to_inner(), bits, self.paused);
 }
 
-/// Moves to the next generation, which the newly committed bytecode compiles; bytecode compiling
-/// any other generation then fails every `assert_current`. Aborts on overflow rather than wrap.
+/// Moves to the next version, which the newly committed bytecode compiles; bytecode compiling
+/// any other version then fails every `assert_current`. Aborts on overflow rather than wrap.
 public(package) fun advance<OTW: drop>(self: &mut PackageVersion<OTW>) {
-    let previous_generation = self.generation;
-    self.generation = previous_generation + 1;
+    let previous_version = self.version;
+    self.version = previous_version + 1;
 
-    blast_admin_events::operational_version_advanced<OTW>(
+    blast_admin_events::version_advanced<OTW>(
         self.id.to_inner(),
         type_name::original_id<OTW>(),
-        previous_generation,
-        self.generation,
+        previous_version,
+        self.version,
     );
 }
 
@@ -264,7 +264,7 @@ public fun new_for_testing<OTW: drop, PackageWitness: drop>(
         valid_pause_bits,
         paused: 0,
         package_witness: type_name::with_defining_ids<PackageWitness>(),
-        generation: INITIAL_GENERATION,
+        version: INITIAL_VERSION,
     }
 }
 
@@ -276,16 +276,16 @@ public fun publisher_for_testing<OTW: drop>(
 }
 
 #[test_only]
-public fun generation_for_testing<OTW: drop>(self: &PackageVersion<OTW>): u64 {
-    self.generation
+public fun version_for_testing<OTW: drop>(self: &PackageVersion<OTW>): u64 {
+    self.version
 }
 
 #[test_only]
-public fun set_generation_for_testing<OTW: drop>(
+public fun set_version_for_testing<OTW: drop>(
     self: &mut PackageVersion<OTW>,
-    generation: u64,
+    version: u64,
 ) {
-    self.generation = generation;
+    self.version = version;
 }
 
 #[test_only]

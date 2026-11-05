@@ -31,14 +31,14 @@ fun pause_bit_layout_is_stable() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
-fun stale_generation_is_rejected_before_the_notice_gate() {
+fun stale_version_is_rejected_before_the_notice_gate() {
     let mut f = release_fixture_with(
         creation_policy::new_publication_for_testing(&mut tx_context::dummy()),
     );
-    f.version.set_generation_for_testing(2);
+    f.version.set_version_for_testing(2);
     f.unpause(constants::create_pause_bit!());
     abort
 }

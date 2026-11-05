@@ -104,13 +104,13 @@ fun replacing_a_ready_proposal_restarts_the_old_notice() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_delay_change_rejects_before_other_validation() {
     let mut fixture = start();
     fixture.run!(|f| {
-        f.version.set_generation_for_testing(9);
+        f.version.set_version_for_testing(9);
         f.schedule_fee(0, 0);
     });
     fixture.end();

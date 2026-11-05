@@ -126,13 +126,13 @@ printf '\nfun activate<OTW: drop>(self: &mut PackageVersion<OTW>) {}\n' \
   >> "$case_dir/sources/package_version.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case skips_generations)"
-edit 's/self.generation = previous_generation + 1;/self.generation = previous_generation + 2;/' \
+case_dir="$(new_case skips_versions)"
+edit 's/self.version = previous_version + 1;/self.version = previous_version + 2;/' \
   "$case_dir/sources/package_version.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case second_generation_write)"
-printf '\nfun rewind<OTW: drop>(self: &mut PackageVersion<OTW>) { self.generation = 1; }\n' \
+case_dir="$(new_case second_version_write)"
+printf '\nfun rewind<OTW: drop>(self: &mut PackageVersion<OTW>) { self.version = 1; }\n' \
   >> "$case_dir/sources/package_version.move"
 expect_rejected "$case_dir"
 

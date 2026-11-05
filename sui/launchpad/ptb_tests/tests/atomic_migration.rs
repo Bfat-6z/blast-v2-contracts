@@ -320,8 +320,8 @@ fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Resu
 }
 
 /// Every reachable pause state against every u8 input, through unmodified production bytecode.
-/// Pausing is `blast_admin`'s and reads no consumer generation; unpausing is the launchpad's
-/// `launch_config::unpause`, which rejects a stale generation first.
+/// Pausing is `blast_admin`'s and reads no consumer version; unpausing is the launchpad's
+/// `launch_config::unpause`, which rejects a stale version first.
 #[test]
 fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> Result<()> {
     let mut w = world("pause-mask-matrix")?;
@@ -334,11 +334,11 @@ fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> R
     let mut invalid = 0;
     let mut unchanged = 0;
     let mut stale = 0;
-    for generation in [1, 2] {
+    for version in [1, 2] {
         for (mask, flags) in states.iter().enumerate() {
-            w.set_pause_generation_for_fixture(1)?;
+            w.set_pause_version_for_fixture(1)?;
             w.replace_pause_mask(mask as u8)?;
-            w.set_pause_generation_for_fixture(generation)?;
+            w.set_pause_version_for_fixture(version)?;
             let before: BTreeSet<_> = flags.iter().copied().collect();
             for bits in 0..=u8::MAX {
                 for pausing in [true, false] {
@@ -350,7 +350,7 @@ fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> R
                         before.difference(&requested).copied().collect()
                     };
                     let pt = w.pause_command(pausing, bits)?;
-                    let rejected = if generation != 1 && !pausing {
+                    let rejected = if version != 1 && !pausing {
                         stale += 1;
                         Some(Expected::Abort { package: w.admin, module: "package_version", code: 9 })
                     } else if !(1..=7).contains(&bits) {
@@ -373,15 +373,15 @@ fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> R
                         assert_eq!(outcome.events.len(), 1);
                         assert_eq!(outcome.events_of("blast_admin_events", name),
                             [bcs::to_bytes(&(w.version, bits, next))?.as_slice()]);
-                        assert_eq!(w.pause_state()?, (w.version, next, generation));
+                        assert_eq!(w.pause_state()?, (w.version, next, version));
                         assert_eq!(w.h.snapshot(&watched[1..], &[w.h.sender]), untouched);
-                        w.set_pause_generation_for_fixture(1)?;
+                        w.set_pause_version_for_fixture(1)?;
                         w.replace_pause_mask(mask as u8)?;
-                        w.set_pause_generation_for_fixture(generation)?;
+                        w.set_pause_version_for_fixture(version)?;
                         successes += 1;
                     }
-                    assert_eq!(w.pause_state()?, (w.version, mask as u8, generation),
-                        "pausing={pausing}, bits={bits}, initial={mask}, generation={generation}");
+                    assert_eq!(w.pause_state()?, (w.version, mask as u8, version),
+                        "pausing={pausing}, bits={bits}, initial={mask}, version={version}");
                 }
             }
         }
@@ -559,12 +559,12 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
 }
 
 #[test]
-fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> Result<()> {
-    let mut w = world("mixed-generation-creation")?;
+fn mixed_version_creation_rejects_each_stale_step_after_native_upgrade() -> Result<()> {
+    let mut w = world("mixed-version-creation")?;
     let ticket = w.publish_ticket()?;
     let original = w.blast;
-    // `constants::generation!()` expands to the literal each `package_version::assert_current` call
-    // loads just before it, so the next generation's bytecode loads 2 there instead of 1.
+    // `constants::version!()` expands to the literal each `package_version::assert_current` call
+    // loads just before it, so the next version's bytecode loads 2 there instead of 1.
     let mut code = w.launchpad_code.clone();
     let mut changed = 0;
     for bytes in &mut code.modules {
@@ -594,7 +594,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
             module.serialize_with_version(module.version, bytes)?;
         }
     }
-    assert!(changed > 0, "advance every compiled generation check");
+    assert!(changed > 0, "advance every compiled version check");
     let role = launchpad_role(w.admin, w.core, original, "UpgradeAdmin")?;
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, true))?;
@@ -682,8 +682,8 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     upgraded.assert_success();
     w.blast = upgraded.effects.created().into_iter()
         .map(|(reference, _)| reference.0).find(|id| w.h.object(*id).is_package()).unwrap();
-    let (_, _, generation) = w.pause_state()?;
-    assert_eq!(generation, 2);
+    let (_, _, version) = w.pause_state()?;
+    assert_eq!(version, 2);
 
     // A fresh adapter links to the active dependency while preserving core type origins.
     let mut adapter = w.adapter_code.clone();
@@ -715,7 +715,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
         stale.package = original;
         // This pinned runtime rejects conflicting linkage before entering Move. Unit tests
         // separately pin the version-first abort for each creation function.
-        println!("mixed-generation step: {name}");
+        println!("mixed-version step: {name}");
         w.h.assert_rolled_back(mixed, Expected::Error("InvalidLinkage"), &[ticket.ticket, ticket.treasury_cap, ticket.currency, w.version, w.config], &[w.h.sender])?;
     }
     w.h.execute(current)?.assert_success();
@@ -1330,10 +1330,10 @@ impl World {
         blast_launchpad_ptb_tests::launchpad_otw(self.launchpad_origin)
     }
 
-    /// The version's id, paused bits and generation.
+    /// The version's id, paused bits and version.
     fn pause_state(&self) -> Result<(ObjectID, u8, u64)> {
-        let (id, _, paused, _, generation): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
-        Ok((id, paused, generation))
+        let (id, _, paused, _, version): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
+        Ok((id, paused, version))
     }
 
     fn replace_pause_mask(&mut self, mask: u8) -> Result<()> {
@@ -1347,12 +1347,12 @@ impl World {
         Ok(())
     }
 
-    /// Only seed the stored generation; masks are always reached through real public calls.
-    fn set_pause_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+    /// Only seed the stored version; masks are always reached through real public calls.
+    fn set_pause_version_for_fixture(&mut self, version: u64) -> Result<()> {
         let (id, valid, paused, witness, _): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
         let mut object = self.h.object(self.version);
         object.data.try_as_move_mut().expect("PackageVersion")
-            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, generation))?);
+            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, version))?);
         self.h.insert(object);
         Ok(())
     }

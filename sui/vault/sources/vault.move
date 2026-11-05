@@ -122,7 +122,7 @@ public fun new<Meme, Quote, Venue>(
     terms: VaultTerms,
     pool_id: ID,
 ): Vault<Meme, Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     registry.assert_venue<Venue>();
     registry.assert_issuer(terms.package_witness());
     let (meme_bps, quote_bps) = terms.protocol_bps();
@@ -217,7 +217,7 @@ public fun position_mut<Meme, Quote, Venue, Position: key + store>(
     _: &Venue,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ): &mut Position {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.id.dynamic_object_field_mut(PositionKey<Venue>())
 }
@@ -234,7 +234,7 @@ public fun attach_auto_lp_position<Meme, Quote, Venue, Position: key + store>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     position: Position,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     self.assert_position<_, _, Venue>();
 
     let position_id = object::id(&position);
@@ -257,7 +257,7 @@ public fun auto_lp_position_mut<Meme, Quote, Venue, Position: key + store>(
     _: &Venue,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ): &mut Position {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.id.dynamic_object_field_mut(AutoLpPositionKey<Venue>())
 }
@@ -279,7 +279,7 @@ public fun split_fees<Meme, Quote, Venue>(
     mut quote: Balance<Quote>,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     self.assert_position<_, _, Venue>();
     let (gross_meme, gross_quote) = (meme.value(), quote.value());
     if (gross_meme == 0 && gross_quote == 0) {
@@ -330,7 +330,7 @@ public fun apply_fee_split<Meme, Quote, Venue>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     self.assert_position<_, _, Venue>();
 
     self.fee_split.apply(clock);
@@ -343,7 +343,7 @@ public fun take_auto_lp<Meme, Quote, Venue>(
     _: &Venue,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ): (Balance<Meme>, Balance<Quote>, AutoLpReceipt) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     self.assert_position<_, _, Venue>();
 
     let meme = self.auto_lp_meme.withdraw_all();
@@ -368,7 +368,7 @@ public fun keep_auto_lp<Meme, Quote, Venue>(
     meme: Balance<Meme>,
     quote: Balance<Quote>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     self.assert_position<_, _, Venue>();
     let AutoLpReceipt { vault_id, taken_meme, taken_quote } = receipt;
     assert!(vault_id == self.id.to_inner(), blast_vault::errors::wrong_vault!());
@@ -403,7 +403,7 @@ public fun take_buyback_quote<Meme, Quote, Venue>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     quote_in: u64,
 ): (Balance<Quote>, BuybackReceipt) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
     self.assert_position<_, _, Venue>();
     assert!(
@@ -430,7 +430,7 @@ public fun burn_buyback<Meme, Quote, Venue>(
     min_meme_out: u64,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     self.assert_position<_, _, Venue>();
     let BuybackReceipt { vault_id, taken_quote } = receipt;
     assert!(vault_id == self.id.to_inner(), blast_vault::errors::wrong_vault!());
@@ -461,7 +461,7 @@ public fun claim_owner_balances<Meme, Quote>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     proof.assert_terms(&self.terms);
     assert!(
         self.owner_meme.value() > 0 || self.owner_quote.value() > 0,
@@ -488,7 +488,7 @@ public fun schedule_fee_split<Meme, Quote>(
     proposed: FeeSplit,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     proof.assert_terms(&self.terms);
 
     self.fee_split.schedule_value(proposed, clock);
@@ -500,7 +500,7 @@ public fun cancel_fee_split<Meme, Quote>(
     proof: OwnerProof,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     proof.assert_terms(&self.terms);
 
     self.fee_split.cancel();
@@ -518,7 +518,7 @@ public fun schedule_protocol_bps<Meme, Quote>(
     quote_bps: Bps,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
     let proposed = new_protocol_bps(meme_bps, quote_bps);
 
@@ -531,7 +531,7 @@ public fun apply_protocol_bps<Meme, Quote>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     package_version.assert_not_paused(constants::admin_pause_bit!());
 
     self.protocol_bps.apply(clock);
@@ -543,7 +543,7 @@ public fun cancel_protocol_bps<Meme, Quote>(
     _: &AdminWitness<CancelAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_bps.cancel();
 }
@@ -558,7 +558,7 @@ public fun pay_protocol_fees_with_partner<Meme, Quote>(
     partner: &Partner,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol.pay_with_partner(treasury, partner, ctx);
 }

@@ -31,7 +31,7 @@ guide.
 
 | Object | Created | Holds | Who writes it |
 | --- | --- | --- | --- |
-| `package_version::PackageVersion<BLAST_FUN>` | `blast_admin::package_admin::wrap` | the active generation and the Create, Trading, and Migrate pause bits | upgrade, pause, and unpause admins |
+| `package_version::PackageVersion<BLAST_FUN>` | `blast_admin::package_admin::wrap` | the active version and the Create, Trading, and Migrate pause bits | upgrade, pause, and unpause admins |
 | `launch_config::LaunchConfig` | package publish | policy new launches use: admitted Meme decimals, admitted Quote types, trade fees, admitted venues, Blast's one-time migration allocation, Blast's LP-fee share, the creation fee, accepted partners | Blast admins |
 | `runtime_config::RuntimeConfig` | package publish | settings read live: the account-claim signer keys and Blast's share of every trade fee | Blast admins |
 | `blast_core::blast_treasury::Treasury` | `blast_core` publish | the one address every Blast fee is paid to, for every product and vault | treasury admin |
@@ -42,7 +42,7 @@ guide.
 `BLAST_FUN` is `blast_fun::blast_fun::BLAST_FUN`, the package's one-time witness. Publication
 hands the publisher a `package_version::Publication<BLAST_FUN>`, which the publication PTB passes
 with the fresh `UpgradeCap` to `blast_admin::package_admin::wrap`. Every mutating launchpad call
-takes the shared `PackageVersion<BLAST_FUN>` and aborts when it is not the current generation (see
+takes the shared `PackageVersion<BLAST_FUN>` and aborts when it is not the current version (see
 Aborts).
 
 #### Owned objects and capabilities
@@ -404,7 +404,7 @@ which redeems it with its own witness and builds the pool and the vault. The `Mi
 abilities and only the stored venue's witness can redeem it, so a PTB that does not pass it to that
 venue fails. `launch::migrate`:
 
-1. Checks the current generation, that Migrate is not paused, and that the launch is
+1. Checks the current version, that Migrate is not paused, and that the launch is
    `MigrationReady`.
 2. Apportions the Meme supply and the final real Quote reserve by the allocation plan (see
    Economics).
@@ -561,7 +561,7 @@ A `PauseAdmin<BLAST_FUN>` calls `blast_admin::package_admin::pause` to set bits 
 at once; it emits `blast_admin::blast_admin_events::Paused<BLAST_FUN>`. Only
 `UnpauseAdmin<BLAST_FUN>` clears bits, with `launch_config::unpause`, which takes `LaunchConfig`,
 `PackageVersion` (mutable), the witness, `PackageAdmin<BLAST_FUN>`, and `RuntimeConfig`. It checks
-the current generation, then aborts with `blast_fun::errors::EUnguardedNotice` unless every
+the current version, then aborts with `blast_fun::errors::EUnguardedNotice` unless every
 launchpad notice is guarded: the claim-signer set, the trade-fee share, trade fees, the venue set,
 the migration allocation, the LP-fee share, and the creation fee each have a nonzero applied notice,
 no pending proposal would set one to zero, and no venue or signer admission is pending. The generic

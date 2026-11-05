@@ -35,7 +35,7 @@ Administration is `blast_admin`'s generic package administration:
 package-scoped `blast_admin::package_admin` roles (`UpgradeAdmin`,
 `CancelAdmin`) typed by this package's one-time witness (OTW). Buybacks take the shared
 `blast_core::blast_domain::BuybackAdmin`; the package declares no roles of its
-own. Every venue call checks **this** package's generation; the vault calls it
+own. Every venue call checks **this** package's version; the vault calls it
 makes check the vault's.
 
 Publication transfers an owned `Publication<BLAST_MIGRATORS>`.

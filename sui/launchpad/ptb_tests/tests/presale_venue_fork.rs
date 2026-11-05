@@ -131,8 +131,8 @@ const fn address(suffix: &[u8]) -> ObjectID {
 // === Tests ===
 
 /// Every reachable pause state against every u8 input, through unmodified production bytecode.
-/// Pausing is `blast_admin`'s and reads no consumer generation; unpausing is the presale's
-/// `creation_policy::unpause`, which rejects a stale generation first.
+/// Pausing is `blast_admin`'s and reads no consumer version; unpausing is the presale's
+/// `creation_policy::unpause`, which rejects a stale version first.
 #[test]
 fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> Result<()> {
     let mut w = World::new(Route::Bluefin)?;
@@ -147,12 +147,12 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
     let mut invalid = 0;
     let mut unchanged = 0;
     let mut stale = 0;
-    for generation in [1, 2] {
+    for version in [1, 2] {
         for flags in states {
             let mask: u8 = flags.iter().sum();
-            w.set_pause_generation_for_fixture(1)?;
+            w.set_pause_version_for_fixture(1)?;
             w.replace_pause_mask(mask)?;
-            w.set_pause_generation_for_fixture(generation)?;
+            w.set_pause_version_for_fixture(version)?;
             let before: BTreeSet<_> = flags.iter().copied().collect();
             for bits in 0..=u8::MAX {
                 for pausing in [true, false] {
@@ -164,7 +164,7 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
                         before.difference(&requested).copied().collect()
                     };
                     let pt = w.pause_command(pausing, bits)?;
-                    let rejected = if generation != 1 && !pausing {
+                    let rejected = if version != 1 && !pausing {
                         stale += 1;
                         Some(Expected::Abort { package: w.admin, module: "package_version", code: 9 })
                     } else if !(1..=7).contains(&bits) {
@@ -187,15 +187,15 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
                         assert_eq!(outcome.events.len(), 1);
                         assert_eq!(outcome.events_of("blast_admin_events", name),
                             [bcs::to_bytes(&(w.version, bits, next))?.as_slice()]);
-                        assert_eq!(w.pause_state()?, (w.version, next, generation));
+                        assert_eq!(w.pause_state()?, (w.version, next, version));
                         assert_eq!(w.h.snapshot(&watched[1..], &[w.h.sender]), untouched);
-                        w.set_pause_generation_for_fixture(1)?;
+                        w.set_pause_version_for_fixture(1)?;
                         w.replace_pause_mask(mask)?;
-                        w.set_pause_generation_for_fixture(generation)?;
+                        w.set_pause_version_for_fixture(version)?;
                         successes += 1;
                     }
-                    assert_eq!(w.pause_state()?, (w.version, mask, generation),
-                        "pausing={pausing}, bits={bits}, initial={mask}, generation={generation}");
+                    assert_eq!(w.pause_state()?, (w.version, mask, version),
+                        "pausing={pausing}, bits={bits}, initial={mask}, version={version}");
                 }
             }
         }
@@ -811,9 +811,9 @@ impl World {
         let versions = wrapped.created(&h, "package_version", "PackageVersion");
         ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
         let version = versions[0];
-        let (_, valid, paused, package_witness, generation): GenericPackageVersionContents =
+        let (_, valid, paused, package_witness, version): GenericPackageVersionContents =
             bcs::from_bytes(&h.contents(version))?;
-        ensure!((valid, paused, generation) == (7, 7, 1), "the presale starts fully paused at generation 1");
+        ensure!((valid, paused, version) == (7, 7, 1), "the presale starts fully paused at version 1");
         ensure!(package_witness.ends_with("::blast_presale_package::PackageWitness"), "{package_witness}");
         let custody = wrapped.created(&h, "package_admin", "PackageAdmin");
         ensure!(custody.len() == 1);
@@ -977,10 +977,10 @@ impl World {
         Ok(())
     }
 
-    /// The version's ID, paused bits and generation.
+    /// The version's ID, paused bits and version.
     fn pause_state(&self) -> Result<(ObjectID, u8, u64)> {
-        let (id, _, paused, _, generation): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
-        Ok((id, paused, generation))
+        let (id, _, paused, _, version): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
+        Ok((id, paused, version))
     }
 
     fn replace_pause_mask(&mut self, mask: u8) -> Result<()> {
@@ -994,23 +994,23 @@ impl World {
         Ok(())
     }
 
-    /// Only seed the stored generation; masks are always reached through real public calls.
-    fn set_pause_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+    /// Only seed the stored version; masks are always reached through real public calls.
+    fn set_pause_version_for_fixture(&mut self, version: u64) -> Result<()> {
         let (id, valid, paused, witness, _): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
         let mut object = self.h.object(self.version);
         object.data.try_as_move_mut().expect("PackageVersion")
-            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, generation))?);
+            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, version))?);
         self.h.insert(object);
         Ok(())
     }
 
-    /// Seeds the stored generation of the migrators' generic `PackageVersion`.
-    fn set_venue_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+    /// Seeds the stored version of the migrators' generic `PackageVersion`.
+    fn set_venue_version_for_fixture(&mut self, version: u64) -> Result<()> {
         let (id, valid, paused, witness, _): GenericPackageVersionContents =
             bcs::from_bytes(&self.h.contents(self.venue_version))?;
         let mut object = self.h.object(self.venue_version);
         object.data.try_as_move_mut().context("migrators PackageVersion")?
-            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, generation))?);
+            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, version))?);
         self.h.insert(object);
         Ok(())
     }
@@ -1920,10 +1920,10 @@ impl World {
         ensure!(pending.pending.as_ref().is_some_and(|p| p.value == next_split() && p.delay_ms == VAULT_FEE_NOTICE_MS));
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
         let watched = [m.vault, m.pool, sale.currency];
-        self.set_venue_generation_for_fixture(2)?;
+        self.set_venue_version_for_fixture(2)?;
         let stale = self.collect_route_pt(sale, m, m.pool, true)?;
         self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "package_version", code: 9}, &watched, &owners)?;
-        self.set_venue_generation_for_fixture(1)?;
+        self.set_venue_version_for_fixture(1)?;
         let early = self.collect_route_pt(sale, m, m.pool, true)?;
         self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 13}, &watched, &owners)?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(old.delay_ms));

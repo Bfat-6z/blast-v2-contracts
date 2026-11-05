@@ -24,7 +24,7 @@ venue's calls, and call the owner, round, and payout functions on it directly.
 - `blast_vault::holder_rewards::Round<Meme, Quote>` (shared, one per published round) holds one
   round's holder budget, its Merkle root, the claimed-leaf bitmap, and an optional gas reserve.
 - `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>` (shared) gates every call by
-  code generation and holds the admin pause bit.
+  code version and holds the admin pause bit.
 - Owner authority is a `blast_core::owner_proof::OwnerProof` that the sale's product issues to its
   creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
   witness.
@@ -135,7 +135,7 @@ immutable after its audit. An `UpgradeAdmin<BLAST_VAULT_PACKAGE>` schedules that
 `blast_admin::package_admin::schedule_make_immutable` and, once the 48-hour upgrade notice has
 passed, executes it with `blast_vault::blast_vault_package::make_immutable` (the shared
 `PackageAdmin`, the role witness, the `PackageVersion` and `Clock`). The call runs only on the
-current vault generation (code 9 from `blast_admin::package_version` otherwise) and then destroys
+current vault version (code 9 from `blast_admin::package_version` otherwise) and then destroys
 the `UpgradeCap`; no later upgrade or repair is possible.
 
 ### Reading state

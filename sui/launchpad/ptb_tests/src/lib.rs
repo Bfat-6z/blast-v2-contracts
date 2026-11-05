@@ -454,7 +454,7 @@ pub type LaunchConfigContents = (
 pub type VaultRegistryContents = (ObjectID, DelayedSet<String>);
 
 /// A `blast_admin::package_version::PackageVersion<M>` in BCS field order: id, defined pause
-/// bits, paused bits, the unpause witness type and the generation.
+/// bits, paused bits, the unpause witness type and the version.
 pub type GenericPackageVersionContents = (ObjectID, u8, u8, String, u64);
 
 /// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
@@ -925,10 +925,10 @@ impl Harness {
         let cap = publication.created(self, "package", "UpgradeCap");
         assert_eq!(bootstrap.len(), 1);
         assert_eq!(cap.len(), 1);
-        // The publication pins the package witness; the generation starts at 1 only at wrap.
+        // The publication pins the package witness; the version starts at 1 only at wrap.
         let (bootstrap_id, publisher, valid_pause_bits, unpause_witness):
             (ObjectID, (ObjectID, String, String), u8, String) = bcs::from_bytes(&self.contents(bootstrap[0]))?;
-        let generation = 1u64;
+        let version = 1u64;
         assert_eq!(valid_pause_bits, 7, "the launchpad defines Create, Trading and Migrate");
         assert!(unpause_witness.ends_with("::blast_fun::PackageWitness"), "{unpause_witness}");
         let cap_contents = self.contents(cap[0]);
@@ -954,10 +954,10 @@ impl Harness {
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
         assert_eq!(bcs::to_bytes(&sealed_caps[0])?, cap_contents);
-        let (version_id, valid, paused, witness, active_generation): GenericPackageVersionContents =
+        let (version_id, valid, paused, witness, active_version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
-        assert_eq!((version_id, valid, paused, witness, active_generation),
-            (version[0], 7, 7, unpause_witness, generation));
+        assert_eq!((version_id, valid, paused, witness, active_version),
+            (version[0], 7, 7, unpause_witness, version));
         let (_, signers, _): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode fresh RuntimeConfig")?;
         assert!(signers.members.is_empty() && signers.admissions.is_empty(), "publication admits no claim signer");
@@ -1133,9 +1133,9 @@ impl Harness {
         let custody = wrapped.created(self, "package_admin", "PackageAdmin");
         ensure!(version.len() == 1 && custody.len() == 1);
         ensure!(self.object(version[0]).is_shared() && self.object(custody[0]).is_shared());
-        let (_, valid, paused, unpause_witness, generation): GenericPackageVersionContents =
+        let (_, valid, paused, unpause_witness, version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the vault PackageVersion")?;
-        ensure!((valid, paused, generation) == (1, 1, 1), "the vault version starts fully paused at generation 1");
+        ensure!((valid, paused, version) == (1, 1, 1), "the vault version starts fully paused at version 1");
         ensure!(unpause_witness.ends_with("::blast_vault_package::PackageWitness"), "{unpause_witness}");
         self.assert_publication_upgrade_notice(custody[0])?;
 
@@ -1196,7 +1196,7 @@ impl Harness {
     }
 
     /// Wraps the migrators' publication with its never-upgraded cap through `blast_admin`'s generic
-    /// custody. The package defines no pause bits, so its version is shared unpaused at generation
+    /// custody. The package defines no pause bits, so its version is shared unpaused at version
     /// one with nothing to release.
     pub fn wrap_migrators(&mut self, admin: ObjectID, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
         ensure!(publication.created(self, "package_version", "PackageVersion").is_empty(), "no version before custody");
@@ -1217,9 +1217,9 @@ impl Harness {
         let custody = outcome.created(self, "package_admin", "PackageAdmin");
         ensure!(version.len() == 1 && custody.len() == 1);
         ensure!(self.object(version[0]).is_shared() && self.object(custody[0]).is_shared());
-        let (_, valid, paused, package_witness, generation): GenericPackageVersionContents =
+        let (_, valid, paused, package_witness, version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the migrators PackageVersion")?;
-        ensure!((valid, paused, generation) == (0, 0, 1), "the migrators version defines no pause bits at generation 1");
+        ensure!((valid, paused, version) == (0, 0, 1), "the migrators version defines no pause bits at version 1");
         ensure!(package_witness.ends_with("::blast_migrators::PackageWitness"), "{package_witness}");
         self.assert_publication_upgrade_notice(custody[0])?;
         Ok(version[0])

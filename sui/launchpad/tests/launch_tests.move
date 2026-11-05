@@ -232,14 +232,14 @@ fun security_curve_fee_cap_replay() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun security_curve_fee_cap_stale_schedule() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         f.clock.set_for_testing(1234);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         launch.schedule_curve_fee_cap_reassignment(
             &f.package_version,
             &creator_admin(),
@@ -251,7 +251,7 @@ fun security_curve_fee_cap_stale_schedule() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun security_curve_fee_cap_stale_apply() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -265,14 +265,14 @@ fun security_curve_fee_cap_stale_apply() {
             &f.clock
         );
         f.clock.set_for_testing(172_801_234);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         launch.apply_curve_fee_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         launch.put_back();
     });
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun security_curve_fee_cap_stale_cancel() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -286,7 +286,7 @@ fun security_curve_fee_cap_stale_cancel() {
             &f.clock
         );
         f.clock.set_for_testing(172_801_234);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         launch.cancel_curve_fee_cap_reassignment(
             &f.package_version,
             &blast_acl::witness_for_testing<CancelAdmin>()
@@ -506,14 +506,14 @@ fun security_metadata_cap_replay() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun security_metadata_cap_stale_schedule() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         f.clock.set_for_testing(1234);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         launch.schedule_metadata_cap_reassignment(
             &f.package_version,
             &creator_admin(),
@@ -525,7 +525,7 @@ fun security_metadata_cap_stale_schedule() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun security_metadata_cap_stale_apply() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -539,14 +539,14 @@ fun security_metadata_cap_stale_apply() {
             &f.clock
         );
         f.clock.set_for_testing(172_801_234);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         launch.apply_metadata_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         launch.put_back();
     });
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun security_metadata_cap_stale_cancel() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
@@ -560,7 +560,7 @@ fun security_metadata_cap_stale_cancel() {
             &f.clock
         );
         f.clock.set_for_testing(172_801_234);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         launch.cancel_metadata_cap_reassignment(
             &f.package_version,
             &blast_acl::witness_for_testing<CancelAdmin>()
@@ -1300,14 +1300,14 @@ fun intake_rejects_a_ticket_whose_decimals_are_no_longer_allowed() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
-fun set_virtual_quote_rejects_a_stale_generation() {
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
+fun set_virtual_quote_rejects_a_stale_version() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         initializer.set_virtual_quote(&f.package_version, 0);
         destroy(initializer);
@@ -1316,14 +1316,14 @@ fun set_virtual_quote_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
-fun set_graduation_target_rejects_a_stale_generation() {
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
+fun set_graduation_target_rejects_a_stale_version() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         initializer.set_graduation_target(&f.package_version, 0);
         destroy(initializer);
@@ -1332,14 +1332,14 @@ fun set_graduation_target_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
-fun set_allocation_plan_rejects_a_stale_generation() {
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
+fun set_allocation_plan_rejects_a_stale_version() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         initializer.set_allocation_plan(&f.package_version, default_plan());
         destroy(initializer);
@@ -1348,14 +1348,14 @@ fun set_allocation_plan_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
-fun set_lp_fee_split_rejects_a_stale_generation() {
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
+fun set_lp_fee_split_rejects_a_stale_version() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         initializer.set_lp_fee_split(&f.package_version, default_fee_split());
         destroy(initializer);
@@ -1364,14 +1364,14 @@ fun set_lp_fee_split_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
-fun set_opening_round_rejects_a_stale_generation() {
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
+fun set_opening_round_rejects_a_stale_version() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         initializer.set_opening_round(&f.package_version, 1);
         destroy(initializer);
@@ -1380,7 +1380,7 @@ fun set_opening_round_rejects_a_stale_generation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun set_partner_checks_the_version_before_partner_admission() {
     let mut fixture = start();
 
@@ -1388,7 +1388,7 @@ fun set_partner_checks_the_version_before_partner_admission() {
         let partner = partners::new_for_testing(PARTNER, PARTNER_SHARE_BPS, f.ctx!());
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         initializer.set_partner(&f.package_version, &f.config, &partner, &f.clock);
         destroy(initializer);
@@ -1398,14 +1398,14 @@ fun set_partner_checks_the_version_before_partner_admission() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun finalize_checks_the_version_before_missing_settings() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let initializer = f.start_launch<TEST_QUOTE, _>(ticket, TestVenue());
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         destroy(f.finalize_launch(initializer));
     });
@@ -1413,14 +1413,14 @@ fun finalize_checks_the_version_before_missing_settings() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun share_checks_the_version_before_already_shared_lifecycle() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let launch = f.new_launch_with(MIGRATION_QUOTE_TARGET, default_plan());
         let launch = f.open_launch(launch);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         launch.share(&f.package_version, &f.clock);
     });
@@ -1465,7 +1465,7 @@ fun launch_rejects_using_the_meme_type_as_quote_before_config_lookup() {
 }
 
 #[test, expected_failure(abort_code = blast_fun::errors::EInvalidSellBurnBps, location = blast_fun::launch_ticket)]
-fun launch_rejects_a_ticket_whose_sell_burn_exceeds_this_generations_ceiling() {
+fun launch_rejects_a_ticket_whose_sell_burn_exceeds_this_versions_ceiling() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
@@ -1785,13 +1785,13 @@ fun owned_launch_rejects_public_sell_before_zero_input() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun buy_checks_the_version_first() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         let (meme, refund) = f.buy(&mut launch, 1_000, 0);
 
         destroy(meme);
@@ -2128,12 +2128,12 @@ fun metadata_recipient_schedule_rejects_zero() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun curve_fee_cap_schedule_checks_version_before_zero_recipient() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         launch.schedule_curve_fee_cap_reassignment(
             &f.package_version,
             &creator_admin(),
@@ -2175,12 +2175,12 @@ fun curve_fee_cap_delay_reduction_to_zero_waits_the_old_notice() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun metadata_cap_schedule_checks_version_before_zero_recipient() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         launch.schedule_metadata_cap_reassignment(
             &f.package_version,
             &creator_admin(),
@@ -2368,14 +2368,14 @@ fun launcher_cannot_claim_another_address_creators_caps() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun creator_claim_checks_the_version_before_the_sender() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
 
         destroy(curve_fee_cap);
@@ -3432,7 +3432,7 @@ fun claim_protocol_fees_with_a_zero_share_partner_pays_nothing() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 /// A stale package is refused before the partner check, so old bytecode cannot claim.
 fun claim_protocol_fees_checks_the_version_before_the_partner() {
     let mut fixture = start();
@@ -3442,7 +3442,7 @@ fun claim_protocol_fees_checks_the_version_before_the_partner() {
         let partner = f.accepted_partner();
         let ticket = f.new_ticket(CREATOR);
         let mut launch = f.intake_with_partner(ticket, &partner);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         launch.claim_protocol_fees(&f.package_version, &f.treasury, f.ctx!());
 
@@ -3453,7 +3453,7 @@ fun claim_protocol_fees_checks_the_version_before_the_partner() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 /// A stale package is refused before the partner check, so old bytecode cannot pay a partner.
 fun claim_protocol_fees_with_partner_checks_the_version_before_the_partner() {
     let mut fixture = start();
@@ -3464,7 +3464,7 @@ fun claim_protocol_fees_with_partner_checks_the_version_before_the_partner() {
         let other = f.accepted_partner();
         let ticket = f.new_ticket(CREATOR);
         let mut launch = f.intake_with_partner(ticket, &partner);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         launch.claim_protocol_fees_with_partner(
             &f.package_version,
@@ -4109,14 +4109,14 @@ fun only_the_stored_venue_redeems_the_migration() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun stale_package_version_aborts_migration_before_its_lifecycle_check() {
     let mut fixture = start();
 
     fixture.next_tx!(LAUNCHER, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
         let mut currency = f.take_currency();
         let migration = launch.migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!());
 
@@ -4277,7 +4277,7 @@ fun a_retired_curve_fee_cap_cannot_prove_ownership() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun prove_owner_checks_the_version_before_the_cap() {
     let mut fixture = start();
 
@@ -4286,7 +4286,7 @@ fun prove_owner_checks_the_version_before_the_cap() {
         let mut launch = f.open_launch(launch);
         let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
         launch.reassign_curve_fee_cap_for_testing(&f.package_version, &creator_admin(), NEW_CREATOR, f.ctx!());
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         let proof = launch.prove_owner(&f.package_version, &curve_fee_cap);
 
