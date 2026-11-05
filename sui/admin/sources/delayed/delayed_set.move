@@ -14,7 +14,7 @@ public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has sto
     key: K,
     members: VecSet<E>,
     delay_ms: u64,
-    admissions: VecMap<E, PendingDelay>,
+    admissions: VecMap<E, Deadline>,
     pending_delay: Option<PendingDelay>,
 }
 
@@ -91,7 +91,7 @@ public fun is_guarded<K: copy + drop + store, E: copy + drop + store>(
 ): bool {
     self.delay_ms > 0
         && self.admissions.is_empty()
-        && self.pending_delay.is_none_or!(|delay| delay.pending_delay_ms() > 0)
+        && self.pending_delay.is_none_or!(|delay| delay.delay_ms() > 0)
 }
 
 /// The proposed next delay, if any.
@@ -113,7 +113,7 @@ public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
     let ready_at_ms = delayed::ready_at_ms_after(self.delay_ms, 0, clock);
 
     self.cancel_admission_if_pending(member);
-    self.admissions.insert(member, delayed::new_pending_delay(self.delay_ms, ready_at_ms));
+    self.admissions.insert(member, delayed::new_deadline(self.delay_ms, ready_at_ms));
 
     sui::event::emit(SetScheduled {
         owner: self.owner,
@@ -258,7 +258,7 @@ public fun is_ready<K: copy + drop + store, E: copy + drop + store>(
     clock: &Clock,
 ): bool {
     self.admissions.try_get(member).is_some_and!(|admission| {
-        clock.timestamp_ms() >= admission.pending_delay_ready_at_ms()
+        clock.timestamp_ms() >= admission.ready_at_ms()
     })
 }
 
@@ -268,7 +268,7 @@ public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store>(
     clock: &Clock,
 ): bool {
     self.pending_delay.is_some_and!(|delay| {
-        delayed::is_ready_at(delay.pending_delay_ready_at_ms(), delay.pending_delay_ms(), clock)
+        delayed::is_ready_at(delay.ready_at_ms(), delay.delay_ms(), clock)
     })
 }
 
@@ -282,11 +282,11 @@ public fun key<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet
     self.key
 }
 
-/// The delay `member`'s pending admission waits and when it becomes ready, if one is pending.
-public fun admission_delay<K: copy + drop + store, E: copy + drop + store>(
+/// The deadline of `member`'s pending admission, if one is pending.
+public fun admission_deadline<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
     member: &E,
-): Option<PendingDelay> {
+): Option<Deadline> {
     self.admissions.try_get(member)
 }
 
@@ -425,6 +425,6 @@ public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 // === Imports ===
 
-use blast_admin::delayed::{Self, PendingDelay};
+use blast_admin::delayed::{Self, Deadline, PendingDelay};
 
 use sui::{clock::Clock, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};

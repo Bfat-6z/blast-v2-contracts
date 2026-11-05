@@ -254,8 +254,8 @@ one type; consumers store four:
 | --- | --- | --- |
 | `delayed::Delayed<K, T>` | an applied `value`, its applied `delay_ms`, at most one `delayed::Proposal<T>` | fees, shares, treasuries, destinations, fee splits |
 | `delayed_action::DelayedAction<K, A>` | an applied `delay_ms`, at most one `delayed::Proposal<delayed_action::Change<A>>` | one-shot actions: upgrades, immutability, creator-cap reassignment, holder-reward rounds, the root transfer |
-| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines (each a `delayed::PendingDelay`), at most one proposed notice | witness and venue allowlists, the launchpad's account-claim signer keys |
-| `delayed_map::DelayedMap<K, E, V>` | applied values by entry `E` in a `Table`, one applied `delay_ms`, at most one pending change per entry with a fixed deadline, at most one proposed notice | keyed values such as per-coin overrides |
+| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions, each with a fixed `delayed::Deadline`, at most one proposed next delay (a `delayed::PendingDelay`) | witness and venue allowlists, the launchpad's account-claim signer keys |
+| `delayed_map::DelayedMap<K, E, V>` | applied values by entry `E` in a `Table`, one applied `delay_ms`, at most one pending change per entry with a fixed `delayed::Deadline`, at most one proposed next delay (a `delayed::PendingDelay`) | keyed values such as per-coin overrides |
 
 Every value carries an `owner` (the ID of the object that stores it) and a `key`
 of type `K`. `delayed::new`, `delayed_action::new`, `delayed_set::new` and
@@ -331,19 +331,22 @@ Every reader is read-only. The same name means the same concept on every type.
 | --- | --- | --- | --- | --- |
 | owner object ID, key | `delayed::owner`, `delayed::key` | `delayed_action::owner`, `delayed_action::key` | `delayed_set::owner`, `delayed_set::key` | `delayed_map::owner`, `delayed_map::key` |
 | applied state | `delayed::value` | none | `delayed_set::contains`, `delayed_set::members`, `delayed_set::length` | `delayed_map::value`, `delayed_map::contains`, `delayed_map::length` |
-| applied notice | `delayed::delay_ms` | `delayed_action::delay_ms` | `delayed_set::delay_ms` | `delayed_map::delay_ms` |
-| pending proposal | `delayed::pending` | `delayed_action::pending`, `delayed_action::pending_action` | `delayed_set::is_pending`, `delayed_set::admission_delay`, `delayed_set::admission_ready_at_ms`, `delayed_set::pending_count` | `delayed_map::is_pending`, `delayed_map::pending`, `delayed_map::entry_ready_at_ms`, `delayed_map::pending_count` |
+| applied delay | `delayed::delay_ms` | `delayed_action::delay_ms` | `delayed_set::delay_ms` | `delayed_map::delay_ms` |
+| pending proposal | `delayed::pending` | `delayed_action::pending`, `delayed_action::pending_action` | `delayed_set::is_pending`, `delayed_set::admission_deadline`, `delayed_set::admission_ready_at_ms`, `delayed_set::pending_count` | `delayed_map::is_pending`, `delayed_map::pending`, `delayed_map::entry_ready_at_ms`, `delayed_map::pending_count` |
 | ready now | `delayed::is_ready` | `delayed_action::is_ready` | `delayed_set::is_ready` (per member) | `delayed_map::is_ready` (per entry) |
-| pending notice change | in `delayed::pending` | `delayed_action::pending_delay`, `delayed_action::is_delay_ready` | `delayed_set::pending_delay`, `delayed_set::is_delay_ready` | `delayed_map::pending_delay`, `delayed_map::is_delay_ready` |
+| pending delay change | in `delayed::pending` | `delayed_action::pending_delay`, `delayed_action::is_delay_ready` | `delayed_set::pending_delay`, `delayed_set::is_delay_ready` | `delayed_map::pending_delay`, `delayed_map::is_delay_ready` |
 | guarded | `delayed::is_guarded` | `delayed_action::is_guarded` | `delayed_set::is_guarded` | `delayed_map::is_guarded` |
 
 Value types: `delayed::Proposal` exposes `delayed::proposal_value`,
 `delayed::proposal_delay_ms` and `delayed::proposal_ready_at_ms` (also as `value`,
-`delay_ms` and `ready_at_ms` on the value); `delayed::PendingDelay` exposes
-`delayed::pending_delay_ms` and `delayed::pending_delay_ready_at_ms` (also as `delay_ms`
+`delay_ms` and `ready_at_ms` on the value); `delayed::PendingDelay`, a proposed next
+delay, exposes `delayed::pending_delay_ms` and `delayed::pending_delay_ready_at_ms`
+(also as `delay_ms` and `ready_at_ms`); `delayed::Deadline`, the fixed deadline of a
+pending admission or entry change and the applied delay it was scheduled under, exposes
+`delayed::deadline_delay_ms` and `delayed::deadline_ready_at_ms` (also as `delay_ms`
 and `ready_at_ms`); `delayed_map::EntryProposal` exposes
 `delayed_map::entry_proposal_value` (none clears) and
-`delayed_map::entry_proposal_delay`; `delayed_action::action`,
+`delayed_map::entry_proposal_deadline`; `delayed_action::action`,
 `delayed_set::member`, `delayed_map::changed_entry` and
 `delayed_map::changed_value` read a change, each none for a delay change.
 `delayed_map::changed_value` returns `Option<Option<V>>`: `some(some(v))` sets

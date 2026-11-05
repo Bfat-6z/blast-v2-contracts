@@ -24,10 +24,10 @@ public struct DelayedMap<
     pending_delay: Option<PendingDelay>,
 }
 
-/// A proposed entry value, or none to clear the entry, and the delay it waits.
+/// A proposed entry value, or none to clear the entry, and its fixed deadline.
 public struct EntryProposal<V: copy + drop + store> has copy, drop, store {
     value: Option<V>,
-    delay: PendingDelay,
+    deadline: Deadline,
 }
 
 /// What a map proposal does once applied.
@@ -103,10 +103,10 @@ public fun schedule<K: copy + drop + store, E: copy + drop + store, V: copy + dr
 ): u64 {
     assert!(value != self.value(&entry), blast_admin::errors::unchanged!());
     let ready_at_ms = delayed::ready_at_ms_after(self.delay_ms, 0, clock);
-    let delay = delayed::new_pending_delay(self.delay_ms, ready_at_ms);
+    let deadline = delayed::new_deadline(self.delay_ms, ready_at_ms);
 
     self.cancel_entry_if_pending(entry);
-    self.pending.insert(entry, EntryProposal { value, delay });
+    self.pending.insert(entry, EntryProposal { value, deadline });
 
     sui::event::emit(MapScheduled {
         owner: self.owner,
@@ -126,8 +126,8 @@ public fun apply<K: copy + drop + store, E: copy + drop + store, V: copy + drop 
     clock: &Clock,
 ) {
     assert!(self.pending.contains(&entry), blast_admin::errors::no_pending!());
-    let EntryProposal { value, delay } = self.pending[&entry];
-    assert!(clock.timestamp_ms() >= delay.ready_at_ms(), blast_admin::errors::not_ready!());
+    let EntryProposal { value, deadline } = self.pending[&entry];
+    assert!(clock.timestamp_ms() >= deadline.ready_at_ms(), blast_admin::errors::not_ready!());
 
     self.pending.remove(&entry);
     if (self.entries.contains(entry)) {
@@ -139,7 +139,7 @@ public fun apply<K: copy + drop + store, E: copy + drop + store, V: copy + drop 
         owner: self.owner,
         key: self.key,
         change: MapChange::Entry { entry, value },
-        delay_ms: delay.delay_ms(),
+        delay_ms: deadline.delay_ms(),
     });
 }
 
@@ -224,9 +224,9 @@ public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>)
     self.value
 }
 
-/// The delay the change waits and when it becomes ready.
-public fun entry_proposal_delay<V: copy + drop + store>(self: &EntryProposal<V>): PendingDelay {
-    self.delay
+/// The deadline the change waits.
+public fun entry_proposal_deadline<V: copy + drop + store>(self: &EntryProposal<V>): Deadline {
+    self.deadline
 }
 
 /// Whether `entry` has a pending change.
@@ -242,7 +242,7 @@ public fun entry_ready_at_ms<K: copy + drop + store, E: copy + drop + store, V: 
     self: &DelayedMap<K, E, V>,
     entry: &E,
 ): Option<u64> {
-    self.pending.try_get(entry).map!(|proposal| proposal.delay.pending_delay_ready_at_ms())
+    self.pending.try_get(entry).map!(|proposal| proposal.deadline.ready_at_ms())
 }
 
 /// Whether `entry`'s pending change would apply now.
@@ -252,7 +252,7 @@ public fun is_ready<K: copy + drop + store, E: copy + drop + store, V: copy + dr
     clock: &Clock,
 ): bool {
     self.pending.try_get(entry).is_some_and!(|proposal| {
-        clock.timestamp_ms() >= proposal.delay.pending_delay_ready_at_ms()
+        clock.timestamp_ms() >= proposal.deadline.ready_at_ms()
     })
 }
 
@@ -262,7 +262,7 @@ public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store, V: cop
     clock: &Clock,
 ): bool {
     self.pending_delay.is_some_and!(|delay| {
-        delayed::is_ready_at(delay.pending_delay_ready_at_ms(), delay.pending_delay_ms(), clock)
+        delayed::is_ready_at(delay.ready_at_ms(), delay.delay_ms(), clock)
     })
 }
 
@@ -309,7 +309,7 @@ public fun is_guarded<K: copy + drop + store, E: copy + drop + store, V: copy + 
 ): bool {
     self.delay_ms > 0
         && self.pending.is_empty()
-        && self.pending_delay.is_none_or!(|delay| delay.pending_delay_ms() > 0)
+        && self.pending_delay.is_none_or!(|delay| delay.delay_ms() > 0)
 }
 
 /// The entry a change touches, or none for a delay change.
@@ -340,14 +340,14 @@ fun cancel_entry_if_pending<K: copy + drop + store, E: copy + drop + store, V: c
     entry: E,
 ) {
     if (!self.pending.contains(&entry)) return;
-    let (_, EntryProposal { value, delay }) = self.pending.remove(&entry);
+    let (_, EntryProposal { value, deadline }) = self.pending.remove(&entry);
 
     sui::event::emit(MapCancelled {
         owner: self.owner,
         key: self.key,
         change: MapChange::Entry { entry, value },
-        delay_ms: delay.delay_ms(),
-        ready_at_ms: delay.ready_at_ms(),
+        delay_ms: deadline.delay_ms(),
+        ready_at_ms: deadline.ready_at_ms(),
     });
 }
 
@@ -458,8 +458,8 @@ public struct MapDestroyed<
 // === Imports ===
 
 public use fun entry_proposal_value as EntryProposal.value;
-public use fun entry_proposal_delay as EntryProposal.delay;
+public use fun entry_proposal_deadline as EntryProposal.deadline;
 
-use blast_admin::delayed::{Self, PendingDelay};
+use blast_admin::delayed::{Self, Deadline, PendingDelay};
 
 use sui::{clock::Clock, table::{Self, Table}, vec_map::{Self, VecMap}};

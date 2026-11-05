@@ -433,6 +433,13 @@ pub struct PendingDelay {
     pub ready_at_ms: u64,
 }
 
+/// Mirrors `blast_admin::delayed::Deadline`.
+#[derive(serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Deadline {
+    pub delay_ms: u64,
+    pub ready_at_ms: u64,
+}
+
 /// Mirrors `blast_admin::delayed_set::DelayedSet<K, E>`, its `VecSet` and `VecMap` flattened.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct DelayedSet<E> {
@@ -440,7 +447,7 @@ pub struct DelayedSet<E> {
     pub key: bool,
     pub members: Vec<E>,
     pub delay_ms: u64,
-    pub admissions: Vec<(E, PendingDelay)>,
+    pub admissions: Vec<(E, Deadline)>,
     pub pending_delay: Option<PendingDelay>,
 }
 

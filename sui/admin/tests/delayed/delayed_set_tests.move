@@ -346,17 +346,17 @@ fun a_set_accepts_the_ceiling_delay() {
 }
 
 #[test]
-fun readers_report_owner_key_and_a_pending_admissions_delay() {
+fun readers_report_owner_key_and_a_pending_admissions_deadline() {
     let clock = clock_at(10);
     let mut set = new_witness_set(DELAY_MS);
     set.schedule_add(@0xA, &clock);
 
-    let delay = set.admission_delay(&@0xA).destroy_some();
+    let deadline = set.admission_deadline(&@0xA).destroy_some();
     assert_eq!(set.owner(), owner());
     assert_eq!(set.key(), Witnesses());
-    assert_eq!(delay.delay_ms(), DELAY_MS);
-    assert_eq!(delay.ready_at_ms(), 10 + DELAY_MS);
-    assert!(set.admission_delay(&@0xB).is_none());
+    assert_eq!(deadline.delay_ms(), DELAY_MS);
+    assert_eq!(deadline.ready_at_ms(), 10 + DELAY_MS);
+    assert!(set.admission_deadline(&@0xB).is_none());
 
     set.cancel_add(@0xA);
     set.destroy();
