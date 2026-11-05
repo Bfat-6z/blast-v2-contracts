@@ -663,7 +663,7 @@ if [[ -e sources/fees.move ]] \
     != 'accrue_trade_fees claim_creator_fees ' ]] \
   || [[ "$(awk -F'\t' '$1 == "FN" && $6 == 0 && $10 ~ /self\s*\.protocol_fees\s*\./ { print $2 }' <<<"$launch_fee_facts" | LC_ALL=C sort | tr '\n' ' ')" \
     != 'accrue_trade_fees claim_protocol_fees claim_protocol_fees_with_partner migrate ' ]] \
-  || [[ "$(count_occurrences 'protocol_fees::new\(package_witness\(\), id\.to_inner\(\), partner_id\)' <<<"$(move_production_body finalize <<<"$launch_fee_facts")")" != 1 ]]; then
+  || [[ "$(count_occurrences 'protocol_fees::new\(package_witness\(\), &id, partner_id\)' <<<"$(move_production_body finalize <<<"$launch_fee_facts")")" != 1 ]]; then
   echo "Blast's launch fees must sit in the core Ledger sealed by PackageWitness and the creator's in its own balances, each reached only by its accrual, claim, and migration." >&2
   failures=$((failures + 1))
 fi
@@ -977,7 +977,7 @@ if [[ ! -f sources/launch/launch.move ]] \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
   || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, creator_metadata_cap_reassignment, curve_fee_cap_id: option::none(), creator_metadata_cap_id: option::none(), partner_id, };'* ]] \
-  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let mut protocol_fees = protocol_fees::new(package_witness(), id.to_inner(), partner_id); protocol_fees.accrue_sui(creation_fee); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let creator_metadata_cap_reassignment = delayed_action::new( CreatorMetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
+  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let mut protocol_fees = protocol_fees::new(package_witness(), &id, partner_id); protocol_fees.accrue_sui(creation_fee); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let creator_metadata_cap_reassignment = delayed_action::new( CreatorMetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
   || [[ "$launch_finalize_body" != *'protocol_fees, creator_meme_fees: balance::zero(), creator_quote_fees: balance::zero(),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \
@@ -1054,7 +1054,7 @@ done
 if [[ "$(move_production_function_contract prove_owner <<<"$launch_facts")" \
     != 'public:0:0:fun prove_owner<Meme, Quote>( self: &Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, curve_fee_cap: &CurveFeeCap<Meme>, ): OwnerProof' ]] \
   || [[ "$(move_production_body prove_owner <<<"$launch_facts")" \
-    != 'package_version.assert_current(constants::version!()); self.assert_curve_fee_cap(curve_fee_cap); owner_proof::new(package_witness(), self.id.to_inner())' ]] \
+    != 'package_version.assert_current(constants::version!()); self.assert_curve_fee_cap(curve_fee_cap); owner_proof::new(package_witness(), &self.id)' ]] \
   || [[ "$(move_production_function_contract assert_curve_fee_cap <<<"$launch_facts")" \
     != 'private:0:0:fun assert_curve_fee_cap<Meme, Quote>( self: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, )' ]] \
   || [[ "$(move_production_body assert_curve_fee_cap <<<"$launch_facts")" \
@@ -1423,7 +1423,7 @@ if [[ "$(launch_functions_containing 'self.lifecycle = Lifecycle::Migrated;')" !
     'self.meme_reserve.withdraw_all()' \
     'self.lifecycle = Lifecycle::Migrated;' \
     'events::migrated<Meme,Quote>(' \
-    'let terms = migration::vault_terms(package_witness(),self.id.to_inner(),self.lp_fee_split,protocol_meme_bps,protocol_quote_bps,self.partner_id,migration::residuals_to_protocol());' \
+    'let terms = migration::vault_terms(package_witness(),&self.id,self.lp_fee_split,protocol_meme_bps,protocol_quote_bps,self.partner_id,migration::residuals_to_protocol());' \
     <<<"$launch_migrate_shape" \
   || [[ "$launch_migrate_shape" != *';migration::new(package_witness(),meme,quote,self.venue,terms)' ]] \
   || [[ "$(count_occurrences 'migration::(new|vault_terms|residuals_to_protocol)\(' <<<"$launch_source")" != 3 ]] \

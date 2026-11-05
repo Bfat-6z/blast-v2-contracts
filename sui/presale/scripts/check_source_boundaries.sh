@@ -122,7 +122,7 @@ rg -q '^public struct PackageWitness\(\) has drop;$' <<<"$otw_production" \
   && [ "$(rg -c 'package_witness\(\)' <<<"$prove_owner_body")" == 1 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$finalize_body")" == 1 ] \
   || fail "Only new, finalize, migrate, prove_owner, sale_token::new, unpause and venue_admission may take the presale's package witness."
-for term in 'self.id.to_inner(),' 'self.fee_split,' 'self.protocol_fees.lp_fee_meme_bps(),' \
+for term in '&self.id,' 'self.fee_split,' 'self.protocol_fees.lp_fee_meme_bps(),' \
   'self.protocol_fees.lp_fee_quote_bps(),' 'self.partner_id,' 'migration::residuals_to_owner(),'; do
   rg -Fq "$term" <<<"$migrate_body" || fail "migrate must seal ${term%,} into its vault terms."
 done

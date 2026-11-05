@@ -20,7 +20,7 @@ venue's calls, and call the owner, round, and payout functions on it directly.
 - `blast_vault::vault::Vault<Meme, Quote>` (shared, one per migrated sale) holds the position under
   the venue's key, the terms the sale sealed (`blast_core::migration::VaultTerms`), the fee split
   and Blast's share, each behind a notice, and the owner, auto-LP, holder-reward, and burn
-  balances.
+  balances. Construction permanently binds the vault to that venue witness type.
 - `blast_vault::holder_rewards::Round<Meme, Quote>` (shared, one per published round) holds one
   round's holder budget, its Merkle root, the claimed-leaf bitmap, and an optional gas reserve.
 - `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>` (shared) gates every call by
@@ -41,7 +41,10 @@ the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
    more.
 2. The venue attaches its position and shares the vault with
    `blast_vault::vault::share_with_position`, which settles the migration residuals and emits
-   `blast_vault_events::VaultCreated`.
+   `blast_vault_events::VaultCreated`. Sharing requires the exact venue bound at construction,
+   even if another venue is admitted. The position key can be attached only once: re-sharing with the
+   bound venue aborts on the existing key, and another venue aborts before attaching anything or
+   emitting an event.
 3. Each fee collection through the venue calls `blast_vault::vault::split_fees`.
 4. Holder-reward rounds are scheduled, published, claimed, and closed (see Flows).
 
@@ -176,6 +179,9 @@ the `UpgradeCap`; no later upgrade or repair is possible.
 
 - Vault creation: `unadmitted_venue`, then `unadmitted_package_witness`. Scheduling Blast's share above
   3,000 basis points per asset aborts with `invalid_protocol_bps`.
+- Sharing: `wrong_venue` when the witness differs from the venue bound at construction, checked
+  before `zero_liquidity`. Re-sharing with the bound venue aborts with the Sui dynamic-field
+  `EFieldAlreadyExists` error. Use the existing vault through its venue's calls.
 - A venue's buyback or auto-LP return: `wrong_vault` for another vault's receipt,
   `returned_exceeds_taken` when it returns more than it took.
 - Owner claim with nothing accrued: `nothing_to_claim`. A proof for another sale or package

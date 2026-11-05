@@ -1919,7 +1919,7 @@ impl World {
         );
         if apply {
             let changes: Vec<DelayedApplied<FeeSplit>> = outcome.delayed("DelayedApplied", "vault", "FeeSplitKey")?;
-            ensure!(changes.len() == 1 && changes[0].owner == m.vault);
+            ensure!(changes.len() == 1 && changes[0].parent == m.vault);
             ensure!(changes[0].previous_value == before.fee_split.value && changes[0].value == after.fee_split.value);
             ensure!(changes[0].delay_ms == after.fee_split.delay_ms && after.fee_split.pending.is_none());
             self.split = after.fee_split.value.clone();
@@ -2386,6 +2386,7 @@ struct Ledger {
 struct VaultState {
     _id: ObjectID,
     terms: VaultTerms,
+    _venue: String,
     pool_id: ObjectID,
     fee_split: Delayed<FeeSplit>,
     _protocol_bps: Delayed<(u64, u64)>,

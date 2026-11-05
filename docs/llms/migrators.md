@@ -383,7 +383,7 @@ burn Quote. Every Meme bought is burned, or sent to `@0x0` under a fixed supply.
 | `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded` | `compound_auto_lp` | Cetus's auto-LP position; liquidity added and what still waits |
 | `blast_vault_events::BuybackBurned` | `buyback_and_burn` | `quote_spent`, `meme_burned`, burn Quote still waiting |
 | `blast_core::blast_core_events::ProtocolFeesPaid` | migration and collections on a vault without a partner | Blast's residuals and LP-fee cut paid to the treasury |
-| `delayed::DelayedApplied` | `settle_and_apply_fee_split` | keyed by `blast_vault::vault::FeeSplitKey` with the vault ID as `owner`: the previous and new split |
+| `delayed::DelayedApplied` | `settle_and_apply_fee_split` | keyed by `blast_vault::vault::FeeSplitKey` with the vault ID as `parent`: the previous and new split |
 
 The migrators, vault, and core events are plain Sui events (not wrapped in an envelope), typed by
 the pair's `Meme` and `Quote`. Cetus and Bluefin emit their own pool, position, and swap events in

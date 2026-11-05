@@ -131,7 +131,7 @@ the event always records money the partner really received. `PartnerUpdated
 { partner_id, recipient }` is emitted at registration and on every recipient
 change; the share and cap lifecycle is `blast_admin::delayed`'s `DelayedCreated`,
 `DelayedScheduled`, `DelayedCancelled` and `DelayedApplied`, keyed by `ShareKey`
-or `CapKey` with the partner as `owner`.
+or `CapKey` with the partner as `parent`.
 
 The deployed partner package is immutable. This payout change requires a fresh
 partner publication and relinking its consumer packages; the existing mainnet

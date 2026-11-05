@@ -23,6 +23,11 @@ rg -q 'registry.assert_venue<Venue>\(\);' sources/vault.move \
   || fail "vault::new must require an admitted venue witness"
 rg -q 'registry.assert_package_witness\(terms.package_witness\(\)\);' sources/vault.move \
   || fail "vault::new must require an admitted issuer witness"
+rg -q 'venue: type_name::with_original_ids<Venue>\(\),' sources/vault.move \
+  || fail "vault::new must bind the constructing venue's original type"
+share="$(sed -n '/^public fun share_with_position</,/^}/p' sources/vault.move)"
+rg -q 'self.venue == type_name::with_original_ids<Venue>\(\)' <<<"$share" \
+  || fail "vault sharing must assert the venue bound at construction"
 if rg -n 'self\.(fee_split|protocol_bps)\.schedule(_delay)?\(' sources; then
   fail "fee-split and Blast-share changes must keep the fixed delay (schedule_value only)"
 fi

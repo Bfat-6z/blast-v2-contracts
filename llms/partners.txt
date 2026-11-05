@@ -207,7 +207,7 @@ immutable, so no one can shorten it.
   `delayed::Delayed<CapKey, ID>` value.
 
 A `delayed::Delayed<K, T>` comes from Blast's shared administration package
-`blast_admin` and has five fields in BCS order: `owner` (the `Partner`'s ID),
+`blast_admin` and has five fields in BCS order: `parent` (the `Partner`'s ID),
 `key` (`blast_partners::blast_partners::ShareKey` or
 `blast_partners::blast_partners::CapKey`, each a one-byte unit struct), `value`
 (the applied value), `delay_ms` (the notice), and `pending: Option<Proposal<T>>`.
@@ -280,11 +280,11 @@ own config. The launchpad embeds one in `launch_config::LaunchConfig` (its
 `partners` field), changed by the `FeeAdmin` role through
 `launch_config::add_partner` and `launch_config::remove_partner`. It maps each partner's ID to the time, in Unix epoch milliseconds,
 it stops being accepted (`u64::MAX` until removed), held in a `Table`, and
-records the `owner` object that embeds it. It has no authority of its own: only
+records the `parent` object that embeds it. It has no authority of its own: only
 the embedding module can reach it mutably, so that product decides who may
 change it.
 
-- `blast_partners::partner_list::new` creates an empty list for an owner.
+- `blast_partners::partner_list::new` creates an empty list for a parent.
 - `blast_partners::partner_list::add` accepts a `Partner` at once, cancelling a
   pending removal or accepting a removed partner again; it aborts when the
   partner is already accepted with no removal pending.
@@ -299,7 +299,7 @@ change it.
   `blast_partners::partner_list::acceptance_ends_at_ms` returns that entry's end
   time and aborts in `sui::dynamic_field` without one;
   `blast_partners::partner_list::length` counts entries, removed ones included;
-  `blast_partners::partner_list::owner` returns the embedding object's ID.
+  `blast_partners::partner_list::parent` returns the embedding object's ID.
 - `blast_partners::partner_list::destroy` deletes the list with every entry and
   emits `PartnerListDestroyed`. It ends every acceptance at once, without the
   notice, so a product destroys it only with the object that embeds it.
@@ -453,23 +453,23 @@ Every event is emitted directly (no envelope).
   `recipient`. The latest one per `partner_id` gives the recipient.
 - Share and cap lifecycle events come from `blast_admin`'s `delayed` module,
   generic in the key (`ShareKey` for the share, `CapKey` for the cap) and the
-  value type (`u64` or `ID`), with `owner` set to the `Partner`'s ID:
+  value type (`u64` or `ID`), with `parent` set to the `Partner`'s ID:
   `delayed::DelayedCreated` (registration: initial value and notice),
   `delayed::DelayedScheduled` (proposal: value, notice, `ready_at_ms`),
   `delayed::DelayedCancelled` (a cancel, or a proposal a new one replaced) and
   `delayed::DelayedApplied` (previous and new value, notice). Replaying them per
-  `owner` and key reconstructs the applied and pending terms; `blast_partners`
+  `parent` and key reconstructs the applied and pending terms; `blast_partners`
   emits no event of its own for them.
 - `blast_partners::partner_list::PartnerAdded`: emitted by
-  `blast_partners::partner_list::add`. Fields: `owner` (the object embedding
+  `blast_partners::partner_list::add`. Fields: `parent` (the object embedding
   the list), `partner_id`.
 - `blast_partners::partner_list::PartnerRemoved`: emitted by
-  `blast_partners::partner_list::remove`. Fields: `owner`, `partner_id`,
-  `acceptance_ends_at_ms` (exclusive). Replaying both per `owner` gives that
+  `blast_partners::partner_list::remove`. Fields: `parent`, `partner_id`,
+  `acceptance_ends_at_ms` (exclusive). Replaying both per `parent` gives that
   list's accepted partners.
 - `blast_partners::partner_list::PartnerListDestroyed`: emitted by
-  `blast_partners::partner_list::destroy`. Field: `owner`. From then on the
-  owner's list accepts no partner.
+  `blast_partners::partner_list::destroy`. Field: `parent`. From then on the
+  parent's list accepts no partner.
 - `blast_partners::blast_partners::PartnerPaid<T>`: emitted by
   `blast_partners::blast_partners::pay` when it sends a positive amount. Fields:
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
@@ -747,10 +747,10 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pa
 
 ```move
 /// The partners one product accepts: each partner's ID maps to the time, in Unix epoch
-/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the
+/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `parent` is the
 /// object that embeds the list, named by its events.
 public struct PartnerList has store {
-    owner: ID,
+    parent: ID,
     acceptance_ends_at_ms: Table<ID, u64>,
 }
 ```
@@ -758,8 +758,8 @@ public struct PartnerList has store {
 #### Functions
 
 ```move
-/// An empty list embedded in `owner`.
-public fun new(owner: &UID, ctx: &mut TxContext): PartnerList
+/// An empty list embedded in `parent`.
+public fun new(parent: &UID, ctx: &mut TxContext): PartnerList
 
 /// Accepts `partner` at once. Adding a partner whose removal is pending cancels the removal;
 /// adding a removed partner accepts it again. Aborts when it is already accepted with no removal
@@ -792,29 +792,29 @@ public fun acceptance_ends_at_ms(self: &PartnerList, partner_id: ID): u64
 public fun length(self: &PartnerList): u64
 
 /// The object that embeds the list, named by its events.
-public fun owner(self: &PartnerList): ID
+public fun parent(self: &PartnerList): ID
 ```
 
 #### Events
 
 ```move
-/// The owner's list accepts the partner from now on.
+/// The parent's list accepts the partner from now on.
 public struct PartnerAdded has copy, drop {
-    owner: ID,
+    parent: ID,
     partner_id: ID,
 }
 
-/// The owner's list accepts the partner until `acceptance_ends_at_ms` (Unix epoch milliseconds),
+/// The parent's list accepts the partner until `acceptance_ends_at_ms` (Unix epoch milliseconds),
 /// exclusive.
 public struct PartnerRemoved has copy, drop {
-    owner: ID,
+    parent: ID,
     partner_id: ID,
     acceptance_ends_at_ms: u64,
 }
 
-/// The owner's list was deleted: it accepts no partner from now on.
+/// The parent's list was deleted: it accepts no partner from now on.
 public struct PartnerListDestroyed has copy, drop {
-    owner: ID,
+    parent: ID,
 }
 ```
 
@@ -1085,7 +1085,7 @@ public struct Unpaused<phantom OTW: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Settings that change only after their applied delay, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied delay, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter delay included, waits the delay applied when it was scheduled. A delay can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No delay exceeds `max_delay_ms`, so a delay can always be changed again. Readers need no Clock.
+Settings that change only after their applied delay, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied delay, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries a module-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Embedding modules use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `parent`; embedding modules emit only their own side effects.  Every change, a shorter delay included, waits the delay applied when it was scheduled. A delay can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No delay exceeds `max_delay_ms`, so a delay can always be changed again. Readers need no Clock.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed.move
 
@@ -1094,7 +1094,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 ```move
 /// An applied setting, its applied delay and at most one proposed replacement.
 public struct Delayed<K: copy + drop + store, T: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -1128,7 +1128,7 @@ public struct Deadline has copy, drop, store {
 /// A setting in force at once; every later change waits the applied delay.
 public fun new<K: copy + drop + store, T: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     value: T,
     delay_ms: u64,
 ): Delayed<K, T>
@@ -1176,7 +1176,7 @@ public fun schedule_delay<K: copy + drop + store, T: copy + drop + store>(
     clock: &Clock,
 ): u64
 
-/// Checks that `apply` would succeed now, changing nothing. Owners call it before
+/// Checks that `apply` would succeed now, changing nothing. Embedding modules call it before
 /// settling accrued economics under the applied value in the same transaction.
 public fun assert_ready<K: copy + drop + store, T: copy + drop + store>(
     self: &Delayed<K, T>,
@@ -1217,9 +1217,9 @@ public fun deadline_delay_ms(self: &Deadline): u64
 public fun deadline_ready_at_ms(self: &Deadline): u64
 
 /// The ID of the object that stores this setting.
-public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID
+public fun parent<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID
 
-/// The owner-defined key of this setting.
+/// The module-defined key of this setting.
 public fun key<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): K
 
 /// Whether `apply` would succeed now: a proposal is pending, its `ready_at_ms` has passed, and
@@ -1235,7 +1235,7 @@ public fun is_ready<K: copy + drop + store, T: copy + drop + store>(
 ```move
 /// A setting was created with its first applied value and delay.
 public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -1243,7 +1243,7 @@ public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has
 
 /// A replacement value and next delay were proposed, ready from `ready_at_ms`.
 public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -1252,7 +1252,7 @@ public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> h
 
 /// A proposal was discarded, by cancellation or by a replacing schedule.
 public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -1261,7 +1261,7 @@ public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> h
 
 /// A ready proposal became the applied value and delay.
 public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     previous_value: T,
     value: T,
@@ -1270,7 +1270,7 @@ public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has
 
 /// A setting was deleted with nothing pending.
 public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 ```
@@ -1290,7 +1290,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 ```move
 /// An applied delay and at most one proposed one-shot action or delay change.
 public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
     pending: Option<delayed::Proposal<Change<A>>>,
@@ -1298,7 +1298,7 @@ public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has 
 
 /// What a proposal does once applied.
 public enum Change<A: copy + drop + store> has copy, drop, store {
-    /// Hands the owner its action; the delay stays as applied.
+    /// Hands the embedding module its action; the delay stays as applied.
     Action(A),
     /// Changes only the delay, to the proposal's `delay_ms`.
     Delay,
@@ -1311,7 +1311,7 @@ public enum Change<A: copy + drop + store> has copy, drop, store {
 /// An action slot with nothing proposed; every action waits the applied delay.
 public fun new<K: copy + drop + store, A: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
 ): DelayedAction<K, A>
 
@@ -1344,7 +1344,7 @@ public fun schedule_delay<K: copy + drop + store, A: copy + drop + store>(
     clock: &Clock,
 ): u64
 
-/// Consumes the ready proposed action and returns it for the owner to perform.
+/// Consumes the ready proposed action and returns it for the embedding module to perform.
 /// Aborts when the proposal is a delay change.
 public fun take_action<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
@@ -1390,9 +1390,9 @@ public fun is_delay_ready<K: copy + drop + store, A: copy + drop + store>(
 ): bool
 
 /// The ID of the object that stores this action slot.
-public fun owner<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID
+public fun parent<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID
 
-/// The owner-defined key of this action slot.
+/// The module-defined key of this action slot.
 public fun key<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): K
 ```
 
@@ -1401,7 +1401,7 @@ public fun key<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAct
 ```move
 /// An action slot was created with its first applied delay.
 public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -1409,7 +1409,7 @@ public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + sto
 /// An action or delay change was proposed, ready from `ready_at_ms`; `delay_ms` is the
 /// delay in force once it applies.
 public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
@@ -1418,16 +1418,16 @@ public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> ha
 
 /// A proposed action or delay change was discarded, by cancellation or replacement.
 public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
     ready_at_ms: u64,
 }
 
-/// A ready action was handed to its owner, or a delay change applied.
+/// A ready action was handed to its embedding module, or a delay change applied.
 public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
@@ -1435,7 +1435,7 @@ public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has 
 
 /// An action slot was deleted with nothing pending.
 public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 ```
@@ -1453,7 +1453,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 /// most one proposed delay. Values live in a Table, so reads cost one entry and the map
 /// grows without bound; pending changes are few and live inline.
 public struct DelayedMap<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     entries: Table<E, V>,
     delay_ms: u64,
@@ -1485,7 +1485,7 @@ public enum MapChange<E: copy + drop + store, V: copy + drop + store> has copy, 
 /// An empty map; every entry change waits the applied delay.
 public fun new<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
     ctx: &mut TxContext,
 ): DelayedMap<K, E, V>
@@ -1594,11 +1594,11 @@ public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store, V: cop
 ): bool
 
 /// The ID of the object that stores this map.
-public fun owner<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+public fun parent<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): ID
 
-/// The owner-defined key of this map.
+/// The module-defined key of this map.
 public fun key<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): K
@@ -1642,7 +1642,7 @@ public fun changed_value<E: copy + drop + store, V: copy + drop + store>(
 ```move
 /// A map was created empty with its first applied delay.
 public struct MapCreated<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -1650,7 +1650,7 @@ public struct MapCreated<K: copy + drop + store, phantom E: copy + drop + store,
 /// An entry change or delay change was proposed, ready from `ready_at_ms`. `delay_ms` is
 /// the delay an entry change waits, or the proposed next delay.
 public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -1660,7 +1660,7 @@ public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: co
 /// A proposed change was discarded, by cancellation or replacement; its fields match its
 /// `MapScheduled`.
 public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -1670,7 +1670,7 @@ public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: co
 /// An entry was set or cleared, or a delay change applied; `delay_ms` matches its
 /// `MapScheduled`.
 public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -1678,7 +1678,7 @@ public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy
 
 /// A map was deleted with nothing pending, ending every remaining entry.
 public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 ```
@@ -1695,7 +1695,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 /// Admitted members, one applied delay for new admissions, pending admissions with fixed
 /// deadlines, and at most one proposed delay. A delay change never moves a deadline.
 public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     members: VecSet<E>,
     delay_ms: u64,
@@ -1718,7 +1718,7 @@ public enum SetChange<E: copy + drop + store> has copy, drop, store {
 /// An empty set; every admission waits the applied delay.
 public fun new<K: copy + drop + store, E: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
 ): DelayedSet<K, E>
 
@@ -1829,9 +1829,9 @@ public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store>(
 ): bool
 
 /// The ID of the object that stores this set.
-public fun owner<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): ID
+public fun parent<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): ID
 
-/// The owner-defined key of this set.
+/// The module-defined key of this set.
 public fun key<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): K
 
 /// The deadline of `member`'s pending admission, if one is pending.
@@ -1849,7 +1849,7 @@ public fun member<E: copy + drop + store>(self: &SetChange<E>): Option<E>
 ```move
 /// A set was created empty with its first applied delay.
 public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -1857,7 +1857,7 @@ public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store>
 /// An admission or delay change was proposed, ready from `ready_at_ms`. `delay_ms` is the
 /// delay an admission waits, or the proposed next delay.
 public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -1867,7 +1867,7 @@ public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has c
 /// A proposed admission or delay change was discarded, by cancellation, replacement or
 /// removal; its fields match its `SetScheduled`.
 public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -1876,7 +1876,7 @@ public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has c
 
 /// A member was admitted, or a delay change applied; `delay_ms` matches its `SetScheduled`.
 public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -1884,14 +1884,14 @@ public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has cop
 
 /// A member left the set at once.
 public struct MemberRemoved<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     member: E,
 }
 
 /// A set was deleted with nothing pending; its remaining members leave with it.
 public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 ```

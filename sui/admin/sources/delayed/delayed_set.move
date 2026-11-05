@@ -10,7 +10,7 @@ module blast_admin::delayed_set;
 /// Admitted members, one applied delay for new admissions, pending admissions with fixed
 /// deadlines, and at most one proposed delay. A delay change never moves a deadline.
 public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     members: VecSet<E>,
     delay_ms: u64,
@@ -31,16 +31,16 @@ public enum SetChange<E: copy + drop + store> has copy, drop, store {
 /// An empty set; every admission waits the applied delay.
 public fun new<K: copy + drop + store, E: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
 ): DelayedSet<K, E> {
     delayed::assert_delay(delay_ms);
-    let owner = owner.to_inner();
+    let parent = parent.to_inner();
 
-    sui::event::emit(SetCreated<K, E> { owner, key, delay_ms });
+    sui::event::emit(SetCreated<K, E> { parent, key, delay_ms });
 
     DelayedSet {
-        owner,
+        parent,
         key,
         members: vec_set::empty(),
         delay_ms,
@@ -116,7 +116,7 @@ public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
     self.admissions.insert(member, delayed::new_deadline(self.delay_ms, ready_at_ms));
 
     sui::event::emit(SetScheduled {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: SetChange::Admission(member),
         delay_ms: self.delay_ms,
@@ -140,7 +140,7 @@ public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
     self.members.insert(member);
 
     sui::event::emit(SetApplied {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: SetChange::Admission(member),
         delay_ms: admission.delay_ms(),
@@ -168,7 +168,7 @@ public fun remove<K: copy + drop + store, E: copy + drop + store>(
     self.cancel_admission_if_pending(member);
     if (is_member) {
         self.members.remove(&member);
-        sui::event::emit(MemberRemoved { owner: self.owner, key: self.key, member });
+        sui::event::emit(MemberRemoved { parent: self.parent, key: self.key, member });
     };
 }
 
@@ -186,7 +186,7 @@ public fun schedule_delay<K: copy + drop + store, E: copy + drop + store>(
     self.pending_delay.fill(delayed::new_pending_delay(delay_ms, ready_at_ms));
 
     sui::event::emit(SetScheduled<K, E> {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: SetChange::Delay,
         delay_ms,
@@ -208,7 +208,7 @@ public fun apply_delay<K: copy + drop + store, E: copy + drop + store>(
     self.delay_ms = delay.delay_ms();
 
     sui::event::emit(SetApplied<K, E> {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: SetChange::Delay,
         delay_ms: delay.delay_ms(),
@@ -231,9 +231,9 @@ public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: Delayed
         blast_admin::errors::proposal_pending!(),
     );
 
-    let DelayedSet { owner, key, members: _, delay_ms: _, admissions: _, pending_delay: _ } = self;
+    let DelayedSet { parent, key, members: _, delay_ms: _, admissions: _, pending_delay: _ } = self;
 
-    sui::event::emit(SetDestroyed<K, E> { owner, key });
+    sui::event::emit(SetDestroyed<K, E> { parent, key });
 }
 
 /// How many members are admitted.
@@ -273,11 +273,11 @@ public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store>(
 }
 
 /// The ID of the object that stores this set.
-public fun owner<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): ID {
-    self.owner
+public fun parent<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): ID {
+    self.parent
 }
 
-/// The owner-defined key of this set.
+/// The module-defined key of this set.
 public fun key<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): K {
     self.key
 }
@@ -308,7 +308,7 @@ fun cancel_admission_if_pending<K: copy + drop + store, E: copy + drop + store>(
     let (_, admission) = self.admissions.remove(&member);
 
     sui::event::emit(SetCancelled {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: SetChange::Admission(member),
         delay_ms: admission.delay_ms(),
@@ -321,7 +321,7 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store>(self
     let delay = self.pending_delay.extract();
 
     sui::event::emit(SetCancelled<K, E> {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         change: SetChange::Delay,
         delay_ms: delay.delay_ms(),
@@ -335,49 +335,49 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store>(self
 public fun set_created_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &SetCreated<K, E>,
 ): (ID, K, u64) {
-    (self.owner, self.key, self.delay_ms)
+    (self.parent, self.key, self.delay_ms)
 }
 
 #[test_only]
 public fun set_scheduled_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &SetScheduled<K, E>,
 ): (ID, K, SetChange<E>, u64, u64) {
-    (self.owner, self.key, self.change, self.delay_ms, self.ready_at_ms)
+    (self.parent, self.key, self.change, self.delay_ms, self.ready_at_ms)
 }
 
 #[test_only]
 public fun set_cancelled_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &SetCancelled<K, E>,
 ): (ID, K, SetChange<E>, u64, u64) {
-    (self.owner, self.key, self.change, self.delay_ms, self.ready_at_ms)
+    (self.parent, self.key, self.change, self.delay_ms, self.ready_at_ms)
 }
 
 #[test_only]
 public fun set_applied_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &SetApplied<K, E>,
 ): (ID, K, SetChange<E>, u64) {
-    (self.owner, self.key, self.change, self.delay_ms)
+    (self.parent, self.key, self.change, self.delay_ms)
 }
 
 #[test_only]
 public fun set_destroyed_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &SetDestroyed<K, E>,
 ): (ID, K) {
-    (self.owner, self.key)
+    (self.parent, self.key)
 }
 
 #[test_only]
 public fun member_removed_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &MemberRemoved<K, E>,
 ): (ID, K, E) {
-    (self.owner, self.key, self.member)
+    (self.parent, self.key, self.member)
 }
 
 // === Events ===
 
 /// A set was created empty with its first applied delay.
 public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -385,7 +385,7 @@ public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store>
 /// An admission or delay change was proposed, ready from `ready_at_ms`. `delay_ms` is the
 /// delay an admission waits, or the proposed next delay.
 public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -395,7 +395,7 @@ public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has c
 /// A proposed admission or delay change was discarded, by cancellation, replacement or
 /// removal; its fields match its `SetScheduled`.
 public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -404,7 +404,7 @@ public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has c
 
 /// A member was admitted, or a delay change applied; `delay_ms` matches its `SetScheduled`.
 public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -412,14 +412,14 @@ public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has cop
 
 /// A member left the set at once.
 public struct MemberRemoved<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     member: E,
 }
 
 /// A set was deleted with nothing pending; its remaining members leave with it.
 public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 

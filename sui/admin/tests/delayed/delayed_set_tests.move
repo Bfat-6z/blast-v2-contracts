@@ -33,8 +33,8 @@ fun an_admission_waits_the_applied_delay_and_removal_is_immediate() {
 
     set.remove(@0xA);
     assert!(!set.contains(&@0xA));
-    let (owner, _, member) = collect<MemberRemoved<Witnesses, address>>().member_removed_fields();
-    assert_eq!(owner, owner());
+    let (parent, _, member) = collect<MemberRemoved<Witnesses, address>>().member_removed_fields();
+    assert_eq!(parent, parent());
     assert_eq!(member, @0xA);
     assert_eq!(set.delay_ms(), DELAY_MS);
 
@@ -288,8 +288,8 @@ fun destruction_records_the_end_of_the_set_and_its_members() {
 
     set.destroy();
 
-    let (set_owner, _) = collect<SetDestroyed<Witnesses, address>>().set_destroyed_fields();
-    assert_eq!(set_owner, owner());
+    let (set_parent, _) = collect<SetDestroyed<Witnesses, address>>().set_destroyed_fields();
+    assert_eq!(set_parent, parent());
 
     clock.destroy_for_testing();
 }
@@ -346,13 +346,13 @@ fun a_set_accepts_the_ceiling_delay() {
 }
 
 #[test]
-fun readers_report_owner_key_and_a_pending_admissions_deadline() {
+fun readers_report_parent_key_and_a_pending_admissions_deadline() {
     let clock = clock_at(10);
     let mut set = new_witness_set(DELAY_MS);
     set.schedule_add(@0xA, &clock);
 
     let deadline = set.admission_deadline(&@0xA).destroy_some();
-    assert_eq!(set.owner(), owner());
+    assert_eq!(set.parent(), parent());
     assert_eq!(set.key(), Witnesses());
     assert_eq!(deadline.delay_ms(), DELAY_MS);
     assert_eq!(deadline.ready_at_ms(), 10 + DELAY_MS);
@@ -393,15 +393,15 @@ fun readers_report_pending_and_ready_admissions_and_delay_changes() {
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.
-fun owner_uid(): UID {
+fun parent_uid(): UID {
     object::new(&mut tx_context::dummy())
 }
 
-fun owner(): ID {
-    let uid = owner_uid();
-    let owner = uid.to_inner();
+fun parent(): ID {
+    let uid = parent_uid();
+    let parent = uid.to_inner();
     uid.delete();
-    owner
+    parent
 }
 
 fun clock_at(timestamp_ms: u64): Clock {
@@ -411,7 +411,7 @@ fun clock_at(timestamp_ms: u64): Clock {
 }
 
 fun new_witness_set(delay_ms: u64): DelayedSet<Witnesses, address> {
-    let uid = owner_uid();
+    let uid = parent_uid();
     let set = delayed_set::new(Witnesses(), &uid, delay_ms);
     uid.delete();
     set

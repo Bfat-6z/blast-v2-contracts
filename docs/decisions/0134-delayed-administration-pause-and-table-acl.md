@@ -239,7 +239,7 @@ operators must bind to the new stack. The fresh interfaces are implemented in
 changes require a fresh publication manifest and coordinated release.
 Each operation's live notice determines its real
 cancellation window; zero provides none. The rollout must verify 48 hours where that
-notice is required. The admin module remains generic and immutable while owner-stored
+notice is required. The admin module remains generic and immutable while parent-stored
 notice periods can change through their own timelocks.
 
 ## Verification
@@ -254,14 +254,14 @@ separate gas custody, frozen treasury, capped and disabled reimbursement, checkp
 gaps, exact claim/closure deadlines, authority revocation and conservation on recovery.
 Native PTBs cover application followed by a failing schedule/application, proving rollback
 of values, notices, proposals and events. Existing pause, custody, claims and ACL tests
-remain required. Source boundary gates reject bypass APIs and missing owner persistence;
+remain required. Source boundary gates reject bypass APIs and missing parent persistence;
 integrator guides and generated references must match source.
 
 ## Amendment 2026-11-03: keyed primitives that own their events
 
 ### Context
 
-Owners re-implemented the delayed state machine around a bare `Pending` record,
+Embedding modules re-implemented the delayed state machine around a bare `Pending` record,
 encoded notice-only proposals with placeholder values (`DelayOnly`, `false`,
 `option::none()`), passed the same notice twice, persisted the next notice by hand
 under source-gate protection, and each emitted its own scheduled, cancelled and
@@ -274,13 +274,13 @@ only as a deadline holder.
 Four `blast_admin` modules each own one delayed type and its lifecycle events:
 `delayed` (which also holds `Proposal`, `Notice` and the deadline rules every type
 shares), `delayed_action`, `delayed_set` and `delayed_map`. Each type stores its
-`owner` object ID and an owner-defined key `K`. Constructors take the owner's `&UID`
+`parent` object ID and a module-defined key `K`. Constructors take the parent's `&UID`
 rather than an `ID`, so only code that creates or holds an object can attribute
 delayed values and events to it:
 
 - `Delayed<K, T>`: a setting with its notice and one proposal (unchanged rules).
 - `DelayedAction<K, A>`: a notice and one proposal that is either `Action(A)` or
-  a notice change. `take_action` hands a ready action to the owner;
+  a notice change. `take_action` hands a ready action to the embedding module;
   `apply_delay` applies a ready notice change; each rejects the other kind. The
   primitive persists notice changes itself.
 - `DelayedSet<K, E>`: an allowlist whose admissions each snapshot a deadline from
@@ -302,7 +302,7 @@ error a type raises in its own call is located in its module; readiness and
 overflow checked through the shared deadline rules are located in `delayed`. A
 replacement emits `Cancelled` for the displaced proposal before `Scheduled`, so
 every proposal ends in exactly one `Applied` or `Cancelled`. Destroying a value with a pending proposal aborts, and destruction
-emits its own event, so no proposal or membership ends silently. Owners emit only their own side
+emits its own event, so no proposal or membership ends silently. Embedding modules emit only their own side
 effects. The primitive rejects proposals that change nothing.
 
 Upgrade custody, creator-cap reassignment and the ACL root transfer use
@@ -324,12 +324,12 @@ operation's stream then starts with its own initial value and notice, so replay
 no longer reads initial notices from published bytecode. Consumer `init`
 functions still emit no events of their own.
 
-Every delayed field gains `owner` and `key`; delayed, consumer and event layouts
+Every delayed field gains `parent` and `key`; delayed, consumer and event layouts
 change, and the replay stream for delay lifecycle moves to the event types of
 `blast_admin`'s four delayed modules. SDK, indexer and admin console decoders must follow, with a fresh
 publication of the stack. Keys must be structs without public constructors, and
-owner objects must not expose their `&UID`; otherwise another package could emit
-events under that key or owner.
+parent objects must not expose their `&UID`; otherwise another package could emit
+events under that key or parent.
 
 ## Amendment 2026-11-03: delayed holder-reward round publication
 

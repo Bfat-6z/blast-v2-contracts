@@ -20,7 +20,7 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     let cancel = blast_acl::witness_for_testing<CancelAdmin>();
     let fee_admin = blast_acl::witness_for_testing<FeeAdmin>();
 
-    let owner = object::id(&config);
+    let parent = object::id(&config);
 
     config.schedule_protocol_allocation(
         &version,
@@ -32,8 +32,8 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     );
     let allocation = allocation::protocol_allocation(bps::new(333), bps::new(444));
     let scheduled = single<DelayedScheduled<ProtocolAllocationKey, ProtocolAllocation>>();
-    let (scheduled_owner, _, value, _, ready_at_ms) = scheduled.delayed_scheduled_fields();
-    assert_eq!(scheduled_owner, owner);
+    let (scheduled_parent, _, value, _, ready_at_ms) = scheduled.delayed_scheduled_fields();
+    assert_eq!(scheduled_parent, parent);
     assert_eq!(value, allocation);
     assert_eq!(ready_at_ms, 172_800_123);
     config.cancel_protocol_allocation(&version, &cancel);
@@ -50,9 +50,9 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
         &clock
     );
     let fees_bytes = u64_fields(vector[111, 222]);
-    let (scheduled_owner, _, value, _, ready_at_ms) = single<DelayedScheduled<TradeFeesKey, TradeFees>>()
+    let (scheduled_parent, _, value, _, ready_at_ms) = single<DelayedScheduled<TradeFeesKey, TradeFees>>()
         .delayed_scheduled_fields();
-    assert_eq!(scheduled_owner, owner);
+    assert_eq!(scheduled_parent, parent);
     assert_eq!(std::bcs::to_bytes(&value), fees_bytes);
     assert_eq!(ready_at_ms, 172_800_123);
     config.cancel_trade_fees(&version, &cancel);
@@ -69,10 +69,10 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
         &clock
     );
     let lp_fees_bytes = u64_fields(vector[1_200, 900]);
-    let (scheduled_owner, _, value, _, ready_at_ms) = single<
+    let (scheduled_parent, _, value, _, ready_at_ms) = single<
         DelayedScheduled<ProtocolLpFeesKey, ProtocolLpFees>
     >().delayed_scheduled_fields();
-    assert_eq!(scheduled_owner, owner);
+    assert_eq!(scheduled_parent, parent);
     assert_eq!(std::bcs::to_bytes(&value), lp_fees_bytes);
     assert_eq!(ready_at_ms, 172_800_123);
     config.cancel_protocol_lp_fees(&version, &cancel);
@@ -81,9 +81,9 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     assert_eq!(std::bcs::to_bytes(&value), lp_fees_bytes);
 
     config.schedule_creation_fee(&version, &fee_admin, 123, 172_800_000, &clock);
-    let (scheduled_owner, _, value, _, ready_at_ms) = single<DelayedScheduled<CreationFeeKey, u64>>()
+    let (scheduled_parent, _, value, _, ready_at_ms) = single<DelayedScheduled<CreationFeeKey, u64>>()
         .delayed_scheduled_fields();
-    assert_eq!(scheduled_owner, owner);
+    assert_eq!(scheduled_parent, parent);
     assert_eq!(value, 123);
     assert_eq!(ready_at_ms, 172_800_123);
     config.cancel_creation_fee(&version, &cancel);
@@ -96,10 +96,10 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
         &clock
     );
     let witness = std::type_name::with_original_ids<TestVenue>();
-    let (scheduled_owner, _, change, _, ready_at_ms) = single<
+    let (scheduled_parent, _, change, _, ready_at_ms) = single<
         SetScheduled<VenueKey, TypeName>
     >().set_scheduled_fields();
-    assert_eq!(scheduled_owner, owner);
+    assert_eq!(scheduled_parent, parent);
     assert_eq!(change.member(), option::some(witness));
     assert_eq!(ready_at_ms, 172_800_123);
     config.cancel_venue<TestVenue>(&version, &cancel);

@@ -23,8 +23,8 @@ fun an_action_waits_the_applied_delay_and_is_handed_back_once() {
 
     assert_eq!(slot.schedule(42, &clock), 5 + DELAY_MS);
     let scheduled = collect<ActionScheduled<Upgrade, u64>>();
-    let (owner, _, change, delay_ms, ready_at_ms) = scheduled.action_scheduled_fields();
-    assert_eq!(owner, owner());
+    let (parent, _, change, delay_ms, ready_at_ms) = scheduled.action_scheduled_fields();
+    assert_eq!(parent, parent());
     assert_eq!(change.action(), option::some(42));
     assert_eq!(delay_ms, DELAY_MS);
     assert_eq!(ready_at_ms, 5 + DELAY_MS);
@@ -178,8 +178,8 @@ fun destruction_records_the_end_of_the_slot() {
 
     slot.destroy();
 
-    let (slot_owner, _) = collect<ActionDestroyed<Upgrade, u64>>().action_destroyed_fields();
-    assert_eq!(slot_owner, owner());
+    let (slot_parent, _) = collect<ActionDestroyed<Upgrade, u64>>().action_destroyed_fields();
+    assert_eq!(slot_parent, parent());
 }
 
 #[test]
@@ -233,10 +233,10 @@ fun a_slot_accepts_the_ceiling_delay() {
 }
 
 #[test]
-fun readers_report_owner_and_key() {
+fun readers_report_parent_and_key() {
     let slot = new_slot(DELAY_MS);
 
-    assert_eq!(slot.owner(), owner());
+    assert_eq!(slot.parent(), parent());
     assert_eq!(slot.key(), Upgrade());
     assert_eq!(slot.delay_ms(), DELAY_MS);
 
@@ -278,15 +278,15 @@ fun readers_split_a_pending_action_from_a_pending_delay_change() {
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.
-fun owner_uid(): UID {
+fun parent_uid(): UID {
     object::new(&mut tx_context::dummy())
 }
 
-fun owner(): ID {
-    let uid = owner_uid();
-    let owner = uid.to_inner();
+fun parent(): ID {
+    let uid = parent_uid();
+    let parent = uid.to_inner();
     uid.delete();
-    owner
+    parent
 }
 
 fun clock_at(timestamp_ms: u64): Clock {
@@ -296,7 +296,7 @@ fun clock_at(timestamp_ms: u64): Clock {
 }
 
 fun new_slot(delay_ms: u64): DelayedAction<Upgrade, u64> {
-    let uid = owner_uid();
+    let uid = parent_uid();
     let slot = delayed_action::new(Upgrade(), &uid, delay_ms);
     uid.delete();
     slot

@@ -28,11 +28,11 @@ public struct Ledger<phantom Meme, phantom Quote> has store {
 
 // === Public Functions ===
 
-/// An empty ledger for the object `origin`, created under the embedding module's `PackageWitness`
-/// and bound to `partner_id` if any.
+/// An empty ledger for the object whose UID is borrowed as `origin`, created under the embedding
+/// module's `PackageWitness` and bound to `partner_id` if any.
 public fun new<Meme, Quote, PackageWitness: drop>(
     _: PackageWitness,
-    origin: ID,
+    origin: &UID,
     partner_id: Option<ID>,
 ): Ledger<Meme, Quote> {
     assert!(
@@ -42,7 +42,7 @@ public fun new<Meme, Quote, PackageWitness: drop>(
 
     Ledger {
         package_witness: type_name::with_original_ids<PackageWitness>(),
-        origin,
+        origin: origin.to_inner(),
         partner_id,
         meme: balance::zero(),
         quote: balance::zero(),

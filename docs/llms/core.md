@@ -44,6 +44,9 @@ across the routes in order.
 `protocol_fees::Ledger` holds Blast's Meme, Quote, and SUI fees for one launch, presale, or vault.
 Only the module that owns it can create it, under its package witness, and every payment event
 names that witness type, so a payment's origin is attributable.
+`protocol_fees::new` borrows the origin object's UID and records its ID. Here `origin` identifies
+the launch, presale, or vault the fees came from; it does not identify the beneficiary or grant
+owner authority.
 `protocol_fees::take_cut` moves Blast's rounded-up cut of a fee into it. A ledger is bound at
 creation to the partner its sale named, or to none. `protocol_fees::pay` pays everything to the
 treasury and aborts when a partner is bound; `protocol_fees::pay_with_partner` first pays that
@@ -51,7 +54,7 @@ partner its cut of each asset through `blast_partners::blast_partners::pay`, the
 rest. Both emit `blast_core_events::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
 may make. `protocol_fees::balances`, `protocol_fees::package_witness`, `protocol_fees::origin`, and
 `protocol_fees::partner_id` read a ledger. `protocol_fees::destroy` deletes one that holds nothing
-and aborts while any fee is held, so its owner pays it out first.
+and aborts while any fee is held, so it must be paid out first.
 
 `blast_treasury::Treasury` is a shared singleton holding the address Blast's fees go to. A Blast
 admin with `blast_domain::TreasuryAdmin` schedules a new address with
@@ -74,18 +77,20 @@ treasury is never deleted: every ledger pays through it.
   keeps the pair's pool tier. The product's creation call redeems the ticket with `migration::redeem_ticket`
   and stores the venue.
 - `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
-  split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
-  `migration::vault_terms`, under the issuing package's witness, builds them. It aborts when either of Blast's LP-fee shares exceeds 3,000 basis
-  points, so every sealed term is within the cap.
+  split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner.
+  `migration::vault_terms` borrows the sale's `&UID` under the issuing package's witness and records its ID.
+  It aborts when either of Blast's LP-fee shares exceeds 3,000 basis points, so every sealed term is within the cap.
 - At migration the product creates a `migration::Migration` with `migration::new`, sealed by its own witness, holding the
   pool's Meme and Quote and terms the same package witness sealed. Only the stored venue can consume it,
   with `migration::redeem`; any other venue aborts.
 - `owner_proof::OwnerProof` is a product's sealed statement that the caller holds the sale's
-  creator authority, issued with `owner_proof::new`. A vault consumes it with
+  creator authority, issued with `owner_proof::new` by borrowing the sale's `&UID` after checking
+  that authority. The proof records the sale's ID. A vault consumes it with
   `owner_proof::assert_terms`, which aborts unless it names
   the vault's package witness and sale.
 
-None of these values can be dropped, copied, or stored, so the PTB that creates one must consume it.
+`VenueTicket`, `Migration`, and `OwnerProof` cannot be dropped, copied, or stored, so the PTB
+that creates one must consume it. `VaultTerms` can be copied and stored.
 
 Readers never consume them. `migration::ticket_venue` (called as `ticket.venue()`) reads a ticket's
 venue. `migration::venue`, `migration::balances` (the Meme and Quote amounts), and

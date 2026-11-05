@@ -8,12 +8,12 @@
 /// apply; cancellable until applied. Settings live here; one-shot actions in
 /// `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.
 ///
-/// Every value carries an owner-defined key `K` and the ID of the object that stores it.
+/// Every value carries a module-defined key `K` and the ID of the object that stores it.
 /// Constructors take that object's `&UID`, which only the code creating or holding the
 /// object has, so no package can attribute a value or its events to another's object.
-/// Owners use a struct without a public constructor as `K`, so only their module can pack
+/// Embedding modules use a struct without a public constructor as `K`, so only their module can pack
 /// it. Each delayed module emits every lifecycle fact of its type, generic in `K` and
-/// carrying `owner`; owners emit only their own side effects.
+/// carrying `parent`; embedding modules emit only their own side effects.
 ///
 /// Every change, a shorter delay included, waits the delay applied when it was scheduled.
 /// A delay can start at zero, so a schedule and its apply in one transaction then act as a
@@ -25,7 +25,7 @@ module blast_admin::delayed;
 
 /// An applied setting, its applied delay and at most one proposed replacement.
 public struct Delayed<K: copy + drop + store, T: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -57,16 +57,16 @@ public struct Deadline has copy, drop, store {
 /// A setting in force at once; every later change waits the applied delay.
 public fun new<K: copy + drop + store, T: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     value: T,
     delay_ms: u64,
 ): Delayed<K, T> {
     assert_delay(delay_ms);
-    let owner = owner.to_inner();
+    let parent = parent.to_inner();
 
-    sui::event::emit(DelayedCreated { owner, key, value, delay_ms });
+    sui::event::emit(DelayedCreated { parent, key, value, delay_ms });
 
-    Delayed { owner, key, value, delay_ms, pending: option::none() }
+    Delayed { parent, key, value, delay_ms, pending: option::none() }
 }
 
 /// The longest delay any delayed type accepts, in milliseconds.
@@ -112,7 +112,7 @@ public fun schedule<K: copy + drop + store, T: copy + drop + store>(
     self.cancel_replaced();
     self.pending.fill(Proposal { value, delay_ms, ready_at_ms });
 
-    sui::event::emit(DelayedScheduled { owner: self.owner, key: self.key, value, delay_ms, ready_at_ms });
+    sui::event::emit(DelayedScheduled { parent: self.parent, key: self.key, value, delay_ms, ready_at_ms });
 
     ready_at_ms
 }
@@ -138,7 +138,7 @@ public fun schedule_delay<K: copy + drop + store, T: copy + drop + store>(
     self.schedule(value, delay_ms, clock)
 }
 
-/// Checks that `apply` would succeed now, changing nothing. Owners call it before
+/// Checks that `apply` would succeed now, changing nothing. Embedding modules call it before
 /// settling accrued economics under the applied value in the same transaction.
 public fun assert_ready<K: copy + drop + store, T: copy + drop + store>(
     self: &Delayed<K, T>,
@@ -162,7 +162,7 @@ public fun apply<K: copy + drop + store, T: copy + drop + store>(
     self.delay_ms = delay_ms;
 
     sui::event::emit(DelayedApplied {
-        owner: self.owner,
+        parent: self.parent,
         key: self.key,
         previous_value,
         value,
@@ -182,9 +182,9 @@ public fun cancel<K: copy + drop + store, T: copy + drop + store>(self: &mut Del
 public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>) {
     assert!(self.pending.is_none(), blast_admin::errors::proposal_pending!());
 
-    let Delayed { owner, key, value: _, delay_ms: _, pending: _ } = self;
+    let Delayed { parent, key, value: _, delay_ms: _, pending: _ } = self;
 
-    sui::event::emit(DelayedDestroyed<K, T> { owner, key });
+    sui::event::emit(DelayedDestroyed<K, T> { parent, key });
 }
 
 /// The proposed value, or the proposed change for an action slot.
@@ -211,11 +211,11 @@ public fun deadline_delay_ms(self: &Deadline): u64 { self.delay_ms }
 public fun deadline_ready_at_ms(self: &Deadline): u64 { self.ready_at_ms }
 
 /// The ID of the object that stores this setting.
-public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID {
-    self.owner
+public fun parent<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID {
+    self.parent
 }
 
-/// The owner-defined key of this setting.
+/// The module-defined key of this setting.
 public fun key<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): K {
     self.key
 }
@@ -291,7 +291,7 @@ fun cancel_replaced<K: copy + drop + store, T: copy + drop + store>(self: &mut D
     if (self.pending.is_none()) return;
     let Proposal { value, delay_ms, ready_at_ms } = self.pending.extract();
 
-    sui::event::emit(DelayedCancelled { owner: self.owner, key: self.key, value, delay_ms, ready_at_ms });
+    sui::event::emit(DelayedCancelled { parent: self.parent, key: self.key, value, delay_ms, ready_at_ms });
 }
 
 // === Test-Only Functions ===
@@ -300,42 +300,42 @@ fun cancel_replaced<K: copy + drop + store, T: copy + drop + store>(self: &mut D
 public fun delayed_created_fields<K: copy + drop + store, T: copy + drop + store>(
     self: &DelayedCreated<K, T>,
 ): (ID, K, T, u64) {
-    (self.owner, self.key, self.value, self.delay_ms)
+    (self.parent, self.key, self.value, self.delay_ms)
 }
 
 #[test_only]
 public fun delayed_scheduled_fields<K: copy + drop + store, T: copy + drop + store>(
     self: &DelayedScheduled<K, T>,
 ): (ID, K, T, u64, u64) {
-    (self.owner, self.key, self.value, self.delay_ms, self.ready_at_ms)
+    (self.parent, self.key, self.value, self.delay_ms, self.ready_at_ms)
 }
 
 #[test_only]
 public fun delayed_cancelled_fields<K: copy + drop + store, T: copy + drop + store>(
     self: &DelayedCancelled<K, T>,
 ): (ID, K, T, u64, u64) {
-    (self.owner, self.key, self.value, self.delay_ms, self.ready_at_ms)
+    (self.parent, self.key, self.value, self.delay_ms, self.ready_at_ms)
 }
 
 #[test_only]
 public fun delayed_applied_fields<K: copy + drop + store, T: copy + drop + store>(
     self: &DelayedApplied<K, T>,
 ): (ID, K, T, T, u64) {
-    (self.owner, self.key, self.previous_value, self.value, self.delay_ms)
+    (self.parent, self.key, self.previous_value, self.value, self.delay_ms)
 }
 
 #[test_only]
 public fun delayed_destroyed_fields<K: copy + drop + store, T: copy + drop + store>(
     self: &DelayedDestroyed<K, T>,
 ): (ID, K) {
-    (self.owner, self.key)
+    (self.parent, self.key)
 }
 
 // === Events ===
 
 /// A setting was created with its first applied value and delay.
 public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -343,7 +343,7 @@ public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has
 
 /// A replacement value and next delay were proposed, ready from `ready_at_ms`.
 public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -352,7 +352,7 @@ public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> h
 
 /// A proposal was discarded, by cancellation or by a replacing schedule.
 public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -361,7 +361,7 @@ public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> h
 
 /// A ready proposal became the applied value and delay.
 public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     previous_value: T,
     value: T,
@@ -370,7 +370,7 @@ public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has
 
 /// A setting was deleted with nothing pending.
 public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 

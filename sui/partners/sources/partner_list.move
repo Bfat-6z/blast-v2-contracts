@@ -18,18 +18,18 @@ module blast_partners::partner_list;
 // === Public Types ===
 
 /// The partners one product accepts: each partner's ID maps to the time, in Unix epoch
-/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the
+/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `parent` is the
 /// object that embeds the list, named by its events.
 public struct PartnerList has store {
-    owner: ID,
+    parent: ID,
     acceptance_ends_at_ms: Table<ID, u64>,
 }
 
 // === Public Functions ===
 
-/// An empty list embedded in `owner`.
-public fun new(owner: &UID, ctx: &mut TxContext): PartnerList {
-    PartnerList { owner: owner.to_inner(), acceptance_ends_at_ms: table::new(ctx) }
+/// An empty list embedded in `parent`.
+public fun new(parent: &UID, ctx: &mut TxContext): PartnerList {
+    PartnerList { parent: parent.to_inner(), acceptance_ends_at_ms: table::new(ctx) }
 }
 
 /// Accepts `partner` at once. Adding a partner whose removal is pending cancels the removal;
@@ -49,7 +49,7 @@ public fun add(self: &mut PartnerList, partner: &Partner) {
         self.acceptance_ends_at_ms.add(partner_id, std::u64::max_value!());
     };
 
-    event::emit(PartnerAdded { owner: self.owner, partner_id });
+    event::emit(PartnerAdded { parent: self.parent, partner_id });
 }
 
 /// Stops accepting `partner_id` once the fixed delay, `blast_partners::delay_ms()`, has passed
@@ -63,7 +63,7 @@ public fun remove(self: &mut PartnerList, partner_id: ID, clock: &Clock) {
     let acceptance_ends_at_ms = now_at_ms + partners::delay_ms();
     *stored_ends_at_ms = acceptance_ends_at_ms;
 
-    event::emit(PartnerRemoved { owner: self.owner, partner_id, acceptance_ends_at_ms });
+    event::emit(PartnerRemoved { parent: self.parent, partner_id, acceptance_ends_at_ms });
 }
 
 /// Aborts unless the list accepts `partner_id` now: it was added, and any removal's delay has
@@ -75,11 +75,11 @@ public fun assert_accepted(self: &PartnerList, partner_id: ID, clock: &Clock) {
 /// Deletes the list and every entry, accepted or removed, and emits `PartnerListDestroyed`. The
 /// embedding module alone holds the list by value, so it alone decides when its acceptance ends.
 public fun destroy(self: PartnerList) {
-    let PartnerList { owner, acceptance_ends_at_ms } = self;
+    let PartnerList { parent, acceptance_ends_at_ms } = self;
 
     acceptance_ends_at_ms.drop();
 
-    event::emit(PartnerListDestroyed { owner });
+    event::emit(PartnerListDestroyed { parent });
 }
 
 /// Whether the list accepts `partner_id` now; `assert_accepted` aborts exactly when this is false.
@@ -104,8 +104,8 @@ public fun length(self: &PartnerList): u64 {
 }
 
 /// The object that embeds the list, named by its events.
-public fun owner(self: &PartnerList): ID {
-    self.owner
+public fun parent(self: &PartnerList): ID {
+    self.parent
 }
 
 // === Private Functions ===
@@ -128,38 +128,38 @@ fun is_accepted_at(self: &PartnerList, partner_id: ID, now_at_ms: u64): bool {
 
 #[test_only]
 public fun partner_added_fields(self: &PartnerAdded): (ID, ID) {
-    (self.owner, self.partner_id)
+    (self.parent, self.partner_id)
 }
 
 #[test_only]
 public fun partner_removed_fields(self: &PartnerRemoved): (ID, ID, u64) {
-    (self.owner, self.partner_id, self.acceptance_ends_at_ms)
+    (self.parent, self.partner_id, self.acceptance_ends_at_ms)
 }
 
 #[test_only]
 public fun partner_list_destroyed_fields(self: &PartnerListDestroyed): ID {
-    self.owner
+    self.parent
 }
 
 // === Events ===
 
-/// The owner's list accepts the partner from now on.
+/// The parent's list accepts the partner from now on.
 public struct PartnerAdded has copy, drop {
-    owner: ID,
+    parent: ID,
     partner_id: ID,
 }
 
-/// The owner's list accepts the partner until `acceptance_ends_at_ms` (Unix epoch milliseconds),
+/// The parent's list accepts the partner until `acceptance_ends_at_ms` (Unix epoch milliseconds),
 /// exclusive.
 public struct PartnerRemoved has copy, drop {
-    owner: ID,
+    parent: ID,
     partner_id: ID,
     acceptance_ends_at_ms: u64,
 }
 
-/// The owner's list was deleted: it accepts no partner from now on.
+/// The parent's list was deleted: it accepts no partner from now on.
 public struct PartnerListDestroyed has copy, drop {
-    owner: ID,
+    parent: ID,
 }
 
 // === Imports ===

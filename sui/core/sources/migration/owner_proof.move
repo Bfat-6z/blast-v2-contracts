@@ -19,9 +19,13 @@ public struct OwnerProof {
 
 // === Public Functions ===
 
-/// Issues a proof for the sale `origin` under the issuing package's witness `PackageWitness`.
-public fun new<PackageWitness: drop>(_: PackageWitness, origin: ID): OwnerProof {
-    OwnerProof { package_witness: type_name::with_original_ids<PackageWitness>(), origin }
+/// Issues a proof by borrowing the sale's `origin` UID under the issuing package's
+/// `PackageWitness`, after the product checks the caller's creator authority.
+public fun new<PackageWitness: drop>(_: PackageWitness, origin: &UID): OwnerProof {
+    OwnerProof {
+        package_witness: type_name::with_original_ids<PackageWitness>(),
+        origin: origin.to_inner(),
+    }
 }
 
 /// Consumes the proof, aborting unless it names `terms`' package witness and sale.

@@ -82,8 +82,8 @@ fun transfer_accepts_at_the_exact_deadline_and_old_root_can_then_be_destroyed() 
 
     fixture.begin_transfer(NEW_ROOT);
     let started = events::collect_one<ActionScheduled<SuperAdminTransfer, address>>(0);
-    let (owner, _, change, delay_ms, executable_at_ms) = started.action_scheduled_fields();
-    assert_eq!(owner, object::id(&fixture.acl));
+    let (parent, _, change, delay_ms, executable_at_ms) = started.action_scheduled_fields();
+    assert_eq!(parent, object::id(&fixture.acl));
     assert_eq!(change.action(), option::some(NEW_ROOT));
     assert_eq!(delay_ms, TRANSFER_DELAY_MS);
     assert_eq!(executable_at_ms, NOW_AT_MS + TRANSFER_DELAY_MS);
@@ -134,8 +134,8 @@ fun the_transfer_slot_is_owned_by_the_acl_with_a_seven_day_delay() {
     let fixture = start();
 
     let created = events::collect_one<ActionCreated<SuperAdminTransfer, address>>(0);
-    let (owner, _, delay_ms) = created.action_created_fields();
-    assert_eq!(owner, object::id(&fixture.acl));
+    let (parent, _, delay_ms) = created.action_created_fields();
+    assert_eq!(parent, object::id(&fixture.acl));
     assert_eq!(delay_ms, TRANSFER_DELAY_MS);
 
     destroy(fixture);

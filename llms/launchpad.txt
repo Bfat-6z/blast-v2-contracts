@@ -645,7 +645,7 @@ inside `sui::vec_set` when the entry already has the requested state.
   created keep the share they started with.
 - `launch_config::add_partner` (FeeAdmin), with a `Partner`: new launches may name it at once;
   cancels a pending removal. The config's `blast_partners::partner_list::PartnerList` emits
-  `blast_partners::partner_list::PartnerAdded` with the config as `owner`.
+  `blast_partners::partner_list::PartnerAdded` with the config as `parent`.
 - `launch_config::remove_partner` (FeeAdmin), with a `Partner` and `Clock`: new launches may still
   name it for `blast_partners::blast_partners::delay_ms` (seven days); launches that already name it
   keep paying it. Emits `blast_partners::partner_list::PartnerRemoved`.
@@ -686,7 +686,7 @@ days). The admin guide documents these delayed primitives in full.
 
 The delayed modules emit every schedule, cancel, and apply event; the launchpad emits none of its
 own for them. They are generic in the
-operation's key and value type and carry `owner` (the ID of the object that stores the field) and
+operation's key and value type and carry `parent` (the ID of the object that stores the field) and
 `key`: `delayed::DelayedScheduled`, `delayed::DelayedCancelled`, and `delayed::DelayedApplied` for a
 setting; `delayed_action::ActionScheduled`, `delayed_action::ActionCancelled`, and
 `delayed_action::ActionApplied` for upgrades and cap reassignments; `delayed_set::SetScheduled`,
@@ -943,7 +943,7 @@ keeps it in `VenueConfig` (see the venues guide).
 | Is this cap live? | its object ID equals `curve_fee_cap_id` or `creator_metadata_cap_id` |
 | Coin metadata, supply mode, total supply | the shared `Currency<Meme>` |
 
-A `delayed::Delayed` stores `owner`, `key`, the applied `value`, the applied `delay_ms`, and an
+A `delayed::Delayed` stores `parent`, `key`, the applied `value`, the applied `delay_ms`, and an
 optional `pending` proposal with the proposed `value`, next `delay_ms`, and `ready_at_ms`. Read the
 applied `value` for live economics. `LaunchConfig` holds `meme_decimals`, `quotes` (a `VecSet` of the
 Quote `TypeName`s with original IDs), `venues`, and the delayed `trade_fees`,
@@ -1510,7 +1510,7 @@ burn Quote. Every Meme bought is burned, or sent to `@0x0` under a fixed supply.
 | `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded` | `compound_auto_lp` | Cetus's auto-LP position; liquidity added and what still waits |
 | `blast_vault_events::BuybackBurned` | `buyback_and_burn` | `quote_spent`, `meme_burned`, burn Quote still waiting |
 | `blast_core::blast_core_events::ProtocolFeesPaid` | migration and collections on a vault without a partner | Blast's residuals and LP-fee cut paid to the treasury |
-| `delayed::DelayedApplied` | `settle_and_apply_fee_split` | keyed by `blast_vault::vault::FeeSplitKey` with the vault ID as `owner`: the previous and new split |
+| `delayed::DelayedApplied` | `settle_and_apply_fee_split` | keyed by `blast_vault::vault::FeeSplitKey` with the vault ID as `parent`: the previous and new split |
 
 The migrators, vault, and core events are plain Sui events (not wrapped in an envelope), typed by
 the pair's `Meme` and `Quote`. Cetus and Bluefin emit their own pool, position, and swap events in
@@ -1622,7 +1622,7 @@ venue's calls, and call the owner, round, and payout functions on it directly.
 - `blast_vault::vault::Vault<Meme, Quote>` (shared, one per migrated sale) holds the position under
   the venue's key, the terms the sale sealed (`blast_core::migration::VaultTerms`), the fee split
   and Blast's share, each behind a notice, and the owner, auto-LP, holder-reward, and burn
-  balances.
+  balances. Construction permanently binds the vault to that venue witness type.
 - `blast_vault::holder_rewards::Round<Meme, Quote>` (shared, one per published round) holds one
   round's holder budget, its Merkle root, the claimed-leaf bitmap, and an optional gas reserve.
 - `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>` (shared) gates every call by
@@ -1643,7 +1643,10 @@ the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
    more.
 2. The venue attaches its position and shares the vault with
    `blast_vault::vault::share_with_position`, which settles the migration residuals and emits
-   `blast_vault_events::VaultCreated`.
+   `blast_vault_events::VaultCreated`. Sharing requires the exact venue bound at construction,
+   even if another venue is admitted. The position key can be attached only once: re-sharing with the
+   bound venue aborts on the existing key, and another venue aborts before attaching anything or
+   emitting an event.
 3. Each fee collection through the venue calls `blast_vault::vault::split_fees`.
 4. Holder-reward rounds are scheduled, published, claimed, and closed (see Flows).
 
@@ -1778,6 +1781,9 @@ the `UpgradeCap`; no later upgrade or repair is possible.
 
 - Vault creation: `unadmitted_venue`, then `unadmitted_package_witness`. Scheduling Blast's share above
   3,000 basis points per asset aborts with `invalid_protocol_bps`.
+- Sharing: `wrong_venue` when the witness differs from the venue bound at construction, checked
+  before `zero_liquidity`. Re-sharing with the bound venue aborts with the Sui dynamic-field
+  `EFieldAlreadyExists` error. Use the existing vault through its venue's calls.
 - A venue's buyback or auto-LP return: `wrong_vault` for another vault's receipt,
   `returned_exceeds_taken` when it returns more than it took.
 - Owner claim with nothing accrued: `nothing_to_claim`. A proof for another sale or package
@@ -1865,6 +1871,9 @@ across the routes in order.
 `protocol_fees::Ledger` holds Blast's Meme, Quote, and SUI fees for one launch, presale, or vault.
 Only the module that owns it can create it, under its package witness, and every payment event
 names that witness type, so a payment's origin is attributable.
+`protocol_fees::new` borrows the origin object's UID and records its ID. Here `origin` identifies
+the launch, presale, or vault the fees came from; it does not identify the beneficiary or grant
+owner authority.
 `protocol_fees::take_cut` moves Blast's rounded-up cut of a fee into it. A ledger is bound at
 creation to the partner its sale named, or to none. `protocol_fees::pay` pays everything to the
 treasury and aborts when a partner is bound; `protocol_fees::pay_with_partner` first pays that
@@ -1872,7 +1881,7 @@ partner its cut of each asset through `blast_partners::blast_partners::pay`, the
 rest. Both emit `blast_core_events::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
 may make. `protocol_fees::balances`, `protocol_fees::package_witness`, `protocol_fees::origin`, and
 `protocol_fees::partner_id` read a ledger. `protocol_fees::destroy` deletes one that holds nothing
-and aborts while any fee is held, so its owner pays it out first.
+and aborts while any fee is held, so it must be paid out first.
 
 `blast_treasury::Treasury` is a shared singleton holding the address Blast's fees go to. A Blast
 admin with `blast_domain::TreasuryAdmin` schedules a new address with
@@ -1895,18 +1904,20 @@ treasury is never deleted: every ledger pays through it.
   keeps the pair's pool tier. The product's creation call redeems the ticket with `migration::redeem_ticket`
   and stores the venue.
 - `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
-  split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
-  `migration::vault_terms`, under the issuing package's witness, builds them. It aborts when either of Blast's LP-fee shares exceeds 3,000 basis
-  points, so every sealed term is within the cap.
+  split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner.
+  `migration::vault_terms` borrows the sale's `&UID` under the issuing package's witness and records its ID.
+  It aborts when either of Blast's LP-fee shares exceeds 3,000 basis points, so every sealed term is within the cap.
 - At migration the product creates a `migration::Migration` with `migration::new`, sealed by its own witness, holding the
   pool's Meme and Quote and terms the same package witness sealed. Only the stored venue can consume it,
   with `migration::redeem`; any other venue aborts.
 - `owner_proof::OwnerProof` is a product's sealed statement that the caller holds the sale's
-  creator authority, issued with `owner_proof::new`. A vault consumes it with
+  creator authority, issued with `owner_proof::new` by borrowing the sale's `&UID` after checking
+  that authority. The proof records the sale's ID. A vault consumes it with
   `owner_proof::assert_terms`, which aborts unless it names
   the vault's package witness and sale.
 
-None of these values can be dropped, copied, or stored, so the PTB that creates one must consume it.
+`VenueTicket`, `Migration`, and `OwnerProof` cannot be dropped, copied, or stored, so the PTB
+that creates one must consume it. `VaultTerms` can be copied and stored.
 
 Readers never consume them. `migration::ticket_venue` (called as `ticket.venue()`) reads a ticket's
 venue. `migration::venue`, `migration::balances` (the Meme and Quote amounts), and
@@ -2011,7 +2022,7 @@ immutable, so no one can shorten it.
   `delayed::Delayed<CapKey, ID>` value.
 
 A `delayed::Delayed<K, T>` comes from Blast's shared administration package
-`blast_admin` and has five fields in BCS order: `owner` (the `Partner`'s ID),
+`blast_admin` and has five fields in BCS order: `parent` (the `Partner`'s ID),
 `key` (`blast_partners::blast_partners::ShareKey` or
 `blast_partners::blast_partners::CapKey`, each a one-byte unit struct), `value`
 (the applied value), `delay_ms` (the notice), and `pending: Option<Proposal<T>>`.
@@ -2084,11 +2095,11 @@ own config. The launchpad embeds one in `launch_config::LaunchConfig` (its
 `partners` field), changed by the `FeeAdmin` role through
 `launch_config::add_partner` and `launch_config::remove_partner`. It maps each partner's ID to the time, in Unix epoch milliseconds,
 it stops being accepted (`u64::MAX` until removed), held in a `Table`, and
-records the `owner` object that embeds it. It has no authority of its own: only
+records the `parent` object that embeds it. It has no authority of its own: only
 the embedding module can reach it mutably, so that product decides who may
 change it.
 
-- `blast_partners::partner_list::new` creates an empty list for an owner.
+- `blast_partners::partner_list::new` creates an empty list for a parent.
 - `blast_partners::partner_list::add` accepts a `Partner` at once, cancelling a
   pending removal or accepting a removed partner again; it aborts when the
   partner is already accepted with no removal pending.
@@ -2103,7 +2114,7 @@ change it.
   `blast_partners::partner_list::acceptance_ends_at_ms` returns that entry's end
   time and aborts in `sui::dynamic_field` without one;
   `blast_partners::partner_list::length` counts entries, removed ones included;
-  `blast_partners::partner_list::owner` returns the embedding object's ID.
+  `blast_partners::partner_list::parent` returns the embedding object's ID.
 - `blast_partners::partner_list::destroy` deletes the list with every entry and
   emits `PartnerListDestroyed`. It ends every acceptance at once, without the
   notice, so a product destroys it only with the object that embeds it.
@@ -2257,23 +2268,23 @@ Every event is emitted directly (no envelope).
   `recipient`. The latest one per `partner_id` gives the recipient.
 - Share and cap lifecycle events come from `blast_admin`'s `delayed` module,
   generic in the key (`ShareKey` for the share, `CapKey` for the cap) and the
-  value type (`u64` or `ID`), with `owner` set to the `Partner`'s ID:
+  value type (`u64` or `ID`), with `parent` set to the `Partner`'s ID:
   `delayed::DelayedCreated` (registration: initial value and notice),
   `delayed::DelayedScheduled` (proposal: value, notice, `ready_at_ms`),
   `delayed::DelayedCancelled` (a cancel, or a proposal a new one replaced) and
   `delayed::DelayedApplied` (previous and new value, notice). Replaying them per
-  `owner` and key reconstructs the applied and pending terms; `blast_partners`
+  `parent` and key reconstructs the applied and pending terms; `blast_partners`
   emits no event of its own for them.
 - `blast_partners::partner_list::PartnerAdded`: emitted by
-  `blast_partners::partner_list::add`. Fields: `owner` (the object embedding
+  `blast_partners::partner_list::add`. Fields: `parent` (the object embedding
   the list), `partner_id`.
 - `blast_partners::partner_list::PartnerRemoved`: emitted by
-  `blast_partners::partner_list::remove`. Fields: `owner`, `partner_id`,
-  `acceptance_ends_at_ms` (exclusive). Replaying both per `owner` gives that
+  `blast_partners::partner_list::remove`. Fields: `parent`, `partner_id`,
+  `acceptance_ends_at_ms` (exclusive). Replaying both per `parent` gives that
   list's accepted partners.
 - `blast_partners::partner_list::PartnerListDestroyed`: emitted by
-  `blast_partners::partner_list::destroy`. Field: `owner`. From then on the
-  owner's list accepts no partner.
+  `blast_partners::partner_list::destroy`. Field: `parent`. From then on the
+  parent's list accepts no partner.
 - `blast_partners::blast_partners::PartnerPaid<T>`: emitted by
   `blast_partners::blast_partners::pay` when it sends a positive amount. Fields:
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
@@ -4315,11 +4326,12 @@ public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName
 /// `redeem_ticket` stays the ticket's one consuming path.
 public fun ticket_venue<Meme, Quote>(self: &VenueTicket<Meme, Quote>): TypeName
 
-/// A vault's terms, sealed under the `PackageWitness` of the sale's product that owns `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
+/// A vault's terms, sealed under the sale product's `PackageWitness` by borrowing the sale's
+/// `origin` UID; owner proofs for the vault must come from the same witness. Each Blast share is at
 /// most `constants::max_lp_fee_bps!()`, 3,000 basis points, so a vault trusts sealed terms.
 public fun vault_terms<PackageWitness: drop>(
     _: PackageWitness,
-    origin: ID,
+    origin: &UID,
     fee_split: fee_split::FeeSplit,
     protocol_meme_bps: bps::Bps,
     protocol_quote_bps: bps::Bps,
@@ -4410,8 +4422,9 @@ public struct OwnerProof {
 #### Functions
 
 ```move
-/// Issues a proof for the sale `origin` under the issuing package's witness `PackageWitness`.
-public fun new<PackageWitness: drop>(_: PackageWitness, origin: ID): OwnerProof
+/// Issues a proof by borrowing the sale's `origin` UID under the issuing package's
+/// `PackageWitness`, after the product checks the caller's creator authority.
+public fun new<PackageWitness: drop>(_: PackageWitness, origin: &UID): OwnerProof
 
 /// Consumes the proof, aborting unless it names `terms`' package witness and sale.
 public fun assert_terms(self: OwnerProof, terms: &migration::VaultTerms)
@@ -4524,11 +4537,11 @@ public struct Ledger<phantom Meme, phantom Quote> has store {
 #### Functions
 
 ```move
-/// An empty ledger for the object `origin`, created under the embedding module's `PackageWitness`
-/// and bound to `partner_id` if any.
+/// An empty ledger for the object whose UID is borrowed as `origin`, created under the embedding
+/// module's `PackageWitness` and bound to `partner_id` if any.
 public fun new<Meme, Quote, PackageWitness: drop>(
     _: PackageWitness,
-    origin: ID,
+    origin: &UID,
     partner_id: Option<ID>,
 ): Ledger<Meme, Quote>
 
@@ -4675,7 +4688,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 2 | `EUnguardedDelay` | Unpause needs a nonzero witness admission delay and no pending admission. |
 | 3 | `EInvalidProtocolBps` | Blast's share must be at most 3,000 basis points per asset. |
 | 4 | `EZeroLiquidity` | The migration position must hold liquidity. |
-| 5 | `EWrongVenue` | Only the venue holding the vault's position may act on it. |
+| 5 | `EWrongVenue` | Only the venue bound at vault construction may act on it. |
 | 6 | `ENothingToClaim` | The owner has nothing accrued to claim. |
 | 7 | `EBuybackQuoteOutOfRange` | Buyback Quote must be positive and at most the burn Quote held. |
 | 8 | `EBuybackBelowMinimum` | The buyback must return at least the minimum Meme. |
@@ -5153,6 +5166,8 @@ public struct Vault<phantom Meme, phantom Quote> has key {
     id: UID,
     /// The terms the vault was created with; owner proofs are checked against them.
     terms: blast_core::migration::VaultTerms,
+    /// The admitted venue fixed at construction; only its witness may attach the position.
+    venue: TypeName,
     pool_id: ID,
     fee_split: blast_admin::delayed::Delayed<FeeSplitKey, blast_core::fee_split::FeeSplit>,
     protocol_bps: blast_admin::delayed::Delayed<ProtocolBpsKey, ProtocolBps>,
@@ -5175,8 +5190,9 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 ```move
 /// Builds a vault for `terms`, unshared so the venue attaches its position and settles the
 /// migration residuals in `share_with_position` before anyone can reach it. Aborts unless `Venue`
-/// and the terms' sealing witness are admitted; Blast's share needs no check, since
-/// `migration::vault_terms` capped it when the terms were sealed. The vault's ID derives from the
+/// and the terms' sealing witness are admitted. The vault is permanently bound to `Venue`.
+/// Blast's share needs no check, since `migration::vault_terms` capped it when the terms were
+/// sealed. The vault's ID derives from the
 /// registry, the sealing witness, and the sale, so each sale has exactly one vault and a client
 /// computes its address from the sale alone. The vault has `key` without `store`, so it cannot
 /// leave this transaction except through `share_with_position`.
@@ -5191,6 +5207,8 @@ public fun new<Meme, Quote, Venue>(
 /// Attaches `position`, holding `liquidity`, under the venue's sealed key with no removal path,
 /// settles the migration residuals by the terms' policy, and shares the vault. Protocol residuals
 /// are paid to the treasury at once, or held for the partner; owner residuals wait for the owner.
+/// Aborts unless `Venue` is the venue bound by `new`. Its position key can be attached only once,
+/// so an already shared vault cannot be initialized again.
 public fun share_with_position<Meme, Quote, Venue, Position: key + store>(
     self: Vault<Meme, Quote>,
     _: &Venue,
@@ -5556,10 +5574,10 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pa
 
 ```move
 /// The partners one product accepts: each partner's ID maps to the time, in Unix epoch
-/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the
+/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `parent` is the
 /// object that embeds the list, named by its events.
 public struct PartnerList has store {
-    owner: ID,
+    parent: ID,
     acceptance_ends_at_ms: Table<ID, u64>,
 }
 ```
@@ -5567,8 +5585,8 @@ public struct PartnerList has store {
 #### Functions
 
 ```move
-/// An empty list embedded in `owner`.
-public fun new(owner: &UID, ctx: &mut TxContext): PartnerList
+/// An empty list embedded in `parent`.
+public fun new(parent: &UID, ctx: &mut TxContext): PartnerList
 
 /// Accepts `partner` at once. Adding a partner whose removal is pending cancels the removal;
 /// adding a removed partner accepts it again. Aborts when it is already accepted with no removal
@@ -5601,29 +5619,29 @@ public fun acceptance_ends_at_ms(self: &PartnerList, partner_id: ID): u64
 public fun length(self: &PartnerList): u64
 
 /// The object that embeds the list, named by its events.
-public fun owner(self: &PartnerList): ID
+public fun parent(self: &PartnerList): ID
 ```
 
 #### Events
 
 ```move
-/// The owner's list accepts the partner from now on.
+/// The parent's list accepts the partner from now on.
 public struct PartnerAdded has copy, drop {
-    owner: ID,
+    parent: ID,
     partner_id: ID,
 }
 
-/// The owner's list accepts the partner until `acceptance_ends_at_ms` (Unix epoch milliseconds),
+/// The parent's list accepts the partner until `acceptance_ends_at_ms` (Unix epoch milliseconds),
 /// exclusive.
 public struct PartnerRemoved has copy, drop {
-    owner: ID,
+    parent: ID,
     partner_id: ID,
     acceptance_ends_at_ms: u64,
 }
 
-/// The owner's list was deleted: it accepts no partner from now on.
+/// The parent's list was deleted: it accepts no partner from now on.
 public struct PartnerListDestroyed has copy, drop {
-    owner: ID,
+    parent: ID,
 }
 ```
 
@@ -5894,7 +5912,7 @@ public struct Unpaused<phantom OTW: drop> has copy, drop {
 
 ### `blast_admin::delayed`
 
-Settings that change only after their applied delay, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied delay, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries an owner-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Owners use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `owner`; owners emit only their own side effects.  Every change, a shorter delay included, waits the delay applied when it was scheduled. A delay can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No delay exceeds `max_delay_ms`, so a delay can always be changed again. Readers need no Clock.
+Settings that change only after their applied delay, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied delay, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries a module-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Embedding modules use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `parent`; embedding modules emit only their own side effects.  Every change, a shorter delay included, waits the delay applied when it was scheduled. A delay can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No delay exceeds `max_delay_ms`, so a delay can always be changed again. Readers need no Clock.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed.move
 
@@ -5903,7 +5921,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 ```move
 /// An applied setting, its applied delay and at most one proposed replacement.
 public struct Delayed<K: copy + drop + store, T: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -5937,7 +5955,7 @@ public struct Deadline has copy, drop, store {
 /// A setting in force at once; every later change waits the applied delay.
 public fun new<K: copy + drop + store, T: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     value: T,
     delay_ms: u64,
 ): Delayed<K, T>
@@ -5985,7 +6003,7 @@ public fun schedule_delay<K: copy + drop + store, T: copy + drop + store>(
     clock: &Clock,
 ): u64
 
-/// Checks that `apply` would succeed now, changing nothing. Owners call it before
+/// Checks that `apply` would succeed now, changing nothing. Embedding modules call it before
 /// settling accrued economics under the applied value in the same transaction.
 public fun assert_ready<K: copy + drop + store, T: copy + drop + store>(
     self: &Delayed<K, T>,
@@ -6026,9 +6044,9 @@ public fun deadline_delay_ms(self: &Deadline): u64
 public fun deadline_ready_at_ms(self: &Deadline): u64
 
 /// The ID of the object that stores this setting.
-public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID
+public fun parent<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID
 
-/// The owner-defined key of this setting.
+/// The module-defined key of this setting.
 public fun key<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): K
 
 /// Whether `apply` would succeed now: a proposal is pending, its `ready_at_ms` has passed, and
@@ -6044,7 +6062,7 @@ public fun is_ready<K: copy + drop + store, T: copy + drop + store>(
 ```move
 /// A setting was created with its first applied value and delay.
 public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -6052,7 +6070,7 @@ public struct DelayedCreated<K: copy + drop + store, T: copy + drop + store> has
 
 /// A replacement value and next delay were proposed, ready from `ready_at_ms`.
 public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -6061,7 +6079,7 @@ public struct DelayedScheduled<K: copy + drop + store, T: copy + drop + store> h
 
 /// A proposal was discarded, by cancellation or by a replacing schedule.
 public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     value: T,
     delay_ms: u64,
@@ -6070,7 +6088,7 @@ public struct DelayedCancelled<K: copy + drop + store, T: copy + drop + store> h
 
 /// A ready proposal became the applied value and delay.
 public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     previous_value: T,
     value: T,
@@ -6079,7 +6097,7 @@ public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has
 
 /// A setting was deleted with nothing pending.
 public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 ```
@@ -6099,7 +6117,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 ```move
 /// An applied delay and at most one proposed one-shot action or delay change.
 public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
     pending: Option<delayed::Proposal<Change<A>>>,
@@ -6107,7 +6125,7 @@ public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has 
 
 /// What a proposal does once applied.
 public enum Change<A: copy + drop + store> has copy, drop, store {
-    /// Hands the owner its action; the delay stays as applied.
+    /// Hands the embedding module its action; the delay stays as applied.
     Action(A),
     /// Changes only the delay, to the proposal's `delay_ms`.
     Delay,
@@ -6120,7 +6138,7 @@ public enum Change<A: copy + drop + store> has copy, drop, store {
 /// An action slot with nothing proposed; every action waits the applied delay.
 public fun new<K: copy + drop + store, A: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
 ): DelayedAction<K, A>
 
@@ -6153,7 +6171,7 @@ public fun schedule_delay<K: copy + drop + store, A: copy + drop + store>(
     clock: &Clock,
 ): u64
 
-/// Consumes the ready proposed action and returns it for the owner to perform.
+/// Consumes the ready proposed action and returns it for the embedding module to perform.
 /// Aborts when the proposal is a delay change.
 public fun take_action<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
@@ -6199,9 +6217,9 @@ public fun is_delay_ready<K: copy + drop + store, A: copy + drop + store>(
 ): bool
 
 /// The ID of the object that stores this action slot.
-public fun owner<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID
+public fun parent<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID
 
-/// The owner-defined key of this action slot.
+/// The module-defined key of this action slot.
 public fun key<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): K
 ```
 
@@ -6210,7 +6228,7 @@ public fun key<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAct
 ```move
 /// An action slot was created with its first applied delay.
 public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -6218,7 +6236,7 @@ public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + sto
 /// An action or delay change was proposed, ready from `ready_at_ms`; `delay_ms` is the
 /// delay in force once it applies.
 public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
@@ -6227,16 +6245,16 @@ public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> ha
 
 /// A proposed action or delay change was discarded, by cancellation or replacement.
 public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
     ready_at_ms: u64,
 }
 
-/// A ready action was handed to its owner, or a delay change applied.
+/// A ready action was handed to its embedding module, or a delay change applied.
 public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: Change<A>,
     delay_ms: u64,
@@ -6244,7 +6262,7 @@ public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has 
 
 /// An action slot was deleted with nothing pending.
 public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 ```
@@ -6262,7 +6280,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 /// most one proposed delay. Values live in a Table, so reads cost one entry and the map
 /// grows without bound; pending changes are few and live inline.
 public struct DelayedMap<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     entries: Table<E, V>,
     delay_ms: u64,
@@ -6294,7 +6312,7 @@ public enum MapChange<E: copy + drop + store, V: copy + drop + store> has copy, 
 /// An empty map; every entry change waits the applied delay.
 public fun new<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
     ctx: &mut TxContext,
 ): DelayedMap<K, E, V>
@@ -6403,11 +6421,11 @@ public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store, V: cop
 ): bool
 
 /// The ID of the object that stores this map.
-public fun owner<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+public fun parent<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): ID
 
-/// The owner-defined key of this map.
+/// The module-defined key of this map.
 public fun key<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): K
@@ -6451,7 +6469,7 @@ public fun changed_value<E: copy + drop + store, V: copy + drop + store>(
 ```move
 /// A map was created empty with its first applied delay.
 public struct MapCreated<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -6459,7 +6477,7 @@ public struct MapCreated<K: copy + drop + store, phantom E: copy + drop + store,
 /// An entry change or delay change was proposed, ready from `ready_at_ms`. `delay_ms` is
 /// the delay an entry change waits, or the proposed next delay.
 public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -6469,7 +6487,7 @@ public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: co
 /// A proposed change was discarded, by cancellation or replacement; its fields match its
 /// `MapScheduled`.
 public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -6479,7 +6497,7 @@ public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: co
 /// An entry was set or cleared, or a delay change applied; `delay_ms` matches its
 /// `MapScheduled`.
 public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: MapChange<E, V>,
     delay_ms: u64,
@@ -6487,7 +6505,7 @@ public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy
 
 /// A map was deleted with nothing pending, ending every remaining entry.
 public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + store, phantom V: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 ```
@@ -6504,7 +6522,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 /// Admitted members, one applied delay for new admissions, pending admissions with fixed
 /// deadlines, and at most one proposed delay. A delay change never moves a deadline.
 public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has store {
-    owner: ID,
+    parent: ID,
     key: K,
     members: VecSet<E>,
     delay_ms: u64,
@@ -6527,7 +6545,7 @@ public enum SetChange<E: copy + drop + store> has copy, drop, store {
 /// An empty set; every admission waits the applied delay.
 public fun new<K: copy + drop + store, E: copy + drop + store>(
     key: K,
-    owner: &UID,
+    parent: &UID,
     delay_ms: u64,
 ): DelayedSet<K, E>
 
@@ -6638,9 +6656,9 @@ public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store>(
 ): bool
 
 /// The ID of the object that stores this set.
-public fun owner<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): ID
+public fun parent<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): ID
 
-/// The owner-defined key of this set.
+/// The module-defined key of this set.
 public fun key<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): K
 
 /// The deadline of `member`'s pending admission, if one is pending.
@@ -6658,7 +6676,7 @@ public fun member<E: copy + drop + store>(self: &SetChange<E>): Option<E>
 ```move
 /// A set was created empty with its first applied delay.
 public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     delay_ms: u64,
 }
@@ -6666,7 +6684,7 @@ public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store>
 /// An admission or delay change was proposed, ready from `ready_at_ms`. `delay_ms` is the
 /// delay an admission waits, or the proposed next delay.
 public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -6676,7 +6694,7 @@ public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has c
 /// A proposed admission or delay change was discarded, by cancellation, replacement or
 /// removal; its fields match its `SetScheduled`.
 public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -6685,7 +6703,7 @@ public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has c
 
 /// A member was admitted, or a delay change applied; `delay_ms` matches its `SetScheduled`.
 public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     change: SetChange<E>,
     delay_ms: u64,
@@ -6693,14 +6711,14 @@ public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has cop
 
 /// A member left the set at once.
 public struct MemberRemoved<K: copy + drop + store, E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
     member: E,
 }
 
 /// A set was deleted with nothing pending; its remaining members leave with it.
 public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
-    owner: ID,
+    parent: ID,
     key: K,
 }
 ```

@@ -88,6 +88,8 @@ public struct Vault<phantom Meme, phantom Quote> has key {
     id: UID,
     /// The terms the vault was created with; owner proofs are checked against them.
     terms: VaultTerms,
+    /// The admitted venue fixed at construction; only its witness may attach the position.
+    venue: TypeName,
     pool_id: ID,
     fee_split: Delayed<FeeSplitKey, FeeSplit>,
     protocol_bps: Delayed<ProtocolBpsKey, ProtocolBps>,
@@ -110,8 +112,9 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 
 /// Builds a vault for `terms`, unshared so the venue attaches its position and settles the
 /// migration residuals in `share_with_position` before anyone can reach it. Aborts unless `Venue`
-/// and the terms' sealing witness are admitted; Blast's share needs no check, since
-/// `migration::vault_terms` capped it when the terms were sealed. The vault's ID derives from the
+/// and the terms' sealing witness are admitted. The vault is permanently bound to `Venue`.
+/// Blast's share needs no check, since `migration::vault_terms` capped it when the terms were
+/// sealed. The vault's ID derives from the
 /// registry, the sealing witness, and the sale, so each sale has exactly one vault and a client
 /// computes its address from the sale alone. The vault has `key` without `store`, so it cannot
 /// leave this transaction except through `share_with_position`.
@@ -149,11 +152,12 @@ public fun new<Meme, Quote, Venue>(
         &id,
         constants::round_delay_ms!(),
     );
-    let protocol = protocol_fees::new(VaultWitness(), id.to_inner(), terms.partner_id());
+    let protocol = protocol_fees::new(VaultWitness(), &id, terms.partner_id());
 
     Vault {
         id,
         terms,
+        venue: type_name::with_original_ids<Venue>(),
         pool_id,
         fee_split,
         protocol_bps,
@@ -174,6 +178,8 @@ public fun new<Meme, Quote, Venue>(
 /// Attaches `position`, holding `liquidity`, under the venue's sealed key with no removal path,
 /// settles the migration residuals by the terms' policy, and shares the vault. Protocol residuals
 /// are paid to the treasury at once, or held for the partner; owner residuals wait for the owner.
+/// Aborts unless `Venue` is the venue bound by `new`. Its position key can be attached only once,
+/// so an already shared vault cannot be initialized again.
 public fun share_with_position<Meme, Quote, Venue, Position: key + store>(
     mut self: Vault<Meme, Quote>,
     _: &Venue,
@@ -184,6 +190,7 @@ public fun share_with_position<Meme, Quote, Venue, Position: key + store>(
     residual_quote: Balance<Quote>,
     ctx: &mut TxContext,
 ) {
+    assert!(self.venue == type_name::with_original_ids<Venue>(), blast_vault::errors::wrong_venue!());
     assert!(liquidity > 0, blast_vault::errors::zero_liquidity!());
 
     let residual_meme_amount = residual_meme.value();
@@ -918,7 +925,7 @@ use blast_vault::{
     constants
 };
 
-use std::type_name::TypeName;
+use std::type_name::{Self, TypeName};
 
 use sui::{
     balance::{Self, Balance},

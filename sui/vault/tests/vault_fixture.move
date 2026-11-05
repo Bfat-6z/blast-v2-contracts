@@ -13,7 +13,6 @@ const SENDER: address = @0x5E4D;
 const TREASURY: address = @0x7EA5;
 const PARTNER_RECIPIENT: address = @0xBA27;
 const POOL: address = @0x9001;
-const SALE: address = @0x5A1E;
 const MEME_SUPPLY: u64 = 1_000_000_000_000;
 
 // === Test-Only Types ===
@@ -47,6 +46,7 @@ public struct VaultFixture {
     currency: Currency<VAULT_FIXTURE>,
     meme_supply: Balance<VAULT_FIXTURE>,
     clock: Clock,
+    origin: UID,
 }
 
 // === Test Helpers ===
@@ -86,12 +86,13 @@ public fun start_with_supply(scenario: &mut Scenario, burn_only: bool): VaultFix
         currency,
         meme_supply,
         clock: clock::create_for_testing(ctx),
+        origin: object::new(ctx),
     }
 }
 
 /// Destroys every fixture object.
 public fun end(self: VaultFixture) {
-    let VaultFixture { registry, version, treasury, partner, currency, meme_supply, clock } = self;
+    let VaultFixture { registry, version, treasury, partner, currency, meme_supply, clock, origin } = self;
     destroy(registry);
     destroy(version);
     destroy(treasury);
@@ -99,6 +100,7 @@ public fun end(self: VaultFixture) {
     destroy(currency);
     destroy(meme_supply);
     clock.destroy_for_testing();
+    origin.delete();
 }
 
 /// The admitted test venue's witness.
@@ -119,7 +121,7 @@ public fun treasury_address(): address { TREASURY }
 
 public fun partner_recipient(): address { PARTNER_RECIPIENT }
 
-public fun sale_id(): ID { object::id_from_address(SALE) }
+public fun sale_id(self: &VaultFixture): ID { self.origin.to_inner() }
 
 public fun pool_id(): ID { object::id_from_address(POOL) }
 
@@ -145,7 +147,7 @@ public fun terms_for(
 ): VaultTerms {
     migration::vault_terms(
         SaleWitness(),
-        sale_id(),
+        &self.origin,
         fee_split,
         bps::new(meme_bps),
         bps::new(quote_bps),
@@ -156,10 +158,14 @@ public fun terms_for(
 }
 
 /// Terms for `fee_split` at Blast's 15% share, sealed by `issuer` for the test sale's ID.
-public fun terms_sealed_by<Issuer: drop>(issuer: Issuer, fee_split: FeeSplit): VaultTerms {
+public fun terms_sealed_by<Issuer: drop>(
+    self: &VaultFixture,
+    issuer: Issuer,
+    fee_split: FeeSplit,
+): VaultTerms {
     migration::vault_terms(
         issuer,
-        sale_id(),
+        &self.origin,
         fee_split,
         bps::new(1_500),
         bps::new(1_500),
@@ -169,8 +175,8 @@ public fun terms_sealed_by<Issuer: drop>(issuer: Issuer, fee_split: FeeSplit): V
 }
 
 /// An owner proof for the test sale.
-public fun owner_proof(): OwnerProof {
-    owner_proof::new(SaleWitness(), sale_id())
+public fun owner_proof(self: &VaultFixture): OwnerProof {
+    owner_proof::new(SaleWitness(), &self.origin)
 }
 
 /// A fresh stand-in position.

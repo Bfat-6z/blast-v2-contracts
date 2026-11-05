@@ -419,7 +419,7 @@ pub enum Change<A> {
 /// Mirrors `blast_admin::delayed::Delayed<K, T>`.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct Delayed<T> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub value: T,
     pub delay_ms: u64,
@@ -443,7 +443,7 @@ pub struct Deadline {
 /// Mirrors `blast_admin::delayed_set::DelayedSet<K, E>`, its `VecSet` and `VecMap` flattened.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct DelayedSet<E> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub members: Vec<E>,
     pub delay_ms: u64,
@@ -456,7 +456,7 @@ pub type RuntimeConfigContents = (ObjectID, DelayedSet<Vec<u8>>, Delayed<u64>);
 
 /// A `LaunchConfig` in BCS field order: meme decimals, the admitted quote type names, trade fees
 /// (quote, meme), admitted venues, protocol allocation (meme, quote), Blast's LP-fee share of new
-/// vaults (meme, quote), creation fee, and the accepted partners' `PartnerList` (owner and its
+/// vaults (meme, quote), creation fee, and the accepted partners' `PartnerList` (parent and its
 /// `Table` (id, size)).
 pub type LaunchConfigContents = (
     ObjectID,
@@ -481,7 +481,7 @@ pub type GenericPackageVersionContents = (ObjectID, u8, u8, String, u64);
 /// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct DelayedAction<A> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub delay_ms: u64,
     pub pending: Option<Proposal<Change<A>>>,
@@ -586,7 +586,7 @@ pub type PackageAdminContents = (ObjectID, (ObjectID, String, String), Vec<Upgra
 /// Mirrors `blast_admin::delayed::DelayedScheduled<K, T>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct DelayedScheduled<T> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub value: T,
     pub delay_ms: u64,
@@ -596,7 +596,7 @@ pub struct DelayedScheduled<T> {
 /// Mirrors `blast_admin::delayed::DelayedApplied<K, T>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct DelayedApplied<T> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub previous_value: T,
     pub value: T,
@@ -606,7 +606,7 @@ pub struct DelayedApplied<T> {
 /// Mirrors `blast_admin::delayed_action::ActionScheduled<K, A>` and `ActionCancelled<K, A>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct ActionScheduled<A> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub change: Change<A>,
     pub delay_ms: u64,
@@ -616,7 +616,7 @@ pub struct ActionScheduled<A> {
 /// Mirrors `blast_admin::delayed_action::ActionApplied<K, A>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct ActionApplied<A> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub change: Change<A>,
     pub delay_ms: u64,
@@ -632,7 +632,7 @@ pub enum SetChange<E> {
 /// Mirrors `blast_admin::delayed_set::SetScheduled<K, E>` and `SetCancelled<K, E>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct SetScheduled<E> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub change: SetChange<E>,
     pub delay_ms: u64,
@@ -642,7 +642,7 @@ pub struct SetScheduled<E> {
 /// Mirrors `blast_admin::delayed_set::SetApplied<K, E>`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct SetApplied<E> {
-    pub owner: ObjectID,
+    pub parent: ObjectID,
     pub key: bool,
     pub change: SetChange<E>,
     pub delay_ms: u64,
@@ -698,7 +698,7 @@ impl Outcome {
 
     /// Contents of the `<name>` lifecycle events of `blast_admin`'s delayed modules keyed by
     /// `key_module::key_name`, in native order. The primitives emit these bare, generic in the
-    /// owner's key type.
+    /// embedding module's key type.
     pub fn delayed_events(&self, name: &str, key_module: &str, key_name: &str) -> Vec<&[u8]> {
         self.events
             .iter()
@@ -970,7 +970,7 @@ impl Harness {
         let (admin_id, sealed_publisher, sealed_caps, upgrade) = self.package_admin(package_admin[0])?;
         assert!(upgrade.pending.is_none(), "fresh custody has no scheduled action");
         assert_eq!(upgrade.delay_ms, PUBLICATION_UPGRADE_DELAY_MS, "publication starts at the 48-hour upgrade delay");
-        assert_eq!(upgrade.owner, package_admin[0]);
+        assert_eq!(upgrade.parent, package_admin[0]);
         assert_eq!(admin_id, package_admin[0]);
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
@@ -1040,11 +1040,11 @@ impl Harness {
         call(&mut b, package, "runtime_config", "schedule_creator_claim_signer_delay", vec![], vec![runtime, version_arg, signer_role, delay, clock]);
         call(&mut b, package, "runtime_config", "apply_creator_claim_signer_delay", vec![], vec![runtime, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
-        let (_, _, _, trade_fees, venues, allocation, lp_fees, creation_fee, (partners_owner, _)): LaunchConfigContents =
+        let (_, _, _, trade_fees, venues, allocation, lp_fees, creation_fee, (partners_parent, _)): LaunchConfigContents =
             bcs::from_bytes(&self.contents(config_id)).context("decode configured LaunchConfig")?;
         let (_, signers, fee_share): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode configured RuntimeConfig")?;
-        ensure!(partners_owner == config_id, "the launch config owns its partner list");
+        ensure!(partners_parent == config_id, "the launch config contains its partner list");
         let applied = [trade_fees.delay_ms, allocation.delay_ms, lp_fees.delay_ms, creation_fee.delay_ms,
             fee_share.delay_ms];
         let pending = [trade_fees.pending.is_some(), allocation.pending.is_some(), lp_fees.pending.is_some(),
@@ -1210,7 +1210,7 @@ impl Harness {
     /// A fresh `PackageAdmin` waits the 48-hour publication delay with nothing scheduled.
     pub fn assert_publication_upgrade_delay(&self, package_admin: ObjectID) -> Result<()> {
         let (admin_id, _, sealed_caps, upgrade) = self.package_admin(package_admin)?;
-        ensure!(admin_id == package_admin && upgrade.owner == package_admin && sealed_caps.len() == 1);
+        ensure!(admin_id == package_admin && upgrade.parent == package_admin && sealed_caps.len() == 1);
         ensure!(upgrade.pending.is_none(), "fresh custody has no scheduled action");
         ensure!(upgrade.delay_ms == PUBLICATION_UPGRADE_DELAY_MS, "publication starts at the 48-hour upgrade delay");
         Ok(())

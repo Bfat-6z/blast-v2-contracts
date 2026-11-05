@@ -28,7 +28,7 @@ const EInvalidProtocolBps: u64 = 3;
 const EZeroLiquidity: u64 = 4;
 
 #[test_only]
-/// Only the venue holding the vault's position may act on it.
+/// Only the venue bound at vault construction may act on it.
 const EWrongVenue: u64 = 5;
 
 #[test_only]

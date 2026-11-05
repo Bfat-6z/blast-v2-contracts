@@ -1,0 +1,7 @@
+[package]
+name = "ptb_rogue_venue"
+edition = "2024"
+license = "BUSL-1.1"
+
+[addresses]
+ptb_rogue_venue = "0x0"

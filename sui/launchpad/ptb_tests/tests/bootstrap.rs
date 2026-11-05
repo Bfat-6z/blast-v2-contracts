@@ -109,7 +109,7 @@ fn assert_treasury_publication(h: &Harness, treasury: ObjectID) -> Result<()> {
     let (id, destination): (ObjectID, Delayed<SuiAddress>) = bcs::from_bytes(&h.contents(treasury))?;
     let recipient = SuiAddress::from(ObjectID::from_hex_literal(TEST_GENESIS_RECIPIENT)?);
     assert_eq!(id, treasury);
-    assert_eq!(destination, Delayed { owner: treasury, key: false, value: recipient, delay_ms: 172_800_000, pending: None });
+    assert_eq!(destination, Delayed { parent: treasury, key: false, value: recipient, delay_ms: 172_800_000, pending: None });
     Ok(())
 }
 
@@ -204,7 +204,7 @@ fn assert_delay_changes_use_the_old_delay(h: &mut Harness, blast: ObjectID, admi
             let scheduled: Vec<DelayedScheduled<u64>> =
                 applied.delayed("DelayedScheduled", "launch_config", "CreationFeeKey")?;
             assert_eq!(scheduled.len(), 1, "scheduled creation fee");
-            assert_eq!((scheduled[0].owner, scheduled[0].value), (config, 123));
+            assert_eq!((scheduled[0].parent, scheduled[0].value), (config, 123));
             assert_eq!((scheduled[0].ready_at_ms, scheduled[0].delay_ms), (scheduled_at_ms + 172_800_000 + 25, 0));
         }
     }
@@ -274,8 +274,8 @@ fn assert_initial_partner_payment(
     const DELAY: u64 = 604_800_000;
     let state: Partner = bcs::from_bytes(&h.contents(partner))?;
     assert_eq!((state.0, state.1), (partner, recipient));
-    assert_eq!(state.2, Delayed { owner: partner, key: false, value: 8_000, delay_ms: DELAY, pending: None });
-    assert_eq!(state.3, Delayed { owner: partner, key: false, value: partner_cap, delay_ms: DELAY, pending: None });
+    assert_eq!(state.2, Delayed { parent: partner, key: false, value: 8_000, delay_ms: DELAY, pending: None });
+    assert_eq!(state.3, Delayed { parent: partner, key: false, value: partner_cap, delay_ms: DELAY, pending: None });
     let updates: Vec<_> = registered.events.iter().filter(|event| event.type_.name.as_str() == "PartnerUpdated").collect();
     assert_eq!(updates.len(), 1);
     assert_eq!(bcs::from_bytes::<(ObjectID, SuiAddress)>(&updates[0].contents)?, (partner, recipient));
@@ -321,7 +321,7 @@ fn assert_initial_partner_payment(
     scheduled_outcome.assert_success();
     let scheduled: Vec<DelayedScheduled<u64>> = scheduled_outcome.delayed("DelayedScheduled", "blast_partners", "ShareKey")?;
     assert_eq!(scheduled.len(), 1);
-    assert_eq!((scheduled[0].owner, scheduled[0].value, scheduled[0].delay_ms), (partner, 5_000, DELAY));
+    assert_eq!((scheduled[0].parent, scheduled[0].value, scheduled[0].delay_ms), (partner, 5_000, DELAY));
     let ready_at_ms = scheduled[0].ready_at_ms;
     assert!(scheduled_outcome.events.iter().all(|event| event.type_.name.as_str() != "PartnerUpdated"));
     h.sim.advance_clock(std::time::Duration::from_millis(DELAY - 1));
@@ -360,11 +360,11 @@ fn assert_initial_partner_payment(
     let applied = h.execute(apply(h)?)?;
     applied.assert_success();
     let state: Partner = bcs::from_bytes(&h.contents(partner))?;
-    assert_eq!(state.2, Delayed { owner: partner, key: false, value: 5_000, delay_ms: DELAY, pending: None });
+    assert_eq!(state.2, Delayed { parent: partner, key: false, value: 5_000, delay_ms: DELAY, pending: None });
     let applied_events: Vec<DelayedApplied<u64>> = applied.delayed("DelayedApplied", "blast_partners", "ShareKey")?;
     assert_eq!(
         applied_events,
-        vec![DelayedApplied { owner: partner, key: false, previous_value: 8_000, value: 5_000, delay_ms: DELAY }],
+        vec![DelayedApplied { parent: partner, key: false, previous_value: 8_000, value: 5_000, delay_ms: DELAY }],
     );
     assert!(applied.events.iter().all(|event| event.type_.name.as_str() != "PartnerUpdated"));
 
