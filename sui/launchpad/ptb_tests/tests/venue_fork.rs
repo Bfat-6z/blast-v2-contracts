@@ -1285,7 +1285,9 @@ impl World {
             let mut b = ProgrammableTransactionBuilder::new();
             self.cetus_migrate_of_bluefin_hand_off(&mut b, launch)?;
             let expected = Expected::Abort { package: self.core, module: "migration", code: WRONG_VENUE };
-            self.h.assert_rolled_back(b.finish(), expected, &watched, &owners)?;
+            let cetus_watched =
+                [watched.clone(), vec![self.venue("cetus_pools"), self.venue("cetus_burn_manager")]].concat();
+            self.h.assert_rolled_back(b.finish(), expected, &cetus_watched, &owners)?;
             self.report("launch::migrate then cetus::migrate with the Bluefin launch's Migration: blast_core::migration wrong_venue, rolled back".into());
         } else {
             let mut reversed = self.pool_pair(launch);
