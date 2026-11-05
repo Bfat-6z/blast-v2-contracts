@@ -139,7 +139,7 @@ for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_po
     source = (ROOT / 'sui' / package / 'sources' / f'{module}.move').read_text()
     require(source, 'venues: DelayedSet<VenueKey, TypeName>,')
     assert 'migration_witness' not in source and 'pending_venue' not in source, package
-    require(fs['schedule_venue'][0], '&AdminWitness<AdapterAdmin>', 'clock: &Clock')
+    require(fs['schedule_venue'][0], '&AdminWitness<VenueAdmin>', 'clock: &Clock')
     assert 'delay_ms: u64' not in fs['schedule_venue'][0], package
     body = fs['schedule_venue'][1]
     require(body, 'venue.is_primitive()', 'origin != @0x1 && origin != @0x2', 'self.venues.schedule_add(venue, clock)')
@@ -148,9 +148,9 @@ for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_po
     assert 'AdminWitness' not in fs['apply_venue'][0]
     require(fs['cancel_venue'][0], '&AdminWitness<CancelAdmin>')
     require(fs['cancel_venue'][1], 'self.venues.cancel_add(')
-    require(fs['remove_venue'][0], '&AdminWitness<AdapterAdmin>')
+    require(fs['remove_venue'][0], '&AdminWitness<VenueAdmin>')
     require(fs['remove_venue'][1], 'self.venues.remove(')
-    require(fs['schedule_venue_delay'][0], '&AdminWitness<AdapterAdmin>', 'delay_ms: u64', 'clock: &Clock')
+    require(fs['schedule_venue_delay'][0], '&AdminWitness<VenueAdmin>', 'delay_ms: u64', 'clock: &Clock')
     require(fs['schedule_venue_delay'][1], 'self.venues.schedule_delay(delay_ms, clock)')
     require(fs['apply_venue_delay'][1], 'self.venues.apply_delay(clock)')
     assert 'AdminWitness' not in fs['apply_venue_delay'][0]

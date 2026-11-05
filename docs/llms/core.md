@@ -119,7 +119,7 @@ an empty tree, an index outside it, or a proof of the wrong depth return false i
 ### Roles
 
 `blast_domain` declares Blast's product roles for the shared ACL: `TreasuryAdmin`, `FeeAdmin`,
-`ListingAdmin`, `AdapterAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`,
+`ListingAdmin`, `VenueAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`,
 `ClaimSignerAdmin`, and `CancelAdmin`. Only Blast admins hold them.
 
 ### Errors

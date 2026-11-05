@@ -856,7 +856,7 @@ fun disallowing_a_venue_does_not_change_an_existing_launch_snapshot() {
             .config
             .set_venue_allowed_for_testing<TestVenue>(
                 &f.package_version,
-                &adapter_admin(),
+                &venue_admin(),
                 false,
              f.ctx!());
 
@@ -882,7 +882,7 @@ fun disallowing_a_venue_rejects_an_unlisted_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         f
             .config
@@ -925,7 +925,7 @@ fun allowing_a_venue_rejects_a_primitive_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         // The primitive check runs before the origin lookup, which no primitive type supports.
         f.config.set_venue_allowed_for_testing<bool>(&f.package_version, &admin_witness, true, f.ctx!());
@@ -945,7 +945,7 @@ fun allowing_a_venue_rejects_a_vector_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         // The primitive check runs before the origin lookup, which no primitive type supports.
         f
@@ -971,7 +971,7 @@ fun allowing_a_venue_rejects_a_standard_library_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         f
             .config
@@ -996,7 +996,7 @@ fun allowing_a_venue_rejects_a_sui_framework_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         f
             .config
@@ -1021,7 +1021,7 @@ fun disallowing_a_framework_type_reports_it_as_unlisted() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         f
             .config
@@ -1046,7 +1046,7 @@ fun stale_package_version_rejects_a_venue_before_its_type_check() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
         f.package_version.set_version_for_testing(2);
 
         f.config.set_venue_allowed_for_testing<bool>(&f.package_version, &admin_witness, true, f.ctx!());
@@ -1407,7 +1407,7 @@ fun fee_admin(): AdminWitness<FeeAdmin> {
     blast_acl::witness_for_testing()
 }
 
-fun adapter_admin(): AdminWitness<AdapterAdmin> {
+fun venue_admin(): AdminWitness<VenueAdmin> {
     blast_acl::witness_for_testing()
 }
 
@@ -1469,7 +1469,7 @@ fun allow_test_venue(self: &mut ConfigFixture) {
         .config
         .set_venue_allowed_for_testing<TestVenue>(
             &self.package_version,
-            &adapter_admin(),
+            &venue_admin(),
             true,
          self.ctx!());
 }
@@ -1523,7 +1523,7 @@ use blast_admin::{
     package_version::PackageVersion
 };
 
-use blast_core::{bps, blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin}};
+use blast_core::{bps, blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin}};
 
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},

@@ -241,7 +241,7 @@ impl World {
         // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap and each role the
         // setters below take; the cap then signs in once per role.
         let mut roles = Vec::new();
-        for role in ["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin"] {
+        for role in ["ListingAdmin", "VenueAdmin", "FeeAdmin", "TreasuryAdmin"] {
             roles.push(parse_sui_type_tag(&format!("{core}::blast_domain::{role}"))?);
         }
         let mut builder = ProgrammableTransactionBuilder::new();
@@ -269,7 +269,7 @@ impl World {
         for role in roles {
             witnesses.push(call(&mut builder, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, admin_cap]));
         }
-        let [_listing_admin, _adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
+        let [_listing_admin, _venue_admin, fee_admin, treasury_admin]: [Argument; 4] =
             witnesses.try_into().expect("one witness per role");
         let config_arg = builder.obj(w.h.shared(config, true))?;
         let version_arg = builder.obj(w.h.shared(version, false))?;

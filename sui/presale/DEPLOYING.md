@@ -50,7 +50,7 @@ policy before the chosen delay and release.
    Product roles are `blast_core::blast_domain`'s, shared with the launchpad and the vault:
    `FeeAdmin` sets the rates for future sales and individual sales before they start and
    chooses which Blast partners new sales may name; `ListingAdmin` allows Quote types;
-   `AdapterAdmin` admits venues, each of which receives the liquidity of the sales it
+   `VenueAdmin` admits venues, each of which receives the liquidity of the sales it
    creates; `TreasuryAdmin`, with the treasury multisig, governs the core treasury's
    destination. Package roles are `blast_admin::package_admin`'s over
    `BLAST_PRESALE_PACKAGE`: `UpgradeAdmin` governs the upgrade notice and compatible upgrades
@@ -80,7 +80,7 @@ policy before the chosen delay and release.
    the registry strands every funded sale that names it until it is admitted again; reserve
    that for a venue found unsafe. The vault must also list the presale's
    `blast_presale::blast_presale_package::PackageWitness`, the issuer of every presale's
-   vault terms. To list each: with the core `blast_domain::AdapterAdmin`,
+   vault terms. To list each: with the core `blast_domain::VenueAdmin`,
    `blast_vault_package::schedule_witness<Witness>` then `apply_witness`. The vault
    publishes fully paused with a zero admission notice, so admit the presale and launchpad
    issuers and venues together, then raise the vault's notice to 48 hours and unpause it, as

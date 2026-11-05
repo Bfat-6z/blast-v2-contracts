@@ -121,7 +121,7 @@ signature:
 | `blast_core::blast_domain::CancelAdmin` | `fee_policy::cancel_fees`, `creation_policy::cancel_venue`, `creation_policy::cancel_venue_delay` |
 | `blast_core::blast_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
 | `blast_core::blast_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
-| `blast_core::blast_domain::AdapterAdmin` | `creation_policy::schedule_venue`, `creation_policy::remove_venue`, `creation_policy::schedule_venue_delay` |
+| `blast_core::blast_domain::VenueAdmin` | `creation_policy::schedule_venue`, `creation_policy::remove_venue`, `creation_policy::schedule_venue_delay` |
 | `blast_core::blast_domain::TreasuryAdmin` | The treasury's destination (core guide); the presale has no payee of its own. |
 
 The product roles are shared, so the same administrator governs the launchpad's and the presale's
@@ -631,7 +631,7 @@ Venue admissions share one applied notice across witness types, held in the
 `creation_policy::schedule_venue` accepts only the witness type in addition to its state,
 authority and Clock inputs. It snapshots the applied notice and deadline; application only admits
 that witness and preserves the live notice. `creation_policy::schedule_venue_delay` proposes a new
-notice under AdapterAdmin; anyone calls `creation_policy::apply_venue_delay`, and CancelAdmin uses
+notice under VenueAdmin; anyone calls `creation_policy::apply_venue_delay`, and CancelAdmin uses
 `creation_policy::cancel_venue_delay`. Existing admission deadlines remain fixed; settle or cancel
 all zero-notice admissions before completing setup. Immediate venue removal cancels that type's
 pending admission and preserves the applied notice. Scheduling an admitted venue, or removing one
@@ -656,7 +656,7 @@ sale starts, but takes the live `FeePolicy`; every rate must be at or below
 its applied rates. Scheduled increases cannot authorize larger sale overrides.
 Once a sale is shared it is public, so an override there may only keep or lower
 each of its four rates; only the creation PTB may raise one.
-AdapterAdmin may immediately remove a venue with `creation_policy::remove_venue`.
+VenueAdmin may immediately remove a venue with `creation_policy::remove_venue`.
 
 ### Economics
 

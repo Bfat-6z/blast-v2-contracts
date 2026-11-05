@@ -9,7 +9,7 @@ A vendor package that creates `blast_presale` sales is a plain venue over
 `prepare` issues the `blast_core::migration::VenueTicket` that the public
 `blast_presale::new` redeems, and its `migrate` redeems the sealed `Migration`
 that `blast_presale::migrate` returned earlier in the PTB. Blast's presale
-`AdapterAdmin` must admit that witness in the shared `CreationPolicy` before
+`VenueAdmin` must admit that witness in the shared `CreationPolicy` before
 the package can open a sale. A vendor venue that also creates a `blast_vault`
 vault must be admitted in the vault's `VaultRegistry` too
 ([ADR 0104](../../docs/decisions/0104-external-presale-migrators-and-vendor-packages.md),

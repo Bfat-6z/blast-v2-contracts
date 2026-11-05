@@ -52,7 +52,7 @@ or with different type arguments, are different roles.
 | Declared in | Roles | Used by |
 | --- | --- | --- |
 | `blast_admin::package_admin` | `blast_admin::package_admin::UpgradeAdmin<OTW>` (schedule, authorize and commit upgrades, schedule and execute immutability, change the upgrade notice), `blast_admin::package_admin::PauseAdmin<OTW>` (set pause bits), `blast_admin::package_admin::UnpauseAdmin<OTW>` (clear pause bits through the package's own unpause), `blast_admin::package_admin::CancelAdmin<OTW>` (cancel the pending upgrade action or notice change) | every upgradeable package, typed by its one-time witness `OTW` |
-| `blast_core::blast_domain` | `blast_domain::TreasuryAdmin`, `blast_domain::FeeAdmin`, `blast_domain::ListingAdmin`, `blast_domain::AdapterAdmin`, `blast_domain::RewardsAdmin`, `blast_domain::BuybackAdmin`, `blast_domain::CreatorAdmin`, `blast_domain::ClaimSignerAdmin`, `blast_domain::CancelAdmin` | the launch products, the vault and the migrators |
+| `blast_core::blast_domain` | `blast_domain::TreasuryAdmin`, `blast_domain::FeeAdmin`, `blast_domain::ListingAdmin`, `blast_domain::VenueAdmin`, `blast_domain::RewardsAdmin`, `blast_domain::BuybackAdmin`, `blast_domain::CreatorAdmin`, `blast_domain::ClaimSignerAdmin`, `blast_domain::CancelAdmin` | the launch products, the vault and the migrators |
 | `blast_partners` | `blast_partners::blast_partners::PartnerAdmin` (register partners, schedule shares and caps) | partners |
 | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer`, `blast_boosts_core::blast_boosts_core::RiskAdmin`, `blast_boosts_core::blast_boosts_core::ShutdownAdmin`, `blast_boosts_core::blast_boosts_core::UpgradeAdmin` | Boosts |
 

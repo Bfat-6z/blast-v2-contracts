@@ -197,7 +197,7 @@ fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> 
             parse_sui_type_tag(&format!("{id}::mock_adapter::Venue")).unwrap()
         });
         let mut b = ProgrammableTransactionBuilder::new();
-        let admin = w.sign_in(&mut b, "AdapterAdmin")?;
+        let admin = w.sign_in(&mut b, "VenueAdmin")?;
         let config = b.obj(w.h.shared(w.config, true))?;
         let version = b.obj(w.h.shared(w.version, false))?;
         let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
@@ -259,7 +259,7 @@ fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> 
         let later = parse_sui_type_tag(&format!("{later}::mock_adapter::Venue"))?;
         let (_, now): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
         let mut b = ProgrammableTransactionBuilder::new();
-        let admin = w.sign_in(&mut b, "AdapterAdmin")?;
+        let admin = w.sign_in(&mut b, "VenueAdmin")?;
         let config = b.obj(w.h.shared(w.config, true))?;
         let version = b.obj(w.h.shared(w.version, false))?;
         let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
@@ -694,7 +694,7 @@ fn mixed_version_creation_rejects_each_stale_step_after_native_upgrade() -> Resu
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, false))?;
     let cap = b.obj(w.h.owned(w.admin_cap))?;
-    let role = launchpad_role(w.admin, w.core, original, "AdapterAdmin")?;
+    let role = launchpad_role(w.admin, w.core, original, "VenueAdmin")?;
     let witness = call(&mut b, w.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]);
     let config = b.obj(w.h.shared(w.config, true))?;
     let version = b.obj(w.h.shared(w.version, false))?;
@@ -1179,7 +1179,7 @@ fn world(work: &str) -> Result<World> {
     // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap and each role the
     // setters below take; the cap then signs in once per role.
     let mut roles = Vec::new();
-    for role in ["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin"] {
+    for role in ["ListingAdmin", "VenueAdmin", "FeeAdmin", "TreasuryAdmin"] {
         roles.push(launchpad_role(admin, core, blast, role)?);
     }
     let mut builder = ProgrammableTransactionBuilder::new();
@@ -1208,7 +1208,7 @@ fn world(work: &str) -> Result<World> {
     for role in roles {
         witnesses.push(call(&mut builder, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, admin_cap]));
     }
-    let [_listing_admin, _adapter_admin, fee_admin, treasury_admin]: [Argument; 4] =
+    let [_listing_admin, _venue_admin, fee_admin, treasury_admin]: [Argument; 4] =
         witnesses.try_into().expect("one witness per role");
     let config_arg = builder.obj(w.h.shared(config, true))?;
     let version_arg = builder.obj(w.h.shared(version, false))?;

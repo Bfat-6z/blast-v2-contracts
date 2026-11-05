@@ -178,7 +178,7 @@ fun the_vault_registry_admits_the_bluefin_venue() {
     let mut registry = blast_vault_package::empty_registry_for_testing(&mut ctx);
     let vault_version = blast_vault_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
-    let admin = blast_acl::witness_for_testing<AdapterAdmin>();
+    let admin = blast_acl::witness_for_testing<VenueAdmin>();
 
     registry.schedule_witness<Venue>(&admin, &vault_version, &clock);
     registry.apply_witness<Venue>(&vault_version, &clock);
@@ -489,7 +489,7 @@ const U64_MAX: u64 = 18_446_744_073_709_551_615;
 
 use blast_admin::{blast_acl, delayed_set::SetApplied, package_version::PackageVersion};
 
-use blast_core::{blast_domain::AdapterAdmin, migration::VenueTicket};
+use blast_core::{blast_domain::VenueAdmin, migration::VenueTicket};
 
 use blast_migrators::{
     blast_migrators::{Self as migrators_package, BLAST_MIGRATORS},

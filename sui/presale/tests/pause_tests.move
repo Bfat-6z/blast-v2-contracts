@@ -170,7 +170,7 @@ fun with_pending_venue_admission(self: ReleaseFixture): ReleaseFixture {
     let clock = sui::clock::create_for_testing(&mut tx_context::dummy());
     creation_policy.schedule_venue<VENUE>(
         &version,
-        &blast_acl::witness_for_testing<AdapterAdmin>(),
+        &blast_acl::witness_for_testing<VenueAdmin>(),
         &clock,
     );
     destroy(clock);
@@ -217,7 +217,7 @@ use blast_admin::{
     package_version::{PackageVersion, Publication}
 };
 
-use blast_core::{blast_domain::{AdapterAdmin, FeeAdmin}, bps};
+use blast_core::{blast_domain::{VenueAdmin, FeeAdmin}, bps};
 
 use blast_presale::{
     blast_presale_package::{Self as otw, BLAST_PRESALE_PACKAGE},

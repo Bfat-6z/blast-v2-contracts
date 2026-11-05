@@ -818,10 +818,10 @@ impl World {
         let package_admin = wrapped.created(&h, "package_admin", "PackageAdmin");
         ensure!(package_admin.len() == 1);
         h.assert_publication_upgrade_delay(package_admin[0])?;
-        let config_cap = h.configuration_admin(admin, admin_published, core, "blast_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin"])?;
+        let config_cap = h.configuration_admin(admin, admin_published, core, "blast_domain", &["ListingAdmin", "VenueAdmin", "FeeAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let listing = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "ListingAdmin")?;
-        let adapter = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "AdapterAdmin")?;
+        let adapter = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "VenueAdmin")?;
         let fee_admin = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "FeeAdmin")?;
         let policy = b.obj(h.shared(creation_policy[0], true))?;
         let version_arg = b.obj(h.shared(version, false))?;

@@ -18,8 +18,8 @@
 /// are `copy`, so a venue that took them as an argument would let anyone who obtained a sale's
 /// terms create a second vault claiming that sale.
 ///
-/// An `AdapterAdmin` schedules an admission, anyone applies it once its delay has passed, a
-/// `CancelAdmin` cancels it, and an `AdapterAdmin` removes a witness at once. Removing a venue
+/// An `VenueAdmin` schedules an admission, anyone applies it once its delay has passed, a
+/// `CancelAdmin` cancels it, and an `VenueAdmin` removes a witness at once. Removing a venue
 /// stops it creating vaults; removing an issuer stops every vault for its sales, so a migration
 /// sealed by it can no longer complete. Existing vaults keep working either way.
 ///
@@ -61,7 +61,7 @@ fun init(otw: BLAST_VAULT_PACKAGE, ctx: &mut TxContext) {
 /// rejected because anyone can construct them.
 public fun schedule_witness<Witness: drop>(
     self: &mut VaultRegistry,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: &Clock,
 ) {
@@ -100,7 +100,7 @@ public fun cancel_witness<Witness: drop>(
 /// Removes an admitted witness at once; existing vaults keep working.
 public fun remove_witness<Witness: drop>(
     self: &mut VaultRegistry,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
 ) {
     package_version.assert_current(constants::version!());
@@ -111,7 +111,7 @@ public fun remove_witness<Witness: drop>(
 /// Schedules a new admission delay after the applied one.
 public fun schedule_witness_delay(
     self: &mut VaultRegistry,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     delay_ms: u64,
     clock: &Clock,
@@ -244,7 +244,7 @@ use blast_admin::{
     package_version::{Self, PackageVersion}
 };
 
-use blast_core::blast_domain::{AdapterAdmin, CancelAdmin};
+use blast_core::blast_domain::{VenueAdmin, CancelAdmin};
 
 use blast_vault::constants;
 

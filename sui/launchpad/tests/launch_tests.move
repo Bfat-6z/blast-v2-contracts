@@ -1577,7 +1577,7 @@ fun a_removed_venue_cannot_start_a_launch() {
         let ticket = f.new_ticket(CREATOR);
         f
             .config
-            .remove_venue<TestVenue>(&f.package_version, &blast_acl::witness_for_testing<AdapterAdmin>());
+            .remove_venue<TestVenue>(&f.package_version, &blast_acl::witness_for_testing<VenueAdmin>());
 
         destroy(f.start_launch<TEST_QUOTE, _>(ticket, TestVenue()));
     });
@@ -4367,7 +4367,7 @@ fun start_with_zero_protocol_allocation(): LaunchFixture {
     config.set_quote_allowed<TEST_QUOTE>(&package_version, &listing_admin(), true);
     config.set_venue_allowed_for_testing<TestVenue>(
         &package_version,
-        &blast_acl::witness_for_testing<AdapterAdmin>(),
+        &blast_acl::witness_for_testing<VenueAdmin>(),
         true,
      scenario.ctx());
     config.set_trade_fees_for_testing(
@@ -5139,7 +5139,7 @@ use blast_admin::{
 
 use blast_core::{
     blast_core_events::ProtocolFeesPaid,
-    blast_domain::{AdapterAdmin, CancelAdmin, CreatorAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
+    blast_domain::{VenueAdmin, CancelAdmin, CreatorAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
     blast_treasury::{Self, Treasury},
     bps,
     fee_split::{Self, FeeSplit},

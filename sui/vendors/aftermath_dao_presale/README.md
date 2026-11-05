@@ -83,7 +83,7 @@ cannot migrate becomes refundable at its LP deadline.
 2. Run `scripts/verify.sh` and `node scripts/check_mainnet_abi.mjs`. The ABI
    gate fails on any newer Aftermath revision until it is reviewed.
 3. Run `scripts/publish_immutable.sh --preview`, then `--execute`.
-4. As Blast's presale `AdapterAdmin`, admit
+4. As Blast's presale `VenueAdmin`, admit
    `<package>::blast_aftermath_dao_presale::Venue` in the presale's
    `CreationPolicy` and, as `ListingAdmin`, allow the sale's Quote type. The
    venue creates no vault, so it is never listed in the `VaultRegistry`.

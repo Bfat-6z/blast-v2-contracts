@@ -53,7 +53,7 @@ fun the_admin_allows_a_quote_and_a_venue() {
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -136,7 +136,7 @@ fun disallowing_a_venue_stops_later_creations() {
 
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         false,
         &mut sui::tx_context::dummy()
     );
@@ -196,7 +196,7 @@ fun an_allowed_venue_cannot_be_allowed_again() {
 
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -217,7 +217,7 @@ fun an_unlisted_venue_cannot_be_disallowed() {
 
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         false,
         &mut sui::tx_context::dummy()
     );
@@ -239,7 +239,7 @@ fun a_primitive_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<u64>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -261,7 +261,7 @@ fun a_vector_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<vector<VENUE>>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
      &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
@@ -282,7 +282,7 @@ fun a_stdlib_type_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<TypeName>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -305,7 +305,7 @@ fun an_option_of_a_witness_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<Option<VENUE>>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
      &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
@@ -326,7 +326,7 @@ fun a_sui_framework_type_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<ID>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -348,7 +348,7 @@ fun disallowing_a_primitive_is_an_unchanged_allowance() {
 
     policy.set_venue_allowed_for_testing<u64>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         false,
         &mut sui::tx_context::dummy()
     );
@@ -528,7 +528,7 @@ fun stale_version_cannot_allow_quotes() {
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -625,7 +625,7 @@ fun listing_admin(): AdminWitness<ListingAdmin> {
     blast_acl::witness_for_testing()
 }
 
-fun adapter_admin(): AdminWitness<AdapterAdmin> {
+fun venue_admin(): AdminWitness<VenueAdmin> {
     blast_acl::witness_for_testing()
 }
 
@@ -646,7 +646,7 @@ fun last_event<Event: copy + drop>(): Event {
 
 use blast_admin::{blast_acl::{Self, AdminWitness}, delayed_set::{MemberRemoved, SetApplied}};
 
-use blast_core::blast_domain::{AdapterAdmin, FeeAdmin, ListingAdmin};
+use blast_core::blast_domain::{VenueAdmin, FeeAdmin, ListingAdmin};
 
 use blast_partners::{
     blast_partners::{Self as partners, Partner},

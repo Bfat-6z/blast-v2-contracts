@@ -333,7 +333,7 @@ if [[ -e sources/acl.move || -e sources/blast_acl.move ]]; then
   failures=$((failures + 1))
 fi
 
-if rg -n '^public struct (ACL|Authority|ProtocolAuthority|SuperAdminCap|AdminCap|AdminWitness|UpgradeAdmin|CreatorAdmin|TreasuryAdmin|FeeAdmin|ListingAdmin|AdapterAdmin|ClaimSignerAdmin|PauseAdmin|UnpauseAdmin|CancelAdmin)\b' \
+if rg -n '^public struct (ACL|Authority|ProtocolAuthority|SuperAdminCap|AdminCap|AdminWitness|UpgradeAdmin|CreatorAdmin|TreasuryAdmin|FeeAdmin|ListingAdmin|VenueAdmin|ClaimSignerAdmin|PauseAdmin|UnpauseAdmin|CancelAdmin)\b' \
   sources --glob '*.move'; then
   echo 'Administration types and roles must come from blast_admin and blast_core, never from a local copy.' >&2
   failures=$((failures + 1))
@@ -344,7 +344,7 @@ launchpad_roles=(
   TreasuryAdmin
   FeeAdmin
   ListingAdmin
-  AdapterAdmin
+  VenueAdmin
   ClaimSignerAdmin
   CancelAdmin
   'UnpauseAdmin<BLAST_FUN>'
@@ -355,7 +355,7 @@ launchpad_role_pattern="$(IFS='|'; echo "${launchpad_roles[*]}")"
 # one, so a same-named local or foreign role fails here.
 role_import_violations="$(for file in "${source_files[@]}"; do
   role_source="$(sed '/^\/\/ === Test-Only Functions ===/,/^\/\/ === Imports ===/d' "$file" | tr '\n' ' ')"
-  if rg -q 'AdminWitness<(CreatorAdmin|TreasuryAdmin|FeeAdmin|ListingAdmin|AdapterAdmin|ClaimSignerAdmin|CancelAdmin)>' <<<"$role_source" \
+  if rg -q 'AdminWitness<(CreatorAdmin|TreasuryAdmin|FeeAdmin|ListingAdmin|VenueAdmin|ClaimSignerAdmin|CancelAdmin)>' <<<"$role_source" \
     && ! rg -q 'use blast_core::\{[^;]*\bblast_domain::' <<<"$role_source"; then
     echo "  ${file}: product roles must come from blast_core::blast_domain"
   fi
@@ -401,7 +401,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_protocol_lp_fees:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:cancel_venue:CancelAdmin launch_config:cancel_venue_delay:CancelAdmin launch_config:remove_partner:FeeAdmin launch_config:remove_venue:AdapterAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_protocol_lp_fees:FeeAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:schedule_venue:AdapterAdmin launch_config:schedule_venue_delay:AdapterAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin launch_config:unpause:UnpauseAdmin<BLAST_FUN> runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin ' ]]; then
+  'launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_protocol_lp_fees:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:cancel_venue:CancelAdmin launch_config:cancel_venue_delay:CancelAdmin launch_config:remove_partner:FeeAdmin launch_config:remove_venue:VenueAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_protocol_lp_fees:FeeAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:schedule_venue:VenueAdmin launch_config:schedule_venue_delay:VenueAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin launch_config:unpause:UnpauseAdmin<BLAST_FUN> runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))

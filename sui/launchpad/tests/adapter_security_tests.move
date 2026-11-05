@@ -66,7 +66,7 @@ fun exercise(case: Case) {
     let mut config = launch_config::new_zero_fees_for_testing(&mut ctx);
     let mut clock = sui::clock::create_for_testing(&mut ctx);
     clock.set_for_testing(1234);
-    let admin = blast_acl::witness_for_testing<AdapterAdmin>();
+    let admin = blast_acl::witness_for_testing<VenueAdmin>();
     let cancel = blast_acl::witness_for_testing<CancelAdmin>();
     config.set_quote_allowed<Quote>(
         &version,
@@ -122,7 +122,7 @@ fun exercise(case: Case) {
 
 // === Imports ===
 
-use blast_core::blast_domain::{AdapterAdmin, CancelAdmin, ListingAdmin};
+use blast_core::blast_domain::{VenueAdmin, CancelAdmin, ListingAdmin};
 
 use blast_fun::{
     blast_fun::{Self as package_version},

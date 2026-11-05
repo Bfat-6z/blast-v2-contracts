@@ -21,8 +21,8 @@ public struct FeeAdmin()
 /// Admits or removes the Quotes and Meme decimals new sales may use.
 public struct ListingAdmin()
 
-/// Admits or removes migration adapters.
-public struct AdapterAdmin()
+/// Admits or removes venues and vault issuers.
+public struct VenueAdmin()
 
 /// Schedules holder-reward rounds and settles their gas reserves.
 public struct RewardsAdmin()

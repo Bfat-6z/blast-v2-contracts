@@ -64,7 +64,7 @@ public fun set_quote_allowed<Quote>(
 public fun schedule_venue<Venue: drop>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     clock: &Clock,
 ) {
     package_version.assert_current(constants::version!());
@@ -103,7 +103,7 @@ public fun cancel_venue<Venue: drop>(
 public fun remove_venue<Venue: drop>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
 ) {
     package_version.assert_current(constants::version!());
 
@@ -141,7 +141,7 @@ public fun remove_partner(
 public fun schedule_venue_delay(
     self: &mut CreationPolicy,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     delay_ms: u64,
     clock: &Clock,
 ) {
@@ -243,7 +243,7 @@ public fun venues_for_testing(self: &CreationPolicy): &DelayedSet<VenueKey, Type
 public fun set_venue_allowed_for_testing<Venue: drop>(
     self: &mut CreationPolicy,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
-    admin: &AdminWitness<AdapterAdmin>,
+    admin: &AdminWitness<VenueAdmin>,
     allowed: bool,
     ctx: &mut TxContext,
 ) {
@@ -310,7 +310,7 @@ use blast_admin::{
     package_version::PackageVersion
 };
 
-use blast_core::blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin};
+use blast_core::blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, ListingAdmin};
 
 use blast_partners::{blast_partners::Partner, partner_list::{Self, PartnerList}};
 

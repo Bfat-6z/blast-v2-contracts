@@ -120,7 +120,7 @@ fun the_vault_registry_admits_the_cetus_venue() {
     let mut registry = blast_vault_package::empty_registry_for_testing(&mut ctx);
     let vault_version = blast_vault_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
-    let admin = blast_acl::witness_for_testing<AdapterAdmin>();
+    let admin = blast_acl::witness_for_testing<VenueAdmin>();
 
     registry.schedule_witness<Venue>(&admin, &vault_version, &clock);
     registry.apply_witness<Venue>(&vault_version, &clock);
@@ -139,7 +139,7 @@ fun the_vault_registry_admits_the_cetus_venue() {
 
 use blast_admin::{blast_acl, delayed_set::SetApplied};
 
-use blast_core::blast_domain::AdapterAdmin;
+use blast_core::blast_domain::VenueAdmin;
 
 use blast_migrators::{cetus::{Self, Venue}, events::{Self, CetusPoolReserved}};
 

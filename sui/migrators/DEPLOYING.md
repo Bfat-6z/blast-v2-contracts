@@ -64,13 +64,13 @@ The venue witnesses are `<migrators>::cetus::Venue` and
 `<migrators>::bluefin::Venue`. Each must be admitted in each product that should
 offer it, and in the vault:
 
-1. **Products.** With each product's `AdapterAdmin`, schedule the venue in its
+1. **Products.** With each product's `VenueAdmin`, schedule the venue in its
    venue list (the launchpad's `launch_config`, the presale's
    `creation_policy`) and apply it after its notice, before that product's
    release ([launchpad DEPLOYING](../launchpad/DEPLOYING.md),
    [presale DEPLOYING](../presale/DEPLOYING.md)). A product's `new` rejects a
    ticket from any other venue.
-2. **Vault.** With the core `blast_domain::AdapterAdmin`, schedule
+2. **Vault.** With the core `blast_domain::VenueAdmin`, schedule
    `blast_vault_package::schedule_witness<Witness>` on the `VaultRegistry` for
    each venue witness and for each product's `PackageWitness` (the issuer of
    its sales' vault terms), and apply each with

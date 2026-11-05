@@ -842,7 +842,7 @@ fun start(): OpeningRoundFixture {
     );
     config.set_venue_allowed_for_testing<TestVenue>(
         &package_version,
-        &blast_acl::witness_for_testing<AdapterAdmin>(),
+        &blast_acl::witness_for_testing<VenueAdmin>(),
         true,
      scenario.ctx());
     config.set_trade_fees_for_testing(
@@ -1099,7 +1099,7 @@ fun clear_bits(self: &mut OpeningRoundFixture, bits: u8) {
 
 use blast_admin::{blast_acl, package_admin::PauseAdmin, package_version::PackageVersion};
 
-use blast_core::{bps, fee_split, migration, blast_domain::{AdapterAdmin, FeeAdmin, ListingAdmin}};
+use blast_core::{bps, fee_split, migration, blast_domain::{VenueAdmin, FeeAdmin, ListingAdmin}};
 
 use blast_fun::{
     allocation::{Self, AllocationPlan},

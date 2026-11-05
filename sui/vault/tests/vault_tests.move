@@ -166,7 +166,7 @@ fun a_removed_issuer_cannot_create_vaults_for_its_sales() {
     let mut registry = blast_vault_package::registry_for_testing<TestVenue, SaleWitness>(
         scenario.ctx(),
     );
-    registry.remove_witness<SaleWitness>(&adapter_admin(), f.version());
+    registry.remove_witness<SaleWitness>(&venue_admin(), f.version());
 
     destroy(
         vault::new<VAULT_FIXTURE, QUOTE, _>(
@@ -1120,7 +1120,7 @@ fun every_route_split(): FeeSplit {
 
 fun fee_admin(): AdminWitness<FeeAdmin> { blast_acl::witness_for_testing() }
 
-fun adapter_admin(): AdminWitness<AdapterAdmin> { blast_acl::witness_for_testing() }
+fun venue_admin(): AdminWitness<VenueAdmin> { blast_acl::witness_for_testing() }
 
 fun cancel_admin(): AdminWitness<CancelAdmin> { blast_acl::witness_for_testing() }
 
@@ -1136,7 +1136,7 @@ use blast_admin::{blast_acl::{Self, AdminWitness}, package_admin::{Self, PauseAd
 
 use blast_core::{
     blast_core_events::ProtocolFeesPaid,
-    blast_domain::{AdapterAdmin, BuybackAdmin, CancelAdmin, FeeAdmin},
+    blast_domain::{VenueAdmin, BuybackAdmin, CancelAdmin, FeeAdmin},
     bps,
     fee_split::{Self, FeeSplit},
     migration,

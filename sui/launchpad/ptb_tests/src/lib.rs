@@ -962,13 +962,13 @@ impl Harness {
             bcs::from_bytes(&self.contents(runtime_id)).context("decode fresh RuntimeConfig")?;
         assert!(signers.members.is_empty() && signers.admissions.is_empty(), "publication admits no claim signer");
         assert_eq!(signers.delay_ms, 0, "publication starts the signer delay at zero");
-        let config_cap = self.configuration_admin(admin, admin_publication, core, "blast_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "ClaimSignerAdmin"])?;
+        let config_cap = self.configuration_admin(admin, admin_publication, core, "blast_domain", &["ListingAdmin", "VenueAdmin", "FeeAdmin", "TreasuryAdmin", "ClaimSignerAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config = b.obj(self.shared(config_id, true))?;
         let version_arg = b.obj(self.shared(version[0], false))?;
         let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
         let listing = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "ListingAdmin")?;
-        let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "AdapterAdmin")?;
+        let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "VenueAdmin")?;
         let allowed = b.pure(true)?;
         call(&mut b, package, "launch_config", "set_quote_allowed", vec![quote], vec![config, version_arg, listing, allowed]);
         // At the zero publication delay a venue's schedule and apply share one PTB.
@@ -1144,12 +1144,12 @@ impl Harness {
 
     /// Lists each of `venues` in the vault registry at the zero publication delay while the
     /// package is paused, raises the admission delay to 48 hours, and unpauses the package
-    /// through its own unpause, through real ACL roles: `blast_core`'s `AdapterAdmin` and the
+    /// through its own unpause, through real ACL roles: `blast_core`'s `VenueAdmin` and the
     /// vault package's `UnpauseAdmin`.
     pub fn release_vault(&mut self, admin: ObjectID, admin_publication: &Outcome, core: ObjectID, stack: &VaultStack,
         witnesses: &[sui_types::TypeTag],
     ) -> Result<()> {
-        let adapter_role = sui_types::parse_sui_type_tag(&format!("{core}::blast_domain::AdapterAdmin"))?;
+        let adapter_role = sui_types::parse_sui_type_tag(&format!("{core}::blast_domain::VenueAdmin"))?;
         let unpause_role = stack.unpause_role(admin)?;
         let cap = self.grant_roles(admin, admin_publication, &[adapter_role.clone(), unpause_role.clone()])?;
         let mut b = ProgrammableTransactionBuilder::new();

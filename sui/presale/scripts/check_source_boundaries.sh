@@ -37,9 +37,9 @@ admin_roles="$(for file in "$sources"/*.move; do
  awk -f "$package_dir/../launchpad/scripts/move_facts.awk" "$file" | awk -F'\t' -v module="$(basename "$file" .move)" '
  $1 == "FN" && $6 == 0 && match($9, /AdminWitness<[A-Za-z]+(<[A-Z_]+>)?>/) { print module ":" $2 ":" substr($9, RSTART + 13, RLENGTH - 14) }'
 done | sort)"
-[ "$admin_roles" == "$(printf '%s\n' 'blast_presale:set_protocol_fees:FeeAdmin' 'creation_policy:add_partner:FeeAdmin' 'creation_policy:cancel_venue:CancelAdmin' 'creation_policy:cancel_venue_delay:CancelAdmin' 'creation_policy:remove_partner:FeeAdmin' 'creation_policy:remove_venue:AdapterAdmin' 'creation_policy:schedule_venue:AdapterAdmin' 'creation_policy:schedule_venue_delay:AdapterAdmin' 'creation_policy:set_quote_allowed:ListingAdmin' 'creation_policy:unpause:UnpauseAdmin<BLAST_PRESALE_PACKAGE>' 'fee_policy:cancel_fees:CancelAdmin' 'fee_policy:schedule_fees:FeeAdmin' | sort)" ] || fail "Every administrator action must take its pinned role."
+[ "$admin_roles" == "$(printf '%s\n' 'blast_presale:set_protocol_fees:FeeAdmin' 'creation_policy:add_partner:FeeAdmin' 'creation_policy:cancel_venue:CancelAdmin' 'creation_policy:cancel_venue_delay:CancelAdmin' 'creation_policy:remove_partner:FeeAdmin' 'creation_policy:remove_venue:VenueAdmin' 'creation_policy:schedule_venue:VenueAdmin' 'creation_policy:schedule_venue_delay:VenueAdmin' 'creation_policy:set_quote_allowed:ListingAdmin' 'creation_policy:unpause:UnpauseAdmin<BLAST_PRESALE_PACKAGE>' 'fee_policy:cancel_fees:CancelAdmin' 'fee_policy:schedule_fees:FeeAdmin' | sort)" ] || fail "Every administrator action must take its pinned role."
 for file in "$sources"/*.move; do
-  if rg -q 'AdminWitness<(FeeAdmin|CancelAdmin|AdapterAdmin|ListingAdmin)>' <<<"$(production "$file")"; then
+  if rg -q 'AdminWitness<(FeeAdmin|CancelAdmin|VenueAdmin|ListingAdmin)>' <<<"$(production "$file")"; then
     rg -q 'blast_domain::' "$file" || fail "$(basename "$file") must take product roles from blast_core::blast_domain."
   fi
 done

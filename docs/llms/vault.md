@@ -29,7 +29,7 @@ venue's calls, and call the owner, round, and payout functions on it directly.
   creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
   witness.
 
-Blast admins hold these roles: `AdapterAdmin` admits and removes venue and issuer witnesses; `FeeAdmin` changes Blast's
+Blast admins hold these roles: `VenueAdmin` admits and removes venue and issuer witnesses; `FeeAdmin` changes Blast's
 per-vault share; `RewardsAdmin` schedules rounds and settles gas reserves; `BuybackAdmin` spends
 the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 

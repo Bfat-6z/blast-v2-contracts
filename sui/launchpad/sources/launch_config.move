@@ -294,7 +294,7 @@ public fun remove_partner(
 public fun schedule_venue<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     clock: &Clock,
 ) {
     package_version.assert_current(constants::version!());
@@ -333,7 +333,7 @@ public fun cancel_venue<Venue: drop>(
 public fun remove_venue<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
 ) {
     package_version.assert_current(constants::version!());
 
@@ -344,7 +344,7 @@ public fun remove_venue<Venue: drop>(
 public fun schedule_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     delay_ms: u64,
     clock: &Clock,
 ) {
@@ -500,7 +500,7 @@ public fun venues_for_testing(self: &LaunchConfig): &DelayedSet<VenueKey, TypeNa
 public fun set_venue_allowed_for_testing<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
-    admin: &AdminWitness<AdapterAdmin>,
+    admin: &AdminWitness<VenueAdmin>,
     allowed: bool,
     ctx: &mut TxContext
 ) {
@@ -656,7 +656,7 @@ use blast_admin::{
 };
 
 use blast_core::{
-    blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
+    blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
     bps::{Self, Bps}
 };
 

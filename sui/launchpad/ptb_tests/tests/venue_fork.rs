@@ -102,7 +102,7 @@ const INVALID_TIER: u64 = 3;
 /// The `blast_core::blast_domain` roles this world's one `AdminCap` holds, for the launchpad and
 /// the vault alike.
 const CORE_ROLES: [&str; 7] =
-    ["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "CreatorAdmin", "BuybackAdmin", "RewardsAdmin"];
+    ["ListingAdmin", "VenueAdmin", "FeeAdmin", "TreasuryAdmin", "CreatorAdmin", "BuybackAdmin", "RewardsAdmin"];
 
 /// Blast's LP-fee share of new vaults from the launch config, then per-vault overrides.
 const DEFAULT_SHARES: (u64, u64) = (1_000, 500);

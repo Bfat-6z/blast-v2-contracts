@@ -137,7 +137,7 @@ fn assert_vault_release_waits_for_the_delay(h: &mut Harness, admin: ObjectID, pu
 fn assert_vault_admission_waits_the_raised_delay(h: &mut Harness, admin: ObjectID, publication: &Outcome,
     core: ObjectID, vault: &VaultStack, venue: TypeTag,
 ) -> Result<()> {
-    let role = parse_sui_type_tag(&format!("{core}::blast_domain::AdapterAdmin"))?;
+    let role = parse_sui_type_tag(&format!("{core}::blast_domain::VenueAdmin"))?;
     let cap = h.grant_roles(admin, publication, std::slice::from_ref(&role))?;
     let mut b = ProgrammableTransactionBuilder::new();
     let adapter = h.sign_in_as(&mut b, admin, publication, cap, role)?;

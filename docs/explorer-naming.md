@@ -25,7 +25,7 @@ identified only through its package one-time witness (OTW); ADR 0085 records why
 | `blast_fun` | package witness (ADR 0137) | — | `blast_fun::PackageWitness` |
 | `blast_migrators` | Publisher one-time witness | `package_marker::PACKAGE_MARKER` | `blast_migrators::BLAST_MIGRATORS` |
 | `blast_migrators` | package witness (ADR 0137) | — | `blast_migrators::PackageWitness` |
-| `blast_core` | shared product roles (ADR 0137), taken by both products, the vault, the venues' buybacks, and the core treasury; no one-time witness or Publisher | — | `blast_domain::TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`, `ClaimSignerAdmin`, `CancelAdmin` |
+| `blast_core` | shared product roles (ADR 0137), taken by both products, the vault, the venues' buybacks, and the core treasury; no one-time witness or Publisher | — | `blast_domain::TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `VenueAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`, `ClaimSignerAdmin`, `CancelAdmin` |
 | `blast_vault` | Publisher one-time witness (ADR 0137) | — | `blast_vault_package::BLAST_VAULT_PACKAGE` |
 | `blast_vault` | package witness (ADR 0137) | — | `blast_vault_package::PackageWitness` |
 | `blast_boosts_aftermath` | Publisher one-time witness | `aftermath::AFTERMATH` | `blast_boosts_aftermath::BLAST_BOOSTS_AFTERMATH` |

@@ -109,7 +109,7 @@ fun stale_delay_change_rejects_before_other_validation() {
 fun a_fresh_venue_type_cannot_bypass_the_admission_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        let witness = blast_acl::witness_for_testing<VenueAdmin>();
         f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_venue_delay(&f.version, &f.clock);
         f.config.schedule_venue<TestVenue>(&f.version, &witness, &f.clock);
@@ -123,7 +123,7 @@ fun a_fresh_venue_type_cannot_bypass_the_admission_delay() {
 fun old_admissions_preserve_a_new_policy_in_either_application_order() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        let witness = blast_acl::witness_for_testing<VenueAdmin>();
         f.config.schedule_venue<TestVenue>(&f.version, &witness, &f.clock);
         f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_venue_delay(&f.version, &f.clock);
@@ -147,7 +147,7 @@ fun old_admissions_preserve_a_new_policy_in_either_application_order() {
 fun multiple_admissions_cannot_restore_a_superseded_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        let witness = blast_acl::witness_for_testing<VenueAdmin>();
         f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_venue_delay(&f.version, &f.clock);
         f.config.schedule_venue<TestVenue>(&f.version, &witness, &f.clock);
@@ -173,7 +173,7 @@ fun multiple_admissions_cannot_restore_a_superseded_delay() {
 fun applying_an_old_admission_cannot_shorten_a_new_admissions_wait() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        let witness = blast_acl::witness_for_testing<VenueAdmin>();
         f.config.schedule_venue<TestVenue>(&f.version, &witness, &f.clock);
         f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_venue_delay(&f.version, &f.clock);
@@ -190,7 +190,7 @@ fun applying_an_old_admission_cannot_shorten_a_new_admissions_wait() {
 fun cancelling_policy_does_not_cancel_admission_or_change_its_delay() {
     let mut fixture = start();
     fixture.run!(|f| {
-        let witness = blast_acl::witness_for_testing<AdapterAdmin>();
+        let witness = blast_acl::witness_for_testing<VenueAdmin>();
         f.config.schedule_venue_delay(&f.version, &witness, 100, &f.clock);
         f.config.apply_venue_delay(&f.version, &f.clock);
         f.config.schedule_venue<TestVenue>(&f.version, &witness, &f.clock);
@@ -271,7 +271,7 @@ use blast_admin::{
     package_version::{PackageVersion, Publication}
 };
 
-use blast_core::blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin};
+use blast_core::blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin};
 
 use blast_fun::{blast_fun::{Self as otw, BLAST_FUN}, launch_config::{Self, LaunchConfig, VenueKey}, runtime_config::{Self, RuntimeConfig}};
 use std::{type_name::TypeName, unit_test::{assert_eq, destroy}};

@@ -129,7 +129,7 @@ reference. A role authorizes only the functions that name it. The package roles 
 | `blast_core::blast_domain::TreasuryAdmin` | `launch_config::schedule_protocol_allocation`; the treasury address itself with `blast_core::blast_treasury::schedule_destination` |
 | `blast_core::blast_domain::FeeAdmin` | `launch_config::schedule_trade_fees`, `launch_config::schedule_creation_fee`, `launch_config::schedule_protocol_lp_fees`, `launch_config::add_partner`, `launch_config::remove_partner`, `runtime_config::schedule_protocol_fee_share` |
 | `blast_core::blast_domain::ListingAdmin` | `launch_config::set_meme_decimals_allowed`, `launch_config::set_quote_allowed` |
-| `blast_core::blast_domain::AdapterAdmin` | `launch_config::schedule_venue`, `launch_config::remove_venue`, `launch_config::schedule_venue_delay` |
+| `blast_core::blast_domain::VenueAdmin` | `launch_config::schedule_venue`, `launch_config::remove_venue`, `launch_config::schedule_venue_delay` |
 | `blast_core::blast_domain::ClaimSignerAdmin` | `runtime_config::schedule_creator_claim_signer`, `runtime_config::revoke_creator_claim_signer`, `runtime_config::schedule_creator_claim_signer_delay` |
 
 Integrators cannot call admin functions. What each setter changes is under "Admin operations".
@@ -439,11 +439,11 @@ inside `sui::vec_set` when the entry already has the requested state.
   `blast_fun::events::QuoteSet`.
 - `launch_config::set_meme_decimals_allowed` (ListingAdmin), with `decimals: u8` and `allowed`.
   Emits `blast_fun::events::MemeDecimalsSet`.
-- `launch_config::schedule_venue` (AdapterAdmin, type argument the venue's witness, for example
+- `launch_config::schedule_venue` (VenueAdmin, type argument the venue's witness, for example
   `blast_migrators::cetus::Venue`), with `Clock`: schedules admission after the applied venue
   notice; rejects primitive types and types defined at `0x1` or `0x2`. Anyone applies it with
   `launch_config::apply_venue` once ready; CancelAdmin discards it with
-  `launch_config::cancel_venue`, even when ready. `launch_config::remove_venue` (AdapterAdmin)
+  `launch_config::cancel_venue`, even when ready. `launch_config::remove_venue` (VenueAdmin)
   removes a venue for new launches at once and cancels its pending admission. Existing launches
   keep their venue. A venue must also be admitted in the vault's registry to migrate (see the vault
   guide).
@@ -520,7 +520,7 @@ and signer admissions.
 | Metadata cap reassignment | `Launch.metadata_cap_reassignment` | `launch::MetadataCapReassignment` | `address` (the recipient) |
 
 Venue admissions share one applied notice across venue types, changed by
-`launch_config::schedule_venue_delay` (AdapterAdmin), `launch_config::apply_venue_delay` (anyone),
+`launch_config::schedule_venue_delay` (VenueAdmin), `launch_config::apply_venue_delay` (anyone),
 and `launch_config::cancel_venue_delay` (CancelAdmin); pending admissions keep their deadlines.
 Account-claim signer keys form one set with its own notice, changed the same way by
 `runtime_config::schedule_creator_claim_signer_delay`,
