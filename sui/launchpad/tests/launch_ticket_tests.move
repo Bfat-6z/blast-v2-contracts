@@ -50,7 +50,7 @@ fun address_ticket_mints_supply_and_fixes_it_at_intake() {
             false,
             0,
         );
-        let created = collect_one<events::LaunchTicketCreated>();
+        let created = collect_one<LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
 
         assert_eq!(
             bcs::to_bytes(&created),
@@ -112,7 +112,7 @@ fun account_ticket_is_composable_and_records_burn_only_selection() {
             SELL_BURN_BPS,
         );
         let created_ticket_id = object::id(&ticket);
-        let created = collect_one<events::LaunchTicketCreated>();
+        let created = collect_one<LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
         let metadata_cap_id = ticket.metadata_cap_id_for_testing();
 
         assert_eq!(
@@ -174,7 +174,7 @@ fun ticket_accepts_fifty_percent_sell_burn() {
             false,
             5_000,
         );
-        let created = collect_one<events::LaunchTicketCreated>();
+        let created = collect_one<LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
 
         assert_eq!(
             bcs::to_bytes(&created),
@@ -351,7 +351,6 @@ fun ticket_created_bytes(
     sell_burn_bps: u64,
 ): vector<u8> {
     let mut expected = bcs::to_bytes(&ticket_id);
-    expected.append(bcs::to_bytes(&type_name::with_original_ids<LAUNCH_TICKET_TESTS>()));
     expected.append(bcs::to_bytes(&decimals));
     expected.append(bcs::to_bytes(&metadata_cap_id));
     expected.append(bcs::to_bytes(&creator));
@@ -361,7 +360,7 @@ fun ticket_created_bytes(
 }
 
 fun collect_one<T: copy + drop>(): T {
-    let mut payloads = event::events_by_type<Event<T>>().map!(|event| event.unwrap());
+    let mut payloads = event::events_by_type<T>();
     assert_eq!(payloads.length(), 1);
     payloads.pop_back()
 }
@@ -440,9 +439,8 @@ fun end(self: TicketFixture) {
 // === Imports ===
 
 use blast_fun::{
-    blast_events::Event,
     creator_authority::{Self, CreatorRecipient},
-    events,
+    events::LaunchTicketCreated,
     launch_ticket::{Self, LaunchTicket},
 };
 

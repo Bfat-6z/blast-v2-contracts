@@ -81,9 +81,9 @@ const ALLOCATION_BPS: u64 = 500;
 const MIGRATION_READY: u8 = 2;
 const MIGRATED: u8 = 3;
 /// `blast_fun::errors` codes.
-const INVALID_INITIAL_MEME_SUPPLY: u64 = 9;
-const INVALID_LAUNCH_LIFECYCLE: u64 = 14;
-const CREATOR_CAP_NOT_LIVE: u64 = 20;
+const INVALID_INITIAL_MEME_SUPPLY: u64 = 8;
+const INVALID_LAUNCH_LIFECYCLE: u64 = 12;
+const CREATOR_CAP_NOT_LIVE: u64 = 18;
 /// `blast_vault::errors` codes.
 const BUYBACK_BELOW_MINIMUM: u64 = 8;
 const CLAIMS_CLOSED: u64 = 23;
@@ -95,10 +95,10 @@ const CLAIMS_STILL_OPEN: u64 = 32;
 const INVALID_COIN_ORDER: u64 = 0;
 const WRONG_COIN_PAIR: u64 = 2;
 
-/// The `blast_fun_domain` roles this world's one `AdminCap` holds.
-const LAUNCHPAD_ROLES: [&str; 5] = ["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "CreatorAdmin"];
-/// The `blast_core::blast_domain` roles the same `AdminCap` holds for the vault.
-const CORE_ROLES: [&str; 3] = ["FeeAdmin", "BuybackAdmin", "RewardsAdmin"];
+/// The `blast_core::blast_domain` roles this world's one `AdminCap` holds, for the launchpad and
+/// the vault alike.
+const CORE_ROLES: [&str; 7] =
+    ["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "CreatorAdmin", "BuybackAdmin", "RewardsAdmin"];
 
 /// Blast's LP-fee share of new vaults from the launch config, then per-vault overrides.
 const DEFAULT_SHARES: (u64, u64) = (1_000, 500);
@@ -592,11 +592,11 @@ impl World {
         // the launchpad's package witness as the issuer of the launch's vault terms, while the
         // vault package is paused, and the launch config admits it.
         let venue_type = tag(&format!("{migrators}::{}::Venue", case.module()));
-        let issuer_type = tag(&format!("{blast}::launch::PackageWitness"));
+        let issuer_type = tag(&format!("{blast}::blast_fun::PackageWitness"));
         let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
         h.release_vault(admin, admin_published, core, &vault_stack, &[venue_type.clone(), issuer_type])?;
         let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, case.quote(), venue_type)?;
-        h.unpause(blast, "blast_fun_domain", admin, admin_published, version, custody, [runtime, config], 7)?;
+        h.unpause_launchpad(blast, admin, admin_published, version, custody, runtime, config, 7)?;
         let (fixture, project_token) = if burnable {
             ("fixture/burnable_project", "burnable_token::BURNABLE_TOKEN")
         } else {
@@ -607,9 +607,6 @@ impl World {
         // Production admin path: the configured root owner's SuperAdminCap grants one AdminCap,
         // then each launchpad and vault role.
         let mut roles = Vec::new();
-        for role in LAUNCHPAD_ROLES {
-            roles.push(tag(&format!("{blast}::blast_fun_domain::{role}")));
-        }
         for role in CORE_ROLES {
             roles.push(tag(&format!("{core}::blast_domain::{role}")));
         }
@@ -716,7 +713,7 @@ impl World {
     /// Signs the AdminCap in to the ACL as the launchpad's `role`; the witness it returns
     /// authorizes only that role.
     fn sign_in(&self, b: &mut ProgrammableTransactionBuilder, role: &str) -> Result<Argument> {
-        self.sign_in_as(b, tag(&format!("{}::blast_fun_domain::{role}", self.blast)))
+        self.sign_in_as(b, tag(&format!("{}::blast_domain::{role}", self.core)))
     }
 
     /// Signs the AdminCap in as `blast_core`'s `role`, which the vault's calls take.
@@ -802,7 +799,7 @@ impl World {
         self.package_events(outcome, self.vault_package(), "blast_vault_events", name)
     }
 
-    /// Launchpad events of `name`, inside the launchpad envelope.
+    /// Launchpad events of `name`, emitted directly by its `events` module.
     fn launchpad_events<T: DeserializeOwned>(&self, outcome: &Outcome, name: &str) -> Vec<T> {
         outcome
             .events_of("events", name)
@@ -1080,8 +1077,10 @@ impl World {
                     && registered[0].coin_pair == cetus_name(&self.quote())
             );
             let position = |name: &str| created.events.iter().position(|event| event.type_.name.as_str() == name);
+            let first_launchpad_event =
+                created.events.iter().position(|event| ObjectID::from(event.type_.address) == self.blast);
             ensure!(
-                position("MintPoolCreationCap") < position("Event"),
+                position("MintPoolCreationCap").is_some() && position("MintPoolCreationCap") < first_launchpad_event,
                 "Cetus mints the pool creation cap before any launchpad event"
             );
             let Owner::ObjectOwner(field) = self.h.object(cap).owner().clone() else { bail!("cap is not a child") };
@@ -1314,11 +1313,11 @@ impl World {
         // partner, and residuals paid to Blast.
         let terms = &created.terms;
         ensure!(terms.origin == launch.launch && terms.fee_split == launch.split);
-        ensure!(terms.package_witness.ends_with("::launch::PackageWitness"), "{}", terms.package_witness);
+        ensure!(terms.package_witness.ends_with("::blast_fun::PackageWitness"), "{}", terms.package_witness);
         ensure!((terms.protocol_meme_bps, terms.protocol_quote_bps) == DEFAULT_SHARES);
         ensure!(terms.partner_id.is_none() && terms.residuals == ResidualPolicy::Protocol);
         let vault_id = created.vault_id;
-        let issuer = tag(&format!("{}::launch::PackageWitness", self.blast));
+        let issuer = tag(&format!("{}::blast_fun::PackageWitness", self.blast));
         ensure!(terms.package_witness == issuer.to_canonical_string(false), "{}", terms.package_witness);
         ensure!(
             vault_id == self.vault_stack.vault_id(&issuer, launch.launch)?,
@@ -1906,7 +1905,7 @@ impl World {
         }
         let scheduled = self.h.execute(b.finish())?;
         scheduled.assert_success();
-        ensure!(scheduled.wrapped_payloads(self.blast).is_empty());
+        ensure!(scheduled.payload_names(self.blast).is_empty());
         for key in ["CurveFeeCapReassignment", "MetadataCapReassignment"] {
             let proposals: Vec<ActionScheduled<SuiAddress>> = scheduled.delayed("ActionScheduled", "launch", key)?;
             ensure!(proposals.len() == 1);
@@ -2358,9 +2357,12 @@ impl World {
     /// migration fee for each asset.
     fn plan_arg(&self, b: &mut ProgrammableTransactionBuilder) -> Result<Argument> {
         let destination = b.pure(SuiAddress::from(DESTINATION))?;
+        let vesting_terms = tag(&format!("{}::payout::VestingTerms", self.core));
+        let outright = call(b, sui_types::MOVE_STDLIB_PACKAGE_ID, "option", "none", vec![vesting_terms], vec![]);
+        let payee = call(b, self.core, "payout", "recipient", vec![], vec![destination, outright]);
         let share = self.bps(b, ALLOCATION_BPS)?;
-        let recipient = call(b, self.blast, "allocation", "recipient", vec![], vec![destination, share, share]);
-        let recipient_type = tag(&format!("{}::allocation::Recipient", self.blast));
+        let recipient = call(b, self.blast, "allocation", "recipient_share", vec![], vec![payee, share, share]);
+        let recipient_type = tag(&format!("{}::allocation::RecipientShare", self.blast));
         let recipients = b.command(Command::make_move_vec(Some(recipient_type), vec![recipient]));
         let curve_meme = self.bps(b, 7_000)?;
         let lp_meme = self.bps(b, 2_000)?;
@@ -2500,7 +2502,6 @@ struct Vault {
 struct LaunchCreated {
     _launch_id: ObjectID,
     _ticket_id: ObjectID,
-    _quote: String,
     venue: String,
     lp_fee_split: FeeSplit,
     _virtual_quote: u64,
@@ -2512,7 +2513,7 @@ struct LaunchCreated {
     _lp_quote_bps: u64,
     _protocol_meme_bps: u64,
     _protocol_quote_bps: u64,
-    _allocation_recipients: Vec<(SuiAddress, u64, u64)>,
+    _allocation_recipients: Vec<((SuiAddress, Option<(u64, u64, u64)>), u64, u64)>,
     _opening_round_ms: u64,
     _creation_fee: u64,
     _partner_id: Option<ObjectID>,

@@ -1,266 +1,58 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Launchpad event payloads and their package-only emitters.
+/// Launchpad event payloads and their package-only emitters. Pauses and versions emit from
+/// `blast_admin`, delayed settings from its delayed modules, and Blast's fee payments from
+/// `blast_core`.
 module blast_fun::events;
-
-// === Public Types ===
-
-public struct MemeDecimalsSet has copy, drop {
-    decimals: u8,
-    allowed: bool,
-}
-
-/// A Quote type was admitted to (`allowed = true`) or removed from (`allowed = false`) future
-/// launches. Existing launches keep trading in it.
-public struct QuoteSet has copy, drop {
-    quote: TypeName,
-    allowed: bool,
-}
-
-/// New launches may name the partner from now on, or its pending removal was cancelled.
-public struct PartnerAdded has copy, drop {
-    partner_id: ID,
-}
-
-/// New launches may name the partner until `accepted_until_ms`; launches that name it keep paying it.
-public struct PartnerRemoved has copy, drop {
-    partner_id: ID,
-    accepted_until_ms: u64,
-}
-
-public struct CreatorCapsClaimed has copy, drop {
-    meme: TypeName,
-    curve_fee_cap_id: ID,
-    blast_metadata_cap_id: ID,
-}
-
-public struct CurveFeeCapReassigned has copy, drop {
-    launch_id: ID,
-    curve_fee_cap_id: ID,
-    recipient: address,
-}
-
-public struct MetadataCapReassigned has copy, drop {
-    launch_id: ID,
-    blast_metadata_cap_id: ID,
-    recipient: address,
-}
-
-public struct MemeMetadataUpdated has copy, drop {
-    launch_id: ID,
-    name: String,
-    description: String,
-    icon_url: String,
-}
-
-/// A generated package created its currency and launch ticket. The supply is one billion whole
-/// tokens at `decimals`.
-public struct LaunchTicketCreated has copy, drop {
-    ticket_id: ID,
-    meme: TypeName,
-    decimals: u8,
-    metadata_cap_id: ID,
-    creator: CreatorRecipient,
-    burnable: bool,
-    sell_burn_bps: u64,
-}
-
-/// A launch was created from `ticket_id` with these settings; a zero `opening_round_ms` has no
-/// opening round. The creator paid `creation_fee` SUI, held with Blast's fees on the launch;
-/// `partner_id` is the launch's partner for good, if it names one.
-public struct LaunchCreated has copy, drop {
-    launch_id: ID,
-    ticket_id: ID,
-    quote: TypeName,
-    venue: TypeName,
-    lp_fee_split: FeeSplit,
-    virtual_quote: u64,
-    graduation_target: u64,
-    quote_fee_bps: u64,
-    meme_fee_bps: u64,
-    allocation_plan: AllocationPlan,
-    opening_round_ms: u64,
-    creation_fee: u64,
-    partner_id: Option<ID>,
-}
-
-public struct LaunchShared has copy, drop {
-    launch_id: ID,
-    public_start_ms: u64,
-}
-
-/// `quote_amount` joined a launch's opening round from the sender; `bids` is the pot after it.
-public struct OpeningRoundJoined has copy, drop {
-    launch_id: ID,
-    quote_amount: u64,
-    bids: u64,
-}
-
-/// The opening round closed: its `bids` bought `meme_amount` from the curve, in the same
-/// transaction's `Bought` when there is one, and left `quote_amount` to refund. Both are delivered
-/// pro rata.
-public struct OpeningRoundSettled has copy, drop {
-    launch_id: ID,
-    bids: u64,
-    meme_amount: u64,
-    quote_amount: u64,
-}
-
-/// `bidder`'s share of the opening round, for its `bid`, was sent to it.
-public struct OpeningRoundDelivered has copy, drop {
-    launch_id: ID,
-    bidder: address,
-    bid: u64,
-    meme_amount: u64,
-    quote_amount: u64,
-}
-
-/// A curve purchase; reserves are after the purchase. Purchases before `LaunchShared` are the
-/// creator's, made in the transaction that creates the launch; the one beside
-/// `OpeningRoundSettled` is the opening round's pot.
-public struct Bought has copy, drop {
-    launch_id: ID,
-    quote_in: u64,
-    meme_out_gross: u64,
-    meme_out_net: u64,
-    quote_refund: u64,
-    protocol_meme_fee: u64,
-    creator_meme_fee: u64,
-    protocol_quote_fee: u64,
-    creator_quote_fee: u64,
-    meme_reserve: u64,
-    real_quote_reserve: u64,
-}
-
-/// A curve sale; reserves are after the sale.
-public struct Sold has copy, drop {
-    launch_id: ID,
-    meme_in_gross: u64,
-    pending_burn: u64,
-    quote_out_gross: u64,
-    protocol_meme_fee: u64,
-    creator_meme_fee: u64,
-    protocol_quote_fee: u64,
-    creator_quote_fee: u64,
-    meme_reserve: u64,
-    real_quote_reserve: u64,
-}
-
-/// One recipient's allocation, paid when migration begins.
-public struct MigrationAllocationPaid has copy, drop {
-    launch_id: ID,
-    destination: address,
-    meme_amount: u64,
-    quote_amount: u64,
-}
-
-/// Migration committed: the adapter received `meme_amount` and `quote_amount` for the pool, and
-/// `disposed_meme` was burned (or sent to `@0x0` under a fixed supply).
-public struct Migrated has copy, drop {
-    launch_id: ID,
-    meme_amount: u64,
-    quote_amount: u64,
-    disposed_meme: u64,
-    total_supply_after: u64,
-}
-
-public struct CreatorFeesClaimed has copy, drop {
-    launch_id: ID,
-    meme_amount: u64,
-    quote_amount: u64,
-}
-
-/// `treasury` was paid Blast's `meme_amount` and `quote_amount` and the creation fee's
-/// `sui_amount`; the launch's partner, if it names one, was paid the partner amounts in the same
-/// claim. Anyone may claim, so the treasury need not be the sender.
-public struct ProtocolFeesClaimed has copy, drop {
-    launch_id: ID,
-    treasury: address,
-    meme_amount: u64,
-    quote_amount: u64,
-    sui_amount: u64,
-    partner_meme_amount: u64,
-    partner_quote_amount: u64,
-    partner_sui_amount: u64,
-}
-
-/// Blast's one-time migration Meme and Quote fee joined the launch's protocol ledger.
-public struct ProtocolFeesAccrued has copy, drop {
-    launch_id: ID,
-    meme_amount: u64,
-    quote_amount: u64,
-}
-
-/// The requested bits and resulting pause mask.
-public struct Paused has copy, drop {
-    bits: u8,
-    paused: u8,
-}
-
-/// The released bits and resulting pause mask.
-public struct Unpaused has copy, drop {
-    bits: u8,
-    paused: u8,
-}
 
 // === Package Functions ===
 
-public(package) fun paused(bits: u8, paused: u8) {
-    emit(Paused { bits, paused });
-}
-
-public(package) fun unpaused(bits: u8, paused: u8) {
-    emit(Unpaused { bits, paused });
-}
-
 public(package) fun meme_decimals_set(decimals: u8, allowed: bool) {
-    emit(MemeDecimalsSet { decimals, allowed });
+    sui::event::emit(MemeDecimalsSet { decimals, allowed });
 }
 
 public(package) fun quote_set<Quote>(allowed: bool) {
-    emit(QuoteSet { quote: type_name::with_original_ids<Quote>(), allowed });
+    sui::event::emit(QuoteSet<Quote> { allowed });
 }
 
-public(package) fun partner_added(partner_id: ID) {
-    emit(PartnerAdded { partner_id });
-}
-
-public(package) fun partner_removed(partner_id: ID, acceptance_ends_at_ms: u64) {
-    emit(PartnerRemoved { partner_id, accepted_until_ms: acceptance_ends_at_ms });
-}
-
-public(package) fun creator_caps_claimed<Meme>(curve_fee_cap_id: ID, blast_metadata_cap_id: ID) {
-    emit(CreatorCapsClaimed {
-        meme: type_name::with_original_ids<Meme>(),
+public(package) fun creator_caps_claimed<Meme, Quote>(
+    curve_fee_cap_id: ID,
+    blast_metadata_cap_id: ID,
+) {
+    sui::event::emit(CreatorCapsClaimed<Meme, Quote> {
         curve_fee_cap_id,
         blast_metadata_cap_id,
     });
 }
 
-public(package) fun curve_fee_cap_reassigned(
+public(package) fun curve_fee_cap_reassigned<Meme, Quote>(
     launch_id: ID,
     curve_fee_cap_id: ID,
-    recipient: address
+    recipient: address,
 ) {
-    emit(CurveFeeCapReassigned { launch_id, curve_fee_cap_id, recipient });
+    sui::event::emit(CurveFeeCapReassigned<Meme, Quote> { launch_id, curve_fee_cap_id, recipient });
 }
 
-public(package) fun metadata_cap_reassigned(
+public(package) fun metadata_cap_reassigned<Meme, Quote>(
     launch_id: ID,
     blast_metadata_cap_id: ID,
-    recipient: address
+    recipient: address,
 ) {
-    emit(MetadataCapReassigned { launch_id, blast_metadata_cap_id, recipient });
+    sui::event::emit(MetadataCapReassigned<Meme, Quote> {
+        launch_id,
+        blast_metadata_cap_id,
+        recipient,
+    });
 }
 
-public(package) fun meme_metadata_updated(
+public(package) fun meme_metadata_updated<Meme, Quote>(
     launch_id: ID,
     name: String,
     description: String,
     icon_url: String,
 ) {
-    emit(MemeMetadataUpdated { launch_id, name, description, icon_url });
+    sui::event::emit(MemeMetadataUpdated<Meme, Quote> { launch_id, name, description, icon_url });
 }
 
 public(package) fun launch_ticket_created<Meme>(
@@ -271,9 +63,8 @@ public(package) fun launch_ticket_created<Meme>(
     burnable: bool,
     sell_burn_bps: u64,
 ) {
-    emit(LaunchTicketCreated {
+    sui::event::emit(LaunchTicketCreated<Meme> {
         ticket_id,
-        meme: type_name::with_original_ids<Meme>(),
         decimals,
         metadata_cap_id,
         creator,
@@ -282,7 +73,7 @@ public(package) fun launch_ticket_created<Meme>(
     });
 }
 
-public(package) fun launch_created<Quote>(
+public(package) fun launch_created<Meme, Quote>(
     launch_id: ID,
     ticket_id: ID,
     venue: TypeName,
@@ -296,10 +87,9 @@ public(package) fun launch_created<Quote>(
     creation_fee: u64,
     partner_id: Option<ID>,
 ) {
-    emit(LaunchCreated {
+    sui::event::emit(LaunchCreated<Meme, Quote> {
         launch_id,
         ticket_id,
-        quote: type_name::with_original_ids<Quote>(),
         venue,
         lp_fee_split,
         virtual_quote,
@@ -313,34 +103,45 @@ public(package) fun launch_created<Quote>(
     });
 }
 
-public(package) fun launch_shared(launch_id: ID, public_starts_at_ms: u64) {
-    emit(LaunchShared { launch_id, public_start_ms: public_starts_at_ms });
+public(package) fun launch_shared<Meme, Quote>(launch_id: ID, public_starts_at_ms: u64) {
+    sui::event::emit(LaunchShared<Meme, Quote> { launch_id, public_start_ms: public_starts_at_ms });
 }
 
-public(package) fun opening_round_joined(launch_id: ID, quote_amount: u64, bids: u64) {
-    emit(OpeningRoundJoined { launch_id, quote_amount, bids });
+public(package) fun opening_round_joined<Meme, Quote>(launch_id: ID, quote_amount: u64, bids: u64) {
+    sui::event::emit(OpeningRoundJoined<Meme, Quote> { launch_id, quote_amount, bids });
 }
 
-public(package) fun opening_round_settled(
+public(package) fun opening_round_settled<Meme, Quote>(
     launch_id: ID,
     bids: u64,
     meme_amount: u64,
     quote_amount: u64,
 ) {
-    emit(OpeningRoundSettled { launch_id, bids, meme_amount, quote_amount });
+    sui::event::emit(OpeningRoundSettled<Meme, Quote> {
+        launch_id,
+        bids,
+        meme_amount,
+        quote_amount,
+    });
 }
 
-public(package) fun opening_round_delivered(
+public(package) fun opening_round_delivered<Meme, Quote>(
     launch_id: ID,
     bidder: address,
     bid: u64,
     meme_amount: u64,
     quote_amount: u64,
 ) {
-    emit(OpeningRoundDelivered { launch_id, bidder, bid, meme_amount, quote_amount });
+    sui::event::emit(OpeningRoundDelivered<Meme, Quote> {
+        launch_id,
+        bidder,
+        bid,
+        meme_amount,
+        quote_amount,
+    });
 }
 
-public(package) fun bought(
+public(package) fun bought<Meme, Quote>(
     launch_id: ID,
     quote_in: u64,
     meme_out_gross: u64,
@@ -353,7 +154,7 @@ public(package) fun bought(
     meme_reserve: u64,
     real_quote_reserve: u64,
 ) {
-    emit(Bought {
+    sui::event::emit(Bought<Meme, Quote> {
         launch_id,
         quote_in,
         meme_out_gross,
@@ -368,7 +169,7 @@ public(package) fun bought(
     });
 }
 
-public(package) fun sold(
+public(package) fun sold<Meme, Quote>(
     launch_id: ID,
     meme_in_gross: u64,
     pending_burn: u64,
@@ -380,7 +181,7 @@ public(package) fun sold(
     meme_reserve: u64,
     real_quote_reserve: u64,
 ) {
-    emit(Sold {
+    sui::event::emit(Sold<Meme, Quote> {
         launch_id,
         meme_in_gross,
         pending_burn,
@@ -394,23 +195,28 @@ public(package) fun sold(
     });
 }
 
-public(package) fun migration_allocation_paid(
+public(package) fun migration_allocation_paid<Meme, Quote>(
     launch_id: ID,
     destination: address,
     meme_amount: u64,
     quote_amount: u64,
 ) {
-    emit(MigrationAllocationPaid { launch_id, destination, meme_amount, quote_amount });
+    sui::event::emit(MigrationAllocationPaid<Meme, Quote> {
+        launch_id,
+        destination,
+        meme_amount,
+        quote_amount,
+    });
 }
 
-public(package) fun migrated(
+public(package) fun migrated<Meme, Quote>(
     launch_id: ID,
     meme_amount: u64,
     quote_amount: u64,
     disposed_meme: u64,
     total_supply_after: u64,
 ) {
-    emit(Migrated {
+    sui::event::emit(Migrated<Meme, Quote> {
         launch_id,
         meme_amount,
         quote_amount,
@@ -419,48 +225,185 @@ public(package) fun migrated(
     });
 }
 
-public(package) fun creator_fees_claimed(launch_id: ID, meme_amount: u64, quote_amount: u64) {
-    emit(CreatorFeesClaimed { launch_id, meme_amount, quote_amount });
-}
-
-public(package) fun protocol_fees_claimed(
-    launch_id: ID,
-    treasury: address,
-    meme_amount: u64,
-    quote_amount: u64,
-    sui_amount: u64,
-    partner_meme_amount: u64,
-    partner_quote_amount: u64,
-    partner_sui_amount: u64,
-) {
-    emit(ProtocolFeesClaimed {
-        launch_id,
-        treasury,
-        meme_amount,
-        quote_amount,
-        sui_amount,
-        partner_meme_amount,
-        partner_quote_amount,
-        partner_sui_amount,
-    });
-}
-
-public(package) fun protocol_fees_accrued(
+public(package) fun creator_fees_claimed<Meme, Quote>(
     launch_id: ID,
     meme_amount: u64,
     quote_amount: u64,
 ) {
-    emit(ProtocolFeesAccrued { launch_id, meme_amount, quote_amount });
+    sui::event::emit(CreatorFeesClaimed<Meme, Quote> { launch_id, meme_amount, quote_amount });
+}
+
+public(package) fun protocol_fees_accrued<Meme, Quote>(
+    launch_id: ID,
+    meme_amount: u64,
+    quote_amount: u64,
+) {
+    sui::event::emit(ProtocolFeesAccrued<Meme, Quote> { launch_id, meme_amount, quote_amount });
+}
+
+// === Events ===
+
+public struct MemeDecimalsSet has copy, drop {
+    decimals: u8,
+    allowed: bool,
+}
+
+/// A Quote type was admitted to (`allowed = true`) or removed from (`allowed = false`) future
+/// launches. Existing launches keep trading in it.
+public struct QuoteSet<phantom Quote> has copy, drop {
+    allowed: bool,
+}
+
+public struct CreatorCapsClaimed<phantom Meme, phantom Quote> has copy, drop {
+    curve_fee_cap_id: ID,
+    blast_metadata_cap_id: ID,
+}
+
+public struct CurveFeeCapReassigned<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    curve_fee_cap_id: ID,
+    recipient: address,
+}
+
+public struct MetadataCapReassigned<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    blast_metadata_cap_id: ID,
+    recipient: address,
+}
+
+public struct MemeMetadataUpdated<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    name: String,
+    description: String,
+    icon_url: String,
+}
+
+/// A generated package created its currency and launch ticket. The supply is one billion whole
+/// tokens at `decimals`.
+public struct LaunchTicketCreated<phantom Meme> has copy, drop {
+    ticket_id: ID,
+    decimals: u8,
+    metadata_cap_id: ID,
+    creator: CreatorRecipient,
+    burnable: bool,
+    sell_burn_bps: u64,
+}
+
+/// A launch was created from `ticket_id` with these settings; a zero `opening_round_ms` has no
+/// opening round. The creator paid `creation_fee` SUI, held with Blast's fees on the launch;
+/// `partner_id` is the launch's partner for good, if it names one.
+public struct LaunchCreated<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    ticket_id: ID,
+    venue: TypeName,
+    lp_fee_split: FeeSplit,
+    virtual_quote: u64,
+    graduation_target: u64,
+    quote_fee_bps: u64,
+    meme_fee_bps: u64,
+    allocation_plan: AllocationPlan,
+    opening_round_ms: u64,
+    creation_fee: u64,
+    partner_id: Option<ID>,
+}
+
+public struct LaunchShared<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    public_start_ms: u64,
+}
+
+/// `quote_amount` joined a launch's opening round from the sender; `bids` is the pot after it.
+public struct OpeningRoundJoined<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    quote_amount: u64,
+    bids: u64,
+}
+
+/// The opening round closed: its `bids` bought `meme_amount` from the curve, in the same
+/// transaction's `Bought` when there is one, and left `quote_amount` to refund. Both are delivered
+/// pro rata.
+public struct OpeningRoundSettled<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    bids: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+}
+
+/// `bidder`'s share of the opening round, for its `bid`, was sent to it.
+public struct OpeningRoundDelivered<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    bidder: address,
+    bid: u64,
+    meme_amount: u64,
+    quote_amount: u64,
+}
+
+/// A curve purchase; reserves are after the purchase. Purchases before `LaunchShared` are the
+/// creator's, made in the transaction that creates the launch; the one beside
+/// `OpeningRoundSettled` is the opening round's pot.
+public struct Bought<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    quote_in: u64,
+    meme_out_gross: u64,
+    meme_out_net: u64,
+    quote_refund: u64,
+    protocol_meme_fee: u64,
+    creator_meme_fee: u64,
+    protocol_quote_fee: u64,
+    creator_quote_fee: u64,
+    meme_reserve: u64,
+    real_quote_reserve: u64,
+}
+
+/// A curve sale; reserves are after the sale.
+public struct Sold<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    meme_in_gross: u64,
+    pending_burn: u64,
+    quote_out_gross: u64,
+    protocol_meme_fee: u64,
+    creator_meme_fee: u64,
+    protocol_quote_fee: u64,
+    creator_quote_fee: u64,
+    meme_reserve: u64,
+    real_quote_reserve: u64,
+}
+
+/// One recipient's allocation, paid when migration begins.
+public struct MigrationAllocationPaid<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    destination: address,
+    meme_amount: u64,
+    quote_amount: u64,
+}
+
+/// Migration committed: the adapter received `meme_amount` and `quote_amount` for the pool, and
+/// `disposed_meme` was burned (or sent to `@0x0` under a fixed supply).
+public struct Migrated<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    meme_amount: u64,
+    quote_amount: u64,
+    disposed_meme: u64,
+    total_supply_after: u64,
+}
+
+public struct CreatorFeesClaimed<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    meme_amount: u64,
+    quote_amount: u64,
+}
+
+/// Blast's one-time migration Meme and Quote fee joined the launch's protocol ledger.
+public struct ProtocolFeesAccrued<phantom Meme, phantom Quote> has copy, drop {
+    launch_id: ID,
+    meme_amount: u64,
+    quote_amount: u64,
 }
 
 // === Imports ===
 
 use blast_core::fee_split::FeeSplit;
 
-use blast_fun::{
-    allocation::AllocationPlan,
-    blast_events::emit_event as emit,
-    creator_authority::CreatorRecipient,
-};
+use blast_fun::{allocation::AllocationPlan, creator_authority::CreatorRecipient};
 
-use std::{string::String, type_name::{Self, TypeName}};
+use std::{string::String, type_name::TypeName};

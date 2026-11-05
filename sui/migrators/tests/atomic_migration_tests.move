@@ -274,9 +274,9 @@ fun the_hand_off_redeems_only_under_the_venue_that_issued_the_ticket() {
     f.next_tx(TESTER);
     let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
     let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
-    let (version, config, _, _, _, ctx) = f.migration_inputs();
+    let (version, config, _, _, _, clock, ctx) = f.migration_inputs();
     let (_meme, _quote, _terms) = launch
-        .migrate(version, config, &mut currency, ctx)
+        .migrate(version, config, &mut currency, clock, ctx)
         .redeem(OtherVenue());
 
     abort EUnexpectedSuccess
@@ -300,9 +300,9 @@ fun the_vault_registry_refuses_a_venue_the_launch_policy_admitted() {
     f.next_tx(TESTER);
     let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
     let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
-    let (version, config, registry, vault_version, _, ctx) = f.migration_inputs();
+    let (version, config, registry, vault_version, _, clock, ctx) = f.migration_inputs();
     let (meme, quote, terms) = launch
-        .migrate(version, config, &mut currency, ctx)
+        .migrate(version, config, &mut currency, clock, ctx)
         .redeem(OtherVenue());
     let _vault = vault::new<ATOMIC_MIGRATION_TESTS, QUOTE, _>(
         registry,
@@ -329,7 +329,7 @@ fun zero_liquidity_aborts_the_migration() {
     f.next_tx(TESTER);
     let mut launch = f.take_launch<ATOMIC_MIGRATION_TESTS, QUOTE>(launch_id);
     let mut currency = f.take_currency<ATOMIC_MIGRATION_TESTS>();
-    let (version, config, registry, vault_version, treasury, ctx) = f.migration_inputs();
+    let (version, config, registry, vault_version, treasury, clock, ctx) = f.migration_inputs();
     launch.mock_adapter_with(
         version,
         config,
@@ -338,6 +338,7 @@ fun zero_liquidity_aborts_the_migration() {
         vault_version,
         treasury,
         0,
+        clock,
         ctx,
     );
 
@@ -350,15 +351,16 @@ fun zero_liquidity_aborts_the_migration() {
 /// shares the vault from the redeemed terms; it returns no protected value.
 public fun mock_adapter(
     launch: &mut Launch<ATOMIC_MIGRATION_TESTS, QUOTE>,
-    version: &PackageVersion,
+    version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
     registry: &mut VaultRegistry,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
+    clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    launch.mock_adapter_with(version, config, currency, registry, vault_version, treasury, 1, ctx)
+    launch.mock_adapter_with(version, config, currency, registry, vault_version, treasury, 1, clock, ctx)
 }
 
 /// Migrates, keeps `RESIDUAL` atoms of each asset as the pool's residuals, seeds a mock position
@@ -366,16 +368,17 @@ public fun mock_adapter(
 /// attached, then shares the vault and the pool.
 fun mock_adapter_with(
     launch: &mut Launch<ATOMIC_MIGRATION_TESTS, QUOTE>,
-    version: &PackageVersion,
+    version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
     registry: &mut VaultRegistry,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     liquidity: u128,
+    clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let (mut meme, mut quote, terms) = launch.migrate(version, config, currency, ctx).redeem(Venue());
+    let (mut meme, mut quote, terms) = launch.migrate(version, config, currency, clock, ctx).redeem(Venue());
     let residual_meme = meme.split(RESIDUAL);
     let residual_quote = quote.split(RESIDUAL);
     let pool = MockPool { id: object::new(ctx) };
@@ -422,8 +425,8 @@ fun mock_migrate(
     launch: &mut Launch<ATOMIC_MIGRATION_TESTS, QUOTE>,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
 ) {
-    let (version, config, registry, vault_version, treasury, ctx) = f.migration_inputs();
-    launch.mock_adapter(version, config, currency, registry, vault_version, treasury, ctx);
+    let (version, config, registry, vault_version, treasury, clock, ctx) = f.migration_inputs();
+    launch.mock_adapter(version, config, currency, registry, vault_version, treasury, clock, ctx);
 }
 
 /// Splits one collection of the mock position's fees through the vault, as a venue does.
@@ -542,7 +545,7 @@ fun vault_created_bytes(
     bytes.append(bcs::to_bytes(&position_id));
     bytes.append(bcs::to_bytes(&1u128));
     bytes.append(bcs::to_bytes(&launch_id));
-    bytes.append(bcs::to_bytes(&type_name::with_original_ids<launch::PackageWitness>()));
+    bytes.append(bcs::to_bytes(&type_name::with_original_ids<PackageWitness>()));
     bytes.append(bcs::to_bytes(&owner_split()));
     bytes.append(bcs::to_bytes(&bps::new(protocol_bps)));
     bytes.append(bcs::to_bytes(&bps::new(protocol_bps)));
@@ -574,7 +577,7 @@ const EUnexpectedSuccess: vector<u8> = b"The guarded operation unexpectedly retu
 
 // === Imports ===
 
-use blast_admin::{blast_acl, package_version::PackageVersion as VaultVersion};
+use blast_admin::{blast_acl, package_version::PackageVersion};
 
 use blast_core::{
     blast_domain::BuybackAdmin,
@@ -586,7 +589,7 @@ use blast_core::{
 };
 
 use blast_fun::{
-    blast_fun::PackageVersion,
+    blast_fun::{BLAST_FUN, PackageWitness},
     launch::{Self, Launch},
     launch_config::LaunchConfig
 };
@@ -603,6 +606,7 @@ use std::{bcs, type_name, unit_test::{assert_eq, destroy}};
 
 use sui::{
     balance::{Self, Balance},
+    clock::Clock,
     coin::Coin,
     coin_registry::Currency,
     event,

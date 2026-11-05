@@ -23,8 +23,8 @@ public(package) fun cap_buy_quote_input(
         (quote_supplied, 0)
     } else {
         let quote_in_gross = quote_remaining.mul_div_ceil(
-            constants::basis_points_denominator!(),
-            constants::basis_points_denominator!() - quote_fee_bps.value(),
+            blast_core::constants::basis_points_denominator!(),
+            blast_core::constants::basis_points_denominator!() - quote_fee_bps.value(),
         );
 
         (quote_in_gross, quote_supplied - quote_in_gross)

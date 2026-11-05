@@ -87,14 +87,15 @@ fn payload_layout(payload: &StructTag) -> Layout {
             bps(),
             bps(),
             bps(),
-            Vector(Box::new(Struct(vec![Address, bps(), bps()]))),
+            // Each recipient: its `payout::Recipient` (destination and optional vesting terms) and
+            // its two shares.
+            Vector(Box::new(Struct(vec![Struct(vec![Address, Vector(Box::new(Struct(vec![U64, U64, U64])))]), bps(), bps()]))),
         ])
     };
     match payload.name.as_str() {
         "LaunchCreated" => Struct(vec![
             id(),
             id(),
-            type_name(),
             type_name(),
             fee_split(),
             U64,
@@ -112,7 +113,6 @@ fn payload_layout(payload: &StructTag) -> Layout {
         "Migrated" => Struct(vec![id(), U64, U64, U64, U64]),
         "LaunchTicketCreated" => Struct(vec![
             id(),
-            type_name(),
             U8,
             id(),
             Enum(vec![vec![Address], vec![Vector(Box::new(U8))]]),
@@ -239,14 +239,8 @@ impl Harness {
             .events
             .iter()
             .map(|event| {
-                // A Blast payload travels inside the `blast_events::Event<T>` envelope, one more
-                // struct; another package's event is its own payload.
-                let (payload, layout) = match event.type_.type_params.as_slice() {
-                    [sui_types::TypeTag::Struct(inner)] if event.type_.module.as_str() == "blast_events" => {
-                        (inner.as_ref(), Layout::Struct(vec![payload_layout(inner)]))
-                    }
-                    _ => (&event.type_, payload_layout(&event.type_)),
-                };
+                // Every measured event is its own payload: Blast packages emit no envelope.
+                let (payload, layout) = (&event.type_, payload_layout(&event.type_));
                 let mut contents = event.contents.as_slice();
                 let value = layout.abstract_size(&mut contents);
                 assert!(contents.is_empty(), "layout of {} left bytes unread", payload.name);

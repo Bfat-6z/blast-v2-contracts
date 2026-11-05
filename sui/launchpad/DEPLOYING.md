@@ -9,26 +9,26 @@ for audit finding L-1, and by
 for delayed policy and paused release.
 
 **Publish → wrap → verify custody → configure while paused → verify notices → unpause.**
-Publication creates an owned `Publication` retaining the canonical Publisher and
-initial generation. It creates no `PackageVersion`, so Move cannot satisfy the
-required input to launch creation or routine configuration setters. Publication
-authorizes no policy setters. `wrap` consumes
-the proof and matching native version-1 UpgradeCap, shares `PackageAdmin`
-and creates `PackageVersion` fully paused in one atomic transaction.
+Publication creates an owned `blast_admin::package_version::Publication<BLAST_FUN>`
+retaining the canonical Publisher and initial generation. It creates no
+`PackageVersion`, so Move cannot satisfy the required input to launch creation
+or routine configuration setters. Publication authorizes no policy setters.
+`blast_admin::package_admin::wrap` consumes the proof and matching native
+version-1 UpgradeCap, shares `PackageAdmin<BLAST_FUN>` and creates
+`PackageVersion<BLAST_FUN>` fully paused in one atomic transaction.
 
 The deployer still receives the raw native UpgradeCap at publication. Do not
 upgrade, restrict, transfer, or destroy it before wrapping. Move cannot block
 the framework's native upgrade while that cap remains in the wallet; an
 already-upgraded cap cannot activate this launchpad lineage. Once wrapped,
-upgrades require the launchpad's `UpgradeAdmin` witness, version checks and a
+upgrades require the `UpgradeAdmin<BLAST_FUN>` witness and a
 ready proposal under custody's applied notice, which starts at 172,800,000 ms
 (48 hours) at wrap.
 
 ## 1. Prepare and publish
 
-`blast_treasury` in `sui/launchpad/Move.toml` is a build-time named address: set it
-to the approved treasury in the publishing build. Publication aborts while it is
-`0x0` (`invalid_destination`).
+Blast's fees are paid to `blast_core::blast_treasury::Treasury`, published and
+configured with `blast_core`; the launchpad has no treasury of its own.
 
 Use a reviewed source commit and its pinned dependencies. Confirm the active
 environment's chain ID is the intended Sui mainnet and the active address is
@@ -59,7 +59,8 @@ effects, not from an older deployment or an unfiltered wallet object list:
 - `LAUNCHPAD_PACKAGE_ID`: the published package; original and current package
   IDs must be equal at this point.
 - `LAUNCHPAD_PUBLICATION_ID`: the deployer-owned
-  `<original-package-id>::blast_fun::Publication`. Its nested Publisher has that
+  `<blast_admin>::package_version::Publication<<original-package-id>::blast_fun::BLAST_FUN>`.
+  Its nested Publisher has that
   original package ID and module `blast_fun`; record the Publisher's ID too.
 - `LAUNCHPAD_UPGRADE_CAP_ID`: the deployer-owned `0x2::package::UpgradeCap`
   for that package, with native `version = 1` and compatible `policy = 0`.
@@ -74,14 +75,17 @@ generation, or missing object. Never try a raw upgrade to repair intake.
 
 ## 3. Seal publication custody
 
-Submit Publication and the untouched UpgradeCap by value to `wrap`. It consumes
+Submit Publication and the untouched UpgradeCap by value to
+`blast_admin::package_admin::wrap` with the type argument
+`<original-package-id>::blast_fun::BLAST_FUN`. It consumes
 Publication forever and shares custody and the fully paused version; it needs
 no ACL witness or LaunchConfig input. `TxContext` is
 supplied by Sui.
 
 ```bash
-sui client call --package "${LAUNCHPAD_PACKAGE_ID:?set from publication}" \
+sui client call --package "${BLAST_ADMIN_PACKAGE_ID:?set from the admin deployment}" \
   --module package_admin --function wrap \
+  --type-args "${LAUNCHPAD_PACKAGE_ID:?set from publication}::blast_fun::BLAST_FUN" \
   --args "${LAUNCHPAD_PUBLICATION_ID:?set from publication}" \
          "${LAUNCHPAD_UPGRADE_CAP_ID:?set from publication}" \
   --gas-budget "${LAUNCHPAD_GAS_BUDGET:?set the approved budget}" --json \
@@ -97,8 +101,8 @@ current custody before retrying; a timeout is not evidence that wrap failed.
 Require all of the following and retain the readbacks:
 
 - The wrap transaction succeeded, deleted Publication, and created exactly
-  one shared `<original-package-id>::package_admin::PackageAdmin` and one
-  shared `<original-package-id>::blast_fun::PackageVersion`. Take their IDs
+  one shared `<blast_admin>::package_admin::PackageAdmin<...::BLAST_FUN>` and one
+  shared `<blast_admin>::package_version::PackageVersion<...::BLAST_FUN>`. Take their IDs
   from this transaction's effects. The consumed Publication cannot be reused.
 - Its `UpgradeCustodyCreated<BLAST_FUN>` event, emitted by the resolved
   `blast_admin::blast_admin_events` module with the launchpad's canonical
@@ -111,8 +115,9 @@ Require all of the following and retain the readbacks:
   the event. Wrapped capabilities are no longer standalone wallet objects;
   their absence from a wallet listing alone does not prove custody.
 - Reading the new `PackageVersion` confirms shared ownership and the compiled
-  current operational generation, initially `1`, and pause mask `7` (Create,
-  Trading and Migrate). An aborted wrap leaves the
+  current operational generation, initially `1`, pause mask `7` (Create,
+  Trading and Migrate), and the pinned unpause witness
+  `<original-package-id>::blast_fun::PackageWitness`. An aborted wrap leaves the
   Publication and cap unchanged and creates neither shared output.
 - Publication-owned policies start at zero notice. Upgrade custody starts at
   48 hours. Verify that neither has a pending proposal. This setup state is not
@@ -133,7 +138,7 @@ do not weaken intake checks.
 
 Use the root to grant the approved role-specific AdminCaps. Sign in through the
 live ACL for ordinary policy operations with the current PackageVersion. Configure
-treasury, protocol fee share, trade/creation fees, allocation and claim signer;
+protocol fee share, trade/creation fees, allocation and claim signer;
 admit each approved Quote and reviewed adapter. Protected policies use ordinary
 schedule/apply calls with Clock. At zero notice both calls can share a PTB;
 Quote-listing changes are immediate. Claim-signer admission waits the signer
@@ -147,7 +152,7 @@ intended notice (172,800,000 ms = 48 hours for this rollout). Upgrade custody
 already holds 48 hours; do not propose it again (an unchanged notice aborts).
 Raising a notice never rewrites an earlier proposal's deadline or proposed next
 notice. Record all applied notices and pending-proposal state. The release call
-below enforces the minimum: it aborts with `unguarded_notice` (44) while any
+below enforces the minimum: it aborts with `unguarded_notice` (32) while any
 covered notice is zero, any pending proposal would set one to zero, or any
 adapter or claim-signer admission is still pending. Initial setup may span transactions while fully paused.
 
@@ -156,10 +161,10 @@ nonempty approved Quote/adapter allowlists, consumer bindings and ACL/key custod
 from the deployment-record guidance. Keep root, cancellation and unpause powers
 under the approved independent multisig arrangement: grant CancelAdmin and
 PauseAdmin to it before release so incident response can cancel pending proposals
-and pause. Grant UnpauseAdmin through the shared Blast ACL, sign in with its
-AdminCap, and call `package_admin::unpause` with the shared PackageAdmin, the
-mutable PackageVersion, the RuntimeConfig, the LaunchConfig and the selected bits
-(all = 7).
+and pause. Grant `UnpauseAdmin<BLAST_FUN>` through the shared Blast ACL, sign in
+with its AdminCap, and call `launch_config::unpause` with the LaunchConfig, the
+RuntimeConfig, the witness, the shared `PackageAdmin<BLAST_FUN>`, the mutable
+`PackageVersion<BLAST_FUN>` and the selected bits (all = 7).
 This release is immediate and needs no Clock; retain its events and readback.
 A later pause cannot recreate Publication or reset a notice. Later protected
 changes wait the operation's applied notice; changing that notice waits its old
@@ -170,22 +175,20 @@ record.
 
 Schedule the exact reviewed digest with UpgradeAdmin and wait the stored deadline
 under the currently applied upgrade notice. CancelAdmin can cancel until execution.
-Then use the governed transaction: authorize with the active generation and an
-`UpgradeAdmin` witness, execute the native Upgrade command, then commit the
-matching receipt through `package_admin::commit_upgrade_and_advance` in the
-same PTB. Its `assert_next` requires the stored generation plus one to equal
-the compiled next target before committing and advancing atomically. There
+Then use the governed transaction: authorize with an `UpgradeAdmin<BLAST_FUN>`
+witness, execute the native Upgrade command, then commit the matching receipt
+through `blast_admin::package_admin::commit_upgrade_and_advance` in the same
+PTB. It advances the stored generation by one, so the new bytecode must compile
+`constants::generation!()` one higher. There
 is no separate activation transaction or raw-cap escape path.
 
-The existing focused checks exercise fresh matching custody, foreign and
-already-upgraded cap rejection, and governed cutover:
-
-Use `scripts/test_admin_delay.sh`, which substitutes fixture named addresses
-(the committed `0x0` treasury aborts publication-initialization fixtures):
+The generic custody is tested in `blast_admin`; the launchpad's publication,
+wrap, and unpause guard are tested here. Use `scripts/test_admin_delay.sh`,
+which substitutes fixture named addresses:
 
 ```bash
-MOVE_TEST_FILTER=package_admin_tests bash scripts/test_admin_delay.sh launchpad
-sui move test -p sui/admin upgrade_custody_tests
+MOVE_TEST_FILTER=blast_fun bash scripts/test_admin_delay.sh launchpad
+sui move test -p sui/admin package_admin_tests
 bash sui/launchpad/scripts/check_source_boundaries.sh
 bash sui/admin/scripts/check_source_boundaries.sh
 (cd sui/launchpad/ptb_tests && cargo test --locked --test bootstrap --test atomic_migration)

@@ -22,10 +22,6 @@ public struct LaunchRegistry has key {
 /// Derives the one launch of `Meme` from the registry.
 public struct LaunchKey<phantom Meme>() has copy, drop, store;
 
-/// The launchpad's package witness: it seals each launch's migration, vault terms, and owner
-/// proofs, and only this module constructs it.
-public struct PackageWitness() has drop;
-
 public enum Lifecycle has copy, drop, store {
     OpeningRound,
     Live,
@@ -65,7 +61,11 @@ public struct Launch<phantom Meme, phantom Quote> has key {
     pending_burn: Balance<Meme>,
     allocation_plan: AllocationPlan,
     allocated_meme: Balance<Meme>,
-    fee_ledger: FeeLedger<Meme, Quote>,
+    /// Blast's fees: its trade-fee share, the creation fee, and the one-time migration fee.
+    protocol_fees: Ledger<Meme, Quote>,
+    /// The creator's trade-fee share, claimed with the curve-fee cap.
+    creator_meme_fees: Balance<Meme>,
+    creator_quote_fees: Balance<Quote>,
     metadata_cap: MetadataCap<Meme>,
     curve_fee_cap_reassignment: DelayedAction<CurveFeeCapReassignment, address>,
     metadata_cap_reassignment: DelayedAction<MetadataCapReassignment, address>,
@@ -111,11 +111,11 @@ fun init(ctx: &mut TxContext) {
 public fun new<Meme, Quote>(
     ticket: LaunchTicket<Meme>,
     treasury_cap: TreasuryCap<Meme>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     venue_ticket: VenueTicket<Meme, Quote>,
 ): LaunchInitializer<Meme, Quote> {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     package_version.assert_not_paused(constants::create_pause_bit!());
     assert!(
@@ -143,10 +143,10 @@ public fun new<Meme, Quote>(
 /// Sets the virtual Quote reserve the curve starts from, which prices the first purchase.
 public fun set_virtual_quote<Meme, Quote>(
     self: &mut LaunchInitializer<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     virtual_quote: u64,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.virtual_quote = option::some(virtual_quote);
 }
@@ -154,30 +154,30 @@ public fun set_virtual_quote<Meme, Quote>(
 /// Sets the Quote reserve at which the curve closes.
 public fun set_graduation_target<Meme, Quote>(
     self: &mut LaunchInitializer<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     graduation_target: u64,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.graduation_target = option::some(graduation_target);
 }
 
 public fun set_allocation_plan<Meme, Quote>(
     self: &mut LaunchInitializer<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     allocation_plan: AllocationPlan,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.allocation_plan = option::some(allocation_plan);
 }
 
 public fun set_lp_fee_split<Meme, Quote>(
     self: &mut LaunchInitializer<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     lp_fee_split: FeeSplit,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.lp_fee_split = option::some(lp_fee_split);
 }
@@ -186,10 +186,10 @@ public fun set_lp_fee_split<Meme, Quote>(
 /// default, has no opening round: trading starts at share.
 public fun set_opening_round<Meme, Quote>(
     self: &mut LaunchInitializer<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     opening_round_duration_ms: u64,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.opening_round_ms = opening_round_duration_ms;
 }
@@ -199,15 +199,15 @@ public fun set_opening_round<Meme, Quote>(
 /// claims them.
 public fun set_partner<Meme, Quote>(
     self: &mut LaunchInitializer<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     partner: &Partner,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     let partner_id = object::id(partner);
-    config.assert_partner(partner_id, clock.timestamp_ms());
+    config.assert_partner(partner_id, clock);
 
     self.partner_id = option::some(partner_id);
 }
@@ -219,13 +219,13 @@ public fun set_partner<Meme, Quote>(
 /// launch's ID derives from `registry` and the coin type.
 public fun finalize<Meme, Quote>(
     self: LaunchInitializer<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     registry: &mut LaunchRegistry,
     currency: &mut Currency<Meme>,
     config: &LaunchConfig,
     creation_fee: Coin<SUI>,
 ): Launch<Meme, Quote> {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     package_version.assert_not_paused(constants::create_pause_bit!());
     let LaunchInitializer {
@@ -259,10 +259,6 @@ public fun finalize<Meme, Quote>(
         ),
         blast_fun::errors::invalid_opening_round!(),
     );
-    assert!(
-        currency.symbol().length() <= constants::max_meme_symbol_length!(),
-        blast_fun::errors::meme_symbol_too_long!(),
-    );
 
     // Trading closes with the reserve at the target, so the pool's share of it must be positive.
     let (lp_quote, _, _) = allocation_plan.apportion_quote(graduation_target);
@@ -274,6 +270,8 @@ public fun finalize<Meme, Quote>(
     let creation_fee_amount = creation_fee.value();
     let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(treasury_cap, currency, atomic_supply);
     let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>());
+    let mut protocol_fees = protocol_fees::new(package_witness(), id.to_inner(), partner_id);
+    protocol_fees.accrue_sui(creation_fee);
     let curve_fee_cap_reassignment = delayed_action::new(
         CurveFeeCapReassignment(),
         &id,
@@ -306,7 +304,9 @@ public fun finalize<Meme, Quote>(
         pending_burn: balance::zero(),
         allocation_plan,
         allocated_meme: meme,
-        fee_ledger: fees::new(creation_fee),
+        protocol_fees,
+        creator_meme_fees: balance::zero(),
+        creator_quote_fees: balance::zero(),
         metadata_cap,
         creator: option::some(creator),
         curve_fee_cap_reassignment,
@@ -316,7 +316,7 @@ public fun finalize<Meme, Quote>(
         partner_id,
     };
 
-    events::launch_created<Quote>(
+    events::launch_created<Meme, Quote>(
         launch.id.to_inner(),
         ticket_id,
         launch.venue,
@@ -338,10 +338,10 @@ public fun finalize<Meme, Quote>(
 /// `opening_round_ms` later.
 public fun share<Meme, Quote>(
     mut self: Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     package_version.assert_not_paused(constants::create_pause_bit!());
     assert!(self.public_start_ms.is_none(), blast_fun::errors::invalid_launch_lifecycle!());
@@ -350,7 +350,7 @@ public fun share<Meme, Quote>(
 
     self.public_start_ms = option::some(public_starts_at_ms);
 
-    events::launch_shared(self.id.to_inner(), public_starts_at_ms);
+    events::launch_shared<Meme, Quote>(self.id.to_inner(), public_starts_at_ms);
 
     transfer::share_object(self);
 }
@@ -358,13 +358,13 @@ public fun share<Meme, Quote>(
 /// Authenticates the creator recipient and issues both creator capabilities.
 public fun claim_creator_caps<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     config: &RuntimeConfig,
     account_attestation: Option<vector<u8>>,
     clock: &Clock,
     ctx: &mut TxContext,
 ): (CurveFeeCap<Meme>, BlastMetadataCap<Meme>) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     assert!(self.public_start_ms.is_some(), blast_fun::errors::invalid_launch_lifecycle!());
 
@@ -379,7 +379,10 @@ public fun claim_creator_caps<Meme, Quote>(
     self.curve_fee_cap_id = option::some(object::id(&curve_fee_cap));
     self.blast_metadata_cap_id = option::some(object::id(&blast_metadata_cap));
 
-    events::creator_caps_claimed<Meme>(object::id(&curve_fee_cap), object::id(&blast_metadata_cap));
+    events::creator_caps_claimed<Meme, Quote>(
+        object::id(&curve_fee_cap),
+        object::id(&blast_metadata_cap),
+    );
 
     (curve_fee_cap, blast_metadata_cap)
 }
@@ -388,12 +391,12 @@ public fun claim_creator_caps<Meme, Quote>(
 /// Apply through `apply_curve_fee_cap_delay`; replaces any pending reassignment.
 public fun schedule_curve_fee_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CreatorAdmin>,
     delay_ms: u64,
     clock: &Clock
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.curve_fee_cap_reassignment.schedule_delay(delay_ms, clock);
 }
@@ -402,12 +405,12 @@ public fun schedule_curve_fee_cap_delay<Meme, Quote>(
 /// the applied notice. Unclaimed curve fees follow the fresh cap when applied.
 public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CreatorAdmin>,
     recipient: address,
     clock: &Clock
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
 
@@ -417,10 +420,10 @@ public fun schedule_curve_fee_cap_reassignment<Meme, Quote>(
 /// Cancels the pending reassignment or notice change without affecting either live creator cap.
 public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.curve_fee_cap_reassignment.cancel();
 }
@@ -428,10 +431,10 @@ public fun cancel_curve_fee_cap_reassignment<Meme, Quote>(
 /// Permissionlessly applies a ready curve-fee cap notice change.
 public fun apply_curve_fee_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.curve_fee_cap_reassignment.apply_delay(clock);
 }
@@ -440,11 +443,11 @@ public fun apply_curve_fee_cap_delay<Meme, Quote>(
 /// recipient and retires the old authority.
 public fun apply_curve_fee_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     let recipient = self.curve_fee_cap_reassignment.take_action(clock);
 
@@ -455,19 +458,19 @@ public fun apply_curve_fee_cap_reassignment<Meme, Quote>(
     self.curve_fee_cap_id = option::some(curve_fee_cap_id);
     transfer::public_transfer(curve_fee_cap, recipient);
 
-    events::curve_fee_cap_reassigned(self.id.to_inner(), curve_fee_cap_id, recipient);
+    events::curve_fee_cap_reassigned<Meme, Quote>(self.id.to_inner(), curve_fee_cap_id, recipient);
 }
 
 /// Changes only this launch's metadata cap notice, after its applied notice.
 /// Apply through `apply_metadata_cap_delay`; replaces any pending reassignment.
 public fun schedule_metadata_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CreatorAdmin>,
     delay_ms: u64,
     clock: &Clock
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.metadata_cap_reassignment.schedule_delay(delay_ms, clock);
 }
@@ -476,12 +479,12 @@ public fun schedule_metadata_cap_delay<Meme, Quote>(
 /// the applied notice.
 public fun schedule_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CreatorAdmin>,
     recipient: address,
     clock: &Clock
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     assert!(recipient != @0x0, blast_fun::errors::invalid_creator_recipient!());
 
@@ -491,10 +494,10 @@ public fun schedule_metadata_cap_reassignment<Meme, Quote>(
 /// Cancels the pending reassignment or notice change without affecting either live creator cap.
 public fun cancel_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.metadata_cap_reassignment.cancel();
 }
@@ -502,10 +505,10 @@ public fun cancel_metadata_cap_reassignment<Meme, Quote>(
 /// Permissionlessly applies a ready metadata cap notice change.
 public fun apply_metadata_cap_delay<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.metadata_cap_reassignment.apply_delay(clock);
 }
@@ -514,11 +517,11 @@ public fun apply_metadata_cap_delay<Meme, Quote>(
 /// recipient and retires the old authority.
 public fun apply_metadata_cap_reassignment<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     let recipient = self.metadata_cap_reassignment.take_action(clock);
 
@@ -529,12 +532,16 @@ public fun apply_metadata_cap_reassignment<Meme, Quote>(
     self.blast_metadata_cap_id = option::some(blast_metadata_cap_id);
     transfer::public_transfer(blast_metadata_cap, recipient);
 
-    events::metadata_cap_reassigned(self.id.to_inner(), blast_metadata_cap_id, recipient);
+    events::metadata_cap_reassigned<Meme, Quote>(
+        self.id.to_inner(),
+        blast_metadata_cap_id,
+        recipient,
+    );
 }
 
 public fun set_name<Meme, Quote>(
     self: &Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     blast_metadata_cap: &BlastMetadataCap<Meme>,
     currency: &mut Currency<Meme>,
     name: String,
@@ -549,7 +556,7 @@ public fun set_name<Meme, Quote>(
 
 public fun set_description<Meme, Quote>(
     self: &Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     blast_metadata_cap: &BlastMetadataCap<Meme>,
     currency: &mut Currency<Meme>,
     description: String,
@@ -564,7 +571,7 @@ public fun set_description<Meme, Quote>(
 
 public fun set_icon_url<Meme, Quote>(
     self: &Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     blast_metadata_cap: &BlastMetadataCap<Meme>,
     currency: &mut Currency<Meme>,
     icon_url: String,
@@ -581,12 +588,12 @@ public fun set_icon_url<Meme, Quote>(
 /// transaction can reach the launch, so the creator's bid joins the same pot at the same price.
 public fun join_opening_round<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     quote_in: Coin<Quote>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
@@ -607,7 +614,7 @@ public fun join_opening_round<Meme, Quote>(
     self.opening_round_bids = self.opening_round_bids + quote;
     self.opening_round_quote.join(quote_in.into_balance());
 
-    events::opening_round_joined(self.id.to_inner(), quote, self.opening_round_bids);
+    events::opening_round_joined<Meme, Quote>(self.id.to_inner(), quote, self.opening_round_bids);
 }
 
 /// Closes the ended opening round: buys from the curve once with the whole pot, at the usual fees
@@ -615,11 +622,11 @@ public fun join_opening_round<Meme, Quote>(
 /// small to buy one Meme atom is held whole for refund unless it reaches graduation. Anyone may settle.
 public fun settle_opening_round<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     runtime_config: &RuntimeConfig,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
@@ -634,7 +641,7 @@ public fun settle_opening_round<Meme, Quote>(
     self.opening_round_meme.join(meme);
     self.opening_round_quote.join(quote_refund);
 
-    events::opening_round_settled(
+    events::opening_round_settled<Meme, Quote>(
         self.id.to_inner(),
         self.opening_round_bids,
         self.opening_round_meme.value(),
@@ -647,11 +654,11 @@ public fun settle_opening_round<Meme, Quote>(
 /// remainder. Anyone may deliver, in any later lifecycle.
 public fun deliver_opening_round<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     bidder: address,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     assert!(
         self.lifecycle != Lifecycle::OpeningRound,
@@ -666,7 +673,7 @@ public fun deliver_opening_round<Meme, Quote>(
     self.opening_round_meme.pay(meme, bidder, ctx);
     self.opening_round_quote.pay(quote, bidder, ctx);
 
-    events::opening_round_delivered(self.id.to_inner(), bidder, bid, meme, quote);
+    events::opening_round_delivered<Meme, Quote>(self.id.to_inner(), bidder, bid, meme, quote);
 }
 
 /// Buys Meme with Quote; Quote beyond the graduation target is refunded. Trading opens at share,
@@ -674,13 +681,13 @@ public fun deliver_opening_round<Meme, Quote>(
 /// A target-reaching buy may return zero Meme when `min_meme_out` is zero.
 public fun buy<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     runtime_config: &RuntimeConfig,
     quote_in: Coin<Quote>,
     min_meme_out: u64,
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(self.lifecycle == Lifecycle::Live, blast_fun::errors::invalid_launch_lifecycle!());
@@ -701,13 +708,13 @@ public fun buy<Meme, Quote>(
 /// Sells Meme for Quote; the sell-burn share of the input waits in `pending_burn`.
 public fun sell<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     runtime_config: &RuntimeConfig,
     meme_in: Coin<Meme>,
     min_quote_out: u64,
     ctx: &mut TxContext,
 ): Coin<Quote> {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     package_version.assert_not_paused(constants::trading_pause_bit!());
     assert!(
@@ -740,11 +747,13 @@ public fun sell<Meme, Quote>(
 
     let mut quote_out = self.real_quote_reserve.split(quote_out_gross);
     let quote_fee = quote_out.split(quote_fee);
-    let (protocol_meme, creator_meme, protocol_quote, creator_quote) = self
-        .fee_ledger
-        .accrue(meme_fee, quote_fee, runtime_config.protocol_fee_share());
+    let (protocol_meme, creator_meme, protocol_quote, creator_quote) = self.accrue_trade_fees(
+        meme_fee,
+        quote_fee,
+        runtime_config.protocol_fee_share(),
+    );
 
-    events::sold(
+    events::sold<Meme, Quote>(
         self.id.to_inner(),
         meme_in_gross,
         pending_burn_delta,
@@ -762,108 +771,68 @@ public fun sell<Meme, Quote>(
 
 public fun claim_creator_fees<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     curve_fee_cap: &CurveFeeCap<Meme>,
     ctx: &mut TxContext,
 ): (Coin<Meme>, Coin<Quote>) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.assert_curve_fee_cap(curve_fee_cap);
+    assert!(
+        self.creator_meme_fees.value() > 0 || self.creator_quote_fees.value() > 0,
+        blast_fun::errors::nothing_accrued!(),
+    );
 
-    let (meme, quote) = self.fee_ledger.claim_creator_fees(ctx);
+    let meme = self.creator_meme_fees.withdraw_all().into_coin(ctx);
+    let quote = self.creator_quote_fees.withdraw_all().into_coin(ctx);
 
-    events::creator_fees_claimed(self.id.to_inner(), meme.value(), quote.value());
+    events::creator_fees_claimed<Meme, Quote>(self.id.to_inner(), meme.value(), quote.value());
 
     (meme, quote)
 }
 
-/// Pays the runtime configuration's treasury Blast's fees on a launch that names no partner: its
-/// trade fees, the creation fee, and the one-time migration fee. Anyone may claim.
+/// Pays `treasury` Blast's fees on a launch that names no partner: its trade fees, the creation
+/// fee, and the one-time migration fee. Anyone may claim; an empty ledger pays nothing.
 public fun claim_protocol_fees<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
-    runtime_config: &RuntimeConfig,
+    package_version: &PackageVersion<BLAST_FUN>,
+    treasury: &Treasury,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
-    assert!(self.partner_id.is_none(), blast_fun::errors::partner_mismatch!());
-
-    let blast_treasury = runtime_config.treasury();
-    let (meme_fees, quote_fees, sui_fees) = self.fee_ledger.claim_protocol_fees();
-    let (treasury_meme, treasury_quote, treasury_sui) = (
-        meme_fees.value(),
-        quote_fees.value(),
-        sui_fees.value(),
-    );
-    pay_treasury(meme_fees, blast_treasury, ctx);
-    pay_treasury(quote_fees, blast_treasury, ctx);
-    pay_treasury(sui_fees, blast_treasury, ctx);
-
-    events::protocol_fees_claimed(
-        self.id.to_inner(),
-        blast_treasury,
-        treasury_meme,
-        treasury_quote,
-        treasury_sui,
-        0,
-        0,
-        0,
-    );
+    self.protocol_fees.pay(treasury, ctx);
 }
 
-/// Pays Blast's fees on a launch that names `partner`: the partner its share of each, then the
-/// runtime configuration's treasury the rest, in the same call. Anyone may claim.
+/// Pays Blast's fees on a launch that names `partner`: the partner its share of each, then
+/// `treasury` the rest, in the same call. Anyone may claim; an empty ledger pays nothing.
 public fun claim_protocol_fees_with_partner<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
-    runtime_config: &RuntimeConfig,
+    package_version: &PackageVersion<BLAST_FUN>,
+    treasury: &Treasury,
     partner: &Partner,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
-    assert!(self.partner_id.contains(&object::id(partner)), blast_fun::errors::partner_mismatch!());
-
-    let blast_treasury = runtime_config.treasury();
-    let (mut meme_fees, mut quote_fees, mut sui_fees) = self.fee_ledger.claim_protocol_fees();
-    let partner_meme = partner.pay(&mut meme_fees, ctx);
-    let partner_quote = partner.pay(&mut quote_fees, ctx);
-    let partner_sui = partner.pay(&mut sui_fees, ctx);
-    let (treasury_meme, treasury_quote, treasury_sui) = (
-        meme_fees.value(),
-        quote_fees.value(),
-        sui_fees.value(),
-    );
-    pay_treasury(meme_fees, blast_treasury, ctx);
-    pay_treasury(quote_fees, blast_treasury, ctx);
-    pay_treasury(sui_fees, blast_treasury, ctx);
-
-    events::protocol_fees_claimed(
-        self.id.to_inner(),
-        blast_treasury,
-        treasury_meme,
-        treasury_quote,
-        treasury_sui,
-        partner_meme,
-        partner_quote,
-        partner_sui,
-    );
+    self.protocol_fees.pay_with_partner(treasury, partner, ctx);
 }
 
-/// Pays every project recipient, accrues Blast's one-time Meme and Quote fee in the launch ledger,
-/// burns the curve's unsold Meme and pending sell-burn (or sends them to `@0x0` when the supply is
-/// fixed), and returns the hand-off only the stored venue can redeem: the pool's share and the
-/// vault's terms, with Blast's applied LP-fee share and the migration residuals paid to Blast.
+/// Pays every project recipient, outright or into its vesting schedule starting now, accrues
+/// Blast's one-time Meme and Quote fee in the launch ledger, burns the curve's unsold Meme and
+/// pending sell-burn (or sends them to `@0x0` when the supply is fixed), and returns the hand-off
+/// only the stored venue can redeem: the pool's share and the vault's terms, with Blast's applied
+/// LP-fee share and the migration residuals paid to Blast.
 /// Anyone may call it; an unredeemed hand-off aborts the transaction.
 public fun migrate<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<Meme>,
+    clock: &Clock,
     ctx: &mut TxContext,
 ): Migration<Meme, Quote> {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     package_version.assert_not_paused(constants::migration_pause_bit!());
     assert!(
@@ -884,23 +853,28 @@ public fun migrate<Meme, Quote>(
         .apportion_quote(self
         .real_quote_reserve
         .value());
-    let destinations = plan.destinations();
+    let payees = plan.payees();
 
-    destinations.length().do!(|i| {
-        let (destination, meme, quote) = (destinations[i], recipient_meme[i], recipient_quote[i]);
-        self.allocated_meme.pay(meme, destination, ctx);
-        self.real_quote_reserve.pay(quote, destination, ctx);
-        events::migration_allocation_paid(self.id.to_inner(), destination, meme, quote);
+    payees.length().do!(|i| {
+        let (payee, meme, quote) = (&payees[i], recipient_meme[i], recipient_quote[i]);
+        payout::pay_or_vest(&mut self.allocated_meme, meme, payee, clock, ctx);
+        payout::pay_or_vest(&mut self.real_quote_reserve, quote, payee, clock, ctx);
+        events::migration_allocation_paid<Meme, Quote>(
+            self.id.to_inner(),
+            payee.destination(),
+            meme,
+            quote,
+        );
     });
 
     self
-        .fee_ledger
-        .accrue_protocol_fees(
+        .protocol_fees
+        .accrue(
             self.allocated_meme.split(protocol_meme_amount),
             self.real_quote_reserve.split(protocol_quote_amount),
         );
     if (protocol_meme_amount > 0 || protocol_quote_amount > 0) {
-        events::protocol_fees_accrued(
+        events::protocol_fees_accrued<Meme, Quote>(
             self.id.to_inner(),
             protocol_meme_amount,
             protocol_quote_amount,
@@ -918,7 +892,7 @@ public fun migrate<Meme, Quote>(
     else transfer::public_transfer(disposal.into_coin(ctx), @0x0);
     self.lifecycle = Lifecycle::Migrated;
 
-    events::migrated(
+    events::migrated<Meme, Quote>(
         self.id.to_inner(),
         lp_meme,
         lp_quote,
@@ -927,7 +901,7 @@ public fun migrate<Meme, Quote>(
     );
 
     let terms = migration::vault_terms(
-        PackageWitness(),
+        package_witness(),
         self.id.to_inner(),
         self.lp_fee_split,
         protocol_meme_bps,
@@ -936,19 +910,19 @@ public fun migrate<Meme, Quote>(
         migration::residuals_to_protocol(),
     );
 
-    migration::new(PackageWitness(), meme, quote, self.venue, terms)
+    migration::new(package_witness(), meme, quote, self.venue, terms)
 }
 
 /// Proves to the launch's vault that the caller holds the curve-fee cap this launch honors.
 public fun prove_owner<Meme, Quote>(
     self: &Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     curve_fee_cap: &CurveFeeCap<Meme>,
 ): OwnerProof {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
     self.assert_curve_fee_cap(curve_fee_cap);
 
-    owner_proof::new(PackageWitness(), self.id.to_inner())
+    owner_proof::new(package_witness(), self.id.to_inner())
 }
 
 // === Private Functions ===
@@ -966,10 +940,10 @@ fun assert_curve_fee_cap<Meme, Quote>(
 
 fun assert_metadata_update<Meme, Quote>(
     self: &Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     blast_metadata_cap: &BlastMetadataCap<Meme>,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
     assert!(
         self.blast_metadata_cap_id.contains(&object::id(blast_metadata_cap)),
         blast_fun::errors::creator_cap_not_live!(),
@@ -977,7 +951,7 @@ fun assert_metadata_update<Meme, Quote>(
 }
 
 fun emit_metadata_updated<Meme, Quote>(self: &Launch<Meme, Quote>, currency: &Currency<Meme>) {
-    events::meme_metadata_updated(
+    events::meme_metadata_updated<Meme, Quote>(
         self.id.to_inner(),
         currency.name(),
         currency.description(),
@@ -1023,11 +997,13 @@ fun buy_from_curve<Meme, Quote>(
     if (self.real_quote_reserve.value() >= self.graduation_target) {
         self.lifecycle = Lifecycle::MigrationReady;
     };
-    let (protocol_meme, creator_meme, protocol_quote, creator_quote) = self
-        .fee_ledger
-        .accrue(meme_fee, quote_fee, runtime_config.protocol_fee_share());
+    let (protocol_meme, creator_meme, protocol_quote, creator_quote) = self.accrue_trade_fees(
+        meme_fee,
+        quote_fee,
+        runtime_config.protocol_fee_share(),
+    );
 
-    events::bought(
+    events::bought<Meme, Quote>(
         self.id.to_inner(),
         quote_in_gross,
         meme_out_gross,
@@ -1044,16 +1020,23 @@ fun buy_from_curve<Meme, Quote>(
     (meme_out, quote_refund)
 }
 
-/// Transfers `amount` split from `self` to `recipient`; a zero amount sends nothing.
-fun pay<Asset>(self: &mut Balance<Asset>, amount: u64, recipient: address, ctx: &mut TxContext) {
-    if (amount > 0) transfer::public_transfer(self.split(amount).into_coin(ctx), recipient);
-}
+/// Splits one trade's fees: Blast's share rounds up into the protocol ledger and the creator keeps
+/// the rest. Returns `(protocol_meme, creator_meme, protocol_quote, creator_quote)`.
+fun accrue_trade_fees<Meme, Quote>(
+    self: &mut Launch<Meme, Quote>,
+    mut meme_fee: Balance<Meme>,
+    mut quote_fee: Balance<Quote>,
+    protocol_fee_share_bps: Bps,
+): (u64, u64, u64, u64) {
+    let (protocol_meme, protocol_quote) = self
+        .protocol_fees
+        .take_cut(&mut meme_fee, &mut quote_fee, protocol_fee_share_bps, protocol_fee_share_bps);
+    let (creator_meme, creator_quote) = (meme_fee.value(), quote_fee.value());
 
-/// Sends one of Blast's claimed balances to the treasury; an empty balance sends nothing.
-fun pay_treasury<T>(fee: Balance<T>, treasury: address, ctx: &mut TxContext) {
-    if (fee.value() == 0) return fee.destroy_zero();
+    self.creator_meme_fees.join(meme_fee);
+    self.creator_quote_fees.join(quote_fee);
 
-    transfer::public_transfer(fee.into_coin(ctx), treasury);
+    (protocol_meme, creator_meme, protocol_quote, creator_quote)
 }
 
 /// Whether the opening round has ended; never before share.
@@ -1086,7 +1069,7 @@ public fun launch_key_for_testing<Meme>(): LaunchKey<Meme> {
 #[test_only]
 public fun reassign_metadata_cap_for_testing<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     admin: &AdminWitness<CreatorAdmin>,
     recipient: address,
     ctx: &mut TxContext,
@@ -1101,7 +1084,7 @@ public fun reassign_metadata_cap_for_testing<Meme, Quote>(
 #[test_only]
 public fun reassign_curve_fee_cap_for_testing<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     admin: &AdminWitness<CreatorAdmin>,
     recipient: address,
     ctx: &mut TxContext,
@@ -1198,13 +1181,18 @@ public fun sell_burn_bps_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): u
 }
 
 #[test_only]
+/// Returns Blast's and the creator's Meme fees, then Blast's and the creator's Quote fees.
 public fun fee_totals_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): (u64, u64, u64, u64) {
-    self.fee_ledger.totals_for_testing()
+    let (protocol_meme, protocol_quote, _) = self.protocol_fees.balances();
+
+    (protocol_meme, self.creator_meme_fees.value(), protocol_quote, self.creator_quote_fees.value())
 }
 
 #[test_only]
 public fun protocol_sui_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): u64 {
-    self.fee_ledger.protocol_sui_for_testing()
+    let (_, _, sui) = self.protocol_fees.balances();
+
+    sui
 }
 
 #[test_only]
@@ -1265,29 +1253,32 @@ public fun venue_for_testing<Meme, Quote>(self: &Launch<Meme, Quote>): TypeName 
 // === Imports ===
 
 use blast_admin::{
-    delayed_action::{Self, DelayedAction},
     blast_acl::AdminWitness,
+    delayed_action::{Self, DelayedAction},
+    package_version::PackageVersion
 };
 
 use blast_core::{
+    blast_domain::{CancelAdmin, CreatorAdmin},
+    blast_treasury::Treasury,
     bps::Bps,
     fee_split::FeeSplit,
     migration::{Self, Migration, VenueTicket},
-    owner_proof::{Self, OwnerProof}
+    owner_proof::{Self, OwnerProof},
+    payout,
+    protocol_fees::{Self, Ledger}
 };
 
 use blast_fun::{
     allocation::AllocationPlan,
-    blast_fun_domain::{CancelAdmin, CreatorAdmin},
+    blast_fun::{BLAST_FUN, package_witness},
     constants,
     creator_authority::{Self, BlastMetadataCap, CreatorRecipient, CurveFeeCap},
     curve,
     events,
-    fees::{Self, FeeLedger},
     launch_config::LaunchConfig,
     launch_ticket::{Self, LaunchTicket},
-    blast_fun::PackageVersion,
-    runtime_config::RuntimeConfig,
+    runtime_config::RuntimeConfig
 };
 
 use blast_partners::blast_partners::Partner;
@@ -1301,7 +1292,7 @@ use sui::{
     coin_registry::{Currency, MetadataCap},
     derived_object,
     dynamic_field,
-    sui::SUI,
+    sui::SUI
 };
 
 use fun dynamic_field::add as UID.add_dynamic_field;
@@ -1312,4 +1303,4 @@ use fun dynamic_field::exists as UID.has_dynamic_field;
 
 use fun dynamic_field::remove as UID.remove_dynamic_field;
 
-use fun pay as Balance.pay;
+use fun payout::pay as Balance.pay;

@@ -99,7 +99,7 @@ public fun prepare<Meme, Quote>(
 public fun migrate<Meme, Quote, CoinA, CoinB>(
     launch: &mut Launch<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<Meme>,
     venue_config: &VenueConfig,
@@ -107,7 +107,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     pools: &mut Pools,
     burn_manager: &mut BurnManager,
     registry: &mut VaultRegistry,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -119,7 +119,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     let tick_spacing = *venue_config.value(PoolTierKey<Meme>());
     let (tick_lower, tick_upper) = pool_creator::full_range_tick_range(tick_spacing);
     let (meme, quote, terms) = launch
-        .migrate(package_version, config, currency, ctx)
+        .migrate(package_version, config, currency, clock, ctx)
         .redeem(Venue());
 
     let meme_amount = meme.value();
@@ -179,7 +179,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
 public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
     cetus_config: &GlobalConfig,
@@ -209,7 +209,7 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
 public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
     cetus_config: &GlobalConfig,
@@ -245,7 +245,7 @@ public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
 public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     admin_witness: &AdminWitness<BuybackAdmin>,
     currency: &mut Currency<Meme>,
     cetus_config: &GlobalConfig,
@@ -304,7 +304,7 @@ fun is_coin_a_seed_side(
 /// Collects the position's fees, splits them through the vault, and adds the auto-LP share back.
 fun settle_fees<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
     cetus_config: &GlobalConfig,
@@ -330,7 +330,7 @@ fun settle_fees<Meme, Quote, CoinA, CoinB>(
 /// from `pool`, which must be the vault's own pool, and returns them as Meme and Quote.
 fun collect_position_fees<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     cetus_config: &GlobalConfig,
     burn_manager: &BurnManager,
     pool: &mut Pool<CoinA, CoinB>,
@@ -362,7 +362,7 @@ fun collect_position_fees<Meme, Quote, CoinA, CoinB>(
 /// Adds the waiting auto-LP balances to the auto-LP position in the vault's pool.
 fun compound<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     cetus_config: &GlobalConfig,
     pool: &mut Pool<CoinA, CoinB>,
     meme_is_a: bool,
@@ -391,7 +391,7 @@ fun compound<Meme, Quote, CoinA, CoinB>(
 /// either side is empty or would give zero liquidity.
 fun add_liquidity<A, B, Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     cetus_config: &GlobalConfig,
     pool: &mut Pool<A, B>,
     mut a: Balance<A>,
@@ -578,7 +578,7 @@ const EWrongCoinPair: vector<u8> = b"CoinA and CoinB must be exactly the launch'
 
 // === Imports ===
 
-use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion as VaultVersion};
+use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};
 
 use blast_core::{
     blast_domain::BuybackAdmin,
@@ -586,7 +586,7 @@ use blast_core::{
     migration::{Self, VenueTicket}
 };
 
-use blast_fun::{blast_fun::PackageVersion, launch::Launch, launch_config::LaunchConfig};
+use blast_fun::{blast_fun::BLAST_FUN, launch::Launch, launch_config::LaunchConfig};
 
 use blast_fun_migrators::{
     blast_events,

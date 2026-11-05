@@ -28,7 +28,7 @@ what the venues do and what each call needs.
 Calls also take objects from other packages:
 
 - Launchpad: the shared `launch::Launch` (`Launch<Meme, Quote>`, migrate only), the launchpad's
-  `blast_fun::blast_fun::PackageVersion`, and `launch_config::LaunchConfig` (migrate only). At
+  `package_version::PackageVersion<BLAST_FUN>` (typed by `blast_fun::blast_fun::BLAST_FUN`), and `launch_config::LaunchConfig` (migrate only). At
   creation the launcher also passes its owned `TreasuryCap<Meme>` to `prepare`.
 - Vault: `blast_vault_package::VaultRegistry` (migrate only), the vault package's
   `blast_admin::package_version::PackageVersion` (typed by `blast_vault_package::BLAST_VAULT_PACKAGE`),
@@ -46,7 +46,7 @@ sealed witnesses; only their own module constructs them. A venue's witness issue
 redeems its launches' migrations, keys its position inside the vault, and authorizes its fee
 collections. Blast admits each witness type twice: in `LaunchConfig` (so launches may start on it)
 and in the vault's `VaultRegistry` (so it may create vaults), which must also list the launchpad's
-`blast_fun::launch::PackageWitness` as the issuer of every launch's vault terms.
+`blast_fun::blast_fun::PackageWitness` as the issuer of every launch's vault terms.
 
 #### Who may call what
 
@@ -346,7 +346,7 @@ burn Quote. Every Meme bought is burned, or sent to `@0x0` under a fixed supply.
 | `delayed::DelayedApplied` | `settle_and_apply_fee_split` | keyed by `blast_vault::vault::FeeSplitKey` with the vault ID as `owner`: the previous and new split |
 
 `CetusPoolReserved` and the vault and core events are plain Sui events (not wrapped in an envelope);
-the launchpad's events are wrapped in `blast_fun::blast_events::Event`. Cetus and Bluefin emit their
+so are the launchpad's. Cetus and Bluefin emit their
 own pool, position, and swap events in the same transactions.
 
 ### Aborts
@@ -358,7 +358,7 @@ own pool, position, and swap events in the same transactions.
 | Bluefin prepare | `blast_fun_migrators::bluefin::EInvalidTier` | tick spacing 1..=400, fee rate 1..=20,000 |
 | Cetus migrate, collect, buyback | `blast_fun_migrators::cetus::EInvalidCoinOrder` (migrate), `blast_fun_migrators::cetus::EWrongCoinPair` | pass the pool's coin order; `CoinA` and `CoinB` must be the launch's Meme and Quote |
 | migrate | `sui::dynamic_field` code 1 reading the tier; 8 `blast_core::errors::EWrongVenue` in `blast_core::migration` | call the migrate of the venue the launch stores |
-| migrate | 14 `blast_fun::errors::EInvalidLaunchLifecycle`, 37 `blast_fun::errors::EPaused` (launchpad) | wait for `MigrationReady`; wait for Migrate to be unpaused |
+| migrate | 12 `blast_fun::errors::EInvalidLaunchLifecycle`, 25 `blast_admin::errors::EPaused` (`package_version`) | wait for `MigrationReady`; wait for Migrate to be unpaused |
 | migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedIssuer`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the launchpad's `PackageWitness` must be listed in `VaultRegistry`; the seed must give positive liquidity |
 | migrate | Cetus aborts when the pair's pool already exists or the tick spacing is no longer registered; Bluefin aborts on a wrong creation fee | the launch stays `MigrationReady`; pass the exact Bluefin fee |
 | collect, settle, buyback | `blast_fun_migrators::cetus::EPositionPoolMismatch`, `blast_fun_migrators::bluefin::EPositionPoolMismatch` | pass the vault's own pool |

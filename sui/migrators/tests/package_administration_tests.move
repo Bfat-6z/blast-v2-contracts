@@ -174,7 +174,7 @@ fun start(): AdminFixtureState {
     AdminFixtureState { scenario, package_version, package_admin }
 }
 
-fun upgrade_admin(): AdminWitness<UpgradeAdmin> {
+fun upgrade_admin(): AdminWitness<UpgradeAdmin<BLAST_FUN_MIGRATORS>> {
     blast_acl::witness_for_testing()
 }
 
@@ -190,7 +190,7 @@ fun foreign_receipt(self: &mut AdminFixtureState): UpgradeReceipt {
 fun wrap_with_foreign_package_cap(self: &mut AdminFixtureState) {
     package_version::init_for_testing(self.scenario.ctx());
     self.scenario.next_tx(PUBLISHER);
-    let bootstrap = self.scenario.take_from_sender<package_version::Publication>();
+    let bootstrap = self.scenario.take_from_sender<Publication>();
     let upgrade_cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), self.scenario.ctx());
 
     package_admin::wrap(bootstrap, upgrade_cap, self.scenario.ctx());
@@ -213,12 +213,10 @@ const DIGEST: vector<u8> = x"000000000000000000000000000000000000000000000000000
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminWitness};
-
-use blast_fun::blast_fun_domain::UpgradeAdmin;
+use blast_admin::{blast_acl::{Self, AdminWitness}, package_admin::UpgradeAdmin};
 
 use blast_fun_migrators::{
-    blast_fun_migrators::{Self as package_version, PackageVersion},
+    blast_fun_migrators::{Self as package_version, BLAST_FUN_MIGRATORS, PackageVersion, Publication},
     package_admin::{Self, PackageAdmin},
 };
 

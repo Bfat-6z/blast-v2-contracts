@@ -8,7 +8,7 @@
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
     Delayed, DelayedApplied, DelayedScheduled, Expected, Harness, Outcome, PUBLICATION_UPGRADE_NOTICE_MS, Proposal,
-    TEST_GENESIS_RECIPIENT, VaultStack, call, publish_stack, sui_dir,
+    TEST_GENESIS_RECIPIENT, VaultStack, call, launchpad_marker, launchpad_role, publish_stack, sui_dir,
 };
 use sui_types::{
     TypeTag,
@@ -30,10 +30,10 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     assert_treasury_publication(&h, stack.treasury)?;
     let code = stack.launchpad_code.clone();
     let (blast, publication) = (stack.launchpad, &stack.launchpad_publication);
-    assert!(publication.created(&h, "blast_fun", "PackageVersion").is_empty());
+    assert!(publication.created(&h, "package_version", "PackageVersion").is_empty());
     assert!(publication.created(&h, "package_admin", "PackageAdmin").is_empty());
     assert!(publication.created(&h, "package", "Publisher").is_empty());
-    let bootstrap = publication.created(&h, "blast_fun", "Publication")[0];
+    let bootstrap = publication.created(&h, "package_version", "Publication")[0];
     let cap = publication.created(&h, "package", "UpgradeCap")[0];
     assert_eq!(bcs::from_bytes::<UpgradeCap>(&h.contents(cap))?.version, 1);
     let config = publication.created(&h, "launch_config", "LaunchConfig")[0];
@@ -42,7 +42,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let mut b = ProgrammableTransactionBuilder::new();
     let bootstrap_arg = b.obj(h.owned(bootstrap))?;
     let cap_arg = b.obj(h.owned(foreign_cap))?;
-    call(&mut b, blast, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
+    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_marker(blast)?], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: admin, module: "upgrade_custody", code: 12 },
@@ -55,24 +55,24 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let runtime = publication.created(&h, "runtime_config", "RuntimeConfig")[0];
     let venue = parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?;
     let (version, custody) = h.wrap_launchpad(blast, publication, admin, admin_publication, core, parse_sui_type_tag("0x2::sui::SUI")?, venue.clone())?;
-    h.unpause(blast, "blast_fun_domain", admin, admin_publication, version, custody, [runtime, config], 7)?;
+    h.unpause_launchpad(blast, admin, admin_publication, version, custody, runtime, config, 7)?;
     h.shared(version, false);
     assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
     // Simulacrum resolves historical owned inputs; test_scenario covers repeated intake.
     assert!(h.sim.store().get_object(&bootstrap).is_none());
 
-    assert_delay_changes_use_the_old_notice(&mut h, blast, admin, admin_publication, version, config)?;
+    assert_delay_changes_use_the_old_notice(&mut h, blast, admin, core, admin_publication, version, config)?;
 
     // The vault package is released only after its venue notice is raised.
     let (vault, vault_publication) = stack.publish(&mut h, &sui_dir().join("vault"), &work)?;
     let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
     assert_vault_release_waits_for_the_notice(&mut h, admin, admin_publication, core, &vault_stack, venue)?;
-    let later = parse_sui_type_tag(&format!("{blast}::launch::PackageWitness"))?;
+    let later = parse_sui_type_tag(&format!("{blast}::blast_fun::PackageWitness"))?;
     assert_vault_admission_waits_the_raised_notice(&mut h, admin, admin_publication, core, &vault_stack, later)?;
 
     // A native upgrade is possible before wrapping, but its cap can never activate this lineage.
     let (unwrapped, publication) = h.publish(code.clone())?;
-    let bootstrap = publication.created(&h, "blast_fun", "Publication")[0];
+    let bootstrap = publication.created(&h, "package_version", "Publication")[0];
     let cap = publication.created(&h, "package", "UpgradeCap")[0];
     let config = publication.created(&h, "launch_config", "LaunchConfig")[0];
     let digest = MovePackage::compute_digest_for_modules_and_deps(&code.modules, &code.dependencies, true);
@@ -87,12 +87,12 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let upgraded = h.execute(b.finish())?;
     upgraded.assert_success();
     assert_eq!(bcs::from_bytes::<UpgradeCap>(&h.contents(cap))?.version, 2);
-    assert!(upgraded.created(&h, "blast_fun", "PackageVersion").is_empty());
-    assert!(upgraded.created(&h, "blast_fun", "Publication").is_empty());
+    assert!(upgraded.created(&h, "package_version", "PackageVersion").is_empty());
+    assert!(upgraded.created(&h, "package_version", "Publication").is_empty());
     let mut b = ProgrammableTransactionBuilder::new();
     let bootstrap_arg = b.obj(h.owned(bootstrap))?;
     let cap_arg = b.obj(h.owned(cap))?;
-    call(&mut b, unwrapped, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
+    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_marker(unwrapped)?], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: admin, module: "upgrade_custody", code: 12 },
@@ -162,12 +162,13 @@ fn assert_vault_admission_waits_the_raised_notice(h: &mut Harness, admin: Object
 }
 
 /// A delay-only proposal waits the old notice; a failed apply-then-schedule PTB rolls back both fields.
-fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, admin: ObjectID,
+fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, admin: ObjectID, core: ObjectID,
     publication: &Outcome, version: ObjectID, config: ObjectID,
 ) -> Result<()> {
-    let cap = h.configuration_admin(admin, publication, blast, "blast_fun_domain", &["FeeAdmin", "CancelAdmin"])?;
+    let fee_role = launchpad_role(admin, core, blast, "FeeAdmin")?;
+    let cap = h.configuration_admin(admin, publication, core, "blast_domain", &["FeeAdmin", "CancelAdmin"])?;
     let mut b = ProgrammableTransactionBuilder::new();
-    let fee = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "FeeAdmin")?;
+    let fee = h.sign_in_as(&mut b, admin, publication, cap, fee_role.clone())?;
     let version_arg = b.obj(h.shared(version, false))?;
     let config_arg = b.obj(h.shared(config, true))?;
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
@@ -189,7 +190,7 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
         let version_arg = b.obj(h.shared(version, false))?;
         let config_arg = b.obj(h.shared(config, true))?;
         let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        let fee = h.configuration_witness(&mut b, admin, publication, cap, blast, "blast_fun_domain", "FeeAdmin")?;
+        let fee = h.sign_in_as(&mut b, admin, publication, cap, fee_role.clone())?;
         call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
         let value = b.pure(123u64)?;
         let next_delay = b.pure(0u64)?;
@@ -214,9 +215,9 @@ fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, adm
     let clock = b.obj(h.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
     call(&mut b, blast, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
     h.execute(b.finish())?.assert_success();
-    let forbidden = h.configuration_admin(admin, publication, blast, "blast_fun_domain", &["TreasuryAdmin"])?;
+    let forbidden = h.configuration_admin(admin, publication, core, "blast_domain", &["TreasuryAdmin"])?;
     let mut b = ProgrammableTransactionBuilder::new();
-    h.configuration_witness(&mut b, admin, publication, forbidden, blast, "blast_fun_domain", "FeeAdmin")?;
+    h.sign_in_as(&mut b, admin, publication, forbidden, fee_role)?;
     h.assert_rolled_back(b.finish(), Expected::Abort { package: admin, module: "blast_acl", code: 5 }, &[forbidden], &[])?;
     Ok(())
 }

@@ -8,9 +8,10 @@ module blast_fun::allocation;
 
 // === Public Types ===
 
-/// One address paid at migration, with its shares of the Meme supply and the final Quote reserve.
-public struct Recipient has copy, drop, store {
-    destination: address,
+/// One recipient at migration, paid outright or vested, with its shares of the Meme supply and
+/// the final Quote reserve.
+public struct RecipientShare has copy, drop, store {
+    recipient: Recipient,
     meme_bps: Bps,
     quote_bps: Bps,
 }
@@ -23,7 +24,7 @@ public struct AllocationPlan has copy, drop, store {
     lp_quote_bps: Bps,
     protocol_meme_bps: Bps,
     protocol_quote_bps: Bps,
-    recipients: vector<Recipient>,
+    recipients: vector<RecipientShare>,
 }
 
 /// Blast's one-time Meme and Quote shares, accrued as protocol fees at migration.
@@ -34,10 +35,10 @@ public struct ProtocolAllocation has copy, drop, store {
 
 // === Public Functions ===
 
-public fun recipient(destination: address, meme_bps: Bps, quote_bps: Bps): Recipient {
-    assert!(destination != @0x0, blast_fun::errors::invalid_destination!());
-
-    Recipient { destination, meme_bps, quote_bps }
+/// A plan share: `recipient` (`blast_core::payout::recipient`, which rejects the zero address)
+/// receives `meme_bps` of the Meme supply and `quote_bps` of the final Quote reserve at migration.
+public fun recipient_share(recipient: Recipient, meme_bps: Bps, quote_bps: Bps): RecipientShare {
+    RecipientShare { recipient, meme_bps, quote_bps }
 }
 
 /// The curve needs positive Meme and the pool needs positive Meme and Quote shares.
@@ -46,7 +47,7 @@ public fun plan(
     curve_meme_bps: Bps,
     lp_meme_bps: Bps,
     lp_quote_bps: Bps,
-    recipients: vector<Recipient>,
+    recipients: vector<RecipientShare>,
 ): AllocationPlan {
     assert!(
         curve_meme_bps.value() > 0 && lp_meme_bps.value() > 0 && lp_quote_bps.value() > 0,
@@ -96,12 +97,12 @@ public(package) fun add_protocol(
     assert!(
         self.recipients.fold!(
             self.curve_meme_bps.value() + self.lp_meme_bps.value() + protocol.meme_bps.value(),
-            |sum, recipient| sum + recipient.meme_bps.value(),
-        ) == constants::basis_points_denominator!()
+            |sum, share| sum + share.meme_bps.value(),
+        ) == blast_core::constants::basis_points_denominator!()
             && self.recipients.fold!(
                 self.lp_quote_bps.value() + protocol.quote_bps.value(),
-                |sum, recipient| sum + recipient.quote_bps.value(),
-            ) == constants::basis_points_denominator!(),
+                |sum, share| sum + share.quote_bps.value(),
+            ) == blast_core::constants::basis_points_denominator!(),
         blast_fun::errors::invalid_shares!(),
     );
 
@@ -115,7 +116,7 @@ public(package) fun apportion_meme(
     supply: u64,
 ): (u64, u64, u64, vector<u64>) {
     let mut bps = vector[self.curve_meme_bps, self.lp_meme_bps, self.protocol_meme_bps];
-    bps.append(self.recipients.map_ref!(|recipient| recipient.meme_bps));
+    bps.append(self.recipients.map_ref!(|share| share.meme_bps));
     let amounts = bps::apportion(bps, supply, option::some(2));
     let recipients = vector::tabulate!(amounts.length() - 3, |i| amounts[i + 3]);
 
@@ -129,15 +130,16 @@ public(package) fun apportion_quote(
     reserve: u64,
 ): (u64, u64, vector<u64>) {
     let mut bps = vector[self.lp_quote_bps, self.protocol_quote_bps];
-    bps.append(self.recipients.map_ref!(|recipient| recipient.quote_bps));
+    bps.append(self.recipients.map_ref!(|share| share.quote_bps));
     let amounts = bps::apportion(bps, reserve, option::some(1));
     let recipients = vector::tabulate!(amounts.length() - 2, |i| amounts[i + 2]);
 
     (amounts[0], amounts[1], recipients)
 }
 
-public(package) fun destinations(self: &AllocationPlan): vector<address> {
-    self.recipients.map_ref!(|recipient| recipient.destination)
+/// The plan's payees, in plan order.
+public(package) fun payees(self: &AllocationPlan): vector<Recipient> {
+    self.recipients.map_ref!(|share| share.recipient)
 }
 
 // === Test-Only Functions ===
@@ -162,6 +164,6 @@ public fun add_protocol_for_testing(
 
 // === Imports ===
 
-use blast_core::bps::{Self, Bps};
+use blast_core::{bps::{Self, Bps}, payout::Recipient};
 
 use blast_fun::constants;

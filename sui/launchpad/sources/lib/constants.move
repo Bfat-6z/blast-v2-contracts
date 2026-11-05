@@ -6,6 +6,11 @@ module blast_fun::constants;
 
 // === Package Constants ===
 
+/// The package generation this bytecode serves.
+macro public(package) fun generation(): u64 {
+    1
+}
+
 /// Stops launch creation, finalization, and sharing.
 macro public(package) fun create_pause_bit(): u8 {
     1
@@ -28,10 +33,6 @@ macro public(package) fun valid_pause_bits(): u8 {
         | blast_fun::constants::migration_pause_bit!()
 }
 
-/// Denominator for protocol rates expressed in basis points.
-macro public(package) fun basis_points_denominator(): u64 {
-    10_000
-}
 
 /// Maximum recipients in an allocation plan.
 macro public(package) fun max_recipients(): u64 {
@@ -48,10 +49,6 @@ macro public(package) fun max_protocol_allocation_bps(): u64 {
     1_000
 }
 
-/// Maximum Blast share of each asset in a vault's LP fees.
-macro public(package) fun max_lp_fee_bps(): u64 {
-    3_000
-}
 
 /// Maximum Blast share of each launch trade fee; the creator receives the rest.
 macro public(package) fun max_protocol_fee_share_bps(): u64 {
@@ -78,11 +75,6 @@ macro public(package) fun max_opening_round_ms(): u64 {
     300_000
 }
 
-/// Maximum Meme symbol length in bytes. Venues copy the symbol into pool and position objects,
-/// which Sui caps in size.
-macro public(package) fun max_meme_symbol_length(): u64 {
-    32
-}
 
 /// Exact whole-token supply minted for every generated Meme currency.
 macro public(package) fun meme_total_supply_whole_tokens(): u64 {

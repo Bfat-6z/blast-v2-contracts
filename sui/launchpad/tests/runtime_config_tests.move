@@ -10,7 +10,6 @@ const PUBLISHER: address = @0xA11CE;
 
 const PROTOCOL_ADMIN: address = @0xAD;
 
-const TREASURY: address = @0x7EA5;
 
 const ANYONE: address = @0xB0B;
 
@@ -22,7 +21,7 @@ const NOTICE_MS: u64 = 172_800_000;
 /// Live-settings administration under each setter's own role, with a clock for the signer set.
 public struct ConfigFixture {
     scenario: Scenario,
-    package_version: PackageVersion,
+    package_version: PackageVersion<BLAST_FUN>,
     config: RuntimeConfig,
     clock: Clock,
 }
@@ -30,15 +29,14 @@ public struct ConfigFixture {
 // === Tests ===
 
 #[test]
-/// Package initialization admits no claim signer, splits trade fees 50/50, and uses the genesis
-/// treasury. Its only events are the primitives' creation records of the three delayed settings.
-fun package_init_uses_a_half_protocol_share_and_genesis_treasury_without_signer() {
-    let (events, signer_public_keys, protocol_fee_share_bps, treasury) = published_config();
+/// Package initialization admits no claim signer and splits trade fees 50/50. Its only events are
+/// the primitives' creation records of the two delayed settings.
+fun package_init_uses_a_half_protocol_share_without_signer() {
+    let (events, signer_public_keys, protocol_fee_share_bps) = published_config();
 
-    assert_eq!(events, 3);
+    assert_eq!(events, 2);
     assert!(signer_public_keys.is_empty());
     assert_eq!(protocol_fee_share_bps, 5_000);
-    assert_eq!(treasury, @blast_treasury);
 }
 
 // --- Protocol fee share ---
@@ -107,7 +105,7 @@ fun protocol_fee_share_checks_the_version_before_the_current_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.set_protocol_fee_share_for_testing(bps::new(0));
     });
@@ -274,7 +272,7 @@ fun claim_signer_checks_the_version_before_the_key_length() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         f.schedule_creator_claim_signer(x"00");
     });
@@ -397,70 +395,6 @@ fun the_signer_notice_follows_its_own_lifecycle() {
     fixture.end();
 }
 
-// --- Treasury ---
-
-#[test]
-fun admin_sets_the_treasury_and_it_emits_the_new_address() {
-    let mut fixture = start();
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_treasury_for_testing(TREASURY);
-
-        assert_eq!(f.config.treasury(), TREASURY);
-        assert_eq!(
-            bcs::to_bytes(&applied_one<TreasuryKey, address>()),
-            address_bytes(TREASURY),
-        );
-    });
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_treasury_for_testing(PUBLISHER);
-
-        assert_eq!(f.config.treasury(), PUBLISHER);
-        assert_eq!(
-            bcs::to_bytes(&applied_one<TreasuryKey, address>()),
-            address_bytes(PUBLISHER),
-        );
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_fun::errors::EInvalidDestination, location = blast_fun::runtime_config)]
-fun treasury_rejects_the_zero_address() {
-    let mut fixture = start();
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_treasury_for_testing(@0x0);
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
-fun treasury_rejects_the_current_address() {
-    let mut fixture = start();
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.set_treasury_for_testing(PUBLISHER);
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun treasury_checks_the_version_before_the_address() {
-    let mut fixture = start();
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_for_testing(2);
-
-        f.set_treasury_for_testing(@0x0);
-    });
-
-    fixture.end();
-}
-
 // === Test Helpers ===
 
 macro fun config_next_tx(
@@ -474,9 +408,8 @@ macro fun config_next_tx(
     $fn(fixture);
 }
 
-/// Package initialization's events, and its shared configuration's signer keys, protocol share,
-/// and treasury.
-fun published_config(): (u64, vector<vector<u8>>, u64, address) {
+/// Package initialization's events, and its shared configuration's signer keys and protocol share.
+fun published_config(): (u64, vector<vector<u8>>, u64) {
     let mut scenario = test_scenario::begin(PUBLISHER);
     runtime_config::init_for_testing(scenario.ctx());
 
@@ -484,11 +417,10 @@ fun published_config(): (u64, vector<vector<u8>>, u64, address) {
     let config = scenario.take_shared<RuntimeConfig>();
     let signer_public_keys = config.creator_claim_signers();
     let protocol_fee_share_bps = config.protocol_fee_share().value();
-    let treasury = config.treasury();
     test_scenario::return_shared(config);
     scenario.end();
 
-    (events, signer_public_keys, protocol_fee_share_bps, treasury)
+    (events, signer_public_keys, protocol_fee_share_bps)
 }
 
 /// Bootstraps the published configuration in one transaction at `now_ms`: admits
@@ -497,7 +429,7 @@ fun published_config(): (u64, vector<vector<u8>>, u64, address) {
 fun bootstrapped_signers(now_ms: u64): (vector<vector<u8>>, SetScheduled<ClaimSignerKey, vector<u8>>) {
     let mut scenario = test_scenario::begin(PUBLISHER);
     runtime_config::init_for_testing(scenario.ctx());
-    let package_version = package_version::new_for_testing(scenario.ctx());
+    let package_version = package_version::version_for_testing(scenario.ctx());
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(now_ms);
 
@@ -523,7 +455,7 @@ fun bootstrapped_signers(now_ms: u64): (vector<vector<u8>>, SetScheduled<ClaimSi
 /// A configuration with no claim signer and the signer notice raised to `NOTICE_MS`, at time zero.
 fun start(): ConfigFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    let package_version = package_version::new_for_testing(scenario.ctx());
+    let package_version = package_version::version_for_testing(scenario.ctx());
     let config = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
     let clock = clock::create_for_testing(scenario.ctx());
 
@@ -593,12 +525,6 @@ fun config_fill_creator_claim_signers(self: &mut ConfigFixture) {
     self.schedule_creator_claim_signer(fourth_signer_public_key());
 }
 
-fun config_set_treasury(self: &mut ConfigFixture, treasury: address) {
-    let admin_witness = blast_acl::witness_for_testing<TreasuryAdmin>();
-
-    self.config.set_treasury_for_testing(&self.package_version, &admin_witness, treasury, self.scenario.ctx());
-}
-
 fun config_end(self: ConfigFixture) {
     destroy(self);
 }
@@ -629,11 +555,6 @@ fun fourth_signer_public_key(): vector<u8> {
 
 fun fifth_signer_public_key(): vector<u8> {
     x"5555555555555555555555555555555555555555555555555555555555555555"
-}
-
-/// Serializes one address constant by value, so no test borrows a constant in place.
-fun address_bytes(value: address): vector<u8> {
-    bcs::to_bytes(&value)
 }
 
 /// The signer set's admission and notice proposals in this transaction, in order.
@@ -679,14 +600,14 @@ use blast_admin::{
     blast_acl::{Self, AdminWitness},
     delayed::DelayedApplied,
     delayed_set::{MemberRemoved, SetApplied, SetCancelled, SetScheduled},
+    package_version::PackageVersion
 };
 
-use blast_core::bps::{Self, Bps};
+use blast_core::{blast_domain::{CancelAdmin, ClaimSignerAdmin, FeeAdmin}, bps::{Self, Bps}};
 
 use blast_fun::{
-    blast_fun_domain::{CancelAdmin, ClaimSignerAdmin, FeeAdmin, TreasuryAdmin},
-    blast_fun::{Self as package_version, PackageVersion},
-    runtime_config::{Self, ClaimSignerKey, ProtocolFeeShareKey, RuntimeConfig, TreasuryKey},
+    blast_fun::{Self as package_version, BLAST_FUN},
+    runtime_config::{Self, ClaimSignerKey, ProtocolFeeShareKey, RuntimeConfig},
 };
 
 use std::{bcs, unit_test::{assert_eq, destroy}};
@@ -716,5 +637,3 @@ use fun config_schedule_creator_claim_signer as ConfigFixture.schedule_creator_c
 use fun config_schedule_creator_claim_signer_delay as ConfigFixture.schedule_creator_claim_signer_delay;
 
 use fun config_set_protocol_fee_share as ConfigFixture.set_protocol_fee_share_for_testing;
-
-use fun config_set_treasury as ConfigFixture.set_treasury_for_testing;

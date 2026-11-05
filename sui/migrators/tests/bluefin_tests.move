@@ -24,33 +24,33 @@ public struct OtherVenue() has drop;
 
 #[test]
 fun prepare_issues_a_bluefin_ticket_at_the_smallest_tier() {
-    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
 
     let launch_id = f.open_bluefin_launch(1, 1);
 
     f.next_tx(launch_fixture::buyer());
     let launch = f.take_launch<BLUEFIN_TESTS, QUOTE>(launch_id);
-    assert_eq!(launch.venue_for_testing(), type_name::with_original_ids<bluefin::Venue>());
+    assert_eq!(launch.venue_for_testing(), type_name::with_original_ids<Venue>());
     test_scenario::return_shared(launch);
     f.end();
 }
 
 #[test]
 fun prepare_accepts_the_largest_bluefin_tier() {
-    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
 
     let launch_id = f.open_bluefin_launch(400, 20_000);
 
     f.next_tx(launch_fixture::buyer());
     let launch = f.take_launch<BLUEFIN_TESTS, QUOTE>(launch_id);
-    assert_eq!(launch.venue_for_testing(), type_name::with_original_ids<bluefin::Venue>());
+    assert_eq!(launch.venue_for_testing(), type_name::with_original_ids<Venue>());
     test_scenario::return_shared(launch);
     f.end();
 }
 
 #[test]
 fun prepare_records_the_pairs_tier_in_one_event() {
-    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
     let treasury_cap = coin::create_treasury_cap_for_testing<BLUEFIN_TESTS>(f.ctx());
 
     let venue = f.prepare<QUOTE>(&treasury_cap, 60, 2_500).redeem_ticket();
@@ -62,7 +62,7 @@ fun prepare_records_the_pairs_tier_in_one_event() {
     expected.append(bcs::to_bytes(&60u32));
     expected.append(bcs::to_bytes(&2_500u64));
     assert_eq!(bcs::to_bytes(&recorded[0]), expected);
-    assert_eq!(venue, type_name::with_original_ids<bluefin::Venue>());
+    assert_eq!(venue, type_name::with_original_ids<Venue>());
     destroy(treasury_cap);
     f.end();
 }
@@ -72,7 +72,7 @@ fun prepare_records_the_pairs_tier_in_one_event() {
     location = sui::dynamic_field,
 )]
 fun prepare_records_one_tier_per_coin() {
-    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
     let treasury_cap = coin::create_treasury_cap_for_testing<BLUEFIN_TESTS>(f.ctx());
     let _ticket = f.prepare<QUOTE>(&treasury_cap, 200, 10_000);
     f.next_tx(launch_fixture::buyer());
@@ -119,7 +119,7 @@ fun prepare_rejects_a_fee_rate_above_the_bluefin_bound() {
     location = blast_admin::operational_version,
 )]
 fun prepare_checks_the_migrators_generation_before_the_tier() {
-    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
     f.migrators_version_mut().set_for_testing(2);
     let treasury_cap = coin::create_treasury_cap_for_testing<BLUEFIN_TESTS>(f.ctx());
 
@@ -145,7 +145,7 @@ fun a_bluefin_ticket_starts_no_launch_until_the_policy_admits_bluefin() {
     location = blast_fun::launch_config,
 )]
 fun a_bluefin_ticket_starts_a_launch_only_in_an_allowed_quote() {
-    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
     let (ticket, treasury_cap) = f.new_ticket(
         test_utils::create_one_time_witness<BLUEFIN_TESTS>(),
         false,
@@ -162,16 +162,16 @@ fun a_bluefin_ticket_starts_a_launch_only_in_an_allowed_quote() {
     location = blast_core::migration,
 )]
 fun a_launch_prepared_at_bluefin_hands_off_only_to_bluefin() {
-    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
     let launch_id = f.open_bluefin_launch(200, 10_000);
     destroy(f.graduate<BLUEFIN_TESTS, QUOTE>(launch_id));
 
     f.next_tx(launch_fixture::buyer());
     let mut launch = f.take_launch<BLUEFIN_TESTS, QUOTE>(launch_id);
     let mut currency = f.take_currency<BLUEFIN_TESTS>();
-    let (version, config, _, _, _, ctx) = f.migration_inputs();
+    let (version, config, _, _, _, clock, ctx) = f.migration_inputs();
     let (_meme, _quote, _terms) = launch
-        .migrate(version, config, &mut currency, ctx)
+        .migrate(version, config, &mut currency, clock, ctx)
         .redeem(OtherVenue());
 
     abort EUnexpectedSuccess
@@ -181,7 +181,7 @@ fun a_launch_prepared_at_bluefin_hands_off_only_to_bluefin() {
 
 /// Prepares a fresh coin at an out-of-bounds tier; preparation must abort.
 fun prepare_rejected_tier(tick_spacing: u32, fee_rate: u64) {
-    let mut f = launch_fixture::start<QUOTE, bluefin::Venue>();
+    let mut f = launch_fixture::start<QUOTE, Venue>();
     let treasury_cap = coin::create_treasury_cap_for_testing<BLUEFIN_TESTS>(f.ctx());
 
     let _ticket = f.prepare<QUOTE>(&treasury_cap, tick_spacing, fee_rate);
@@ -235,7 +235,7 @@ use blast_core::{bps, fee_split::{Self, FeeSplit}, migration::VenueTicket};
 
 use blast_fun_migrators::{
     blast_events::BluefinPoolTierRecorded,
-    bluefin,
+    bluefin::{Self, Venue},
     launch_fixture::{Self, LaunchFixture}
 };
 

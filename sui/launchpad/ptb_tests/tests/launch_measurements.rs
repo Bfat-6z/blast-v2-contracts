@@ -149,7 +149,6 @@ struct Opened {
 struct LaunchCreated {
     _launch_id: ObjectID,
     _ticket_id: ObjectID,
-    _quote: String,
     venue: String,
     lp_fee_split: FeeSplit,
     _virtual_quote: u64,
@@ -161,7 +160,8 @@ struct LaunchCreated {
     _lp_quote_bps: u64,
     protocol_meme_bps: u64,
     protocol_quote_bps: u64,
-    plan_recipients: Vec<(SuiAddress, u64, u64)>,
+    /// Each recipient's payee (destination and optional vesting terms) and its two shares.
+    plan_recipients: Vec<((SuiAddress, Option<(u64, u64, u64)>), u64, u64)>,
     opening_round_ms: u64,
     _creation_fee: u64,
     _partner_id: Option<ObjectID>,
@@ -207,7 +207,7 @@ impl World {
         let launch_registry = h.derived_registry(published, "launch", "LaunchRegistry")?;
         let (adapter, _) = stack.publish(&mut h, &fixture.join("adapter"), &work)?;
         let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
-        h.unpause(blast, "blast_fun_domain", admin, admin_published, version, custody, [runtime, config], 7)?;
+        h.unpause_launchpad(blast, admin, admin_published, version, custody, runtime, config, 7)?;
         let mut templates = Vec::new();
         for decimals in [6u8, 9] {
             templates.push((decimals, build(&generate_template(&work, decimals)?, &stack.linked(), &work)?));
@@ -242,7 +242,7 @@ impl World {
         // setters below take; the cap then signs in once per role.
         let mut roles = Vec::new();
         for role in ["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin"] {
-            roles.push(parse_sui_type_tag(&format!("{blast}::blast_fun_domain::{role}"))?);
+            roles.push(parse_sui_type_tag(&format!("{core}::blast_domain::{role}"))?);
         }
         let mut builder = ProgrammableTransactionBuilder::new();
         let acl_arg = builder.obj(w.h.shared(acl, true))?;
@@ -302,7 +302,7 @@ impl World {
         let over = Shape::maximum(MAX_PLAN_RECIPIENTS + 1);
         let pt = self.open(&ticket, over)?;
         // `blast_fun::errors::recipient_capacity_reached`.
-        let rejected = Expected::Abort { package: self.blast, module: "allocation", code: 7 };
+        let rejected = Expected::Abort { package: self.blast, module: "allocation", code: 6 };
         let sender = self.h.sender;
         self.h.assert_rolled_back(pt, rejected, &[ticket.ticket, ticket.treasury_cap, ticket.currency], &[sender])?;
         let outcome = self.last_outcome()?;
@@ -573,15 +573,18 @@ impl World {
         let mut recipients = Vec::new();
         for i in 0..plan_recipients {
             let destination = builder.pure(SuiAddress::from(address(&[0xC1, i as u8])))?;
+            let vesting_terms = parse_sui_type_tag(&format!("{}::payout::VestingTerms", self.core))?;
+            let outright = call(builder, sui_types::MOVE_STDLIB_PACKAGE_ID, "option", "none", vec![vesting_terms], vec![]);
+            let payee = call(builder, self.core, "payout", "recipient", vec![], vec![destination, outright]);
             let meme_bps = self.bps(builder, meme[i + 1])?;
             let quote_bps = self.bps(builder, quote[i + 1])?;
-            recipients.push(call(builder, self.blast, "allocation", "recipient", vec![], vec![
-                destination,
+            recipients.push(call(builder, self.blast, "allocation", "recipient_share", vec![], vec![
+                payee,
                 meme_bps,
                 quote_bps,
             ]));
         }
-        let recipients = builder.command(Command::MakeMoveVec(Some(self.allocation_type("Recipient")?), recipients));
+        let recipients = builder.command(Command::MakeMoveVec(Some(self.allocation_type("RecipientShare")?), recipients));
         let curve_meme_bps = self.bps(builder, CURVE_BPS)?;
         let lp_meme_bps = self.bps(builder, meme[0])?;
         let lp_quote_bps = self.bps(builder, quote[0])?;
@@ -848,12 +851,9 @@ fn distinct_weights(count: usize, total: u64) -> Vec<u64> {
     weights
 }
 
-/// An event's payload name, looking through the Blast envelope.
+/// An event's type name; Blast packages emit their payloads directly.
 fn payload_name(event: &sui_types::event::Event) -> String {
-    match &event.type_.type_params[..] {
-        [TypeTag::Struct(payload)] if event.type_.module.as_str() == "blast_events" => payload.name.to_string(),
-        _ => event.type_.name.to_string(),
-    }
+    event.type_.name.to_string()
 }
 
 fn sui_version() -> Result<String> {

@@ -5,15 +5,19 @@ creator authority, and venue-neutral migration handoff. It imports no venue
 package; adapters compose with it through a programmable transaction block.
 
 Administration is not implemented here. `blast_admin` owns the singleton Blast
-ACL and the operational-generation and package-custody primitives; this package
-declares one role type per administrator concern in `blast_fun_domain`
-([ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)),
-and Migrators takes the same roles. That package keeps its own generation and
-`PackageAdmin`.
+ACL and the generic `package_version::PackageVersion<BLAST_FUN>` and
+`package_admin::PackageAdmin<BLAST_FUN>`, with their package-scoped
+`UpgradeAdmin`, `PauseAdmin`, `UnpauseAdmin` and `CancelAdmin` roles; product
+roles are `blast_core::blast_domain`'s
+([ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)).
+This package's marker module owns `PackageWitness`, the one witness it pins at
+publication and passes to every sealed call, and `launch_config::unpause`
+releases pause bits once every launchpad notice is guarded. Blast's fees go to `blast_core::blast_treasury::Treasury` through the
+core protocol-fee ledger each launch holds.
 
 A governed upgrade is one transaction: authorize the digest, run the native
-Upgrade command, then call `package_admin::commit_upgrade_and_advance`, which
-commits the receipt to the same sealed cap and advances the operational
+Upgrade command, then call `blast_admin::package_admin::commit_upgrade_and_advance`,
+which commits the receipt to the same sealed cap and advances the operational
 generation. There is no separate activation step.
 
 Use these sources instead of a duplicated module inventory:

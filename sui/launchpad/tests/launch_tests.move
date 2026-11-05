@@ -41,8 +41,6 @@ const VIRTUAL_QUOTE: u64 = 5_000_000;
 
 const MIGRATION_QUOTE_TARGET: u64 = 25_000_000;
 
-/// A Meme symbol exactly at the 32-byte launch intake bound.
-const MAX_LENGTH_SYMBOL: vector<u8> = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
 
 const QUOTE_FEE_BPS: u64 = 100;
 
@@ -71,6 +69,9 @@ const EXPECTED_POOL_MEME: u64 = 200_000_000__000_000_000;
 /// Blast's share of `MIGRATION_QUOTE_TARGET`.
 const EXPECTED_PROTOCOL_QUOTE: u64 = 625_000;
 
+/// The core treasury's applied notice for a destination change.
+const TREASURY_NOTICE_MS: u64 = 48 * 60 * 60 * 1_000;
+
 // === Test-Only Types ===
 
 /// This module's one-time witness stands in for a generated package's.
@@ -97,10 +98,11 @@ public struct CapProposal has copy, drop {
 
 public struct LaunchFixture {
     scenario: Scenario,
-    package_version: PackageVersion,
+    package_version: PackageVersion<BLAST_FUN>,
     registry: LaunchRegistry,
-    config: launch_config::LaunchConfig,
-    runtime_config: runtime_config::RuntimeConfig,
+    config: LaunchConfig,
+    runtime_config: RuntimeConfig,
+    treasury: Treasury,
     clock: Clock,
 }
 
@@ -177,7 +179,7 @@ fun security_curve_fee_cap_replacement_exact_ready() {
         launch.apply_curve_fee_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         let cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::CurveFeeCapReassigned>()),
+            bcs::to_bytes(&collect_one<CurveFeeCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, BOB)
         );
         launch.put_back();
@@ -201,7 +203,7 @@ fun security_curve_fee_cap_cancelled() {
         f.clock.set_for_testing(172_801_234);
         launch.cancel_curve_fee_cap_reassignment(
             &f.package_version,
-            &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>()
+            &blast_acl::witness_for_testing<CancelAdmin>()
         );
         launch.apply_curve_fee_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         launch.put_back();
@@ -237,7 +239,7 @@ fun security_curve_fee_cap_stale_schedule() {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         f.clock.set_for_testing(1234);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         launch.schedule_curve_fee_cap_reassignment(
             &f.package_version,
             &creator_admin(),
@@ -263,7 +265,7 @@ fun security_curve_fee_cap_stale_apply() {
             &f.clock
         );
         f.clock.set_for_testing(172_801_234);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         launch.apply_curve_fee_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         launch.put_back();
     });
@@ -284,10 +286,10 @@ fun security_curve_fee_cap_stale_cancel() {
             &f.clock
         );
         f.clock.set_for_testing(172_801_234);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         launch.cancel_curve_fee_cap_reassignment(
             &f.package_version,
-            &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>()
+            &blast_acl::witness_for_testing<CancelAdmin>()
         );
         launch.put_back();
     });
@@ -311,7 +313,7 @@ fun security_curve_fee_cap_exact_ready() {
         launch.apply_curve_fee_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         let cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::CurveFeeCapReassigned>()),
+            bcs::to_bytes(&collect_one<CurveFeeCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, NEW_CREATOR)
         );
         launch.put_back();
@@ -336,7 +338,7 @@ fun security_curve_fee_cap_after_ready() {
         launch.apply_curve_fee_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         let cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::CurveFeeCapReassigned>()),
+            bcs::to_bytes(&collect_one<CurveFeeCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, NEW_CREATOR)
         );
         launch.put_back();
@@ -360,7 +362,7 @@ fun security_curve_fee_cap_cancel_reschedule() {
         f.clock.set_for_testing(172_801_234);
         launch.cancel_curve_fee_cap_reassignment(
             &f.package_version,
-            &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>()
+            &blast_acl::witness_for_testing<CancelAdmin>()
         );
         launch.schedule_curve_fee_cap_reassignment(
             &f.package_version,
@@ -372,7 +374,7 @@ fun security_curve_fee_cap_cancel_reschedule() {
         launch.apply_curve_fee_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         let cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::CurveFeeCapReassigned>()),
+            bcs::to_bytes(&collect_one<CurveFeeCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, BOB)
         );
         launch.put_back();
@@ -451,7 +453,7 @@ fun security_metadata_cap_replacement_exact_ready() {
         launch.apply_metadata_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         let cap_id = launch.blast_metadata_cap_id_for_testing().destroy_some();
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::MetadataCapReassigned>()),
+            bcs::to_bytes(&collect_one<MetadataCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, BOB)
         );
         launch.put_back();
@@ -475,7 +477,7 @@ fun security_metadata_cap_cancelled() {
         f.clock.set_for_testing(172_801_234);
         launch.cancel_metadata_cap_reassignment(
             &f.package_version,
-            &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>()
+            &blast_acl::witness_for_testing<CancelAdmin>()
         );
         launch.apply_metadata_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         launch.put_back();
@@ -511,7 +513,7 @@ fun security_metadata_cap_stale_schedule() {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         f.clock.set_for_testing(1234);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         launch.schedule_metadata_cap_reassignment(
             &f.package_version,
             &creator_admin(),
@@ -537,7 +539,7 @@ fun security_metadata_cap_stale_apply() {
             &f.clock
         );
         f.clock.set_for_testing(172_801_234);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         launch.apply_metadata_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         launch.put_back();
     });
@@ -558,10 +560,10 @@ fun security_metadata_cap_stale_cancel() {
             &f.clock
         );
         f.clock.set_for_testing(172_801_234);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         launch.cancel_metadata_cap_reassignment(
             &f.package_version,
-            &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>()
+            &blast_acl::witness_for_testing<CancelAdmin>()
         );
         launch.put_back();
     });
@@ -585,7 +587,7 @@ fun security_metadata_cap_exact_ready() {
         launch.apply_metadata_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         let cap_id = launch.blast_metadata_cap_id_for_testing().destroy_some();
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::MetadataCapReassigned>()),
+            bcs::to_bytes(&collect_one<MetadataCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, NEW_CREATOR)
         );
         launch.put_back();
@@ -610,7 +612,7 @@ fun security_metadata_cap_after_ready() {
         launch.apply_metadata_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         let cap_id = launch.blast_metadata_cap_id_for_testing().destroy_some();
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::MetadataCapReassigned>()),
+            bcs::to_bytes(&collect_one<MetadataCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, NEW_CREATOR)
         );
         launch.put_back();
@@ -634,7 +636,7 @@ fun security_metadata_cap_cancel_reschedule() {
         f.clock.set_for_testing(172_801_234);
         launch.cancel_metadata_cap_reassignment(
             &f.package_version,
-            &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>()
+            &blast_acl::witness_for_testing<CancelAdmin>()
         );
         launch.schedule_metadata_cap_reassignment(
             &f.package_version,
@@ -646,7 +648,7 @@ fun security_metadata_cap_cancel_reschedule() {
         launch.apply_metadata_cap_reassignment(&f.package_version, &f.clock, f.ctx!());
         let cap_id = launch.blast_metadata_cap_id_for_testing().destroy_some();
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::MetadataCapReassigned>()),
+            bcs::to_bytes(&collect_one<MetadataCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, BOB)
         );
         launch.put_back();
@@ -654,91 +656,75 @@ fun security_metadata_cap_cancel_reschedule() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[test, expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun security_pause_blocks_new() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let ticket = f.new_ticket(CREATOR);
-        f
-            .package_version
-            .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 1);
+        f.pause(1);
         destroy(f.start_launch<TEST_QUOTE, _>(ticket, TestVenue()));
     });
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[test, expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun security_partial_unpause_keeps_new_paused() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let ticket = f.new_ticket(CREATOR);
-        f
-            .package_version
-            .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
-        f
-            .package_version
-            .clear_pause_bits(2);
+        f.pause(7);
+        f.clear_pause_bits(2);
         destroy(f.start_launch<TEST_QUOTE, _>(ticket, TestVenue()));
     });
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[test, expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun security_pause_blocks_finalize() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let ticket = f.new_ticket(CREATOR);
         let initializer = f.configured_initializer(ticket);
-        f
-            .package_version
-            .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 1);
+        f.pause(1);
         destroy(f.finalize_launch(initializer));
     });
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[test, expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun security_pause_blocks_share() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
-        f
-            .package_version
-            .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 1);
+        f.pause(1);
         f.share_launch(launch);
     });
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[test, expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun security_pause_blocks_migrate() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         f.graduate(&mut launch);
-        f
-            .package_version
-            .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 4);
+        f.pause(4);
         f.migrate(&mut launch);
         launch.put_back();
     });
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[test, expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun security_partial_unpause_keeps_migrate_paused() {
     let mut fixture = start();
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         f.graduate(&mut launch);
-        f
-            .package_version
-            .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
-        f
-            .package_version
-            .clear_pause_bits(2);
+        f.pause(7);
+        f.clear_pause_bits(2);
         f.migrate(&mut launch);
         launch.put_back();
     });
@@ -785,9 +771,7 @@ fun security_old_creator_claims_during_notice_and_new_cap_gets_only_remaining_fe
         let (_, expected_meme, _, expected_quote) = launch.fee_totals_for_testing();
         assert!(expected_meme > 0 && expected_quote > 0);
         // The exit remains usable even with every pause bit set.
-        f
-            .package_version
-            .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
+        f.pause(7);
         let (meme, quote) = launch.claim_creator_fees(&f.package_version, &cap, f.ctx!());
         assert_eq!(meme.value(), expected_meme);
         assert_eq!(quote.value(), expected_quote);
@@ -807,9 +791,7 @@ fun security_fully_paused_creator_caps_can_still_be_claimed() {
     fixture.next_tx!(CREATOR, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
-        f
-            .package_version
-            .pause(&blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(), 7);
+        f.pause(7);
         let (fee, metadata) = f.claim(&mut launch);
         assert_eq!(launch.curve_fee_cap_id_for_testing(), option::some(object::id(&fee)));
         assert_eq!(launch.blast_metadata_cap_id_for_testing(), option::some(object::id(&metadata)));
@@ -867,17 +849,12 @@ fun security_metadata_authority_stays_live_until_reassignment() {
 
 
 #[test]
-#[expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun trading_pause_blocks_buy_before_coin_validation() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f
-            .package_version
-            .pause(
-                &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(),
-                constants::trading_pause_bit!()
-            );
+        f.pause(constants::trading_pause_bit!());
         let (meme, refund) = f.buy(&mut launch, 0, 0);
         destroy(meme);
         destroy(refund);
@@ -888,17 +865,12 @@ fun trading_pause_blocks_buy_before_coin_validation() {
 
 
 #[test]
-#[expected_failure(abort_code = blast_fun::errors::EPaused, location = blast_fun::blast_fun)]
+#[expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun trading_pause_blocks_sell_before_lifecycle_and_coin_validation() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f
-            .package_version
-            .pause(
-                &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(),
-                constants::trading_pause_bit!()
-            );
+        f.pause(constants::trading_pause_bit!());
         let meme = coin::zero<LAUNCH_TESTS>(f.ctx!());
         let quote = launch.sell(&f.package_version, &f.runtime_config, meme, 0, f.ctx!());
         destroy(quote);
@@ -913,15 +885,8 @@ fun clearing_trading_restores_buy_and_sell_while_migration_stays_paused() {
     fixture.next_tx!(LAUNCHER, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
-        f
-            .package_version
-            .pause(
-                &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(),
-                constants::trading_pause_bit!() | constants::migration_pause_bit!()
-            );
-        f
-            .package_version
-            .clear_pause_bits(constants::trading_pause_bit!());
+        f.pause(constants::trading_pause_bit!() | constants::migration_pause_bit!());
+        f.clear_pause_bits(constants::trading_pause_bit!());
 
         let (meme, refund) = f.buy(&mut launch, 1_000_000, 1);
         assert!(meme.value() > 0);
@@ -952,7 +917,7 @@ fun finalize_snapshots_the_config_and_emits_launch_created() {
         );
 
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::LaunchCreated>()),
+            bcs::to_bytes(&collect_one<LaunchCreated<LAUNCH_TESTS, TEST_QUOTE>>()),
             launch_created_bytes(object::id(&launch), ticket_id),
         );
         assert_eq!(launch.sell_burn_bps_for_testing(), SELL_BURN_BPS);
@@ -1006,7 +971,7 @@ fun burn_only_ticket_keeps_supply_mode_authoritative_in_coin_registry() {
         let ticket = f.new_ticket_with_mode(CREATOR, true);
         let ticket_id = object::id(&ticket);
         let metadata_cap_id = ticket.metadata_cap_id_for_testing();
-        let ticket_created = collect_one<events::LaunchTicketCreated>();
+        let ticket_created = collect_one<LaunchTicketCreated<LAUNCH_TESTS>>();
         let launch = f.intake<TEST_QUOTE, _>(
             ticket,
             TestVenue(),
@@ -1335,63 +1300,6 @@ fun intake_rejects_a_ticket_whose_decimals_are_no_longer_allowed() {
     fixture.end();
 }
 
-#[test]
-fun intake_accepts_a_meme_symbol_at_the_length_bound() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket_with_symbol(MAX_LENGTH_SYMBOL);
-
-        destroy(f.intake<TEST_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_fun::errors::EMemeSymbolTooLong, location = blast_fun::launch)]
-fun intake_rejects_a_meme_symbol_over_the_length_bound() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket_with_symbol(over_length_symbol());
-
-        destroy(f.intake<TEST_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_fun::errors::EDecimalsNotAllowed, location = blast_fun::launch_config)]
-fun intake_checks_the_decimals_before_the_symbol_length() {
-    let mut fixture = start();
-
-    fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let ticket = f.new_ticket_with(CREATOR, false, 6, over_length_symbol());
-        let admin_witness = listing_admin();
-
-        f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, false);
-
-        destroy(f.intake<TEST_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
 #[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
 fun set_virtual_quote_rejects_a_stale_generation() {
     let mut fixture = start();
@@ -1399,7 +1307,7 @@ fun set_virtual_quote_rejects_a_stale_generation() {
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         initializer.set_virtual_quote(&f.package_version, 0);
         destroy(initializer);
@@ -1415,7 +1323,7 @@ fun set_graduation_target_rejects_a_stale_generation() {
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         initializer.set_graduation_target(&f.package_version, 0);
         destroy(initializer);
@@ -1431,7 +1339,7 @@ fun set_allocation_plan_rejects_a_stale_generation() {
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         initializer.set_allocation_plan(&f.package_version, default_plan());
         destroy(initializer);
@@ -1447,7 +1355,7 @@ fun set_lp_fee_split_rejects_a_stale_generation() {
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         initializer.set_lp_fee_split(&f.package_version, default_fee_split());
         destroy(initializer);
@@ -1463,7 +1371,7 @@ fun set_opening_round_rejects_a_stale_generation() {
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         initializer.set_opening_round(&f.package_version, 1);
         destroy(initializer);
@@ -1480,7 +1388,7 @@ fun set_partner_checks_the_version_before_partner_admission() {
         let partner = partners::new_for_testing(PARTNER, PARTNER_SHARE_BPS, f.ctx!());
         let ticket = f.new_ticket(CREATOR);
         let mut initializer = f.configured_initializer(ticket);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         initializer.set_partner(&f.package_version, &f.config, &partner, &f.clock);
         destroy(initializer);
@@ -1497,7 +1405,7 @@ fun finalize_checks_the_version_before_missing_settings() {
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
         let initializer = f.start_launch<TEST_QUOTE, _>(ticket, TestVenue());
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         destroy(f.finalize_launch(initializer));
     });
@@ -1512,28 +1420,9 @@ fun share_checks_the_version_before_already_shared_lifecycle() {
     fixture.next_tx!(LAUNCHER, |f| {
         let launch = f.new_launch_with(MIGRATION_QUOTE_TARGET, default_plan());
         let launch = f.open_launch(launch);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         launch.share(&f.package_version, &f.clock);
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
-fun intake_checks_the_version_before_the_symbol_length() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket_with_symbol(over_length_symbol());
-        f.package_version.set_for_testing(2);
-
-        destroy(f.intake<TEST_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
     });
 
     fixture.end();
@@ -1545,24 +1434,6 @@ fun launch_delegates_quote_admission_to_launch_config() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
-
-        destroy(f.intake<OTHER_QUOTE, _>(
-            ticket,
-            TestVenue(),
-            MIGRATION_QUOTE_TARGET,
-            default_plan(),
-        ));
-    });
-
-    fixture.end();
-}
-
-#[test, expected_failure(abort_code = blast_fun::errors::EQuoteNotAllowed, location = blast_fun::launch_config)]
-fun starting_checks_the_quote_before_finalize_checks_the_symbol() {
-    let mut fixture = start();
-
-    fixture.next_tx!(LAUNCHER, |f| {
-        let ticket = f.new_ticket_with_symbol(over_length_symbol());
 
         destroy(f.intake<OTHER_QUOTE, _>(
             ticket,
@@ -1737,7 +1608,7 @@ fun buy_before_share_emits_bought() {
         assert!(launch.public_start_ms_for_testing().is_none());
         launch.assert_lifecycle(true, false, false);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::Bought>()),
+            bcs::to_bytes(&collect_one<Bought<LAUNCH_TESTS, TEST_QUOTE>>()),
             u64_payload(
                 object::id(&launch),
                 vector[
@@ -1781,7 +1652,7 @@ fun buys_before_share_repeat_until_one_graduates_the_launch() {
         let (third, third_refund) = f.buy(&mut launch, 10_000_000, 1);
         let (_, real_quote, _, _) = launch.balances_for_testing();
 
-        assert_eq!(collect<events::Bought>().length(), 3);
+        assert_eq!(collect<Bought<LAUNCH_TESTS, TEST_QUOTE>>().length(), 3);
         assert_eq!(real_quote, MIGRATION_QUOTE_TARGET);
         assert_eq!(third_refund.value(), 10_000_000 - 5_252_526);
         launch.assert_lifecycle(false, true, false);
@@ -1865,7 +1736,7 @@ fun share_starts_public_trading_and_emits_launch_shared() {
         f.share_launch(launch);
 
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::LaunchShared>()),
+            bcs::to_bytes(&collect_one<LaunchShared<LAUNCH_TESTS, TEST_QUOTE>>()),
             u64_payload(launch_id, vector[250_000]),
         );
     });
@@ -1920,7 +1791,7 @@ fun buy_checks_the_version_first() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         let (meme, refund) = f.buy(&mut launch, 1_000, 0);
 
         destroy(meme);
@@ -1938,7 +1809,7 @@ fun cap_notice_and_recipient_proposals_are_recorded_by_the_primitive() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        let cancel_witness = blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>();
+        let cancel_witness = blast_acl::witness_for_testing<CancelAdmin>();
         let launch_id = object::id(&launch);
         f.clock.set_for_testing(10);
         launch.schedule_curve_fee_cap_delay(&f.package_version, &creator_admin(), 25, &f.clock);
@@ -2172,8 +2043,8 @@ fun policy_only_schedules_replace_recipients_and_preserve_the_creator_claim() {
 
         assert!(launch.curve_fee_cap_id_for_testing().is_none());
         assert!(launch.blast_metadata_cap_id_for_testing().is_none());
-        assert!(collect<events::CurveFeeCapReassigned>().is_empty());
-        assert!(collect<events::MetadataCapReassigned>().is_empty());
+        assert!(collect<CurveFeeCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>().is_empty());
+        assert!(collect<MetadataCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>().is_empty());
         let (curve, metadata) = f.claim(&mut launch);
         assert_eq!(launch.curve_fee_cap_id_for_testing(), option::some(object::id(&curve)));
         assert_eq!(launch.blast_metadata_cap_id_for_testing(), option::some(object::id(&metadata)));
@@ -2262,7 +2133,7 @@ fun curve_fee_cap_schedule_checks_version_before_zero_recipient() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         launch.schedule_curve_fee_cap_reassignment(
             &f.package_version,
             &creator_admin(),
@@ -2309,7 +2180,7 @@ fun metadata_cap_schedule_checks_version_before_zero_recipient() {
     let mut fixture = start();
     fixture.next_tx!(LAUNCHER, |f| {
         let mut launch = f.new_default_launch(CREATOR);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         launch.schedule_metadata_cap_reassignment(
             &f.package_version,
             &creator_admin(),
@@ -2359,7 +2230,7 @@ fun creator_cap_reassignment_schedules_and_cancellations_record_each_recipient()
         let mut launch = f.new_default_launch(CREATOR);
         let launch_id = object::id(&launch);
         let admin_witness = creator_admin();
-        let cancel_witness = blast_acl::witness_for_testing<blast_fun::blast_fun_domain::CancelAdmin>();
+        let cancel_witness = blast_acl::witness_for_testing<CancelAdmin>();
         f.clock.set_for_testing(1_234);
 
         launch.schedule_curve_fee_cap_reassignment(&f.package_version, &admin_witness, NEW_CREATOR, &f.clock);
@@ -2412,11 +2283,10 @@ fun designated_creator_claims_both_caps() {
         let mut launch = f.take_launch();
         let native_metadata_cap_id = launch.metadata_cap_id_for_testing();
         let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
-        let mut expected = bcs::to_bytes(&type_name::with_original_ids<LAUNCH_TESTS>());
-        expected.append(bcs::to_bytes(&object::id(&curve_fee_cap)));
+        let mut expected = bcs::to_bytes(&object::id(&curve_fee_cap));
         expected.append(bcs::to_bytes(&object::id(&metadata_cap)));
 
-        assert_eq!(bcs::to_bytes(&collect_one<events::CreatorCapsClaimed>()), expected);
+        assert_eq!(bcs::to_bytes(&collect_one<CreatorCapsClaimed<LAUNCH_TESTS, TEST_QUOTE>>()), expected);
         assert_eq!(launch.metadata_cap_id_for_testing(), native_metadata_cap_id);
         assert!(object::id(&metadata_cap) != native_metadata_cap_id);
         assert!(!launch.has_creator_authority_for_testing());
@@ -2433,7 +2303,7 @@ fun designated_creator_claims_both_caps() {
         assert!(reassigned_id != native_metadata_cap_id);
         assert_eq!(launch.metadata_cap_id_for_testing(), native_metadata_cap_id);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::MetadataCapReassigned>()),
+            bcs::to_bytes(&collect_one<MetadataCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), reassigned_id, NEW_CREATOR),
         );
 
@@ -2505,7 +2375,7 @@ fun creator_claim_checks_the_version_before_the_sender() {
     fixture.next_tx!(LAUNCHER, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
 
         destroy(curve_fee_cap);
@@ -2543,7 +2413,7 @@ fun admin_reassigns_claimed_creator_and_the_new_cap_claims_prior_fees() {
         let cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
         assert!(cap_id != retired_cap_id);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::CurveFeeCapReassigned>()),
+            bcs::to_bytes(&collect_one<CurveFeeCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, NEW_CREATOR),
         );
 
@@ -2614,7 +2484,7 @@ fun admin_reassigns_an_unclaimed_creator_and_removes_the_pending_claim() {
         let cap_id = launch.curve_fee_cap_id_for_testing().destroy_some();
         assert!(!launch.has_creator_authority_for_testing());
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::CurveFeeCapReassigned>()),
+            bcs::to_bytes(&collect_one<CurveFeeCapReassigned<LAUNCH_TESTS, TEST_QUOTE>>()),
             cap_reassigned_bytes(object::id(&launch), cap_id, NEW_CREATOR),
         );
 
@@ -2689,7 +2559,7 @@ fun metadata_cap_holder_updates_coin_metadata_through_the_launch() {
         expected.append(bcs::to_bytes(&b"Renamed Launch".to_string()));
         expected.append(bcs::to_bytes(&b"Normalized launch state".to_string()));
         expected.append(bcs::to_bytes(&b"".to_string()));
-        assert_eq!(bcs::to_bytes(&collect_one<events::MemeMetadataUpdated>()), expected);
+        assert_eq!(bcs::to_bytes(&collect_one<MemeMetadataUpdated<LAUNCH_TESTS, TEST_QUOTE>>()), expected);
 
         launch.set_description(
             &f.package_version,
@@ -2886,7 +2756,7 @@ fun buy_and_sell_move_exact_coins_accounting_and_payloads() {
         assert_eq!(meme.value(), meme_out_net);
         assert_eq!(refund.value(), 0);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::Bought>()),
+            bcs::to_bytes(&collect_one<Bought<LAUNCH_TESTS, TEST_QUOTE>>()),
             u64_payload(
                 launch_id,
                 vector[
@@ -2932,7 +2802,7 @@ fun buy_and_sell_move_exact_coins_accounting_and_payloads() {
 
         assert_eq!(quote_out.value(), quote_out_net);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::Sold>()),
+            bcs::to_bytes(&collect_one<Sold<LAUNCH_TESTS, TEST_QUOTE>>()),
             u64_payload(
                 launch_id,
                 vector[
@@ -2962,7 +2832,7 @@ fun buy_and_sell_move_exact_coins_accounting_and_payloads() {
         assert_eq!(meme_fees.value(), meme_fee + sell_meme_fee);
         assert_eq!(quote_fees.value(), quote_fee + sell_quote_fee);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::CreatorFeesClaimed>()),
+            bcs::to_bytes(&collect_one<CreatorFeesClaimed<LAUNCH_TESTS, TEST_QUOTE>>()),
             u64_payload(launch_id, vector[meme_fee + sell_meme_fee, quote_fee + sell_quote_fee]),
         );
         let (protocol_meme, creator_meme, protocol_quote, creator_quote) = launch
@@ -3006,7 +2876,7 @@ fun graduating_buy_refunds_the_excess_and_closes_the_curve() {
         assert_eq!(meme_reserve, EXPECTED_CURVE_MEME - meme_out_gross);
         launch.assert_lifecycle(false, true, false);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::Bought>()),
+            bcs::to_bytes(&collect_one<Bought<LAUNCH_TESTS, TEST_QUOTE>>()),
             u64_payload(
                 object::id(&launch),
                 vector[
@@ -3147,13 +3017,8 @@ fun anyone_claims_blasts_trade_fees_for_the_treasury() {
         assert!(protocol_quote > 0);
         assert!(creator_quote > protocol_quote);
 
-        f
-            .package_version
-            .pause(
-                &blast_acl::witness_for_testing<blast_fun::blast_fun_domain::PauseAdmin>(),
-                constants::valid_pause_bits!()
-            );
-        launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
+        f.pause(constants::valid_pause_bits!());
+        launch.claim_protocol_fees(&f.package_version, &f.treasury, f.ctx!());
 
         let (
             protocol_meme_left,
@@ -3167,10 +3032,11 @@ fun anyone_claims_blasts_trade_fees_for_the_treasury() {
         assert_eq!(protocol_quote_left, 0);
         assert_eq!(creator_quote_left, creator_quote);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::ProtocolFeesClaimed>()),
-            protocol_fees_claimed_bytes(
+            bcs::to_bytes(&collect_one<ProtocolFeesPaid<LAUNCH_TESTS, TEST_QUOTE>>()),
+            protocol_fees_paid_bytes(
                 object::id(&launch),
                 TREASURY,
+                option::none(),
                 vector[protocol_meme, protocol_quote, 0, 0, 0, 0],
             ),
         );
@@ -3205,23 +3071,24 @@ fun a_rotated_treasury_receives_every_later_claim() {
         let mut launch = f.open_launch(launch);
         let launch_id = object::id(&launch);
 
-        launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
-        f.runtime_config.set_treasury_for_testing(&f.package_version, &treasury_admin(), ALICE, f.ctx!());
+        launch.claim_protocol_fees(&f.package_version, &f.treasury, f.ctx!());
+        f.rotate_treasury(ALICE);
         let (meme, refund) = f.buy(&mut launch, 10_000_000, 1);
         let (protocol_meme, _, protocol_quote, _) = launch.fee_totals_for_testing();
-        launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
+        launch.claim_protocol_fees(&f.package_version, &f.treasury, f.ctx!());
 
-        let claims = collect<events::ProtocolFeesClaimed>();
+        let claims = collect<ProtocolFeesPaid<LAUNCH_TESTS, TEST_QUOTE>>();
         assert_eq!(claims.length(), 2);
         assert_eq!(
             bcs::to_bytes(&claims[0]),
-            protocol_fees_claimed_bytes(launch_id, TREASURY, vector[0, 0, CREATION_FEE, 0, 0, 0]),
+            protocol_fees_paid_bytes(launch_id, TREASURY, option::none(), vector[0, 0, CREATION_FEE, 0, 0, 0]),
         );
         assert_eq!(
             bcs::to_bytes(&claims[1]),
-            protocol_fees_claimed_bytes(
+            protocol_fees_paid_bytes(
                 launch_id,
                 ALICE,
+                option::none(),
                 vector[protocol_meme, protocol_quote, 0, 0, 0, 0],
             ),
         );
@@ -3260,18 +3127,19 @@ fun finalize_holds_the_creation_fee_for_blasts_claim() {
 
         assert_eq!(launch.protocol_sui_for_testing(), CREATION_FEE);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::LaunchCreated>()),
+            bcs::to_bytes(&collect_one<LaunchCreated<LAUNCH_TESTS, TEST_QUOTE>>()),
             launch_created_bytes_with(object::id(&launch), ticket_id, CREATION_FEE, option::none()),
         );
 
-        launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
+        launch.claim_protocol_fees(&f.package_version, &f.treasury, f.ctx!());
 
         assert_eq!(launch.protocol_sui_for_testing(), 0);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::ProtocolFeesClaimed>()),
-            protocol_fees_claimed_bytes(
+            bcs::to_bytes(&collect_one<ProtocolFeesPaid<LAUNCH_TESTS, TEST_QUOTE>>()),
+            protocol_fees_paid_bytes(
                 object::id(&launch),
                 TREASURY,
+                option::none(),
                 vector[0, 0, CREATION_FEE, 0, 0, 0],
             ),
         );
@@ -3320,7 +3188,7 @@ fun set_partner_binds_the_partner_at_creation() {
 
         assert_eq!(launch.protocol_sui_for_testing(), CREATION_FEE);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::LaunchCreated>()),
+            bcs::to_bytes(&collect_one<LaunchCreated<LAUNCH_TESTS, TEST_QUOTE>>()),
             launch_created_bytes_with(
                 object::id(&launch),
                 ticket_id,
@@ -3337,7 +3205,7 @@ fun set_partner_binds_the_partner_at_creation() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPartnerNotAccepted, location = blast_fun::launch_config)]
+#[test, expected_failure(abort_code = blast_partners::errors::EPartnerNotAccepted, location = blast_partners::partner_list)]
 fun set_partner_rejects_a_partner_launches_may_not_name() {
     let mut fixture = start();
 
@@ -3381,7 +3249,7 @@ fun claim_protocol_fees_with_partner_pays_the_partner_its_share() {
 
         launch.claim_protocol_fees_with_partner(
             &f.package_version,
-            &f.runtime_config,
+            &f.treasury,
             &partner,
             f.ctx!(),
         );
@@ -3394,10 +3262,11 @@ fun claim_protocol_fees_with_partner_pays_the_partner_its_share() {
         assert_eq!(protocol_quote_left, 0);
         assert_eq!(creator_quote_left, creator_quote);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::ProtocolFeesClaimed>()),
-            protocol_fees_claimed_bytes(
+            bcs::to_bytes(&collect_one<ProtocolFeesPaid<LAUNCH_TESTS, TEST_QUOTE>>()),
+            protocol_fees_paid_bytes(
                 object::id(&launch),
                 TREASURY,
+                option::some(partner_id),
                 vector[
                     protocol_meme - partner_meme,
                     protocol_quote - partner_quote,
@@ -3457,7 +3326,7 @@ fun claim_protocol_fees_with_partner_includes_migration_fees() {
 
         let mut currency = f.take_currency();
         let (pool_meme, pool_quote, terms) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
         assert_eq!(terms.partner_id(), option::some(partner_id));
 
@@ -3471,7 +3340,7 @@ fun claim_protocol_fees_with_partner_includes_migration_fees() {
         ) as u64;
         launch.claim_protocol_fees_with_partner(
             &f.package_version,
-            &f.runtime_config,
+            &f.treasury,
             &partner,
             f.ctx!(),
         );
@@ -3531,16 +3400,17 @@ fun claim_protocol_fees_with_a_zero_share_partner_pays_nothing() {
 
         launch.claim_protocol_fees_with_partner(
             &f.package_version,
-            &f.runtime_config,
+            &f.treasury,
             &partner,
             f.ctx!(),
         );
 
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::ProtocolFeesClaimed>()),
-            protocol_fees_claimed_bytes(
+            bcs::to_bytes(&collect_one<ProtocolFeesPaid<LAUNCH_TESTS, TEST_QUOTE>>()),
+            protocol_fees_paid_bytes(
                 object::id(&launch),
                 TREASURY,
+                option::some(object::id(&partner)),
                 vector[protocol_meme, protocol_quote, CREATION_FEE, 0, 0, 0],
             ),
         );
@@ -3572,9 +3442,9 @@ fun claim_protocol_fees_checks_the_version_before_the_partner() {
         let partner = f.accepted_partner();
         let ticket = f.new_ticket(CREATOR);
         let mut launch = f.intake_with_partner(ticket, &partner);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
-        launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
+        launch.claim_protocol_fees(&f.package_version, &f.treasury, f.ctx!());
 
         destroy(partner);
         destroy(launch);
@@ -3594,11 +3464,11 @@ fun claim_protocol_fees_with_partner_checks_the_version_before_the_partner() {
         let other = f.accepted_partner();
         let ticket = f.new_ticket(CREATOR);
         let mut launch = f.intake_with_partner(ticket, &partner);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         launch.claim_protocol_fees_with_partner(
             &f.package_version,
-            &f.runtime_config,
+            &f.treasury,
             &other,
             f.ctx!(),
         );
@@ -3611,7 +3481,7 @@ fun claim_protocol_fees_with_partner_checks_the_version_before_the_partner() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPartnerMismatch, location = blast_fun::launch)]
+#[test, expected_failure(abort_code = blast_core::errors::EPartnerMismatch, location = blast_core::protocol_fees)]
 /// Naming the wrong partner is refused before the empty ledger is.
 fun claim_protocol_fees_with_partner_checks_the_partner_before_the_fees() {
     let mut fixture = start();
@@ -3624,7 +3494,7 @@ fun claim_protocol_fees_with_partner_checks_the_partner_before_the_fees() {
 
         launch.claim_protocol_fees_with_partner(
             &f.package_version,
-            &f.runtime_config,
+            &f.treasury,
             &other,
             f.ctx!(),
         );
@@ -3637,7 +3507,7 @@ fun claim_protocol_fees_with_partner_checks_the_partner_before_the_fees() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPartnerMismatch, location = blast_fun::launch)]
+#[test, expected_failure(abort_code = blast_core::errors::EPartnerMismatch, location = blast_core::protocol_fees)]
 /// No one can claim a partnered launch's fees without paying its partner.
 fun claim_protocol_fees_rejects_a_launch_that_names_a_partner() {
     let mut fixture = start();
@@ -3648,7 +3518,7 @@ fun claim_protocol_fees_rejects_a_launch_that_names_a_partner() {
         let ticket = f.new_ticket(CREATOR);
         let mut launch = f.intake_with_partner(ticket, &partner);
 
-        launch.claim_protocol_fees(&f.package_version, &f.runtime_config, f.ctx!());
+        launch.claim_protocol_fees(&f.package_version, &f.treasury, f.ctx!());
 
         destroy(partner);
         destroy(launch);
@@ -3657,7 +3527,7 @@ fun claim_protocol_fees_rejects_a_launch_that_names_a_partner() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPartnerMismatch, location = blast_fun::launch)]
+#[test, expected_failure(abort_code = blast_core::errors::EPartnerMismatch, location = blast_core::protocol_fees)]
 fun claim_protocol_fees_with_partner_rejects_another_partner() {
     let mut fixture = start();
 
@@ -3670,7 +3540,7 @@ fun claim_protocol_fees_with_partner_rejects_another_partner() {
 
         launch.claim_protocol_fees_with_partner(
             &f.package_version,
-            &f.runtime_config,
+            &f.treasury,
             &other,
             f.ctx!(),
         );
@@ -3683,7 +3553,7 @@ fun claim_protocol_fees_with_partner_rejects_another_partner() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_fun::errors::EPartnerMismatch, location = blast_fun::launch)]
+#[test, expected_failure(abort_code = blast_core::errors::EPartnerMismatch, location = blast_core::protocol_fees)]
 fun claim_protocol_fees_with_partner_rejects_a_launch_without_one() {
     let mut fixture = start();
 
@@ -3694,12 +3564,54 @@ fun claim_protocol_fees_with_partner_rejects_a_launch_without_one() {
 
         launch.claim_protocol_fees_with_partner(
             &f.package_version,
-            &f.runtime_config,
+            &f.treasury,
             &partner,
             f.ctx!(),
         );
 
         destroy(partner);
+        destroy(launch);
+    });
+
+    fixture.end();
+}
+
+#[test]
+/// Blast's fee claim on an empty ledger pays and emits nothing, so a keeper's claim never aborts.
+fun claim_protocol_fees_on_an_empty_ledger_pays_nothing() {
+    let mut fixture = start();
+
+    fixture.next_tx!(BOB, |f| {
+        let mut launch = f.new_default_launch(CREATOR);
+
+        launch.claim_protocol_fees(&f.package_version, &f.treasury, f.ctx!());
+
+        assert!(event::events_by_type<ProtocolFeesPaid<LAUNCH_TESTS, TEST_QUOTE>>().is_empty());
+        destroy(launch);
+    });
+
+    fixture.next_tx!(BOB, |f| {
+        f.burn_paid(TREASURY, 0, 0, 0);
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::ENothingAccrued, location = blast_fun::launch)]
+fun claim_creator_fees_rejects_an_empty_creator_balance() {
+    let mut fixture = start();
+
+    fixture.next_tx!(CREATOR, |f| {
+        let launch = f.new_default_launch(CREATOR);
+        let mut launch = f.open_launch(launch);
+        let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
+
+        let (meme, quote) = launch.claim_creator_fees(&f.package_version, &curve_fee_cap, f.ctx!());
+
+        destroy(meme);
+        destroy(quote);
+        destroy(curve_fee_cap);
+        destroy(metadata_cap);
         destroy(launch);
     });
 
@@ -3844,9 +3756,9 @@ fun migration_pays_recipients_and_accrues_blast_allocation() {
             .fee_totals_for_testing();
         let mut currency = f.take_currency();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
-        let paid = collect<events::MigrationAllocationPaid>();
+        let paid = collect<MigrationAllocationPaid<LAUNCH_TESTS, TEST_QUOTE>>();
         let (curve, real_quote, pending_burn, allocated) = launch.balances_for_testing();
         let (protocol_meme, _, protocol_quote, _) = launch.fee_totals_for_testing();
 
@@ -3864,7 +3776,7 @@ fun migration_pays_recipients_and_accrues_blast_allocation() {
         assert_eq!(protocol_meme, protocol_meme_before + EXPECTED_PROTOCOL_MEME);
         assert_eq!(protocol_quote, protocol_quote_before + EXPECTED_PROTOCOL_QUOTE);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::ProtocolFeesAccrued>()),
+            bcs::to_bytes(&collect_one<ProtocolFeesAccrued<LAUNCH_TESTS, TEST_QUOTE>>()),
             u64_payload(launch_id, vector[EXPECTED_PROTOCOL_MEME, EXPECTED_PROTOCOL_QUOTE]),
         );
         assert_eq!(curve + real_quote + pending_burn + allocated, 0);
@@ -3887,6 +3799,59 @@ fun migration_pays_recipients_and_accrues_blast_allocation() {
 }
 
 #[test]
+/// A vesting recipient's allocation is locked in one schedule per asset, starting at migration,
+/// instead of being sent outright; the payout event still reports its amounts.
+fun migration_vests_a_vesting_recipients_allocation() {
+    let mut fixture = start();
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let vesting = option::some(blast_core::payout::vesting_terms(0, 1_000, 10));
+        let plan = allocation::plan(
+            bps::new(7_000),
+            bps::new(LP_MEME_BPS),
+            bps::new(9_000),
+            vector[
+                allocation::recipient_share(
+                    blast_core::payout::recipient(CREATOR, option::none()),
+                    bps::new(0),
+                    bps::new(750),
+                ),
+                allocation::recipient_share(
+                    blast_core::payout::recipient(ALICE, vesting),
+                    bps::new(250),
+                    bps::new(0),
+                ),
+            ],
+        );
+        let launch = f.new_launch_with(MIGRATION_QUOTE_TARGET, plan);
+        f.share_launch(launch);
+    });
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let mut launch = f.take_launch();
+        let launch_id = object::id(&launch);
+        f.graduate(&mut launch);
+        f.migrate(&mut launch);
+
+        let paid = collect<MigrationAllocationPaid<LAUNCH_TESTS, TEST_QUOTE>>();
+        assert_eq!(
+            bcs::to_bytes(&paid[1]),
+            allocation_paid_bytes(launch_id, ALICE, 25_000_000__000_000_000, 0),
+        );
+        launch.put_back();
+    });
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        assert_eq!(f.take_coin<TEST_QUOTE>(CREATOR).burn_for_testing(), 1_875_000);
+        assert!(!f.has_coin<LAUNCH_TESTS>(ALICE));
+        assert!(f.has_vesting<LAUNCH_TESTS>());
+        assert!(!f.has_vesting<TEST_QUOTE>());
+    });
+
+    fixture.end();
+}
+
+#[test]
 /// Odd shares of an odd target: Blast's Quote rounds up, the one leftover Quote unit goes to the
 /// largest remaining remainder (ALICE 7,777 over BOB 6,034 and the pool's 4,439), and every Meme
 /// and Quote unit is accounted for.
@@ -3899,8 +3864,16 @@ fun migration_apportions_by_largest_remainder_and_conserves_both_assets() {
             bps::new(2_333),
             bps::new(7_777),
             vector[
-                allocation::recipient(ALICE, bps::new(333), bps::new(1_111)),
-                allocation::recipient(BOB, bps::new(583), bps::new(862)),
+                allocation::recipient_share(
+                    blast_core::payout::recipient(ALICE, option::none()),
+                    bps::new(333),
+                    bps::new(1_111),
+                ),
+                allocation::recipient_share(
+                    blast_core::payout::recipient(BOB, option::none()),
+                    bps::new(583),
+                    bps::new(862),
+                ),
             ],
         );
         let launch = f.new_launch_with(25_000_007, plan);
@@ -3923,9 +3896,9 @@ fun migration_apportions_by_largest_remainder_and_conserves_both_assets() {
 
         let mut currency = f.take_currency();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
-        let paid = collect<events::MigrationAllocationPaid>();
+        let paid = collect<MigrationAllocationPaid<LAUNCH_TESTS, TEST_QUOTE>>();
         let (protocol_meme, _, protocol_quote, _) = launch.fee_totals_for_testing();
 
         assert_eq!(
@@ -3973,7 +3946,7 @@ fun migration_pays_sixteen_project_recipients() {
         f.migrate(&mut launch);
         let (_, real_quote, _, allocated) = launch.balances_for_testing();
 
-        assert_eq!(collect<events::MigrationAllocationPaid>().length(), 16);
+        assert_eq!(collect<MigrationAllocationPaid<LAUNCH_TESTS, TEST_QUOTE>>().length(), 16);
         assert_eq!(real_quote + allocated, 0);
 
         launch.put_back();
@@ -3998,13 +3971,13 @@ fun fixed_supply_migration_sends_the_disposal_to_zero() {
         let mut currency = f.take_currency();
         let supply = currency.total_supply().destroy_some();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
 
         assert_eq!(meme.value(), EXPECTED_POOL_MEME);
         assert_eq!(currency.total_supply().destroy_some(), supply);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::Migrated>()),
+            bcs::to_bytes(&collect_one<Migrated<LAUNCH_TESTS, TEST_QUOTE>>()),
             migrated_bytes(
                 object::id(&launch),
                 meme.value(),
@@ -4048,12 +4021,12 @@ fun burn_only_migration_burns_the_disposal_from_native_supply() {
         let mut currency = f.take_currency();
         let supply = currency.total_supply().destroy_some();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
 
         assert_eq!(currency.total_supply().destroy_some(), supply - disposed_meme);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::Migrated>()),
+            bcs::to_bytes(&collect_one<Migrated<LAUNCH_TESTS, TEST_QUOTE>>()),
             migrated_bytes(
                 object::id(&launch),
                 meme.value(),
@@ -4080,7 +4053,7 @@ fun migration_rejects_a_live_launch() {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
         let mut currency = f.take_currency();
-        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, f.ctx!());
+        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!());
 
         destroy(migration);
         destroy(currency);
@@ -4100,11 +4073,11 @@ fun migration_cannot_be_repeated() {
         f.graduate(&mut launch);
         let mut currency = f.take_currency();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
         destroy(meme);
         destroy(quote);
-        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, f.ctx!());
+        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!());
 
         destroy(migration);
         destroy(currency);
@@ -4124,7 +4097,7 @@ fun only_the_stored_venue_redeems_the_migration() {
         f.graduate(&mut launch);
         let mut currency = f.take_currency();
         let (meme, quote, _) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(OtherVenue());
 
         destroy(meme);
@@ -4143,9 +4116,9 @@ fun stale_package_version_aborts_migration_before_its_lifecycle_check() {
     fixture.next_tx!(LAUNCHER, |f| {
         let launch = f.new_default_launch(CREATOR);
         let mut launch = f.open_launch(launch);
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
         let mut currency = f.take_currency();
-        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, f.ctx!());
+        let migration = launch.migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!());
 
         destroy(migration);
         destroy(currency);
@@ -4168,14 +4141,14 @@ fun migration_hands_the_stored_venue_the_pool_share_and_the_vault_terms() {
         f.graduate(&mut launch);
         let mut currency = f.take_currency();
         let (meme, quote, terms) = launch
-            .migrate(&f.package_version, &f.config, &mut currency, f.ctx!())
+            .migrate(&f.package_version, &f.config, &mut currency, &f.clock, f.ctx!())
             .redeem(TestVenue());
         let (protocol_meme_bps, protocol_quote_bps) = terms.protocol_bps();
 
         assert_eq!(meme.value(), EXPECTED_POOL_MEME);
         assert_eq!(quote.value(), MIGRATION_QUOTE_TARGET - EXPECTED_PROTOCOL_QUOTE);
         assert_eq!(terms.origin(), object::id(&launch));
-        assert_eq!(terms.package_witness(), type_name::with_original_ids<launch::PackageWitness>());
+        assert_eq!(terms.package_witness(), type_name::with_original_ids<PackageWitness>());
         assert_eq!(terms.fee_split(), default_fee_split());
         assert_eq!(protocol_meme_bps.value(), 1_200);
         assert_eq!(protocol_quote_bps.value(), 900);
@@ -4313,7 +4286,7 @@ fun prove_owner_checks_the_version_before_the_cap() {
         let mut launch = f.open_launch(launch);
         let (curve_fee_cap, metadata_cap) = f.claim(&mut launch);
         launch.reassign_curve_fee_cap_for_testing(&f.package_version, &creator_admin(), NEW_CREATOR, f.ctx!());
-        f.package_version.set_for_testing(2);
+        f.package_version.set_generation_for_testing(2);
 
         let proof = launch.prove_owner(&f.package_version, &curve_fee_cap);
 
@@ -4380,16 +4353,16 @@ fun start(): LaunchFixture {
 /// Configured launch policy with Blast's default zero protocol allocation, paying `TREASURY`.
 fun start_with_zero_protocol_allocation(): LaunchFixture {
     let mut scenario = test_scenario::begin(@0x0);
-    let package_version = package_version::new_for_testing(scenario.ctx());
+    let package_version = package_version::version_for_testing(scenario.ctx());
     let registry = launch::registry_for_testing(scenario.ctx());
     launch_config::init_zero_fees_for_testing(scenario.ctx());
-    let mut runtime_config = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
+    let runtime_config = runtime_config::new_zero_fee_share_for_testing(scenario.ctx());
     let clock = clock::create_for_testing(scenario.ctx());
 
     scenario.next_tx(PROTOCOL_ADMIN);
-    let mut config = scenario.take_shared<launch_config::LaunchConfig>();
+    let mut config = scenario.take_shared<LaunchConfig>();
 
-    runtime_config.set_treasury_for_testing(&package_version, &treasury_admin(), TREASURY, scenario.ctx());
+    let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
 
     config.set_quote_allowed<TEST_QUOTE>(&package_version, &listing_admin(), true);
     config.set_venue_allowed_for_testing<TestVenue>(
@@ -4410,6 +4383,7 @@ fun start_with_zero_protocol_allocation(): LaunchFixture {
         registry,
         config,
         runtime_config,
+        treasury,
         clock,
     }
 }
@@ -4454,11 +4428,19 @@ fun launch_end(self: LaunchFixture) {
 /// Replaces the launch registry with a new one, as another publication would hold, so the same
 /// coin type can launch again under a different derived ID.
 fun launch_with_fresh_registry(self: LaunchFixture): LaunchFixture {
-    let LaunchFixture { mut scenario, package_version, registry, config, runtime_config, clock } = self;
+    let LaunchFixture {
+        mut scenario,
+        package_version,
+        registry,
+        config,
+        runtime_config,
+        treasury,
+        clock,
+    } = self;
     destroy(registry);
     let registry = launch::registry_for_testing(scenario.ctx());
 
-    LaunchFixture { scenario, package_version, registry, config, runtime_config, clock }
+    LaunchFixture { scenario, package_version, registry, config, runtime_config, treasury, clock }
 }
 
 // --- Plans ---
@@ -4494,8 +4476,16 @@ fun external_plan(): AllocationPlan {
         bps::new(LP_MEME_BPS),
         bps::new(9_000),
         vector[
-            allocation::recipient(CREATOR, bps::new(0), bps::new(750)),
-            allocation::recipient(ALICE, bps::new(250), bps::new(0)),
+            allocation::recipient_share(
+                blast_core::payout::recipient(CREATOR, option::none()),
+                bps::new(0),
+                bps::new(750),
+            ),
+            allocation::recipient_share(
+                blast_core::payout::recipient(ALICE, option::none()),
+                bps::new(250),
+                bps::new(0),
+            ),
         ],
     )
 }
@@ -4506,7 +4496,11 @@ fun recipients_plan(count: u64): AllocationPlan {
         bps::new(CURVE_MEME_BPS - count),
         bps::new(LP_MEME_BPS),
         bps::new(LP_QUOTE_BPS - count),
-        vector::tabulate!(count, |_| allocation::recipient(CREATOR, bps::new(1), bps::new(1))),
+        vector::tabulate!(count, |_| allocation::recipient_share(
+            blast_core::payout::recipient(CREATOR, option::none()),
+            bps::new(1),
+            bps::new(1),
+        )),
     )
 }
 
@@ -4549,13 +4543,6 @@ fun launch_new_ticket_with_decimals(
     self.new_ticket_with(creator, burnable, decimals, b"LAUNCH")
 }
 
-fun launch_new_ticket_with_symbol(
-    self: &mut LaunchFixture,
-    symbol: vector<u8>,
-): LaunchTicket<LAUNCH_TESTS> {
-    self.new_ticket_with(CREATOR, false, MEME_DECIMALS, symbol)
-}
-
 fun launch_new_ticket_with(
     self: &mut LaunchFixture,
     creator: address,
@@ -4579,13 +4566,6 @@ fun launch_new_ticket_with(
     transfer::public_transfer(treasury_cap, self.ctx!().sender());
 
     ticket
-}
-
-/// A Meme symbol one byte over the launch intake bound.
-fun over_length_symbol(): vector<u8> {
-    let mut symbol = MAX_LENGTH_SYMBOL;
-    symbol.push_back(b"X"[0]);
-    symbol
 }
 
 /// Starts the launch with a ticket from `venue`, sets the target, plan, and default fee split, and
@@ -4802,7 +4782,7 @@ fun assert_terminal_dust_buy(target: u64, gross_meme: u64) {
         assert_eq!(creator_quote_after, creator_quote_before + 1);
         launch.assert_lifecycle(false, true, false);
         assert_eq!(
-            bcs::to_bytes(&collect_one<events::Bought>()),
+            bcs::to_bytes(&collect_one<Bought<LAUNCH_TESTS, TEST_QUOTE>>()),
             u64_payload(
                 object::id(&launch),
                 vector[2, gross_meme, 0, 98, 0, gross_meme, 0, 1, meme_after, target],
@@ -4889,7 +4869,7 @@ fun launch_claim(
 fun migrate(self: &mut LaunchFixture, launch: &mut Launch<LAUNCH_TESTS, TEST_QUOTE>): VaultTerms {
     let mut currency = self.take_currency();
     let (meme, quote, terms) = launch
-        .migrate(&self.package_version, &self.config, &mut currency, self.ctx!())
+        .migrate(&self.package_version, &self.config, &mut currency, &self.clock, self.ctx!())
         .redeem(TestVenue());
     destroy(meme);
     destroy(quote);
@@ -4907,7 +4887,7 @@ fun launch_return_currency(_: &LaunchFixture, currency: Currency<LAUNCH_TESTS>) 
 
 fun launch_take_metadata_cap(
     self: &LaunchFixture
-): blast_fun::creator_authority::BlastMetadataCap<LAUNCH_TESTS> {
+): BlastMetadataCap<LAUNCH_TESTS> {
     self.scenario.take_from_sender()
 }
 
@@ -4919,8 +4899,23 @@ fun launch_take_coin<T>(self: &LaunchFixture, owner: address): Coin<T> {
     self.scenario.take_from_address(owner)
 }
 
+fun launch_has_vesting<T>(_: &LaunchFixture): bool {
+    test_scenario::has_most_recent_shared<Vesting<T>>()
+}
+
 fun launch_has_coin<T>(_: &LaunchFixture, owner: address): bool {
     test_scenario::has_most_recent_for_address<Coin<T>>(owner)
+}
+
+/// Points the core treasury at `destination` through its delayed change, as a treasury
+/// administrator would, advancing the fixture clock past its notice.
+fun launch_rotate_treasury(self: &mut LaunchFixture, destination: address) {
+    let now_ms = self.clock.timestamp_ms();
+    self
+        .treasury
+        .schedule_destination(&treasury_admin(), destination, TREASURY_NOTICE_MS, &self.clock);
+    self.clock.set_for_testing(now_ms + TREASURY_NOTICE_MS);
+    self.treasury.apply_destination(&self.clock);
 }
 
 /// Takes and burns what earlier transactions paid `owner`: exactly one coin of each positive
@@ -5011,7 +5006,7 @@ fun applied_cap_recipients<K: copy + drop + store>(): vector<Option<address>> {
 }
 
 fun collect<T: copy + drop>(): vector<T> {
-    event::events_by_type<Event<T>>().map!(|event| event.unwrap())
+    event::events_by_type<T>()
 }
 
 fun collect_one<T: copy + drop>(): T {
@@ -5030,10 +5025,19 @@ fun u64_payload(launch_id: ID, fields: vector<u64>): vector<u8> {
 
 /// Expected `ProtocolFeesClaimed` bytes: the treasury paid, then Blast's three amounts and the
 /// partner's three.
-fun protocol_fees_claimed_bytes(launch_id: ID, treasury: address, amounts: vector<u64>): vector<u8> {
-    let mut expected = bcs::to_bytes(&launch_id);
+/// Expected `ProtocolFeesPaid` bytes: the treasury's Meme, Quote, and SUI, then the partner's.
+fun protocol_fees_paid_bytes(
+    launch_id: ID,
+    treasury: address,
+    partner_id: Option<ID>,
+    amounts: vector<u64>,
+): vector<u8> {
+    let mut expected = bcs::to_bytes(&type_name::with_original_ids<PackageWitness>());
+    expected.append(bcs::to_bytes(&launch_id));
     expected.append(bcs::to_bytes(&treasury));
-    amounts.do!(|amount| expected.append(bcs::to_bytes(&amount)));
+    3u64.do!(|i| expected.append(bcs::to_bytes(&amounts[i])));
+    expected.append(bcs::to_bytes(&partner_id));
+    3u64.do!(|i| expected.append(bcs::to_bytes(&amounts[i + 3])));
     expected
 }
 
@@ -5041,7 +5045,6 @@ fun protocol_fees_claimed_bytes(launch_id: ID, treasury: address, amounts: vecto
 fun ticket_created_bytes(ticket_id: ID, metadata_cap_id: ID, burnable: bool): vector<u8> {
     let decimals = MEME_DECIMALS;
     let mut expected = bcs::to_bytes(&ticket_id);
-    expected.append(bcs::to_bytes(&type_name::with_original_ids<LAUNCH_TESTS>()));
     expected.append(bcs::to_bytes(&decimals));
     expected.append(bcs::to_bytes(&metadata_cap_id));
     expected.append(bcs::to_bytes(&creator_authority::new_address(CREATOR)));
@@ -5065,7 +5068,6 @@ fun launch_created_bytes_with(
 ): vector<u8> {
     let mut expected = bcs::to_bytes(&launch_id);
     expected.append(bcs::to_bytes(&ticket_id));
-    expected.append(bcs::to_bytes(&type_name::with_original_ids<TEST_QUOTE>()));
     expected.append(bcs::to_bytes(&type_name::with_original_ids<TestVenue>()));
     expected.append(bcs::to_bytes(&default_fee_split()));
     expected.append(u64_bytes(VIRTUAL_QUOTE));
@@ -5111,27 +5113,59 @@ fun u64_bytes(value: u64): vector<u8> {
     bcs::to_bytes(&value)
 }
 
+/// Sets `bits` through the generic administration, as a pause administrator would.
+fun pause_bits(self: &mut LaunchFixture, bits: u8) {
+    blast_admin::package_admin::pause(
+        &mut self.package_version,
+        &blast_acl::witness_for_testing<PauseAdmin<BLAST_FUN>>(),
+        bits,
+    );
+}
+
+/// Clears `bits` through the generic administration without the release notice checks.
+fun clear_bits(self: &mut LaunchFixture, bits: u8) {
+    let ctx = self.scenario.ctx();
+    blast_fun::blast_fun::clear_pause_bits_for_testing(&mut self.package_version, bits, ctx);
+}
+
 // === Imports ===
 
 use blast_admin::{
     blast_acl::{Self, AdminWitness},
     delayed_action::{ActionApplied, ActionCancelled, ActionScheduled},
+    package_admin::PauseAdmin,
+    package_version::PackageVersion
 };
 
 use blast_core::{
+    blast_core_events::ProtocolFeesPaid,
+    blast_domain::{AdapterAdmin, CancelAdmin, CreatorAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
+    blast_treasury::{Self, Treasury},
     bps,
     fee_split::{Self, FeeSplit},
-    migration::{Self, VaultTerms},
+    migration::{Self, VaultTerms}
 };
 
 use blast_fun::{
     allocation::{Self, AllocationPlan},
-    blast_events::Event,
-    blast_fun_domain::{AdapterAdmin, CreatorAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
     creator_authority::{Self, BlastMetadataCap, CurveFeeCap},
     curve,
     constants,
-    events,
+    events::{
+        Bought,
+        CreatorCapsClaimed,
+        CreatorFeesClaimed,
+        CurveFeeCapReassigned,
+        LaunchCreated,
+        LaunchShared,
+        LaunchTicketCreated,
+        MemeMetadataUpdated,
+        MetadataCapReassigned,
+        Migrated,
+        MigrationAllocationPaid,
+        ProtocolFeesAccrued,
+        Sold,
+    },
     launch::{
         Self,
         CurveFeeCapReassignment,
@@ -5140,11 +5174,13 @@ use blast_fun::{
         LaunchRegistry,
         MetadataCapReassignment
     },
-    launch_config,
+    launch_config::{Self, LaunchConfig},
     launch_ticket::{Self, LaunchTicket},
-    blast_fun::{Self as package_version, PackageVersion},
-    runtime_config,
+    blast_fun::{Self as package_version, BLAST_FUN, PackageWitness},
+    runtime_config::{Self, RuntimeConfig},
 };
+
+use blast_fun_vesting::blast_fun_linear_vesting::Vesting;
 
 use blast_partners::blast_partners::{Self as partners, Partner, PartnerPaid};
 
@@ -5162,6 +5198,10 @@ use sui::{
     test_utils,
 };
 
+use fun pause_bits as LaunchFixture.pause;
+
+use fun clear_bits as LaunchFixture.clear_pause_bits;
+
 use fun launch_ctx as LaunchFixture.ctx;
 
 use fun launch_end as LaunchFixture.end;
@@ -5175,8 +5215,6 @@ use fun launch_new_ticket as LaunchFixture.new_ticket;
 use fun launch_new_ticket_with_mode as LaunchFixture.new_ticket_with_mode;
 
 use fun launch_new_ticket_with_decimals as LaunchFixture.new_ticket_with_decimals;
-
-use fun launch_new_ticket_with_symbol as LaunchFixture.new_ticket_with_symbol;
 
 use fun launch_new_ticket_with as LaunchFixture.new_ticket_with;
 
@@ -5212,7 +5250,11 @@ use fun launch_take_coin as LaunchFixture.take_coin;
 
 use fun launch_has_coin as LaunchFixture.has_coin;
 
+use fun launch_has_vesting as LaunchFixture.has_vesting;
+
 use fun launch_burn_paid as LaunchFixture.burn_paid;
+
+use fun launch_rotate_treasury as LaunchFixture.rotate_treasury;
 
 use fun launch_burn_paid_coin as LaunchFixture.burn_paid_coin;
 

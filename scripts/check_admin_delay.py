@@ -32,7 +32,7 @@ def require(text, *parts):
         assert part in text, f'missing {part}'
 
 
-def governed(package, module, fields, version='package_version', shared_notice=()):
+def governed(package, module, fields, version='package_version', shared_notice=(), current='();'):
     """Fields in `shared_notice` wait a notice shared with other entries, so their schedules
     take no delay of their own; the shared notice is governed as `<field>_delay`."""
     fs = functions(package, module)
@@ -40,7 +40,7 @@ def governed(package, module, fields, version='package_version', shared_notice=(
         for phase in ('schedule', 'apply', 'cancel'):
             name = f'{phase}_{field}'
             signature, body = fs[name]
-            assert body.startswith(f'{version}.assert_current();'), (package, module, name)
+            assert body.startswith(f'{version}.assert_current{current}'), (package, module, name)
             if phase == 'apply':
                 assert 'AdminWitness' not in signature, (module, name)
                 require(signature, 'clock: &Clock')
@@ -57,17 +57,51 @@ def governed(package, module, fields, version='package_version', shared_notice=(
         assert f'set_{field}' not in fs, (module, field)
 
 
-governed('launchpad', 'runtime_config', {'treasury': 'TreasuryAdmin', 'protocol_fee_share': 'FeeAdmin'})
-governed('launchpad', 'launch_config', {'creation_fee': 'FeeAdmin', 'trade_fees': 'FeeAdmin', 'protocol_allocation': 'TreasuryAdmin', 'protocol_lp_fees': 'FeeAdmin'})
+# The launchpad runs on the generic package administration: its version check names its compiled
+# generation, and Blast's fees go to the core treasury, so it governs no destination of its own.
+LAUNCHPAD_CURRENT = '(constants::generation!());'
+governed('launchpad', 'runtime_config', {'protocol_fee_share': 'FeeAdmin'}, current=LAUNCHPAD_CURRENT)
+governed('launchpad', 'launch_config', {'creation_fee': 'FeeAdmin', 'trade_fees': 'FeeAdmin', 'protocol_allocation': 'TreasuryAdmin', 'protocol_lp_fees': 'FeeAdmin'}, current=LAUNCHPAD_CURRENT)
+assert 'treasury' not in functions('launchpad', 'runtime_config') and 'schedule_treasury' not in functions('launchpad', 'runtime_config')
+for name in ('package_admin', 'blast_fun_domain', 'fees', 'blast_events'):
+    assert not list((ROOT / 'sui/launchpad/sources').rglob(f'{name}.move')), name
+marker = (ROOT / 'sui/launchpad/sources/blast_fun.move').read_text()
+require(marker, 'public struct BLAST_FUN() has drop;', 'public struct PackageWitness() has drop;',
+        'package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)')
+marker_fs = functions('launchpad', 'blast_fun')
+assert set(marker_fs) == {'init', 'package_witness'}, marker_fs
+assert marker_fs['package_witness'][1] == 'PackageWitness()', marker_fs['package_witness']
+# The package witness is constructed only by its module; no launchpad function stores it, takes it,
+# or returns it except the package-only constructor.
+for path in (ROOT / 'sui/launchpad/sources').rglob('*.move'):
+    for name, (signature, _) in functions('launchpad', str(path.relative_to(ROOT / 'sui/launchpad/sources').with_suffix(''))).items():
+        assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_fun', 'package_witness'), (path, name)
+# Only the launchpad's unpause clears bits, after checking every launchpad notice.
+callers = [(path, name) for path in (ROOT / 'sui/launchpad/sources').rglob('*.move')
+           for name, (_, body) in functions('launchpad', str(path.relative_to(ROOT / 'sui/launchpad/sources').with_suffix(''))).items()
+           if 'clear_pause_bits(' in body]
+assert [(path.stem, name) for path, name in callers] == [('launch_config', 'unpause')], callers
+signature, body = functions('launchpad', 'launch_config')['unpause']
+assert signature.split('(', 1)[1].replace(' ', '').replace('\n', '') == (
+    'self:&LaunchConfig,package_version:&mutPackageVersion<BLAST_FUN>,'
+    'unpause_admin:&AdminWitness<UnpauseAdmin<BLAST_FUN>>,package_admin:&PackageAdmin<BLAST_FUN>,'
+    'runtime_config:&RuntimeConfig,bits:u8,)'
+), signature
+assert body.startswith(f'package_version.assert_current{LAUNCHPAD_CURRENT}'), body
+assert body.index('self.is_guarded() && runtime_config.is_guarded()') < body.index('clear_pause_bits('), body
+require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')
 governed('presale', 'fee_policy', {'destination': 'TreasuryAdmin', 'fees': 'FeeAdmin'})
-for package in ('launchpad', 'presale', 'migrators'):
+for package, upgrade_role, cancel_role in (
+    ('presale', 'UpgradeAdmin', 'CancelAdmin'),
+    ('migrators', 'UpgradeAdmin<BLAST_FUN_MIGRATORS>', 'CancelAdmin<BLAST_FUN_MIGRATORS>'),
+):
     fs = functions(package, 'package_admin')
     source = (ROOT / 'sui' / package / 'sources' / 'package_admin.move').read_text()
     require(source, 'upgrade: DelayedAction<UpgradeKey, UpgradeAction>,', 'public struct UpgradeKey() has copy, drop, store;')
     assert 'DelayOnly' not in source and 'delay_ms: u64,\n' not in source.split('public struct PackageAdmin')[1].split('}')[0], package
     for name in ('schedule_upgrade', 'schedule_make_immutable', 'authorize_upgrade', 'make_immutable'):
         signature, body = fs[name]
-        require(signature, '&AdminWitness<UpgradeAdmin>', 'clock: &Clock')
+        require(signature, f'&AdminWitness<{upgrade_role}>', 'clock: &Clock')
         assert body.startswith('package_version.assert_current();'), (package, name)
     require(fs['schedule_upgrade'][1], 'digest.length() == 32', 'self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock)')
     require(fs['schedule_make_immutable'][1], 'self.upgrade.schedule(UpgradeAction::MakeImmutable, clock)')
@@ -77,7 +111,7 @@ for package in ('launchpad', 'presale', 'migrators'):
         body = fs[name][1]
         require(body, 'self.upgrade.take_action(clock)', f'action == UpgradeAction::{action}')
         assert body.index('self.upgrade.take_action(clock)') < body.index(f'action == UpgradeAction::{action}') < body.index('self.custody.'), name
-    require(fs['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin>')
+    require(fs['cancel_upgrade_action'][0], f'&AdminWitness<{cancel_role}>')
     require(fs['cancel_upgrade_action'][1], 'self.upgrade.cancel()')
     require(fs['wrap'][1], 'upgrade_custody::new')
     require(fs['wrap'][0], 'publication: Publication')
@@ -127,8 +161,8 @@ for cap in ['curve_fee_cap', 'metadata_cap']:
     for phase in ('reassignment', 'delay'):
         assert 'AdminWitness' not in fs[f'apply_{cap}_{phase}'][0], (cap, phase)
 
-for package, module, actions in [
-    ('launchpad', 'launch', {
+for package, module, current, actions in [
+    ('launchpad', 'launch', LAUNCHPAD_CURRENT, {
         'new': 'constants::create_pause_bit!()',
         'finalize': 'constants::create_pause_bit!()',
         'share': 'constants::create_pause_bit!()',
@@ -138,7 +172,7 @@ for package, module, actions in [
         'sell': 'constants::trading_pause_bit!()',
         'migrate': 'constants::migration_pause_bit!()',
     }),
-    ('presale', 'blast_presale', {
+    ('presale', 'blast_presale', '();', {
         'new': 'constants::create_pause_bit!()',
         'share': 'constants::create_pause_bit!()',
         'commit_open': 'constants::commit_pause_bit!()',
@@ -150,7 +184,7 @@ for package, module, actions in [
     fs = functions(package, module)
     for name, bit in actions.items():
         body = fs[name][1]
-        assert body.startswith(f'package_version.assert_current(); package_version.assert_not_paused({bit});'), (package, name)
+        assert body.startswith(f'package_version.assert_current{current} package_version.assert_not_paused({bit});'), (package, name)
     for name, (_, body) in fs.items():
         if name not in actions: assert 'assert_not_paused' not in body, (package, name)
 
@@ -162,15 +196,20 @@ print('ADR 0134 administration boundaries: OK')
 # Publication proves unique native custody intake; it never authorizes policy changes.
 for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_package'), ('migrators', 'blast_fun_migrators')]:
     marker_fs = functions(package, marker)
-    require(marker_fs['init'][1], 'transfer::transfer(Publication', 'sui::package::claim(otw, ctx)')
-    assert 'share_object' not in marker_fs['init'][1]
-    require(marker_fs['destroy'][0], 'self: Publication')
-    assert {name for name, (_, body) in marker_fs.items() if re.search(r'\bPublication\s*{', body)} == {'init', 'destroy'}
-    assert marker_fs['init'][0].startswith('fun init(')
     source = (ROOT / 'sui' / package / 'sources' / f'{marker}.move').read_text()
-    require(source, 'public struct Publication has key {')
     assert 'admin_delay' not in source
-    if package != 'migrators':
+    if package == 'launchpad':
+        # The generic `package_version::new_publication` claims the Publisher and seeds the version.
+        require(marker_fs['init'][1], '.keep(ctx)')
+        assert 'share_object' not in marker_fs['init'][1] and 'public struct Publication' not in source
+    else:
+        require(marker_fs['init'][1], 'transfer::transfer(Publication', 'sui::package::claim(otw, ctx)')
+        assert 'share_object' not in marker_fs['init'][1]
+        require(marker_fs['destroy'][0], 'self: Publication')
+        assert {name for name, (_, body) in marker_fs.items() if re.search(r'\bPublication\s*{', body)} == {'init', 'destroy'}
+        require(source, 'public struct Publication has key {')
+    assert marker_fs['init'][0].startswith('fun init(')
+    if package == 'presale':
         assert 'paused: 0' not in marker_fs['share_version'][1]
     for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
         production = path.read_text().split('// === Test-Only Functions ===')[0]
@@ -306,7 +345,7 @@ require((ROOT / 'sui/launchpad/sources/runtime_config.move').read_text(),
         'creator_claim_signers: DelayedSet<ClaimSignerKey, vector<u8>>,')
 for name in signer:
     if name.endswith(('_creator_claim_signer', '_creator_claim_signer_delay')):
-        assert signer[name][1].startswith('package_version.assert_current();'), name
+        assert signer[name][1].startswith(f'package_version.assert_current{LAUNCHPAD_CURRENT}'), name
 schedule_signature, schedule_body = signer['schedule_creator_claim_signer']
 require(schedule_signature, '&AdminWitness<ClaimSignerAdmin>', 'clock: &Clock')
 assert 'delay_ms: u64' not in schedule_signature
@@ -330,9 +369,9 @@ require(signer['cancel_creator_claim_signer_delay'][1], 'self.creator_claim_sign
 for name in ('apply_creator_claim_signer', 'apply_creator_claim_signer_delay'):
     assert 'AdminWitness' not in signer[name][0], name
 assert 'set_creator_claim_signer' not in signer
-for package in ('launchpad', 'presale', 'migrators'):
+for package, upgrade_role in (('presale', 'UpgradeAdmin'), ('migrators', 'UpgradeAdmin<BLAST_FUN_MIGRATORS>')):
     fs = functions(package, 'package_admin')
-    require(fs['schedule_upgrade_delay'][0], '&AdminWitness<UpgradeAdmin>', 'delay_ms: u64')
+    require(fs['schedule_upgrade_delay'][0], f'&AdminWitness<{upgrade_role}>', 'delay_ms: u64')
     require(fs['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
     require(fs['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
     assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]

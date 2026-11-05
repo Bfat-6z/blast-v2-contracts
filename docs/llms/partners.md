@@ -89,7 +89,6 @@ time the partner stops being accepted (`u64::MAX` until removed):
 | Product | Config object and key | Admin |
 | --- | --- | --- |
 | Boosts | `blast_boosts_aftermath::blast_boosts_aftermath::Protocol`, `blast_boosts_aftermath::blast_boosts_aftermath::PartnerKey` | `RiskAdmin` role (`operations::add_partner`, `operations::remove_partner`) |
-| Launchpad | `launch_config::LaunchConfig`, `launch_config::PartnerKey` | `FeeAdmin` role (`launch_config::add_partner`, `launch_config::remove_partner`) |
 | Presale | `creation_policy::CreationPolicy`, `creation_policy::PartnerKey` | presale `FeeAdmin` role (`creation_policy::add_partner`, `creation_policy::remove_partner`) |
 
 Adding applies at once (and cancels a pending removal). Removing sets the value
@@ -99,7 +98,9 @@ accepted for seven more days. A partner is accepted while the field exists and
 
 **Shared acceptance list.** `blast_partners::partner_list::PartnerList` is the
 same acceptance rule as one embeddable value, for a product to keep inside its
-own config. It maps each partner's ID to the time, in Unix epoch milliseconds,
+own config. The launchpad embeds one in `launch_config::LaunchConfig` (its
+`partners` field), changed by the `FeeAdmin` role through
+`launch_config::add_partner` and `launch_config::remove_partner`. It maps each partner's ID to the time, in Unix epoch milliseconds,
 it stops being accepted (`u64::MAX` until removed), held in a `Table`, and
 records the `owner` object that embeds it. It has no authority of its own: only
 the embedding module can reach it mutably, so that product decides who may
@@ -253,7 +254,8 @@ object's content over RPC, or replay the events below.
 - Whether a product's `PartnerList` accepts a partner now:
   `blast_partners::partner_list::is_accepted`.
 - Whether a product accepts a partner: read the product config's dynamic field
-  `PartnerKey(partner_id)`; accepted while it exists and `now < value`.
+  `PartnerKey(partner_id)`, or the entry for `partner_id` in its embedded
+  `PartnerList` table; accepted while it exists and `now < value`.
 - Which partner a launch, sale, or vault names: its `partner_id: Option<ID>`
   field; a vault's comes from its terms, recorded in
   `blast_vault::blast_vault_events::VaultCreated`.
@@ -290,8 +292,7 @@ Every event is emitted directly (no envelope).
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
   its own event in the same transaction:
   `blast_boosts_aftermath::events::PartnerFeePaid` (Boosts),
-  `blast_fun::events::ProtocolFeesClaimed` (launch claims),
-  `blast_core::blast_core_events::ProtocolFeesPaid` (LP vaults),
+  `blast_core::blast_core_events::ProtocolFeesPaid` (launch claims and LP vaults),
   and `blast_presale::blast_presale::ProtocolFeesPaid` (presale raise fee).
   `blast_fun::events::LaunchCreated` and
   `blast_presale::blast_presale::PresaleOpened` record the partner a launch or
