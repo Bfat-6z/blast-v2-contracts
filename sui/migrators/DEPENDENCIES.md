@@ -95,6 +95,13 @@ venue package over `blast_core` that creates no vault.
   pair's pool without the capability. That is a trust assumption on the venue
   operator: such a pool makes the pair's migration abort, and recovering the
   sale would need a migrators upgrade.
+  The window before `prepare` is the coin's `TreasuryCap` holder's alone
+  (`venue_fork::cetus_pool_pre_creation_before_prepare`, 2026-11-05): Cetus
+  `pool_creator::create_pool_v3` refuses a seed range beside the initial price
+  (abort 5), so a stranger with no Meme cannot open the pool, while the holder
+  can mint Meme and open it; Cetus keeps one pool per pair and spacing
+  (`factory` abort 1); and removing that seed leaves the pool one atom of each
+  coin, so the sale's exact-supply check refuses the launch afterwards.
 - **Direct events, no wrapper.** `events.move` owns this package's raw payloads,
   typed by the pair's phantom `Meme` and `Quote` as in `blast_vault_events`, and
   is its only module that calls `sui::event::emit`; vault and fee events come

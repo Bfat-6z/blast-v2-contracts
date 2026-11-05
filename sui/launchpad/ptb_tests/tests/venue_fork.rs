@@ -45,7 +45,7 @@ use blast_launchpad_ptb_tests::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusAddLiquidity, CetusCollectFee,
         CetusOpenPosition, CetusPoolState, CetusPosition, CreatePool, LiquidityProvided, MintPoolCreationCap,
-        RegisterPermissionPair, USDC, UserFeeCollected, apportion, cetus_name, expected_sqrt_price, id,
+        MAX_TICK, RegisterPermissionPair, USDC, UserFeeCollected, apportion, cetus_name, expected_sqrt_price, id,
         insert_snapshot, meme_is_cetus_a, sui, tag, venue_dependencies, venue_events,
     },
     publish_stack, sui_dir, unique_bps,
@@ -68,6 +68,8 @@ const CETUS_FEE_RATE: u64 = 10_000;
 /// A Cetus fee tier that does not exist, and one that exists but is not admitted for the Quote.
 const CETUS_UNREGISTERED_SPACING: u32 = 7;
 const CETUS_UNADMITTED_SPACING: u32 = 60;
+/// Meme a cap holder mints to seed a pre-created Cetus pool at price 1 against two Quote units.
+const PRE_CREATION_MEME: u64 = 1_000_000_000;
 const BLUEFIN_TICK_SPACING: u32 = 60;
 const BLUEFIN_FEE_RATE: u64 = 3_000;
 
@@ -191,6 +193,63 @@ fn cetus_buyback_returns_unspent_swap_input() -> Result<()> {
 #[test]
 fn bluefin_buyback_returns_unspent_swap_input() -> Result<()> {
     buybacks_burn_native_supply(Case::Bluefin, true)
+}
+
+/// H-1 (2026-11-05 review): the Cetus pool for the pair at the launch's tick spacing can be created
+/// after the Meme package publishes and before `prepare` reserves it. Cetus refuses a seed range
+/// beside the initial price, so a stranger with no Meme cannot open it; the `TreasuryCap` holder
+/// can mint Meme, open it, and unwind. Cetus refuses a second pool for the pair and spacing, which
+/// is what migration's own creation would hit. The run records whether the exact supply survives
+/// the unwind, and then either finalization's refusal or migration's abort over the pre-created
+/// pool, each as a `VENUE_FORK` line.
+#[test]
+fn cetus_pool_pre_creation_before_prepare() -> Result<()> {
+    let mut w = World::new(Case::CetusMemeA)?;
+    w.report(format!("snapshot checkpoint {}", w.checkpoint));
+    let split = initial_split();
+    let ticket = w.publish_ticket()?;
+
+    w.create_cetus_pool(&ticket, Seed::OneSided { mint: false }, Some(w.cetus_abort("pool_creator", 5)))?;
+    w.report("stranger: create_pool_v3 seeded with Quote alone beside the price, no Meme: Cetus pool_creator aborts 5, rolled back".into());
+    w.create_cetus_pool(&ticket, Seed::OneSided { mint: true }, Some(w.cetus_abort("pool_creator", 5)))?;
+    w.report("cap holder: the same one-sided seed with minted Meme at hand: Cetus pool_creator aborts 5, so the check is the seed range, not the amounts".into());
+
+    let (pool, position) = w.create_cetus_pool(&ticket, Seed::FullRange, None)?.context("the cap holder's pool")?;
+    w.report(format!("cap holder: mint {PRE_CREATION_MEME} Meme, create_pool_v3 full range at spacing {CETUS_TICK_SPACING} before prepare: pool {pool} created"));
+
+    // Cetus keeps one pool per pair and tick spacing, so migration's own creation would abort here.
+    w.create_cetus_pool(&ticket, Seed::FullRange, Some(w.cetus_abort("factory", 1)))?;
+    w.report("cap holder: a second full-range create_pool_v3 for the same pair and spacing: Cetus factory aborts 1 (pool exists), rolled back".into());
+
+    let surplus = w.unwind_cetus_pool(&ticket, pool, position)?;
+    let state = CetusPoolState::of(&w.h, pool)?;
+    w.report(format!(
+        "cap holder: remove_liquidity, close_position, burn every Meme held: total_supply - atomic supply = {surplus}; pool keeps coin_a={} coin_b={} liquidity={}",
+        state.coin_a, state.coin_b, state.liquidity
+    ));
+
+    if surplus == 0 {
+        let launch = w.start_launch_from(ticket, &split)?;
+        w.graduate(&launch)?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        w.migrate_command(&mut b, &launch, w.route_types(&launch), None)?;
+        let migrated = w.h.execute(b.finish())?;
+        let pools = migrated.created(&w.h, "pool", "Pool");
+        w.report(format!(
+            "prepare, launch, graduate, migrate over the pre-created pair: {:?}; pools created {pools:?}; launch lifecycle {}",
+            migrated.effects.status(),
+            w.launch_lifecycle(&launch)
+        ));
+    } else {
+        let watched = [ticket.ticket, ticket.treasury_cap, ticket.currency, w.venue_config, w.venue("cetus_pools")];
+        let pt = w.create_launch_pt(&ticket, &split, w.cetus_tier, false)?;
+        let expected = Expected::Abort { package: w.blast, module: "launch_ticket", code: INVALID_INITIAL_MEME_SUPPLY };
+        w.h.assert_rolled_back(pt, expected, &watched, &[w.h.sender])?;
+        w.report("prepare, launch::new, finalize over the surplus: launch_ticket aborts invalid_initial_meme_supply, rolled back, no launch".into());
+    }
+
+    w.print_report();
+    Ok(())
 }
 
 fn buybacks_burn_native_supply(case: Case, exhaust_liquidity: bool) -> Result<()> {
@@ -382,6 +441,14 @@ fn run(case: Case) -> Result<()> {
 
     w.print_report();
     Ok(())
+}
+
+/// How a pre-created Cetus pool is seeded: one Quote unit in a range beside the price, with or
+/// without minted Meme at hand, or minted Meme across the full range.
+#[derive(Clone, Copy)]
+enum Seed {
+    OneSided { mint: bool },
+    FullRange,
 }
 
 // === Cases ===
@@ -872,6 +939,137 @@ impl World {
         bail!("no generated Meme had the route's Cetus coin order")
     }
 
+    /// The pool's coin types in Cetus's order.
+    fn cetus_pair_of(&self, meme: &TypeTag) -> Vec<TypeTag> {
+        let mut types = vec![meme.clone(), self.quote()];
+        if !self.case.meme_is_a() {
+            types.reverse();
+        }
+        types
+    }
+
+    /// Every Meme coin the sender holds.
+    fn sender_meme_coins(&self, meme: &TypeTag) -> Vec<ObjectID> {
+        let meme = meme.to_canonical_string(true);
+        self.h
+            .owned_by(self.h.sender)
+            .into_iter()
+            .filter(|object| object.coin_type_maybe().is_some_and(|coin| coin.to_canonical_string(true) == meme))
+            .map(|object| object.id())
+            .collect()
+    }
+
+    /// Appends Cetus's public `create_pool_v3` for the pair at the launch's tick spacing and
+    /// initial price 1, seeded as `seed` says, and returns its `(Position, Coin, Coin)` result.
+    fn seed_cetus_pool(&mut self, b: &mut ProgrammableTransactionBuilder, ticket: &Ticket, seed: Seed) -> Result<(u16, ObjectID)> {
+        let meme_is_a = self.case.meme_is_a();
+        let spacing = CETUS_TICK_SPACING as i32;
+        let cetus_config = self.shared(b, self.venue("cetus_global_config"), false)?;
+        let pools = self.shared(b, self.venue("cetus_pools"), true)?;
+        let tick_spacing = b.pure(CETUS_TICK_SPACING)?;
+        let price = b.pure(1u128 << 64)?;
+        let url = b.pure(String::new())?;
+        // Beside the price: with Meme as coin A, a range below it holds only coin B, the Quote.
+        let (lower, upper) = match seed {
+            Seed::OneSided { .. } if meme_is_a => (-2 * spacing, -spacing),
+            Seed::OneSided { .. } => (spacing, 2 * spacing),
+            Seed::FullRange => (-(MAX_TICK - MAX_TICK % spacing), MAX_TICK - MAX_TICK % spacing),
+        };
+        let lower = b.pure(lower as u32)?;
+        let upper = b.pure(upper as u32)?;
+        let meme = match seed {
+            Seed::OneSided { mint: false } => call(b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "zero", vec![ticket.meme.clone()], vec![]),
+            _ => {
+                let cap = b.obj(self.h.owned(ticket.treasury_cap))?;
+                let amount = b.pure(PRE_CREATION_MEME)?;
+                call(b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "mint", vec![ticket.meme.clone()], vec![cap, amount])
+            }
+        };
+        let quote_coin = self.mint(self.quote(), 2 * self.case.quote_unit());
+        let quote = b.obj(self.h.owned(quote_coin))?;
+        let (coin_a, coin_b) = if meme_is_a { (meme, quote) } else { (quote, meme) };
+        // A one-sided seed fixes the Quote; the full range fixes the Meme.
+        let fix_amount_a = b.pure(matches!(seed, Seed::FullRange) == meme_is_a)?;
+        let clock = self.clock(b)?;
+        let Argument::Result(created) = call(
+            b,
+            id(CETUS),
+            "pool_creator",
+            "create_pool_v3",
+            self.cetus_pair_of(&ticket.meme),
+            vec![cetus_config, pools, tick_spacing, price, url, lower, upper, coin_a, coin_b, fix_amount_a, clock],
+        ) else {
+            unreachable!()
+        };
+        b.transfer_args(
+            self.h.sender,
+            vec![Argument::NestedResult(created, 0), Argument::NestedResult(created, 1), Argument::NestedResult(created, 2)],
+        );
+        Ok((created, quote_coin))
+    }
+
+    /// One PTB creating the pair's Cetus pool: executes it and returns the shared pool and the
+    /// seed position, or asserts `expected` rolled back.
+    fn create_cetus_pool(&mut self, ticket: &Ticket, seed: Seed, expected: Option<Expected>) -> Result<Option<(ObjectID, ObjectID)>> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let (_, quote_coin) = self.seed_cetus_pool(&mut b, ticket, seed)?;
+        let pt = b.finish();
+
+        if let Some(expected) = expected {
+            let watched = [ticket.treasury_cap, quote_coin, self.venue("cetus_pools")];
+            self.h.assert_rolled_back(pt, expected, &watched, &[self.h.sender])?;
+            return Ok(None);
+        }
+        let created = self.h.execute(pt)?;
+        created.assert_success();
+        let pools = created.created(&self.h, "pool", "Pool");
+        let positions = created.created(&self.h, "position", "Position");
+        ensure!(pools.len() == 1 && self.h.object(pools[0]).is_shared(), "one shared Cetus pool");
+        ensure!(positions.len() == 1, "one seed position");
+        Ok(Some((pools[0], positions[0])))
+    }
+
+    /// Removes the seed position's whole liquidity, closes it, burns every Meme the sender holds
+    /// with the cap, and returns the supply left above the ticket's atomic supply.
+    fn unwind_cetus_pool(&mut self, ticket: &Ticket, pool: ObjectID, position: ObjectID) -> Result<u64> {
+        let meme_is_a = self.case.meme_is_a();
+        let liquidity = self.position_liquidity(position)?;
+        let types = self.cetus_pair_of(&ticket.meme);
+        let mut b = ProgrammableTransactionBuilder::new();
+        let cetus_config = self.shared(&mut b, self.venue("cetus_global_config"), false)?;
+        let pool_arg = self.shared(&mut b, pool, true)?;
+        let position_arg = b.obj(self.h.owned(position))?;
+        let delta = b.pure(liquidity)?;
+        let clock = self.clock(&mut b)?;
+        let Argument::Result(removed) = call(
+            &mut b,
+            id(CETUS),
+            "pool",
+            "remove_liquidity",
+            types.clone(),
+            vec![cetus_config, pool_arg, position_arg, delta, clock],
+        ) else {
+            unreachable!()
+        };
+        let (meme_index, quote_index) = if meme_is_a { (0, 1) } else { (1, 0) };
+        let cap = b.obj(self.h.owned(ticket.treasury_cap))?;
+        let meme = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "from_balance", vec![ticket.meme.clone()], vec![Argument::NestedResult(removed, meme_index)]);
+        call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "burn", vec![ticket.meme.clone()], vec![cap, meme]);
+        let quote = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "from_balance", vec![self.quote()], vec![Argument::NestedResult(removed, quote_index)]);
+        b.transfer_arg(self.h.sender, quote);
+        call(&mut b, id(CETUS), "pool", "close_position", types, vec![cetus_config, pool_arg, position_arg]);
+        for coin in self.sender_meme_coins(&ticket.meme) {
+            let coin = b.obj(self.h.owned(coin))?;
+            call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "burn", vec![ticket.meme.clone()], vec![cap, coin]);
+        }
+        self.h.execute(b.finish())?.assert_success();
+        ensure!(self.sender_meme_coins(&ticket.meme).is_empty(), "no Meme is left outside the ticket and the pool");
+
+        // `TreasuryCap { id, total_supply: Supply { value } }`.
+        let total_supply = u64::from_le_bytes(self.h.contents(ticket.treasury_cap)[32..40].try_into()?);
+        Ok(total_supply - ATOMIC_SUPPLY)
+    }
+
     /// One PTB: the venue's `prepare` at `tier` on the coin's `TreasuryCap`, `launch::new` with
     /// the venue ticket and the cap, the setters, `finalize`, and `share`. With `mint_between`, one
     /// more atom is minted from the cap after `prepare`.
@@ -980,6 +1178,11 @@ impl World {
     /// the venue and the launch record.
     fn start_launch(&mut self, split: &FeeSplit) -> Result<Launch> {
         let ticket = self.publish_ticket()?;
+        self.start_launch_from(ticket, split)
+    }
+
+    /// `start_launch` over an already published ticket.
+    fn start_launch_from(&mut self, ticket: Ticket, split: &FeeSplit) -> Result<Launch> {
         let owners = [self.h.sender];
         let mut watched = vec![ticket.ticket, ticket.treasury_cap, ticket.currency, self.venue_config];
         if self.case.is_cetus() {
