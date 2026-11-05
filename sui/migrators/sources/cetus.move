@@ -301,9 +301,19 @@ fun is_coin_a_seed_side(
         prefer_a,
     );
 
-    let preference_fits = needed_a <= amount_a && needed_b <= amount_b;
+    seed_fixed_side(prefer_a, amount_a, amount_b, needed_a, needed_b)
+}
 
-    if (preference_fits) prefer_a else !prefer_a
+/// Keeps the preferred seed side if the venue's rounded requirements fit both balances, and fixes
+/// the other side otherwise.
+fun seed_fixed_side(
+    preferred: bool,
+    available_a: u64,
+    available_b: u64,
+    needed_a: u64,
+    needed_b: u64,
+): bool {
+    if (needed_a <= available_a && needed_b <= available_b) preferred else !preferred
 }
 
 /// Collects the position's fees, splits them through the vault, and adds the auto-LP share back.
@@ -555,6 +565,18 @@ fun cast<From: store, To: store>(scratch: &mut UID, value: From): To {
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// Runs the seed-side rule on explicit balances and venue requirements.
+public fun seed_fixed_side_for_testing(
+    preferred: bool,
+    available_a: u64,
+    available_b: u64,
+    needed_a: u64,
+    needed_b: u64,
+): bool {
+    seed_fixed_side(preferred, available_a, available_b, needed_a, needed_b)
+}
 
 #[test_only]
 /// Runs the pair proof: whether Meme is `CoinA`, aborting unless the pair is the sale's.

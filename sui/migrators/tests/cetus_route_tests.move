@@ -16,6 +16,18 @@ public struct OTHER() has drop;
 // === Tests ===
 
 #[test]
+fun seed_keeps_the_preferred_side_when_both_balances_cover_the_venue_quote() {
+    assert!(cetus::seed_fixed_side_for_testing(true, 10, 20, 10, 20));
+    assert!(!cetus::seed_fixed_side_for_testing(false, 10, 20, 10, 19));
+}
+
+#[test]
+fun seed_flips_the_preferred_side_on_one_atom_of_rounding_overdraw() {
+    assert!(cetus::seed_fixed_side_for_testing(false, 10, 20, 11, 20));
+    assert!(!cetus::seed_fixed_side_for_testing(true, 10, 20, 10, 21));
+}
+
+#[test]
 /// One route serves both Cetus coin orders: it reports which side the Meme is on.
 fun the_route_locates_meme_in_either_coin_order() {
     assert!(cetus::is_meme_coin_a_for_testing<MEME, QUOTE, MEME, QUOTE>());

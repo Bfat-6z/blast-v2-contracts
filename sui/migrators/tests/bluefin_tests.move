@@ -28,6 +28,18 @@ public struct PrepareFixture {
 // === Tests ===
 
 #[test]
+fun seed_keeps_the_preferred_side_when_both_balances_cover_the_venue_quote() {
+    assert!(bluefin::seed_fixed_side_for_testing(true, 10, 20, 10, 20));
+    assert!(!bluefin::seed_fixed_side_for_testing(false, 10, 20, 10, 19));
+}
+
+#[test]
+fun seed_flips_the_preferred_side_on_one_atom_of_rounding_overdraw() {
+    assert!(bluefin::seed_fixed_side_for_testing(false, 10, 20, 11, 20));
+    assert!(!bluefin::seed_fixed_side_for_testing(true, 10, 20, 10, 21));
+}
+
+#[test]
 fun prepare_issues_a_bluefin_ticket_at_the_smallest_tier() {
     let mut f = start(b"MEME");
 
