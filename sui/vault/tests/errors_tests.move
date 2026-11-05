@@ -43,7 +43,7 @@ fun error_registry_is_stable() {
         errors::reserve_settled!(),
         errors::over_reserve!(),
         errors::claims_still_open!(),
-        errors::unadmitted_issuer!(),
+        errors::unadmitted_package_witness!(),
         errors::returned_exceeds_taken!(),
     ];
     assert_eq!(codes.length(), 35);

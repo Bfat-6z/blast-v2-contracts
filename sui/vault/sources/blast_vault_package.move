@@ -182,8 +182,11 @@ public(package) fun assert_venue<Venue>(self: &VaultRegistry) {
 }
 
 /// Aborts unless `issuer`, a terms' sealing witness in its original-ID form, is admitted.
-public(package) fun assert_issuer(self: &VaultRegistry, issuer: TypeName) {
-    assert!(self.witnesses.contains(&issuer), blast_vault::errors::unadmitted_issuer!());
+public(package) fun assert_package_witness(self: &VaultRegistry, package_witness: TypeName) {
+    assert!(
+        self.witnesses.contains(&package_witness),
+        blast_vault::errors::unadmitted_package_witness!(),
+    );
 }
 
 /// The registry's UID, from which `vault::new` derives each vault's ID; nothing else in the

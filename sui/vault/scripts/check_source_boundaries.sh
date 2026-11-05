@@ -21,7 +21,7 @@ fi
   || fail "only blast_vault_package may initialize state"
 rg -q 'registry.assert_venue<Venue>\(\);' sources/vault.move \
   || fail "vault::new must require an admitted venue witness"
-rg -q 'registry.assert_issuer\(terms.package_witness\(\)\);' sources/vault.move \
+rg -q 'registry.assert_package_witness\(terms.package_witness\(\)\);' sources/vault.move \
   || fail "vault::new must require an admitted issuer witness"
 if rg -n 'self\.(fee_split|protocol_bps)\.schedule(_delay)?\(' sources; then
   fail "fee-split and Blast-share changes must keep the fixed delay (schedule_value only)"

@@ -19,7 +19,7 @@ module blast_vault::vault;
 
 /// Derives a sale's one vault from the registry: the witness that sealed its terms and the sale.
 public struct VaultKey has copy, drop, store {
-    issuer: TypeName,
+    package_witness: TypeName,
     origin: ID,
 }
 
@@ -124,13 +124,13 @@ public fun new<Meme, Quote, Venue>(
 ): Vault<Meme, Quote> {
     package_version.assert_current(constants::version!());
     registry.assert_venue<Venue>();
-    registry.assert_issuer(terms.package_witness());
+    registry.assert_package_witness(terms.package_witness());
     let (meme_bps, quote_bps) = terms.protocol_bps();
     let protocol_bps = ProtocolBps { meme_bps, quote_bps };
 
     let id = derived_object::claim(
         registry.uid_mut(),
-        VaultKey { issuer: terms.package_witness(), origin: terms.origin() },
+        VaultKey { package_witness: terms.package_witness(), origin: terms.origin() },
     );
     let fee_split = delayed::new(
         FeeSplitKey(),
@@ -805,8 +805,8 @@ fun burn<Meme>(currency: &mut Currency<Meme>, meme: Balance<Meme>, ctx: &mut TxC
 
 #[test_only]
 /// The key a vault's ID derives from, for the terms sealed by `issuer` for the sale `origin`.
-public fun vault_key_for_testing(issuer: TypeName, origin: ID): VaultKey {
-    VaultKey { issuer, origin }
+public fun vault_key_for_testing(package_witness: TypeName, origin: ID): VaultKey {
+    VaultKey { package_witness, origin }
 }
 
 #[test_only]

@@ -130,7 +130,7 @@ fun terms_at_the_blast_share_maximum_create_a_vault() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_vault::errors::EUnadmittedIssuer,
+    abort_code = blast_vault::errors::EUnadmittedPackageWitness,
     location = blast_vault::blast_vault_package,
 )]
 fun terms_sealed_by_an_unadmitted_issuer_cannot_create_a_vault() {
@@ -156,7 +156,7 @@ fun an_admitted_venue_seals_its_own_standalone_terms() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_vault::errors::EUnadmittedIssuer,
+    abort_code = blast_vault::errors::EUnadmittedPackageWitness,
     location = blast_vault::blast_vault_package,
 )]
 fun a_removed_issuer_cannot_create_vaults_for_its_sales() {
@@ -231,6 +231,24 @@ fun a_vault_id_derives_from_the_registry_the_sealing_issuer_and_the_sale() {
     let vault = f.new_vault(terms);
 
     assert_eq!(object::id(&vault), f.derived_vault_id<SaleWitness>(vault_fixture::sale_id()));
+    destroy(vault);
+    f.end();
+    scenario.end();
+}
+
+#[test]
+/// The vault key's layout fixes the derived ID: this fixture's vault is always at this address.
+fun the_fixture_vault_id_is_pinned() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
+
+    let vault = f.new_vault(terms);
+
+    assert_eq!(
+        object::id(&vault),
+        object::id_from_address(@0xd35a1d74f875890549d1059ec43b5bcc76919bad1aecfa13589e087efb4e409f),
+    );
     destroy(vault);
     f.end();
     scenario.end();

@@ -173,7 +173,7 @@ the `UpgradeCap`; no later upgrade or repair is possible.
 
 ### Aborts
 
-- Vault creation: `unadmitted_venue`, then `unadmitted_issuer`. Scheduling Blast's share above
+- Vault creation: `unadmitted_venue`, then `unadmitted_package_witness`. Scheduling Blast's share above
   3,000 basis points per asset aborts with `invalid_protocol_bps`.
 - A venue's buyback or auto-LP return: `wrong_vault` for another vault's receipt,
   `returned_exceeds_taken` when it returns more than it took.

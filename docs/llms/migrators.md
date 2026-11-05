@@ -373,7 +373,7 @@ the same transactions.
 | Cetus migrate, collect, buyback | 0 `blast_migrators::errors::EInvalidCoinOrder` (migrate), 2 `blast_migrators::errors::EWrongCoinPair` | pass the pool's coin order; `CoinA` and `CoinB` must be the sale's Meme and Quote |
 | migrate | `sui::dynamic_field` code 1 reading the tier; 8 `blast_core::errors::EWrongVenue` in `blast_core::migration` | call the migrate of the venue the sale stores, with that sale's `Migration` |
 | migrate | the product's own lifecycle or pause abort in its `migrate` (product guides) | wait until the sale is ready to migrate and its migration is unpaused |
-| migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedIssuer`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the product's package witness must be listed in `VaultRegistry`; the seed must give positive liquidity |
+| migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedPackageWitness`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the product's package witness must be listed in `VaultRegistry`; the seed must give positive liquidity |
 | migrate | Cetus aborts when the pair's pool already exists or the tick spacing is no longer registered; Bluefin aborts on a wrong creation fee | the sale stays ready to migrate; pass the exact Bluefin fee |
 | collect, settle, buyback | 1 `blast_migrators::errors::EPositionPoolMismatch` in the venue's module | pass the vault's own pool |
 | settle and apply | 14 `ENoPending` or 13 `ENotReady` from Blast admin's `delayed` module | wait until the scheduled split is ready |

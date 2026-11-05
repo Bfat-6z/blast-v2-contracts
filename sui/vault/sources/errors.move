@@ -141,7 +141,7 @@ const EClaimsStillOpen: u64 = 32;
 
 #[test_only]
 /// Only terms sealed by an admitted issuer may create vaults.
-const EUnadmittedIssuer: u64 = 33;
+const EUnadmittedPackageWitness: u64 = 33;
 
 #[test_only]
 /// A venue returns at most what it took from the vault.
@@ -213,6 +213,6 @@ macro public(package) fun over_reserve(): u64 { 31 }
 
 macro public(package) fun claims_still_open(): u64 { 32 }
 
-macro public(package) fun unadmitted_issuer(): u64 { 33 }
+macro public(package) fun unadmitted_package_witness(): u64 { 33 }
 
 macro public(package) fun returned_exceeds_taken(): u64 { 34 }
