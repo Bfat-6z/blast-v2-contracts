@@ -255,3 +255,118 @@ Steps 1 and 2 are independent; 3 and 4 need 2; 5 needs 3 and 4; 6 needs 4; 7 nee
 - Partner-cut vectors equal to today's launchpad and vault outputs.
 - Mainnet-fork PTB suites for launchpad, presale and standalone vaults on each venue, including
   preparation before supply leaves the ticket or `TreasuryCap`.
+
+## Amendment 2026-11-05: one way to do each thing
+
+### Context
+
+Implementing steps 1 to 7 showed the stack above still had two ways to do several things: the
+presale kept its own copy of the venues, the migrators package imported the launchpad, three
+products carried their own package administration over `blast_admin`'s version and custody
+primitives, a vendor wrapped the presale's version-gated calls, and a venue could also seal its own
+vault terms. The owner asked on 2026-11-04 for one way to do each thing before the fresh publish
+(epic #197). This amendment records what changed against the decision above.
+
+### Decision
+
+**Seven packages.** `blast_admin`, `blast_partners` and `blast_core` are published immutable.
+`blast_fun` (launchpad), `blast_presale`, `blast_vault` and `blast_migrators` are
+compatible-upgradeable. The per-coin templates and the one-off vendors sit outside the seven and
+depend inward. Every boundary of the 2026-11-04 package review stays: everything in one package
+exceeds Sui's 100 KiB package limit, and the vault stays apart from the venues so a DEX bump never
+upgrades custody.
+
+**`blast_migrators`, not `blast_venues`.** The one venue package is the existing `sui/migrators`
+directory under the name `blast_migrators`, the repository's own term (owner decision, 2026-11-04). The
+earlier `blast_fun_migrators` name claimed one product and goes.
+
+**Cetus and Bluefin only.** `blast_migrators` ships `cetus` and `bluefin` for both products. The
+presale's venue copies, its venue configuration and its pool-price math are deleted; the seed price
+and the seedable-price bounds both CLMMs share live once in `blast_core::migration`, the one package both the presale and the venues import. Aftermath
+leaves the migrators and the presale (owner, 2026-11-04). The Aftermath DAO vendor
+(`blast_aftermath_dao_presale`) is a plain venue over `blast_core` instead of a wrapper around the presale's version-gated calls: its `AdminCap` prepares a
+sale token, binding the reservation to the issuer it names (the presale's package witness), and
+returns the `VenueTicket` the presale redeems; its `migrate` takes the `Migration` from the PTB,
+seeds the pool and pays the DAO fee to the partner's compiled treasury. It creates no vault, so only
+the presale's creation policy admits it, never the vault registry. Because it imports no product, a
+presale upgrade never strands it and its immutable publication costs nothing.
+
+**Two-call migration through the PTB.** A product's `migrate` returns the sealed `Migration`; the
+next PTB command passes it to the stored venue's `migrate`. Products and venues never import each
+other, so a product upgrade forces no venue relink, and one venue serves both products.
+
+**Standalone vaults are cut**, where a venue would have sealed its own vault terms. No caller existed, and sealing its own terms was the only reason
+a venue would be an issuer. The vault registry therefore lists the two product package witnesses as
+issuers and the venue witnesses as venues; a venue obtains terms only from the `Migration` it
+redeems. Adding standalone vaults later is a migrators upgrade plus a registry entry.
+
+**One package witness per package.** Each package declares one `PackageWitness`, pinned by its
+publication in `blast_admin::package_version`. It is the one type through which the package seals
+vault terms, creates its protocol-fee ledger, issues owner proofs, releases its pause bits, and
+borrows its own `Publisher` from `PackageAdmin`. One witness per purpose would be several ways to
+say the same thing, and each would need its own pin.
+
+**One package administration.** Every upgradeable package uses the generic
+`PackageVersion<Marker>` and `PackageAdmin<Marker>` and the package roles generic over its marker;
+the products' own package-administration modules, version objects and role sets are deleted, and
+product roles come from `blast_core::blast_domain`. `blast_admin`'s former operational-version and
+upgrade-custody modules fold into those two types, whose only constructor, `package_admin::wrap`,
+consumes the package's unique `Publication`, so no package can
+build a second version or custody object.
+
+**`UpgradeAction` is `Upgrade(digest)` or `MakeImmutable`, with no repair action.** The generic
+`PackageAdmin` reads no consumer generation, so a release that compiled the wrong generation
+constant is corrected by scheduling the next upgrade under the same notice. A separate repair action
+would be a second way to install code, with its own notice to audit.
+
+**No upgrade-policy narrowing.** The additive and dependency-only restrictions are removed. Under
+either policy a release cannot change existing modules, so it cannot compile the next generation,
+and after the next `commit_upgrade_and_advance` every version-gated call would abort forever.
+`make_immutable` is the one terminal action, behind the upgrade notice.
+
+**`make_immutable` is guarded by the package itself** (owner, 2026-11-05).
+`blast_admin::package_admin::make_immutable` takes the package's own witness and its live
+`PackageVersion`, so only code in the package can end its upgrades, through a wrapper that first
+checks its compiled generation. A release that forgot its generation bump fails that check and can
+never be made immutable. Only the vault has the wrapper (`blast_vault_package::make_immutable`,
+for #195); any other package adds one by upgrade if it ever needs it.
+
+**The migrators package has no pause bits.** Its version starts unpaused and it has no unpause.
+Migration stops with each product's migration bit and buyback with the vault's admin bit.
+Residual risk, accepted: `prepare`, fee collection and the settled fee-split update have no
+emergency stop of their own; only a delayed upgrade that advances the generation retires them.
+Collection must never freeze, and these calls move only a vault's own fees under its stored split.
+
+**Complete public API in the immutable packages** (owner rule, 2026-11-05). `blast_admin`,
+`blast_partners` and `blast_core` give every struct its readers and, where a value can end, its
+destructor, even with no caller today: an immutable package can never add one later, while a future
+package may hold these types in ways this stack does not. `blast_admin`'s delayed map is kept for
+that reason, although it has no consumer and was first slated for deletion. `OwnerProof` is unchanged.
+
+**The vault is upgradeable now and made immutable after audit** (#195). It publishes
+compatible-upgradeable so an audit finding can still be fixed, and schedules `make_immutable` after
+the audit and a quiet period, executed through its own wrapper. Until then a vault upgrade forces a migrators relink in the same release window: a compatible
+`blast_migrators` upgrade that rebinds the vault address and bumps `constants::generation`, since
+every `commit_upgrade_and_advance` advances the stored generation. The venues call version-gated
+vault functions, so migration and fee collection abort until the relink lands.
+
+`blast_sui` and boosts are outside this stack and adopt the generic administration separately
+(#191, #205).
+
+### Consequences
+
+- The publish order respects the dependency edges: partners needs admin; core needs admin and
+  partners; the vault and both products need core; migrators needs the vault; the launch-ticket
+  template needs `blast_fun`; the vendor needs core only. The chosen sequence is admin, partners,
+  core, then the vault and the two products in any order, then migrators, the template and the
+  vendor. Admission happens while every package
+  is paused: the vault lists the two product witnesses and the two venue witnesses at notice zero,
+  each product admits its venues, every zero notice is raised, and only then do the vault and the
+  products unpause. `deployments/README.md` owns the runbook.
+- Forced relinks: admin, partners and core force nothing; a vault upgrade forces a migrators relink;
+  a migrators, product or vendor release forces nothing.
+- The SDK, indexer and admin console read `PackageVersion<Marker>` and `PackageAdmin<Marker>`
+  object types, `blast_admin_events::Paused<Marker>` for every pause, migrators events under
+  `blast_migrators::events`, and a two-call migration PTB.
+- Implementation steps 5 and 6 above are replaced by this amendment: there is no `blast_venues`
+  package, no standalone vault creation, and the vendor redeems the hand-off as a venue.

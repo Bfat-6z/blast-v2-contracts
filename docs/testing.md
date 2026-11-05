@@ -16,9 +16,9 @@ error must be used in production, numbered sequentially from zero within its
 module, and covered by an exact abort code and raising-module assertion. Registry
 macros also need literal numeric pins. The gate checks Move test declarations and
 the explicitly mapped native venue oracles; run those suites to verify behavior.
-Aftermath pool postconditions have direct guard tests because local interface
-stubs abort before migration can reach them; these do not replace the external
-venue gate below.
+The Aftermath DAO vendor's pool postconditions have direct guard tests because
+its local interface stubs abort before migration can reach them; these do not
+replace the external venue gate below.
 
 For ADR 0134 fresh-stack checks, run `bash scripts/test_admin_delay.sh` under the
 workspace memory guard. It temporarily excludes historical first-party publication
@@ -50,20 +50,20 @@ Both exercise every reachable pause state and every `u8` input for both mutators
 including stored-generation mismatch, exact events and rollback. Real ACL tests
 cover role separation, wrong witness types, role and administrator revocation,
 and successful and failing multi-command sequences. The presale matrix also
-preserves a funded sale's balances, currency and capability. Each package's Move
-`pause_tests` directly covers the package-only operation guard: every supported
-state/query pair, every disjoint `u8` query, and unsupported query bits combined
-with paused operations. The administration source gate pins every protected
+preserves a funded sale's balances, currency and capability. Pause bits live in
+the generic `blast_admin::package_version::PackageVersion<Marker>`, whose own
+tests cover the operation guard; each product's Move `pause_tests` covers its
+`unpause` notice gate. The administration source gate pins every protected
 operation's version/pause guard order and keeps settlement and exits available.
 
-Measure instruction coverage of the three pause functions independently of the
+Measure instruction coverage of the products' `unpause` independently of the
 larger suites with the fresh-stack wrapper:
 
 ```bash
 MOVE_TEST_FILTER=pause_tests bash scripts/test_admin_delay.sh --coverage launchpad presale
 ```
 
-Require 100% for `pause`, `unpause` and `assert_not_paused` in both package markers.
+Require 100% for `launch_config::unpause` and `creation_policy::unpause`.
 Run the full affected suites separately without the filter.
 
 Native PTB fixture output stays under the test crate's ignored `target/ptb-fixtures/`
@@ -94,9 +94,9 @@ package addresses. Venue instructions remain in the fork trace directory
 because the root-package CLI report only includes first-party modules.
 The coverage command applies a test-only patch to the pinned Move VM tracer
 in an isolated Cargo manifest. The tracer snapshots all call arguments before
-registering their locations in the new frame, so it can trace Aftermath swaps
-that pass multiple references to the same pool. Standalone swaps, migration,
-and fee collection use the same traced execution path.
+registering their locations in the new frame, so it can trace venue calls that
+pass several references borrowed from the same object. Swaps, migration, and
+fee collection use the same traced execution path.
 Run the Move unit coverage command after the fork so the coverage map and
 test-mode bytecode are built together.
 

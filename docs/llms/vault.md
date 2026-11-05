@@ -13,11 +13,10 @@ venue's calls, and call the owner, round, and payout functions on it directly.
 ### Objects and authority
 
 - `blast_vault_package::VaultRegistry` (shared singleton) lists the admitted witness types: the
-  venues that may create vaults and the issuers whose sealed terms they may use (the launchpad, the
-  presale, and each venue for the standalone vaults it seals itself). A witness is admitted by its
-  type, which only its own module can construct. A venue obtains terms only from
-  `blast_core::migration::redeem` or by sealing them itself; it never accepts terms from its
-  caller.
+  venues that may create vaults and the issuers whose sealed terms they may use (the launchpad's
+  and the presale's package witnesses). A witness is admitted by its type, which only its own module
+  can construct. A venue obtains terms only from `blast_core::migration::redeem`; it never accepts
+  terms from its caller.
 - `blast_vault::vault::Vault<Meme, Quote>` (shared, one per migrated sale) holds the position under
   the venue's key, the terms the sale sealed (`blast_core::migration::VaultTerms`), the fee split
   and Blast's share, each behind a notice, and the owner, auto-LP, holder-reward, and burn

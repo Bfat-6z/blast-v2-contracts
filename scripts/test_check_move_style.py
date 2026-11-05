@@ -205,6 +205,58 @@ const EXPIRY: u64 = 100;
 '''
         self.check_source(source, "fixture.move")
 
+    def test_module_qualified_types_fail(self):
+        for position, line in (
+            ("field", "public struct Holder has drop { recipient: payout::Recipient }"),
+            ("parameter", "public fun take(_recipient: &mut payout::Recipient) {}"),
+            ("return", "public fun make(): payout::Recipient { abort }"),
+            ("type argument", "public fun name(): String { schedule_witness<std::string::String>() }"),
+            ("local annotation", "public fun read() { let _value: option::Option<u64> = option::none(); }"),
+            ("fully qualified", "public fun version(_version: &blast_admin::package_version::PackageVersion) {}"),
+            ("qualified variant", "public fun owner(): Destination { payout::Destination::Owner }"),
+        ):
+            with self.subTest(position=position):
+                source = f"module example::value;\n// === Public Functions ===\n{line}\n"
+                with self.assertRaisesRegex(ValueError, "import types instead of qualifying them"):
+                    self.check_source(source, "value.move")
+
+    def test_imports_comments_attributes_variants_and_calls_pass(self):
+        source = '''#[test_only]
+module example::value_tests;
+// === Tests ===
+/// Pays a `payout::Recipient` through `blast_core::payout::Recipient`.
+#[test, expected_failure(abort_code = example::errors::EInvalid, location = example::value)]
+fun pays() {
+    // A `payout::Recipient` in a line comment.
+    let label = b"payout::Recipient";
+    let _ = Destination::Owner;
+    payout::pay_or_vest(Recipient::Owner, label);
+    abort example::errors::invalid!()
+}
+// === Imports ===
+use blast_core::payout::{Destination, Recipient};
+use fun blast_core::payout::pay_or_vest as Recipient.pay;
+'''
+        self.check_source(source, "value_tests.move")
+
+    def test_out_of_scope_packages_skip_qualified_type_check(self):
+        source = """module example::value;
+// === Public Functions ===
+public fun make(): payout::Recipient { abort }
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with patch("check_move_style.ROOT", root):
+                for package in ("sui/blast_sui", "sui/boosts/core", "scratch-sui/dex", "sui/launchpad"):
+                    path = root / package / "sources" / "value.move"
+                    path.parent.mkdir(parents=True)
+                    path.write_text(source)
+                    if package == "sui/launchpad":
+                        with self.assertRaisesRegex(ValueError, "import types"):
+                            check(path)
+                    else:
+                        check(path)
+
 
 if __name__ == "__main__":
     unittest.main()

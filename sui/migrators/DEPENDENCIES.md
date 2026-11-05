@@ -14,7 +14,8 @@ witness, and, in the same PTB as the product's own `migrate`, redeems the
 `Migration` it returned and locks the position in a new
 `blast_vault::vault::Vault` (ADR 0137). Aftermath, MMT, and Turbos were removed
 before publication together with their witnesses, local interfaces, and
-dependency pins.
+dependency pins; Aftermath remains only in the one-off DAO vendor, a separate
+venue package over `blast_core` that creates no vault.
 
 - **Release venue matrix.** A venue reaches a sale only through its own
   witness: `prepare` issues the `blast_core::migration::VenueTicket` that the
@@ -512,6 +513,15 @@ function, since the venue's witness borrows its position from the vault. The cor
 public statement is therefore that principal is held by an upgradeable package
 with no exposed withdrawal path, never that it is permanently locked. Do not add
 a migrator admin capability as an alternative.
+
+A vault upgrade forces a migrators relink in the same release window: the
+venues call version-gated `blast_vault` functions, so once the vault commits its
+upgrade, migration and fee collection abort until the relink lands: a
+compatible migrators upgrade that rebinds the vault address and bumps
+`constants::generation`, since every `commit_upgrade_and_advance` advances the
+stored generation. Schedule both together and execute them
+back to back. A product upgrade forces no relink, since the venues take the
+`Migration` from the PTB.
 
 Before release, in order:
 

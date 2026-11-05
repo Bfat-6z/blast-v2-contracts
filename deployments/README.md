@@ -11,7 +11,7 @@ Every record must contain at least:
 - package/contract identifiers and dependency identifiers;
 - deployer, transaction digest, status, and the created shared/admin objects,
   including the `Publisher`, `UpgradeCap`/`PackageAdmin`, and
-  operational-generation object IDs, and, for `blast_admin`, the singleton `ACL`
+  `PackageVersion` object IDs, and, for `blast_admin`, the singleton `ACL`
   and its `SuperAdminCap`; each `AdminCap` granted with its holder and roles;
 - constructor/init parameters and post-deploy verification results;
 - for `blast_admin`, which is published immutably, the `sourceDigest` printed by
@@ -28,29 +28,93 @@ Blast SUI uses its [deployment](../sui/blast_sui/DEPLOYING.md) and
 same normalized evidence while following their accepted ADRs and verification
 scripts.
 
-ADR 0134 uses a fresh ACL, partners, launchpad, migrators, and presale stack.
-The October 28 package IDs and source revisions remain in the historical
-deployment records. The fresh stack receives compiler publication bindings
-after its own publication.
+ADR 0134 uses a fresh launch stack. The October 28 package IDs and source
+revisions remain in the historical deployment records. The fresh stack receives
+compiler publication bindings after its own publication.
 
-Launchpad, presale and migrators require nonzero named-address payout defaults
-before publication. Their deployer-owned Publication retains provenance only;
-it authorizes no policy setters (ADR 0134). Wrap consumes it permanently, seals
-native custody and creates the operational version. Launchpad and presale start
-fully paused. Configure initial policies through ordinary ACL roles after wrap;
-publication-owned launchpad and presale policies initially have zero notice; upgrade
-custody and the migrators LP-fee policy start at 48 hours. `unpause` refuses to release
-until every launchpad or presale notice is nonzero with no pending zero-notice change or
-admission.
-Record the chosen fees, destinations, launchpad claim signer and allocation,
-Quote and reviewed adapter allowlists, and applied-value events. Apply or cancel
-every outstanding zero-notice proposal, including independent adapter admissions,
-then configure and read back each operation's intended notice (48 hours for this
-rollout). Raising a notice does not rewrite older proposals. Verify approved key
-custody before multisig UnpauseAdmin releases selected operations. Record
+## Fresh launch stack
+
+The stack is the seven packages of ADR 0137 (amended 2026-11-05) plus the
+per-coin template and the vendor. `blast_admin`, `blast_partners` and
+`blast_core` publish immutable; `blast_vault`, `blast_fun`, `blast_presale` and
+`blast_migrators` publish compatible-upgradeable.
+
+Before publication, set `blast_acl_root` (admin) and `blast_treasury` (core) to
+their intended nonzero addresses; each `init` aborts on `0x0`.
+
+### Publish order
+
+A package's manifest binds the IDs of the packages it depends on, so each waits
+for those: `blast_partners` needs `blast_admin`; `blast_core` needs both;
+`blast_vault`, `blast_fun` and `blast_presale` need `blast_core`;
+`blast_migrators` needs `blast_vault`; `launch_ticket_template` needs `blast_fun`;
+the vendor `blast_aftermath_dao_presale` needs `blast_core` only. The chosen
+sequence:
+
+1. `blast_admin`
+2. `blast_partners`
+3. `blast_core`
+4. `blast_vault`, `blast_fun` and `blast_presale`, in any order
+5. `blast_migrators`
+6. `launch_ticket_template` and the vendor
+
+Each upgradeable package's deployer receives an owned `Publication<Marker>`
+pinning the package's `PackageWitness`. In a follow-up transaction,
+`blast_admin::package_admin::wrap` consumes it with the package's `UpgradeCap`,
+sharing `PackageAdmin<Marker>` and `PackageVersion<Marker>`. The vault and both
+products start fully paused; the migrators package defines no pause bits and
+starts unpaused.
+
+### Admission while paused
+
+Admissions ignore the pause, and every publication-owned notice starts at zero,
+so Blast configures the stack before any release:
+
+1. The vault registry admits, at notice zero, the launchpad's
+   `blast_fun::blast_fun::PackageWitness`, the presale's
+   `blast_presale::blast_presale_package::PackageWitness`, and the venue
+   witnesses `blast_migrators::cetus::Venue` and `blast_migrators::bluefin::Venue`
+   (`schedule_witness`, then `apply_witness`). The vendor's venue is never listed
+   here: it creates no vault.
+2. Each product admits its venues at notice zero: the launchpad's
+   `launch_config` lists the two migrators venues, and the presale's
+   `creation_policy` lists them and the vendor's `Venue`. Then set fees, Quote
+   types, partners, the launchpad claim signer and allocation.
+3. Apply or cancel every outstanding zero-notice proposal, then raise every
+   notice: the vault's witness notice and each product configuration notice
+   (48 hours for this rollout). Raising a notice does not rewrite older
+   proposals. The vault's fee-split and Blast-share notices are compiled at
+   48 hours and have no setter. `blast_core`'s treasury notice and each
+   package's `PackageAdmin` upgrade notice start at 48 hours and need no raise.
+4. Unpause the vault (`blast_vault_package::unpause`), then the products
+   (`launch_config::unpause`, `creation_policy::unpause`). Each refuses while
+   one of its notices is unguarded.
+
+Record the chosen fees, destinations, allowlists and applied-value events,
 Publication consumption, sealed custody, every applied notice, proposal state,
-pause masks and unpause evidence. Later protected changes wait their operation's
-applied notice, including while paused; notice reductions wait the old notice.
+pause masks and unpause evidence. Verify approved key custody before the
+multisig `UnpauseAdmin` releases selected operations. Later protected changes
+wait their operation's applied notice, including while paused; notice
+reductions wait the old notice.
+
+### Releases
+
+- A vault upgrade forces a migrators relink in the same window. The venues call
+  version-gated vault functions, so after `commit_upgrade_and_advance` on the
+  vault, migration and fee collection abort until the relink lands. The relink
+  is a normal migrators release: a compatible upgrade that rebinds the vault
+  address and bumps `constants::generation`. Prepare, review and schedule both
+  upgrades together, then execute the vault upgrade and the migrators upgrade
+  back to back.
+- A migrators (DEX bump), product or vendor release forces no other package to
+  relink: products and venues meet only through the `Migration` passed in the
+  PTB.
+- Every release bumps the package's `constants::generation`;
+  `commit_upgrade_and_advance` advances the stored generation in the same call.
+- `make_immutable` ends upgrades for good. It needs the package's own witness
+  and live `PackageVersion`, so only a package with its own wrapper can take
+  it: today the vault (see [Vault immutability](#vault-immutability)). Another
+  package gains one only through an upgrade.
 
 ## Boosts adapter upgrades
 

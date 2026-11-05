@@ -19,15 +19,13 @@ by one of these boundaries:
 This keeps V2 smaller than the historical collection of interdependent packages
 without forcing unrelated dependencies into the trusted core.
 
-The operationally versioned, compatible-upgradeable `blast_presale` package is a separate product boundary: it owns
-presale escrow, eligibility, proportional settlement, and its Bluefin, Cetus,
-and Aftermath venues, without importing or mutating launchpad state. Its venues
-share the package so a sealed witness makes pool creation atomic with escrow
-release. Its public `new` and `migrate` redeem the ticket and seal the hand-off
-of any venue whose witness the `CreationPolicy` admits, so one-off partner venues
-live in their own packages under `sui/vendors` and depend inward on it. It
-depends on the immutable `blast_partners` package only to pay a sale's Blast
-partner. See [ADR 0099](decisions/0099-standalone-overflow-presale.md),
+The version-gated, compatible-upgradeable `blast_presale` package is a separate product boundary: it owns
+presale escrow, eligibility, and proportional settlement, without importing or
+mutating launchpad state, and it contains no venue. Its public `new` redeems the
+ticket of any venue whose witness the `CreationPolicy` admits, and its `migrate`
+seals the hand-off for that venue, so the shared venues in `blast_migrators` and
+one-off partner venues under `sui/vendors` serve it without importing it. See
+[ADR 0099](decisions/0099-standalone-overflow-presale.md),
 [ADR 0104](decisions/0104-external-presale-migrators-and-vendor-packages.md), and
 [ADR 0106](decisions/0106-presale-partners.md).
 
@@ -37,8 +35,12 @@ immutable `blast_core` holds the money vocabulary (basis points, payouts, the fe
 split, the protocol-fee ledger, the treasury, Merkle proofs) and the sealed
 values that carry a sale to its venue and prove ownership to its vault, and the
 upgradeable `blast_vault` holds every migrated sale's LP custody, fee split,
-Blast share, partner hold, and holder rewards. Each product keeps its own
-venue allowlist, Quote allowlist, and partner list.
+Blast share, partner hold, and holder rewards. The upgradeable `blast_migrators`
+holds the Cetus and Bluefin venues for both products. Each product keeps its own
+venue allowlist, Quote allowlist, and partner list. The stack is seven packages:
+`blast_admin`, `blast_partners` and `blast_core` immutable; `blast_fun`,
+`blast_presale`, `blast_vault` and `blast_migrators` upgradeable (ADR 0137,
+amended 2026-11-05).
 
 The package boundaries are decided in
 [decisions/0001-sui-package-and-module-layout.md](decisions/0001-sui-package-and-module-layout.md):
@@ -50,11 +52,13 @@ keep external dependencies and independently governed custody outside core.
 `blast_core` defines the sealed values that cross those boundaries: the venue
 ticket a venue issues when it prepares a coin, the `Migration` a product returns
 at migration, and the owner proof a product issues to its creator authority.
-Venues depend inward on their product, `blast_core`, and `blast_vault`; the vault
-depends on neither a product nor a venue. Composition happens **in the programmable
+Venues depend inward on `blast_core` and `blast_vault` and import no product; the
+vault depends on neither a product nor a venue. Composition happens **in the programmable
 transaction block, not in product code**: a transaction threads these values
 from a venue call into the product and back to the venue or the vault, so venue
-preparation is possible without the product naming any venue.
+preparation is possible without the product naming any venue. Migration is two
+calls: the product's `migrate` returns the `Migration`, and the next command
+passes it to the stored venue's `migrate`.
 
 The values crossing that boundary are non-droppable, so the transaction cannot end
 until the call that must consume each one has run.
@@ -63,10 +67,10 @@ until the call that must consume each one has run.
 
 | Component | Responsibility | Must not own |
 | --- | --- | --- |
-| Package bootstrap | canonical OTW, the package's operational version singleton seeded from that witness, and the one-time framework `Publisher` claim | protocol administration, feature state beyond the version singleton, or upgrade authority |
-| Package administration | validated `Publisher` and raw `UpgradeCap` custody, exact-digest authorization under the compatible policy, receipt commit, package-specific operational activation, and deliberate `make_immutable` | ACL membership storage, feature configuration, or state migration |
+| Package bootstrap | canonical OTW and the package witness, which `blast_admin::package_version::new_publication` pins in an owned `Publication` beside the claimed `Publisher` | protocol administration, feature state, or upgrade authority |
+| Package administration (`blast_admin`) | the generic `PackageVersion<Marker>` and `PackageAdmin<Marker>`: sealed `Publisher` and `UpgradeCap` custody, pause bits, exact-digest upgrades under the compatible policy with the generation advanced in the same commit, and deliberate `make_immutable` | ACL membership storage, feature configuration, or state migration |
 | Protocol ACL | root rotation and revocable routine-admin membership | feature configuration, backend keys, creator recipients, or fees |
-| Runtime config | one dedicated creator-claim backend key, the live bonding-curve trade protocol fee share, and the treasury every permissionless protocol fee claim pays | admin delegation, creator recipient or issuance, cold launch policy, accrued balances, total trade-fee rates, or claim authority |
+| Runtime config | the creator-claim backend keys and the live bonding-curve trade protocol fee share | admin delegation, creator recipient or issuance, cold launch policy, accrued balances, total trade-fee rates, the treasury (`blast_core`), or claim authority |
 | Launch config | a table of admitted Quote types (the creator picks each launch's virtual Quote reserve), mutable generated-Meme decimal admission, Quote/Meme trade-fee rates, a future-launch migration-fee allocation that defaults to zero, Blast's delayed LP-fee share each new vault takes at migration, and the delayed venue allowlist that gates which venue's ticket may start a launch | live launch repricing, per-launch project allocation choices, quote currency-registry objects, DEX costs or dependencies, user balances, derived valuations, or hot trade configuration |
 | Registry/config | global limits, other fee ceilings, emergency state | user balances or curve math |
 | Launch ticket | one-time-witness currency creation, exact supply mint, and pre-launch supply and metadata custody; the `TreasuryCap` travels beside it | venue binding, decimal policy, trades, metadata updates, or migration |
@@ -262,13 +266,13 @@ The historical contracts correctly treated migration as a typed, one-time
 handoff. V2 retains that property but narrows it:
 
 1. An exact-target buy returns excess Quote and closes trading.
-2. Anyone calls the stored venue's `migrate`, which calls `launch::migrate`.
-   The launch pays every recipient, burns the curve's unsold Meme and the
-   pending sell-burn (or sends them to `@0x0` under a fixed supply), marks the
-   launch `Migrated`, and returns a sealed `Migration` holding only the pool's
-   Meme and Quote and the vault's terms. Only the stored venue's witness can
-   redeem it.
-3. The venue seeds the pool and installs the position, which must hold
+2. Anyone calls `launch::migrate`. The launch pays every recipient, burns the
+   curve's unsold Meme and the pending sell-burn (or sends them to `@0x0` under
+   a fixed supply), marks the launch `Migrated`, and returns a sealed
+   `Migration` holding only the pool's Meme and Quote and the vault's terms.
+   Only the stored venue's witness can redeem it.
+3. The next PTB command passes the `Migration` to the stored venue's `migrate`,
+   which seeds the pool and installs the position, which must hold
    liquidity, in a new `blast_vault` vault with the launch's sealed terms; the
    residuals go to Blast at once, or are held for the launch's partner. Any
    failure rolls back the whole transaction. From then on the vault holds the
@@ -306,10 +310,11 @@ intentional semantic difference in an ADR and in shared differential vectors.
 Upgradeability is a product/security decision, not a default convenience.
 
 - Launchpad: the canonical `Publisher` and raw `UpgradeCap` enter one shared
-  `PackageAdmin` after module/package provenance checks. An
-  `AdminWitness<UpgradeAdmin>` signed in on the singleton Blast ACL (ADR 0097)
-  authorizes an exact digest under the cap's compatible policy, which no path
-  narrows (ADR 0088); the native receipt then commits against the same cap and
+  `PackageAdmin<BLAST_FUN>` after module/package provenance checks. An
+  `AdminWitness<UpgradeAdmin<BLAST_FUN>>` signed in on the singleton Blast ACL
+  (ADR 0097) schedules an exact digest and, after the upgrade notice, authorizes
+  it under the cap's compatible policy, which no path narrows (ADR 0137); the
+  native receipt then commits against the same cap and
   advances the generation, and `make_immutable` is the deliberate end of
   upgrades. A future governance design retires the routine-admin package path
   through the mandatory shared-object version gate after installing replacement
@@ -319,14 +324,18 @@ Upgradeability is a product/security decision, not a default convenience.
   shared `PackageVersion` required by launch creation and routine configuration setters
   ([ADR 0114](decisions/0114-launchpad-custody-before-activation.md)).
   The only upgrade finalizer commits the native receipt and advances the
-  operational version to the exact next compiled generation in the same call;
+  package version to the exact next compiled generation in the same call;
   there is no separate activation step.
-- The migrators package keeps its `UpgradeCap` in its own `PackageAdmin` and
-  normally retains upgradeability: Cetus and Bluefin gate callers by package
-  version, and launchpad cutovers require venue relinks (ADR 0088). Every
-  migrators upgrade uses the compatible policy and bumps both compiled
-  generation constants. ADR 0134 permits a delayed terminal immutability
-  decision only after dependency and exit review; no path narrows cap policy.
+- `blast_migrators` keeps its `UpgradeCap` in its generic
+  `PackageAdmin<BLAST_MIGRATORS>` and stays upgradeable: Cetus and Bluefin gate
+  callers by package version, so each of their bumps forces a migrators relink.
+  A vault upgrade forces one too, in the same release window, because the venues
+  call version-gated vault functions. A product upgrade forces none, since the
+  venues take the `Migration` from the PTB. Every migrators upgrade uses the
+  compatible policy and bumps its compiled generation constant; no path narrows
+  cap policy.
+- `blast_vault` publishes upgradeable and is made immutable after its audit and
+  a quiet period (ADR 0137, #195).
 
 - Boosts Aftermath separates native receipt commit from successor activation
   ([ADR 0123](decisions/0123-successor-activated-boosts-upgrades.md)). The successor
@@ -351,7 +360,7 @@ atomically and makes prior-generation bytecode unusable.
 
 Launchpad, presale, migrators and the vault retain the canonical Publisher and
 generation in a unique owned Publication until validated custody wrap consumes
-it; the vault uses `blast_admin`'s generic publication and package
+it; all four use `blast_admin`'s generic publication and package
 administration (ADR 0137). It has no policy authority. Wrap shares the canonical
 PackageVersion; launchpad, presale and the vault start fully paused. Ordinary ACL operations configure policy after wrap.
 Each protected operation owns its applied notice, initially zero for publication-owned

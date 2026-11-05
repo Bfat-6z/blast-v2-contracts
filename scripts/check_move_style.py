@@ -21,6 +21,15 @@ UTILITY_SECTIONS = [
     "Test-Only Functions", "Events", "Errors", "Imports",
 ]
 ERROR_NAME = r"E[A-Z](?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]*"
+# Exempt from the qualified-type rule only; every other style check still applies.
+# blast_sui and boosts are out of the one-way stack scope and adopt the type
+# import rule with their own administration rework (#191, #205); scratch-sui is
+# parked, out of scope.
+QUALIFIED_TYPES_EXEMPT = ("sui/blast_sui", "sui/boosts", "scratch-sui")
+# A lowercase module segment followed by a type segment: `module::Type`,
+# `pkg::module::Type`, `module::Type::Variant`. Calls through a module
+# (`payout::pay_or_vest`, `errors::x!`) and `Enum::Variant` stay allowed.
+QUALIFIED_TYPE = re.compile(r"\b[a-z_][a-z0-9_]*::[A-Z]\w*")
 
 
 def mask(source):
@@ -29,6 +38,34 @@ def mask(source):
         r'//[^\n]*|/\*[\s\S]*?\*/|b?"(?:\\.|[^"\\])*"',
         lambda match: re.sub(r"[^\n]", " ", match[0]), source,
     )
+
+
+def mask_attributes_and_uses(text):
+    """Hide attributes (abort_code and location paths) and use declarations."""
+    spans = [match.span() for match in re.finditer(r"\b(?:public\s+)?use\b[^;]*;", text)]
+    for match in re.finditer(r"#\[", text):
+        depth, cursor = 1, match.end()
+        while depth and cursor < len(text):
+            depth += (text[cursor] == "[") - (text[cursor] == "]")
+            cursor += 1
+        spans.append((match.start(), cursor))
+    chars = list(text)
+    for start, end in spans:
+        for index in range(start, end):
+            if chars[index] != "\n":
+                chars[index] = " "
+    return "".join(chars)
+
+
+def check_qualified_types(source):
+    """Types are imported and named bare; only calls go through a module."""
+    text = mask_attributes_and_uses(mask(source))
+    hits = [
+        f"line {text[:match.start()].count(chr(10)) + 1}: {match[0]}"
+        for match in QUALIFIED_TYPE.finditer(text)
+    ]
+    if hits:
+        raise ValueError("import types instead of qualifying them: " + "; ".join(hits))
 
 
 def declarations(source):
@@ -156,6 +193,11 @@ def check(path):
     ) and in_order(UTILITY_SECTIONS)
     if not (in_order(SECTIONS) or in_order(TAIL_SECTIONS) or utility_layout):
         raise ValueError("sections must occur once, in the order in AGENTS.md")
+    if not any(
+        path.resolve().is_relative_to(ROOT / directory)
+        for directory in QUALIFIED_TYPES_EXEMPT
+    ):
+        check_qualified_types(source)
     previous_kind = None
     closed_constant_sections = set()
     previous_section = None

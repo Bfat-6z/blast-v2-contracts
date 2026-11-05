@@ -1293,7 +1293,8 @@ fi
 creator_authority_facts="$(move_facts sources/creator_authority.move)"
 
 # Each creator capability is an identity-only object whose one production constructor lives in
-# this module (ADR 0082). LP-fee capability authority left for `blast_fun_migrators` (ADR 0083).
+# this module (ADR 0082). After migration the curve-fee cap proves ownership to the launch's
+# `blast_vault` vault through `launch::prove_owner`; LP-fee authority lives there (ADR 0137).
 creator_capability_violations=''
 for capability_spec in 'CurveFeeCap|new_curve_fee_cap' 'BlastMetadataCap|new_metadata_cap'; do
   IFS='|' read -r capability_type capability_constructor <<<"$capability_spec"
