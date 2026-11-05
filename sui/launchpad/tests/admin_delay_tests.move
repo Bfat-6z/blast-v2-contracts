@@ -100,12 +100,12 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
         SetScheduled<VenueKey, TypeName>
     >().set_scheduled_fields();
     assert_eq!(scheduled_owner, owner);
-    assert_eq!(change.member_for_testing(), option::some(witness));
+    assert_eq!(change.member(), option::some(witness));
     assert_eq!(ready_at_ms, 172_800_123);
     config.cancel_venue<TestVenue>(&version, &cancel);
     let (_, _, change, _, _) = single<SetCancelled<VenueKey, TypeName>>()
         .set_cancelled_fields();
-    assert_eq!(change.member_for_testing(), option::some(witness));
+    assert_eq!(change.member(), option::some(witness));
 
     destroy(config);
     destroy(version);

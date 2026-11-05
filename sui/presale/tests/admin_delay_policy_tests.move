@@ -105,7 +105,7 @@ fun replacing_a_ready_proposal_restarts_the_old_notice() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_delay_change_rejects_before_other_validation() {
     let mut fixture = start();
@@ -281,7 +281,7 @@ fun fee(self: &AdminDelayFixture): u64 { self.runtime.fees().raise_bps().value()
 fun migration_delay_changes(): u64 {
     sui::event::events_by_type<SetApplied<VenueKey, TypeName>>().count!(|applied| {
         let (_, _, change, _) = applied.set_applied_fields();
-        change.member_for_testing().is_none()
+        change.member().is_none()
     })
 }
 

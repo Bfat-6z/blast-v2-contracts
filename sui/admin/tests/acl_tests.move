@@ -48,10 +48,10 @@ fun init_shares_one_acl_and_delivers_its_root_to_the_configured_address_without_
     assert_eq!(test_scenario::ids_for_address<SuperAdminCap>(PUBLISHER).length(), 0);
     let root = scenario.take_from_sender<SuperAdminCap>();
     let acl = scenario.take_shared<ACL>();
-    assert_eq!(acl.active_super_admin_cap_id_for_testing(), root.super_admin_cap_id_for_testing());
-    assert_eq!(acl.admin_count_for_testing(), 0);
-    assert!(acl.super_admin_transfer_for_testing().pending().is_none());
-    assert_eq!(blast_acl::max_roles_per_admin_for_testing(), MAX_ROLES_PER_ADMIN);
+    assert_eq!(acl.super_admin_cap_id(), root.super_admin_cap_id_for_testing());
+    assert_eq!(acl.admin_count(), 0);
+    assert!(acl.super_admin_transfer().pending().is_none());
+    assert_eq!(blast_acl::max_roles_per_admin(), MAX_ROLES_PER_ADMIN);
 
     test_scenario::return_shared(acl);
     destroy(root);
@@ -63,11 +63,11 @@ fun grant_delivers_a_roleless_cap_that_signs_in_to_each_granted_role() {
     let mut fixture = start();
 
     fixture.grant_admin(ADMIN);
-    let granted = events::collect_one<events::AdminGranted>(0);
+    let granted = events::collect_one<AdminGranted>(0);
     let admin_cap = fixture.take_admin_cap(ADMIN);
     let admin_cap_id = admin_cap.admin_cap_id_for_testing();
     fixture.grant_role<FeeAdmin>(admin_cap_id);
-    let fee_granted = events::collect_one<events::AdminRoleGranted>(0);
+    let fee_granted = events::collect_one<AdminRoleGranted>(0);
     fixture.grant_role<RiskAdmin>(admin_cap_id);
     let _: AdminWitness<FeeAdmin> = fixture.acl.sign_in(&admin_cap);
     let _: AdminWitness<RiskAdmin> = fixture.acl.sign_in(&admin_cap);
@@ -79,10 +79,10 @@ fun grant_delivers_a_roleless_cap_that_signs_in_to_each_granted_role() {
     assert_eq!(role_cap_id, admin_cap_id);
     assert_eq!(role, type_name::with_defining_ids<FeeAdmin>());
     assert_eq!(
-        fixture.acl.admin_roles_for_testing(admin_cap_id),
+        fixture.acl.admin_roles(admin_cap_id),
         vector[type_name::with_defining_ids<FeeAdmin>(), type_name::with_defining_ids<RiskAdmin>()],
     );
-    assert_eq!(fixture.acl.admin_count_for_testing(), 1);
+    assert_eq!(fixture.acl.admin_count(), 1);
 
     destroy(admin_cap);
     destroy(fixture);
@@ -95,14 +95,14 @@ fun revoking_one_role_keeps_the_others() {
     let admin_cap_id = admin_cap.admin_cap_id_for_testing();
 
     fixture.revoke_role<FeeAdmin>(admin_cap_id);
-    let revoked = events::collect_one<events::AdminRoleRevoked>(0);
+    let revoked = events::collect_one<AdminRoleRevoked>(0);
     let (revoked_cap_id, revoked_role) = revoked.admin_role_revoked_fields();
     let _: AdminWitness<RiskAdmin> = fixture.acl.sign_in(&admin_cap);
 
     assert_eq!(revoked_cap_id, admin_cap_id);
     assert_eq!(revoked_role, type_name::with_defining_ids<FeeAdmin>());
     assert_eq!(
-        fixture.acl.admin_roles_for_testing(admin_cap_id),
+        fixture.acl.admin_roles(admin_cap_id),
         vector[type_name::with_defining_ids<RiskAdmin>()],
     );
 
@@ -119,7 +119,7 @@ fun instantiations_of_a_generic_role_are_distinct_roles() {
     fixture.grant_role<Role<FeeAdmin>>(admin_cap.admin_cap_id_for_testing());
     fixture.grant_role<Role<RiskAdmin>>(admin_cap.admin_cap_id_for_testing());
 
-    assert_eq!(fixture.acl.admin_roles_for_testing(admin_cap.admin_cap_id_for_testing()).length(), 2);
+    assert_eq!(fixture.acl.admin_roles(admin_cap.admin_cap_id_for_testing()).length(), 2);
 
     destroy(admin_cap);
     destroy(fixture);
@@ -132,7 +132,7 @@ fun revoking_an_admin_reports_every_role_it_held() {
     let admin_cap_id = admin_cap.admin_cap_id_for_testing();
 
     fixture.revoke_admin(admin_cap_id);
-    let revoked = events::collect_one<events::AdminRevoked>(0);
+    let revoked = events::collect_one<AdminRevoked>(0);
     let (revoked_cap_id, roles) = revoked.admin_revoked_fields();
 
     assert_eq!(revoked_cap_id, admin_cap_id);
@@ -140,7 +140,7 @@ fun revoking_an_admin_reports_every_role_it_held() {
         roles,
         vector[type_name::with_defining_ids<FeeAdmin>(), type_name::with_defining_ids<RiskAdmin>()],
     );
-    assert_eq!(fixture.acl.admin_count_for_testing(), 0);
+    assert_eq!(fixture.acl.admin_count(), 0);
 
     destroy(admin_cap);
     destroy(fixture);
@@ -157,11 +157,11 @@ fun destroying_live_and_revoked_caps_reports_their_previous_state() {
     fixture.revoke_admin(revoked_cap_id);
 
     fixture.acl.destroy_admin_cap(live_cap);
-    let live = events::collect_one<events::AdminDestroyed>(0);
+    let live = events::collect_one<AdminDestroyed>(0);
     let (live_id, live_roles, live_was_active) = live.admin_destroyed_fields();
     fixture.scenario.next_tx(OTHER_ADMIN);
     fixture.acl.destroy_admin_cap(revoked_cap);
-    let revoked = events::collect_one<events::AdminDestroyed>(0);
+    let revoked = events::collect_one<AdminDestroyed>(0);
     let (revoked_id, revoked_roles, revoked_was_active) = revoked.admin_destroyed_fields();
 
     assert_eq!(live_id, live_cap_id);
@@ -170,7 +170,7 @@ fun destroying_live_and_revoked_caps_reports_their_previous_state() {
     assert_eq!(revoked_id, revoked_cap_id);
     assert!(revoked_roles.is_empty());
     assert!(!revoked_was_active);
-    assert_eq!(fixture.acl.admin_count_for_testing(), 0);
+    assert_eq!(fixture.acl.admin_count(), 0);
 
     destroy(fixture);
 }
@@ -372,6 +372,40 @@ fun root_cap_from_another_acl_cannot_revoke() {
     abort
 }
 
+#[test]
+fun readers_report_the_root_admins_roles_and_fixed_limits() {
+    let mut fixture = start();
+    let admin_cap = fixture.start_admin_with_fee_and_risk(ADMIN);
+    let admin_cap_id = admin_cap.admin_cap_id_for_testing();
+    let unknown_id = object::id_from_address(@0xDEAD);
+
+    assert_eq!(fixture.acl.super_admin_cap_id(), fixture.root.super_admin_cap_id_for_testing());
+    assert!(fixture.acl.is_admin(admin_cap_id));
+    assert!(!fixture.acl.is_admin(unknown_id));
+    assert!(fixture.acl.has_role<FeeAdmin>(admin_cap_id));
+    assert!(!fixture.acl.has_role<Role<u8>>(admin_cap_id));
+    assert!(!fixture.acl.has_role<FeeAdmin>(unknown_id));
+    assert_eq!(fixture.acl.admin_roles(admin_cap_id).length(), 2);
+    assert_eq!(fixture.acl.admin_count(), 1);
+    assert!(fixture.acl.super_admin_transfer().pending().is_none());
+    assert_eq!(fixture.acl.super_admin_transfer().delay_ms(), blast_acl::super_admin_transfer_delay_ms());
+    assert_eq!(blast_acl::max_roles_per_admin(), MAX_ROLES_PER_ADMIN);
+    assert_eq!(blast_acl::super_admin_transfer_delay_ms(), 7 * 24 * 60 * 60 * 1_000);
+
+    destroy(admin_cap);
+    destroy(fixture);
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EInvalidAdminCap, location = blast_admin::blast_acl)]
+fun admin_roles_rejects_an_unknown_cap() {
+    let fixture = start();
+
+    fixture.acl.admin_roles(object::id_from_address(@0xDEAD));
+
+    abort
+}
+
 // === Test Helpers ===
 
 fun start(): Fixture {
@@ -437,7 +471,7 @@ fun grant_eight_roles<T>(self: &mut Fixture, admin_cap_id: ID) {
 
 use blast_admin::{
     blast_acl::{Self, ACL, AdminCap, AdminWitness, SuperAdminCap},
-    blast_admin_events as events,
+    blast_admin_events::{Self as events, AdminDestroyed, AdminGranted, AdminRevoked, AdminRoleGranted, AdminRoleRevoked},
     errors,
 };
 

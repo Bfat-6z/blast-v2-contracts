@@ -604,7 +604,7 @@ place. The opening-round balances awaiting delivery are untouched.
 #### Admin operations (Blast admin)
 
 Each setter takes the object it changes, `PackageVersion`, and the role's `AdminWitness`. Delayed
-schedules abort with code 20 from the Blast admin delayed module of their type (`delayed` for a
+schedules abort with code 16 from the Blast admin delayed module of their type (`delayed` for a
 setting, `delayed_set` for a venue or signer admission) when nothing would change; "Delayed
 administration" lists their events. The allow/remove toggles for Quotes and decimals instead abort
 inside `sui::vec_set` when the entry already has the requested state.
@@ -654,8 +654,9 @@ inside `sui::vec_set` when the entry already has the requested state.
 - Upgrades (`UpgradeAdmin<BLAST_FUN>`): `blast_admin::package_admin::authorize_upgrade` returns an
   `UpgradeTicket` for an exact, scheduled digest; after the Upgrade command,
   `blast_admin::package_admin::commit_upgrade_and_advance` commits the receipt and advances
-  `PackageVersion` in the same transaction; `blast_admin::package_admin::make_immutable` ends
-  upgrades for good. The admin guide documents these calls.
+  `PackageVersion` in the same transaction. Ending upgrades needs a launchpad wrapper around
+  `blast_admin::package_admin::make_immutable`, which takes the launchpad's package witness; the
+  launchpad has none yet, so only a later upgrade can add it. The admin guide documents these calls.
 
 Each `schedule_*` setting has an `apply_*` that anyone calls once ready and a `cancel_*` for
 CancelAdmin, named after it (for example `launch_config::apply_protocol_lp_fees` and
@@ -667,7 +668,7 @@ Each policy owns its applied notice. A value schedule takes the proposed value a
 `delay_ms`, but it is ready at `now + applied delay_ms`: passing zero cannot shorten the current
 wait. Application, by anyone with `Clock`, makes the value and the next notice active together.
 Rescheduling replaces the proposal and restarts the full applied notice. `CancelAdmin` can cancel
-even a ready proposal. A proposal that changes neither value nor notice aborts with code 20
+even a ready proposal. A proposal that changes neither value nor notice aborts with code 16
 (`EUnchanged`) from Blast admin. Every notice is at most `blast_admin::delayed::max_delay_ms` (30
 days). The admin guide documents these delayed primitives in full.
 
@@ -705,8 +706,9 @@ is immediate, so a rotation admits the new key before revoking the old one.
 Upgrade custody is `blast_admin`'s generic administration and starts with a 48-hour notice.
 `blast_admin::package_admin::schedule_upgrade` takes an exact 32-byte digest;
 `blast_admin::package_admin::authorize_upgrade` consumes only that ready digest.
-`blast_admin::package_admin::schedule_make_immutable` and `blast_admin::package_admin::make_immutable`
-end upgrades. `blast_admin::package_admin::schedule_upgrade_delay` proposes only the notice,
+`blast_admin::package_admin::schedule_make_immutable` schedules the end of upgrades, which
+`blast_admin::package_admin::make_immutable` executes only from the launchpad's own code (a later
+upgrade must add that wrapper). `blast_admin::package_admin::schedule_upgrade_delay` proposes only the notice,
 replacing any pending action; anyone applies it with `blast_admin::package_admin::apply_upgrade_delay`.
 `blast_admin::package_admin::cancel_upgrade_action` (`CancelAdmin<BLAST_FUN>`) cancels any of these.
 
@@ -719,7 +721,7 @@ only a new notice with `launch::schedule_curve_fee_cap_delay` or
 replaces the other. After the notice anyone applies a reassignment with
 `launch::apply_curve_fee_cap_reassignment` or `launch::apply_metadata_cap_reassignment`, and a
 notice change with `launch::apply_curve_fee_cap_delay` or `launch::apply_metadata_cap_delay`;
-calling the other kind's apply aborts with code 22 from `delayed_action`. CancelAdmin cancels with
+calling the other kind's apply aborts with code 18 from `delayed_action`. CancelAdmin cancels with
 `launch::cancel_curve_fee_cap_reassignment` or `launch::cancel_metadata_cap_reassignment`.
 
 A reassignment mints a fresh cap, records it as the live one, sends it to the non-zero recipient, and
@@ -985,12 +987,12 @@ fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partner
 
 | Flow | Code, constant (module) | Fix |
 | --- | --- | --- |
-| any | 9 in `blast_admin::operational_version` | call the launchpad's current package ID |
-| pause, unpause | 23 `EInvalidPauseBits`, 24 `EPauseUnchanged` from `blast_admin::package_version` | select nonzero supported bits that change the active mask |
-| create, buy, sell, join, settle, migrate | 25 `blast_admin::errors::EPaused` (`package_version`) | wait for an `UnpauseAdmin<BLAST_FUN>` to clear the operation's bit |
-| unpause | 32 `blast_fun::errors::EUnguardedNotice` (`launch_config`); 27 `EUnguardedUpgradeNotice` from `blast_admin::package_admin` | make every notice nonzero, cancel proposals that would zero one, settle pending admissions |
-| package administration | 26 `EWrongUpgradeAction`, 13 `EInvalidPackageDigest` from `blast_admin::package_admin` | execute the exact scheduled action; use a 32-byte digest |
-| delayed administration | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin's delayed modules | wait for `ready_at_ms`; schedule before applying or cancelling; choose a notice of at most 30 days; change the value or notice; apply with the call matching the pending change |
+| any | 9 in `blast_admin::package_version` | call the launchpad's current package ID |
+| pause, unpause | 19 `EInvalidPauseBits`, 20 `EPauseUnchanged` from `blast_admin::package_version` | select nonzero supported bits that change the active mask |
+| create, buy, sell, join, settle, migrate | 21 `blast_admin::errors::EPaused` (`package_version`) | wait for an `UnpauseAdmin<BLAST_FUN>` to clear the operation's bit |
+| unpause | 32 `blast_fun::errors::EUnguardedNotice` (`launch_config`); 23 `EUnguardedUpgradeNotice` from `blast_admin::package_admin` | make every notice nonzero, cancel proposals that would zero one, settle pending admissions |
+| package administration | 22 `EWrongUpgradeAction`, 11 `EInvalidPackageDigest` from `blast_admin::package_admin` | execute the exact scheduled action; use a 32-byte digest |
+| delayed administration | 13 `ENotReady`, 14 `ENoPending`, 15 `EInvalidDelay`, 16 `EUnchanged`, 18 `EWrongChange` from Blast admin's delayed modules | wait for `ready_at_ms`; schedule before applying or cancelling; choose a notice of at most 30 days; change the value or notice; apply with the call matching the pending change |
 | publish | 7 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 20 `blast_fun::errors::EInvalidCreatorRecipient`, 21 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | prepare | `blast_migrators::errors::EInvalidTier`, `blast_migrators::errors::ESymbolTooLong`; Cetus aborts in its own modules | a tier within Bluefin's bounds and a Meme symbol of at most 32 bytes; a tick spacing Cetus registers and a pair it accepts |
 | start | 9 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
@@ -1379,8 +1381,9 @@ receipt and moves `PackageVersion<BLAST_MIGRATORS>` to the next generation in th
 From then on every call to the old package's code aborts the generation check, so integrators must
 call the current package address; type names keep the original address. Upgrading this package
 leaves the products and the vault on their own generations; an upgrade of the vault requires a
-relink of this package. `blast_admin::package_admin::schedule_make_immutable` and
-`blast_admin::package_admin::make_immutable` end upgrades;
+relink of this package. `blast_admin::package_admin::schedule_make_immutable` schedules the end of upgrades, which
+`blast_admin::package_admin::make_immutable` executes only from this package's own code (a later
+upgrade must add that wrapper);
 `blast_admin::package_admin::schedule_upgrade_delay` changes the notice. The package defines no
 pause bits: migration stops with the product's migration pause bit, and buybacks with the vault's
 admin pause bit.
@@ -1475,7 +1478,7 @@ the same transactions.
 
 | Flow | Abort | Fix |
 | --- | --- | --- |
-| any | code 9 in `blast_admin::operational_version` | call the current package ID of the migrators, product, or vault package |
+| any | code 9 in `blast_admin::package_version` | call the current package ID of the migrators, product, or vault package |
 | Cetus prepare | Cetus aborts in its own modules | choose a tick spacing Cetus registers, for a pair it accepts |
 | Bluefin prepare | 3 `blast_migrators::errors::EInvalidTier`, then 4 `blast_migrators::errors::ESymbolTooLong` | tick spacing 1..=400, fee rate 1..=20,000; a Meme symbol of at most 32 bytes |
 | Cetus migrate, collect, buyback | 0 `blast_migrators::errors::EInvalidCoinOrder` (migrate), 2 `blast_migrators::errors::EWrongCoinPair` | pass the pool's coin order; `CoinA` and `CoinB` must be the sale's Meme and Quote |
@@ -1484,7 +1487,7 @@ the same transactions.
 | migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedIssuer`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the product's package witness must be listed in `VaultRegistry`; the seed must give positive liquidity |
 | migrate | Cetus aborts when the pair's pool already exists or the tick spacing is no longer registered; Bluefin aborts on a wrong creation fee | the sale stays ready to migrate; pass the exact Bluefin fee |
 | collect, settle, buyback | 1 `blast_migrators::errors::EPositionPoolMismatch` in the venue's module | pass the vault's own pool |
-| settle and apply | 18 `ENoPending` or 17 `ENotReady` from Blast admin's `delayed` module | wait until the scheduled split is ready |
+| settle and apply | 14 `ENoPending` or 13 `ENotReady` from Blast admin's `delayed` module | wait until the scheduled split is ready |
 | buyback | 7 `blast_vault::errors::EBuybackQuoteOutOfRange`, 8 `blast_vault::errors::EBuybackBelowMinimum`; Blast admin `EPaused` when the vault's admin bit is set | spend a positive amount up to the burn Quote; re-quote `min_meme_out` |
 
 ### Pitfalls
@@ -1681,6 +1684,16 @@ round scheduling and publication, and gas settlement. It never stops venue admis
 collection, owner claims, partner payouts, holder claims, round closing, or cancellations.
 Unpausing with `blast_vault_package::unpause` requires a nonzero witness admission notice, with no
 pending admission or change to zero.
+
+### Upgrades and immutability
+
+The vault is upgradeable through `blast_admin`'s generic administration and is to be made
+immutable after its audit. An `UpgradeAdmin<BLAST_VAULT_PACKAGE>` schedules that with
+`blast_admin::package_admin::schedule_make_immutable` and, once the 48-hour upgrade notice has
+passed, executes it with `blast_vault::blast_vault_package::make_immutable` (the shared
+`PackageAdmin`, the role witness, the `PackageVersion` and `Clock`). The call runs only on the
+current vault generation (code 9 from `blast_admin::package_version` otherwise) and then destroys
+the `UpgradeCap`; no later upgrade or repair is possible.
 
 ### Reading state
 
@@ -2201,9 +2214,9 @@ are raised in module `blast_partners`; `partner_list::add` and
 removing one whose removal is pending), and code 4 is raised in module
 `partner_list`. The share and cap calls also
 abort in module `blast_admin::delayed` with `blast_admin`'s error codes:
-`ENotReady` (17, `apply_share` or `apply_cap` before `ready_at_ms`),
-`ENoPending` (18, apply or cancel with nothing proposed), `EInvalidDelay` (19, a
-`ready_at_ms` that would overflow) and `EUnchanged` (20, proposing the applied
+`ENotReady` (13, `apply_share` or `apply_cap` before `ready_at_ms`),
+`ENoPending` (14, apply or cancel with nothing proposed), `EInvalidDelay` (15, a
+`ready_at_ms` that would overflow) and `EUnchanged` (16, proposing the applied
 value). A product call that names a
 partner it does not accept, or passes the wrong `Partner` to a claim, aborts in
 that product's module with that product's own error.
@@ -4689,6 +4702,16 @@ public fun unpause(
     package_version: &mut blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
     bits: u8,
 )
+
+/// Ends the vault package's upgrades once its scheduled immutability action is ready (#195,
+/// after the audit). It runs only on the live generation; the generic administration then checks
+/// the package witness, consumes the action and destroys the UpgradeCap.
+public fun make_immutable(
+    package_admin: &mut blast_admin::package_admin::PackageAdmin<BLAST_VAULT_PACKAGE>,
+    upgrade_admin: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UpgradeAdmin<BLAST_VAULT_PACKAGE>>,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
+)
 ```
 
 ### `blast_vault::constants`
@@ -5405,26 +5428,23 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 7 | `ENotPendingSuperAdminRecipient` |  |
 | 8 | `ESuperAdminCapStillActive` |  |
 | 9 | `EOperationalVersionMismatch` |  |
-| 10 | `EOperationalVersionOverflow` |  |
-| 11 | `EInvalidPackagePublisher` |  |
-| 12 | `EInvalidUpgradeCap` |  |
-| 13 | `EInvalidPackageDigest` |  |
-| 14 | `EUpgradeCapUnavailable` |  |
-| 15 | `EUpgradePolicyNotMoreRestrictive` |  |
-| 16 | `EInvalidPackageMarker` |  |
-| 17 | `ENotReady` |  |
-| 18 | `ENoPending` |  |
-| 19 | `EInvalidDelay` |  |
-| 20 | `EUnchanged` |  |
-| 21 | `EProposalPending` |  |
-| 22 | `EWrongChange` |  |
-| 23 | `EInvalidPauseBits` |  |
-| 24 | `EPauseUnchanged` |  |
-| 25 | `EPaused` |  |
-| 26 | `EWrongUpgradeAction` |  |
-| 27 | `EUnguardedUpgradeNotice` |  |
-| 28 | `EInvalidPackageWitness` |  |
-| 29 | `EWrongUnpauseWitness` |  |
+| 10 | `EInvalidUpgradeCap` |  |
+| 11 | `EInvalidPackageDigest` |  |
+| 12 | `EUpgradeCapUnavailable` |  |
+| 13 | `ENotReady` |  |
+| 14 | `ENoPending` |  |
+| 15 | `EInvalidDelay` |  |
+| 16 | `EUnchanged` |  |
+| 17 | `EProposalPending` |  |
+| 18 | `EWrongChange` |  |
+| 19 | `EInvalidPauseBits` |  |
+| 20 | `EPauseUnchanged` |  |
+| 21 | `EPaused` |  |
+| 22 | `EWrongUpgradeAction` |  |
+| 23 | `EUnguardedUpgradeNotice` |  |
+| 24 | `EInvalidPackageWitness` |  |
+| 25 | `EWrongUnpauseWitness` |  |
+| 26 | `EWrongPackageWitness` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -5435,7 +5455,8 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/ad
 #### Types
 
 ```move
-/// The shared singleton that lists the active root and every live administrator's roles.
+/// The shared singleton that lists the active root and every live administrator's roles. It has
+/// no destructor: every consumer's sign-in reads it for the life of the protocol.
 public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
@@ -5505,6 +5526,32 @@ public fun destroy_retired_super_admin_cap(self: &ACL, root: SuperAdminCap)
 
 /// Proves that `admin_cap` is live and holds `Role`; the witness type is what consumers require.
 public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role>
+
+/// The ID of the one root cap that works; any other `SuperAdminCap` is inert.
+public fun super_admin_cap_id(self: &ACL): ID
+
+/// Whether `admin_cap_id` names a live administrator.
+public fun is_admin(self: &ACL, admin_cap_id: ID): bool
+
+/// Whether the live administrator `admin_cap_id` holds `Role`; false for an unknown cap.
+public fun has_role<Role>(self: &ACL, admin_cap_id: ID): bool
+
+/// The role type names, with defining IDs, a live administrator holds.
+public fun admin_roles(self: &ACL, admin_cap_id: ID): vector<TypeName>
+
+/// How many live administrators exist.
+public fun admin_count(self: &ACL): u64
+
+/// The root transfer's delayed slot: its fixed notice and any pending nominee.
+public fun super_admin_transfer(
+    self: &ACL,
+): &delayed_action::DelayedAction<SuperAdminTransfer, address>
+
+/// The most roles one administrator can hold.
+public fun max_roles_per_admin(): u64
+
+/// The fixed wait before a nominated super admin may accept the root, in milliseconds.
+public fun super_admin_transfer_delay_ms(): u64
 ```
 
 #### Constants
@@ -5557,13 +5604,23 @@ public struct SuperAdminCapDestroyed has copy, drop {
     super_admin_cap_id: ID,
 }
 
-/// Emitted by a value that only its package's one-time witness could create; `container_id` is
-/// the UID the advancing module held.
+/// A package version moved to its next generation; `container_id` is that `PackageVersion`.
 public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, drop {
     container_id: ID,
     original_package_id: address,
     previous_generation: u64,
     new_generation: u64,
+}
+
+/// A package version was created at wrap, beside the administration `custodian_id`, with its
+/// defined and paused bits, pinned package witness and first generation.
+public struct PackageVersionCreated<phantom PackageMarker: drop> has copy, drop {
+    package_version_id: ID,
+    custodian_id: ID,
+    valid_pause_bits: u8,
+    paused: u8,
+    package_witness: TypeName,
+    generation: u64,
 }
 
 public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop {
@@ -5591,15 +5648,6 @@ public struct UpgradeCommitted<phantom PackageMarker: drop> has copy, drop {
     new_package_id: ID,
     previous_native_version: u64,
     new_native_version: u64,
-}
-
-public struct UpgradePolicyRestricted<phantom PackageMarker: drop> has copy, drop {
-    custodian_id: ID,
-    upgrade_cap_id: ID,
-    original_package_id: address,
-    native_version: u64,
-    previous_policy: u8,
-    new_policy: u8,
 }
 
 public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
@@ -5745,6 +5793,19 @@ public fun notice_delay_ms(self: &Notice): u64
 
 /// The Unix millisecond time from which the change can apply.
 public fun notice_ready_at_ms(self: &Notice): u64
+
+/// The ID of the object that stores this setting.
+public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID
+
+/// The owner-defined key of this setting.
+public fun key<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): K
+
+/// Whether `apply` would succeed now: a proposal is pending, its `ready_at_ms` has passed, and
+/// its notice still fits in a Unix millisecond timestamp.
+public fun is_ready<K: copy + drop + store, T: copy + drop + store>(
+    self: &Delayed<K, T>,
+    clock: &Clock,
+): bool
 ```
 
 #### Events
@@ -5882,6 +5943,35 @@ public fun destroy<K: copy + drop + store, A: copy + drop + store>(self: Delayed
 
 /// The proposed action, or none for a notice change.
 public fun action<A: copy + drop + store>(self: &Change<A>): Option<A>
+
+/// The proposed action, or none when nothing or a notice change is pending.
+public fun pending_action<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<A>
+
+/// The proposed next notice and when it becomes ready, or none when nothing or an action is
+/// pending.
+public fun pending_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<delayed::Notice>
+
+/// Whether the pending proposal, an action or a notice change, would apply now.
+public fun is_ready<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+    clock: &Clock,
+): bool
+
+/// Whether a pending notice change would apply now.
+public fun is_delay_ready<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+    clock: &Clock,
+): bool
+
+/// The ID of the object that stores this action slot.
+public fun owner<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID
+
+/// The owner-defined key of this action slot.
+public fun key<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): K
 ```
 
 #### Events
@@ -6053,6 +6143,73 @@ public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>)
 
 /// The notice the change waits and when it becomes ready.
 public fun entry_proposal_notice<V: copy + drop + store>(self: &EntryProposal<V>): delayed::Notice
+
+/// Whether `entry` has a pending change.
+public fun is_pending<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): bool
+
+/// When `entry`'s pending change becomes ready, if one is pending.
+public fun entry_ready_at_ms<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): Option<u64>
+
+/// Whether `entry`'s pending change would apply now.
+public fun is_ready<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+    clock: &Clock,
+): bool
+
+/// Whether a pending notice change would apply now.
+public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    clock: &Clock,
+): bool
+
+/// The ID of the object that stores this map.
+public fun owner<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): ID
+
+/// The owner-defined key of this map.
+public fun key<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): K
+
+/// Whether `entry` has an applied value.
+public fun contains<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): bool
+
+/// How many entries have an applied value.
+public fun entry_count<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): u64
+
+/// How many entry changes are pending.
+public fun pending_count<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): u64
+
+/// True when every change still to come waits a nonzero notice: the applied notice is nonzero,
+/// no proposal would set it to zero, and no entry change scheduled earlier is pending.
+public fun is_guarded<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): bool
+
+/// The entry a change touches, or none for a notice change.
+public fun changed_entry<E: copy + drop + store, V: copy + drop + store>(
+    self: &MapChange<E, V>,
+): Option<E>
+
+/// The value an entry change proposes (none clears), or none for a notice change.
+public fun changed_value<E: copy + drop + store, V: copy + drop + store>(
+    self: &MapChange<E, V>,
+): Option<V>
 ```
 
 #### Events
@@ -6223,6 +6380,45 @@ public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(self: &m
 /// Deletes a set with no pending admission or notice change and records its end, which
 /// also ends every remaining membership.
 public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: DelayedSet<K, E>)
+
+/// How many members are admitted.
+public fun member_count<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): u64
+
+/// Whether `member` has a pending admission.
+public fun is_pending<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): bool
+
+/// Whether `member`'s pending admission would apply now.
+public fun is_ready<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+    clock: &Clock,
+): bool
+
+/// Whether a pending notice change would apply now.
+public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    clock: &Clock,
+): bool
+
+/// The ID of the object that stores this set.
+public fun owner<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): ID
+
+/// The owner-defined key of this set.
+public fun key<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): K
+
+/// The notice `member`'s pending admission waits and when it becomes ready, if one is pending.
+public fun admission_notice<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): Option<delayed::Notice>
+
+/// The member a change admits, or none for a notice change.
+public fun member<E: copy + drop + store>(self: &SetChange<E>): Option<E>
 ```
 
 #### Events
@@ -6277,58 +6473,9 @@ public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 }
 ```
 
-### `blast_admin::operational_version`
-
-Sealed operational-generation arithmetic for consumer-owned version containers.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/operational_version.move
-
-#### Types
-
-```move
-/// Storable, package-typed generation value with construction and mutation sealed here.
-public struct OperationalVersion<phantom PackageMarker: drop> has store {
-    generation: u64,
-}
-```
-
-#### Functions
-
-```move
-/// Creates the initial operational generation from the consumer package's one-time witness, so
-/// the value can only come into existence inside that package's initializer.
-public fun new<PackageMarker: drop>(otw: &PackageMarker): OperationalVersion<PackageMarker>
-
-/// Rejects bytecode whose private compiled generation differs from canonical state.
-public fun assert_current<PackageMarker: drop>(
-    self: &OperationalVersion<PackageMarker>,
-    compiled_generation: u64,
-)
-
-/// Proves the proposed compiled generation is exactly next before other finalizer effects.
-public fun assert_next<PackageMarker: drop>(
-    self: &OperationalVersion<PackageMarker>,
-    compiled_generation: u64,
-)
-
-/// Advances only when the consumer's new compiled generation is exactly one greater.
-///
-/// `container` is the versioned object's own UID, so the emitted container ID is one the caller
-/// holds.
-public fun advance<PackageMarker: drop>(
-    self: &mut OperationalVersion<PackageMarker>,
-    container: &UID,
-    compiled_generation: u64,
-)
-```
-
-#### Constants
-
-- `INITIAL_GENERATION: u64 = 1`
-
 ### `blast_admin::package_admin`
 
-One package's sealed Publisher and UpgradeCap, its delayed upgrade decisions, and the role-gated pause controls of its `PackageVersion`, typed by the package's one-time witness.  Each role is generic over the package marker, so the ACL stores `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator never reaches another's custody. This package is immutable: no consumer bytecode generation gates these calls, and a consumer whose new bytecode compiles the wrong generation can still schedule a repair.
+One package's sealed Publisher and UpgradeCap, its delayed upgrade decisions, and the role-gated pause controls of its `PackageVersion`, typed by the package's one-time witness.  The native capabilities never leave the shared `PackageAdmin`: only the package itself, with its package witness, borrows the Publisher by immutable reference, nothing lends the UpgradeCap, and the cap acts only through a scheduled upgrade or the one terminal `make_immutable`. Each role is generic over the package marker, so the ACL stores `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator never reaches another's custody. This package is immutable: no consumer bytecode generation gates these calls, and a consumer whose new bytecode compiles the wrong generation can still schedule a repair.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package_admin.move
 
@@ -6344,10 +6491,13 @@ public enum UpgradeAction has copy, drop, store {
 /// Keys the delayed lifecycle of one package's upgrade actions and their notice.
 public struct UpgradeKey<phantom PackageMarker: drop>() has copy, drop, store;
 
-/// Shared custody for one package's framework Publisher and UpgradeCap.
+/// Shared custody for one package's framework Publisher and UpgradeCap. It has no destructor:
+/// deleting it would release or strand the native capabilities it seals.
 public struct PackageAdmin<phantom PackageMarker: drop> has key {
     id: UID,
-    custody: upgrade_custody::UpgradeCustody<PackageMarker>,
+    publisher: Publisher,
+    /// Native upgrade authority; `none` once the package is immutable.
+    upgrade_cap: Option<UpgradeCap>,
     upgrade: delayed_action::DelayedAction<UpgradeKey<PackageMarker>, UpgradeAction>,
 }
 
@@ -6367,9 +6517,10 @@ public struct CancelAdmin<phantom PackageMarker> {}
 #### Functions
 
 ```move
-/// Consumes the unique publication proof, seals the native capabilities and shares both the
-/// administration and the package version. The version starts with every defined bit paused;
-/// an `UnpauseAdmin` releases it through the package's own unpause.
+/// Consumes the unique publication proof, seals the never-upgraded native cap of the marker's
+/// package beside its Publisher, and shares both the administration and the package version.
+/// The version starts with every defined bit paused; an `UnpauseAdmin` releases it through the
+/// package's own unpause.
 public fun wrap<PackageMarker: drop>(
     publication: package_version::Publication<PackageMarker>,
     upgrade_cap: UpgradeCap,
@@ -6401,7 +6552,8 @@ public fun cancel_upgrade_action<PackageMarker: drop>(
 )
 
 /// Consumes the ready upgrade action for exactly `digest` and authorizes it under the sealed
-/// cap's current policy.
+/// cap's current policy. A scheduled upgrade implies the cap: scheduling requires it, and only a
+/// consumed immutability action removes it.
 public fun authorize_upgrade<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
@@ -6409,9 +6561,10 @@ public fun authorize_upgrade<PackageMarker: drop>(
     clock: &Clock,
 ): UpgradeTicket
 
-/// Commits the native receipt into the sealed cap and advances the package version by one
-/// generation, together. The new bytecode must compile that generation; bytecode compiling any
-/// other fails every `assert_current`, while these calls stay available to schedule a repair.
+/// Commits the native receipt into the sealed cap that authorized it, then advances the package
+/// version by one generation in the same call. The new bytecode must compile that generation; bytecode
+/// compiling any other fails every `assert_current`, while these calls stay available to schedule
+/// a repair.
 public fun commit_upgrade_and_advance<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
@@ -6419,10 +6572,17 @@ public fun commit_upgrade_and_advance<PackageMarker: drop>(
     receipt: UpgradeReceipt,
 )
 
-/// Consumes the ready immutability action and irreversibly destroys native upgrade authority.
-public fun make_immutable<PackageMarker: drop>(
+/// Consumes the ready immutability action and irreversibly destroys native upgrade authority;
+/// the Publisher stays sealed. This is the one terminal upgrade action: the cap's policy is
+/// never narrowed in between. The package itself must pass its package witness (aborts with
+/// `EWrongPackageWitness` otherwise), so only its own code can end its upgrades. Each package
+/// that may end its upgrades wraps this call in a thin function that first runs
+/// `package_version.assert_current(constants::generation!())`, so only its live bytecode can.
+public fun make_immutable<PackageMarker: drop, PackageWitness: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    _: PackageWitness,
+    package_version: &package_version::PackageVersion<PackageMarker>,
     clock: &Clock,
 )
 
@@ -6449,62 +6609,124 @@ public fun pause<PackageMarker: drop>(
 )
 
 /// Clears the requested pause bits for the package's own unpause, which first checks its own
-/// configuration notices and then passes a value of the exact witness type the package pinned
-/// at publication. Aborts while any upgrade notice still to come could be zero. Only the
-/// package's unpause constructs that type, so a role alone cannot skip its checks.
-public fun clear_pause_bits<PackageMarker: drop, UnpauseWitness: drop>(
+/// configuration notices and then passes a value of its package witness, the type pinned at
+/// publication. Aborts while any upgrade notice still to come could be zero. Only the package's
+/// own code constructs that type, so a role alone cannot skip its checks.
+public fun clear_pause_bits<PackageMarker: drop, PackageWitness: drop>(
     self: &PackageAdmin<PackageMarker>,
     _: &blast_acl::AdminWitness<UnpauseAdmin<PackageMarker>>,
-    _: UnpauseWitness,
+    _: PackageWitness,
     package_version: &mut package_version::PackageVersion<PackageMarker>,
     bits: u8,
 )
+
+/// Borrows the sealed Publisher for package `PackageMarker` itself, which passes a value of its
+/// package witness, the type pinned at publication, to create Display or transfer policies for
+/// its own types. The reference cannot move, mutate or burn the Publisher.
+public fun publisher<PackageMarker: drop, PackageWitness: drop>(
+    self: &PackageAdmin<PackageMarker>,
+    _: PackageWitness,
+    package_version: &package_version::PackageVersion<PackageMarker>,
+): &Publisher
+
+/// Borrows the sealed Publisher mutably for package `PackageMarker` itself, gated exactly like
+/// `publisher` (aborts with `EWrongPackageWitness`), for framework calls that take
+/// `&mut Publisher` such as `sui::display_registry::new_with_publisher`. A Publisher has no
+/// `drop`, so a mutable reference cannot overwrite it, and the pinned framework has no call that
+/// moves a value out from behind one. If a later framework adds a generic swap, only the package
+/// holding its witness could use it, and the Publisher would then leave this custody.
+public fun publisher_mut<PackageMarker: drop, PackageWitness: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    _: PackageWitness,
+    package_version: &package_version::PackageVersion<PackageMarker>,
+): &mut Publisher
+
+/// The applied upgrade notice, in milliseconds.
+public fun upgrade_delay_ms<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): u64
+
+/// The pending upgrade action or notice change, if any.
+public fun pending_upgrade<PackageMarker: drop>(
+    self: &PackageAdmin<PackageMarker>,
+): Option<delayed::Proposal<delayed_action::Change<UpgradeAction>>>
+
+/// True when every upgrade action still to come waits a nonzero notice.
+public fun is_upgrade_notice_guarded<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): bool
+
+/// Whether native upgrade authority remains; false once the package is immutable.
+public fun has_upgrade_cap<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): bool
+
+/// The sealed UpgradeCap's ID, or none once the package is immutable.
+public fun upgrade_cap_id<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): Option<ID>
+
+/// The package ID the next upgrade starts from, or none once the package is immutable.
+public fun current_package_id<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): Option<ID>
+
+/// The native upgrade count plus one, or none once the package is immutable.
+public fun native_version<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): Option<u64>
+
+/// The native upgrade policy, or none once the package is immutable.
+public fun upgrade_policy<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): Option<u8>
+
+/// The sealed Publisher's ID.
+public fun publisher_id<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): ID
+
+/// The digest an upgrade action approves, or none for immutability.
+public fun upgrade_digest(self: &UpgradeAction): Option<vector<u8>>
+
+/// The notice every package's upgrade actions wait from wrap until changed, in milliseconds.
+public fun initial_upgrade_delay_ms(): u64
 ```
 
 #### Constants
 
 - `INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: The notice every upgrade or immutability action waits from publication until changed.
+- `PACKAGE_DIGEST_LENGTH: u64 = 32`: The byte length of a package digest, the only length `schedule_upgrade` accepts.
+- `INITIAL_NATIVE_VERSION: u64 = 1`: The framework stamps a freshly published package's `UpgradeCap` with version one.
 
 ### `blast_admin::package_version`
 
-One package's publication proof, operational generation and pause bits, typed by its one-time witness.  The consumer's initializer turns its one-time witness into an owned `Publication`, which `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused. The consumer compiles its own generation constant and checks it with `assert_current`; it also chooses which pause bits exist and pins the one witness type its own unpause passes when clearing them. Setting and clearing bits and advancing the generation are sealed here and reached only through `package_admin`'s role-gated calls.
+One package's publication proof, operational generation and pause bits, typed by its one-time witness.  The consumer's initializer turns its one-time witness into an owned `Publication`, which `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused at generation one. The consumer compiles its own generation constant and checks it with `assert_current`; it also chooses which pause bits exist and pins its package witness, the one type whose value its own code passes to clear pause bits or to borrow its Publisher. Setting and clearing bits and advancing the generation are sealed here and reached only through `package_admin`'s role-gated calls, so no package can build a second version or move a generation by any other path.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package_version.move
 
 #### Types
 
 ```move
-/// Owned publication custody; it cannot supply the `PackageVersion` that operations require.
+/// Owned publication custody; it cannot supply the `PackageVersion` that operations require. It has
+/// no destructor: it holds the package's Publisher, whose one exit is `package_admin::wrap`.
 public struct Publication<phantom PackageMarker: drop> has key {
     id: UID,
     publisher: Publisher,
     valid_pause_bits: u8,
-    unpause_witness: TypeName,
-    generation: operational_version::OperationalVersion<PackageMarker>,
+    package_witness: TypeName,
 }
 
-/// The package's shared operational generation and pause bits.
+/// The package's shared operational generation and pause bits. It has no destructor: every
+/// version-gated call of the package reads it.
 public struct PackageVersion<phantom PackageMarker: drop> has key {
     id: UID,
     /// The bits this package defines; every pause or unpause request must fall within them.
     valid_pause_bits: u8,
     paused: u8,
-    /// The exact type, with defining IDs, whose value the package's own unpause passes to
-    /// `package_admin::clear_pause_bits`.
-    unpause_witness: TypeName,
-    generation: operational_version::OperationalVersion<PackageMarker>,
+    /// The package witness: the exact type, with defining IDs, whose value only the package's own
+    /// code passes to `package_admin::clear_pause_bits`, `package_admin::publisher` and
+    /// `package_admin::make_immutable`.
+    package_witness: TypeName,
+    /// The only generation whose compiled bytecode passes `assert_current`.
+    generation: u64,
 }
 ```
 
 #### Functions
 
 ```move
-/// Claims the Publisher and seeds the first generation from the package's one-time witness,
-/// so a publication can only come into existence inside that package's initializer.
+/// Claims the Publisher from the package's one-time witness, so a publication can only come into
+/// existence inside that package's initializer; the framework rejects any other witness.
 /// `valid_pause_bits` fixes the bits the package defines, and zero defines none.
-/// `UnpauseWitness` pins the one type that can clear them: a struct the package defines, other
-/// than its marker, that it constructs only inside its own unpause and never returns or stores.
-public fun new_publication<PackageMarker: drop, UnpauseWitness: drop>(
+/// `PackageWitness` pins the package witness, the one type that clears those bits and borrows the
+/// Publisher: a struct the package defines, other than its marker, that only the package's own
+/// code constructs and that it never returns or stores.
+public fun new_publication<PackageMarker: drop, PackageWitness: drop>(
     otw: PackageMarker,
     valid_pause_bits: u8,
     ctx: &mut TxContext,
@@ -6523,77 +6745,34 @@ public fun assert_current<PackageMarker: drop>(
 /// Rejects an operation whose pause bit is set, before its lifecycle or economic checks. This is a
 /// mask check only: a bit the package never defined is never set, so it never aborts.
 public fun assert_not_paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>, bit: u8)
-```
 
-### `blast_admin::upgrade_custody`
+/// The active generation; only bytecode compiling it passes `assert_current`.
+public fun generation<PackageMarker: drop>(self: &PackageVersion<PackageMarker>): u64
 
-Sealed custody and native transitions for one consumer package's framework capabilities.
+/// The pause bits the package defines.
+public fun valid_pause_bits<PackageMarker: drop>(self: &PackageVersion<PackageMarker>): u8
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/upgrade_custody.move
+/// The pause bits currently set.
+public fun paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>): u8
 
-#### Types
+/// True when any of `bits` is set.
+public fun is_paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>, bits: u8): bool
 
-```move
-/// Storable custody value whose capabilities never leave it: the Publisher is readable by
-/// reference and the UpgradeCap acts only through the named transitions below.
-public struct UpgradeCustody<phantom PackageMarker: drop> has store {
-    publisher: Publisher,
-    upgrade_cap: Option<UpgradeCap>,
-}
-```
+/// The package witness type, with defining IDs, pinned at publication.
+public fun package_witness<PackageMarker: drop>(self: &PackageVersion<PackageMarker>): TypeName
 
-#### Functions
+/// The pause bits the publication will define once wrapped.
+public fun publication_valid_pause_bits<PackageMarker: drop>(self: &Publication<PackageMarker>): u8
 
-```move
-/// Validates an original package's Publisher and never-upgraded cap before sealing both.
-public fun new<PackageMarker: drop>(
-    custodian_id: ID,
-    publisher: Publisher,
-    upgrade_cap: UpgradeCap,
-): UpgradeCustody<PackageMarker>
+/// The ID of the Publisher the publication holds.
+public fun publication_publisher_id<PackageMarker: drop>(self: &Publication<PackageMarker>): ID
 
-/// Reports whether native upgrade authority remains sealed in custody.
-public fun has_upgrade_cap<PackageMarker: drop>(self: &UpgradeCustody<PackageMarker>): bool
-
-/// Borrows the sealed Publisher for provenance-gated framework features such as Display and
-/// TransferPolicy. Every framework path that moves or burns a Publisher takes it by value, so a
-/// reference cannot end custody; the consumer wrapper decides who may call this.
-public fun publisher<PackageMarker: drop>(self: &UpgradeCustody<PackageMarker>): &Publisher
-
-/// Authorizes exactly one 32-byte package digest under the cap's current policy.
-public fun authorize_upgrade<PackageMarker: drop>(
-    self: &mut UpgradeCustody<PackageMarker>,
-    custodian_id: ID,
-    digest: vector<u8>,
-): UpgradeTicket
-
-/// Commits a native receipt into the same sealed capability that authorized it.
-public fun commit_upgrade<PackageMarker: drop>(
-    self: &mut UpgradeCustody<PackageMarker>,
-    custodian_id: ID,
-    receipt: UpgradeReceipt,
-)
-
-/// Irreversibly narrows compatible policy to additive-only upgrades.
-public fun restrict_to_additive<PackageMarker: drop>(
-    self: &mut UpgradeCustody<PackageMarker>,
-    custodian_id: ID,
-)
-
-/// Irreversibly narrows compatible or additive policy to dependency-only upgrades.
-public fun restrict_to_dependency_only<PackageMarker: drop>(
-    self: &mut UpgradeCustody<PackageMarker>,
-    custodian_id: ID,
-)
-
-/// Irreversibly destroys native upgrade authority while preserving Publisher custody.
-public fun make_immutable<PackageMarker: drop>(
-    self: &mut UpgradeCustody<PackageMarker>,
-    custodian_id: ID,
-)
+/// The package witness type, with defining IDs, the publication pins.
+public fun publication_package_witness<PackageMarker: drop>(
+    self: &Publication<PackageMarker>,
+): TypeName
 ```
 
 #### Constants
 
-- `PACKAGE_DIGEST_LENGTH: u64 = 32`
-- `INITIAL_NATIVE_VERSION: u64 = 1`: The framework stamps a freshly published package's `UpgradeCap` with version one.
+- `INITIAL_GENERATION: u64 = 1`

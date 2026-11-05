@@ -14,8 +14,8 @@ public struct Receipt has key {
     id: UID,
 }
 
-/// A witness only this marker's package can construct, for package-gated calls.
-public struct UnpauseWitness() has drop;
+/// The package witness only this marker's package constructs, for package-gated calls.
+public struct PackageWitness() has drop;
 
 // === Test Helpers ===
 
@@ -23,6 +23,6 @@ public fun marker(): PACKAGE_MARKER {
     PACKAGE_MARKER {}
 }
 
-public fun unpause_witness(): UnpauseWitness {
-    UnpauseWitness()
+public fun package_witness(): PackageWitness {
+    PackageWitness()
 }

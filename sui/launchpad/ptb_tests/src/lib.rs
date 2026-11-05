@@ -558,7 +558,8 @@ pub enum UpgradeAction {
     MakeImmutable,
 }
 
-/// A `PackageAdmin` in BCS field order, with its `UpgradeCustody` flattened.
+/// A `PackageAdmin` in BCS field order: id, sealed Publisher, `Option<UpgradeCap>` (none once
+/// immutable) and the upgrade `DelayedAction`.
 pub type PackageAdminContents = (ObjectID, (ObjectID, String, String), Vec<UpgradeCap>, DelayedAction<UpgradeAction>);
 
 /// Mirrors `blast_admin::delayed::DelayedScheduled<K, T>`.
@@ -924,8 +925,10 @@ impl Harness {
         let cap = publication.created(self, "package", "UpgradeCap");
         assert_eq!(bootstrap.len(), 1);
         assert_eq!(cap.len(), 1);
-        let (bootstrap_id, publisher, valid_pause_bits, unpause_witness, generation):
-            (ObjectID, (ObjectID, String, String), u8, String, u64) = bcs::from_bytes(&self.contents(bootstrap[0]))?;
+        // The publication pins the package witness; the generation starts at 1 only at wrap.
+        let (bootstrap_id, publisher, valid_pause_bits, unpause_witness):
+            (ObjectID, (ObjectID, String, String), u8, String) = bcs::from_bytes(&self.contents(bootstrap[0]))?;
+        let generation = 1u64;
         assert_eq!(valid_pause_bits, 7, "the launchpad defines Create, Trading and Migrate");
         assert!(unpause_witness.ends_with("::blast_fun::PackageWitness"), "{unpause_witness}");
         let cap_contents = self.contents(cap[0]);

@@ -383,6 +383,58 @@ fun a_setting_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal(
     clock.destroy_for_testing();
 }
 
+#[test]
+fun readers_report_owner_key_and_proposal_terms() {
+    let clock = clock_at(10);
+    let mut setting = new_setting(7, NOTICE_MS);
+    setting.schedule(8, 25, &clock);
+
+    let proposal = setting.pending().destroy_some();
+    assert_eq!(setting.owner(), owner());
+    assert_eq!(setting.key(), Fee());
+    assert_eq!(proposal.value(), 8);
+    assert_eq!(proposal.delay_ms(), 25);
+    assert_eq!(proposal.ready_at_ms(), 10 + NOTICE_MS);
+    assert_eq!(delayed::max_delay_ms(), 30 * 24 * 60 * 60 * 1_000);
+
+    setting.cancel();
+    setting.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun a_setting_is_ready_exactly_when_apply_would_succeed() {
+    let mut clock = clock_at(0);
+    let mut setting = new_setting(7, NOTICE_MS);
+    assert!(!setting.is_ready(&clock));
+
+    setting.schedule_value(8, &clock);
+    clock.set_for_testing(NOTICE_MS - 1);
+    assert!(!setting.is_ready(&clock));
+    clock.set_for_testing(NOTICE_MS);
+    assert!(setting.is_ready(&clock));
+    setting.apply(&clock);
+    assert!(!setting.is_ready(&clock));
+
+    setting.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+/// A proposed notice that would no longer fit at application time is not ready.
+fun a_setting_whose_next_notice_would_overflow_is_not_ready() {
+    let mut clock = clock_at(0);
+    let mut setting = new_setting(7, 0);
+    setting.schedule_delay(delayed::max_delay_ms(), &clock);
+
+    clock.set_for_testing(std::u64::max_value!() - delayed::max_delay_ms() + 1);
+    assert!(!setting.is_ready(&clock));
+
+    setting.cancel();
+    setting.destroy();
+    clock.destroy_for_testing();
+}
+
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.

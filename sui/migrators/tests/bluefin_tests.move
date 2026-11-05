@@ -148,7 +148,7 @@ fun prepare_checks_the_tier_before_the_symbol() {
 
 #[test, expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun prepare_checks_the_migrators_generation_before_the_tier() {
     let mut f = start(symbol_of_length(33));
@@ -173,7 +173,7 @@ fun the_vault_registry_admits_the_bluefin_venue() {
 
     let admitted = event::events_by_type<SetApplied<WitnessesKey, TypeName>>().map!(|applied| {
         let (_, _, change, _) = applied.set_applied_fields();
-        change.member_for_testing().destroy_some()
+        change.member().destroy_some()
     });
     assert_eq!(admitted, vector[type_name::with_original_ids<Venue>()]);
     destroy(registry);

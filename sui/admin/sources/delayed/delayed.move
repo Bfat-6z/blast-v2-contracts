@@ -196,6 +196,25 @@ public fun notice_delay_ms(self: &Notice): u64 { self.delay_ms }
 /// The Unix millisecond time from which the change can apply.
 public fun notice_ready_at_ms(self: &Notice): u64 { self.ready_at_ms }
 
+/// The ID of the object that stores this setting.
+public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID {
+    self.owner
+}
+
+/// The owner-defined key of this setting.
+public fun key<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): K {
+    self.key
+}
+
+/// Whether `apply` would succeed now: a proposal is pending, its `ready_at_ms` has passed, and
+/// its notice still fits in a Unix millisecond timestamp.
+public fun is_ready<K: copy + drop + store, T: copy + drop + store>(
+    self: &Delayed<K, T>,
+    clock: &Clock,
+): bool {
+    self.pending.is_some_and!(|proposal| is_ready_at(proposal.ready_at_ms, proposal.delay_ms, clock))
+}
+
 // === Package Functions ===
 
 /// A proposal for another delayed module, built from an already checked deadline.
@@ -219,13 +238,23 @@ public(package) fun assert_delay(delay_ms: u64) {
 
 /// The deadline `applied_delay_ms` from now; checks that `next_delay_ms` is within the
 /// ceiling and stays representable.
-public(package) fun ready_at_ms_after(applied_delay_ms: u64, next_delay_ms: u64, clock: &Clock): u64 {
+public(package) fun ready_at_ms_after(
+    applied_delay_ms: u64,
+    next_delay_ms: u64,
+    clock: &Clock,
+): u64 {
     assert_delay(next_delay_ms);
     let ready_at_ms = clock.timestamp_ms().checked_add(applied_delay_ms)
         .destroy_or!(abort blast_admin::errors::invalid_delay!());
     assert!(ready_at_ms.checked_add(next_delay_ms).is_some(), blast_admin::errors::invalid_delay!());
 
     ready_at_ms
+}
+
+/// Whether a change ready from `ready_at_ms` with next notice `next_delay_ms` applies now; the
+/// predicate form of `assert_ready_at`.
+public(package) fun is_ready_at(ready_at_ms: u64, next_delay_ms: u64, clock: &Clock): bool {
+    clock.timestamp_ms() >= ready_at_ms && clock.timestamp_ms().checked_add(next_delay_ms).is_some()
 }
 
 /// Checks readiness and rechecks representability at the actual application time.

@@ -270,8 +270,9 @@ receipt and moves `PackageVersion<BLAST_MIGRATORS>` to the next generation in th
 From then on every call to the old package's code aborts the generation check, so integrators must
 call the current package address; type names keep the original address. Upgrading this package
 leaves the products and the vault on their own generations; an upgrade of the vault requires a
-relink of this package. `blast_admin::package_admin::schedule_make_immutable` and
-`blast_admin::package_admin::make_immutable` end upgrades;
+relink of this package. `blast_admin::package_admin::schedule_make_immutable` schedules the end of upgrades, which
+`blast_admin::package_admin::make_immutable` executes only from this package's own code (a later
+upgrade must add that wrapper);
 `blast_admin::package_admin::schedule_upgrade_delay` changes the notice. The package defines no
 pause bits: migration stops with the product's migration pause bit, and buybacks with the vault's
 admin pause bit.
@@ -366,7 +367,7 @@ the same transactions.
 
 | Flow | Abort | Fix |
 | --- | --- | --- |
-| any | code 9 in `blast_admin::operational_version` | call the current package ID of the migrators, product, or vault package |
+| any | code 9 in `blast_admin::package_version` | call the current package ID of the migrators, product, or vault package |
 | Cetus prepare | Cetus aborts in its own modules | choose a tick spacing Cetus registers, for a pair it accepts |
 | Bluefin prepare | 3 `blast_migrators::errors::EInvalidTier`, then 4 `blast_migrators::errors::ESymbolTooLong` | tick spacing 1..=400, fee rate 1..=20,000; a Meme symbol of at most 32 bytes |
 | Cetus migrate, collect, buyback | 0 `blast_migrators::errors::EInvalidCoinOrder` (migrate), 2 `blast_migrators::errors::EWrongCoinPair` | pass the pool's coin order; `CoinA` and `CoinB` must be the sale's Meme and Quote |
@@ -375,7 +376,7 @@ the same transactions.
 | migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedIssuer`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the product's package witness must be listed in `VaultRegistry`; the seed must give positive liquidity |
 | migrate | Cetus aborts when the pair's pool already exists or the tick spacing is no longer registered; Bluefin aborts on a wrong creation fee | the sale stays ready to migrate; pass the exact Bluefin fee |
 | collect, settle, buyback | 1 `blast_migrators::errors::EPositionPoolMismatch` in the venue's module | pass the vault's own pool |
-| settle and apply | 18 `ENoPending` or 17 `ENotReady` from Blast admin's `delayed` module | wait until the scheduled split is ready |
+| settle and apply | 14 `ENoPending` or 13 `ENotReady` from Blast admin's `delayed` module | wait until the scheduled split is ready |
 | buyback | 7 `blast_vault::errors::EBuybackQuoteOutOfRange`, 8 `blast_vault::errors::EBuybackBelowMinimum`; Blast admin `EPaused` when the vault's admin bit is set | spend a positive amount up to the burn Quote; re-quote `min_meme_out` |
 
 ### Pitfalls

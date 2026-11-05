@@ -58,7 +58,9 @@ public fun contains<K: copy + drop + store, E: copy + drop + store>(
 }
 
 /// The admitted members.
-public fun members<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): VecSet<E> {
+public fun members<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): VecSet<E> {
     self.members
 }
 
@@ -76,13 +78,17 @@ public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>
 }
 
 /// How many admissions are pending.
-public fun pending_count<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): u64 {
+public fun pending_count<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): u64 {
     self.admissions.length()
 }
 
 /// True when every admission still to come waits a nonzero notice: the applied notice is
 /// nonzero, no proposal would set it to zero, and no admission scheduled earlier is pending.
-public fun is_guarded<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): bool {
+public fun is_guarded<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): bool {
     self.delay_ms > 0
         && self.admissions.is_empty()
         && self.pending_delay.is_none_or!(|notice| notice.notice_delay_ms() > 0)
@@ -210,7 +216,9 @@ public fun apply_delay<K: copy + drop + store, E: copy + drop + store>(
 }
 
 /// Discards the proposed notice, even a ready one.
-public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(self: &mut DelayedSet<K, E>) {
+public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(
+    self: &mut DelayedSet<K, E>,
+) {
     assert!(self.pending_delay.is_some(), blast_admin::errors::no_pending!());
     self.cancel_delay_if_pending();
 }
@@ -226,6 +234,68 @@ public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: Delayed
     let DelayedSet { owner, key, members: _, delay_ms: _, admissions: _, pending_delay: _ } = self;
 
     sui::event::emit(SetDestroyed<K, E> { owner, key });
+}
+
+/// How many members are admitted.
+public fun member_count<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): u64 {
+    self.members.length()
+}
+
+/// Whether `member` has a pending admission.
+public fun is_pending<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): bool {
+    self.admissions.contains(member)
+}
+
+/// Whether `member`'s pending admission would apply now.
+public fun is_ready<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+    clock: &Clock,
+): bool {
+    self.admissions.try_get(member).is_some_and!(|admission| {
+        clock.timestamp_ms() >= admission.notice_ready_at_ms()
+    })
+}
+
+/// Whether a pending notice change would apply now.
+public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    clock: &Clock,
+): bool {
+    self.pending_delay.is_some_and!(|notice| {
+        delayed::is_ready_at(notice.notice_ready_at_ms(), notice.notice_delay_ms(), clock)
+    })
+}
+
+/// The ID of the object that stores this set.
+public fun owner<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): ID {
+    self.owner
+}
+
+/// The owner-defined key of this set.
+public fun key<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): K {
+    self.key
+}
+
+/// The notice `member`'s pending admission waits and when it becomes ready, if one is pending.
+public fun admission_notice<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+    member: &E,
+): Option<Notice> {
+    self.admissions.try_get(member)
+}
+
+/// The member a change admits, or none for a notice change.
+public fun member<E: copy + drop + store>(self: &SetChange<E>): Option<E> {
+    match (self) {
+        SetChange::Admission(member) => option::some(*member),
+        SetChange::Delay => option::none(),
+    }
 }
 
 // === Private Functions ===
@@ -260,15 +330,6 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store>(self
 }
 
 // === Test-Only Functions ===
-
-#[test_only]
-/// The member a change admits, or none for a notice change.
-public fun member_for_testing<E: copy + drop + store>(self: &SetChange<E>): Option<E> {
-    match (self) {
-        SetChange::Admission(member) => option::some(*member),
-        SetChange::Delay => option::none(),
-    }
-}
 
 #[test_only]
 public fun set_created_fields<K: copy + drop + store, E: copy + drop + store>(

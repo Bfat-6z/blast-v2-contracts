@@ -25,8 +25,8 @@ fun an_entry_waits_the_applied_notice_and_reads_stay_applied_until_apply() {
     let (owner, _, change, delay_ms, ready_at_ms) = collect<MapScheduled<Overrides, address, u64>>()
         .map_scheduled_fields();
     assert_eq!(owner, owner());
-    assert_eq!(change.entry_for_testing(), option::some(@0xA));
-    assert_eq!(change.entry_value_for_testing(), option::some(7));
+    assert_eq!(change.changed_entry(), option::some(@0xA));
+    assert_eq!(change.changed_value(), option::some(7));
     assert_eq!(delay_ms, NOTICE_MS);
     assert_eq!(ready_at_ms, 5 + NOTICE_MS);
 
@@ -37,7 +37,7 @@ fun an_entry_waits_the_applied_notice_and_reads_stay_applied_until_apply() {
     assert!(map.pending(&@0xA).is_none());
     let (_, _, applied_change, applied_delay_ms) = collect<MapApplied<Overrides, address, u64>>()
         .map_applied_fields();
-    assert_eq!(applied_change.entry_value_for_testing(), option::some(7));
+    assert_eq!(applied_change.changed_value(), option::some(7));
     assert_eq!(applied_delay_ms, NOTICE_MS);
 
     clear(&mut map, @0xA, &mut clock);
@@ -116,7 +116,7 @@ fun a_replaced_entry_change_is_cancelled_first_and_restarts_the_notice() {
 
     let (_, _, change, delay_ms, ready_at_ms) = collect<MapCancelled<Overrides, address, u64>>()
         .map_cancelled_fields();
-    assert_eq!(change.entry_value_for_testing(), option::some(1));
+    assert_eq!(change.changed_value(), option::some(1));
     assert_eq!(delay_ms, 100);
     assert_eq!(ready_at_ms, 100);
 
@@ -150,7 +150,7 @@ fun an_applied_notice_change_records_the_new_notice() {
     map.apply_delay(&clock);
 
     let (_, _, change, delay_ms) = collect<MapApplied<Overrides, address, u64>>().map_applied_fields();
-    assert!(change.entry_for_testing().is_none());
+    assert!(change.changed_entry().is_none());
     assert_eq!(delay_ms, 20);
     assert_eq!(map.delay_ms(), 20);
     destroy(map);
@@ -313,6 +313,65 @@ fun a_map_with_a_pending_notice_change_cannot_be_destroyed() {
 
     map.destroy();
 
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun readers_report_owner_key_counts_and_guard() {
+    let mut clock = clock_at(0);
+    let mut map = new_map(0);
+    assert!(!map.is_guarded());
+    map.schedule(@0xA, option::some(1), &clock);
+    map.apply(@0xA, &clock);
+    map.schedule_delay(NOTICE_MS, &clock);
+    map.apply_delay(&clock);
+
+    assert_eq!(map.owner(), owner());
+    assert_eq!(map.key(), Overrides());
+    assert!(map.contains(&@0xA));
+    assert!(!map.contains(&@0xB));
+    assert_eq!(map.entry_count(), 1);
+    assert_eq!(map.pending_count(), 0);
+    assert!(map.is_guarded());
+
+    map.schedule(@0xB, option::some(2), &clock);
+    assert_eq!(map.pending_count(), 1);
+    assert!(!map.is_guarded());
+
+    map.cancel(@0xB);
+    clear(&mut map, @0xA, &mut clock);
+    map.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun readers_report_pending_and_ready_entry_changes_and_notice_changes() {
+    let mut clock = clock_at(0);
+    let mut map = new_map(NOTICE_MS);
+    map.schedule(@0xA, option::some(3), &clock);
+    map.schedule_delay(25, &clock);
+
+    assert!(map.is_pending(&@0xA));
+    assert!(!map.is_pending(&@0xB));
+    assert_eq!(map.entry_ready_at_ms(&@0xA), option::some(NOTICE_MS));
+    assert!(map.entry_ready_at_ms(&@0xB).is_none());
+    let proposal = map.pending(&@0xA).destroy_some();
+    assert_eq!(proposal.value(), option::some(3));
+    assert_eq!(proposal.notice().delay_ms(), NOTICE_MS);
+    assert!(!map.is_ready(&@0xA, &clock));
+    assert!(!map.is_delay_ready(&clock));
+    clock.set_for_testing(NOTICE_MS);
+    assert!(map.is_ready(&@0xA, &clock));
+    assert!(map.is_delay_ready(&clock));
+
+    map.apply(@0xA, &clock);
+    map.apply_delay(&clock);
+    assert!(!map.is_pending(&@0xA));
+    assert_eq!(map.value(&@0xA), option::some(3));
+    assert_eq!(map.delay_ms(), 25);
+
+    clear(&mut map, @0xA, &mut clock);
+    map.destroy();
     clock.destroy_for_testing();
 }
 

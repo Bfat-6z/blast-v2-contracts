@@ -229,6 +229,109 @@ public fun entry_proposal_notice<V: copy + drop + store>(self: &EntryProposal<V>
     self.notice
 }
 
+/// Whether `entry` has a pending change.
+public fun is_pending<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): bool {
+    self.pending.contains(entry)
+}
+
+/// When `entry`'s pending change becomes ready, if one is pending.
+public fun entry_ready_at_ms<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): Option<u64> {
+    self.pending.try_get(entry).map!(|proposal| proposal.notice.notice_ready_at_ms())
+}
+
+/// Whether `entry`'s pending change would apply now.
+public fun is_ready<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+    clock: &Clock,
+): bool {
+    self.pending.try_get(entry).is_some_and!(|proposal| {
+        clock.timestamp_ms() >= proposal.notice.notice_ready_at_ms()
+    })
+}
+
+/// Whether a pending notice change would apply now.
+public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    clock: &Clock,
+): bool {
+    self.pending_delay.is_some_and!(|notice| {
+        delayed::is_ready_at(notice.notice_ready_at_ms(), notice.notice_delay_ms(), clock)
+    })
+}
+
+/// The ID of the object that stores this map.
+public fun owner<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): ID {
+    self.owner
+}
+
+/// The owner-defined key of this map.
+public fun key<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): K {
+    self.key
+}
+
+/// Whether `entry` has an applied value.
+public fun contains<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+    entry: &E,
+): bool {
+    self.entries.contains(*entry)
+}
+
+/// How many entries have an applied value.
+public fun entry_count<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): u64 {
+    self.entries.length()
+}
+
+/// How many entry changes are pending.
+public fun pending_count<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): u64 {
+    self.pending.length()
+}
+
+/// True when every change still to come waits a nonzero notice: the applied notice is nonzero,
+/// no proposal would set it to zero, and no entry change scheduled earlier is pending.
+public fun is_guarded<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+    self: &DelayedMap<K, E, V>,
+): bool {
+    self.delay_ms > 0
+        && self.pending.is_empty()
+        && self.pending_delay.is_none_or!(|notice| notice.notice_delay_ms() > 0)
+}
+
+/// The entry a change touches, or none for a notice change.
+public fun changed_entry<E: copy + drop + store, V: copy + drop + store>(
+    self: &MapChange<E, V>,
+): Option<E> {
+    match (self) {
+        MapChange::Entry { entry, value: _ } => option::some(*entry),
+        MapChange::Delay => option::none(),
+    }
+}
+
+/// The value an entry change proposes (none clears), or none for a notice change.
+public fun changed_value<E: copy + drop + store, V: copy + drop + store>(
+    self: &MapChange<E, V>,
+): Option<V> {
+    match (self) {
+        MapChange::Entry { entry: _, value } => *value,
+        MapChange::Delay => option::none(),
+    }
+}
+
 // === Private Functions ===
 
 fun cancel_entry_if_pending<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
@@ -263,28 +366,6 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store, V: c
 }
 
 // === Test-Only Functions ===
-
-#[test_only]
-/// The entry a change touches, or none for a notice change.
-public fun entry_for_testing<E: copy + drop + store, V: copy + drop + store>(
-    self: &MapChange<E, V>,
-): Option<E> {
-    match (self) {
-        MapChange::Entry { entry, value: _ } => option::some(*entry),
-        MapChange::Delay => option::none(),
-    }
-}
-
-#[test_only]
-/// The value an entry change proposes (none clears), or none for a notice change.
-public fun entry_value_for_testing<E: copy + drop + store, V: copy + drop + store>(
-    self: &MapChange<E, V>,
-): Option<V> {
-    match (self) {
-        MapChange::Entry { entry: _, value } => *value,
-        MapChange::Delay => option::none(),
-    }
-}
 
 #[test_only]
 public fun map_created_fields<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(

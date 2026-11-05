@@ -232,6 +232,49 @@ fun a_slot_accepts_the_ceiling_notice() {
     slot.destroy();
 }
 
+#[test]
+fun readers_report_owner_and_key() {
+    let slot = new_slot(NOTICE_MS);
+
+    assert_eq!(slot.owner(), owner());
+    assert_eq!(slot.key(), Upgrade());
+    assert_eq!(slot.delay_ms(), NOTICE_MS);
+
+    slot.destroy();
+}
+
+#[test]
+fun readers_split_a_pending_action_from_a_pending_notice_change() {
+    let mut clock = clock_at(10);
+    let mut slot = new_slot(NOTICE_MS);
+    assert!(slot.pending_action().is_none());
+    assert!(slot.pending_delay().is_none());
+    assert!(!slot.is_ready(&clock));
+
+    slot.schedule(5, &clock);
+    assert_eq!(slot.pending_action(), option::some(5));
+    assert!(slot.pending_delay().is_none());
+    clock.set_for_testing(10 + NOTICE_MS - 1);
+    assert!(!slot.is_ready(&clock));
+    clock.set_for_testing(10 + NOTICE_MS);
+    assert!(slot.is_ready(&clock));
+    assert!(!slot.is_delay_ready(&clock));
+
+    slot.schedule_delay(25, &clock);
+    let notice = slot.pending_delay().destroy_some();
+    assert_eq!(notice.delay_ms(), 25);
+    assert_eq!(notice.ready_at_ms(), 10 + 2 * NOTICE_MS);
+    assert!(slot.pending_action().is_none());
+    assert!(!slot.is_delay_ready(&clock));
+    clock.set_for_testing(10 + 2 * NOTICE_MS);
+    assert!(slot.is_delay_ready(&clock));
+    assert!(slot.is_ready(&clock));
+
+    slot.cancel();
+    slot.destroy();
+    clock.destroy_for_testing();
+}
+
 // === Test Helpers ===
 
 /// A dummy context derives the same first object ID every time.

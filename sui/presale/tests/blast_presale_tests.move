@@ -3266,7 +3266,7 @@ fun an_lp_rate_change_keeps_blasts_raise_and_token_amounts() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_precedes_partner_admission() {
     let mut ctx = tx_context::dummy();
@@ -3293,7 +3293,7 @@ fun stale_version_precedes_partner_admission() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun future_version_cannot_finalize() {
     let mut ctx = tx_context::dummy();
@@ -3323,7 +3323,7 @@ fun future_version_cannot_finalize() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_rejects_commit_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
@@ -3350,7 +3350,7 @@ fun stale_version_rejects_commit_before_lifecycle_or_amount_checks() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_rejects_settle_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
@@ -3370,7 +3370,7 @@ fun stale_version_rejects_settle_before_lifecycle_or_amount_checks() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_rejects_cancel_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
@@ -3390,7 +3390,7 @@ fun stale_version_rejects_cancel_before_lifecycle_or_amount_checks() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_rejects_claim_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
@@ -3410,7 +3410,7 @@ fun stale_version_rejects_claim_before_lifecycle_or_amount_checks() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_rejects_migrate_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
@@ -3434,7 +3434,7 @@ fun stale_version_rejects_migrate_before_lifecycle_or_amount_checks() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_prevents_initializer_creation() {
     let mut ctx = tx_context::dummy();

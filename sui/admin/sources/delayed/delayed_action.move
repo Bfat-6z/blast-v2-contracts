@@ -41,7 +41,9 @@ public fun new<K: copy + drop + store, A: copy + drop + store>(
 }
 
 /// The applied notice in milliseconds.
-public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64 {
+public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): u64 {
     self.delay_ms
 }
 
@@ -121,6 +123,54 @@ public fun action<A: copy + drop + store>(self: &Change<A>): Option<A> {
         Change::Action(action) => option::some(*action),
         Change::Delay => option::none(),
     }
+}
+
+/// The proposed action, or none when nothing or a notice change is pending.
+public fun pending_action<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<A> {
+    self.pending.and_ref!(|proposal| proposal.value().action())
+}
+
+/// The proposed next notice and when it becomes ready, or none when nothing or an action is
+/// pending.
+public fun pending_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<Notice> {
+    self.pending.and_ref!(|proposal| {
+        if (proposal.value().action().is_some()) option::none()
+        else option::some(delayed::new_notice(proposal.proposal_delay_ms(), proposal.ready_at_ms()))
+    })
+}
+
+/// Whether the pending proposal, an action or a notice change, would apply now.
+public fun is_ready<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+    clock: &Clock,
+): bool {
+    self.pending.is_some_and!(|proposal| {
+        delayed::is_ready_at(proposal.ready_at_ms(), proposal.proposal_delay_ms(), clock)
+    })
+}
+
+/// Whether a pending notice change would apply now.
+public fun is_delay_ready<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+    clock: &Clock,
+): bool {
+    self.pending_delay().is_some_and!(|notice| {
+        delayed::is_ready_at(notice.notice_ready_at_ms(), notice.notice_delay_ms(), clock)
+    })
+}
+
+/// The ID of the object that stores this action slot.
+public fun owner<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID {
+    self.owner
+}
+
+/// The owner-defined key of this action slot.
+public fun key<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): K {
+    self.key
 }
 
 // === Private Functions ===
@@ -260,6 +310,6 @@ public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + s
 
 // === Imports ===
 
-use blast_admin::delayed::{Self, Proposal};
+use blast_admin::delayed::{Self, Notice, Proposal};
 
 use sui::clock::Clock;

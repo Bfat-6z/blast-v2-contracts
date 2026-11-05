@@ -219,7 +219,7 @@ fun protocol_allocation_rejects_quote_one_above_the_maximum() {
 #[
     expected_failure(
         abort_code = blast_admin::errors::EOperationalVersionMismatch,
-        location = blast_admin::operational_version,
+        location = blast_admin::package_version,
     ),
 ]
 fun stale_package_version_rejects_protocol_allocation_before_its_bounds() {
@@ -310,7 +310,7 @@ fun protocol_lp_fees_reject_quote_one_above_the_maximum() {
 #[
     expected_failure(
         abort_code = blast_admin::errors::EOperationalVersionMismatch,
-        location = blast_admin::operational_version,
+        location = blast_admin::package_version,
     ),
 ]
 fun stale_package_version_rejects_protocol_lp_fees_before_their_bounds() {
@@ -438,7 +438,7 @@ fun disallowing_an_unlisted_decimal_rejects_the_unchanged_set() {
 #[
     expected_failure(
         abort_code = blast_admin::errors::EOperationalVersionMismatch,
-        location = blast_admin::operational_version,
+        location = blast_admin::package_version,
     ),
 ]
 fun stale_package_version_rejects_decimals_before_the_unchanged_check() {
@@ -630,7 +630,7 @@ fun disallowing_an_unlisted_quote_aborts() {
 #[
     expected_failure(
         abort_code = blast_admin::errors::EOperationalVersionMismatch,
-        location = blast_admin::operational_version,
+        location = blast_admin::package_version,
     ),
 ]
 fun stale_package_version_rejects_quote_before_the_set_update() {
@@ -801,7 +801,7 @@ fun trade_fees_reject_unchanged_pair() {
 #[
     expected_failure(
         abort_code = blast_admin::errors::EOperationalVersionMismatch,
-        location = blast_admin::operational_version,
+        location = blast_admin::package_version,
     ),
 ]
 fun stale_package_version_rejects_trade_fees_before_their_bounds() {
@@ -837,7 +837,7 @@ fun admin_allows_a_venue_and_the_primitive_records_its_original_type_name() {
 
         assert_eq!(f.config.allowed_venue_count_for_testing(), 1);
         assert_eq!(owner, object::id(&f.config));
-        assert_eq!(change.member_for_testing(), option::some(test_venue()));
+        assert_eq!(change.member(), option::some(test_venue()));
     });
 
     fixture.end();
@@ -1039,7 +1039,7 @@ fun disallowing_a_framework_type_reports_it_as_unlisted() {
 #[
     expected_failure(
         abort_code = blast_admin::errors::EOperationalVersionMismatch,
-        location = blast_admin::operational_version,
+        location = blast_admin::package_version,
     ),
 ]
 fun stale_package_version_rejects_a_venue_before_its_type_check() {
@@ -1129,7 +1129,7 @@ fun creation_fee_rejects_the_current_value() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_checks_the_version_before_the_current_value() {
     let mut fixture = start();
 
@@ -1266,7 +1266,7 @@ fun removing_an_unknown_partner_aborts() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun adding_a_partner_checks_the_version_first() {
     let mut fixture = start();
 
@@ -1281,7 +1281,7 @@ fun adding_a_partner_checks_the_version_first() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::operational_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
 fun removing_a_partner_checks_the_version_before_the_list() {
     let mut fixture = start();
 

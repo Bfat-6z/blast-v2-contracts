@@ -46,7 +46,7 @@ Routine state-changing public calls below take `&PackageVersion<BLAST_PRESALE_PA
 after their first object argument, including initializer setters, policy administration,
 migration, payouts, and `blast_presale::blast_presale::prove_owner`. It is a read-only shared input
 except during pause, unpause and upgrade commit-and-advance. A stale or future generation aborts in
-`blast_admin::operational_version` before effects. Pure value constructors, the initializer's
+`blast_admin::package_version` before effects. Pure value constructors, the initializer's
 `blast_presale::blast_presale::venue` getter and `blast_presale::blast_presale::destroy_cap` do not
 take it. Venue and vault calls take their own packages' versions, because each package checks only
 its own generation.
@@ -580,7 +580,7 @@ Rescheduling replaces the proposal and restarts the full currently applied notic
 Ordinary value applications need no role; code authorization and immutability execution
 still need UpgradeAdmin. Overflow is rejected at scheduling and actual application;
 later schedules check their own timestamp addition too. A value proposal that changes neither
-value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 20
+value nor notice, or a notice-only proposal equal to the applied notice, aborts with code 16
 (`EUnchanged`) from Blast admin's `delayed` module (`delayed_action` for the upgrade notice,
 `delayed_set` for the admission notice).
 Read the live notice before relying on a cancellation window.
@@ -635,7 +635,7 @@ notice under AdapterAdmin; anyone calls `creation_policy::apply_venue_delay`, an
 `creation_policy::cancel_venue_delay`. Existing admission deadlines remain fixed; settle or cancel
 all zero-notice admissions before completing setup. Immediate venue removal cancels that type's
 pending admission and preserves the applied notice. Scheduling an admitted venue, or removing one
-that is neither admitted nor pending, aborts with code 20 from `delayed_set`.
+that is neither admitted nor pending, aborts with code 16 from `delayed_set`.
 
 ### Emergency pause
 
@@ -888,7 +888,7 @@ admin events are listed in "Blast admin operations" and "Delayed administration"
 Presale errors are numeric codes from `blast_presale::errors`, raised in the module named; the SDK
 maps each code to its name. Common ones by flow:
 
-- Any call: `blast_admin::operational_version` aborts for a stale package ID (call the current
+- Any call: `blast_admin::package_version` aborts with code 9 for a stale package ID (call the current
   presale package); `blast_admin::errors::EPaused` from `blast_admin::package_version` while the
   call's pause bit is set.
 - Start (`new`): `blast_presale::errors::EQuoteNotAllowed` / `blast_presale::errors::EVenueNotAllowed`
@@ -939,12 +939,12 @@ maps each code to its name. Common ones by flow:
   accepted, or its removal already pending); pause, unpause and upgrade aborts are the generic
   administration's (admin guide).
 - Delayed administration (policy fees, venue admission, upgrades): Blast admin's
-  delayed modules abort with plain codes. 17 `ENotReady`: applied before `ready_at_ms` (from
-  `delayed_set` for an early admission, otherwise from `delayed`). 18 `ENoPending`: applied or
+  delayed modules abort with plain codes. 13 `ENotReady`: applied before `ready_at_ms` (from
+  `delayed_set` for an early admission, otherwise from `delayed`). 14 `ENoPending`: applied or
   cancelled with nothing pending (from the type's own module: `delayed` for a setting,
-  `delayed_action` for an upgrade, `delayed_set` for an admission). 19 `EInvalidDelay`: a deadline
-  or notice would overflow (from `delayed`). 20 `EUnchanged`: the proposal changes nothing, the
-  venue is already admitted, or the removed venue is unknown (from the type's own module). 22
+  `delayed_action` for an upgrade, `delayed_set` for an admission). 15 `EInvalidDelay`: a deadline
+  or notice would overflow (from `delayed`). 16 `EUnchanged`: the proposal changes nothing, the
+  venue is already admitted, or the removed venue is unknown (from the type's own module). 18
   `EWrongChange` (from `delayed_action`): `authorize_upgrade` or `make_immutable` while a notice
   change is pending, or `apply_upgrade_delay` while an action is pending.
 

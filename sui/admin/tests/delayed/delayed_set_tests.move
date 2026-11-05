@@ -29,7 +29,7 @@ fun an_admission_waits_the_applied_notice_and_removal_is_immediate() {
     assert!(set.admission_ready_at_ms(&@0xA).is_none());
     let applied = collect<SetApplied<Witnesses, address>>();
     let (_, _, applied_change, _) = applied.set_applied_fields();
-    assert_eq!(applied_change.member_for_testing(), option::some(@0xA));
+    assert_eq!(applied_change.member(), option::some(@0xA));
 
     set.remove(@0xA);
     assert!(!set.contains(&@0xA));
@@ -96,7 +96,7 @@ fun removal_discards_a_pending_admission_without_changing_the_notice() {
 
     let cancelled = collect<SetCancelled<Witnesses, address>>();
     let (_, _, cancelled_change, _, _) = cancelled.set_cancelled_fields();
-    assert_eq!(cancelled_change.member_for_testing(), option::some(@0xA));
+    assert_eq!(cancelled_change.member(), option::some(@0xA));
     assert!(set.admission_ready_at_ms(&@0xA).is_none());
     assert_eq!(set.delay_ms(), 100);
 
@@ -218,7 +218,7 @@ fun a_replaced_notice_change_is_cancelled_first() {
 
     let (_, _, change, delay_ms, _) = collect<SetCancelled<Witnesses, address>>()
         .set_cancelled_fields();
-    assert!(change.member_for_testing().is_none());
+    assert!(change.member().is_none());
     assert_eq!(delay_ms, 20);
     assert_eq!(set.pending_delay().destroy_some().delay_ms(), 30);
 
@@ -343,6 +343,51 @@ fun a_set_accepts_the_ceiling_notice() {
 
     assert_eq!(set.delay_ms(), delayed::max_delay_ms());
     set.destroy();
+}
+
+#[test]
+fun readers_report_owner_key_and_a_pending_admissions_notice() {
+    let clock = clock_at(10);
+    let mut set = new_witness_set(NOTICE_MS);
+    set.schedule_add(@0xA, &clock);
+
+    let notice = set.admission_notice(&@0xA).destroy_some();
+    assert_eq!(set.owner(), owner());
+    assert_eq!(set.key(), Witnesses());
+    assert_eq!(notice.delay_ms(), NOTICE_MS);
+    assert_eq!(notice.ready_at_ms(), 10 + NOTICE_MS);
+    assert!(set.admission_notice(&@0xB).is_none());
+
+    set.cancel_add(@0xA);
+    set.destroy();
+    clock.destroy_for_testing();
+}
+
+#[test]
+fun readers_report_pending_and_ready_admissions_and_notice_changes() {
+    let mut clock = clock_at(0);
+    let mut set = new_witness_set(NOTICE_MS);
+    set.schedule_add(@0xA, &clock);
+    set.schedule_delay(25, &clock);
+
+    assert_eq!(set.member_count(), 0);
+    assert!(set.is_pending(&@0xA));
+    assert!(!set.is_pending(&@0xB));
+    assert!(!set.is_ready(&@0xA, &clock));
+    assert!(!set.is_delay_ready(&clock));
+    clock.set_for_testing(NOTICE_MS);
+    assert!(set.is_ready(&@0xA, &clock));
+    assert!(!set.is_ready(&@0xB, &clock));
+    assert!(set.is_delay_ready(&clock));
+
+    set.apply_add(@0xA, &clock);
+    set.apply_delay(&clock);
+    assert_eq!(set.member_count(), 1);
+    assert!(!set.is_pending(&@0xA));
+    assert!(!set.is_delay_ready(&clock));
+
+    set.destroy();
+    clock.destroy_for_testing();
 }
 
 // === Test Helpers ===

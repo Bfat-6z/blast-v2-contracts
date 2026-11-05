@@ -157,6 +157,20 @@ public fun unpause(
     package_admin.clear_pause_bits(unpause_admin, PackageWitness(), package_version, bits);
 }
 
+/// Ends the vault package's upgrades once its scheduled immutability action is ready (#195,
+/// after the audit). It runs only on the live generation; the generic administration then checks
+/// the package witness, consumes the action and destroys the UpgradeCap.
+public fun make_immutable(
+    package_admin: &mut PackageAdmin<BLAST_VAULT_PACKAGE>,
+    upgrade_admin: &AdminWitness<UpgradeAdmin<BLAST_VAULT_PACKAGE>>,
+    package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
+) {
+    package_version.assert_current(constants::generation!());
+
+    package_admin.make_immutable(upgrade_admin, PackageWitness(), package_version, clock);
+}
+
 // === Package Functions ===
 
 /// Aborts unless `Venue` is an admitted witness.
@@ -226,7 +240,7 @@ public fun version_for_testing(ctx: &mut TxContext): PackageVersion<BLAST_VAULT_
 use blast_admin::{
     blast_acl::AdminWitness,
     delayed_set::{Self, DelayedSet},
-    package_admin::{PackageAdmin, UnpauseAdmin},
+    package_admin::{PackageAdmin, UnpauseAdmin, UpgradeAdmin},
     package_version::{Self, PackageVersion}
 };
 

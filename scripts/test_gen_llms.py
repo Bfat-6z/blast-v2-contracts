@@ -48,5 +48,53 @@ class SummaryIdentityTests(unittest.TestCase):
             self.assertEqual(set(result.sources), {'policy'})
 
 
+class FrozenPackageTests(unittest.TestCase):
+    """blast_sui (#191) and Boosts (#205) are kept verbatim until they adopt the folded admin."""
+
+    def test_frozen_packages_are_the_out_of_scope_products(self):
+        self.assertEqual(
+            set(gen_llms.FROZEN),
+            {'sui/blast_sui', 'sui/boosts/core', 'sui/boosts/products', 'sui/boosts/aftermath_adapter'},
+        )
+        self.assertEqual(gen_llms.frozen_guides(), {'blast-sui.md', 'boosts.md'})
+
+    def test_summaries_skip_frozen_packages(self):
+        with (
+            patch.object(gen_llms, 'PACKAGES', [('sui/blast_sui', 'Frozen'), ('sui/example', 'Example')]),
+            patch.object(gen_llms, 'package_name', return_value='example'),
+            patch.object(gen_llms.subprocess, 'run') as run,
+        ):
+            run.return_value.returncode = 0
+            gen_llms.build_summaries(Path('summaries'))
+
+        self.assertEqual(run.call_count, 1)
+        command = run.call_args.args[0]
+        self.assertTrue(command[command.index('-p') + 1].endswith('sui/example'))
+
+    def test_frozen_guide_and_reference_sections_are_copied_verbatim(self):
+        frozen = gen_llms.Package(path='sui/blast_sui', title='blastSUI and funSUI', name='blast_sui')
+        guide_heading = gen_llms.guide_heading('blast-sui.md')
+        committed_text = '\n'.join([
+            '# header', '',
+            guide_heading, '', 'committed guide, stale on purpose', '',
+            gen_llms.reference_heading(frozen), '', 'committed reference', '',
+        ])
+        committed = gen_llms.committed_sections(committed_text)
+        with (
+            patch.object(gen_llms, 'deployment', return_value={'live': False}),
+            patch.object(gen_llms, 'package_reference', side_effect=AssertionError('frozen package rebuilt')),
+        ):
+            text = gen_llms.assemble('# header\n', ['blast-sui.md'], [frozen], {}, {'blast_sui'}, committed)
+
+        self.assertIn('\n'.join(committed[guide_heading]), text)
+        self.assertIn('committed reference', text)
+        self.assertTrue(text.endswith('committed reference\n'))
+
+    def test_committed_sections_split_at_each_top_level_heading(self):
+        sections = gen_llms.committed_sections('# top\n## A\na\n### sub\n## B\nb\n')
+        self.assertEqual(sections['## A'], ['## A', 'a', '### sub'])
+        self.assertEqual(sections['## B'], ['## B', 'b', ''])
+
+
 if __name__ == '__main__':
     unittest.main()

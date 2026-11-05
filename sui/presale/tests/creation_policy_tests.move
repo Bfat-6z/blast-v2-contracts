@@ -64,7 +64,7 @@ fun the_admin_allows_a_quote_and_a_venue() {
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
     assert_eq!(owner, object::id(&policy));
-    assert_eq!(admission.member_for_testing(), option::some(type_name<VENUE>()));
+    assert_eq!(admission.member(), option::some(type_name<VENUE>()));
 
     policy.destroy_for_testing();
 
@@ -516,7 +516,7 @@ fun an_unlisted_partner_cannot_be_removed() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_cannot_allow_quotes() {
     let mut package_version = blast_presale::blast_presale_package::version_for_testing(
@@ -539,7 +539,7 @@ fun stale_version_cannot_allow_quotes() {
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
     assert_eq!(owner, object::id(&policy));
-    assert_eq!(admission.member_for_testing(), option::some(type_name<VENUE>()));
+    assert_eq!(admission.member(), option::some(type_name<VENUE>()));
 
     policy.destroy_for_testing();
 
@@ -549,7 +549,7 @@ fun stale_version_cannot_allow_quotes() {
 #[test]
 #[expected_failure(
     abort_code = blast_admin::errors::EOperationalVersionMismatch,
-    location = blast_admin::operational_version,
+    location = blast_admin::package_version,
 )]
 fun stale_version_cannot_accept_partners() {
     let mut ctx = tx_context::dummy();

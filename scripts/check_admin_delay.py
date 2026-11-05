@@ -200,6 +200,63 @@ for package, module, current, actions in [
     for name, (_, body) in fs.items():
         if name not in actions: assert 'assert_not_paused' not in body, (package, name)
 
+# The generic package administration every upgradeable package shares: role-gated, waits the
+# package's own upgrade notice, and keeps the native capabilities sealed.
+generic = functions('admin', 'package_admin')
+generic_source = (ROOT / 'sui/admin/sources/package_admin.move').read_text()
+require(generic_source, 'upgrade: DelayedAction<UpgradeKey<PackageMarker>, UpgradeAction>,',
+        'upgrade_cap: Option<UpgradeCap>,', 'const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;')
+for name in ('schedule_upgrade', 'schedule_make_immutable', 'authorize_upgrade', 'make_immutable', 'schedule_upgrade_delay'):
+    require(generic[name][0], '&AdminWitness<UpgradeAdmin<PackageMarker>>', 'clock: &Clock')
+for name in ('schedule_upgrade', 'schedule_make_immutable'):
+    assert 'delay_ms: u64' not in generic[name][0], name
+    assert generic[name][1].startswith('assert!(self.upgrade_cap.is_some(), blast_admin::errors::upgrade_cap_unavailable!());'), name
+require(generic['schedule_upgrade'][1], 'digest.length() == PACKAGE_DIGEST_LENGTH', 'self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock)')
+require(generic['schedule_make_immutable'][1], 'self.upgrade.schedule(UpgradeAction::MakeImmutable, clock)')
+for name, action, effect in [('authorize_upgrade', 'Upgrade(digest)', 'upgrade_cap.authorize(policy, digest)'),
+                             ('make_immutable', 'MakeImmutable', 'package::make_immutable(upgrade_cap)')]:
+    body = generic[name][1]
+    require(body, 'let action = self.upgrade.take_action(clock);')
+    assert body.index('self.upgrade.take_action(clock)') < body.index(f'action == UpgradeAction::{action}') < body.index(effect), name
+# Only the package's own code, with its pinned package witness, ends its upgrades; checked first.
+require(generic['make_immutable'][0], '_: PackageWitness', 'package_version: &PackageVersion<PackageMarker>')
+assert generic['make_immutable'][1].startswith('package_version.assert_package_witness<_, PackageWitness>();')
+# The vault (immutable after audit, #195) wraps it on its live generation only; the upgradeable
+# products add a wrapper only in a later upgrade if they ever need one.
+signature, body = functions('vault', 'blast_vault_package')['make_immutable']
+require(signature, '&AdminWitness<UpgradeAdmin<BLAST_VAULT_PACKAGE>>', 'package_version: &PackageVersion<BLAST_VAULT_PACKAGE>')
+assert body.startswith('package_version.assert_current(constants::generation!());'), body
+require(body, 'package_admin.make_immutable(upgrade_admin, PackageWitness(), package_version, clock)')
+for package in ('launchpad', 'presale', 'migrators'):
+    for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
+        assert '.make_immutable(' not in path.read_text(), path
+require(generic['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin<PackageMarker>>')
+require(generic['cancel_upgrade_action'][1], 'self.upgrade.cancel()')
+require(generic['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
+require(generic['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
+assert 'AdminWitness' not in generic['apply_upgrade_delay'][0]
+commit = generic['commit_upgrade_and_advance']
+require(commit[0], '&AdminWitness<UpgradeAdmin<PackageMarker>>', 'package_version: &mut PackageVersion<PackageMarker>')
+assert commit[1].index('upgrade_cap.commit(receipt);') < commit[1].index('package_version.advance();')
+require(generic['pause'][0], '&AdminWitness<PauseAdmin<PackageMarker>>')
+require(generic['clear_pause_bits'][0], '&AdminWitness<UnpauseAdmin<PackageMarker>>', '_: PackageWitness')
+# Only the package itself, holding its pinned package witness, borrows its Publisher, by reference.
+require(generic['publisher'][0], 'self: &PackageAdmin<PackageMarker>', '_: PackageWitness',
+        'package_version: &PackageVersion<PackageMarker>', '): &Publisher')
+require(generic['publisher_mut'][0], 'self: &mut PackageAdmin<PackageMarker>', '_: PackageWitness',
+        'package_version: &PackageVersion<PackageMarker>', '): &mut Publisher')
+for name in ('publisher', 'publisher_mut'):
+    assert generic[name][1].startswith('package_version.assert_package_witness<_, PackageWitness>();'), name
+clear = generic['clear_pause_bits'][1]
+assert clear.index('assert_unpause_witness') < clear.index('self.upgrade.is_guarded()') < clear.index('package_version.clear_pause_bits(bits)')
+require(generic['wrap'][0], 'publication: Publication<PackageMarker>', 'upgrade_cap: UpgradeCap')
+require(generic['new'][1], 'delayed_action::new(UpgradeKey<PackageMarker>(), &id, INITIAL_UPGRADE_DELAY_MS)')
+assert {name for name, (_, body) in generic.items() if 'PackageAdmin {' in body} == {'new'}
+assert not any(re.search(r'\):\s*(Publisher|UpgradeCap|&\s*(mut\s+)?UpgradeCap)', signature) for signature, _ in generic.values())
+assert {name for name, (signature, _) in generic.items() if re.search(r'\):\s*&\s*mut\s+Publisher', signature)} == {'publisher_mut'}
+assert {name for name, (signature, _) in generic.items() if re.search(r'\):\s*&Publisher', signature)} == {'publisher'}
+assert not any(word in generic_source for word in ('only_additive_upgrades', 'only_dep_upgrades', 'restrict_to'))
+
 acl = (ROOT / 'sui/admin/sources/blast_acl.move').read_text()
 require(acl, 'admins: Table<ID, VecSet<TypeName>>,', 'super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,')
 assert 'MAX_ADMINS' not in acl and 'Timelocked' not in acl
