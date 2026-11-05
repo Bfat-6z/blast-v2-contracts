@@ -39,7 +39,7 @@ use anyhow::{Context, Result, bail, ensure};
 use blake2::{Blake2b, Digest, digest::consts::U32};
 use blast_launchpad_ptb_tests::{
     ActionScheduled, Change, CompiledPackage, Delayed, DelayedAction, DelayedApplied, Destination, Expected, FeeSplit,
-    Harness, Outcome, RoundTerms, UnlinkedPackage, VaultStack, build, build_unlinked, call,
+    GenericPackageVersionContents, Harness, Outcome, RoundTerms, UnlinkedPackage, VaultStack, build, build_unlinked, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusAddLiquidity, CetusCollectFee,
@@ -1618,9 +1618,11 @@ impl World {
             ensure!(pending.pending.as_ref().is_some_and(|p| p.value == *split && p.delay_ms == VAULT_FEE_NOTICE_MS));
             // Seed only fixture generation bytes; the public wrapper must reject before readiness.
             let original = self.h.object(self.migrators_version);
+            let (id, valid, paused, witness, _): GenericPackageVersionContents =
+                bcs::from_bytes(&self.h.contents(self.migrators_version))?;
             let mut stale = original.clone();
             stale.data.try_as_move_mut().expect("PackageVersion")
-                .set_contents_unsafe(bcs::to_bytes(&(self.migrators_version, 2u64))?);
+                .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, 2u64))?);
             self.h.insert(stale);
             let stale_apply = self.collect_pt(launch, m, m.pool, update)?;
             self.h.assert_rolled_back(stale_apply, Expected::Abort {package: self.admin, module: "operational_version", code: 9},
