@@ -33,12 +33,13 @@ fi
 [ "$(sed -n '/^\[dependencies\]/,/^\[/p' "$package_dir/Move.toml" | rg -o '^[A-Za-z_]+ =' | sort | tr '\n' ' ')" \
   == 'blast_admin = blast_core = blast_partners = ' ] \
   || fail "Presale depends on blast_admin, blast_core, and blast_partners only."
-admin_roles="$(for file in "$sources"/*.move; do
+mapfile -t source_files < <(find "$sources" -type f -name '*.move' -print | LC_ALL=C sort)
+admin_roles="$(for file in "${source_files[@]}"; do
  awk -f "$package_dir/../launchpad/scripts/move_facts.awk" "$file" | awk -F'\t' -v module="$(basename "$file" .move)" '
  $1 == "FN" && $6 == 0 && match($9, /AdminWitness<[A-Za-z]+(<[A-Z_]+>)?>/) { print module ":" $2 ":" substr($9, RSTART + 13, RLENGTH - 14) }'
 done | sort)"
 [ "$admin_roles" == "$(printf '%s\n' 'blast_presale:set_protocol_fees:FeeAdmin' 'creation_policy:add_partner:FeeAdmin' 'creation_policy:cancel_venue:CancelAdmin' 'creation_policy:cancel_venue_delay:CancelAdmin' 'creation_policy:remove_partner:FeeAdmin' 'creation_policy:remove_venue:VenueAdmin' 'creation_policy:schedule_venue:VenueAdmin' 'creation_policy:schedule_venue_delay:VenueAdmin' 'creation_policy:set_quote_allowed:ListingAdmin' 'creation_policy:unpause:UnpauseAdmin<BLAST_PRESALE_PACKAGE>' 'fee_policy:cancel_fees:CancelAdmin' 'fee_policy:schedule_fees:FeeAdmin' | sort)" ] || fail "Every administrator action must take its pinned role."
-for file in "$sources"/*.move; do
+for file in "${source_files[@]}"; do
   if rg -q 'AdminWitness<(FeeAdmin|CancelAdmin|VenueAdmin|ListingAdmin)>' <<<"$(production "$file")"; then
     rg -q 'blast_domain::' "$file" || fail "$(basename "$file") must take product roles from blast_core::blast_domain."
   fi
@@ -50,10 +51,10 @@ python3 "$package_dir/scripts/check_version_boundaries.py"
 
 # 2b. Errors have one numeric registry; event payloads are raw structs emitted only by events.move,
 #     except PresaleCreated, which stays beside the sale terms it records (a module cycle otherwise).
-for file in "$sources"/*.move; do
+for file in "${source_files[@]}"; do
   [ "$(basename "$file")" == errors.move ] && continue
   if rg -n '#\[error\(|^[[:space:]]*const E[A-Z]' "$file"; then
-    fail "$(basename "$file"): define presale errors in sources/errors.move."
+    fail "$(basename "$file"): define presale errors in sources/lib/errors.move."
   fi
   case "$(basename "$file")" in
     events.move) ;;
@@ -64,7 +65,7 @@ for file in "$sources"/*.move; do
       ;;
     *)
       if production "$file" | rg -n 'event::emit'; then
-        fail "$(basename "$file"): emit presale events through sources/events.move."
+        fail "$(basename "$file"): emit presale events through sources/lib/events.move."
       fi
       ;;
   esac
@@ -78,7 +79,7 @@ fi
 rg -Fq 'fee_ledger: Ledger<SaleToken, Quote>,' <<<"$presale_production" \
   && rg -Fq 'let fee_ledger = protocol_fees::new(' <<<"$presale_production" \
   || fail "Each sale holds Blast's fees in one core ledger bound to its partner."
-rg -Fq 'partners: PartnerList,' "$sources/creation_policy.move" \
+rg -Fq 'partners: PartnerList,' "$sources/config/creation_policy.move" \
   || fail "The creation policy keeps its partners in blast_partners::partner_list."
 
 # 3. A sale's Blast partner is named only by set_partner on its initializer, so `finalize` fixes it
@@ -111,8 +112,8 @@ finalize_body="$(sed -n '/^public fun finalize</,/^}/p' <<<"$presale_production"
 otw_production="$(production "$sources/blast_presale_package.move")"
 rg -q '^public struct PackageWitness\(\) has drop;$' <<<"$otw_production" \
   && [ "$(rg -c 'PackageWitness\(\)' <<<"$otw_production")" == 2 ] \
-  && [ "$(for file in "$sources"/*.move; do production "$file" | rg -c 'package_witness\(\)' || true; done | paste -sd+ | bc)" == 6 ] \
-  && [ "$(production "$sources/creation_policy.move" | rg -c 'package_witness\(\)')" == 1 ] \
+  && [ "$(for file in "${source_files[@]}"; do production "$file" | rg -c 'package_witness\(\)' || true; done | paste -sd+ | bc)" == 6 ] \
+  && [ "$(production "$sources/config/creation_policy.move" | rg -c 'package_witness\(\)')" == 1 ] \
   && [ "$(rg -c 'blast_presale_package::package_witness\(\)' <<<"$presale_production")" == 4 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$migrate_body")" == 2 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$prove_owner_body")" == 1 ] \
@@ -133,20 +134,20 @@ rg -Fq 'migration::is_seedable_price(' <<<"$presale_production" \
 # 8. Every delayed operation stores blast_admin's primitive under a key its owning module declares,
 #    so only that module can create or drive it and the primitive alone records its lifecycle.
 require_field() {
-  grep -Fqx "    $2" "$sources/$1.move" || fail "$1 must store ${2%,}."
-  grep -Eq "^public struct $3\(\) has copy, drop, store;$" "$sources/$1.move" \
+  grep -Fqx "    $2" "$sources/config/$1.move" || fail "$1 must store ${2%,}."
+  grep -Eq "^public struct $3\(\) has copy, drop, store;$" "$sources/config/$1.move" \
     || fail "$1 must declare its delayed-operation key $3."
 }
 require_field fee_policy 'fees: Delayed<FeesKey, ProtocolFees>,' FeesKey
 require_field creation_policy 'venues: DelayedSet<VenueKey, TypeName>,' VenueKey
-if rg -n 'destination' "$sources/fee_policy.move" | rg -v '^\S*:[0-9]+:\s*///'; then
+if rg -n 'destination' "$sources/config/fee_policy.move" | rg -v '^\S*:[0-9]+:\s*///'; then
   fail "Blast's fees are paid to blast_core's treasury; the fee policy keeps no destination."
 fi
-if rg -n '\b(Pending|new_pending|take_ready|witness_delay_ms|pending_witness\w*|DelayOnly)\b|self\.(delay_ms|pending)\b' "$sources"/{fee_policy,creation_policy}.move; then
+if rg -n '\b(Pending|new_pending|take_ready|witness_delay_ms|pending_witness\w*|DelayOnly)\b|self\.(delay_ms|pending)\b' "$sources/config"/{fee_policy,creation_policy}.move; then
   fail "Delayed operations keep no delay or proposal outside blast_admin's primitive."
 fi
 if rg -n '^public struct \w*(Scheduled|Cancelled|Changed|DelayChanged|WitnessSet)\b' \
-  "$sources"/{fee_policy,creation_policy}.move; then
+  "$sources/config"/{fee_policy,creation_policy}.move; then
   fail "The delayed primitive alone emits schedule, cancel and apply events."
 fi
 

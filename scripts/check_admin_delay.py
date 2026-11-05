@@ -74,11 +74,11 @@ assert otw_fs['package_witness'][1] == 'PackageWitness()', otw_fs['package_witne
 # The package witness is constructed only by its module; no launchpad function stores it, takes it,
 # or returns it except the package-only constructor.
 for path in (ROOT / 'sui/launchpad/sources').rglob('*.move'):
-    for name, (signature, _) in functions('launchpad', str(path.relative_to(ROOT / 'sui/launchpad/sources').with_suffix(''))).items():
+    for name, (signature, _) in functions('launchpad', path.stem).items():
         assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_fun', 'package_witness'), (path, name)
 # Only the launchpad's unpause clears bits, after checking every launchpad delay.
 callers = [(path, name) for path in (ROOT / 'sui/launchpad/sources').rglob('*.move')
-           for name, (_, body) in functions('launchpad', str(path.relative_to(ROOT / 'sui/launchpad/sources').with_suffix(''))).items()
+           for name, (_, body) in functions('launchpad', path.stem).items()
            if 'clear_pause_bits(' in body]
 assert [(path.stem, name) for path, name in callers] == [('launch_config', 'unpause')], callers
 signature, body = functions('launchpad', 'launch_config')['unpause']
@@ -136,7 +136,7 @@ for path in (ROOT / 'sui/presale/sources').rglob('*.move'):
 
 for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_policy')]:
     fs = functions(package, module)
-    source = (ROOT / 'sui' / package / 'sources' / f'{module}.move').read_text()
+    source = module_path(package, module).read_text()
     require(source, 'venues: DelayedSet<VenueKey, TypeName>,')
     assert 'migration_witness' not in source and 'pending_venue' not in source, package
     require(fs['schedule_venue'][0], '&AdminWitness<VenueAdmin>', 'clock: &Clock')
@@ -158,7 +158,7 @@ for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_po
     assert 'set_venue_allowed' not in fs
 
 fs = functions('launchpad', 'launch')
-source = (ROOT / 'sui/launchpad/sources/launch.move').read_text()
+source = (ROOT / 'sui/launchpad/sources/launch/launch.move').read_text()
 assert 'apply_cap_reassignment_delay' not in fs and '_delay_ms: u64,' not in source.split('public struct Launch<')[1].split('\n}')[0]
 for cap in ['curve_fee_cap', 'creator_metadata_cap']:
     require(fs[f'schedule_{cap}_reassignment'][0], '&AdminWitness<CreatorAdmin>', 'clock: &Clock')
@@ -203,7 +203,7 @@ for package, module, current, actions in [
 # The generic package administration every upgradeable package shares: role-gated, waits the
 # package's own upgrade delay, and keeps the native capabilities sealed.
 generic = functions('admin', 'package_admin')
-generic_source = (ROOT / 'sui/admin/sources/package_admin.move').read_text()
+generic_source = (ROOT / 'sui/admin/sources/package/package_admin.move').read_text()
 require(generic_source, 'upgrade: DelayedAction<UpgradeKey<OTW>, UpgradeAction>,',
         'upgrade_cap: Option<UpgradeCap>,', 'const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;')
 for name in ('schedule_upgrade', 'schedule_make_immutable', 'authorize_upgrade', 'make_immutable', 'schedule_upgrade_delay'):
@@ -265,7 +265,7 @@ print('ADR 0134 administration boundaries: OK')
 # Publication proves unique native custody intake; it never authorizes policy changes.
 for package, otw_module in [('launchpad', 'blast_fun')]:
     otw_fs = functions(package, otw_module)
-    source = (ROOT / 'sui' / package / 'sources' / f'{otw_module}.move').read_text()
+    source = module_path(package, otw_module).read_text()
     assert 'admin_delay' not in source
     # The generic `package_version::new_publication` claims the Publisher and seeds the version.
     require(otw_fs['init'][1], '.keep(ctx)')
@@ -277,7 +277,7 @@ for package, otw_module in [('launchpad', 'blast_fun')]:
         assert 'set_now' not in production, path
         if path.stem not in (otw_module, 'package_admin'):
             assert not re.search(r'\bPublication\b', production), path
-        for name, (signature, body) in functions(package, str(path.relative_to(ROOT / 'sui' / package / 'sources').with_suffix(''))).items():
+        for name, (signature, body) in functions(package, path.stem).items():
             if not re.search(r'\.schedule(_add|_value)?\(', body):
                 continue
                 continue
@@ -397,7 +397,7 @@ if True:
 
 # Signer admission waits the set's delay and is capped; revocation stays immediate.
 signer = functions('launchpad', 'runtime_config')
-require((ROOT / 'sui/launchpad/sources/runtime_config.move').read_text(),
+require((ROOT / 'sui/launchpad/sources/config/runtime_config.move').read_text(),
         'creator_claim_signers: DelayedSet<ClaimSignerKey, vector<u8>>,')
 for name in signer:
     if name.endswith(('_creator_claim_signer', '_creator_claim_signer_delay')):

@@ -25,9 +25,9 @@ class SummaryIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             package = root / 'sui/example'
-            (package / 'sources').mkdir(parents=True)
+            (package / 'sources/config').mkdir(parents=True)
             (package / 'Move.toml').write_text('[package]\nname = "example"\n')
-            (package / 'sources/policy.move').write_text('module example::policy;\n')
+            (package / 'sources/config/policy.move').write_text('module example::policy;\n')
             summaries = root / 'summaries'
             summary = summaries / 'example'
             (summary / 'treasury').mkdir(parents=True)

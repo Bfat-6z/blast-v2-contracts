@@ -4,12 +4,13 @@ python3 "$(dirname "$0")/../../../scripts/check_admin_delay.py"
 
 PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_DIR="$PACKAGE_DIR/sources"
-BLUEFIN_SOURCE="$SOURCE_DIR/bluefin.move"
-CETUS_SOURCE="$SOURCE_DIR/cetus.move"
-EVENTS_SOURCE="$SOURCE_DIR/events.move"
-ERRORS_SOURCE="$SOURCE_DIR/errors.move"
-VENUE_CONFIG_SOURCE="$SOURCE_DIR/venue_config.move"
-CONSTANTS_SOURCE="$SOURCE_DIR/constants.move"
+BLUEFIN_SOURCE="$SOURCE_DIR/venues/bluefin.move"
+CETUS_SOURCE="$SOURCE_DIR/venues/cetus.move"
+EVENTS_SOURCE="$SOURCE_DIR/lib/events.move"
+ERRORS_SOURCE="$SOURCE_DIR/lib/errors.move"
+VENUE_CONFIG_SOURCE="$SOURCE_DIR/venues/venue_config.move"
+CONSTANTS_SOURCE="$SOURCE_DIR/lib/constants.move"
+mapfile -t source_files < <(find "$SOURCE_DIR" -type f -name '*.move' -print | LC_ALL=C sort)
 
 fail() {
     echo "Migrator source boundary failed: $1" >&2
@@ -120,10 +121,10 @@ require_text() {
 # cap, or a vault's position to a new caller. Vault custody, LP-fee collection, and holder rewards
 # belong to `blast_vault`; the retired migrator vault, LP-fee policy, holder rewards, and Merkle
 # modules may not return.
-[[ "$(find "$SOURCE_DIR" -mindepth 1 -printf '%P\n' | LC_ALL=C sort | tr '\n' ' ')" \
-    == 'blast_migrators.move bluefin.move cetus.move constants.move errors.move events.move venue_config.move ' ]] || \
+[[ "$(find "$SOURCE_DIR" -type f -printf '%P\n' | LC_ALL=C sort | tr '\n' ' ')" \
+    == 'blast_migrators.move lib/constants.move lib/errors.move lib/events.move venues/bluefin.move venues/cetus.move venues/venue_config.move ' ]] || \
     fail "sources must be exactly the pinned module set; a new module must extend this gate"
-for source in "$SOURCE_DIR"/*.move; do
+for source in "${source_files[@]}"; do
     module="$(basename "$source" .move)"
     facts="$(move_facts "$source")"
     [[ "$facts" != *MALFORMED* ]] || fail "the Move reader rejected ${module}.move"
@@ -145,7 +146,7 @@ done
 # package function, an added type parameter or return value (a generic `Lent: key + store` that
 # lends the reserved creation cap), or a changed parameter fails here until this pin is extended
 # deliberately.
-package_surface="$(for source in "$SOURCE_DIR"/*.move; do
+package_surface="$(for source in "${source_files[@]}"; do
     move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
         '$1 == "FN" && $6 == 0 && $7 == 0 && $3 != "private" { print module ":" $3 ":" $9 }'
 done | LC_ALL=C sort)"
@@ -185,7 +186,7 @@ EOF
 # Every rename in the package is pinned. The rules here match protected types and calls by name,
 # so a type, function, or method alias under a new name (`Venue as Seal`, a `use fun` that
 # shadows `assert_current`) would hide them; each alias must be extended here deliberately.
-package_aliases="$(for source in "$SOURCE_DIR"/*.move; do
+package_aliases="$(for source in "${source_files[@]}"; do
     move_norm "$source" | rg -o -P '[\w:]+ as (?!u(8|16|32|64|128|256)\b(?!\.))[\w.]+' \
         | sed "s|^|$(basename "$source" .move): |"
 done | LC_ALL=C sort)"
@@ -216,7 +217,7 @@ EOF
 # Both versions are `blast_admin`'s generic `PackageVersion`, typed by the one-time witness (OTW)
 # of the package each route checks: this package's own for the guard, the vault package's for the vault calls.
 for module in bluefin cetus; do
-    [[ "$(move_norm "$SOURCE_DIR/${module}.move" | rg -o 'use blast_admin::[^;]*;')" \
+    [[ "$(move_norm "$SOURCE_DIR/venues/${module}.move" | rg -o 'use blast_admin::[^;]*;')" \
         == 'use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};' ]] || \
         fail "${module}.move must import blast_admin's generic PackageVersion once, unaliased"
 done
@@ -241,7 +242,7 @@ fi
 # not return.
 matrix_venue_modules=""
 matrix_seam_modules=""
-for source in "$SOURCE_DIR"/*.move; do
+for source in "${source_files[@]}"; do
     module="$(basename "$source" .move)"
     facts="$(move_facts "$source")"
     if awk -F'\t' '$1 == "TYPE" && $2 == "Venue" { found = 1 } END { exit !found }' <<<"$facts"; then
@@ -262,7 +263,7 @@ if rg -q '\bstruct Witness\b|\bWitness\(\)' "$SOURCE_DIR"; then
     fail "the retired migration witness is forbidden; each venue's one witness is its Venue"
 fi
 for module in $matrix_venue_modules; do
-    venue_facts="$(move_facts "$SOURCE_DIR/${module}.move")"
+    venue_facts="$(move_facts "$SOURCE_DIR/venues/${module}.move")"
     [[ "$(move_production_type Venue <<<"$venue_facts")" == 'struct Venue() has drop;' ]] || \
         fail "${module}::Venue must be a field-free drop-only witness"
     # The ticket is issued once, at the end of `prepare`, and the hand-off is redeemed once, at the
@@ -289,20 +290,20 @@ done
 # witness in its signature, so none returns it or fills a caller's container with it. Only the
 # two `prepare` routes return a ticket, and no route returns the hand-off.
 for module in $matrix_venue_modules; do
-    if move_facts "$SOURCE_DIR/${module}.move" | awk -F'\t' '
+    if move_facts "$SOURCE_DIR/venues/${module}.move" | awk -F'\t' '
         $1 == "FN" && $9 ~ /[^A-Za-z0-9_]Venue([^A-Za-z0-9_]|$)/ { found = 1 }
         END { exit !found }'; then
         fail "${module}::Venue must never appear in any ${module} function signature"
     fi
 done
-[[ "$(for source in "$SOURCE_DIR"/*.move; do
+[[ "$(for source in "${source_files[@]}"; do
     move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
         '$1 == "FN" && index($9, "VenueTicket") > 0 { print module ":" $2 }'
 done | LC_ALL=C sort | tr '\n' ' ')" == 'bluefin:prepare cetus:prepare ' ]] || \
     fail "only the venues' prepare routes may return a VenueTicket"
 # Each venue's `migrate` takes the hand-off its product returned earlier in the PTB as its first
 # argument and redeems it in place; no other function names the hand-off type, and none returns it.
-[[ "$(for source in "$SOURCE_DIR"/*.move; do
+[[ "$(for source in "${source_files[@]}"; do
     move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
         '$1 == "FN" && $6 == 0 && index($9, "Migration<") > 0 { print module ":" $2 ":" (index($9, "( migration: Migration<Meme, Quote>,") > 0 && index($9, "):") == 0) }'
 done | LC_ALL=C sort | tr '\n' ' ')" == 'bluefin:migrate:1 cetus:migrate:1 ' ]] || \
@@ -313,7 +314,7 @@ fi
 # Each venue records its prepared coin's tier under a key of its own module, so one venue can
 # never read another's tier.
 for module in $matrix_venue_modules; do
-    [[ "$(move_production_type PoolTierKey <<<"$(move_facts "$SOURCE_DIR/${module}.move")")" \
+    [[ "$(move_production_type PoolTierKey <<<"$(move_facts "$SOURCE_DIR/venues/${module}.move")")" \
         == 'struct PoolTierKey<phantom Meme>() has copy, drop, store;' ]] || \
         fail "${module} must key its prepared tier by its own PoolTierKey<Meme>"
 done
@@ -326,7 +327,7 @@ if rg -q '\b(integer_sqrt|ratio_q128|sqrt_upper_bound_shift)\b|fun sqrt_price_x6
     fail "the seed price must be blast_core's sqrt_price_x64, never a local copy"
 fi
 for module in bluefin cetus; do
-    [[ "$(move_norm "$SOURCE_DIR/${module}.move" | grep -o 'migration::sqrt_price_x64(' | wc -l)" -eq 1 ]] || \
+    [[ "$(move_norm "$SOURCE_DIR/venues/${module}.move" | grep -o 'migration::sqrt_price_x64(' | wc -l)" -eq 1 ]] || \
         fail "${module}::migrate must price its pool once with blast_core's sqrt_price_x64"
 done
 # Auto-LP side selection adds nothing unless the price is strictly inside the range, checked first
@@ -385,14 +386,14 @@ if rg -q '\b(VenueTierUpdated|venue_tier_updated|RoutesChanged|routes_changed|Po
     "$SOURCE_DIR"; then
     fail "venue tiers and fee routes are sale settings and the Blast share is sealed in the vault terms; no admin tier, route, or snapshot record may return"
 fi
-reservation_writers="$(for source in "$SOURCE_DIR"/*.move; do
+reservation_writers="$(for source in "${source_files[@]}"; do
     [[ "$source" == "$EVENTS_SOURCE" ]] && continue
     move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
         '$1 == "FN" && $6 == 0 && index($10, "events::cetus_pool_reserved<") > 0 { print module ":" $2 }'
 done | LC_ALL=C sort | tr '\n' ' ')"
 [[ "$reservation_writers" == 'cetus:prepare ' ]] || \
     fail "CetusPoolReserved must be emitted only by cetus:prepare (found: ${reservation_writers:-none})"
-tier_writers="$(for source in "$SOURCE_DIR"/*.move; do
+tier_writers="$(for source in "${source_files[@]}"; do
     [[ "$source" == "$EVENTS_SOURCE" ]] && continue
     move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
         '$1 == "FN" && $6 == 0 && index($10, "events::bluefin_pool_tier_recorded<") > 0 { print module ":" $2 }'
@@ -406,7 +407,7 @@ done | LC_ALL=C sort | tr '\n' ' ')"
 # `blast_vault` vault each migration creates, which pays Blast through the core treasury and owns
 # the fee split, auto-LP, buyback, and holder-reward balances. No migrator type stores a balance or
 # a coin, and no module declares a vault, a fee policy, a treasury destination, or a round.
-for source in "$SOURCE_DIR"/*.move; do
+for source in "${source_files[@]}"; do
     if move_facts "$source" | awk -F'\t' '
         $1 == "TYPE" && $5 == 0 && $8 ~ /(^|[^A-Za-z0-9_])(Balance|Coin|Table|Bag)</ { found = 1 }
         END { exit !found }'; then
@@ -448,7 +449,7 @@ if move_norm "$VENUE_CONFIG_SOURCE" | rg -q '\bborrow_mut\b|_field_mut\b|\bremov
 fi
 # Only the two preparations write records, and only the two migrations read them.
 venue_record_sites="$(for module in bluefin cetus; do
-    move_facts "$SOURCE_DIR/${module}.move" | awk -F'\t' -v module="$module" '
+    move_facts "$SOURCE_DIR/venues/${module}.move" | awk -F'\t' -v module="$module" '
         $1 == "FN" && $6 == 0 && index($10, "venue_config.add_value(") > 0 { print module ":" $2 " adds" }
         $1 == "FN" && $6 == 0 && index($10, "venue_config.value(") > 0 { print module ":" $2 " reads" }'
 done | LC_ALL=C sort | tr '\n' ' ')"
@@ -726,7 +727,7 @@ fi
 # The capability is minted once, from the treasury capability `cetus::prepare` borrows mutably;
 # Bluefin only reads its caller's capability, and no other module names one.
 [[ "$(rg -c 'factory::mint_pool_creation_cap\(' "$CETUS_SOURCE" || true)" -eq 1 ]] \
-    && [[ "$(for source in "$SOURCE_DIR"/*.move; do
+    && [[ "$(for source in "${source_files[@]}"; do
         move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
             '$1 == "FN" && $6 == 0 && index($9, "TreasuryCap<") > 0 { print module ":" $2 ":" ($9 ~ /&mut TreasuryCap</ ? "mut" : "ref") }'
     done | LC_ALL=C sort | tr '\n' ' ')" == 'bluefin:prepare:ref cetus:prepare:mut ' ]] || \
@@ -754,7 +755,7 @@ reject_pattern '(position\.(burn|delete|destroy)|((burn|delete|destroy)[[:space:
     'position burn or destruction is forbidden'
 reject_pattern '(sequence|revision|nonce|schema_version|action_tag):' \
     'application-level event ordering fields are forbidden'
-COMPACT_SOURCE="$(sed -n 'p' "$SOURCE_DIR"/*.move | tr -d '[:space:]')"
+COMPACT_SOURCE="$(sed -n 'p' "${source_files[@]}" | tr -d '[:space:]')"
 if [[ "$COMPACT_SOURCE" =~ transfer::(public_)?transfer\([^\)]*position ]]; then
     fail "position transfer is forbidden"
 fi
@@ -767,12 +768,12 @@ fi
 # and `add_object` is named only by its declaration and the Cetus preparation. No module renames a
 # dynamic field module or imports its members, so none reaches a field function under another
 # name.
-for source in "$SOURCE_DIR"/*.move; do
+for source in "${source_files[@]}"; do
     if move_norm "$source" | rg -q '\bdynamic_(object_)?field( as |::\{)'; then
         fail "$(basename "$source") must import dynamic field modules by name only"
     fi
 done
-object_custody_sites="$(for source in "$SOURCE_DIR"/*.move; do
+object_custody_sites="$(for source in "${source_files[@]}"; do
     module="$(basename "$source" .move)"
     facts="$(move_facts "$source")"
     awk -F'\t' -v module="$module" '$1 == "FN" {
@@ -848,7 +849,7 @@ if rg -n "^public struct (${CORE_ROLES})\\b" "$SOURCE_DIR"; then
 fi
 # The witness type is each administrator action's role check, so every witness a source names is
 # borrowed and names one concrete core role; a generic or foreign role fails here.
-admin_witness_violations="$(for source in "$SOURCE_DIR"/*.move; do
+admin_witness_violations="$(for source in "${source_files[@]}"; do
     move_norm "$source" | { rg -o '&?AdminWitness<[^>]*>' || true; } \
         | { rg -v -x "&AdminWitness<(${CORE_ROLES})>" || true; } \
         | sed "s|^|$(basename "$source"): |"
@@ -856,12 +857,12 @@ done)"
 [[ -z "$admin_witness_violations" ]] || \
     fail "every administrator witness must be a borrowed AdminWitness of one concrete role: ${admin_witness_violations}"
 for module in bluefin cetus; do
-    move_norm "$SOURCE_DIR/${module}.move" | rg -q 'use blast_core::\{ blast_domain::BuybackAdmin,' || \
+    move_norm "$SOURCE_DIR/venues/${module}.move" | rg -q 'use blast_core::\{ blast_domain::BuybackAdmin,' || \
         fail "${module} buybacks must take the core domain's BuybackAdmin, the role blast_vault checks"
 done
 # Every administrator action takes exactly one role, the one pinned here. The buybacks hand their
 # witness to `blast_vault`'s `take_buyback_quote`, whose calls are pinned above.
-admin_roles="$(for source in "$SOURCE_DIR"/*.move; do
+admin_roles="$(for source in "${source_files[@]}"; do
     move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" '
         $1 == "FN" && $6 == 0 && index($9, "AdminWitness<") > 0 {
             rest = $9
@@ -884,7 +885,7 @@ ROLES
 # from the Move reader, so spacing or line breaks cannot hide a function, and each one must take
 # this package's version and check it before doing anything else.
 for guard_module in bluefin cetus; do
-    guard_facts="$(move_facts "$SOURCE_DIR/${guard_module}.move")"
+    guard_facts="$(move_facts "$SOURCE_DIR/venues/${guard_module}.move")"
     [[ "$guard_facts" != *MALFORMED* ]] || fail "the Move reader rejected ${guard_module}.move"
     unguarded="$(awk -F'\t' '
         $1 != "FN" || $3 != "public" || $6 != 0 { next }
@@ -898,14 +899,14 @@ done
 # `vault_version` is `blast_vault`'s version, which the vault checks itself; it never stands in
 # for this package's own guard.
 for guard_module in bluefin cetus; do
-    if rg -n '^[[:space:]]+vault_version\.assert_current\(' "$SOURCE_DIR/${guard_module}.move"; then
+    if rg -n '^[[:space:]]+vault_version\.assert_current\(' "$SOURCE_DIR/venues/${guard_module}.move"; then
         fail "${guard_module}.move must not assert the vault version as if it were its own"
     fi
 done
 
 # No public migrator function may hand out a raw balance, a position, a vault, the hand-off, a
 # pool, or the reserved pool creation capability.
-protected_returners="$(for file in "$SOURCE_DIR"/*.move; do move_facts "$file"; done \
+protected_returners="$(for file in "${source_files[@]}"; do move_facts "$file"; done \
     | awk -F'\t' '
         $1 == "MALFORMED" { print "MALFORMED" }
         $1 == "FN" && $3 == "public" && $6 == 0 && index($9, "):") > 0 {

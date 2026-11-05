@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 registry="$(awk -f scripts/move_facts.awk sources/lib/errors.move)"
-tests="$(awk -f scripts/move_facts.awk tests/errors_tests.move)"
+tests="$(awk -f scripts/move_facts.awk tests/lib/errors_tests.move)"
 macros="$(awk -F'\t' '$1 == "FN" && $5 == 1 { print $2 }' <<<"$registry" | sort)"
 # Compare names, including duplicates, so equal counts cannot hide an omitted pin.
 pins="$(awk -F'\t' '$1 == "NORM" { print $2 }' <<<"$tests" \

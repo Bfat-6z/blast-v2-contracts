@@ -29,8 +29,8 @@ public fun revoke_admin(self: &mut ACL, root: &SuperAdminCap, admin_cap_id: ID);
 
 **TreasuryAdmin proposes; CancelAdmin cancels; anyone applies once ready.**
 Fees follow the same pattern:
-[schedule_trade_fees / apply_trade_fees / cancel_trade_fees](../sui/launchpad/sources/launch_config.move).
-[Source: runtime_config](../sui/launchpad/sources/runtime_config.move).
+[schedule_trade_fees / apply_trade_fees / cancel_trade_fees](../sui/launchpad/sources/config/launch_config.move).
+[Source: runtime_config](../sui/launchpad/sources/config/runtime_config.move).
 
 ```move
 public fun schedule_treasury(
