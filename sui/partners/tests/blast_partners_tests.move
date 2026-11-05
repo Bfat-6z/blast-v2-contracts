@@ -492,6 +492,77 @@ fun scheduling_rejects_an_unrepresentable_ready_time() {
     fixture.end();
 }
 
+#[test]
+/// `is_share_ready` answers what `apply_share` would do: false with nothing proposed, before the
+/// notice, after cancellation, and once applied; true from the ready time on.
+fun share_readiness_follows_the_proposal_and_its_notice() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        assert!(!partner.is_share_ready(&fixture.clock));
+
+        let scheduled_at = fixture.now();
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.set_time(scheduled_at + delay() - 1);
+        assert!(!partner.is_share_ready(&fixture.clock));
+        fixture.set_time(scheduled_at + delay());
+        assert!(partner.is_share_ready(&fixture.clock));
+        fixture.advance(1);
+        assert!(partner.is_share_ready(&fixture.clock));
+        assert!(!partner.is_cap_ready(&fixture.clock));
+
+        partner.cancel_share(&partner_admin());
+        assert!(!partner.is_share_ready(&fixture.clock));
+
+        fixture.schedule_share(&mut partner, 3_000);
+        fixture.advance(delay());
+        partner.apply_share(&fixture.clock);
+        assert!(!partner.is_share_ready(&fixture.clock));
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+/// A ready time whose fixed notice no longer fits in a timestamp is not ready, as `apply_share`
+/// would abort.
+fun a_share_is_not_ready_once_its_notice_would_overflow() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.set_time(std::u64::max_value!() - delay());
+        assert!(partner.is_share_ready(&fixture.clock));
+        fixture.advance(1);
+        assert!(!partner.is_share_ready(&fixture.clock));
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
+fun share_application_refuses_once_its_notice_would_overflow() {
+    let mut fixture = start();
+    fixture.register(RECIPIENT, 2_500).destroy_cap();
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        fixture.schedule_share(&mut partner, 1_000);
+        fixture.set_time(std::u64::max_value!() - delay() + 1);
+        partner.apply_share(&fixture.clock);
+        fixture.return_partner(partner);
+    });
+
+    fixture.end();
+}
+
 // --- Cap ---
 
 #[test]
@@ -808,6 +879,42 @@ fun a_partner_without_a_live_cap_is_moved_to_a_new_one() {
         fixture.return_partner(never_minted);
     });
 
+    fixture.end();
+}
+
+#[test]
+/// `is_cap_ready` answers what `apply_cap` would do: false with nothing proposed, before the
+/// notice, after cancellation, and once applied; true from the ready time on.
+fun cap_readiness_follows_the_proposal_and_its_notice() {
+    let mut fixture = start();
+    let cap = fixture.register(RECIPIENT, 2_500);
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        assert!(!partner.is_cap_ready(&fixture.clock));
+
+        let scheduled_at = fixture.now();
+        fixture.schedule_cap(&mut partner, @0xCAFE.to_id());
+        fixture.set_time(scheduled_at + delay() - 1);
+        assert!(!partner.is_cap_ready(&fixture.clock));
+        fixture.set_time(scheduled_at + delay());
+        assert!(partner.is_cap_ready(&fixture.clock));
+        fixture.advance(1);
+        assert!(partner.is_cap_ready(&fixture.clock));
+        assert!(!partner.is_share_ready(&fixture.clock));
+
+        partner.cancel_cap(&partner_admin());
+        assert!(!partner.is_cap_ready(&fixture.clock));
+
+        let next_cap = fixture.reissue_cap(&mut partner);
+        fixture.advance(delay());
+        partner.apply_cap(&fixture.clock);
+        assert!(!partner.is_cap_ready(&fixture.clock));
+        next_cap.destroy_cap();
+        fixture.return_partner(partner);
+    });
+
+    cap.destroy_cap();
     fixture.end();
 }
 

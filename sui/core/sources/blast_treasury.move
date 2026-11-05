@@ -66,6 +66,12 @@ public fun pending_destination(self: &Treasury): Option<Proposal<address>> {
     self.destination.pending()
 }
 
+/// Whether `apply_destination` would succeed now: a destination is scheduled, its ready time has
+/// passed, and its next notice still fits in a Unix millisecond timestamp.
+public fun is_destination_ready(self: &Treasury, clock: &Clock): bool {
+    self.destination.is_ready(clock)
+}
+
 /// Whether every change waits a nonzero notice.
 public fun is_guarded(self: &Treasury): bool {
     self.destination.is_guarded()

@@ -75,7 +75,9 @@ needs no `Clock`; there is no initial waiting period. From then on:
    or `blast_partners::blast_partners::cancel_cap`, even after it is ready.
 4. From `ready_at_ms`, anyone may call `blast_partners::blast_partners::apply_share`
    or `blast_partners::blast_partners::apply_cap`, the partner included. Nothing
-   changes merely because time passes.
+   changes merely because time passes. `blast_partners::blast_partners::is_share_ready`
+   and `blast_partners::blast_partners::is_cap_ready` say whether that call would
+   succeed now.
 
 There is no delete: a partner exists forever, because launches, presales, and
 vaults bind its ID for good and pay Blast's held fees only with it. To switch it
@@ -241,7 +243,12 @@ Move callers read a partner with `blast_partners::blast_partners::recipient`,
 `blast_partners::blast_partners::pending_share_bps`,
 `blast_partners::blast_partners::cap_id` (applied), and
 `blast_partners::blast_partners::pending_cap_id`; each pending reader returns an
-`Option<delayed::Proposal<T>>`. The share readers keep the field's name,
+`Option<delayed::Proposal<T>>`. `blast_partners::blast_partners::is_share_ready`
+and `blast_partners::blast_partners::is_cap_ready` take the `Clock` and return
+whether `apply_share` or `apply_cap` would succeed now: a proposal is pending,
+the clock reads its `ready_at_ms` or later, and the clock plus the seven-day
+notice still fits in a `u64`. They return false with nothing proposed, before
+`ready_at_ms`, and after a cancel or an apply. The share readers keep the field's name,
 `share_bps`, the repository's term for a partner's share in basis points.
 `blast_partners::blast_partners::max_share_bps` returns the 8,000 BPS ceiling
 `register` and `schedule_share` enforce. Off chain, read the shared `Partner`
