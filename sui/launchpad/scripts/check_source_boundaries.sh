@@ -782,7 +782,7 @@ if [[ "$(move_production_body max_recipients <<<"$constants_facts")" != '16' ]] 
   || ! rg -Fq 'meme_fee_bps.value() <= constants::max_trade_fee_bps!()' sources/config/launch_config.move \
   || rg -n 'protocol_trade_fee_share_bps' sources \
   || ! rg -Fq 'type_name::with_original_ids<Quote>()' sources/config/launch_config.move \
-  || [[ "$(count_occurrences 'type_name::with_original_ids<Venue>\(\)' <<<"$launch_config_source")" != 4 ]] \
+  || [[ "$(count_occurrences 'type_name::with_original_ids<Venue>\(\)' <<<"$launch_config_source")" != 5 ]] \
   || ! rg -Fq 'assert!( self.venues.contains(&venue), blast_fun::errors::venue_not_allowed!(), );' \
     <<<"$(move_production_body snapshot_for_launch <<<"$launch_config_facts")" \
   || ! in_order 'assert!(!venue.is_primitive(), blast_fun::errors::invalid_venue!());' \
@@ -828,7 +828,8 @@ launch_ticket_source="$(move_normalized_source <<<"$launch_ticket_facts")"
 # The generated package's one-time witness names the currency and the Coin Registry proves it
 # is unique, so the constructor needs no package identity, launch policy, or registry borrow.
 # The ticket is pure coin custody: it records no venue or Quote and holds no TreasuryCap, which
-# `new` returns beside it so a venue can prepare the coin. The ticket therefore cannot leak supply:
+# `new` returns beside it sealed under the package witness (ADR 0138) so an admitted venue can
+# prepare the coin while no one can mint. The ticket therefore cannot leak supply:
 # finalization takes the cap back and re-checks that the ticket holds the whole minted supply and
 # that nothing else was minted, re-checks the sell burn, and only then fixes the supply mode.
 launch_ticket_new_body="$(move_production_body new <<<"$launch_ticket_facts" | move_semantic_shape)"
@@ -840,7 +841,7 @@ if [[ ! -f sources/launch/launch_ticket.move ]] \
   || [[ "$(move_production_type LaunchTicket <<<"$launch_ticket_facts")" \
     != 'struct LaunchTicket<phantom Meme> has key, store { id: UID, meme: Balance<Meme>, metadata_cap: MetadataCap<Meme>, creator: CreatorRecipient, decimals: u8, burnable: bool, sell_burn_bps: Bps, }' ]] \
   || [[ "$(move_production_function_contract new <<<"$launch_ticket_facts")" != 'public:0:0:fun new<Meme: drop>( otw: Meme, decimals: u8,'* ]] \
-  || [[ "$(move_production_function_contract new <<<"$launch_ticket_facts")" != *'ctx: &mut TxContext, ): (LaunchTicket<Meme>, TreasuryCap<Meme>)' ]] \
+  || [[ "$(move_production_function_contract new <<<"$launch_ticket_facts")" != *'ctx: &mut TxContext, ): (LaunchTicket<Meme>, SealedTreasuryCap<Meme>)' ]] \
   || [[ "$(count_occurrences 'coin_registry::new_currency_with_otw\(' <<<"$launch_ticket_source")" != 1 ]] \
   || ! in_order \
     'constants::max_sell_burn_bps!()' \
@@ -849,7 +850,7 @@ if [[ ! -f sources/launch/launch_ticket.move ]] \
     'treasury_cap.mint_balance(atomic_supply(decimals))' \
     'initializer.finalize(ctx)' \
     <<<"$launch_ticket_new_body" \
-  || [[ "$launch_ticket_new_body" != *';(ticket,treasury_cap)' ]] \
+  || [[ "$launch_ticket_new_body" != *';(ticket,sealed_treasury_cap::new(package_witness(),treasury_cap,ctx))' ]] \
   || [[ "$(count_occurrences '\btreasury_cap\b' <<<"$launch_ticket_new_body")" != 3 ]] \
   || [[ "$(move_production_function_contract destroy <<<"$launch_ticket_facts")" \
     != 'package:0:0:fun destroy<Meme>( self: LaunchTicket<Meme>, treasury_cap: TreasuryCap<Meme>, currency: &mut Currency<Meme>, atomic_supply: u64, ): (Balance<Meme>, MetadataCap<Meme>, CreatorRecipient, Bps)' ]] \
@@ -865,7 +866,7 @@ if [[ ! -f sources/launch/launch_ticket.move ]] \
   || rg -q 'self\.treasury_cap|treasury_cap_mut|&(mut )?TreasuryCap' <<<"$launch_ticket_source" \
   || rg -q '\b(UpgradeCap|CoinRegistry|PackageVersion|LaunchConfig|TypeName|make_regulated|DenyCap|CoinMetadata)\b' <<<"$launch_ticket_source" \
   || rg -q '\btransfer::|\bentry fun\b' <<<"$launch_ticket_source"; then
-  echo 'launch_ticket.move must create the currency from the generated package one-time witness, mint the canonical supply once into a ticket that records no venue or Quote, return the TreasuryCap beside it without holding or lending it, fix the supply mode only at finalization after taking the cap back and re-checking the whole minted supply and sell burn, and custody the metadata cap and creator recipient without package, policy, or registry inputs.' >&2
+  echo 'launch_ticket.move must create the currency from the generated package one-time witness, mint the canonical supply once into a ticket that records no venue or Quote, return the TreasuryCap sealed under the package witness beside it without holding or lending it, fix the supply mode only at finalization after taking the cap back and re-checking the whole minted supply and sell burn, and custody the metadata cap and creator recipient without package, policy, or registry inputs.' >&2
   failures=$((failures + 1))
 fi
 if [[ "$(rg -o '\.mint_balance\(' sources | wc -l)" != 1 ]] \
@@ -928,9 +929,10 @@ launch_functions_containing() {
 # A venue's pair-typed ticket starts a launch: `new` checks the version, then the create pause,
 # then the distinct pair, then redeems the ticket and checks this version's Quote, venue, and
 # decimal admissions, into an ability-less initializer reachable only through its setters and
-# `finalize`. The initializer holds the TreasuryCap without lending it; only `finalize` hands it
-# back to the ticket's re-checking `destroy`, after checking every setting, and keeps the native
-# MetadataCap inline forever.
+# `finalize`. `new` opens the cap's seal under the package witness (ADR 0138); the initializer
+# holds the TreasuryCap without lending it; only `finalize` hands it back to the ticket's
+# re-checking `destroy`, after checking every setting, and keeps the native MetadataCap inline
+# forever.
 launch_new_body="$(move_production_body new <<<"$launch_facts")"
 launch_finalize_body="$(move_production_body finalize <<<"$launch_facts")"
 launch_creation_ungated="$(awk -F'\t' '
@@ -947,8 +949,8 @@ if [[ ! -f sources/launch/launch.move ]] \
   || [[ "$(move_production_type LaunchInitializer <<<"$launch_facts")" != 'struct LaunchInitializer<phantom Meme, phantom Quote> {'* ]] \
   || [[ "$launch_initializer_functions" != 'finalize:public new:public set_allocation_plan:public set_graduation_target:public set_lp_fee_split:public set_opening_round:public set_partner:public set_virtual_quote:public ' ]] \
   || [[ "$(move_production_type LaunchInitializer <<<"$launch_facts")" != 'struct LaunchInitializer<phantom Meme, phantom Quote> { ticket: LaunchTicket<Meme>, treasury_cap: TreasuryCap<Meme>, venue: TypeName,'* ]] \
-  || [[ "$(move_production_function_contract new <<<"$launch_facts")" != 'public:0:0:fun new<Meme, Quote>( ticket: LaunchTicket<Meme>, treasury_cap: TreasuryCap<Meme>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, venue_ticket: VenueTicket<Meme, Quote>, ): LaunchInitializer<Meme, Quote>' ]] \
-  || [[ "$launch_new_body" != 'package_version.assert_current(constants::version!()); package_version.assert_not_paused(constants::create_pause_bit!()); assert!( type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(), blast_fun::errors::invalid_meme_quote_pair!(), ); let venue = venue_ticket.redeem_ticket(); let (quote_fee_bps, meme_fee_bps) = config.snapshot_for_launch<Quote>(venue, ticket.decimals()); LaunchInitializer {'* ]] \
+  || [[ "$(move_production_function_contract new <<<"$launch_facts")" != 'public:0:0:fun new<Meme, Quote>( ticket: LaunchTicket<Meme>, sealed_treasury_cap: SealedTreasuryCap<Meme>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, venue_ticket: VenueTicket<Meme, Quote>, ): LaunchInitializer<Meme, Quote>' ]] \
+  || [[ "$launch_new_body" != 'package_version.assert_current(constants::version!()); package_version.assert_not_paused(constants::create_pause_bit!()); assert!( type_name::with_original_ids<Meme>() != type_name::with_original_ids<Quote>(), blast_fun::errors::invalid_meme_quote_pair!(), ); let venue = venue_ticket.redeem_ticket(); let (quote_fee_bps, meme_fee_bps) = config.snapshot_for_launch<Quote>(venue, ticket.decimals()); LaunchInitializer { ticket, treasury_cap: sealed_treasury_cap.into_treasury_cap(package_witness()), venue,'* ]] \
   || [[ "$(launch_functions_containing 'treasury_cap')" != 'finalize new ' ]] \
   || [[ "$(launch_functions_containing '.redeem_ticket(')" != 'new ' ]] \
   || [[ "$(count_occurrences 'let LaunchInitializer \{' <<<"$launch_source")" != 1 ]] \
@@ -1025,7 +1027,7 @@ for authority_spec in \
   'self.partner_id = |set_partner ' \
   'self.assert_curve_fee_cap(|claim_creator_fees prove_owner ' \
   'owner_proof::new(|prove_owner ' \
-  'package_witness()|finalize migrate prove_owner ' \
+  'package_witness()|finalize migrate new prove_owner ' \
   'self.assert_metadata_update(|set_description set_icon_url set_name ' \
   '&self.metadata_cap|set_description set_icon_url set_name ' \
   'transfer::public_transfer(|apply_creator_metadata_cap_reassignment apply_curve_fee_cap_reassignment migrate ' \
@@ -1044,9 +1046,11 @@ done
 # The owner proof is the curve-fee cap's only reach outside the launch: `prove_owner` checks the
 # version, then the live cap through the private `assert_curve_fee_cap`, before it seals a proof
 # for this launch under the package witness. The witness is the one-time-witness module's drop-only struct,
-# which no launch function returns or takes; launch.move obtains it only inside `finalize` (to seal
-# the launch's fee ledger), `migrate`, and `prove_owner`, and launch_config only inside `unpause`,
-# so no other package can seal this launchpad's ledger, terms, hand-offs, proofs, or pause release.
+# which no launch function returns or takes; launch.move obtains it only inside `new` (to open the
+# cap's seal), `finalize` (to seal the launch's fee ledger), `migrate`, and `prove_owner`;
+# launch_ticket.move inside `new` (to seal the cap); and launch_config inside `unpause` and
+# `venue_admission` (to admit a venue to that seal), so no other package can seal this launchpad's
+# ledger, terms, hand-offs, proofs, admissions, or pause release.
 if [[ "$(move_production_function_contract prove_owner <<<"$launch_facts")" \
     != 'public:0:0:fun prove_owner<Meme, Quote>( self: &Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, curve_fee_cap: &CurveFeeCap<Meme>, ): OwnerProof' ]] \
   || [[ "$(move_production_body prove_owner <<<"$launch_facts")" \
@@ -1056,12 +1060,12 @@ if [[ "$(move_production_function_contract prove_owner <<<"$launch_facts")" \
   || [[ "$(move_production_body assert_curve_fee_cap <<<"$launch_facts")" \
     != 'assert!( self.curve_fee_cap_id.contains(&object::id(curve_fee_cap)), blast_fun::errors::creator_cap_not_live!(), );' ]] \
   || [[ -n "$(move_production_type PackageWitness <<<"$launch_facts")" ]] \
-  || [[ "$(count_occurrences '\bpackage_witness\(\)' <<<"$launch_source")" != 4 ]] \
+  || [[ "$(count_occurrences '\bpackage_witness\(\)' <<<"$launch_source")" != 5 ]] \
   || [[ -n "$(awk -F'\t' '$1 == "FN" && $9 ~ /PackageWitness/ { print $2 }' <<<"$launch_facts")" ]] \
   || [[ "$(rg -l '\bPackageWitness\b' sources --glob '*.move' | tr '\n' ' ')" != 'sources/blast_fun.move ' ]] \
-  || [[ "$(rg -l '\bpackage_witness\(\)' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" != 'sources/blast_fun.move sources/config/launch_config.move sources/launch/launch.move ' ]] \
+  || [[ "$(rg -l '\bpackage_witness\(\)' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" != 'sources/blast_fun.move sources/config/launch_config.move sources/launch/launch.move sources/launch/launch_ticket.move ' ]] \
   || [[ "$(rg -l '\bowner_proof::' sources --glob '*.move' | tr '\n' ' ')" != 'sources/launch/launch.move ' ]]; then
-  launch_authority_violations+='  the owner proof must check the version and the live curve-fee cap, and the package witness must be obtained only by finalize, migrate, prove_owner, and unpause'$'\n'
+  launch_authority_violations+='  the owner proof must check the version and the live curve-fee cap, and the package witness must be obtained only by new, finalize, migrate, prove_owner, the ticket constructor, unpause, and venue_admission'$'\n'
 fi
 # Each creator-cap reassignment stores the primitive's one-shot action slot, whose action is the
 # recipient; only the ready action reaches the reassignment that records new authority.

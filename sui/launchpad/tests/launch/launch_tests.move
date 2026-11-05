@@ -1546,8 +1546,7 @@ fun creator_cannot_open_the_sealed_cap_with_a_venue_witness() {
 
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket(CREATOR);
-        f.scenario.next_tx(LAUNCHER);
-        let sealed_treasury_cap = f.scenario.take_from_sender<SealedTreasuryCap<LAUNCH_TESTS>>();
+        let sealed_treasury_cap = f.take_sealed_treasury_cap();
 
         destroy(sealed_treasury_cap.into_treasury_cap(TestVenue()));
         destroy(ticket);
@@ -4953,6 +4952,13 @@ fun launch_take_creator_metadata_cap(
     self.scenario.take_from_sender()
 }
 
+/// The sealed cap the ticket's publication sent to the sender, in the next transaction.
+fun launch_take_sealed_treasury_cap(self: &mut LaunchFixture): SealedTreasuryCap<LAUNCH_TESTS> {
+    let sender = self.scenario.sender();
+    self.scenario.next_tx(sender);
+    self.scenario.take_from_sender()
+}
+
 fun launch_take_currency(self: &LaunchFixture): Currency<LAUNCH_TESTS> {
     self.scenario.take_from_address(COIN_REGISTRY)
 }
@@ -5350,3 +5356,4 @@ use fun launch_put_back as Launch.put_back;
 
 use fun launch_return_currency as LaunchFixture.return_currency;
 use fun launch_take_creator_metadata_cap as LaunchFixture.take_creator_metadata_cap;
+use fun launch_take_sealed_treasury_cap as LaunchFixture.take_sealed_treasury_cap;
