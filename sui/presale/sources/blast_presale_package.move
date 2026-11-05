@@ -11,9 +11,9 @@
 /// `CancelAdmin<BLAST_PRESALE_PACKAGE>`.
 ///
 /// The fee and creation policies start with zero notices so Blast configures them while the
-/// package is paused; `creation_policy::unpause` refuses until every notice is guarded. It lives
-/// beside the policies it reads because they name `BLAST_PRESALE_PACKAGE`, so this module cannot
-/// import them.
+/// package is paused; `creation_policy::unpause` refuses until every notice is guarded, then clears
+/// bits with the package witness. It lives beside the policies it reads because they name
+/// `BLAST_PRESALE_PACKAGE`, so this module cannot import them.
 module blast_presale::blast_presale_package;
 
 // === Public Types ===
@@ -23,8 +23,8 @@ public struct BLAST_PRESALE_PACKAGE() has drop;
 
 /// The presale's one package witness, pinned at publication. It seals each sale's protocol-fee
 /// ledger, migration, vault terms and owner proofs, and clears pause bits through the generic
-/// administration. Only this package constructs it, through `package_witness`; nothing stores or
-/// returns it outside the package.
+/// administration. Only this module constructs it, through the package-only `package_witness`;
+/// nothing stores it or returns it outside the package.
 public struct PackageWitness() has drop;
 
 // === Private Initialization ===
@@ -36,21 +36,10 @@ fun init(otw: BLAST_PRESALE_PACKAGE, ctx: &mut TxContext) {
 
 // === Package Functions ===
 
-/// The package witness, for `blast_presale`'s ledger, hand-off and owner proofs.
+/// The package witness, for `blast_presale`'s ledger, hand-off and owner proofs and for
+/// `creation_policy::unpause`.
 public(package) fun package_witness(): PackageWitness {
     PackageWitness()
-}
-
-/// Clears the requested pause bits through the generic administration, passing the witness this
-/// package pinned at publication. Only `creation_policy::unpause` calls it, after checking every
-/// presale notice.
-public(package) fun clear_pause_bits(
-    unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_PRESALE_PACKAGE>>,
-    package_admin: &PackageAdmin<BLAST_PRESALE_PACKAGE>,
-    package_version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>,
-    bits: u8,
-) {
-    package_admin.clear_pause_bits(unpause_admin, PackageWitness(), package_version, bits);
 }
 
 // === Test-Only Functions ===
@@ -79,10 +68,6 @@ public fun package_admin_for_testing(ctx: &mut TxContext): PackageAdmin<BLAST_PR
 
 // === Imports ===
 
-use blast_admin::{
-    blast_acl::AdminWitness,
-    package_admin::{PackageAdmin, UnpauseAdmin},
-    package_version::{Self, PackageVersion}
-};
+use blast_admin::{package_admin::PackageAdmin, package_version::{Self, PackageVersion}};
 
 use blast_presale::constants;

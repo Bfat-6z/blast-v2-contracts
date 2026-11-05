@@ -43,13 +43,13 @@ assert "public struct PackageWitness() has drop;" in marker
 init = dict((name, body) for name, _, body in functions(marker))["init"]
 assert "package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)" in init
 assert ".keep(ctx)" in init and "share_object" not in init
-assert set(name for name, _, _ in functions(marker)) == {"init", "package_witness", "clear_pause_bits"}
+assert set(name for name, _, _ in functions(marker)) == {"init", "package_witness"}
 assert "public(package) fun package_witness(): PackageWitness {" in marker
-assert "package_admin.clear_pause_bits(unpause_admin, PackageWitness(), package_version, bits);" in marker
 # Only the presale's unpause clears bits, after checking every presale notice.
-callers = [(path.stem, name) for path in SOURCES.glob("*.move") if path.stem != "blast_presale_package"
+callers = [(path.stem, name) for path in SOURCES.glob("*.move")
            for name, _, body in functions(path.read_text()) if "clear_pause_bits(" in body]
 assert callers == [("creation_policy", "unpause")], callers
 unpause = dict((name, body) for name, _, body in functions((SOURCES / "creation_policy.move").read_text()))["unpause"]
 assert unpause.index("self.is_guarded() && fee_policy.is_guarded()") < unpause.index("clear_pause_bits(")
+assert "package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);" in unpause
 print("Presale activation and version boundaries: OK")

@@ -5258,9 +5258,9 @@ fun pause(version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>, bits: u8) {
 /// notice is guarded.
 fun clear_pause_bits(version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>, bits: u8) {
     let package_admin = blast_presale_package::package_admin_for_testing(&mut tx_context::dummy());
-    blast_presale_package::clear_pause_bits(
-        &blast_acl::witness_for_testing(),
-        &package_admin,
+    package_admin.clear_pause_bits(
+        &blast_acl::witness_for_testing<UnpauseAdmin<BLAST_PRESALE_PACKAGE>>(),
+        blast_presale_package::package_witness(),
         version,
         bits,
     );
@@ -5275,7 +5275,7 @@ fun fee_admin(): AdminWitness<FeeAdmin> {
 
 use blast_admin::{
     blast_acl::{Self, AdminWitness},
-    package_admin::{Self, PauseAdmin},
+    package_admin::{Self, PauseAdmin, UnpauseAdmin},
     package_version::PackageVersion
 };
 

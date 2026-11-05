@@ -191,126 +191,126 @@ everyone is then filled at one common rate and the excess is refunded. A creator
 hard-cap the sale, from the start or from a later point in the window, so it takes Quote first
 come, first served only up to the raise; such a sale may also close as soon as its raise is full.
 
-The creator picks the sale's venue at creation: the venue's `prepare` call records the pool tier
+The creator picks the sale's venue at creation: the venue's `prepare` call records the pool terms
 and returns a sealed `blast_core::migration::VenueTicket` that `blast_presale::blast_presale::new`
-redeems, so the sale can migrate only to that venue. Anyone can migrate a funded sale into a new
-full-range Cetus or Bluefin pool, or a 50/50 Aftermath pool behind Aftermath's DAO-fee pool; the
-same transaction pays Blast (or, on a sale that names a partner, holds Blast's raise fee for a
-later pay call), the raise recipients, and the token recipients, then hands the pool's balances and
-the vault's terms to the venue in a sealed `blast_core::migration::Migration`. The venue creates
-the pool and locks the position in a new shared `blast_vault::vault::Vault`, which has no removal
-path. Buyers then claim their tokens and overflow refund. A sale that misses its raise, or that
-someone cancels once its liquidity deadline passes unmigrated, refunds every commitment in full.
+redeems, so the sale can migrate only to that venue. The venues live in their own packages: the
+Cetus and Bluefin venues of `blast_migrators`, which serve the launchpad too, and one-off vendor
+venues. The presale imports none of them. Anyone can migrate a funded sale:
+`blast_presale::blast_presale::migrate` pays Blast's raise and token fees to the core treasury (or,
+on a sale that names a partner, holds them for a later pay call), the raise recipients, and the
+token recipients, then returns the pool's balances and the vault's terms in a sealed
+`blast_core::migration::Migration`. The same PTB passes it to the venue's `migrate`, which creates
+the pool and locks the position in a new shared `blast_vault::vault::Vault` with no removal path.
+Buyers then claim their tokens and overflow refund. A sale that misses its raise, or that someone
+cancels once its liquidity deadline passes unmigrated, refunds every commitment in full.
 
 The vault (fee split, owner claims, partner payouts, holder-reward rounds) is described in the
-vault guide, and the hand-off, owner proof, fee split, treasury, and Merkle primitives in the core
-guide; both ship in this file. This guide covers what the presale does and what each call needs.
+vault guide, and the hand-off, owner proof, fee split, payouts, protocol-fee ledger, treasury, and
+Merkle primitives in the core guide; both ship in this file. This guide covers what the presale
+does and what each call needs.
 
-The presale is separate from the bonding-curve launchpad and reuses the shared Blast
-ACL, partner registry, and operational-version/capability-custody primitives.
-Publication creates an owned `blast_presale_package::Publication`; it shares no
-PackageVersion. `blast_presale::package_admin::wrap` consumes Publication and the
-fresh matching UpgradeCap, sealing compatible custody and sharing the version
-fully paused; publication-owned policy operations start with zero notice. Ordinary ACL-authorized operations
-then configure policies before release.
+The presale is separate from the bonding-curve launchpad and reuses the shared Blast ACL, the
+partner registry and its partner lists, the core money primitives, and Blast admin's generic
+package administration. Publication creates an owned
+`blast_admin::package_version::Publication<BLAST_PRESALE_PACKAGE>`; it shares no version.
+`blast_admin::package_admin::wrap` consumes it and the fresh matching UpgradeCap, sealing
+compatible custody in a shared `blast_admin::package_admin::PackageAdmin<BLAST_PRESALE_PACKAGE>`
+and sharing `blast_admin::package_version::PackageVersion<BLAST_PRESALE_PACKAGE>` fully paused;
+the presale's own policies start with zero notice. Ordinary ACL-authorized operations then
+configure them before release.
 
 See ADR 0117 and ADR 0137. In this guide `SaleToken` is the sale coin; venues call it `Meme`.
+`BLAST_PRESALE_PACKAGE` is `blast_presale::blast_presale_package::BLAST_PRESALE_PACKAGE`, the
+package's one-time witness and the type argument of its version, administration and package roles.
 
-Routine state-changing public calls below take `&blast_presale_package::PackageVersion`
-immediately after their first object argument (as their first argument, for the venues'
-`prepare`), including initializer setters, policy administration, migrations, payouts, fee
-collections, and `blast_presale::blast_presale::prove_owner`. It is a read-only shared input except
-during pause, unpause and upgrade commit-and-advance. A stale or future generation aborts in
+Routine state-changing public calls below take `&PackageVersion<BLAST_PRESALE_PACKAGE>` immediately
+after their first object argument, including initializer setters, policy administration,
+migration, payouts, and `blast_presale::blast_presale::prove_owner`. It is a read-only shared input
+except during pause, unpause and upgrade commit-and-advance. A stale or future generation aborts in
 `blast_admin::operational_version` before effects. Pure value constructors, the initializer's
 `blast_presale::blast_presale::venue` getter and `blast_presale::blast_presale::destroy_cap` do not
-take it. Venue calls that create or mutate a vault also take the vault package's own
-`blast_admin::package_version::PackageVersion` (typed by `blast_vault_package::BLAST_VAULT_PACKAGE`),
-because each package checks only its own generation.
+take it. Venue and vault calls take their own packages' versions, because each package checks only
+its own generation.
 
 ### Objects and authority
 
 Shared singletons, created once at deployment (`PackageAdmin` and `PackageVersion` by
-`blast_presale::package_admin::wrap`, the others when the package is published):
+`blast_admin::package_admin::wrap`, the others when the package is published):
 
 - `fee_policy::FeePolicy`: Blast's current rates (`raise_bps`, `token_bps`, `lp_fee_meme_bps`,
-  `lp_fee_quote_bps`, held in a `fee_policy::ProtocolFees`) that new sales snapshot, and the
-  `destination` address Blast's raise and token fees go to.
+  `lp_fee_quote_bps`, held in a `fee_policy::ProtocolFees`) that new sales snapshot.
 - `creation_policy::CreationPolicy`: the allowlists checked once, when a sale is created: Quote
-  types, venue witnesses, and Blast partners a sale may name.
-- `blast_presale::venue_config::VenueConfig`: venue records written when a coin is prepared:
-  each coin's `blast_presale::venue_config::PoolTier`, each Cetus coin's reserved pool-creation
-  capability (never removed; migration only borrows it), and each Aftermath coin's
-  `CreatePoolCapV2` (removed by that sale's migration).
-- `blast_presale::package_admin::PackageAdmin`: holds the package's Publisher and compatible upgrade cap.
-- `blast_presale::blast_presale_package::PackageVersion`: the singleton active generation and pause flags, shared by custody wrap.
+  types, venue witnesses, and Blast partners a sale may name (a
+  `blast_partners::partner_list::PartnerList`).
+- `blast_presale::blast_presale::PresaleRegistry`: every presale's object ID derives from it.
+- `blast_admin::package_admin::PackageAdmin<BLAST_PRESALE_PACKAGE>`: holds the package's Publisher
+  and compatible upgrade cap.
+- `blast_admin::package_version::PackageVersion<BLAST_PRESALE_PACKAGE>`: the active generation and
+  pause bits.
 
 Calls also take objects from other packages:
 
-- Vault: `blast_vault_package::VaultRegistry` (migrations only; it must admit the venue's witness),
-  the vault package's `PackageVersion`, and the core `blast_core::blast_treasury::Treasury` that
-  Blast's LP fees go to.
-- Sui: the sale coin's Coin Registry `Currency<SaleToken>` (mutable at `finalize` and in fee
-  collections, which may burn Meme), the Quote's `Currency<Quote>` (Bluefin migration only), and
-  `Clock` at `0x6`.
-- Venues: Cetus `GlobalConfig`, `Pools`, the pair's `Pool<CoinA, CoinB>`, and Cetus LP Burn's
-  `BurnManager`; Bluefin `GlobalConfig` and `Pool<Meme, Quote>`; Aftermath's `PoolRegistry` and the
-  DAO-fee package's `Version`. All shared.
+- Core: `blast_core::blast_treasury::Treasury`, the one address every Blast fee is paid to
+  (migration and partner payouts).
+- Sui: the sale coin's Coin Registry `Currency<SaleToken>` (mutable at `finalize`) and `Clock` at
+  `0x6`.
+- Venues and vault: the venue's own objects, the vault's `VaultRegistry` and version (venue and
+  vault guides).
 
 Per-sale objects:
 
 - `blast_presale::blast_presale::Presale<SaleToken, Quote>`: shared. It holds every commitment, the whole minted
-  supply, and the sale's terms until migration or refund. It has `key` only, so it cannot be
-  transferred: it must be shared in the transaction that creates it.
+  supply, the sale's terms until migration or refund, and a `blast_core::protocol_fees::Ledger`
+  holding Blast's fees from migration until paid. It has `key` only, so it cannot be transferred:
+  it must be shared in the transaction that creates it.
 - `blast_presale::blast_presale::PresaleCap`: owned by the creator (key, store). It proves sale
   ownership to the sale's vault through `blast_presale::blast_presale::prove_owner` and can be
   destroyed after a cancellation. It cannot change any sale term or move any commitment.
-- `blast_vault::vault::Vault<Meme, Quote>`: shared, created by a Cetus, Bluefin, or Aftermath
-  migration. It holds the Bluefin position, the Cetus LP-burn proof, or the DAO-fee pool's
-  `OwnerCap` (Aftermath, whose LP coin is owned by `0x0`), and the balances its fees are split into
-  (vault guide). An Aftermath vault is also the address its DAO-fee pool pays fees to.
+- `blast_vault::vault::Vault<Meme, Quote>`: shared, created by the venue's migration (vault guide).
 - A vesting schedule (`Vesting<T>` from the external, immutable `blast_fun_vesting` package):
-  shared, one per vested payout. See "Claiming vested tokens".
+  shared, one per vested payout, created through `blast_core::payout::pay_or_vest`. See "Claiming
+  vested tokens".
 
-Venue witnesses: `blast_presale::cetus::Venue`, `blast_presale::bluefin::Venue`, and
-`blast_presale::aftermath::Venue` are sealed witnesses only their own module constructs. A venue's
-witness issues its tickets, redeems its sales' migrations, keys its position inside the vault, and
-authorizes its fee collections. Blast admits each witness type twice: in `CreationPolicy` (so sales
-may start on it) and in the vault's `VaultRegistry` (so it may create vaults).
+Venue witnesses: each venue defines a sealed witness only its own module constructs. It issues the
+venue's tickets, redeems its sales' migrations, and keys its position inside the vault. Blast
+admits each witness type in `CreationPolicy` (so sales may start on it) and, for a venue that
+creates vaults, in the vault's `VaultRegistry`.
 
 Capabilities and who holds them:
 
 | Object | Held by | Authorizes |
 | --- | --- | --- |
-| `blast_presale_package::Publication` | Deployer, until wrap consumes it permanently | Holds publication provenance until native custody is sealed; no policy authority. |
-| `blast_acl::AdminCap` granted a presale role | Blast operations | The calls of each role it holds; see the table below. |
+| `blast_admin::package_version::Publication` | Deployer, until wrap consumes it permanently | Holds publication provenance until native custody is sealed; no policy authority. |
+| `blast_acl::AdminCap` granted a role | Blast operations | The calls of each role it holds; see the table below. |
 | `blast_presale::blast_presale::PresaleCap` | Sale creator (or a vendor treasury) | `blast_presale::blast_presale::prove_owner`, `blast_presale::blast_presale::destroy_cap`. |
-| `blast_partners::blast_partners::Partner` | Shared, managed in `blast_partners` | Read by the presale and the vault to pay a partner its cut of Blast's fees. |
+| `blast_partners::blast_partners::Partner` | Shared, managed in `blast_partners` | Read by the presale ledger and the vault to pay a partner its cut of Blast's fees. |
 
 Blast administers presales through the one shared Blast access-control list
-(`blast_admin::blast_acl`), as it does its other packages. `blast_presale_domain` declares the presale's roles; an operator's
-`blast_acl::AdminCap` granted a role calls `blast_acl::sign_in<Role>` with the shared
-`blast_acl::ACL` in the same PTB and passes the returned `blast_acl::AdminWitness<Role>` by
-reference. Each admin call names exactly one role in its signature:
+(`blast_admin::blast_acl`). Product roles are `blast_core::blast_domain`'s, shared with the
+launchpad, the vault and the venues; package roles are `blast_admin::package_admin`'s, typed by
+`BLAST_PRESALE_PACKAGE`. An operator's `blast_acl::AdminCap` granted a role calls
+`blast_acl::sign_in<Role>` with the shared `blast_acl::ACL` in the same PTB and passes the returned
+`blast_acl::AdminWitness<Role>` by reference. Each admin call names exactly one role in its
+signature:
 
 | Role | Calls |
 | --- | --- |
-| `blast_presale_domain::PauseAdmin` | `blast_presale_package::pause` |
-| `blast_presale_domain::UnpauseAdmin` | `blast_presale::package_admin::unpause` |
-| `blast_presale_domain::CancelAdmin` | `fee_policy::cancel_fees`, `fee_policy::cancel_destination`, `creation_policy::cancel_venue`, `creation_policy::cancel_venue_delay`, `blast_presale::package_admin::cancel_upgrade_action` |
-| `blast_presale_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
-| `blast_presale_domain::TreasuryAdmin` | `fee_policy::schedule_destination` |
-| `blast_presale_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
-| `blast_presale_domain::AdapterAdmin` | `creation_policy::schedule_venue`, `creation_policy::remove_venue`, `creation_policy::schedule_venue_delay` |
-| `blast_presale_domain::UpgradeAdmin` | `blast_presale::package_admin::schedule_upgrade`, `blast_presale::package_admin::schedule_make_immutable`, `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance`, `blast_presale::package_admin::make_immutable`, `blast_presale::package_admin::schedule_upgrade_delay` |
+| `blast_admin::package_admin::PauseAdmin<BLAST_PRESALE_PACKAGE>` | `blast_admin::package_admin::pause` |
+| `blast_admin::package_admin::UnpauseAdmin<BLAST_PRESALE_PACKAGE>` | `creation_policy::unpause` |
+| `blast_admin::package_admin::UpgradeAdmin<BLAST_PRESALE_PACKAGE>` | `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::schedule_make_immutable`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance`, `blast_admin::package_admin::make_immutable`, `blast_admin::package_admin::schedule_upgrade_delay` |
+| `blast_admin::package_admin::CancelAdmin<BLAST_PRESALE_PACKAGE>` | `blast_admin::package_admin::cancel_upgrade_action` |
+| `blast_core::blast_domain::CancelAdmin` | `fee_policy::cancel_fees`, `creation_policy::cancel_venue`, `creation_policy::cancel_venue_delay` |
+| `blast_core::blast_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
+| `blast_core::blast_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
+| `blast_core::blast_domain::AdapterAdmin` | `creation_policy::schedule_venue`, `creation_policy::remove_venue`, `creation_policy::schedule_venue_delay` |
+| `blast_core::blast_domain::TreasuryAdmin` | The treasury's destination (core guide); the presale has no payee of its own. |
 
-Holder-reward rounds are the vault's, under the core roles (vault guide). A role from another
-package, such as
-`blast_fun_domain::FeeAdmin`, is a different type and cannot reach these calls; the vault's own
-Blast calls take the core roles in `blast_core::blast_domain`. PauseAdmin may freeze creation,
+The product roles are shared, so the same administrator governs the launchpad's and the presale's
+fees, listings and venues; each product still keeps its own lists. PauseAdmin may freeze creation,
 commitments or migration. No admin may cancel a sale, move commitments, change windows,
 recipients, or a vault's fee split. Presale admins' power over a live sale is limited to its Blast
-rates before the window starts and the destination of its raise and token fees. After migration,
-Blast's per-vault LP-fee share is the vault's own delayed setting (vault guide).
+rates before the window starts; the core treasury's destination decides where Blast's fees go.
+After migration, Blast's per-vault LP-fee share is the vault's own delayed setting (vault guide).
 
 ### Lifecycle
 
@@ -327,7 +327,7 @@ Pending --share--> Open --settle (total >= raise)--> Funded --migrate--> Migrate
 | `Pending` | Only inside the creation PTB, between `finalize` and `share` | `blast_presale::blast_presale::set_protocol_fees` (admin, when the creation PTB also signs in as `FeeAdmin`), `blast_presale::blast_presale::share` |
 | `Open` | From `share` until `settle` | Before `start_ms`: `blast_presale::blast_presale::set_protocol_fees` (admin), which may only keep or lower each rate. From `start_ms` until `end_ms`: commits. From `end_ms`, or earlier once the raise is full under a hard cap that closes the sale when filled: `blast_presale::blast_presale::settle` |
 | `Funded` | After a settle that met the raise | Migration at any time; `blast_presale::blast_presale::cancel_unlaunched` from the LP deadline |
-| `Migrated` | After migration | `blast_presale::blast_presale::claim` (tokens + overflow refund), `blast_presale::blast_presale::pay_protocol_fees_with_partner` once on a partnered sale |
+| `Migrated` | After migration | `blast_presale::blast_presale::claim` (tokens + overflow refund), `blast_presale::blast_presale::pay_protocol_fees_with_partner` on a partnered sale |
 | `Cancelled` | After an underfunded settle or `cancel_unlaunched` | `blast_presale::blast_presale::claim` (full refund), `blast_presale::blast_presale::destroy_cap` |
 
 `blast_presale::blast_presale::prove_owner` works in every state, but only a migrated sale has a
@@ -339,28 +339,31 @@ or `Funded`. The vault never closes and its position is never removed.
 
 #### Publication and initial configuration
 
-1. Publish the package. The deployer receives the unique `blast_presale::blast_presale_package::Publication`,
-   holding its canonical Publisher and initial generation. Policy singletons are
-   shared; no operational PackageVersion exists yet.
-2. Call `blast_presale::package_admin::wrap` with Publication by value and the matching
-   never-upgraded UpgradeCap. It consumes Publication permanently, seals native
-   custody and shares PackageVersion. Publication-owned policy operations start with zero notice. All operations start paused (combined mask = 7).
-3. Grant the required roles on the real Blast ACL. Configure destinations, fees
-   and reviewed venue admission through the ordinary schedule/apply operations
-   with Clock. At zero delay these can run in one PTB. Quote admission uses its
-   ordinary ListingAdmin setter. No publication proof authorizes policy changes.
-   Each presale venue, and the presale's own `blast_presale::blast_presale::PackageWitness` as
-   the issuer of its vault terms, must also be listed in the vault's `VaultRegistry`
-   (`blast_vault_package::schedule_witness`), or its migrations abort.
-4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own
-   role to schedule and apply its intended value and next notice. Upgrade custody
-   already holds its 48-hour notice from publication.
-   Read back every operation's notice and configured value before release.
-5. Sign in as UnpauseAdmin and clear the intended bits on PackageVersion (all = 7) with
-   `blast_presale::package_admin::unpause`. Unpause is immediate once every notice is guarded:
-   the fee destination, the fee rates, the venue set and the upgrade slot each need a nonzero
-   applied notice, no pending proposal that would set it to zero, and no pending venue
-   admission. Otherwise it aborts with `blast_presale::errors::EUnguardedNotice` (5).
+1. Publish the package. The deployer receives the unique
+   `blast_admin::package_version::Publication<BLAST_PRESALE_PACKAGE>`, holding its canonical
+   Publisher, initial generation and pause bits. `FeePolicy`, `CreationPolicy` and
+   `PresaleRegistry` are shared; no PackageVersion exists yet.
+2. Call `blast_admin::package_admin::wrap<BLAST_PRESALE_PACKAGE>` with the Publication by value and
+   the matching never-upgraded UpgradeCap. It consumes the Publication permanently, seals native
+   custody in the shared `PackageAdmin` with the 48-hour upgrade notice, and shares the
+   `PackageVersion` with every bit paused (create 1, commit 2, migrate 4).
+3. Grant the required roles on the real Blast ACL. Configure fees and reviewed venue admission
+   through the ordinary schedule/apply operations with Clock. At zero delay these can run in one
+   PTB. Quote admission and partners use their ordinary setters. No publication proof authorizes
+   policy changes. Each venue that creates vaults, and the presale's own
+   `blast_presale::blast_presale_package::PackageWitness` as the issuer of its vault terms, must
+   also be listed in the vault's `VaultRegistry` (`blast_vault_package::schedule_witness`), or its
+   migrations abort.
+4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own role to
+   schedule and apply its intended value and next notice. Upgrade custody already holds its 48-hour
+   notice from wrap. Read back every operation's notice and configured value before release.
+5. Sign in as `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` and clear the intended bits (all = 7) with
+   `creation_policy::unpause(creation_policy, package_version, unpause_admin, package_admin,
+   fee_policy, bits)`. Unpause is immediate once every notice is guarded: the fee rates and
+   the venue set each need a nonzero applied notice, no pending proposal that would set it to
+   zero, and no pending venue admission; otherwise it aborts with
+   `blast_presale::errors::EUnguardedNotice` (0). The generic administration then requires the
+   upgrade notice to be guarded too (`blast_admin::errors::EUnguardedUpgradeNotice`).
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
 policy or recreate Publication. An outstanding zero-delay proposal remains ready
@@ -368,15 +371,15 @@ after enabling positive notices, which is why setup must settle those proposals
 before release. Venue admission remains checked when creating sales.
 
 PTB conventions used below: `Clock` is the shared object `0x6`. Values such as `Bps`,
-`RecipientShare`, `EligibilityPolicy`, and `FeeSplit` are structs, so build them with Move calls
-and pass the results; plain numbers, booleans, addresses, and `vector<u8>` go in as pure inputs.
-Build a `vector<RecipientShare>` or `vector<Route>` with the PTB `MakeMoveVec` command (a
+`Recipient`, `RecipientShare`, `EligibilityPolicy`, and `FeeSplit` are structs, so build them with
+Move calls and pass the results; plain numbers, booleans, addresses, and `vector<u8>` go in as pure
+inputs. Build a `vector<RecipientShare>` or `vector<Route>` with the PTB `MakeMoveVec` command (a
 recipient list may be empty).
 
 #### Creating a sale
 
 A sale is created in one PTB in four stages, the same shape as the launchpad's: the venue's
-`prepare` records the coin's pool tier and returns a `VenueTicket<Meme, Quote>`;
+`prepare` records the coin's pool terms and returns a `VenueTicket<Meme, Quote>`;
 `blast_presale::blast_presale::new` redeems the ticket and returns a
 `blast_presale::blast_presale::PresaleInitializer<Meme, Quote>`; setters on the initializer record
 the creator's terms; `blast_presale::blast_presale::finalize` checks them all together, mints the
@@ -396,11 +399,14 @@ Value constructors (*anyone*, pure):
 
 - `blast_core::bps::new(value)` builds each rate; it aborts with
   `blast_core::errors::EInvalidBps` above 10,000.
-- `blast_presale::blast_presale::vesting_terms(vesting_cliff_delay_ms, vesting_period_duration_ms, periods)` returns a
-  `blast_presale::blast_presale::VestingTerms`.
-- `blast_presale::blast_presale::recipient_share(recipient, bps)` or
-  `blast_presale::blast_presale::vested_recipient_share(recipient, bps, terms)` build one share. Gather them with
-  `MakeMoveVec` into two lists: token recipients and raise recipients.
+- `blast_core::payout::vesting_terms(cliff_delay_ms, period_duration_ms, periods)` returns a
+  `blast_core::payout::VestingTerms` (`blast_core::errors::EInvalidVestingTerms` unless the period
+  and count are positive, the cliff is within the schedule, and the whole fits in 2^63 ms).
+- `blast_core::payout::recipient(destination, vesting_terms)` returns a
+  `blast_core::payout::Recipient`: paid outright with `none`, vested under `some(terms)` from the
+  migration. It rejects `0x0` (`blast_core::errors::EInvalidRecipient`).
+- `blast_presale::blast_presale::recipient_share(recipient, bps)` builds one share. Gather them
+  with `MakeMoveVec` into two lists: token recipients and raise recipients.
 - `blast_presale::blast_presale::open_eligibility(wallet_cap, max_participants, min_commitment)` or
   `blast_presale::blast_presale::allowlisted_eligibility(root, leaf_count)` build the eligibility policy.
 - `blast_presale::blast_presale::uncapped_for_eligible(start_delay_ms)` or
@@ -414,42 +420,13 @@ Value constructors (*anyone*, pure):
 
 Steps, type arguments `<Meme, Quote>` throughout:
 
-1. Prepare the coin on the venue (*cap holder*: the `TreasuryCap<Meme>` holder):
-   - Cetus: `blast_presale::cetus::prepare(package_version, venue_config, cetus_config, pools,
-     treasury_cap, tick_spacing)`, with the `TreasuryCap` by mutable reference. It mints the coin's
-     Cetus `PoolCreationCap` from the treasury cap, registers the `<Meme, Quote>` pair at
-     `tick_spacing`, and stores the cap in `VenueConfig` under `blast_presale::cetus::CreationCapKey`
-     with no path to remove it. It records the tick spacing and the fee rate Cetus sets for it as
-     the pool tier (below). Cetus aborts if it has no fee tier for the tick spacing or refuses the
-     pair (the Quote must be in Cetus's permission-pair allowlist at that tick spacing).
-   - Bluefin: `blast_presale::bluefin::prepare(package_version, venue_config, treasury_cap,
-     currency, tick_spacing, pool_fee_rate)`, with the `TreasuryCap` by immutable reference
-     (proving the caller controls the coin) and `Currency<Meme>` read. Tick spacing must be
-     1..=400 and the fee rate 1..=20,000 in Bluefin's fee unit
-     (`blast_presale::errors::EInvalidTier`); the coin's symbol must be at most 32 bytes
-     (`blast_presale::errors::ESymbolTooLong`). It records the pool tier (below) and needs no
-     Bluefin objects.
-   - Aftermath: `blast_presale::aftermath::prepare<Lp, Meme, Quote>(package_version, venue_config,
-     treasury_cap, create_pool_cap, dao_fee_bps)`, with the `TreasuryCap` by immutable reference
-     and the `CreatePoolCapV2` of a fresh Aftermath LP coin `Lp` by value. Beforehand, in its own
-     transaction, publish that LP coin (one per sale, through Aftermath's own LP-coin flow); its
-     publication yields the `CreatePoolCapV2`. `prepare` keeps the capability in `VenueConfig`
-     under `blast_presale::aftermath::CreatePoolCapKey<Lp, Meme>` for the sale's migration and
-     emits `blast_presale::aftermath::PoolCreationReserved` (`create_pool_cap_id`), typed
-     `<Lp, Meme, Quote>`. `dao_fee_bps` (a `u16`) is the DAO fee the pool charges on every swap,
-     deposit, and withdrawal and pays to the sale's vault, 1..=10,000 BPS
-     (`blast_presale::errors::EInvalidDaoFee`); it is the sale's tier, recorded with tick spacing
-     0. The pool's weights and fee are the module's constants (50/50, flatness 0, Aftermath's
-     minimum 0.01% swap-in fee; see Migrating to Aftermath). `prepare` cannot check that the
-     capability belongs to `Lp`; verify it before listing the sale.
-
-   Each `prepare` returns a `blast_core::migration::VenueTicket<Meme, Quote>` sealed by the venue's
-   witness. The pool tier belongs to the venue, not the sale: the `Presale` and `PresaleCreated`
-   carry none. Every venue records a `blast_presale::venue_config::PoolTier` under
-   `blast_presale::venue_config::PoolTierKey<Meme>` (each sale token has exactly one sale, so a
-   coin can be prepared once) and emits `blast_presale::venue_config::PoolTierReserved<Meme, Quote,
-   Venue>`, whose third type argument is `blast_presale::cetus::Venue`,
-   `blast_presale::bluefin::Venue`, or `blast_presale::aftermath::Venue`.
+1. Prepare the coin on the venue (*cap holder*: the `TreasuryCap<Meme>` holder): the venue's
+   `prepare`, for example `blast_migrators::cetus::prepare` or `blast_migrators::bluefin::prepare`,
+   with the `TreasuryCap` by reference, records the pool terms (tick spacing, fee rate, and for
+   Cetus the coin's pool-creation capability) under the venue's own key and returns a
+   `blast_core::migration::VenueTicket<Meme, Quote>` sealed by the venue's witness. The pool terms
+   belong to the venue, not the sale: the `Presale` and `PresaleCreated` carry none. The migrators
+   guide lists each venue's arguments, bounds and events.
 2. `blast_presale::blast_presale::new(treasury_cap, package_version, venue_ticket,
    creation_policy, fee_policy)` takes the `TreasuryCap` by value and the ticket from step 1. In
    order it checks the package version and the create pause bit, redeems the ticket, checks that
@@ -467,7 +444,7 @@ Steps, type arguments `<Meme, Quote>` throughout:
    - `blast_presale::blast_presale::set_fee_split(initializer, package_version, fee_split)`: the
      vault's starting LP-fee split.
 4. Optional setters:
-   - `blast_presale::blast_presale::set_participant_vesting(initializer, package_version, vesting)`:
+   - `blast_presale::blast_presale::set_participant_vesting(initializer, package_version, vesting_terms)`:
      each buyer's tokens vest from that buyer's claim. Without it, claims pay tokens out at once.
    - `blast_presale::blast_presale::set_uncapped_phase(initializer, package_version, phase)`: lifts
      wallet caps from the phase's start. Without it, caps hold for the whole window.
@@ -489,7 +466,7 @@ Steps, type arguments `<Meme, Quote>` throughout:
 7. `blast_presale::blast_presale::share(presale, package_version, commitment_starts_at_ms, clock)`,
    same caller, fixes the windows and shares the sale. The start is
    `max(commitment_starts_at_ms, now)`, so a sale can be published ahead of its start. Emits
-   `blast_presale::blast_presale::PresaleOpened`.
+   `blast_presale::events::PresaleOpened`.
 8. `TransferObjects([presale_cap], creator)`.
 
 Settings:
@@ -500,8 +477,8 @@ Settings:
 | `burnable` | `true`: supply becomes burn-only; `false`: fixed. |
 | `token_allocation_bps` | Buyers' share of the supply, > 0. |
 | `liquidity_token_allocation_bps` | Tokens seeded into the pool, > 0. |
-| `recipient_allocations` | Up to 64 token recipients, distinct nonzero addresses, each > 0 BPS, optionally vested. Buyers + LP + Blast's token rate + recipients = exactly 10,000 BPS. |
-| `participant_vesting` | Optional `VestingTerms` for every buyer's tokens. |
+| `recipient_allocations` | Up to 64 token recipients with distinct destinations, each > 0 BPS, each paid or vested as its `Recipient` says. Buyers + LP + Blast's token rate + recipients = exactly 10,000 BPS. |
+| `participant_vesting` | Optional `blast_core::payout::VestingTerms` for every buyer's tokens. |
 | `raise_target` | Quote the sale must raise, atomic units, > 0. |
 | `raise_allocations` | Up to 64 raise recipients paid in Quote at migration, optionally vested. Their BPS plus Blast's raise rate must stay below 10,000; the LP keeps the rest. |
 | `duration_ms` | Commitment window length, > 0; set with `commitment_duration_ms`. |
@@ -510,7 +487,7 @@ Settings:
 | uncapped phase | Optional `blast_presale::blast_presale::UncappedPhase` (below). |
 | hard cap | Optional `starts_after_ms` and `closes_when_filled` (below). |
 | `fee_split` | `blast_core::fee_split::FeeSplit`: up to 20 routes with distinct destinations (addresses, the vault's owner, auto-LP, holder rewards, burn), each positive, totalling exactly 10,000 BPS. The creator takes LP fees through the owner route, claimed with an owner proof, or by listing its own address. |
-| tick spacing, fee rate, DAO fee | Pool tier, given to the venue's `prepare` and kept in `VenueConfig`. Cetus derives the fee rate from the tick spacing. |
+| pool terms | Given to the venue's `prepare` and kept by the venue (migrators guide). |
 
 A setting never set is zero (supply, raise, window lengths, token BPS), so `finalize` rejects it
 with that setting's error. A missing eligibility policy or LP-fee split aborts with
@@ -554,7 +531,8 @@ cap, without waiting for the window's end (see Settling). Without it, a full sal
 end, so the pool can open at an announced time.
 
 `finalize` aborts unless the LP's tokens and Quote give a seed price both CLMM venues can pool
-(`blast_presale::errors::EUnseedablePrice`; see Economics).
+(`blast_presale::errors::EUnseedablePrice`, checked with `blast_core::migration::is_seedable_price`;
+see Economics).
 
 #### Committing
 
@@ -576,7 +554,7 @@ destroy a zero coin).
      phase open to anyone has started.
 3. `TransferObjects([returned_coin], sender)`.
 
-Each commit emits `blast_presale::blast_presale::Committed`. Rules:
+Each commit emits `blast_presale::events::Committed`. Rules:
 
 - The window is `start_ms <= now < end_ms`.
 - A wallet's first commit takes a participant slot; later commits top it up by any positive
@@ -622,8 +600,8 @@ Who may call: *anyone*. `blast_presale::blast_presale::settle(presale, package_v
   sale can then take no more Quote.
 
 If total commitments reach the raise the sale becomes `Funded` and emits
-`blast_presale::blast_presale::PresaleFunded`; otherwise it becomes `Cancelled` and emits
-`blast_presale::blast_presale::PresaleCancelled`. Closing early ends the window at the settle: the
+`blast_presale::events::PresaleFunded`; otherwise it becomes `Cancelled` and emits
+`blast_presale::events::PresaleCancelled`. Closing early ends the window at the settle: the
 stored `duration_ms` becomes the time the sale ran, so `end_ms` and the LP deadline count from the
 close. `PresaleFunded` carries both. A sale without a hard cap never closes early.
 
@@ -634,109 +612,47 @@ way; creators who want a public start choose `closes_when_filled = false`.
 
 #### Migrating
 
-Every venue's `migrate` calls `blast_presale::blast_presale::migrate`, which checks the version,
-the migrate pause bit, and that the sale is `Funded`; pays Blast its raise and token fees at the
-`FeePolicy` destination (or, on a partnered sale, holds them for
-`blast_presale::blast_presale::pay_protocol_fees_with_partner`); pays or vests each raise
-recipient and each token recipient; marks the sale `Migrated`; emits
-`blast_presale::blast_presale::PresaleMigrated`; and returns a sealed
-`blast_core::migration::Migration<SaleToken, Quote>`. The hand-off holds the LP's tokens and Quote
-and the vault's `blast_core::migration::VaultTerms`: origin = the sale's ID, the sale's
-`FeeSplit`, Blast's LP-fee rates from the sale's snapshot (`lp_fee_meme_bps`, `lp_fee_quote_bps`),
-the sale's partner, and migration residuals held for the owner. Only the stored venue's witness
-can redeem it (`blast_core::errors::EWrongVenue` otherwise), and it cannot be dropped or stored,
-so an unredeemed hand-off fails the whole transaction. Call the venue's `migrate`, never
-`blast_presale::blast_presale::migrate` alone.
-
-The venue then creates the pool, builds the vault with `blast_vault::vault::new` (which aborts
-unless the `VaultRegistry` admits the venue), attaches the position with
-`blast_vault::vault::share_with_position` (`blast_vault::errors::EZeroLiquidity` for a position
-with no liquidity), and shares the vault. Whatever the pool did not take waits in the vault as the
-owner's residuals. Nothing returns to the caller. Any venue failure rolls the whole transition
-back and leaves the sale `Funded`.
-
-#### Migrating to Cetus
-
-Who may call: *anyone*, while `Funded`, until someone cancels. Usually one keeper PTB:
+Who may call: *anyone*, while `Funded`, until someone cancels. One keeper PTB, type arguments
+`<SaleToken, Quote>`:
 
 1. `blast_presale::blast_presale::settle(presale, package_version, clock)` if not yet settled.
-2. `blast_presale::cetus::migrate<Meme, Quote, CoinA, CoinB>(sale, package_version, fee_policy,
-   venue_config, cetus_config, pools, burn_manager, registry, vault_version, treasury, clock)`.
-   `CoinA` and `CoinB` are the sale's two types in Cetus's canonical order: the order Cetus's own
-   `is_right_order` check (in its `factory` module) accepts. Find it by dev-inspecting either
-   order; the wrong order aborts with `blast_presale::errors::EInvalidCoinOrder`, and a pair that
-   is not exactly the sale's two types aborts with `blast_presale::errors::EWrongCoinPair`. Shared
-   objects: the presale (`sale`, mutable), `FeePolicy`, `VenueConfig` (read), Cetus `GlobalConfig`
-   (read), Cetus `Pools` (mutable), the Cetus LP-burn `BurnManager` (mutable), `VaultRegistry`, the
-   vault `PackageVersion`, and `Treasury`.
-3. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(presale,
-   package_version, fee_policy, partner)`.
+2. `blast_presale::blast_presale::migrate(presale, package_version, treasury, clock)` with the
+   shared core `Treasury` read. It checks the version, the migrate pause bit, and that the sale is
+   `Funded`; moves Blast's raise and token fees into the sale's ledger and pays them to the
+   treasury's current destination (on a partnered sale it holds them for
+   `blast_presale::blast_presale::pay_protocol_fees_with_partner`); pays or vests each raise
+   recipient and each token recipient through `blast_core::payout::pay_or_vest`; marks the sale
+   `Migrated`; emits `blast_presale::events::PresaleMigrated`; and returns a sealed
+   `blast_core::migration::Migration<SaleToken, Quote>`. The hand-off holds the LP's tokens and
+   Quote and the vault's `blast_core::migration::VaultTerms`: origin = the sale's ID, the sale's
+   `FeeSplit`, Blast's LP-fee rates from the sale's snapshot (`lp_fee_meme_bps`,
+   `lp_fee_quote_bps`), the sale's partner, and migration residuals held for the owner.
+3. The venue's `migrate`, for example `blast_migrators::cetus::migrate` or
+   `blast_migrators::bluefin::migrate`, with the `Migration` from step 2 as its first argument and
+   the venue's and vault's objects (migrators guide). Only the stored venue's witness can redeem
+   the hand-off (`blast_core::errors::EWrongVenue` otherwise), and it cannot be dropped or stored,
+   so an unredeemed hand-off fails the whole transaction.
+4. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(presale,
+   package_version, treasury, partner)` (below).
 
-The venue redeems the hand-off, creates the pool with the reserved `PoolCreationCap` at the tick
-spacing `prepare` recorded, seeds a full-range position at the price the LP balances imply (it
-never adopts an existing pool), burns the position through Cetus LP-burn for its fee-claiming
-proof, and shares a new vault holding that proof and Cetus's leftover coins.
-
-#### Migrating to Bluefin
-
-Who may call: *anyone*, while `Funded`, until someone cancels.
-
-1. `blast_presale::blast_presale::settle(presale, package_version, clock)` if not yet settled.
-2. `creation_fee = SplitCoins(GasCoin, [amount])`, where `amount` is the fee amount (the `u64` in
-   the `(bool, u64)` pair) that Bluefin's `get_pool_creation_fee_amount<SUI>` (its `config`
-   module) returns at submission time; Bluefin rejects another amount.
-3. `blast_presale::bluefin::migrate<Meme, Quote>(sale, package_version, fee_policy, venue_config,
-   currency, quote_currency, bluefin_config, registry, vault_version, treasury, creation_fee,
-   clock)`. `venue_config` is read for the tier `prepare` recorded. `currency` and
-   `quote_currency` are the shared Coin Registry `Currency<Meme>` and `Currency<Quote>` (read for
-   both symbols and decimals and the Quote's icon URL); the Bluefin `GlobalConfig` is mutable.
-4. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
-
-The venue creates the pool `Pool<Meme, Quote>` (Meme is always coin A) named
-`<Meme symbol>-<Quote symbol>` at the recorded tier, opens a full-range position aligned inward to
-the tick spacing, adds the LP balances, moves the position and Bluefin's leftovers into a new
-shared vault, and shares the pool.
-
-#### Migrating to Aftermath
-
-Who may call: *anyone*, while `Funded`, until someone cancels.
-
-1. `blast_presale::blast_presale::settle(presale, package_version, clock)` if not yet settled.
-2. `blast_presale::aftermath::migrate<Lp, Meme, Quote>(sale, package_version, fee_policy,
-   venue_config, pool_registry, dao_fee_version, registry, vault_version, treasury, clock)`. `Lp`
-   must be the LP coin whose capability `prepare` kept: the call first removes the capability under
-   `CreatePoolCapKey<Lp, Meme>` from `VenueConfig` (mutable), which aborts in `sui::dynamic_field`
-   for any other `Lp`. `pool_registry` is Aftermath's shared `PoolRegistry` (mutable);
-   `dao_fee_version` is the DAO-fee package's shared `Version`. The module sorts the coins into
-   Aftermath's order itself.
-3. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
-
-The venue redeems the hand-off, creates the pool from all LP tokens and Quote (50/50 weights,
-flatness 0, Aftermath's minimum 0.01% swap-in fee, which compounds into the LP, no other pool fees,
-name "Blast Presale Pool"; no sale token circulates before the migration, so nobody can register
-the sale's pool first), checks it holds every unit (`blast_presale::errors::EPoolMismatch`), builds
-the vault, wraps the pool in a DAO-fee pool at the recorded `dao_fee_bps` whose fee recipient is
-the vault's address (`blast_presale::errors::EDaoFeePoolMismatch` if Aftermath reports anything
-else), emits `blast_presale::aftermath::DaoFeePoolCreated` (vault, base pool, DAO-fee pool, owner
-cap, and LP coin IDs), attaches the DAO-fee pool's `OwnerCap` as the vault's position with the LP
-coin's amount (the pool's whole liquidity) as its liquidity and no residuals, shares the vault,
-shares the DAO-fee pool (the object traders use), and sends the LP coin to `0x0`, where nobody can
-ever use it. Nothing in the package removes the owner cap, so the fee or its recipient cannot be
-changed, and the liquidity is locked for good. If the `CreatePoolCapV2` belongs to a different LP
-coin than `Lp`, or Aftermath retires the versions this package links to, migration aborts and the
-sale becomes refundable at its LP deadline.
+The venue creates the pool, builds the vault (which requires the `VaultRegistry` to admit the venue
+and the presale's `PackageWitness` as the issuer), attaches the position, and shares the vault.
+Whatever the pool did not take waits in the vault as the owner's residuals. Nothing returns to the
+caller. Any venue failure rolls the whole transition back and leaves the sale `Funded`.
 
 #### Paying a partnered sale's Blast fees
 
-Who may call: *anyone*, once, after migration.
-`blast_presale::blast_presale::pay_protocol_fees_with_partner(presale, package_version,
-fee_policy, partner)` takes the Blast raise fee the migration held, pays the partner its cut
-through `blast_partners::blast_partners::pay`, then pays Blast the rest of the raise fee and its
-whole token fee at the `FeePolicy`'s current destination. Emits
-`blast_partners::blast_partners::PartnerPaid` (when the cut is positive) and
-`blast_presale::blast_presale::ProtocolFeesPaid`. The partner is paid as an owned coin at its
-recipient address using `public_transfer`. Blast's LP fees on the sale's vault are held and paid
-separately, by the vault (below).
+Who may call: *anyone*, after migration.
+`blast_presale::blast_presale::pay_protocol_fees_with_partner(presale, package_version, treasury,
+partner)` pays out the sale's ledger with `blast_core::protocol_fees::pay_with_partner`: the
+partner receives its cut of each of Blast's fees (the raise fee in Quote and the token fee in the
+sale token), rounded down, through `blast_partners::blast_partners::pay`, and the treasury's current
+destination the rest. It aborts with `blast_core::errors::EPartnerMismatch` unless `partner` is the
+sale's partner (always, on a sale without one). A ledger holding nothing, before migration, after a
+cancellation, or once paid, sends and emits nothing. Emits
+`blast_partners::blast_partners::PartnerPaid` per asset with a positive cut and
+`blast_core::blast_core_events::ProtocolFeesPaid`. Blast's LP fees on the sale's vault are held and
+paid separately, by the vault (below).
 
 #### Claiming tokens and refunds
 
@@ -751,7 +667,7 @@ so each wallet claims once.
   participant that starts at this claim; the Quote refund is always paid at once. A claim whose
   token amount is zero creates no schedule.
 
-Emits `blast_presale::blast_presale::Claimed` with `tokens`, `quote_refund`, `remaining_participants`, and
+Emits `blast_presale::events::Claimed` with `tokens`, `quote_refund`, `remaining_participants`, and
 `vesting_id`.
 
 #### Claiming vested tokens
@@ -759,8 +675,8 @@ Emits `blast_presale::blast_presale::Claimed` with `tokens`, `quote_refund`, `re
 Vested raise shares (Quote) and token shares start at migration; vested participant tokens start
 at the participant's claim. Each schedule is a shared `Vesting<T>` from the immutable
 `blast_fun_vesting` package, with a fixed beneficiary and no cancellation authority. Find its ID
-in the `vesting_id` field of `blast_presale::blast_presale::RaiseAllocated`, `blast_presale::blast_presale::RecipientAllocated`,
-or `blast_presale::blast_presale::Claimed`.
+in the `vesting_id` field of `blast_presale::events::RaiseAllocated`,
+`blast_presale::events::RecipientAllocated`, or `blast_presale::events::Claimed`.
 
 - Claim: `blast_fun_linear_vesting::claim<T>(vesting, clock)`. *Anyone* may call; it transfers all
   newly vested value to the beneficiary as a coin and aborts with
@@ -774,7 +690,7 @@ or `blast_presale::blast_presale::Claimed`.
 
 Who may call: *anyone*. `blast_presale::blast_presale::cancel_unlaunched(presale, package_version,
 clock)` once `now >= end_ms + liquidity_window_ms` while `Funded`. The sale becomes `Cancelled`
-and emits `blast_presale::blast_presale::PresaleCancelled`. Every wallet then claims a full refund
+and emits `blast_presale::events::PresaleCancelled`. Every wallet then claims a full refund
 with `blast_presale::blast_presale::claim`. A sale nobody settled can be settled and cancelled in
 one PTB after the LP deadline. All minted tokens stay locked in the cancelled sale forever.
 `blast_presale::blast_presale::destroy_cap(presale, presale_cap)` (*cap holder*) then deletes the
@@ -795,65 +711,21 @@ pass it in the same PTB to one vault call, which consumes it and aborts with
 - Change the fee split: `blast_vault::vault::schedule_fee_split(vault, proof, vault_version,
   proposed, clock)` with a new `blast_core::fee_split::FeeSplit`, ready after a fixed 48-hour
   notice; `blast_vault::vault::cancel_fee_split` cancels it, even once ready. The venue's
-  settle-and-apply call (below) activates it.
+  settle-and-apply call (migrators guide) activates it.
 
 #### Collecting LP fees
 
-Who may call: *anyone*, as often as they like. Each collection takes the fees, then
-`blast_vault::vault::split_fees` pays Blast its share of each asset (rounded up) to the
-`Treasury`, or holds it for the partner on a partnered sale, and divides the rest over the vault's
-fee split: address routes are paid as coins at once; owner, auto-LP, and holder-reward routes
-accrue in the vault; the burn route's Meme is burned (sent to `0x0` under a fixed supply) and its
-Quote kept. A collection of zero is valid and moves nothing. Shared objects only; nothing returns.
+Who may call: *anyone*, as often as they like, through the venue's collection calls (migrators
+guide). Each collection takes the fees, then `blast_vault::vault::split_fees` pays Blast its share
+of each asset (rounded up) to the `Treasury`, or holds it for the partner on a partnered sale, and
+divides the rest over the vault's fee split (vault guide). On a partnered sale's vault, follow
+with `blast_vault::vault::pay_protocol_fees_with_partner(vault, vault_version, treasury, partner)`:
+*anyone*; it pays the partner its cut of each held asset and the `Treasury` the rest. Holding
+nothing is valid and moves nothing, so it can follow every collection.
 
-- Cetus: `blast_presale::cetus::collect_fees<Meme, Quote, CoinA, CoinB>(vault, package_version,
-  vault_version, treasury, currency, cetus_config, burn_manager, pool)` where `currency` is the
-  mutable `Currency<Meme>`, `burn_manager` is read, and `pool` is the vault's mutable
-  `Pool<CoinA, CoinB>` (same coin order as migration; `blast_presale::errors::EWrongCoinPair` for
-  other types, `blast_presale::errors::EPositionPoolMismatch` for another pool). It collects from
-  the burned migration position.
-- Bluefin: `blast_presale::bluefin::collect_fees<Meme, Quote>(vault, package_version,
-  vault_version, treasury, currency, bluefin_config, pool, clock)` where `pool` is the vault's
-  `Pool<Meme, Quote>` (`blast_presale::errors::EPositionPoolMismatch` otherwise).
-- Aftermath: `blast_presale::aftermath::collect_fees<Meme, Quote>(vault, package_version,
-  vault_version, treasury, currency, meme_fees, quote_fees)`. Aftermath pays the DAO fee of every
-  swap, deposit, and withdrawal as a separate `Coin<Meme>` or `Coin<Quote>` sent to the vault's
-  address, so the vault owns those coins. `meme_fees` and `quote_fees` are
-  `vector<Receiving<Coin<Meme>>>` and `vector<Receiving<Coin<Quote>>>`: list the IDs of the coins
-  the vault owns (query the vault address's owned objects) as PTB receiving inputs and gather each
-  list with `MakeMoveVec`; either list may be empty. The call receives every listed coin into the
-  vault, joins them, and splits the totals like any collection. A coin the vault does not own
-  aborts in `sui::transfer`; a coin left unlisted waits for a later call. A vault of another venue
-  aborts with `blast_vault::errors::EWrongVenue`.
-
-Each nonzero collection emits `blast_vault_events::FeesCollected`. Neither CLMM venue collects
-venue incentive rewards. Presale venues do not add auto-LP or buy back yet: auto-LP Meme and Quote
-and the burn route's Quote accrue in the vault, and no presale call spends them, until shared
-venues that compound and buy back ship (ADR 0137, step 5).
-
-On a partnered sale's vault, follow with `blast_vault::vault::pay_protocol_fees_with_partner(vault,
-vault_version, treasury, partner)`: *anyone*; it pays the partner its cut of each held asset and
-the `Treasury` the rest. Holding nothing is valid and moves nothing, so it can follow every
-collection.
-
-Applying a ready fee split (*anyone*, once the owner's proposal is ready):
-
-- Cetus and Bluefin: `blast_presale::cetus::settle_and_apply_fee_split` (`<Meme, Quote, CoinA,
-  CoinB>`, the `collect_fees` objects plus `Clock`) and
-  `blast_presale::bluefin::settle_and_apply_fee_split` (`<Meme, Quote>`, the `collect_fees`
-  objects). Each checks the proposal is ready (`blast_vault::vault::assert_fee_split_ready`),
-  collects every position fee under the current split, then activates the stored split with
-  `blast_vault::vault::apply_fee_split`, so each fee follows the split it accrued under. It takes
-  no split of its own.
-- Aftermath: `blast_presale::aftermath::apply_fee_split(vault, package_version, vault_version,
-  clock)` checks readiness and activates the stored split. Aftermath sends DAO-fee coins separately
-  to the vault address, and a collection receives only its listed coins, so those coins follow the
-  split applied **when received**, including coins sent before activation but received afterward.
-  This is collection-time accounting rather than accrual-time allocation; indexers must expose
-  that boundary.
-
-Holder-reward rounds funded by the holder-reward route, Blast's per-vault LP-fee share changes,
-and buybacks are the vault's own calls (vault guide).
+Applying a ready fee split, holder-reward rounds funded by the holder-reward route, Blast's
+per-vault LP-fee share changes, and buybacks are the venue's and the vault's own calls (migrators
+and vault guides).
 
 #### Blast admin operations
 
@@ -862,20 +734,21 @@ Integrators cannot call these; they explain state changes. Each takes the
 
 | Call | Effect |
 | --- | --- |
-| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise and token rates at most 1,000 BPS each; each LP-fee rate at most 3,000 (`blast_presale::errors::EInvalidFees`). Compiled maximums: raising one needs a package upgrade. Anyone applies it once ready with `fee_policy::apply_fees`, which emits `delayed::DelayedApplied<fee_policy::FeesKey, fee_policy::ProtocolFees>`. |
-| `fee_policy::schedule_destination` | Redirects every later Blast raise and token payout, existing sales included; rejects `0x0` (`blast_presale::errors::EInvalidDestination`). Anyone applies it with `fee_policy::apply_destination`, which emits `delayed::DelayedApplied<fee_policy::DestinationKey, address>`. Blast's LP fees go to the core `Treasury` instead (core guide). |
-| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate (`blast_presale::errors::EAboveFeePolicy`). Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`blast_presale::errors::EProtocolFeesIncreased` otherwise). Emits `blast_presale::blast_presale::ProtocolFeesChanged`. |
-| `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `creation_policy::QuoteSet`. |
+| `fee_policy::schedule_fees` | Rates new sales snapshot. Raise and token rates at most 1,000 BPS each; each LP-fee rate at most `blast_core::constants::max_lp_fee_bps` (3,000) (`blast_presale::errors::EInvalidFees`). Compiled maximums: raising one needs a package upgrade. Anyone applies it once ready with `fee_policy::apply_fees`, which emits `delayed::DelayedApplied<fee_policy::FeesKey, fee_policy::ProtocolFees>`. |
+| `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate (`blast_presale::errors::EAboveFeePolicy`). Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`blast_presale::errors::EProtocolFeesIncreased` otherwise). Emits `blast_presale::events::ProtocolFeesChanged`. |
+| `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `blast_presale::events::QuoteSet`, typed by the Quote. |
 | `creation_policy::schedule_venue` | Schedules admission of a venue witness; rejects primitives, vectors, and `0x1`/`0x2` types (`blast_presale::errors::EInvalidVenue`). Anyone applies it once ready with `creation_policy::apply_venue`, which emits `delayed_set::SetApplied<creation_policy::VenueKey, TypeName>`. `creation_policy::remove_venue` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted venue) and cancels a pending admission. |
-| `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `creation_policy::PartnerAdded`. |
-| `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `creation_policy::PartnerRemoved`. |
-| `blast_presale::package_admin::schedule_upgrade`, `blast_presale::package_admin::authorize_upgrade`, `blast_presale::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic operational-version cutover (below). |
+| `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `blast_partners::partner_list::PartnerAdded` with the policy's ID as `owner`. |
+| `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `blast_partners::partner_list::PartnerRemoved`. |
+| `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic version cutover, typed `<BLAST_PRESALE_PACKAGE>` (admin guide). |
 
-`blast_presale::package_admin::wrap` consumes the publication Publication and never-upgraded matching cap once. Each upgrade increments both compiled generation constants and commits/advances in one PTB; old bytecode then rejects the advanced version. Existing dependency-only deployments require a fresh publication to adopt this design.
+`blast_admin::package_admin::wrap` consumes the Publication and the never-upgraded matching cap
+once. Each upgrade raises the compiled generation and commits and advances the version in one
+PTB; old bytecode then rejects the advanced version.
 
 ### Delayed administration
 
-Each treasury, fee or upgrade operation owns its applied notice period. A delayed-value
+Each fee, admission or upgrade operation owns its applied notice period. A delayed-value
 schedule accepts a proposed value and **next** `delay_ms`, but its execution deadline is
 `ready_at_ms = now + currently_applied_delay_ms`. Passing zero cannot shorten the
 current wait. The proposed value and next notice become active together only after
@@ -913,32 +786,24 @@ for an action or admission. `delayed_set::MemberRemoved` records an immediate ve
 | Operation | Object and field | Key | Value or action type |
 | --- | --- | --- | --- |
 | Blast's rates | `FeePolicy.fees` | `fee_policy::FeesKey` | `fee_policy::ProtocolFees` |
-| Blast's payee | `FeePolicy.destination` | `fee_policy::DestinationKey` | `address` |
-| Upgrades and immutability | `PackageAdmin.upgrade` | `blast_presale::package_admin::UpgradeKey` | `blast_presale::package_admin::UpgradeAction` |
+| Upgrades and immutability | `PackageAdmin.upgrade` | `blast_admin::package_admin::UpgradeKey<BLAST_PRESALE_PACKAGE>` | `blast_admin::package_admin::UpgradeAction` |
 | Venue admissions | `CreationPolicy.venues` | `creation_policy::VenueKey` | `TypeName` |
 
 A vault's fee split and Blast's per-vault LP-fee share are the vault's own delayed fields, each
 with a fixed 48-hour notice (vault guide).
 
-`blast_presale::package_admin::schedule_upgrade` takes only the digest in addition to
-its state, authority and Clock inputs, and uses the stored upgrade notice.
-`blast_presale::package_admin::authorize_upgrade` consumes only a ready matching digest;
-its ticket must feed the native upgrade command and its receipt the ordinary finalizer.
-`blast_presale::package_admin::schedule_make_immutable` and
-`blast_presale::package_admin::make_immutable` govern destruction of upgrade authority.
-These action schedules accept no delay argument and their execution preserves the notice.
-`blast_presale::package_admin::schedule_upgrade_delay` uses UpgradeAdmin to propose only the
-notice period, replacing any pending action. Anyone applies it with
-`blast_presale::package_admin::apply_upgrade_delay`; it cannot authorize code or immutability.
-`blast_presale::package_admin::cancel_upgrade_action` cancels any of these proposals.
+Upgrades and immutability are Blast admin's generic administration (admin guide): its
+`blast_admin::package_admin` calls, typed `<BLAST_PRESALE_PACKAGE>`, schedule, cancel, authorize
+and commit each action under the stored upgrade notice. Blast's fee destination is the core
+treasury's own delayed setting (core guide).
 
 Publication-owned policy singletons start with zero notice for ordinary
 role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
 no upgrade or immutability action can run without notice, even during setup. Configure
 and apply each other operation's intended notice, and drain or cancel all earlier setup
-proposals before release. `blast_presale::package_admin::unpause` enforces the minimum: it
-aborts unless the fee destination, fee rates, venue set and upgrade slot each have a nonzero
-applied notice, no pending proposal that would set one to zero, and no pending venue admission.
+proposals before release. `creation_policy::unpause` enforces the minimum: it aborts unless the
+fee rates and venue set each have a nonzero applied notice, no pending proposal that would set one
+to zero, and no pending venue admission; the generic administration then checks the upgrade slot.
 Raising a notice never changes previously scheduled deadlines or next delays.
 Pausing and upgrades cannot reset notices. This source requires a fresh stack.
 
@@ -955,15 +820,17 @@ that is neither admitted nor pending, aborts with code 20 from `delayed_set`.
 
 ### Emergency pause
 
-A `PauseAdmin` calls `blast_presale_package::pause` to set selected bits on the shared
-package version. Only `UnpauseAdmin` may clear bits, with `blast_presale::package_admin::unpause`,
-which takes the shared PackageAdmin, PackageVersion, FeePolicy and CreationPolicy and first checks
-that every policy notice is guarded (see above). Bits: create is 1, commit is 2, migrate is 4.
-Pauses never expire; a paused call aborts with `blast_presale::errors::EPaused`.
-`blast_presale::blast_presale::new` and `blast_presale::blast_presale::share` check the create bit,
-all three commitment paths the commit bit, and `blast_presale::blast_presale::migrate` (so every
-venue's migration) the migrate bit. Settlement, claims, refunds, `cancel_unlaunched`, partner
-payouts, owner proofs, and fee collections stay open.
+A `PauseAdmin<BLAST_PRESALE_PACKAGE>` calls `blast_admin::package_admin::pause` to set selected
+bits on the shared version. Only `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` may clear bits, with
+`creation_policy::unpause`, which takes the `CreationPolicy`, the `PackageVersion`, the
+`PackageAdmin` and the `FeePolicy` and first checks that every presale notice is guarded (see above). Bits:
+create is 1, commit is 2, migrate is 4. Pauses never expire; a paused call aborts with
+`blast_admin::errors::EPaused` from `blast_admin::package_version`, and pause and unpause events are
+`blast_admin::blast_admin_events::Paused` and `blast_admin::blast_admin_events::Unpaused`, typed
+by `BLAST_PRESALE_PACKAGE`. `blast_presale::blast_presale::new` and
+`blast_presale::blast_presale::share` check the create bit, all three commitment paths the commit
+bit, and `blast_presale::blast_presale::migrate` the migrate bit. Settlement, claims, refunds,
+`cancel_unlaunched`, partner payouts, owner proofs, and fee collections stay open.
 
 `blast_presale::blast_presale::set_protocol_fees` remains immediate before the
 sale starts, but takes the live `FeePolicy`; every rate must be at or below
@@ -971,7 +838,6 @@ its applied rates. Scheduled increases cannot authorize larger sale overrides.
 Once a sale is shared it is public, so an override there may only keep or lower
 each of its four rates; only the creation PTB may raise one.
 AdapterAdmin may immediately remove a venue with `creation_policy::remove_venue`.
-Genesis treasury is configured before publication, never defaulted to the publisher.
 
 ### Economics
 
@@ -1026,15 +892,17 @@ Blast takes three fees, all from the sale's snapshot (`Presale.protocol_fees`), 
 `FeePolicy` at creation. Later `fee_policy::schedule_fees` calls never touch existing sales. Nothing is
 charged at creation, on commitment, on refund, or when a sale does not migrate.
 
-- Raise fee: Blast's Quote, apportioned with the raise at creation, paid at migration to
-  `FeePolicy.destination` as it is when paid. Overflow refunds are never charged.
-- Token fee: Blast's tokens, apportioned with the supply at creation, paid at migration to the
-  same destination.
+- Raise fee: Blast's Quote, apportioned with the raise at creation, moved into the sale's
+  `blast_core::protocol_fees::Ledger` at migration and paid to the core `Treasury`'s destination as
+  it is when paid. Overflow refunds are never charged.
+- Token fee: Blast's tokens, apportioned with the supply at creation, moved into the same ledger at
+  migration and paid with the raise fee.
 - LP fees: migration seals the sale's `lp_fee_meme_bps` and `lp_fee_quote_bps` into the vault's
   terms. At each collection the vault takes `ceil(gross × bps / 10,000)` of each asset at its
   current share and pays it to the core `Treasury`. Blast can change one vault's share only
   through the vault's own delayed call, `blast_vault::vault::schedule_protocol_bps` (core
-  `FeeAdmin`, fixed 48-hour notice, at most 3,000 BPS per asset; vault guide).
+  `FeeAdmin`, fixed 48-hour notice, at most `blast_core::constants::max_lp_fee_bps`, 3,000 BPS per
+  asset; vault guide).
 
 Per-sale changes before the start (`blast_presale::blast_presale::set_protocol_fees`): a rate may rise
 only in the creation PTB; on a shared sale each rate may only stay or fall. A changed raise rate
@@ -1048,24 +916,22 @@ poolable price.
 #### Partners
 
 A sale may name one `blast_partners::blast_partners::Partner`, named on the initializer and fixed
-at `finalize`. The partner earns a cut of Blast's raise fee and, through the sale's vault, of
-Blast's LP fees, never of Blast's token fee. The cut is `floor(fee × share_bps / 10,000)` using the
-partner's share applied when paid (at most 8,000 BPS; a change Blast proposes can be applied by
-anyone 7 days later). Blast keeps the rest. On a partnered sale, migration holds Blast's raise fee
-and tokens in the sale until `blast_presale::blast_presale::pay_protocol_fees_with_partner` runs;
-the vault inherits the partner and holds Blast's LP fees until
-`blast_vault::vault::pay_protocol_fees_with_partner` runs.
+at `finalize`; the sale's ledger is bound to it. The partner earns a cut of every Blast fee: the
+raise fee, the token fee, and, through the sale's vault, Blast's LP fees (ADR 0137). The cut is
+`floor(fee × share_bps / 10,000)` of each asset, using the partner's share applied when paid (at
+most 8,000 BPS; a change Blast proposes can be applied by anyone 7 days later). Blast keeps the
+rest. On a partnered sale, migration holds Blast's raise and token fees in the sale's ledger until
+`blast_presale::blast_presale::pay_protocol_fees_with_partner` runs; the vault inherits the partner
+and holds Blast's LP fees until `blast_vault::vault::pay_protocol_fees_with_partner` runs.
 
 #### LP-fee split and residuals
 
 After Blast's LP fees, the rest of each asset is apportioned by largest remainder over the vault's
 fee-split routes, in route order (the sale's `fee_split` until the owner changes it). Address
 routes are paid as coins in the same transaction; owner, auto-LP, and holder-reward routes accrue
-in the vault; the burn route burns its Meme and keeps its Quote. On presale vaults, auto-LP
-balances and burn Quote currently only accrue (see Collecting LP fees). Migration residuals,
-whatever Cetus or Bluefin did not take when seeding, wait in the vault for the owner, who claims
-them with `blast_vault::vault::claim_owner_balances`; Aftermath leaves none. The vault guide has
-the details.
+in the vault; the burn route burns its Meme and keeps its Quote. Migration residuals, whatever the
+venue did not take when seeding, wait in the vault for the owner, who claims them with
+`blast_vault::vault::claim_owner_balances`. The vault guide has the details.
 
 #### Seed price bound
 
@@ -1096,7 +962,8 @@ All times are Unix milliseconds from `Clock`.
 - `blast_presale::blast_presale::cancel_unlaunched`: from `now >= LP deadline`. The 7-day minimum means a funded
   sale stays migratable for at least a week after its end.
 - Vesting starts at migration for recipients and at each claim for participants.
-- `blast_presale::blast_presale::set_partner` needs `now < accepted_until_ms` for that partner.
+- `blast_presale::blast_presale::set_partner` needs the policy's partner list to accept the
+  partner now: added, and any removal's `acceptance_ends_at_ms` not yet reached.
 - Hard cap: commitments are held to the raise from `now >= hard cap start`.
 - Vault fee-split and Blast-share changes wait a fixed 48 hours; collections have no deadline or
   cooldown (vault guide).
@@ -1122,12 +989,13 @@ content and dynamic fields), and use events for history.
 - Raise progress: `raise_target`, `total_commitments`, `participants` (wallets that have
   committed and not yet claimed), `quote` (Quote held).
 - Terms: `eligibility`, `token_allocation` (buyers' tokens), `participant_vesting`,
-  `recipient_payouts` and `raise_payouts` (each recipient's exact amount and vesting),
-  `fee_split` (the vault's starting `FeeSplit`), `venue` (the type name, with original package IDs,
-  of `blast_presale::cetus::Venue`, `blast_presale::bluefin::Venue`,
-  `blast_presale::aftermath::Venue`, or a vendor venue's witness).
-- Blast: `protocol_fees` (the snapshot), `protocol_quote`, `protocol_tokens`, `partner_id`,
-  `unpaid_protocol_quote` (`some` only between a partnered migration and its pay call).
+  `recipient_payouts` and `raise_payouts` (each `Recipient`, with its destination and vesting
+  terms, and its exact amount), `fee_split` (the vault's starting `FeeSplit`), `venue` (the venue
+  witness's type name, with original package IDs).
+- Blast: `protocol_fees` (the snapshot), `protocol_quote` and `protocol_tokens` (Blast's amounts,
+  the tokens escrowed until migration), `partner_id`, and `fee_ledger`, the
+  `blast_core::protocol_fees::Ledger` whose `meme` (sale tokens) and `quote` balances hold Blast's
+  fees from a partnered migration until its pay call.
 - Custody balances: `sale_tokens`, `liquidity_tokens`, `recipient_tokens`.
 - `presale_cap_id`: the ID of the sale's `PresaleCap`.
 
@@ -1141,12 +1009,11 @@ Common answers:
 - Is it open? `lifecycle == Open` and `start_ms <= now < start_ms + duration_ms`.
 - Fill rate? `raise_target / total_commitments` once `total_commitments >= raise_target`.
 - Has a wallet claimed? After `Migrated`/`Cancelled`, its commitment field is gone (and a
-  `blast_presale::blast_presale::Claimed` names it).
+  `blast_presale::events::Claimed` names it).
 - Preview a claim: apply the formulas in Economics to `token_allocation`, `total_commitments`,
   `raise_target`, and the wallet's `quote`; the last claimant gets the remainder.
 - Which vault? The `blast_vault_events::VaultCreated` whose `terms` has the sale's ID as its
-  `origin`, emitted in the migration transaction; on Aftermath also
-  `blast_presale::aftermath::DaoFeePoolCreated`'s `vault_id`.
+  `origin`, emitted in the migration transaction.
 
 Other objects:
 
@@ -1156,78 +1023,73 @@ proposal with the proposed `value`, next `delay_ms`, and `ready_at_ms` (Unix mil
 pending proposal becomes ready; only a successful apply call changes it. Each `Bps` is a
 positional struct wrapping one u64.
 
-- `FeePolicy`: `destination` is `Delayed<DestinationKey, address>`, so `destination.value` is the
-  current payee. `fees` is `Delayed<FeesKey, ProtocolFees>`; `fees.value` holds the applied `raise_bps`, `token_bps`,
-  `lp_fee_meme_bps` and `lp_fee_quote_bps`, each a `Bps`.
+- `FeePolicy`: `fees` is `Delayed<FeesKey, ProtocolFees>`; `fees.value` holds the applied
+  `raise_bps`, `token_bps`, `lp_fee_meme_bps` and `lp_fee_quote_bps`, each a `Bps`. Blast's payee
+  is the core `Treasury`'s `destination` (core guide).
 - `CreationPolicy`: `allowed_quotes` (a set of type names with original package IDs) and
   `venues`, a `DelayedSet<VenueKey, TypeName>`. Its `members` holds the admitted venue type names
   (original package IDs), `delay_ms` the applied admission notice, `admissions` maps each pending
   type name to its snapshotted `delay_ms` and `ready_at_ms`, and `pending_delay` holds a proposed
   next notice. An admission becomes active only when applied into `members`, which preserves the
-  applied notice. Accepted partners are dynamic fields keyed by `creation_policy::PartnerKey` (the
-  partner's ID) whose `u64` value is the time the partner stops being accepted (the maximum u64
-  while accepted).
-- `VenueConfig`: a coin's tier is the `blast_presale::venue_config::PoolTier` (`tick_spacing`,
-  `pool_fee_rate`) in the dynamic field keyed by `PoolTierKey<Meme>`; a Cetus coin's
-  `PoolCreationCap` is the dynamic object field keyed by `blast_presale::cetus::CreationCapKey<Meme>`;
-  an Aftermath coin's `CreatePoolCapV2` is the dynamic object field keyed by
-  `blast_presale::aftermath::CreatePoolCapKey<Lp, Meme>` until its migration removes it.
-- The sale's `Vault` (terms, fee split, Blast's share, balances, positions): vault guide. On
-  Aftermath, the vault's pending DAO fees are the coins owned by the vault's address.
+  applied notice. `partners` is a `blast_partners::partner_list::PartnerList` whose
+  `acceptance_ends_at_ms` table maps each partner's ID to the time it stops being accepted (the
+  maximum u64 while accepted).
+- The sale's `Vault` (terms, fee split, Blast's share, balances, positions): vault guide.
 - `Vesting<T>`: `balance`, `beneficiary`, `start_ms`, `cliff_ms`, `period_ms`, `periods`,
   `released`.
 
 ### Events
 
 Sale events carry the type arguments `<SaleToken, Quote>`. Filter by the full generic type or by
-the emitting module. Payloads are emitted directly (no envelope).
+the emitting module. Payloads are emitted directly (no envelope), from `blast_presale::events`
+except `blast_presale::blast_presale::PresaleCreated`, which stays beside the sale terms it records.
 
 | Flow | Event | Indexer use |
 | --- | --- | --- |
-| Prepare | `blast_presale::venue_config::PoolTierReserved`, then on Aftermath `blast_presale::aftermath::PoolCreationReserved` | The venue's pool tier (`tick_spacing`, `pool_fee_rate`: on Cetus and Bluefin the swap fee in millionths, on Aftermath 0 and the DAO fee in BPS), typed `<Meme, Quote, Venue>` with the venue's witness; on Aftermath the kept `create_pool_cap_id`, typed `<Lp, Meme, Quote>`. Cetus emits its own pair-registration events. |
-| Create | `blast_presale::blast_presale::PresaleCreated` | All terms: supply split (BPS), recipients and vesting, raise split (BPS), window lengths, eligibility, uncapped phase, hard cap, `venue`, `fee_split`, Blast's snapshot rates and amounts, `treasury_cap_id`, `presale_cap_id`. |
-| Share | `blast_presale::blast_presale::PresaleOpened` | `start_ms`, scheduled `end_ms` and `liquidity_deadline_ms`, `uncapped_from_ms`, `hard_cap_from_ms` (`none` without a hard cap), `partner_id`. |
-| Per-sale rates | `blast_presale::blast_presale::ProtocolFeesChanged` | New rates, Blast amounts, and new buyer `token_allocation`. |
-| Commit | `blast_presale::blast_presale::Committed` | `quote` accepted, `wallet_commitment` (new total), `total_commitments`, `participants`. It has no wallet field: the wallet is the transaction sender. |
-| Settle | `blast_presale::blast_presale::PresaleFunded` / `blast_presale::blast_presale::PresaleCancelled` | Funded: `accepted_quote`, `refundable_quote`, `token_allocation`, and the actual `end_ms` and `liquidity_deadline_ms`, earlier than `PresaleOpened`'s after an early close. Cancelled: total refundable. |
-| Migrate | `blast_presale::blast_presale::ProtocolFeesPaid` (unpartnered), `blast_presale::blast_presale::RaiseAllocated` (per raise recipient), `blast_presale::blast_presale::RecipientAllocated` (per token recipient), `blast_presale::blast_presale::PresaleMigrated`, then on Aftermath `blast_presale::aftermath::DaoFeePoolCreated`, then `blast_vault_events::VaultCreated` | Payouts with `vesting_id`; `venue` and LP amounts; vault, pool, position, liquidity, sealed terms, and residuals. The vault event's third type argument is the venue witness. On Aftermath the vault's `pool_id` is the base pool, `position_id` the DAO-fee pool's owner cap, and the DAO-fee event adds the shared DAO-fee pool, owner cap, and LP coin (owned by `0x0`) IDs. |
-| Partner pay | `blast_partners::blast_partners::PartnerPaid`, `blast_presale::blast_presale::ProtocolFeesPaid` | `partner_quote` is the partner's cut. |
-| Claim | `blast_presale::blast_presale::Claimed` | `tokens`, `quote_refund`, `remaining_participants`, `vesting_id`. |
-| Collect | `blast_vault_events::FeesCollected` | Gross amounts, Blast's cut, each route's amounts in route order. |
-| Apply split | `delayed::DelayedApplied` keyed by `blast_vault::vault::FeeSplitKey` | The previous and new split. |
+| Prepare | The venue's own events (migrators guide) | The venue's pool terms. |
+| Create | `blast_presale::blast_presale::PresaleCreated` | All terms: supply split (BPS), token recipients (`blast_core::payout::Recipient`: destination and vesting terms), raise split (BPS) and raise recipients, participant vesting, window lengths, eligibility, uncapped phase, hard cap, `venue`, `fee_split`, Blast's snapshot rates and amounts, `treasury_cap_id`, `presale_cap_id`. |
+| Share | `blast_presale::events::PresaleOpened` | `start_ms`, scheduled `end_ms` and `liquidity_deadline_ms`, `uncapped_from_ms`, `hard_cap_from_ms` (`none` without a hard cap), `partner_id`. |
+| Per-sale rates | `blast_presale::events::ProtocolFeesChanged` | New rates, Blast amounts, and new buyer `token_allocation`. |
+| Commit | `blast_presale::events::Committed` | `quote` accepted, `wallet_commitment` (new total), `total_commitments`, `participants`. It has no wallet field: the wallet is the transaction sender. |
+| Settle | `blast_presale::events::PresaleFunded` / `blast_presale::events::PresaleCancelled` | Funded: `accepted_quote`, `refundable_quote`, `token_allocation`, and the actual `end_ms` and `liquidity_deadline_ms`, earlier than `PresaleOpened`'s after an early close. Cancelled: total refundable. |
+| Migrate | `blast_core::blast_core_events::ProtocolFeesPaid` (unpartnered, when Blast's fees are not both zero), `blast_presale::events::RaiseAllocated` (per raise recipient), `blast_presale::events::RecipientAllocated` (per token recipient), `blast_presale::events::PresaleMigrated`, then the venue's and the vault's events (`blast_vault_events::VaultCreated`) | Blast's payment (`origin` is the sale, `meme_amount` its tokens, `quote_amount` its Quote, `treasury` the payee); payouts with `vesting_id`; `venue` and LP amounts; the vault and its sealed terms. |
+| Partner pay | `blast_partners::blast_partners::PartnerPaid` (per asset with a positive cut), `blast_core::blast_core_events::ProtocolFeesPaid` | The partner's cut of each asset (`partner_meme_amount`, `partner_quote_amount`) and Blast's rest. |
+| Claim | `blast_presale::events::Claimed` | `tokens`, `quote_refund`, `remaining_participants`, `vesting_id`. |
+| Partner list | `blast_partners::partner_list::PartnerAdded`, `blast_partners::partner_list::PartnerRemoved` | `owner` is the `CreationPolicy`'s ID. |
+| Quote list | `blast_presale::events::QuoteSet` | Typed by the Quote; `allowed`. |
 | Vesting | `VestingCreated`, `VestingClaimed` (from `blast_fun_vesting`) | Schedule terms and releases. |
 
-Owner claims, partner LP payouts, and holder-reward rounds emit the vault's events (vault guide).
-Admin events are listed in "Blast admin operations" and "Delayed administration".
+Collections, owner claims, partner LP payouts, and holder-reward rounds emit the venue's and the
+vault's events (migrators and vault guides). Pauses emit
+`blast_admin::blast_admin_events::Paused` and `blast_admin::blast_admin_events::Unpaused`; other
+admin events are listed in "Blast admin operations" and "Delayed administration".
 
 ### Aborts
 
-Errors are Move clever errors: the abort names the module and constant, and the message explains
-it. Common ones by flow (module `blast_presale` unless named):
+Presale errors are numeric codes from `blast_presale::errors`, raised in the module named; the SDK
+maps each code to its name. Common ones by flow:
 
 - Any call: `blast_admin::operational_version` aborts for a stale package ID (call the current
-  presale or vault package); `blast_presale::errors::EPaused` while the call's pause bit is set.
-- Prepare: `blast_presale::errors::EInvalidTier`; `blast_presale::errors::ESymbolTooLong`;
-  `blast_presale::errors::EInvalidDaoFee` (1..=10,000 BPS); Cetus's own aborts for an
-  unregistered tick spacing or refused pair.
+  presale package); `blast_admin::errors::EPaused` from `blast_admin::package_version` while the
+  call's pause bit is set.
 - Start (`new`): `blast_presale::errors::EQuoteNotAllowed` / `blast_presale::errors::EVenueNotAllowed`
   (ask Blast to list it); `blast_presale::errors::EInvalidAssetPair` (sale coin equals Quote);
   `blast_presale::errors::EInitialSupplyNotZero`.
-- Value constructors: `blast_core::errors::EInvalidBps`; `blast_presale::errors::EInvalidEligibilityPolicy`,
-  `blast_presale::errors::EInvalidUncappedPhase`, `blast_presale::errors::EInvalidVestingTerms`;
+- Value constructors: `blast_core::errors::EInvalidBps`; `blast_core::errors::EInvalidVestingTerms`
+  and `blast_core::errors::EInvalidRecipient` (`0x0`) from `blast_core::payout`;
+  `blast_presale::errors::EInvalidEligibilityPolicy`, `blast_presale::errors::EInvalidUncappedPhase`;
   `blast_core::errors::EInvalidRoute` and `blast_core::errors::EInvalidFeeSplit` from the fee-split
   builders (core guide).
 - Finalize: `blast_presale::errors::ESaleTokenNotUnregulated` (regulated or unknown legacy currency; use a new
   Coin Registry currency created without regulation); `blast_presale::errors::EMissingSetting` (no eligibility policy or LP-fee split); `blast_presale::errors::EInvalidRaiseTarget`
-  (raise unset or zero); `blast_presale::errors::EInvalidTokenAllocation` (BPS not exactly 10,000 with Blast's token rate, duplicate or zero
-  recipient, more than 64, or a zero apportioned amount); `blast_presale::errors::EInvalidRaiseAllocation` (no LP share
+  (raise unset or zero); `blast_presale::errors::EInvalidTokenAllocation` (BPS not exactly 10,000 with Blast's token rate, duplicate
+  destination, more than 64, or a zero apportioned amount); `blast_presale::errors::EInvalidRaiseAllocation` (no LP share
   left after Blast, duplicates, zero amounts); `blast_presale::errors::EInvalidWindow` (zero duration or LP window under
   7 days); `blast_presale::errors::EUnreachableRaise` (minimum × slots below raise); `blast_presale::errors::EInvalidEligibilityPolicy`;
   `blast_presale::errors::EInvalidUncappedPhase`; `blast_presale::errors::EInvalidHardCap` (hard cap starts at or after the window's end);
-  `blast_presale::errors::EInvalidVestingTerms`; `blast_presale::errors::EUnseedablePrice`. A PTB
-  that leaves the `VenueTicket` or the `PresaleInitializer` unconsumed fails at its end with Sui's
-  unused-value error, not a Move abort.
-- Partner: `blast_presale::errors::EPartnerNotAccepted`.
+  `blast_presale::errors::EUnseedablePrice`. A PTB that leaves the `VenueTicket` or the
+  `PresaleInitializer` unconsumed fails at its end with Sui's unused-value error, not a Move abort.
+- Partner: `blast_partners::errors::EPartnerNotAccepted` from `blast_partners::partner_list`.
 - Share: `blast_presale::errors::EInvalidLifecycle` (already shared); `blast_presale::errors::EInvalidWindow`.
 - Commit: `blast_presale::errors::EPresaleNotStarted`, `blast_presale::errors::EPresaleEnded` (check the window); `blast_presale::errors::EZeroCommitment`;
   `blast_presale::errors::EWrongEligibilityPolicy` (wrong commit function for the policy); `blast_presale::errors::EInvalidEligibilityProof`
@@ -1240,21 +1102,9 @@ it. Common ones by flow (module `blast_presale` unless named):
   `blast_presale::errors::EInvalidLifecycle` (already settled).
 - Migrate: `blast_presale::errors::EInvalidLifecycle` (not `Funded`: unsettled, underfunded,
   cancelled, or migrated); `blast_core::errors::EWrongVenue` in `blast_core::migration` (another
-  venue's `migrate`), or, on Aftermath, a `sui::dynamic_field` abort when no capability is kept
-  under that `Lp` (a wrong `Lp`, or another venue's sale); `blast_presale::errors::EInvalidCoinOrder` (swap `CoinA`/`CoinB`);
-  `blast_presale::errors::EWrongCoinPair`; `blast_vault::errors::EUnadmittedVenue` (the
-  `VaultRegistry` does not admit the venue); `blast_vault::errors::EZeroLiquidity`;
-  `blast_presale::errors::EPoolMismatch` and `blast_presale::errors::EDaoFeePoolMismatch`
-  (Aftermath did not take every unit or did not record the vault as the recipient at the recorded
-  fee; nothing to fix by retrying); venue aborts (Bluefin creation fee amount, a Cetus pool that
-  already exists, an Aftermath `CreatePoolCapV2` of another LP coin, which no retry fixes, so the
-  sale refunds at its liquidity deadline).
-- Collect and apply: `blast_presale::errors::EPositionPoolMismatch` (pass the vault's own pool);
-  `blast_presale::errors::EWrongCoinPair` (Cetus); `blast_vault::errors::EWrongVenue` (Aftermath
-  call on another venue's vault); an abort in `sui::transfer` means a listed coin is not owned by
-  the vault. Settle-and-apply and `blast_presale::aftermath::apply_fee_split`: 18 `ENoPending` or
-  17 `ENotReady` from Blast admin's `delayed` module (no proposal, or not yet ready).
-- Partner pay: `blast_presale::errors::EWrongPartner`; `blast_presale::errors::ENoPartnerPayout` (not migrated yet, or already paid).
+  venue's `migrate`); the venue's and the vault's own aborts (migrators and vault guides).
+- Partner pay: `blast_core::errors::EPartnerMismatch` from `blast_core::protocol_fees` (not the
+  sale's partner, or a sale without one).
 - Claim: `blast_presale::errors::EInvalidLifecycle` (not `Migrated`/`Cancelled`); `blast_presale::errors::ENoCommitment` (never committed or
   already claimed).
 - Cancel: `blast_presale::errors::ELiquidityDeadlineNotReached`; `blast_presale::errors::EInvalidLifecycle` (not `Funded`).
@@ -1264,12 +1114,12 @@ it. Common ones by flow (module `blast_presale` unless named):
   `blast_vault::errors::ENothingToClaim`.
 - Admin-only: `blast_acl::sign_in` aborts for a revoked `AdminCap` or one without the role;
   then `blast_presale::errors::EPresaleStarted`, `blast_presale::errors::EProtocolFeesIncreased` (a shared sale's override raises a rate),
-  `blast_presale::errors::EAboveFeePolicy`, `blast_presale::errors::EProtocolFeesUnchanged`, `blast_presale::errors::EInvalidFees`, `blast_presale::errors::EInvalidDestination`,
-  `blast_presale::errors::EAllowanceUnchanged`, `blast_presale::errors::EInvalidVenue`,
-  `blast_presale::errors::EInvalidPauseBits`, `blast_presale::errors::EPauseUnchanged`,
-  `blast_presale::errors::EUnguardedNotice`, `blast_presale::errors::EWrongUpgradeAction`,
-  `blast_presale::errors::EInvalidDigest`.
-- Delayed administration (policy fees and payee, venue admission, upgrades): Blast admin's
+  `blast_presale::errors::EAboveFeePolicy`, `blast_presale::errors::EProtocolFeesUnchanged`, `blast_presale::errors::EInvalidFees`,
+  `blast_presale::errors::EAllowanceUnchanged` (Quote already in that state), `blast_presale::errors::EInvalidVenue`,
+  `blast_presale::errors::EUnguardedNotice`, `blast_partners::errors::EUnchanged` (partner already
+  accepted, or its removal already pending); pause, unpause and upgrade aborts are the generic
+  administration's (admin guide).
+- Delayed administration (policy fees, venue admission, upgrades): Blast admin's
   delayed modules abort with plain codes. 17 `ENotReady`: applied before `ready_at_ms` (from
   `delayed_set` for an early admission, otherwise from `delayed`). 18 `ENoPending`: applied or
   cancelled with nothing pending (from the type's own module: `delayed` for a setting,
@@ -1284,10 +1134,8 @@ it. Common ones by flow (module `blast_presale` unless named):
 - Prepare, `new`, set, `finalize`, and `share` in one PTB. The `VenueTicket` and the
   `PresaleInitializer` must be consumed and the `Presale` cannot be transferred, so a PTB that
   skips a step fails. The partner can be named only on the initializer.
-- Passing the `TreasuryCap` by value to `prepare`. Cetus takes it by mutable reference, Bluefin
-  and Aftermath by immutable reference; `new` takes it by value afterwards.
-- Choosing a Cetus tick spacing Cetus does not register, or a Bluefin tier outside its bounds:
-  creation aborts, and the tier can never change after creation.
+- Passing the `TreasuryCap` by value to the venue's `prepare`: it takes the cap by reference;
+  `new` takes it by value afterwards.
 - An early close needs a hard cap with `closes_when_filled`. A sale without a hard cap always
   runs to `end_ms`, even when it reached its raise on day one.
 - Every commit returns a coin. Transfer it back to the sender, even when it is zero.
@@ -1296,21 +1144,10 @@ it. Common ones by flow (module `blast_presale` unless named):
 - A keeper PTB of `settle` then `migrate` aborts as a whole when the sale is underfunded
   (`settle` cancels, then `migrate` hits `blast_presale::errors::EInvalidLifecycle`). Compare `total_commitments` with
   `raise_target` first and send `settle` alone when it falls short.
-- Calling `blast_presale::blast_presale::migrate` directly: its `Migration` must be redeemed by the
-  venue. Call the venue's `migrate`, which calls it.
+- `blast_presale::blast_presale::migrate` returns a `Migration` that must be redeemed by the sale's
+  venue in the same PTB: pass it to that venue's `migrate`.
 - A venue missing from the vault's `VaultRegistry` cannot migrate even though `CreationPolicy`
   admitted it at creation.
-- Cetus calls need `CoinA`/`CoinB` in Cetus's order, both for `migrate` and for the pool type in
-  `collect_fees`. Bluefin always has Meme as coin A. Aftermath takes `<Lp, Meme, Quote>` and
-  orders the coins itself.
-- Bluefin migration needs a `Coin<SUI>` of exactly Bluefin's current pool-creation fee.
-- An Aftermath sale needs a fresh LP coin published before creation, whose `CreatePoolCapV2` goes
-  to `blast_presale::aftermath::prepare`. `prepare` cannot check the capability against `Lp`, so
-  verify the capability's coin before listing the sale. Its DAO fees are not in a position: they
-  sit as coins at the vault's address until someone lists them in
-  `blast_presale::aftermath::collect_fees`.
-- Routing LP fees to auto-LP or burn on a presale vault: until shared venues that compound and
-  buy back ship, auto-LP balances and burn Quote only accrue in the vault.
 - Partnered sales and vaults hold Blast's fees until the pay calls run. Add
   `blast_presale::blast_presale::pay_protocol_fees_with_partner` after migration and
   `blast_vault::vault::pay_protocol_fees_with_partner` after each collection.
@@ -1341,7 +1178,7 @@ and passes it to `blast_presale::blast_presale::new`; the sale records the witne
 sale's `Migration` (`blast_core::errors::EWrongVenue` otherwise); the venue receives the LP's
 `Balance<SaleToken>` and `Balance<Quote>` and the `VaultTerms`, and must put the balances into its
 pool in the same call. `blast_presale::blast_presale::migrate` pays Blast, raise recipients, and
-token recipients exactly as for the package's own venues. Blast must first admit the witness with
+token recipients exactly as for every other venue. Blast must first admit the witness with
 `creation_policy::schedule_venue`; removing it later never blocks existing sales. A venue creates a
 vault only if the vault's `VaultRegistry` admits it; a vendor sale without a vault has no Blast LP
 fees, no holder-reward rounds, and no owner claims. Every other sale rule (eligibility, claims,
@@ -1447,15 +1284,16 @@ started the sale, at any time until the sale is cancelled. From the LP deadline 
 liquidity_window_ms`, at least 7 days) anyone may call `blast_presale::blast_presale::cancel_unlaunched` instead,
 which makes every commitment fully refundable.
 
-**What is the PTB to start a sale on Cetus?** `blast_presale::cetus::prepare` with the
+**What is the PTB to start a sale on Cetus?** `blast_migrators::cetus::prepare` with the
 `TreasuryCap` by mutable reference (returns the `VenueTicket`), `blast_presale::blast_presale::new`
 with the `TreasuryCap` by value and the ticket, the setters, `blast_presale::blast_presale::finalize`,
 `blast_presale::blast_presale::share`, and a transfer of the `PresaleCap`, in that order.
 
 **What does Blast charge?** A snapshot, taken at creation, of a raise rate, a token rate, and two
-LP-fee rates. The raise and token fees are paid at migration to the `FeePolicy` destination; the
-LP-fee rates pass to the vault, which takes them at each fee collection, rounded up, for the core
-`Treasury`. Nothing is charged on commitments, refunds, or failed sales.
+LP-fee rates. The raise and token fees are paid at migration to the core `Treasury` (or held for a
+partnered sale's pay call); the LP-fee rates pass to the vault, which takes them at each fee
+collection, rounded up, for the same `Treasury`. Nothing is charged on commitments, refunds, or
+failed sales.
 
 **How does the creator get its LP fees and the migration residuals?** Through the vault's fee
 split: an address route is paid at each collection, and an owner route accrues. The `PresaleCap`
@@ -1465,8 +1303,8 @@ the same proof with `blast_vault::vault::schedule_fee_split` to change the split
 
 **Can Blast or the creator change a sale after it opens?** The creator cannot. Blast's presale
 `FeeAdmin` can change the sale's four rates only before `start_ms` (raising one only in its
-creation transaction), and `TreasuryAdmin` can redirect the raise and token fee destination after
-its notice. Windows, recipients and eligibility never change. After migration, Blast's per-vault
+creation transaction), and the core `TreasuryAdmin` can redirect every Blast fee after the
+treasury's notice. Windows, recipients and eligibility never change. After migration, Blast's per-vault
 LP share changes only through the vault's own 48-hour delayed call.
 
 **How is an allowlist leaf built?** `blake2b256(0x00 || "blast-presale-v1" || u64 LE index ||
@@ -1476,10 +1314,8 @@ LP share changes only through the vault's own 48-hour delayed call.
 
 **Where is the liquidity, and can anyone withdraw it?** A Cetus position is burned through
 Cetus LP-burn and the vault keeps only its fee-claiming proof. A Bluefin position sits in the
-vault under the venue's key, which only borrows it to collect fees and never removes it. An
-Aftermath sale's LP coin, the pool's whole liquidity, is sent to `0x0`, on the package's own route
-and the vendor's alike, and the package's vault keeps the DAO-fee owner cap as its position, which
-no function removes.
+vault under the venue's key, which only borrows it to collect fees and never removes it. The
+Aftermath DAO-pool vendor sends its LP coin, the pool's whole liquidity, to `0x0`.
 
 ## Launchpad
 
@@ -2946,13 +2782,14 @@ off, Blast proposes and then applies a zero share; products that name it keep
 working and simply pay it nothing.
 
 **Product acceptance.** Each product accepts a partner in its own shared config,
-as a dynamic field keyed by `PartnerKey(partner_id)` whose `u64` value is the
-time the partner stops being accepted (`u64::MAX` until removed):
+mapping the partner's ID to the time it stops being accepted (`u64::MAX` until
+removed): a dynamic field keyed by `PartnerKey(partner_id)`, or, for the presale,
+the `acceptance_ends_at_ms` table of a `blast_partners::partner_list::PartnerList`:
 
 | Product | Config object and key | Admin |
 | --- | --- | --- |
 | Boosts | `blast_boosts_aftermath::blast_boosts_aftermath::Protocol`, `blast_boosts_aftermath::blast_boosts_aftermath::PartnerKey` | `RiskAdmin` role (`operations::add_partner`, `operations::remove_partner`) |
-| Presale | `creation_policy::CreationPolicy`, `creation_policy::PartnerKey` | presale `FeeAdmin` role (`creation_policy::add_partner`, `creation_policy::remove_partner`) |
+| Presale | `creation_policy::CreationPolicy`, its `partners` `blast_partners::partner_list::PartnerList` | core `FeeAdmin` role (`creation_policy::add_partner`, `creation_policy::remove_partner`) |
 
 Adding applies at once (and cancels a pending removal). Removing sets the value
 to `now` plus `blast_partners::blast_partners::delay_ms()`: the partner stays
@@ -3155,10 +2992,9 @@ Every event is emitted directly (no envelope).
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
   its own event in the same transaction:
   `blast_boosts_aftermath::events::PartnerFeePaid` (Boosts),
-  `blast_core::blast_core_events::ProtocolFeesPaid` (launch claims and LP vaults),
-  and `blast_presale::blast_presale::ProtocolFeesPaid` (presale raise fee).
+  `blast_core::blast_core_events::ProtocolFeesPaid` (launch claims, LP vaults and presale fees).
   `blast_fun::events::LaunchCreated` and
-  `blast_presale::blast_presale::PresaleOpened` record the partner a launch or
+  `blast_presale::events::PresaleOpened` record the partner a launch or
   sale names.
 
 ### Aborts
@@ -5084,8 +4920,8 @@ pending admission or change to zero.
   sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
   0x2::derived_object::DerivedObjectKey<blast_vault::vault::VaultKey>, bcs(key))`. The launchpad's
   issuer is `blast_fun::blast_fun::PackageWitness` and the presale's
-  `blast_presale::blast_presale::PackageWitness`. Each sale has exactly one vault; a second
-  `blast_vault::vault::new` for the same terms aborts in `sui::derived_object`.
+  `blast_presale::blast_presale_package::PackageWitness`. Each sale has exactly one vault; a
+  second `blast_vault::vault::new` for the same terms aborts in `sui::derived_object`.
 
 - `blast_vault::vault::pool_id`: the pool the vault's position belongs to.
 - The venue's positions are dynamic object fields of the vault, under the venue's
@@ -5741,163 +5577,45 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 | Code | Constant | Meaning |
 | --- | --- | --- |
-| 0 | `EInvalidPauseBits` | Select nonzero pause bits supported by this package. |
-| 1 | `EPauseUnchanged` | The requested pause change must alter the active bits. |
-| 2 | `EPaused` | This operation is paused. |
-| 3 | `EWrongUpgradeAction` | The ready action must match the requested upgrade digest or immutability. |
-| 4 | `EInvalidDigest` | A package digest must contain 32 bytes. |
-| 5 | `EUnguardedNotice` | Unpausing needs every policy notice nonzero, with no pending zero notice or admission. |
-| 6 | `EAllowanceUnchanged` | An allowlist update must change whether the type or partner is allowed. |
-| 7 | `EQuoteNotAllowed` | This Quote type is not allowed for new presales. |
-| 8 | `EVenueNotAllowed` | This venue is not allowed for new presales. |
-| 9 | `EInvalidVenue` | A venue must be a non-framework struct, never a primitive, vector, or framework type any caller can construct. |
-| 10 | `EPartnerNotAccepted` | New presales may not name this partner. |
-| 11 | `EInvalidFees` | Blast's raise and token shares must be at most 1,000 BPS and each LP fee at most 3,000. |
-| 12 | `EInvalidDestination` | The protocol destination must be a nonzero address. |
-| 13 | `EInvalidAssetPair` | The sale token and Quote type must differ. |
-| 14 | `EInvalidRaiseTarget` | The raise target must be positive. |
-| 15 | `EInvalidTokenAllocation` | The supply must be positive, and token allocations unique, positive, bounded, totalling exactly 10,000 BPS with Blast's share, and apportioning to positive amounts. |
-| 16 | `EInvalidWindow` | The commitment window must be positive, the liquidity window at least seven days, and both must end within u64 milliseconds. |
-| 17 | `EInvalidEligibilityPolicy` | The eligibility policy has an invalid cap, participant bound, root, or leaf count. |
-| 18 | `EInvalidLifecycle` | The presale is not in the lifecycle required by this operation. |
-| 19 | `EPresaleEnded` | The presale commitment window has ended. |
-| 20 | `EPresaleNotEnded` | The presale commitment window has not ended, and the sale cannot close early: its raise is not full under a hard cap that closes it when filled. |
-| 21 | `EZeroCommitment` | A presale commitment must be positive. |
-| 22 | `EWalletCapExceeded` | The wallet commitment exceeds its eligibility cap. |
-| 23 | `EParticipantCapacityReached` | The presale already contains its maximum number of participants. |
-| 24 | `EInvalidEligibilityProof` | The submitted wallet, cap, index, or proof does not match the allowlist. |
-| 25 | `EWrongEligibilityPolicy` | The commit function does not match the presale eligibility policy. |
-| 26 | `ETotalCommitmentOverflow` | Adding the commitment would overflow the presale total. |
-| 27 | `ENoCommitment` | The wallet has no undelivered presale commitment. |
-| 28 | `EWrongPresaleCap` | The creator capability belongs to a different presale. |
-| 29 | `ELiquidityDeadlineNotReached` | The deadline to cancel an unlaunched funded presale has not arrived. |
-| 30 | `EInitialSupplyNotZero` | The supplied SaleToken TreasuryCap must have zero total supply. |
-| 31 | `EBelowMinimumCommitment` | The wallet's total commitment is below the sale's minimum commitment. |
-| 32 | `EUnreachableRaise` | The minimum commitment times the slots held to it, the participant bound of an open policy or the open-to-anyone phase slots beyond any allowlist, must reach the raise target. |
-| 33 | `EUnseedablePrice` | The raise and LP-token allocation give a seed price the venues cannot pool. |
-| 34 | `EInvalidUncappedPhase` | An uncapped phase must start inside the window, and an open-to-anyone phase needs a positive minimum and a participant bound between the policy's and 65,536. |
-| 35 | `EUncappedPhaseNotOpen` | The presale has no uncapped phase open to any wallet, or it has not started. |
-| 36 | `EPresaleFilled` | The presale has already reached its raise under its hard cap. |
-| 37 | `EInvalidRaiseAllocation` | Raise allocations must be unique, positive, bounded, leave the LP a share after Blast's, and apportion to positive amounts. |
-| 38 | `EInvalidVestingTerms` | Vesting needs a positive period and period count, a cliff within its duration, and a duration of at most 2^63 milliseconds. |
-| 39 | `EPresaleNotStarted` | The presale commitment window has not started. |
-| 40 | `EPresaleStarted` | A presale's Blast rates can change only before its commitment window starts. |
-| 41 | `EProtocolFeesUnchanged` | A presale fee update must change its stored rates. |
-| 42 | `EWrongPartner` | The partner is not the one the presale named at creation. |
-| 43 | `ENoPartnerPayout` | The presale holds no partner payout: it has not migrated, or its partner was already paid. |
-| 44 | `EInvalidHardCap` | A hard cap must start inside the commitment window. |
-| 45 | `EMissingSetting` | A presale needs its eligibility policy and LP-fee split set before it is finalized. |
-| 46 | `ESaleTokenNotUnregulated` | The sale currency must be confirmed unregulated; regulated and unknown legacy currencies are not allowed. |
-| 47 | `EAboveFeePolicy` | A sale fee override cannot exceed the currently applied fee policy. |
-| 48 | `EProtocolFeesIncreased` | A shared sale's fee override may only keep or lower each of its rates. |
-| 49 | `EInvalidCoinOrder` | CoinA and CoinB must follow the Cetus coin order. |
-| 50 | `EPositionPoolMismatch` | Pool must be the one holding the position. |
-| 51 | `EWrongCoinPair` | CoinA and CoinB must be exactly the presale's Meme and Quote. |
-| 52 | `EInvalidTier` | Bluefin tier needs tick spacing 1..=400 and fee rate 1..=20,000. |
-| 53 | `ESymbolTooLong` | The Meme symbol must be at most 32 bytes for Bluefin migration. |
-| 54 | `EPoolMismatch` | The Aftermath pool must hold every sale token and Quote unit the presale released. |
-| 55 | `EDaoFeePoolMismatch` | The DAO-fee pool must charge this module's fee and pay the vault. |
-| 56 | `EInvalidDaoFee` | Aftermath DAO fee needs 1..=10,000 basis points. |
-
-### `blast_presale::aftermath`
-
-Aftermath sale-token preparation, permissionless migration into `blast_vault` custody, and LP-fee collection for presales.  A funded sale migrates into a fresh 50/50 Aftermath weighted pool wrapped in Aftermath's DAO-fee pool. Aftermath pays the DAO fee of every swap, deposit, and withdrawal as separate coins sent straight to the fee recipient address, so `migrate` builds the sale's vault first and names its address as that recipient: the fee coins land owned by the vault object, and anyone may then receive them into the vault, where they are split like any collection. The LP coin, the whole pool liquidity, is sent to `0x0`, so the pool's liquidity is locked for good; the vault's position is the DAO-fee pool's `OwnerCap`, which could otherwise change the fee or redirect it, under the venue's sealed position key with no removal path.  Aftermath creates a pool only from a `CreatePoolCapV2` minted by a freshly published LP coin, so the creator publishes one per sale and hands its capability to `prepare`, which keeps it under the sale token's and the LP coin's types; only that sale's migration, naming the same LP coin, consumes it (ADR 0137 supersedes ADR 0116's `FinalizeTicket`).  Aftermath's registry rejects a second pool with the same coins, weights, flatness, and fees, but no sale token circulates before migration, so nobody can create the sale's pool first and the migration creates it with the module's fixed terms.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/aftermath.move
-
-#### Types
-
-```move
-/// The Aftermath venue's sealed witness: it issues tickets, redeems migrations, and keys the
-/// DAO-fee pool owner cap in the vault, so the creation policy and the vault registry admit this
-/// one type.
-public struct Venue() has drop;
-
-/// Key for a sale token's reserved Aftermath pool-creation capability, minted by the LP coin `Lp`.
-public struct CreatePoolCapKey<phantom Lp, phantom Meme>() has copy, drop, store;
-```
-
-#### Functions
-
-```move
-/// Prepares `Meme` for a presale in `Quote` that migrates to an Aftermath pool charging
-/// `dao_fee_bps` of every swap, deposit, and withdrawal to the sale's vault, and returns the
-/// ticket `blast_presale::new` redeems. It keeps `create_pool_cap`, which the fresh LP coin `Lp`
-/// minted, for the sale's migration. The fee is the sale's pool tier, recorded under its token's
-/// type with no tick spacing; the pool's weights and base fee are this module's constants. The
-/// treasury capability proves the caller controls the token, so no one else can reserve it first.
-public fun prepare<Lp, Meme, Quote>(
-    package_version: &blast_presale_package::PackageVersion,
-    venue_config: &mut venue_config::VenueConfig,
-    _: &TreasuryCap<Meme>,
-    create_pool_cap: pool::CreatePoolCapV2,
-    dao_fee_bps: u16,
-): blast_core::migration::VenueTicket<Meme, Quote>
-
-/// Anyone may migrate a funded presale into its reserved Aftermath pool, consuming the capability
-/// `prepare` kept for the LP coin `Lp`: it seeds a 50/50 pool with all of the sale's LP tokens and
-/// Quote, builds the sale's vault, wraps the pool in a DAO-fee pool paying the vault at the fee
-/// `prepare` recorded, shares that pool, locks the pool's owner cap in the vault as its position,
-/// shares the vault, and sends the LP coin to `0x0`.
-public fun migrate<Lp, Meme, Quote>(
-    sale: &mut blast_presale::Presale<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    fee_policy: &fee_policy::FeePolicy,
-    venue_config: &mut venue_config::VenueConfig,
-    pool_registry: &mut pool_registry::PoolRegistry,
-    dao_fee_version: &version::Version,
-    registry: &mut blast_vault::blast_vault_package::VaultRegistry,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    treasury: &blast_core::blast_treasury::Treasury,
-    clock: &Clock,
-    ctx: &mut TxContext,
-)
-
-/// Anyone may receive the DAO fees Aftermath sent to an Aftermath vault's address, one
-/// `Receiving` per fee coin, and split them through the vault. An empty collection is valid.
-/// Another venue's vault aborts in the vault: its fees settle only through its own venue.
-public fun collect_fees<Meme, Quote>(
-    vault: &mut blast_vault::vault::Vault<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    treasury: &blast_core::blast_treasury::Treasury,
-    currency: &mut Currency<Meme>,
-    meme_fees: vector<transfer::Receiving<Coin<Meme>>>,
-    quote_fees: vector<transfer::Receiving<Coin<Quote>>>,
-    ctx: &mut TxContext,
-)
-
-/// Anyone may activate an Aftermath vault's ready split. Aftermath pays fees as separate coins:
-/// unreceived coins follow the applied split when they are later collected.
-public fun apply_fee_split<Meme, Quote>(
-    vault: &mut blast_vault::vault::Vault<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    clock: &Clock,
-)
-```
-
-#### Events
-
-```move
-/// `prepare` reserved the `Meme` sale's Aftermath pool creation for the LP coin `Lp` with the
-/// capability `create_pool_cap_id`, which the sale's migration consumes.
-public struct PoolCreationReserved<phantom Lp, phantom Meme, phantom Quote> has copy, drop {
-    create_pool_cap_id: ID,
-}
-
-/// A sale migrated into the Aftermath pool `pool_id`, which traders reach through the shared
-/// DAO-fee pool `dao_fee_pool_id` paying its fees to the vault `vault_id`. The vault holds that
-/// pool's owner cap `owner_cap_id` as its position, and the LP coin `lp_coin_id`, the whole pool
-/// liquidity, is owned by `0x0`.
-public struct DaoFeePoolCreated<phantom Lp, phantom Meme, phantom Quote> has copy, drop {
-    vault_id: ID,
-    pool_id: ID,
-    dao_fee_pool_id: ID,
-    owner_cap_id: ID,
-    lp_coin_id: ID,
-}
-```
+| 0 | `EUnguardedNotice` | Unpausing needs every policy notice nonzero, with no pending zero notice or admission. |
+| 1 | `EAllowanceUnchanged` | An allowlist update must change whether the type or partner is allowed. |
+| 2 | `EQuoteNotAllowed` | This Quote type is not allowed for new presales. |
+| 3 | `EVenueNotAllowed` | This venue is not allowed for new presales. |
+| 4 | `EInvalidVenue` | A venue must be a non-framework struct, never a primitive, vector, or framework type any caller can construct. |
+| 5 | `EInvalidFees` | Blast's raise and token shares must be at most 1,000 BPS and each LP fee at most 3,000. |
+| 6 | `EInvalidAssetPair` | The sale token and Quote type must differ. |
+| 7 | `EInvalidRaiseTarget` | The raise target must be positive. |
+| 8 | `EInvalidTokenAllocation` | The supply must be positive, and token allocations unique, positive, bounded, totalling exactly 10,000 BPS with Blast's share, and apportioning to positive amounts. |
+| 9 | `EInvalidWindow` | The commitment window must be positive, the liquidity window at least seven days, and both must end within u64 milliseconds. |
+| 10 | `EInvalidEligibilityPolicy` | The eligibility policy has an invalid cap, participant bound, root, or leaf count. |
+| 11 | `EInvalidLifecycle` | The presale is not in the lifecycle required by this operation. |
+| 12 | `EPresaleEnded` | The presale commitment window has ended. |
+| 13 | `EPresaleNotEnded` | The presale commitment window has not ended, and the sale cannot close early: its raise is not full under a hard cap that closes it when filled. |
+| 14 | `EZeroCommitment` | A presale commitment must be positive. |
+| 15 | `EWalletCapExceeded` | The wallet commitment exceeds its eligibility cap. |
+| 16 | `EParticipantCapacityReached` | The presale already contains its maximum number of participants. |
+| 17 | `EInvalidEligibilityProof` | The submitted wallet, cap, index, or proof does not match the allowlist. |
+| 18 | `EWrongEligibilityPolicy` | The commit function does not match the presale eligibility policy. |
+| 19 | `ETotalCommitmentOverflow` | Adding the commitment would overflow the presale total. |
+| 20 | `ENoCommitment` | The wallet has no undelivered presale commitment. |
+| 21 | `EWrongPresaleCap` | The creator capability belongs to a different presale. |
+| 22 | `ELiquidityDeadlineNotReached` | The deadline to cancel an unlaunched funded presale has not arrived. |
+| 23 | `EInitialSupplyNotZero` | The supplied SaleToken TreasuryCap must have zero total supply. |
+| 24 | `EBelowMinimumCommitment` | The wallet's total commitment is below the sale's minimum commitment. |
+| 25 | `EUnreachableRaise` | The minimum commitment times the slots held to it, the participant bound of an open policy or the open-to-anyone phase slots beyond any allowlist, must reach the raise target. |
+| 26 | `EUnseedablePrice` | The raise and LP-token allocation give a seed price the venues cannot pool. |
+| 27 | `EInvalidUncappedPhase` | An uncapped phase must start inside the window, and an open-to-anyone phase needs a positive minimum and a participant bound between the policy's and 65,536. |
+| 28 | `EUncappedPhaseNotOpen` | The presale has no uncapped phase open to any wallet, or it has not started. |
+| 29 | `EPresaleFilled` | The presale has already reached its raise under its hard cap. |
+| 30 | `EInvalidRaiseAllocation` | Raise allocations must be unique, positive, bounded, leave the LP a share after Blast's, and apportion to positive amounts. |
+| 31 | `EPresaleNotStarted` | The presale commitment window has not started. |
+| 32 | `EPresaleStarted` | A presale's Blast rates can change only before its commitment window starts. |
+| 33 | `EProtocolFeesUnchanged` | A presale fee update must change its stored rates. |
+| 34 | `EInvalidHardCap` | A hard cap must start inside the commitment window. |
+| 35 | `EMissingSetting` | A presale needs its eligibility policy and LP-fee split set before it is finalized. |
+| 36 | `ESaleTokenNotUnregulated` | The sale currency must be confirmed unregulated; regulated and unknown legacy currencies are not allowed. |
+| 37 | `EAboveFeePolicy` | A sale fee override cannot exceed the currently applied fee policy. |
+| 38 | `EProtocolFeesIncreased` | A shared sale's fee override may only keep or lower each of its rates. |
 
 ### `blast_presale::blast_presale`
 
@@ -5916,10 +5634,6 @@ public struct PresaleRegistry has key {
 
 /// Derives the one presale of `SaleToken` from the registry.
 public struct PresaleKey<phantom SaleToken>() has copy, drop, store;
-
-/// The presale's package witness: it seals each sale's migration, vault terms, and owner proofs,
-/// and only this module constructs it.
-public struct PackageWitness() has drop;
 
 /// Who may commit and the maximum Quote each wallet may commit.
 ///
@@ -5987,29 +5701,18 @@ public struct PresaleCap has key, store {
     presale_id: ID,
 }
 
-/// Linear vesting from the schedule's start, migration for a recipient share and the claim for a
-/// participant: nothing before `cliff_ms`, then the vested amount steps up every `period_ms` until
-/// all `periods` have elapsed.
-public struct VestingTerms has copy, drop, store {
-    cliff_ms: u64,
-    period_ms: u64,
-    periods: u64,
-}
-
 /// One recipient's share, in BPS, of the token supply or of the raise, paid at migration or
-/// vested from it.
+/// vested from it as its `blast_core::payout::Recipient` says.
 public struct RecipientShare has copy, drop, store {
-    recipient: address,
+    recipient: blast_core::payout::Recipient,
     bps: blast_core::bps::Bps,
-    vesting: Option<VestingTerms>,
 }
 
 /// The exact token or Quote amount one recipient receives at migration, apportioned from its
-/// `RecipientShare` when the presale is created, and the terms it vests under, if any.
+/// `RecipientShare` when the presale is created.
 public struct RecipientPayout has copy, drop, store {
-    recipient: address,
+    recipient: blast_core::payout::Recipient,
     amount: u64,
-    vesting: Option<VestingTerms>,
 }
 
 /// Dynamic-field name for one wallet's undelivered commitment.
@@ -6035,7 +5738,7 @@ public struct PresaleInitializer<phantom SaleToken, phantom Quote> {
     token_allocation_bps: blast_core::bps::Bps,
     liquidity_token_allocation_bps: blast_core::bps::Bps,
     recipient_allocations: vector<RecipientShare>,
-    participant_vesting: Option<VestingTerms>,
+    participant_vesting: Option<blast_core::payout::VestingTerms>,
     raise_target: u64,
     raise_allocations: vector<RecipientShare>,
     duration_ms: u64,
@@ -6053,9 +5756,10 @@ public struct PresaleInitializer<phantom SaleToken, phantom Quote> {
 /// Presale, LP, Blast, and additional recipient allocations stay escrowed until
 /// a funded migration atomically releases them. Blast's rates are snapshotted
 /// at creation, Blast's `FeeAdmin` may change them until the window starts, and its
-/// fees are paid only on migration, or, when the sale names a Blast partner,
-/// held from migration until `pay_protocol_fees_with_partner` pays the partner its cut of Blast's
-/// raise fee. If the raise is missed, every commitment
+/// fees move into the sale's protocol-fee ledger on migration, which pays them to the treasury at
+/// once, or, when the sale names a Blast partner, holds them until
+/// `pay_protocol_fees_with_partner` pays the partner its cut of each and the treasury the rest.
+/// If the raise is missed, every commitment
 /// is refunded. Anyone may migrate a funded sale until it is cancelled; once LP
 /// is still unmigrated at its deadline, anyone may cancel it so every
 /// commitment becomes refundable. Under participant vesting, each claim locks the
@@ -6085,7 +5789,7 @@ public struct Presale<phantom SaleToken, phantom Quote> has key {
     participants: u64,
     quote: Balance<Quote>,
     token_allocation: u64,
-    participant_vesting: Option<VestingTerms>,
+    participant_vesting: Option<blast_core::payout::VestingTerms>,
     sale_tokens: Balance<SaleToken>,
     liquidity_tokens: Balance<SaleToken>,
     recipient_payouts: vector<RecipientPayout>,
@@ -6094,12 +5798,11 @@ public struct Presale<phantom SaleToken, phantom Quote> has key {
     protocol_fees: fee_policy::ProtocolFees,
     protocol_quote: u64,
     protocol_tokens: Balance<SaleToken>,
-    /// The Blast partner named at creation, paid its cut of Blast's raise fee. It never changes
-    /// once the sale is shared.
+    /// The Blast partner named at creation, paid its cut of Blast's fees. It never changes once
+    /// the sale is shared.
     partner_id: Option<ID>,
-    /// Blast's raise fee, held from a partnered sale's migration until
-    /// `pay_protocol_fees_with_partner` splits it.
-    unpaid_protocol_quote: Option<Balance<Quote>>,
+    /// Blast's raise and token fees from migration until paid; bound to `partner_id`.
+    fee_ledger: blast_core::protocol_fees::Ledger<SaleToken, Quote>,
 }
 ```
 
@@ -6128,26 +5831,13 @@ public fun uncapped_for_anyone(
     min_commitment: u64,
 ): UncappedPhase
 
-/// One recipient's share in BPS. Presale creation validates each list of shares under that
-/// list's own rules and error.
-public fun recipient_share(recipient: address, bps: blast_core::bps::Bps): RecipientShare
-
-/// One recipient's token or raise share in BPS, locked at migration in an irrevocable linear
-/// schedule under `vesting` instead of paid out.
-public fun vested_recipient_share(
-    recipient: address,
+/// One recipient's share in BPS of the supply or the raise, paid or vested at migration as
+/// `recipient` says. Presale creation validates each list of shares under that list's own rules
+/// and error.
+public fun recipient_share(
+    recipient: blast_core::payout::Recipient,
     bps: blast_core::bps::Bps,
-    vesting: VestingTerms,
 ): RecipientShare
-
-/// Linear vesting terms. The steps and cliff must fit in `constants::max_vesting_duration_ms!()`,
-/// so migration and claims can always create the schedule. Product limits on the duration belong
-/// to creation tooling.
-public fun vesting_terms(
-    vesting_cliff_delay_ms: u64,
-    vesting_period_duration_ms: u64,
-    periods: u64,
-): VestingTerms
 
 /// Starts a presale of `SaleToken` raising `Quote` whose liquidity migrates to the venue that
 /// issued `venue_ticket` for the pair, and snapshots Blast's rates. The venue keeps the pool terms,
@@ -6158,7 +5848,7 @@ public fun vesting_terms(
 /// which venues may open sales; the sale's migration hand-off is then redeemable only by it.
 public fun new<SaleToken, Quote>(
     treasury_cap: TreasuryCap<SaleToken>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     venue_ticket: blast_core::migration::VenueTicket<SaleToken, Quote>,
     creation_policy: &creation_policy::CreationPolicy,
     fee_policy: &fee_policy::FeePolicy,
@@ -6168,7 +5858,7 @@ public fun new<SaleToken, Quote>(
 /// fixed.
 public fun set_supply<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     token_supply: u64,
     burnable: bool,
 )
@@ -6177,25 +5867,25 @@ public fun set_supply<SaleToken, Quote>(
 /// rate the shares must total exactly 10,000 BPS.
 public fun set_token_allocations<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     token_allocation_bps: blast_core::bps::Bps,
     liquidity_token_allocation_bps: blast_core::bps::Bps,
     recipient_allocations: vector<RecipientShare>,
 )
 
-/// Locks each participant's claimed tokens in its own schedule under `vesting`, starting at its
-/// claim, instead of paying them out. Without it, claims pay tokens out at once.
+/// Locks each participant's claimed tokens in its own schedule under `vesting_terms`, starting at
+/// its claim, instead of paying them out. Without it, claims pay tokens out at once.
 public fun set_participant_vesting<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    vesting: VestingTerms,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    vesting_terms: blast_core::payout::VestingTerms,
 )
 
 /// Sets the Quote the sale raises and each recipient's share of it, paid at migration. The LP
 /// keeps what Blast's and the recipients' shares leave.
 public fun set_raise<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     raise_target: u64,
     raise_allocations: vector<RecipientShare>,
 )
@@ -6204,7 +5894,7 @@ public fun set_raise<SaleToken, Quote>(
 /// migrate a funded sale before anyone may cancel it: at least seven days.
 public fun set_windows<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     commitment_duration_ms: u64,
     liquidity_window_duration_ms: u64,
 )
@@ -6212,14 +5902,14 @@ public fun set_windows<SaleToken, Quote>(
 /// Sets who may commit and each wallet's cap.
 public fun set_eligibility<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     eligibility: EligibilityPolicy,
 )
 
 /// Adds a closing phase that lifts wallet caps. Without one, caps hold for the whole window.
 public fun set_uncapped_phase<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     uncapped: UncappedPhase,
 )
 
@@ -6230,7 +5920,7 @@ public fun set_uncapped_phase<SaleToken, Quote>(
 /// for the whole window and always runs to its end.
 public fun set_hard_cap<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     start_delay_ms: u64,
     closes_when_filled: bool,
 )
@@ -6239,18 +5929,17 @@ public fun set_hard_cap<SaleToken, Quote>(
 /// routes, including the sale owner, auto-LP, holder rewards, and burn.
 public fun set_fee_split<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     fee_split: blast_core::fee_split::FeeSplit,
 )
 
 /// Names the sale's Blast partner, one the `CreationPolicy` lets new presales name; from
-/// `finalize` on it is the sale's partner for good. The partner earns its cut of Blast's raise
-/// fee, which migration holds until `pay_protocol_fees_with_partner` pays it, and its vault inherits
-/// the partner, which then earns its cut of Blast's LP fees (ADR 0107). It never shares Blast's
-/// token fee.
+/// `finalize` on it is the sale's partner for good. The partner earns its cut of Blast's raise and
+/// token fees, which migration holds until `pay_protocol_fees_with_partner` pays them, and its
+/// vault inherits the partner, which then earns its cut of Blast's LP fees (ADRs 0107, 0137).
 public fun set_partner<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     creation_policy: &creation_policy::CreationPolicy,
     partner: &blast_partners::blast_partners::Partner,
     clock: &Clock,
@@ -6265,7 +5954,7 @@ public fun venue<SaleToken, Quote>(self: &PresaleInitializer<SaleToken, Quote>):
 /// irreversibly makes it fixed or burn-only before returning the presale for `share`.
 public fun finalize<SaleToken, Quote>(
     self: PresaleInitializer<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     registry: &mut PresaleRegistry,
     currency: &mut Currency<SaleToken>,
     ctx: &mut TxContext,
@@ -6276,7 +5965,7 @@ public fun finalize<SaleToken, Quote>(
 /// then Blast's `FeeAdmin` may change the sale's Blast rates.
 public fun share<SaleToken, Quote>(
     self: Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     commitment_starts_at_ms: u64,
     clock: &Clock,
 )
@@ -6289,8 +5978,8 @@ public fun share<SaleToken, Quote>(
 /// rounded down; an unchanged rate keeps its amount, and every recipient keeps its amount.
 public fun set_protocol_fees<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::FeeAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::FeeAdmin>,
     fee_policy: &fee_policy::FeePolicy,
     raise_bps: blast_core::bps::Bps,
     token_bps: blast_core::bps::Bps,
@@ -6304,7 +5993,7 @@ public fun set_protocol_fees<SaleToken, Quote>(
 /// accept (a zero coin otherwise).
 public fun commit_open<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     quote_in: Coin<Quote>,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -6314,7 +6003,7 @@ public fun commit_open<SaleToken, Quote>(
 /// returning whatever a hard cap could not accept.
 public fun commit_allowlisted<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     quote_in: Coin<Quote>,
     index: u64,
     wallet_cap: u64,
@@ -6327,7 +6016,7 @@ public fun commit_allowlisted<SaleToken, Quote>(
 /// returning whatever a hard cap could not accept.
 public fun commit_uncapped<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     quote_in: Coin<Quote>,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -6338,7 +6027,7 @@ public fun commit_uncapped<SaleToken, Quote>(
 /// from now. Underfunded sales become fully refundable. Anyone may settle.
 public fun settle<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 )
 
@@ -6346,7 +6035,7 @@ public fun settle<SaleToken, Quote>(
 /// Quote for refunds. Anyone may cancel.
 public fun cancel_unlaunched<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 )
 
@@ -6357,24 +6046,25 @@ public fun cancel_unlaunched<SaleToken, Quote>(
 /// claim receives the bounded integer-rounding remainder.
 public fun claim<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     participant: address,
     clock: &Clock,
     ctx: &mut TxContext,
 )
 
-/// Pays Blast and the raise recipients their shares and releases every token
-/// recipient's tokens at once, locking each vesting share in its own shared irrevocable
-/// schedule starting now, then returns the hand-off only the stored venue can redeem: the rest
-/// of the raise, the LP-token allocation, and the vault's terms, with the sale's LP-fee split,
-/// Blast's snapshotted LP-fee rates, its partner, and the migration residuals kept for the owner.
-/// A sale naming a Blast partner holds Blast's fees instead, for `pay_protocol_fees_with_partner`.
-/// Anyone may call it until the sale is cancelled; an unredeemed hand-off aborts the transaction,
-/// so the venue's pool creation stays atomic with this state transition.
+/// Pays Blast's raise and token fees to `treasury` and the raise recipients their shares, and
+/// releases every token recipient's tokens at once, locking each vesting share in its own shared
+/// irrevocable schedule starting now, then returns the hand-off only the stored venue can redeem:
+/// the rest of the raise, the LP-token allocation, and the vault's terms, with the sale's LP-fee
+/// split, Blast's snapshotted LP-fee rates, its partner, and the migration residuals kept for the
+/// owner. A sale naming a Blast partner holds Blast's fees in its ledger instead, for
+/// `pay_protocol_fees_with_partner`. Anyone may call it until the sale is cancelled; an unredeemed
+/// hand-off aborts the transaction, so the venue's pool creation stays atomic with this state
+/// transition.
 public fun migrate<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    fee_policy: &fee_policy::FeePolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    treasury: &blast_core::blast_treasury::Treasury,
     clock: &Clock,
     ctx: &mut TxContext,
 ): blast_core::migration::Migration<SaleToken, Quote>
@@ -6382,18 +6072,18 @@ public fun migrate<SaleToken, Quote>(
 /// Proves to the sale's vault that the caller holds the sale's creator capability.
 public fun prove_owner<SaleToken, Quote>(
     self: &Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     cap: &PresaleCap,
 ): blast_core::owner_proof::OwnerProof
 
-/// Pays a migrated sale's Blast partner its cut of Blast's raise fee, rounded down so Blast keeps
-/// the remainder, and pays Blast the rest of it and its token fee at the `FeePolicy`'s current
-/// destination. The cut is the partner's `blast_partners` applied rate. Anyone may call it
-/// once after migration: both recipients are fixed.
+/// Pays a migrated sale's Blast partner its cut of each of Blast's fees the migration held, rounded
+/// down so Blast keeps the remainder, and `treasury` the rest. The cut is the partner's
+/// `blast_partners` applied rate. Anyone may call it: both recipients are fixed, and a ledger with
+/// nothing held, before migration or once paid, sends nothing.
 public fun pay_protocol_fees_with_partner<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    fee_policy: &fee_policy::FeePolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    treasury: &blast_core::blast_treasury::Treasury,
     partner: &blast_partners::blast_partners::Partner,
     ctx: &mut TxContext,
 )
@@ -6413,16 +6103,16 @@ public struct PresaleCreated<phantom SaleToken, phantom Quote> has copy, drop {
     treasury_cap_id: ID,
     token_supply: u64,
     token_allocation_bps: u64,
-    participant_vesting: Option<VestingTerms>,
+    participant_vesting: Option<blast_core::payout::VestingTerms>,
     liquidity_token_allocation_bps: u64,
-    recipients: vector<address>,
+    /// Each token recipient, with the terms it vests under, if any, and its share.
+    recipients: vector<blast_core::payout::Recipient>,
     recipient_bps: vector<u64>,
-    recipient_vesting: vector<Option<VestingTerms>>,
     burnable: bool,
     raise_target: u64,
-    raise_recipients: vector<address>,
+    /// Each raise recipient, with the terms it vests under, if any, and its share.
+    raise_recipients: vector<blast_core::payout::Recipient>,
     raise_recipient_bps: vector<u64>,
-    raise_recipient_vesting: vector<Option<VestingTerms>>,
     duration_ms: u64,
     liquidity_window_ms: u64,
     eligibility: EligibilityPolicy,
@@ -6439,6 +6129,186 @@ public struct PresaleCreated<phantom SaleToken, phantom Quote> has copy, drop {
     protocol_quote: u64,
     protocol_tokens: u64,
 }
+```
+
+### `blast_presale::blast_presale_package`
+
+The presale's publication and the one constructor of its package witness.  Publication hands the deployer an owned `Publication<BLAST_PRESALE_PACKAGE>`, which `blast_admin::package_admin::wrap` turns into the shared `PackageAdmin<BLAST_PRESALE_PACKAGE>` and the shared `PackageVersion<BLAST_PRESALE_PACKAGE>`, fully paused. Pausing, upgrades, and immutability go through `blast_admin::package_admin` under the package-scoped roles `PauseAdmin<BLAST_PRESALE_PACKAGE>`, `UpgradeAdmin<BLAST_PRESALE_PACKAGE>`, and `CancelAdmin<BLAST_PRESALE_PACKAGE>`.  The fee and creation policies start with zero notices so Blast configures them while the package is paused; `creation_policy::unpause` refuses until every notice is guarded, then clears bits with the package witness. It lives beside the policies it reads because they name `BLAST_PRESALE_PACKAGE`, so this module cannot import them.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/blast_presale_package.move
+
+#### Types
+
+```move
+/// The package's one-time witness and the marker of its version, publication, and roles.
+public struct BLAST_PRESALE_PACKAGE() has drop;
+
+/// The presale's one package witness, pinned at publication. It seals each sale's protocol-fee
+/// ledger, migration, vault terms and owner proofs, and clears pause bits through the generic
+/// administration. Only this module constructs it, through the package-only `package_witness`;
+/// nothing stores it or returns it outside the package.
+public struct PackageWitness() has drop;
+```
+
+### `blast_presale::constants`
+
+Package-wide presale constants exposed as zero-cost macros. The basis-points denominator and Blast's LP-fee share maximum come from `blast_core::constants`.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/constants.move
+
+#### Constants
+
+- `generation: u64 = 1`: The package generation this bytecode serves.
+- `create_pause_bit: u8 = 1`: Stops presale creation and sharing.
+- `commit_pause_bit: u8 = 2`: Stops open, allowlisted, and uncapped commitments.
+- `migration_pause_bit: u8 = 4`: Stops LP migration.
+- `valid_pause_bits: u8 = blast_presale::constants::create_pause_bit!() | blast_presale::constants::commit_pause_bit!() | blast_presale::constants::migration_pause_bit!()`: Every supported presale pause flag.
+- `max_participants: u64 = 65_536`: Technical bound on the dynamic commitment records one presale may hold.
+- `max_recipients: u64 = 64`: Bounds the token and raise recipient lists, both paid in the one migration transaction.
+- `min_liquidity_window_duration_ms: u64 = 7 * 24 * 60 * 60 * 1_000`: The shortest LP-migration window. Migration is permissionless, so a funded sale reaches its refund exit only after a week in which nobody migrated it, and a sale that nobody settled by its end cannot be settled and cancelled in one transaction inside that week.
+- `max_raise_bps: u64 = 1_000`: Blast's largest share of a sale's raise.
+- `max_token_bps: u64 = 1_000`: Blast's largest share of a sale's tokens.
+- `digest_length: u64 = 32`: Byte length of a Blake2b-256 digest: an allowlist's Merkle root.
+- `allowlist_leaf_domain: vector<u8> = b"blast-presale-v1"`: The Merkle leaf domain of every presale allowlist, `blast_core::merkle::leaf`'s domain for each `(index, wallet, wallet_cap)` payload.
+
+### `blast_presale::creation_policy`
+
+Blast's allowlists for new presales: the Quote coins a sale may raise, the venues whose tickets may start a sale, and the Blast partners a sale may name; and the presale's `unpause`, which reads these and the fee policy's notices.  A presale is checked once, when it is created. Later changes apply only to later sales, so a delisting never strands a live sale's commitments, blocks its migration, or stops paying its partner.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/creation_policy.move
+
+#### Types
+
+```move
+/// Shared singleton holding the Quote types, venues, and partners new presales may use.
+public struct CreationPolicy has key {
+    id: UID,
+    allowed_quotes: VecSet<TypeName>,
+    venues: blast_admin::delayed_set::DelayedSet<VenueKey, TypeName>,
+    partners: blast_partners::partner_list::PartnerList,
+}
+
+/// Keys the delayed lifecycle of venue admissions and their notice.
+public struct VenueKey() has copy, drop, store;
+```
+
+#### Functions
+
+```move
+/// Allows or disallows `Quote` for presales created afterward; existing ones keep it.
+public fun set_quote_allowed<Quote>(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::ListingAdmin>,
+    allowed: bool,
+)
+
+/// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
+/// start presales afterward, and only that venue redeems their migrations; existing sales keep
+/// their venue. Rescheduling a pending admission restarts its notice.
+///
+/// `presale::new` and `presale::migrate` are public, so whoever can construct an admitted witness
+/// can open sales and redeem their liquidity. Admit only a struct whose defining module is the
+/// reviewed venue and keeps its constructor private. A primitive, a vector, or a framework type,
+/// any of which a caller can construct, is rejected.
+public fun schedule_venue<Venue: drop>(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
+    clock: &Clock,
+)
+
+/// Permissionlessly applies the approved admission once ready.
+public fun apply_venue<Venue: drop>(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    clock: &Clock,
+)
+
+/// Cancels a pending venue admission, including after its threshold.
+public fun cancel_venue<Venue: drop>(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
+)
+
+/// Immediately removes a venue for new presales and cancels any pending admission.
+public fun remove_venue<Venue: drop>(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
+)
+
+/// Lets new presales name `partner`, at once. Adding a partner whose removal is pending cancels
+/// the removal; adding a removed partner accepts it again.
+public fun add_partner(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::FeeAdmin>,
+    partner: &blast_partners::blast_partners::Partner,
+)
+
+/// Stops new presales naming `partner` after the notice Blast gives for every change to a
+/// partner, `blast_partners::delay_ms()`. Sales that already name it keep paying it.
+public fun remove_partner(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::FeeAdmin>,
+    partner: &blast_partners::blast_partners::Partner,
+    clock: &Clock,
+)
+
+/// Proposes only the admission notice. Existing admission deadlines remain fixed.
+public fun schedule_venue_delay(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::AdapterAdmin>,
+    delay_ms: u64,
+    clock: &Clock,
+)
+
+/// Permissionlessly applies a ready admission-notice proposal.
+public fun apply_venue_delay(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    clock: &Clock,
+)
+
+/// Cancels only the admission-notice proposal.
+public fun cancel_venue_delay(
+    self: &mut CreationPolicy,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
+)
+
+/// Clears the requested pause bits once every presale notice is guarded: nonzero, with no
+/// pending change that would set one to zero and no pending admission. A notice left at its zero
+/// publication value therefore blocks release instead of going live; the generic administration
+/// then checks the upgrade notice and the pinned witness. Settlement, cancellation, refunds and
+/// claims never require unpausing.
+public fun unpause(
+    self: &CreationPolicy,
+    package_version: &mut blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    unpause_admin: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UnpauseAdmin<blast_presale_package::BLAST_PRESALE_PACKAGE>>,
+    package_admin: &blast_admin::package_admin::PackageAdmin<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    fee_policy: &fee_policy::FeePolicy,
+    bits: u8,
+)
+```
+
+### `blast_presale::events`
+
+Presale event payloads and their package-only emitters. Pauses and versions emit from `blast_admin`, delayed settings from its delayed modules, partner acceptance from `blast_partners::partner_list`, and Blast's fee payments from `blast_core`. `PresaleCreated` stays beside the sale terms it records in `blast_presale`, which would otherwise form a module cycle.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/events.move
+
+#### Events
+
+```move
+/// Presales created afterward may (`allowed`) or may not raise `Quote`.
+public struct QuoteSet<phantom Quote> has copy, drop {
+    allowed: bool,
+}
 
 /// A presale was shared with these commitment and liquidity windows and its Blast partner, if
 /// any. Commitments open at `start_ms`, which may be later than the share. A sale whose hard cap
@@ -6453,8 +6323,8 @@ public struct PresaleOpened<phantom SaleToken, phantom Quote> has copy, drop {
     partner_id: Option<ID>,
 }
 
-/// Before the window started, Blast's `FeeAdmin` replaced this sale's Blast rates, moving Blast's tokens
-/// to or from the sale allocation and its Quote to or from the LP's.
+/// Before the window started, Blast's `FeeAdmin` replaced this sale's Blast rates, moving Blast's
+/// tokens to or from the sale allocation and its Quote to or from the LP's.
 public struct ProtocolFeesChanged<phantom SaleToken, phantom Quote> has copy, drop {
     presale_id: ID,
     protocol_raise_bps: u64,
@@ -6507,16 +6377,6 @@ public struct PresaleMigrated<phantom SaleToken, phantom Quote> has copy, drop {
     recipient_tokens: u64,
 }
 
-/// Blast received `quote` of its raise fee and its `tokens` at `destination`, after the sale's
-/// Blast partner took `partner_quote` of the raise fee, which `PartnerPaid` also records.
-public struct ProtocolFeesPaid<phantom SaleToken, phantom Quote> has copy, drop {
-    presale_id: ID,
-    destination: address,
-    quote: u64,
-    tokens: u64,
-    partner_quote: u64,
-}
-
 /// One configured recipient received its share of the raise, or the vesting schedule
 /// `vesting_id` that holds it.
 public struct RaiseAllocated<phantom SaleToken, phantom Quote> has copy, drop {
@@ -6548,449 +6408,20 @@ public struct Claimed<phantom SaleToken, phantom Quote> has copy, drop {
 }
 ```
 
-### `blast_presale::blast_presale_domain`
-
-Blast presale's administration roles in the shared Blast ACL.  A role is a type. An `AdminCap` holding `Role` signs in to `AdminWitness<Role>`, and a function's witness parameter names the one role it accepts, so no role authorizes another's actions and a role from any other package cannot reach these operations.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/blast_presale_domain.move
-
-#### Types
-
-```move
-/// Governs administrative delay and compatible upgrades with atomic version cutover.
-public struct UpgradeAdmin {}
-
-/// Sets the address every protocol fee is paid to.
-public struct TreasuryAdmin {}
-
-/// Sets Blast's rates for new sales, one sale before its start, and one migrated sale's vault, and
-/// the partners new sales may name.
-public struct FeeAdmin {}
-
-/// Admits or removes the Quotes new sales may use.
-public struct ListingAdmin {}
-
-/// Admits or removes the venues whose tickets may start sales.
-public struct AdapterAdmin {}
-
-/// May set emergency pause bits, never clear them.
-public struct PauseAdmin {}
-
-/// May clear pause bits after an incident.
-public struct UnpauseAdmin {}
-
-/// May cancel any scheduled administrative action.
-public struct CancelAdmin {}
-```
-
-### `blast_presale::blast_presale_package`
-
-Canonical publication custody and operational generation.  The one-time witness seeds the generation and claims the Publisher. Both stay in owned publication custody until package administration seals the native capabilities.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/blast_presale_package.move
-
-#### Types
-
-```move
-/// One-time witness: it seeds the package generation and claims this package's Publisher.
-public struct BLAST_PRESALE_PACKAGE() has drop;
-
-/// Publication-only custody; it cannot supply the PackageVersion required by presale activity.
-public struct Publication has key {
-    id: UID,
-    publisher: Publisher,
-    generation: blast_admin::operational_version::OperationalVersion<BLAST_PRESALE_PACKAGE>,
-}
-
-/// Singleton operational package generation.
-public struct PackageVersion has key {
-    id: UID,
-    paused: u8,
-    generation: blast_admin::operational_version::OperationalVersion<BLAST_PRESALE_PACKAGE>,
-}
-```
-
-#### Functions
-
-```move
-/// Freezes selected operations immediately; does not authorize unpausing.
-public fun pause(
-    self: &mut PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::PauseAdmin>,
-    bits: u8,
-)
-```
-
-#### Events
-
-```move
-/// The requested bits and resulting pause mask.
-public struct Paused has copy, drop {
-    bits: u8,
-    paused: u8,
-}
-
-/// The released bits and resulting pause mask.
-public struct Unpaused has copy, drop {
-    bits: u8,
-    paused: u8,
-}
-```
-
-#### Constants
-
-- `PACKAGE_VERSION: u64 = 1`: Current package generation accepted by every protected mutation.
-- `NEXT_PACKAGE_VERSION: u64 = 2`: The generation this bytecode hands over to in a governed upgrade.
-
-### `blast_presale::bluefin`
-
-Bluefin sale-token preparation, permissionless migration into `blast_vault` custody, and LP-fee collection for presales. Auto-LP and burn routes accrue in the vault until the shared venues compound and buy back (ADR 0137, step 5).
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/bluefin.move
-
-#### Types
-
-```move
-/// The Bluefin venue's sealed witness: it issues tickets, redeems migrations, and keys the
-/// position in the vault, so the creation policy and the vault registry admit this one type.
-public struct Venue() has drop;
-```
-
-#### Functions
-
-```move
-/// Prepares `Meme` for a presale in `Quote` that migrates to a Bluefin pool at this tier, and
-/// returns the ticket `blast_presale::new` redeems. Every sale token has one sale, so the tier is
-/// recorded under its type; the treasury capability proves the caller controls the token, so no
-/// one else can record its tier first.
-public fun prepare<Meme, Quote>(
-    package_version: &blast_presale_package::PackageVersion,
-    venue_config: &mut venue_config::VenueConfig,
-    _: &TreasuryCap<Meme>,
-    currency: &Currency<Meme>,
-    tick_spacing: u32,
-    pool_fee_rate: u64,
-): blast_core::migration::VenueTicket<Meme, Quote>
-
-/// Anyone may atomically migrate a funded presale into its configured Bluefin pool and a
-/// `blast_vault` vault holding the position under the sale's terms; Bluefin's residuals wait in
-/// it for the sale's owner.
-public fun migrate<Meme, Quote>(
-    sale: &mut blast_presale::Presale<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    fee_policy: &fee_policy::FeePolicy,
-    venue_config: &venue_config::VenueConfig,
-    currency: &Currency<Meme>,
-    quote_currency: &Currency<Quote>,
-    bluefin_config: &mut config::GlobalConfig,
-    registry: &mut blast_vault::blast_vault_package::VaultRegistry,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    treasury: &blast_core::blast_treasury::Treasury,
-    creation_fee: Coin<sui::SUI>,
-    clock: &Clock,
-    ctx: &mut TxContext,
-)
-
-/// Anyone may collect LP fees from a migrated presale's Bluefin position and split them through
-/// its vault.
-public fun collect_fees<Meme, Quote>(
-    vault: &mut blast_vault::vault::Vault<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    treasury: &blast_core::blast_treasury::Treasury,
-    currency: &mut Currency<Meme>,
-    bluefin_config: &config::GlobalConfig,
-    pool: &mut pool::Pool<Meme, Quote>,
-    clock: &Clock,
-    ctx: &mut TxContext,
-)
-
-/// Anyone may collect every accrued position fee under the applied split, then activate the
-/// vault's ready split. Readiness alone never changes collection accounting.
-public fun settle_and_apply_fee_split<Meme, Quote>(
-    vault: &mut blast_vault::vault::Vault<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    treasury: &blast_core::blast_treasury::Treasury,
-    currency: &mut Currency<Meme>,
-    bluefin_config: &config::GlobalConfig,
-    pool: &mut pool::Pool<Meme, Quote>,
-    clock: &Clock,
-    ctx: &mut TxContext,
-)
-```
-
-### `blast_presale::cetus`
-
-Cetus sale-token preparation, permissionless migration into `blast_vault` custody, and LP-fee collection for presales.  Preparing the sale token mints its single Cetus `PoolCreationCap` from the treasury capability before any supply exists, registers the pair at the creator's tick spacing, and returns the `VenueTicket` the presale redeems; afterwards only that capability or Cetus's pool-manager role can create the pair's pool there. Migration redeems the sale's hand-off, creates and seeds the pool, burns the full-range position through Cetus LP Burn, and shares a vault holding the burn proof under the sale's terms. Auto-LP and burn routes accrue in the vault until the shared venues compound and buy back (ADR 0137, step 5).
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/cetus.move
-
-#### Types
-
-```move
-/// The Cetus venue's sealed witness: it issues tickets, redeems migrations, and keys the position
-/// in the vault, so the creation policy and the vault registry admit this one type.
-public struct Venue() has drop;
-
-/// Key for a Meme type's reserved Cetus pool-creation capability.
-public struct CreationCapKey<phantom Meme>() has copy, drop, store;
-
-/// Transient dynamic-field name `cast` uses to retype a coin or balance.
-public struct CastKey() has copy, drop, store;
-```
-
-#### Functions
-
-```move
-/// Prepares `Meme` for a presale in `Quote` that migrates to a Cetus pool at `tick_spacing`, whose
-/// fee rate Cetus derives from it, and returns the ticket `blast_presale::new` redeems. The pair's
-/// pool creation is reserved at that tier before the supply is minted. Every sale token has one
-/// sale, so the tier is recorded under its type.
-public fun prepare<Meme, Quote>(
-    package_version: &blast_presale_package::PackageVersion,
-    venue_config: &mut venue_config::VenueConfig,
-    cetus_config: &config::GlobalConfig,
-    pools: &mut factory::Pools,
-    treasury_cap: &mut TreasuryCap<Meme>,
-    tick_spacing: u32,
-    ctx: &mut TxContext,
-): blast_core::migration::VenueTicket<Meme, Quote>
-
-/// Anyone may migrate a funded presale into its reserved Cetus pool and a `blast_vault` vault.
-/// `CoinA` and `CoinB` name the presale's Meme and Quote in Cetus's canonical coin order. The
-/// vault holds the burn proof under the sale's terms, and Cetus's residuals wait in it for the
-/// sale's owner.
-public fun migrate<Meme, Quote, CoinA, CoinB>(
-    sale: &mut blast_presale::Presale<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    fee_policy: &fee_policy::FeePolicy,
-    venue_config: &venue_config::VenueConfig,
-    cetus_config: &config::GlobalConfig,
-    pools: &mut factory::Pools,
-    burn_manager: &mut lp_burn::BurnManager,
-    registry: &mut blast_vault::blast_vault_package::VaultRegistry,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    treasury: &blast_core::blast_treasury::Treasury,
-    clock: &Clock,
-    ctx: &mut TxContext,
-)
-
-/// Anyone may collect LP fees from a migrated presale's Cetus position and split them through its
-/// vault. `CoinA` and `CoinB` are the pool's coin order.
-public fun collect_fees<Meme, Quote, CoinA, CoinB>(
-    vault: &mut blast_vault::vault::Vault<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    treasury: &blast_core::blast_treasury::Treasury,
-    currency: &mut Currency<Meme>,
-    cetus_config: &config::GlobalConfig,
-    burn_manager: &lp_burn::BurnManager,
-    pool: &mut pool::Pool<CoinA, CoinB>,
-    ctx: &mut TxContext,
-)
-
-/// Anyone may collect every accrued position fee under the applied split, then activate the
-/// vault's ready split. `CoinA` and `CoinB` are the pool's coin order.
-public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
-    vault: &mut blast_vault::vault::Vault<Meme, Quote>,
-    package_version: &blast_presale_package::PackageVersion,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    treasury: &blast_core::blast_treasury::Treasury,
-    currency: &mut Currency<Meme>,
-    cetus_config: &config::GlobalConfig,
-    burn_manager: &lp_burn::BurnManager,
-    pool: &mut pool::Pool<CoinA, CoinB>,
-    clock: &Clock,
-    ctx: &mut TxContext,
-)
-```
-
-### `blast_presale::constants`
-
-Package-wide presale constants exposed as zero-cost macros.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/constants.move
-
-#### Constants
-
-- `create_pause_bit: u8 = 1`: Stops presale creation and sharing.
-- `commit_pause_bit: u8 = 2`: Stops open, allowlisted, and uncapped commitments.
-- `migration_pause_bit: u8 = 4`: Stops LP migration.
-- `valid_pause_bits: u8 = blast_presale::constants::create_pause_bit!() | blast_presale::constants::commit_pause_bit!() | blast_presale::constants::migration_pause_bit!()`: Every supported presale pause flag.
-- `basis_points_denominator: u64 = 10_000`: Denominator for rates expressed in basis points.
-- `max_participants: u64 = 65_536`: Technical bound on the dynamic commitment records one presale may hold.
-- `max_recipients: u64 = 64`: Bounds the token and raise recipient lists, both paid in the one migration transaction.
-- `min_liquidity_window_duration_ms: u64 = 7 * 24 * 60 * 60 * 1_000`: The shortest LP-migration window. Migration is permissionless, so a funded sale reaches its refund exit only after a week in which nobody migrated it, and a sale that nobody settled by its end cannot be settled and cancelled in one transaction inside that week.
-- `max_vesting_duration_ms: u64 = 1 << 63`: A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292 million years, the schedule's end still fits in u64, so migration cannot overflow creating it.
-- `max_raise_bps: u64 = 1_000`: Blast's largest share of a sale's raise.
-- `max_token_bps: u64 = 1_000`: Blast's largest share of a sale's tokens.
-- `max_lp_fee_bps: u64 = 3_000`: Blast's largest share of each LP fee, Meme and Quote.
-- `digest_length: u64 = 32`: Byte length of a Blake2b-256 digest: an allowlist's Merkle root.
-- `allowlist_leaf_domain: vector<u8> = b"blast-presale-v1"`: The Merkle leaf domain of every presale allowlist, `blast_core::merkle::leaf`'s domain for each `(index, wallet, wallet_cap)` payload.
-- `max_meme_symbol_length: u64 = 32`: Bluefin stores the pool name, built from this symbol, twice in every `Position`; the bound keeps a migrated position inside Sui's object size limit (ADR 0088).
-- `bluefin_max_tick_spacing: u32 = 400`: Bluefin pool creation's own tick-spacing bound.
-- `bluefin_max_fee_rate: u64 = 20_000`: Bluefin pool creation's own fee-rate bound.
-- `aftermath_max_dao_fee_bps: u16 = 10_000`: Aftermath's own bound on a DAO fee, the whole amount, which its DAO-fee pool creation asserts as `fee_bps <= 10_000`.
-- `aftermath_half_weight: u64 = 500_000_000_000_000_000`: Each coin's Aftermath weight: half of Aftermath's `1e18` fixed-point one.
-- `aftermath_flatness: u64 = 0`: Selects Aftermath's uncorrelated weighted-product curve.
-- `aftermath_base_swap_fee: u64 = 100_000_000_000_000`: Aftermath's minimum base swap-in fee, 0.01% in its `1e18` unit; it rejects zero. This part compounds into the locked LP.
-- `aftermath_pool_name: vector<u8> = b"Blast Presale Pool"`: Name of every Aftermath pool a presale creates.
-
-### `blast_presale::creation_policy`
-
-Blast's allowlists for new presales: the Quote coins a sale may raise, the venues, in this package or another, whose tickets may start a sale, and the Blast partners a sale may name.  A presale is checked once, when it is created. Later changes apply only to later sales, so a delisting never strands a live sale's commitments, blocks its migration, or stops paying its partner.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/creation_policy.move
-
-#### Types
-
-```move
-/// Shared singleton holding the Quote types and venues new presales may use.
-public struct CreationPolicy has key {
-    id: UID,
-    allowed_quotes: VecSet<TypeName>,
-    venues: blast_admin::delayed_set::DelayedSet<VenueKey, TypeName>,
-}
-
-/// Keys the delayed lifecycle of venue admissions and their notice.
-public struct VenueKey() has copy, drop, store;
-
-/// Dynamic-field key of a Blast partner new presales may name. Its value is the time the partner
-/// stops being accepted: `u64::MAX` until Blast removes it.
-public struct PartnerKey(ID) has copy, drop, store;
-```
-
-#### Functions
-
-```move
-/// Allows or disallows `Quote` for presales created afterward; existing ones keep it.
-public fun set_quote_allowed<Quote>(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::ListingAdmin>,
-    allowed: bool,
-)
-
-/// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
-/// start presales afterward, and only that venue redeems their migrations; existing sales keep
-/// their venue. Rescheduling a pending admission restarts its notice.
-///
-/// `presale::new` and `presale::migrate` are public, so whoever can construct an admitted witness
-/// can open sales and redeem their liquidity. Admit only a struct whose defining module is the
-/// reviewed venue and keeps its constructor private. A primitive, a vector, or a framework type,
-/// any of which a caller can construct, is rejected.
-public fun schedule_venue<Venue: drop>(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::AdapterAdmin>,
-    clock: &Clock,
-)
-
-/// Permissionlessly applies the approved admission once ready.
-public fun apply_venue<Venue: drop>(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    clock: &Clock,
-)
-
-/// Cancels a pending venue admission, including after its threshold.
-public fun cancel_venue<Venue: drop>(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
-)
-
-/// Immediately removes a venue for new presales and cancels any pending admission.
-public fun remove_venue<Venue: drop>(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::AdapterAdmin>,
-)
-
-/// Lets new presales name `partner`, at once. Adding a partner whose removal is pending cancels
-/// the removal; adding a removed partner accepts it again.
-public fun add_partner(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::FeeAdmin>,
-    partner: &blast_partners::blast_partners::Partner,
-)
-
-/// Stops new presales naming `partner` after the notice Blast gives for every change to a
-/// partner, `blast_partners::delay_ms()`. Sales that already name it keep paying it.
-public fun remove_partner(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::FeeAdmin>,
-    partner: &blast_partners::blast_partners::Partner,
-    clock: &Clock,
-)
-
-/// Proposes only the admission notice. Existing admission deadlines remain fixed.
-public fun schedule_venue_delay(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::AdapterAdmin>,
-    delay_ms: u64,
-    clock: &Clock,
-)
-
-/// Permissionlessly applies a ready admission-notice proposal.
-public fun apply_venue_delay(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    clock: &Clock,
-)
-
-/// Cancels only the admission-notice proposal.
-public fun cancel_venue_delay(
-    self: &mut CreationPolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
-)
-```
-
-#### Events
-
-```move
-/// Presales created afterward may (`allowed`) or may not raise `quote`.
-public struct QuoteSet has copy, drop {
-    quote: TypeName,
-    allowed: bool,
-}
-
-/// Presales created from now on may name the partner `partner_id`.
-public struct PartnerAdded has copy, drop {
-    partner_id: ID,
-}
-
-/// Presales created before `accepted_until_ms` may still name the partner `partner_id`; later ones
-/// may not.
-public struct PartnerRemoved has copy, drop {
-    partner_id: ID,
-    accepted_until_ms: u64,
-}
-```
-
 ### `blast_presale::fee_policy`
 
-Blast's fees on presales: a share of every successful raise, of every token supply, and of every collected LP fee.  Each presale snapshots the rates when it is created. Until the sale's window starts, the `FeeAdmin` may change that sale's rates, so its economics are fixed before commitments open; the LP-fee rates then pass to the sale's vault in its migration terms, which changes them per vault after notice. Every raise and token payout reads the current destination.
+Blast's fees on presales: a share of every successful raise, of every token supply, and of every collected LP fee.  Each presale snapshots the rates when it is created. Until the sale's window starts, the `FeeAdmin` may change that sale's rates, so its economics are fixed before commitments open; the LP-fee rates then pass to the sale's vault in its migration terms, which changes them per vault after notice. Blast's fees are paid to the one `blast_core::blast_treasury::Treasury`.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/fee_policy.move
 
 #### Types
 
 ```move
-/// Shared singleton holding the rates new presales snapshot and the address paid Blast's fees.
+/// Shared singleton holding the rates new presales snapshot.
 public struct FeePolicy has key {
     id: UID,
-    destination: blast_admin::delayed::Delayed<DestinationKey, address>,
     fees: blast_admin::delayed::Delayed<FeesKey, ProtocolFees>,
 }
-
-/// Keys the delayed lifecycle of the address paid Blast's fees.
-public struct DestinationKey() has copy, drop, store;
 
 /// Keys the delayed lifecycle of the rates new presales snapshot.
 public struct FeesKey() has copy, drop, store;
@@ -7012,8 +6443,8 @@ public struct ProtocolFees has copy, drop, store {
 /// Schedules fees after the full administrative delay.
 public fun schedule_fees(
     self: &mut FeePolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::FeeAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::FeeAdmin>,
     raise_bps: blast_core::bps::Bps,
     token_bps: blast_core::bps::Bps,
     lp_fee_meme_bps: blast_core::bps::Bps,
@@ -7025,210 +6456,16 @@ public fun schedule_fees(
 /// Applies the scheduled fees permissionlessly once ready.
 public fun apply_fees(
     self: &mut FeePolicy,
-    package_version: &blast_presale_package::PackageVersion,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 )
 
 /// Cancels a pending change, including after its delay has elapsed.
 public fun cancel_fees(
     self: &mut FeePolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
+    package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
+    _: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::CancelAdmin>,
 )
-
-/// Redirects every later protocol payout, including those of existing presales.
-/// Schedules destination after the full administrative delay.
-public fun schedule_destination(
-    self: &mut FeePolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::TreasuryAdmin>,
-    destination: address,
-    delay_ms: u64,
-    clock: &Clock,
-)
-
-/// Applies the scheduled destination permissionlessly once ready.
-public fun apply_destination(
-    self: &mut FeePolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    clock: &Clock,
-)
-
-/// Cancels a pending change, including after its delay has elapsed.
-public fun cancel_destination(
-    self: &mut FeePolicy,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
-)
-```
-
-### `blast_presale::migration_math`
-
-Concentrated-liquidity seed price derived from the configured migration assets.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/migration_math.move
-
-#### Constants
-
-- `MIN_SQRT_PRICE_X64: u128 = 4295048016`
-- `MAX_SQRT_PRICE_X64: u128 = 79226673515401279992447579055`
-
-### `blast_presale::package_admin`
-
-Shared custody of this package's Publisher and UpgradeCap, driven by package administrators.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/package_admin.move
-
-#### Types
-
-```move
-/// The exact code digest or irreversible end of upgrades approved for execution.
-public enum UpgradeAction has copy, drop, store {
-    Upgrade(vector<u8>),
-    MakeImmutable,
-}
-
-/// Keys the delayed lifecycle of this package's upgrade actions and their notice.
-public struct UpgradeKey() has copy, drop, store;
-
-/// Shared custody for the package's framework Publisher and UpgradeCap.
-public struct PackageAdmin has key {
-    id: UID,
-    custody: blast_admin::upgrade_custody::UpgradeCustody<blast_presale_package::BLAST_PRESALE_PACKAGE>,
-    upgrade: blast_admin::delayed_action::DelayedAction<UpgradeKey, UpgradeAction>,
-}
-```
-
-#### Functions
-
-```move
-/// Schedules one exact code digest under the applied notice, replacing any previous action.
-/// Changing the notice requires a separate policy-only proposal.
-public fun schedule_upgrade(
-    self: &mut PackageAdmin,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
-    digest: vector<u8>,
-    clock: &Clock,
-)
-
-/// Schedules the irreversible destruction of upgrade authority under the applied notice.
-public fun schedule_make_immutable(
-    self: &mut PackageAdmin,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
-    clock: &Clock,
-)
-
-/// Cancels any scheduled action, even after its execution threshold.
-public fun cancel_upgrade_action(
-    self: &mut PackageAdmin,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::CancelAdmin>,
-)
-
-/// Consumes the unique publication proof and seals native custody before activation.
-/// The initial operational generation starts fully paused; UnpauseAdmin releases it immediately.
-public fun wrap(
-    publication: blast_presale_package::Publication,
-    upgrade_cap: UpgradeCap,
-    ctx: &mut TxContext,
-)
-
-/// Authorizes the exact package digest under the wrapped cap's current policy.
-public fun authorize_upgrade(
-    self: &mut PackageAdmin,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
-    digest: vector<u8>,
-    clock: &Clock,
-): UpgradeTicket
-
-/// Commits the upgrade and advances the package version together.
-public fun commit_upgrade_and_advance(
-    self: &mut PackageAdmin,
-    package_version: &mut blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
-    receipt: UpgradeReceipt,
-)
-
-/// Executes a ready immutability decision under the live upgrade role.
-public fun make_immutable(
-    self: &mut PackageAdmin,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
-    clock: &Clock,
-)
-
-/// Clears the requested pause bits once every presale notice is guarded: nonzero, with no
-/// pending change that would set one to zero and no pending admission. A notice left at its
-/// zero publication value therefore blocks release instead of going live. Settlement,
-/// cancellation, refunds and claims never require unpausing.
-public fun unpause(
-    self: &PackageAdmin,
-    package_version: &mut blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UnpauseAdmin>,
-    fee_policy: &fee_policy::FeePolicy,
-    creation_policy: &creation_policy::CreationPolicy,
-    bits: u8,
-)
-
-/// Changes only the upgrade notice period, after the currently applied notice.
-/// Replaces any pending upgrade or immutability action.
-public fun schedule_upgrade_delay(
-    self: &mut PackageAdmin,
-    package_version: &blast_presale_package::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_presale_domain::UpgradeAdmin>,
-    delay_ms: u64,
-    clock: &Clock,
-)
-
-/// Applies a ready policy-only proposal; cannot consume an upgrade authorization.
-public fun apply_upgrade_delay(
-    self: &mut PackageAdmin,
-    package_version: &blast_presale_package::PackageVersion,
-    clock: &Clock,
-)
-```
-
-#### Constants
-
-- `INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: The notice every upgrade or immutability action waits from publication until changed.
-
-### `blast_presale::venue_config`
-
-Custody for the venue capabilities and pool tiers venues reserve while preparing a sale token, before its presale opens. Entries are write-once under keys only their venue module constructs; a capability the venue's migration consumes leaves with it.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/venue_config.move
-
-#### Types
-
-```move
-public struct VenueConfig has key {
-    id: UID,
-}
-
-/// Key for the pool tier a sale token's venue reserved. Each sale token has one sale.
-public struct PoolTierKey<phantom Meme>() has copy, drop, store;
-
-/// A concentrated-liquidity pool tier, in the venue's own units.
-public struct PoolTier has copy, drop, store {
-    tick_spacing: u32,
-    pool_fee_rate: u64,
-}
-```
-
-#### Events
-
-```move
-/// A venue reserved the `<Meme, Quote>` sale's pool at this tier, which its migration creates.
-/// `Venue` is the venue's marker, such as `cetus::Venue`, and fixes the units: for Cetus and
-/// Bluefin `pool_fee_rate` is the pool's swap fee in millionths; for Aftermath it is the DAO fee
-/// in basis points and `tick_spacing` is zero.
-public struct PoolTierReserved<phantom Meme, phantom Quote, phantom Venue> has copy, drop {
-    tick_spacing: u32,
-    pool_fee_rate: u64,
-}
 ```
 
 ## API reference: `blast_fun` (Launchpad)

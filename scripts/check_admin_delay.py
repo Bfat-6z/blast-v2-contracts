@@ -118,11 +118,12 @@ assert signature.split('(', 1)[1].replace(' ', '').replace('\n', '') == (
 ), signature
 assert body.startswith(f'package_version.assert_current{PRESALE_CURRENT}'), body
 assert body.index('self.is_guarded() && fee_policy.is_guarded()') < body.index('clear_pause_bits('), body
-require(body, 'package_admin.clear_pause_bits(unpause_admin, blast_presale_package::package_witness(), package_version, bits)')
+require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')
 for path in (ROOT / 'sui/presale/sources').rglob('*.move'):
     production = path.read_text().split('// === Test-Only Functions ===')[0]
     assert 'Bootstrap' not in production and 'set_now' not in production, path
-    assert not re.search(r'\bPublication\b', production), path
+    if path.stem != 'blast_presale_package':
+        assert not re.search(r'\bPublication\b', production), path
     for name, (signature, body) in functions('presale', path.stem).items():
         if not re.search(r'\.schedule(_add|_value)?\(', body):
             continue

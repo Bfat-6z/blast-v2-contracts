@@ -37,7 +37,7 @@ admin_roles="$(for file in "$sources"/*.move; do
  awk -f "$package_dir/../launchpad/scripts/move_facts.awk" "$file" | awk -F'\t' -v module="$(basename "$file" .move)" '
  $1 == "FN" && $6 == 0 && match($9, /AdminWitness<[A-Za-z]+(<[A-Z_]+>)?>/) { print module ":" $2 ":" substr($9, RSTART + 13, RLENGTH - 14) }'
 done | sort)"
-[ "$admin_roles" == "$(printf '%s\n' 'blast_presale:set_protocol_fees:FeeAdmin' 'blast_presale_package:clear_pause_bits:UnpauseAdmin<BLAST_PRESALE_PACKAGE>' 'creation_policy:add_partner:FeeAdmin' 'creation_policy:cancel_venue:CancelAdmin' 'creation_policy:cancel_venue_delay:CancelAdmin' 'creation_policy:remove_partner:FeeAdmin' 'creation_policy:remove_venue:AdapterAdmin' 'creation_policy:schedule_venue:AdapterAdmin' 'creation_policy:schedule_venue_delay:AdapterAdmin' 'creation_policy:set_quote_allowed:ListingAdmin' 'creation_policy:unpause:UnpauseAdmin<BLAST_PRESALE_PACKAGE>' 'fee_policy:cancel_fees:CancelAdmin' 'fee_policy:schedule_fees:FeeAdmin' | sort)" ] || fail "Every administrator action must take its pinned role."
+[ "$admin_roles" == "$(printf '%s\n' 'blast_presale:set_protocol_fees:FeeAdmin' 'creation_policy:add_partner:FeeAdmin' 'creation_policy:cancel_venue:CancelAdmin' 'creation_policy:cancel_venue_delay:CancelAdmin' 'creation_policy:remove_partner:FeeAdmin' 'creation_policy:remove_venue:AdapterAdmin' 'creation_policy:schedule_venue:AdapterAdmin' 'creation_policy:schedule_venue_delay:AdapterAdmin' 'creation_policy:set_quote_allowed:ListingAdmin' 'creation_policy:unpause:UnpauseAdmin<BLAST_PRESALE_PACKAGE>' 'fee_policy:cancel_fees:CancelAdmin' 'fee_policy:schedule_fees:FeeAdmin' | sort)" ] || fail "Every administrator action must take its pinned role."
 for file in "$sources"/*.move; do
   if production "$file" | rg -q 'AdminWitness<(FeeAdmin|CancelAdmin|AdapterAdmin|ListingAdmin)>'; then
     rg -q 'blast_domain::' "$file" || fail "$(basename "$file") must take product roles from blast_core::blast_domain."
@@ -101,8 +101,8 @@ settle_body="$(sed -n '/^public fun settle</,/^}/p' <<<"$presale_production")"
   || fail "Only settle, closing a sale early, may shorten its window."
 
 # 5. The hand-off (ADR 0137): the package witness, pinned at publication, is constructed only by
-#    `blast_presale_package::package_witness`, which only `finalize` (the fee ledger), `migrate`
-#    and `prove_owner` call, sealing the sale's own terms with its owner's residuals and its
+#    `blast_presale_package::package_witness`, which only `finalize` (the fee ledger), `migrate`,
+#    `prove_owner`, and `creation_policy::unpause` call, sealing the sale's own terms with its owner's residuals and its
 #    snapshotted LP-fee rates. The sale never reaches a vault or a venue; the venue the stored
 #    witness names redeems the hand-off.
 migrate_body="$(sed -n '/^public fun migrate</,/^}/p' <<<"$presale_production")"
@@ -110,13 +110,14 @@ prove_owner_body="$(sed -n '/^public fun prove_owner</,/^}/p' <<<"$presale_produ
 finalize_body="$(sed -n '/^public fun finalize</,/^}/p' <<<"$presale_production")"
 marker_production="$(production "$sources/blast_presale_package.move")"
 rg -q '^public struct PackageWitness\(\) has drop;$' <<<"$marker_production" \
-  && [ "$(rg -c 'PackageWitness\(\)' <<<"$marker_production")" == 3 ] \
-  && [ "$(for file in "$sources"/*.move; do production "$file" | rg -c 'package_witness\(\)' || true; done | paste -sd+ | bc)" == 5 ] \
+  && [ "$(rg -c 'PackageWitness\(\)' <<<"$marker_production")" == 2 ] \
+  && [ "$(for file in "$sources"/*.move; do production "$file" | rg -c 'package_witness\(\)' || true; done | paste -sd+ | bc)" == 6 ] \
+  && [ "$(production "$sources/creation_policy.move" | rg -c 'package_witness\(\)')" == 1 ] \
   && [ "$(rg -c 'blast_presale_package::package_witness\(\)' <<<"$presale_production")" == 4 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$migrate_body")" == 2 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$prove_owner_body")" == 1 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$finalize_body")" == 1 ] \
-  || fail "Only finalize, migrate and prove_owner may take the presale's package witness."
+  || fail "Only finalize, migrate, prove_owner and unpause may take the presale's package witness."
 for term in 'self.id.to_inner(),' 'self.fee_split,' 'self.protocol_fees.lp_fee_meme_bps(),' \
   'self.protocol_fees.lp_fee_quote_bps(),' 'self.partner_id,' 'migration::residuals_to_owner(),'; do
   rg -Fq "$term" <<<"$migrate_body" || fail "migrate must seal ${term%,} into its vault terms."

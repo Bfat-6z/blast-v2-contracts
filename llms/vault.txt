@@ -311,8 +311,8 @@ pending admission or change to zero.
   sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
   0x2::derived_object::DerivedObjectKey<blast_vault::vault::VaultKey>, bcs(key))`. The launchpad's
   issuer is `blast_fun::blast_fun::PackageWitness` and the presale's
-  `blast_presale::blast_presale::PackageWitness`. Each sale has exactly one vault; a second
-  `blast_vault::vault::new` for the same terms aborts in `sui::derived_object`.
+  `blast_presale::blast_presale_package::PackageWitness`. Each sale has exactly one vault; a
+  second `blast_vault::vault::new` for the same terms aborts in `sui::derived_object`.
 
 - `blast_vault::vault::pool_id`: the pool the vault's position belongs to.
 - The venue's positions are dynamic object fields of the vault, under the venue's

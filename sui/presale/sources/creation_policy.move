@@ -192,7 +192,7 @@ public fun unpause(
         blast_presale::errors::unguarded_notice!(),
     );
 
-    blast_presale_package::clear_pause_bits(unpause_admin, package_admin, package_version, bits);
+    package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);
 }
 
 // === Package Functions ===
@@ -297,7 +297,7 @@ public fun allowing_for_testing<Quote, Venue>(ctx: &mut TxContext): CreationPoli
 public fun destroy_for_testing(self: CreationPolicy) {
     let CreationPolicy { id, allowed_quotes: _, venues, partners } = self;
     std::unit_test::destroy(venues);
-    partners.destroy_for_testing();
+    partners.destroy();
     id.delete();
 }
 
@@ -315,7 +315,7 @@ use blast_core::blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin
 use blast_partners::{blast_partners::Partner, partner_list::{Self, PartnerList}};
 
 use blast_presale::{
-    blast_presale_package::{Self, BLAST_PRESALE_PACKAGE},
+    blast_presale_package::{BLAST_PRESALE_PACKAGE, package_witness},
     constants,
     events,
     fee_policy::FeePolicy

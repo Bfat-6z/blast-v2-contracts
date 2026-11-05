@@ -215,7 +215,7 @@ impl UnlinkedPackage {
 
 /// Compile simulator packages with an explicit nonzero genesis recipient, restoring the sources.
 /// `blast_core` declares `blast_treasury`, and a build rejects one named address with two values,
-/// so the root manifest and core's are rewritten together (presale still declares it too).
+/// so the root manifest and core's are rewritten together.
 /// Callers hold BUILD_LOCK until compilation completes.
 struct GenesisFixture { originals: Vec<(PathBuf, String)> }
 impl GenesisFixture {
@@ -251,25 +251,45 @@ fn same_file(left: &Path, right: &Path) -> bool {
     matches!((left.canonicalize(), right.canonicalize()), (Ok(left), Ok(right)) if left == right)
 }
 
-/// Appends the presale's `package_admin::unpause`, which clears `bits` only while every notice of
-/// the package is guarded. `policies` are the two shared policies it reads (see `Harness::unpause`).
+/// `<presale>::blast_presale_package::BLAST_PRESALE_PACKAGE`, the presale's marker in
+/// `blast_admin`'s generic types.
+pub fn presale_marker(presale: ObjectID) -> Result<sui_types::TypeTag> {
+    Ok(sui_types::parse_sui_type_tag(&format!("{presale}::blast_presale_package::BLAST_PRESALE_PACKAGE"))?)
+}
+
+/// The role type a presale call takes: `UpgradeAdmin`, `PauseAdmin`, `UnpauseAdmin` and
+/// `PackageCancelAdmin` are `blast_admin`'s generic package roles over `BLAST_PRESALE_PACKAGE`;
+/// every other role is `blast_core::blast_domain`'s.
+pub fn presale_role(admin: ObjectID, core: ObjectID, presale: ObjectID, role: &str) -> Result<sui_types::TypeTag> {
+    let marker = format!("{presale}::blast_presale_package::BLAST_PRESALE_PACKAGE");
+    let tag = match role {
+        "UpgradeAdmin" | "PauseAdmin" | "UnpauseAdmin" => format!("{admin}::package_admin::{role}<{marker}>"),
+        "PackageCancelAdmin" => format!("{admin}::package_admin::CancelAdmin<{marker}>"),
+        _ => format!("{core}::blast_domain::{role}"),
+    };
+    Ok(sui_types::parse_sui_type_tag(&tag)?)
+}
+
+/// Appends `creation_policy::unpause`, which clears `bits` only while every presale notice and the
+/// package's upgrade notice are guarded.
 #[allow(clippy::too_many_arguments)]
-pub fn append_unpause(
+pub fn append_presale_unpause(
     h: &Harness,
     b: &mut ProgrammableTransactionBuilder,
-    package: ObjectID,
+    presale: ObjectID,
     custody: ObjectID,
     version: ObjectID,
     witness: Argument,
-    policies: [ObjectID; 2],
+    creation_policy: ObjectID,
+    fee_policy: ObjectID,
     bits: u8,
 ) -> Result<()> {
-    let custody = b.obj(h.shared(custody, false))?;
+    let creation_policy = b.obj(h.shared(creation_policy, false))?;
     let version = b.obj(h.shared(version, true))?;
-    let first = b.obj(h.shared(policies[0], false))?;
-    let second = b.obj(h.shared(policies[1], false))?;
+    let custody = b.obj(h.shared(custody, false))?;
+    let fee_policy = b.obj(h.shared(fee_policy, false))?;
     let bits = b.pure(bits)?;
-    call(b, package, "package_admin", "unpause", vec![], vec![custody, version, witness, first, second, bits]);
+    call(b, presale, "creation_policy", "unpause", vec![], vec![creation_policy, version, witness, custody, fee_policy, bits]);
     Ok(())
 }
 
@@ -1202,37 +1222,19 @@ impl Harness {
         Ok(version[0])
     }
 
-    /// Uses the real ACL and immediate UnpauseAdmin path without advancing the Clock. `custody` is
-    /// the presale's `PackageAdmin`; `policies` are the two shared policies its
-    /// `package_admin::unpause` requires guarded, `FeePolicy` and `CreationPolicy`
-    /// (`blast_presale_domain`). The launchpad releases through `unpause_launchpad`.
+    /// Releases `bits` of the presale through the real ACL: grants a fresh `AdminCap` the generic
+    /// `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` and calls `creation_policy::unpause`, which needs every
+    /// presale notice guarded, without advancing the Clock.
     #[allow(clippy::too_many_arguments)]
-    pub fn unpause(&mut self, package: ObjectID, domain: &str, admin: ObjectID,
-        publication: &Outcome, version: ObjectID, custody: ObjectID, policies: [ObjectID; 2], bits: u8,
+    pub fn unpause_presale(&mut self, presale: ObjectID, admin: ObjectID, publication: &Outcome,
+        version: ObjectID, custody: ObjectID, creation_policy: ObjectID, fee_policy: ObjectID, bits: u8,
     ) -> Result<()> {
-        let acl = publication.created(self, "blast_acl", "ACL")[0];
-        let root = publication.created(self, "blast_acl", "SuperAdminCap")[0];
-        let role = sui_types::parse_sui_type_tag(&format!("{package}::{domain}::UnpauseAdmin"))?;
-        let mut b = ProgrammableTransactionBuilder::new();
-        let acl_arg = b.obj(self.shared(acl, true))?;
-        let root_arg = b.obj(self.owned(root))?;
-        let recipient = b.pure(self.sender)?;
-        call(&mut b, admin, "blast_acl", "grant_admin", vec![], vec![acl_arg, root_arg, recipient]);
-        let granted = self.impersonate_cap_owner(root, b.finish())?;
-        granted.assert_success();
-        let cap = granted.created(self, "blast_acl", "AdminCap")[0];
-        let mut b = ProgrammableTransactionBuilder::new();
-        let acl_arg = b.obj(self.shared(acl, true))?;
-        let root_arg = b.obj(self.owned(root))?;
-        let cap_id = b.pure(cap)?;
-        call(&mut b, admin, "blast_acl", "grant_role", vec![role.clone()], vec![acl_arg, root_arg, cap_id]);
-        self.impersonate_cap_owner(root, b.finish())?.assert_success();
+        let role = presale_role(admin, ObjectID::ZERO, presale, "UnpauseAdmin")?;
+        let cap = self.grant_roles(admin, publication, std::slice::from_ref(&role))?;
         let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
         let mut b = ProgrammableTransactionBuilder::new();
-        let acl_arg = b.obj(self.shared(acl, false))?;
-        let cap_arg = b.obj(self.owned(cap))?;
-        let witness = call(&mut b, admin, "blast_acl", "sign_in", vec![role], vec![acl_arg, cap_arg]);
-        append_unpause(self, &mut b, package, custody, version, witness, policies, bits)?;
+        let witness = self.sign_in_as(&mut b, admin, publication, cap, role)?;
+        append_presale_unpause(self, &mut b, presale, custody, version, witness, creation_policy, fee_policy, bits)?;
         self.execute(b.finish())?.assert_success();
         assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
         Ok(())
