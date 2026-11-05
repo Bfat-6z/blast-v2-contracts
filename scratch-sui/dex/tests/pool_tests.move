@@ -108,7 +108,7 @@ fun events_replay_swaps_deposits_withdrawals_and_fee_claims() {
     let mut f = start();
     let pool_id = object::id(&f.pool);
     let initial_id = object::id(&f.position);
-    let created = event::events_by_type<pool::PoolCreated<MEME, QUOTE>>();
+    let created = event::events_by_type<PoolCreated<MEME, QUOTE>>();
     let mut expected = bcs::to_bytes(&pool_id);
     expected.append(bcs::to_bytes(&initial_id));
     expected.append(bcs::to_bytes(&100_000u64));
@@ -126,7 +126,7 @@ fun events_replay_swaps_deposits_withdrawals_and_fee_claims() {
     destroy(refund);
     let mut late = f.new_position();
     let late_id = object::id(&late);
-    let positions = event::events_by_type<pool::PositionCreated>();
+    let positions = event::events_by_type<PositionCreated>();
     let mut expected = bcs::to_bytes(&pool_id);
     expected.append(bcs::to_bytes(&late_id));
     assert_eq!(positions.length(), 1);
@@ -140,7 +140,7 @@ fun events_replay_swaps_deposits_withdrawals_and_fee_claims() {
     let output = f.sell(input, 107_800, 200);
     assert_eq!(output.value(), 107_800);
     destroy(output);
-    let swaps = event::events_by_type<pool::Swapped>();
+    let swaps = event::events_by_type<Swapped>();
     assert_eq!(swaps.length(), 2);
     assert_eq!(
         bcs::to_bytes(&swaps[0]),
@@ -155,7 +155,7 @@ fun events_replay_swaps_deposits_withdrawals_and_fee_claims() {
     assert_eq!(quote.value(), 10_000);
     destroy(meme);
     destroy(quote);
-    let changes = event::events_by_type<pool::LiquidityChanged>();
+    let changes = event::events_by_type<LiquidityChanged>();
     assert_eq!(changes.length(), 2);
     assert_eq!(
         bcs::to_bytes(&changes[0]),
@@ -171,7 +171,7 @@ fun events_replay_swaps_deposits_withdrawals_and_fee_claims() {
     let fee = f.claim_initial_fees();
     assert_eq!(fee.value(), 2_969);
     destroy(fee);
-    let claims = event::events_by_type<pool::FeesClaimed>();
+    let claims = event::events_by_type<FeesClaimed>();
     assert_eq!(claims.length(), 2);
     let mut expected = bcs::to_bytes(&pool_id);
     expected.append(bcs::to_bytes(&late_id));
@@ -182,7 +182,7 @@ fun events_replay_swaps_deposits_withdrawals_and_fee_claims() {
     expected.append(bcs::to_bytes(&2_969u64));
     assert_eq!(bcs::to_bytes(&claims[1]), expected);
     late.destroy_empty();
-    let closed = event::events_by_type<pool::PositionClosed>();
+    let closed = event::events_by_type<PositionClosed>();
     let mut expected = bcs::to_bytes(&pool_id);
     expected.append(bcs::to_bytes(&late_id));
     assert_eq!(closed.length(), 1);
@@ -518,7 +518,18 @@ fun duplicate_pool(f: &mut PoolFixture): (Pool<MEME, QUOTE>, Position<MEME, QUOT
 
 // === Imports ===
 
-use blast_fun_dex::pool::{Self, Factory, Pool, Position};
+use blast_fun_dex::pool::{
+    Self,
+    Factory,
+    FeesClaimed,
+    LiquidityChanged,
+    Pool,
+    PoolCreated,
+    Position,
+    PositionClosed,
+    PositionCreated,
+    Swapped
+};
 
 use std::{bcs, unit_test::{assert_eq, destroy}};
 

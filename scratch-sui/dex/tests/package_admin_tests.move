@@ -53,7 +53,7 @@ fun canonical_capabilities_enter_dex_custody() {
     // The creation fact belongs to the sealing transaction, so it is collected
     // before the shared object can be taken in the next one.
     let created = blast_admin::events::collect_one<
-        blast_admin::events::UpgradeCustodyCreated<PACKAGE_MARKER>,
+        UpgradeCustodyCreated<PACKAGE_MARKER>,
     >(0);
 
     scenario.next_tx(ROOT);
@@ -122,7 +122,7 @@ fun the_package_admin_role_can_irreversibly_restrict_the_dex() {
 
     fixture.restrict_to_additive();
     let restricted = blast_admin::events::collect_one<
-        blast_admin::events::UpgradePolicyRestricted<PACKAGE_MARKER>,
+        UpgradePolicyRestricted<PACKAGE_MARKER>,
     >(0);
     let (_, _, _, _, previous_policy, new_policy) =
         restricted.upgrade_policy_restricted_fields();
@@ -160,7 +160,7 @@ fun the_package_admin_role_can_permanently_destroy_upgrade_authority() {
     fixture.make_immutable();
 
     let destroyed = blast_admin::events::collect_one<
-        blast_admin::events::UpgradeCapDestroyed<PACKAGE_MARKER>,
+        UpgradeCapDestroyed<PACKAGE_MARKER>,
     >(0);
     let (custodian_id, emitted_upgrade_cap_id, _, final_native_version, final_policy) =
         destroyed.upgrade_cap_destroyed_fields();
@@ -276,7 +276,7 @@ fun package_digest(): vector<u8> {
     x"11223344556677889900aabbccddeeffffeeddccbbaa00998877665544332211"
 }
 
-fun authorize_upgrade(self: &mut Fixture, digest: vector<u8>): package::UpgradeTicket {
+fun authorize_upgrade(self: &mut Fixture, digest: vector<u8>): UpgradeTicket {
     let Fixture { factory, authority, admin_cap, package_admin, .. } = self;
     let admin_witness = authority.sign_in(admin_cap);
 
@@ -306,7 +306,10 @@ fun make_immutable(self: &mut Fixture) {
 
 // === Imports ===
 
-use blast_admin::acl::{Authority, AdminCap, SuperAdminCap};
+use blast_admin::{
+    acl::{Authority, AdminCap, SuperAdminCap},
+    events::{UpgradeCapDestroyed, UpgradeCustodyCreated, UpgradePolicyRestricted}
+};
 
 use blast_fun_dex::{
     dex_domain::{Self, DEX_DOMAIN},
@@ -318,4 +321,4 @@ use blast_fun_dex::{
 
 use std::unit_test::{assert_eq, destroy};
 
-use sui::{package, test_scenario::{Self, Scenario}};
+use sui::{package::{Self, UpgradeTicket}, test_scenario::{Self, Scenario}};
