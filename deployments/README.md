@@ -106,8 +106,10 @@ reductions wait the old notice.
   PTB.
 - Every release bumps the package's `constants::generation`;
   `commit_upgrade_and_advance` advances the stored generation in the same call.
-- `make_immutable` ends upgrades for good; the vault takes it only after its
-  audit and a quiet period (ADR 0137, #195).
+- `make_immutable` ends upgrades for good. It needs the package's own witness
+  and live `PackageVersion`, so only a package with its own wrapper can take
+  it: today the vault (see [Vault immutability](#vault-immutability)). Another
+  package gains one only through an upgrade.
 
 ## Boosts adapter upgrades
 
