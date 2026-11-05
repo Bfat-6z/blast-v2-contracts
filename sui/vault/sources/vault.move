@@ -6,8 +6,8 @@
 /// The one LP vault every Blast sale migrates into: permanent custody of a venue position, and the
 /// split of every fee collection it earns.
 ///
-/// An admitted venue builds the vault from the terms it redeemed from a sale's migration (or its
-/// own standalone terms), attaches the position under its sealed `Venue` key, and shares it. Every
+/// An admitted venue builds the vault from the terms it redeemed from a sale's migration, attaches
+/// the position under its sealed `Venue` key, and shares it. Every
 /// collection then pays Blast its per-vault share through the core protocol ledger, at once or held
 /// for the sale's partner, and divides the rest by the vault's fee split: address routes are paid
 /// at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with
@@ -108,8 +108,8 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 
 // Venue: creation and custody
 
-/// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
-/// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` and the terms' sealing
+/// Builds a vault for `terms`, unshared so the venue attaches its position and settles the
+/// migration residuals in `share_with_position` before anyone can reach it. Aborts unless `Venue` and the terms' sealing
 /// witness are admitted; Blast's share needs no check, since `migration::vault_terms` capped it
 /// when the terms were sealed. The vault's ID derives from the registry, the sealing witness, and
 /// the sale, so each sale has exactly one vault and a client computes its address from the sale

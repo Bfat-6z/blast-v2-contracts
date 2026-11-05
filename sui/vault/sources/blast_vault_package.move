@@ -8,14 +8,13 @@
 /// One list of admitted witness types decides who may create a vault: the venue whose witness
 /// calls `vault::new`, and the issuer whose witness sealed the vault's terms, must both be on it.
 /// Each witness is the one its module alone can construct. The launchpad and presale witnesses
-/// are issuers; a venue is a venue and, for the standalone vaults whose terms it seals itself, an
-/// issuer too. The list does not distinguish the two roles, so an admitted product witness would
+/// are issuers and the venue witnesses are venues. The list does not distinguish the two roles, so an admitted product witness would
 /// also pass the venue check; both are Blast-reviewed code, and products never call `vault::new`.
 /// Gating venues binds every position key to venue code Blast reviewed; gating issuers keeps a
 /// stranger's terms, with a Blast share and partner of its choosing, out of Blast vaults.
 ///
-/// An admitted venue obtains `VaultTerms` only from `migration::redeem` or by sealing them itself
-/// under its own witness from Blast policy; it never accepts `VaultTerms` from its caller. Terms
+/// An admitted venue obtains `VaultTerms` only from `migration::redeem`; it never accepts
+/// `VaultTerms` from its caller. Terms
 /// are `copy`, so a venue that took them as an argument would let anyone who obtained a sale's
 /// terms create a second vault claiming that sale.
 ///

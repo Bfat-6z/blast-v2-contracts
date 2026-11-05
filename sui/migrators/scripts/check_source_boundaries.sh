@@ -487,7 +487,7 @@ bluefin_migrate_body="$(bluefin_body migrate)"
 # hand-off, creates the named pool priced from the handed-off balances with the caller's whole
 # creation fee, opens and seeds a full-range position, creates and shares the vault holding the
 # position under the redeemed terms, then shares the pool.
-[[ "$bluefin_migrate_body" == 'migrators_version.assert_current(constants::generation!());letPoolTier{tick_spacing,fee_rate}=*venue_config.value(PoolTierKey<Meme>());let(lower_tick,upper_tick)=bluefin_config.full_range_tick_range(tick_spacing);let(meme,quote,terms)=migration.redeem(Venue());letmutpool=pool::create_pool_and_get_object<Meme,Quote,SUI>(clock,bluefin_config,currency.pool_name(quote_currency),b"",currency.symbol().into_bytes(),currency.decimals(),b"",quote_currency.symbol().into_bytes(),quote_currency.decimals(),quote_currency.icon_url().into_bytes(),tick_spacing,fee_rate,migration::sqrt_price_x64(meme.value(),quote.value(),true),creation_fee.into_balance(),ctx);letmutposition=pool::open_position(bluefin_config,&mutpool,lower_tick,upper_tick,ctx);let(residual_meme,residual_quote)=pool.seed(bluefin_config,&mutposition,meme,quote,clock);letpool_id=position.pool_id();letliquidity=position.liquidity();vault::new<Meme,Quote,_>(registry,&Venue(),vault_version,terms,pool_id).share_with_position(&Venue(),treasury,position,liquidity,residual_meme,residual_quote,ctx);pool.share_pool_object();' ]] \
+[[ "$bluefin_migrate_body" == 'migrators_version.assert_current(constants::generation!());let(meme,quote,terms)=migration.redeem(Venue());letPoolTier{tick_spacing,fee_rate}=*venue_config.value(PoolTierKey<Meme>());let(lower_tick,upper_tick)=bluefin_config.full_range_tick_range(tick_spacing);letmutpool=pool::create_pool_and_get_object<Meme,Quote,SUI>(clock,bluefin_config,currency.pool_name(quote_currency),b"",currency.symbol().into_bytes(),currency.decimals(),b"",quote_currency.symbol().into_bytes(),quote_currency.decimals(),quote_currency.icon_url().into_bytes(),tick_spacing,fee_rate,migration::sqrt_price_x64(meme.value(),quote.value(),true),creation_fee.into_balance(),ctx);letmutposition=pool::open_position(bluefin_config,&mutpool,lower_tick,upper_tick,ctx);let(residual_meme,residual_quote)=pool.seed(bluefin_config,&mutposition,meme,quote,clock);letpool_id=position.pool_id();letliquidity=position.liquidity();vault::new<Meme,Quote,_>(registry,&Venue(),vault_version,terms,pool_id).share_with_position(&Venue(),treasury,position,liquidity,residual_meme,residual_quote,ctx);pool.share_pool_object();' ]] \
     && [[ "$(bluefin_body full_range_tick_range)" == 'let(minimum_tick,maximum_tick)=bluefin_config.get_tick_range();letspacing=i32::from(tick_spacing);(minimum_tick.div(spacing).mul(spacing).as_u32(),maximum_tick.div(spacing).mul(spacing).as_u32())' ]] || \
     fail "Bluefin migrate must redeem the hand-off, create and fund the pool, create and share the vault holding the position, then share the pool"
 # The pool and the position record no Meme icon, as Cetus: the position stores the URL it is given,
@@ -603,9 +603,9 @@ cetus_body() {
 pair_proof='letmeme_is_a=is_meme_coin_a<Meme,Quote,CoinA,CoinB>();'
 [[ "$(cetus_body migrate)" == "migrators_version.assert_current(constants::generation!());assert!(factory::is_right_order<CoinA,CoinB>(),blast_migrators::errors::invalid_coin_order!());${pair_proof}"* ]] \
     && in_order \
+        'let(meme,quote,terms)=migration.redeem(Venue());' \
         'lettick_spacing=*venue_config.value(PoolTierKey<Meme>());' \
         'let(tick_lower,tick_upper)=pool_creator::full_range_tick_range(tick_spacing);' \
-        'let(meme,quote,terms)=migration.redeem(Venue());' \
         'letmeme_amount=meme.value();letquote_amount=quote.value();' \
         'letsqrt_price=migration::sqrt_price_x64(meme_amount,quote_amount,meme_is_a);' \
         'letfix_a=is_coin_a_seed_side(tick_lower,tick_upper,sqrt_price,meme_amount,quote_amount,meme_is_a);' \

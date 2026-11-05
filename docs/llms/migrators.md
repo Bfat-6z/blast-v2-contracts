@@ -163,9 +163,9 @@ Inside the venue call, in order:
 
 1. Checks the coin order (`blast_migrators::errors::EInvalidCoinOrder`) and that `{CoinA, CoinB}`
    is exactly `{Meme, Quote}` (`blast_migrators::errors::EWrongCoinPair`).
-2. Reads the coin's tick spacing from `VenueConfig` and Cetus's full-range ticks for it.
-3. Redeems the `Migration` with its witness, receiving the pool's Meme and Quote and the vault's
+2. Redeems the `Migration` with its witness, receiving the pool's Meme and Quote and the vault's
    terms; a hand-off sealed for any other venue aborts.
+3. Reads the coin's tick spacing from `VenueConfig` and Cetus's full-range ticks for it.
 4. Computes the opening price from those atomic amounts with
    `blast_core::migration::sqrt_price_x64` (see Economics), creates the pool with the reserved
    `PoolCreationCap` at the recorded tick spacing, and seeds full-range liquidity with exactly the
@@ -188,7 +188,7 @@ Bluefin pools always have Meme as coin A: `Pool<Meme, Quote>`.
    `Currency<Quote>`, Bluefin `GlobalConfig` (mutable), `VaultRegistry` (mutable), the vault
    `PackageVersion`, `Treasury`, the `Coin<SUI>` fee (by value), and `Clock`.
 
-Inside the call: it reads the coin's tier from `VenueConfig`; redeems the `Migration` as above;
+Inside the call: it redeems the `Migration` as above; reads the coin's tier from `VenueConfig`;
 creates `Pool<Meme, Quote>` at the tier, named `MEME-QUOTE` from the two Coin Registry symbols, with
 no Meme icon and the Quote's icon; opens a position across the widest tick range Bluefin's
 configured bounds allow at that spacing; seeds it with the handed-off balances; creates the vault

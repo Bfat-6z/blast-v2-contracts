@@ -84,6 +84,8 @@ const MIGRATED: u8 = 3;
 const INVALID_INITIAL_MEME_SUPPLY: u64 = 8;
 const INVALID_LAUNCH_LIFECYCLE: u64 = 12;
 const CREATOR_CAP_NOT_LIVE: u64 = 18;
+/// `blast_core::errors` code for a hand-off redeemed by another venue.
+const WRONG_VENUE: u64 = 8;
 /// `blast_vault::errors` codes.
 const BUYBACK_BELOW_MINIMUM: u64 = 8;
 const CLAIMS_CLOSED: u64 = 23;
@@ -1213,6 +1215,37 @@ impl World {
         Ok(())
     }
 
+    /// `launch::migrate`, then the Cetus venue's `migrate` with that Migration, in Cetus's coin
+    /// order for the pair.
+    fn cetus_migrate_of_bluefin_hand_off(&self, b: &mut ProgrammableTransactionBuilder, launch: &Launch) -> Result<()> {
+        let launch_arg = self.shared(b, launch.launch, true)?;
+        let version = self.shared(b, self.version, false)?;
+        let config = self.shared(b, self.config, false)?;
+        let currency = self.shared(b, launch.currency, true)?;
+        let clock = self.clock(b)?;
+        let migration = call(b, self.blast, "launch", "migrate", self.pair(launch), vec![launch_arg, version, config, currency, clock]);
+        let mut types = self.pair(launch);
+        if meme_is_cetus_a(&launch.meme, &self.quote()) {
+            types.extend([launch.meme.clone(), self.quote()]);
+        } else {
+            types.extend([self.quote(), launch.meme.clone()]);
+        }
+        let args = vec![
+            migration,
+            self.shared(b, self.migrators_version, false)?,
+            self.shared(b, self.venue_config, false)?,
+            self.shared(b, self.venue("cetus_global_config"), false)?,
+            self.shared(b, self.venue("cetus_pools"), true)?,
+            self.shared(b, self.venue("cetus_burn_manager"), true)?,
+            self.shared(b, self.vault_stack.registry, true)?,
+            self.vault_version(b)?,
+            self.shared(b, self.treasury, false)?,
+            clock,
+        ];
+        call(b, self.migrators, "cetus", "migrate", types, args);
+        Ok(())
+    }
+
     /// Bluefin's live SUI pool-creation fee from the snapshot's fee table.
     fn bluefin_creation_fee(&self) -> Result<u64> {
         let (_, _, fee): (ObjectID, String, u64) =
@@ -1246,6 +1279,14 @@ impl World {
             let expected = Expected::Abort { package: id(BLUEFIN), module: "pool", code: 1039 };
             self.h.assert_rolled_back(b.finish(), expected, &watched, &owners)?;
             self.report(format!("migrate paying {} MIST against the live {fee} MIST creation fee: Bluefin pool aborts 1039, rolled back", fee + 1));
+
+            // The Bluefin launch's hand-off into the Cetus venue: the redeem refuses it before
+            // the Cetus venue reads any tier or touches Cetus.
+            let mut b = ProgrammableTransactionBuilder::new();
+            self.cetus_migrate_of_bluefin_hand_off(&mut b, launch)?;
+            let expected = Expected::Abort { package: self.core, module: "migration", code: WRONG_VENUE };
+            self.h.assert_rolled_back(b.finish(), expected, &watched, &owners)?;
+            self.report("launch::migrate then cetus::migrate with the Bluefin launch's Migration: blast_core::migration wrong_venue, rolled back".into());
         } else {
             let mut reversed = self.pool_pair(launch);
             reversed.reverse();

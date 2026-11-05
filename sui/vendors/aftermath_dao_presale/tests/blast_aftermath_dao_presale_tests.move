@@ -36,7 +36,7 @@ fun publication_sends_the_admin_cap_to_the_publisher() {
 
 #[test]
 /// `prepare` issues this venue's ticket for the pair and shares one pool creation for the sale
-/// token and LP coin, recorded in one event.
+/// token and LP coin, bound to the issuer and recorded in one event.
 fun prepare_issues_this_venues_ticket_and_shares_the_pool_creation() {
     let mut scenario = publish();
 
@@ -48,7 +48,12 @@ fun prepare_issues_this_venues_ticket_and_shares_the_pool_creation() {
     let pool_creation = scenario.take_shared<PoolCreation<LP, SALE>>();
     assert_eq!(
         reserved,
-        vector[migrator::pool_creation_reserved_for_testing(object::id(&pool_creation))],
+        vector[
+            migrator::pool_creation_reserved_for_testing(
+                object::id(&pool_creation),
+                type_name::with_original_ids<TestIssuer>(),
+            ),
+        ],
     );
     test_scenario::return_shared(pool_creation);
     scenario.end();
@@ -80,6 +85,66 @@ fun migrate_refuses_a_hand_off_for_another_venue() {
 
     scenario.next_tx(KEEPER);
     scenario.migrate(type_name::with_original_ids<QUOTE>());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EWrongIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+/// A hand-off for this venue whose terms another package sealed cannot consume the pool creation
+/// the AdminCap bound to the presale's issuer, so it can never set the sale's pool price.
+fun migrate_refuses_terms_another_issuer_sealed() {
+    let mut scenario = publish();
+    scenario.prepare_for<A>().redeem_ticket();
+
+    scenario.next_tx(KEEPER);
+    scenario.migrate(type_name::with_original_ids<Venue>());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_core::errors::EWrongVenue, location = blast_core::migration)]
+/// The venue check precedes the issuer check.
+fun migrate_checks_the_venue_before_the_issuer() {
+    let mut scenario = publish();
+    scenario.prepare_for<A>().redeem_ticket();
+
+    scenario.next_tx(KEEPER);
+    scenario.migrate(type_name::with_original_ids<QUOTE>());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+/// Anyone can construct a primitive, so it cannot be the issuer.
+fun prepare_rejects_a_primitive_issuer() {
+    let mut scenario = publish();
+
+    scenario.prepare_for<u64>().redeem_ticket();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+/// Anyone can construct a framework type such as `SUI`'s witness, so it cannot be the issuer.
+fun prepare_rejects_a_framework_issuer() {
+    let mut scenario = publish();
+
+    scenario.prepare_for<SUI>().redeem_ticket();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+/// Standard-library types are refused like framework types.
+fun prepare_rejects_a_standard_library_issuer() {
+    let mut scenario = publish();
+
+    scenario.prepare_for<String>().redeem_ticket();
 
     abort
 }
@@ -150,12 +215,19 @@ fun publish(): Scenario {
     scenario
 }
 
-/// The publisher's AdminCap prepares `SALE` in `QUOTE` with a pool creation reserved for `LP`.
+/// The publisher's AdminCap prepares `SALE` in `QUOTE` with a pool creation reserved for `LP` and
+/// the test issuer every hand-off here is sealed by.
 fun prepare(scenario: &mut Scenario): VenueTicket<SALE, QUOTE> {
+    scenario.prepare_for<TestIssuer>()
+}
+
+/// The publisher's AdminCap prepares `SALE` in `QUOTE` with a pool creation reserved for `LP` and
+/// bound to `Issuer`.
+fun prepare_for<Issuer>(scenario: &mut Scenario): VenueTicket<SALE, QUOTE> {
     let admin_cap = scenario.take_from_sender<AdminCap>();
     let create_pool_cap = amm_pool::create_pool_cap_for_testing(scenario.ctx());
 
-    let ticket = migrator::prepare<LP, SALE, QUOTE>(&admin_cap, create_pool_cap, scenario.ctx());
+    let ticket = migrator::prepare<LP, SALE, QUOTE, Issuer>(&admin_cap, create_pool_cap, scenario.ctx());
 
     scenario.return_to_sender(admin_cap);
     ticket
@@ -215,7 +287,7 @@ use blast_aftermath_dao_presale::blast_aftermath_dao_presale::{
     sorts_before_for_testing,
 };
 
-use blast_core::{bps, fee_split, migration::{Self, VenueTicket}};
+use blast_core::{bps, fee_split, migration::{Self, TestIssuer, VenueTicket}};
 
 use dao_fee_amm::version;
 
@@ -225,3 +297,4 @@ use sui::{balance, event, sui::SUI, test_scenario::{Self, Scenario}};
 
 use fun migrate as Scenario.migrate;
 use fun prepare as Scenario.prepare;
+use fun prepare_for as Scenario.prepare_for;

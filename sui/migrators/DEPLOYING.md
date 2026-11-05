@@ -48,7 +48,12 @@ Record the `PackageAdmin` and `PackageVersion` IDs.
 ## 3. Configure
 
 Migrators holds no policy and defines no pause bits, so there is nothing to
-release here. Package upgrades take `blast_admin::package_admin`'s
+release here. That is a residual risk to accept at deployment: the package has no
+emergency stop of its own. Migration stops with each product's migration pause
+bit and `buyback_and_burn` with the vault's admin bit, but `prepare`,
+`collect_fees` and `settle_and_apply_fee_split` can be stopped only by advancing
+this package's generation through a delayed upgrade, which retires every call
+to the old bytecode after the upgrade notice. Package upgrades take `blast_admin::package_admin`'s
 `UpgradeAdmin<BLAST_MIGRATORS>` and `CancelAdmin<BLAST_MIGRATORS>` roles, and
 buybacks the shared `blast_core::blast_domain::BuybackAdmin`. Blast's LP share
 for new sales is each product's own LP-fee policy, sealed into the `Migration`.

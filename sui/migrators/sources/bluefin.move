@@ -86,10 +86,10 @@ public fun migrate<Meme, Quote>(
     ctx: &mut TxContext,
 ) {
     migrators_version.assert_current(constants::generation!());
+    let (meme, quote, terms) = migration.redeem(Venue());
 
     let PoolTier { tick_spacing, fee_rate } = *venue_config.value(PoolTierKey<Meme>());
     let (lower_tick, upper_tick) = bluefin_config.full_range_tick_range(tick_spacing);
-    let (meme, quote, terms) = migration.redeem(Venue());
 
     let mut pool = pool::create_pool_and_get_object<Meme, Quote, SUI>(
         clock,

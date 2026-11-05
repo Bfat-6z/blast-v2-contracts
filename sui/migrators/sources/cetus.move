@@ -120,10 +120,10 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
         blast_migrators::errors::invalid_coin_order!(),
     );
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
+    let (meme, quote, terms) = migration.redeem(Venue());
 
     let tick_spacing = *venue_config.value(PoolTierKey<Meme>());
     let (tick_lower, tick_upper) = pool_creator::full_range_tick_range(tick_spacing);
-    let (meme, quote, terms) = migration.redeem(Venue());
 
     let meme_amount = meme.value();
     let quote_amount = quote.value();

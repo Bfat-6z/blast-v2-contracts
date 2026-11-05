@@ -1190,10 +1190,14 @@ holds the sale token's `TreasuryCap`), one PTB:
 
 1. Beforehand, in its own transaction, publish a fresh Aftermath LP coin `Lp` (one per sale); its
    publication yields the `CreatePoolCapV2` that the `AdminCap` holder passes in.
-2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken,
-   Quote>(admin_cap, create_pool_cap)` shares the `PoolCreation<Lp, SaleToken>`, emits
+2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken, Quote,
+   Issuer>(admin_cap, create_pool_cap)`, with the presale's package witness
+   `blast_presale::blast_presale::PackageWitness` as `Issuer`, shares the
+   `PoolCreation<Lp, SaleToken>` bound to that issuer, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
-   (`pool_creation_id`), and returns the venue's `VenueTicket<SaleToken, Quote>`. Its pool's weights
+   (`pool_creation_id`, `issuer`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
+   A primitive, standard-library, or framework `Issuer` aborts with
+   `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EInvalidIssuer` (code 2). Its pool's weights
    and fees are the module's constants, so it records no tier.
 3. `blast_presale::blast_presale::new` with the `TreasuryCap` and the ticket, as for any sale. The
    `CreationPolicy` must admit the vendor's `Venue`.
@@ -1218,7 +1222,9 @@ Migrate (*anyone*, while `Funded`), one PTB:
 4. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
 
 The call redeems the hand-off with its `Venue` (`blast_core::errors::EWrongVenue` for a hand-off
-sealed for any other venue), keeping only the sale's ID from the vault terms (no vault exists for
+sealed for any other venue), refuses terms another package sealed
+(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongIssuer`, code 3), keeping only
+the sale's ID from the vault terms (no vault exists for
 its pools), creates the pool from all LP tokens and Quote (50/50 weights, flatness 0, a 0.01%
 swap-in fee that compounds into the LP, no other pool fees, name "Blast Presale Pool"), checks it
 holds every unit (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EPoolMismatch`, code
