@@ -97,8 +97,8 @@ fun pending_entries_keep_their_deadlines_across_delay_changes() {
 
     let pending = map.pending(&@0xA).destroy_some();
     assert_eq!(pending.value(), option::some(1));
-    assert_eq!(pending.delay().delay_ms(), 100);
-    assert_eq!(pending.delay().ready_at_ms(), 100);
+    assert_eq!(pending.deadline().delay_ms(), 100);
+    assert_eq!(pending.deadline().ready_at_ms(), 100);
     map.apply(@0xA, &clock);
     assert_eq!(map.schedule(@0xB, option::some(2), &clock), 1_100);
 
@@ -361,7 +361,7 @@ fun readers_report_pending_and_ready_entry_changes_and_delay_changes() {
     assert!(map.entry_ready_at_ms(&@0xB).is_none());
     let proposal = map.pending(&@0xA).destroy_some();
     assert_eq!(proposal.value(), option::some(3));
-    assert_eq!(proposal.delay().delay_ms(), DELAY_MS);
+    assert_eq!(proposal.deadline().delay_ms(), DELAY_MS);
     assert!(!map.is_ready(&@0xA, &clock));
     assert!(!map.is_delay_ready(&clock));
     clock.set_for_testing(DELAY_MS);
