@@ -2,8 +2,9 @@
 
 Use this runbook for a new `blast_presale` deployment. Record the normalized result
 in the format required by [`deployments/README.md`](../../deployments/README.md).
-Publication alone cannot activate presales. The publisher receives an owned Publication;
-only wrapping it with the matching fresh UpgradeCap shares PackageVersion.
+Publication alone cannot activate presales. The publisher receives an owned generic
+Publication; only `blast_admin::package_admin::wrap` with the matching fresh UpgradeCap
+shares PackageVersion.
 Routine mutations and sale creation require the shared version (ADR 0117,
 amended by ADR 0134). Wrap starts fully paused with zero notice on publication-owned
 policies and a 48-hour notice on upgrade custody; ordinary ACL operations configure
@@ -19,111 +20,90 @@ policy before the chosen delay and release.
    `[published.mainnet]` entry from `Published.toml` before publishing, so this
    build publishes a new package rather than resolving to the old one, and commit
    the entry the new publication writes: vendor packages link to it.
-2. `blast_admin`, `blast_partners`, `blast_core` and `blast_vault` must already be
-   published, with their `Published.toml` entries committed, so this build links
-   to the one Blast ACL, the partner registry (see the partners
-   [README](../partners/README.md)), the core `Treasury` that Blast's LP fees go
-   to, and the vault. The vault must also be wrapped, so its shared
-   `PackageVersion` and `VaultRegistry` exist; it stays paused until its venues
-   are admitted (step 6). Set `blast_treasury` in `Move.toml` to the
-   approved destination of Blast's raise and token fees: it is a build-time
-   named address, and publication aborts while it is `0x0`. Run the complete `scripts/verify.sh` gate,
-   then `scripts/publish.sh --preview`
-   and `--execute`, which publish to mainnet. The sender receives the raw `UpgradeCap` and owned `blast_presale_package::Publication`; the
-   package mints no administrator capability. Do not upgrade the package before custody finalization:
-   `package_admin::wrap` accepts only a never-upgraded cap, and a cap upgraded
+2. `blast_admin`, `blast_partners` and `blast_core` must already be published, with
+   their `Published.toml` entries committed, so this build links to the one Blast ACL and
+   generic package administration, the partner registry (see the partners
+   [README](../partners/README.md)), and the core `Treasury` every Blast fee goes to. The
+   vault must also be published and wrapped, so its shared `PackageVersion` and
+   `VaultRegistry` exist; it stays paused until its venues and issuers are admitted
+   (step 6). Run the complete `scripts/verify.sh` gate, then `scripts/publish.sh
+   --preview` and `--execute`, which publish to mainnet. The sender receives the raw
+   `UpgradeCap` and the owned
+   `blast_admin::package_version::Publication<BLAST_PRESALE_PACKAGE>`; the package mints no
+   administrator capability. Do not upgrade the package before custody finalization:
+   `blast_admin::package_admin::wrap` accepts only a never-upgraded cap, and a cap upgraded
    first can never be sealed.
-3. Seal custody with `scripts/wrap_package_admin.sh <package-id> <publication-id>
-   <upgrade-cap-id> --preview` and `--execute`. Publication carries provenance
+3. Seal custody with `scripts/wrap_package_admin.sh <admin-package-id> <package-id>
+   <publication-id> <upgrade-cap-id> --preview` and `--execute`, which calls
+   `blast_admin::package_admin::wrap<BLAST_PRESALE_PACKAGE>`. Publication carries provenance
    only and is permanently consumed. Configure policy after wrap through the ACL.
 
-4. From the effects of step 3, verify that `PackageAdmin` is shared and that the
-   `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
-   unchanged at compatible (`0`). Record the newly shared `PackageVersion` from
-   these finalization effects; its initial pause mask must be 7. Verify zero notice
-   on publication-owned policy and 48 hours on upgrade custody. Verify that wrapping
-   consumed the Publication. From the publish effects, record the shared `FeePolicy`, `CreationPolicy`, and `VenueConfig` singletons.
-5. With the Blast ACL's `SuperAdminCap`, grant the presale roles
-   (`blast_acl::grant_role` with each `blast_presale_domain` type) to the
-   operations multisig's `AdminCap`, minting one with `blast_acl::grant_admin`
-   if needed. Keep `TreasuryAdmin` with the treasury multisig to govern fee
-   payouts. `FeeAdmin` sets the rates
-   for future sales and individual sales before they start. It also chooses which Blast partners new sales may name. `ListingAdmin` allows Quote types.
-   `AdapterAdmin` admits venues, each of which receives the liquidity of the
-   sales it creates. Holder-reward rounds and per-vault Blast-share changes are
-   the vault's, under the shared `blast_core::blast_domain` roles: grant the
-   automated rewards worker only the core `RewardsAdmin`, to publish rounds and
-   settle their capped gas reserves.
-   `UpgradeAdmin` governs the upgrade notice and compatible upgrades with atomic
-   generation cutover. Grant `CancelAdmin` and `PauseAdmin` to the independent
-   incident-response multisig before release: revoking a role does not cancel
-   its pending proposals, so cancellation must be available. Each call signs in
-   with `blast_acl::sign_in` in the same PTB. The root revokes a role or an
-   administrator at once if a cap is lost or compromised.
-6. With the ordinary role witnesses and Clock, schedule/apply fee rates,
-   destination and reviewed venue admission: `creation_policy::schedule_venue`
-   and `apply_venue` for each admitted `blast_presale::{cetus,bluefin,aftermath}::Venue`.
-   Quote admission uses ListingAdmin.
-   At zero delay scheduling and application can share a PTB. Zero fees are valid;
-   verify destinations, rates and venue admission. Apply or cancel every outstanding
-   zero-delay proposal. Use each operation’s role to schedule/apply its intended next
-   notice
-   (172,800,000 ms = 48 hours for the R2 rollout) and read each notice back.
-   Upgrade custody already holds 48 hours; do not propose it again (an unchanged
-   notice aborts). Then grant UnpauseAdmin and clear the selected bits (all = 7)
-   with `package_admin::unpause`, passing the shared PackageAdmin, PackageVersion,
-   FeePolicy and CreationPolicy. It aborts with `EUnguardedNotice` while any of
-   those notices is zero, a pending proposal would set one to zero, or a venue
-   admission is pending. Unpause is immediate and needs no Clock. Later changes snapshot the applied delay; delay-policy changes
-   themselves wait the old delay. Pausing never resets it.
+4. From the effects of step 3, verify that `PackageAdmin<BLAST_PRESALE_PACKAGE>` is shared
+   and that the `UpgradeCap` is wrapped inside it, no longer address-owned, with its policy
+   unchanged at compatible (`0`). Record the newly shared
+   `PackageVersion<BLAST_PRESALE_PACKAGE>`; its initial pause mask must be 7. Verify zero
+   notice on the presale's policies and 48 hours on upgrade custody. Verify that wrapping
+   consumed the Publication. From the publish effects, record the shared `FeePolicy`,
+   `CreationPolicy`, and `PresaleRegistry` singletons.
+5. With the Blast ACL's `SuperAdminCap`, grant the roles (`blast_acl::grant_role`) to the
+   operations multisig's `AdminCap`, minting one with `blast_acl::grant_admin` if needed.
+   Product roles are `blast_core::blast_domain`'s, shared with the launchpad and the vault:
+   `FeeAdmin` sets the rates for future sales and individual sales before they start and
+   chooses which Blast partners new sales may name; `ListingAdmin` allows Quote types;
+   `AdapterAdmin` admits venues, each of which receives the liquidity of the sales it
+   creates; `TreasuryAdmin`, with the treasury multisig, governs the core treasury's
+   destination. Package roles are `blast_admin::package_admin`'s over
+   `BLAST_PRESALE_PACKAGE`: `UpgradeAdmin` governs the upgrade notice and compatible upgrades
+   with atomic generation cutover, `PauseAdmin` and `UnpauseAdmin` set and clear pause bits,
+   and `CancelAdmin` cancels upgrade actions. Grant both `CancelAdmin` roles and `PauseAdmin`
+   to the independent incident-response multisig before release: revoking a role does not
+   cancel its pending proposals, so cancellation must be available. Each call signs in with
+   `blast_acl::sign_in` in the same PTB. The root revokes a role or an administrator at once
+   if a cap is lost or compromised.
+6. With the ordinary role witnesses and Clock, schedule/apply fee rates and reviewed venue
+   admission: `creation_policy::schedule_venue` and `apply_venue` for each admitted venue
+   witness (`blast_migrators::cetus::Venue`, `blast_migrators::bluefin::Venue`, vendor
+   venues). Quote admission uses ListingAdmin. At zero delay scheduling and application can
+   share a PTB. Zero fees are valid; verify rates and venue admission. Apply or cancel every
+   outstanding zero-delay proposal. Use each operation's role to schedule/apply its intended
+   next notice (172,800,000 ms = 48 hours) and read each notice back. Upgrade custody
+   already holds 48 hours; do not propose it again (an unchanged notice aborts). Then grant
+   `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` and clear the selected bits (all = 7) with
+   `creation_policy::unpause`, passing the shared CreationPolicy, FeePolicy, PackageAdmin and
+   PackageVersion. It aborts with `EUnguardedNotice` while either policy's notice is zero, a
+   pending proposal would set one to zero, or a venue admission is pending, and the generic
+   administration aborts while the upgrade notice is unguarded. Unpause is immediate and
+   needs no Clock. Pausing never resets a notice.
 
-   Each admitted venue must also be admitted in the vault's `VaultRegistry`, or
-   its migrations abort, so admit it there first. Removing a venue from the
-   registry strands every funded sale that names it until it is admitted again;
-   reserve that for a venue found unsafe. The vault must also list the presale's
-   `blast_presale::blast_presale::PackageWitness`, the issuer of every presale's
+   Each admitted venue that creates vaults must also be admitted in the vault's
+   `VaultRegistry`, or its migrations abort, so admit it there first. Removing a venue from
+   the registry strands every funded sale that names it until it is admitted again; reserve
+   that for a venue found unsafe. The vault must also list the presale's
+   `blast_presale::blast_presale_package::PackageWitness`, the issuer of every presale's
    vault terms. To list each: with the core `blast_domain::AdapterAdmin`,
    `blast_vault_package::schedule_witness<Witness>` then `apply_witness`. The vault
-   publishes fully paused with a zero admission notice, so admit the presale and
-   launchpad venues together, then raise the vault's notice to 48 hours and
-   unpause it, as [migrators DEPLOYING](../migrators/DEPLOYING.md) step 4
-   describes. A venue admitted later waits that notice.
-
-7. Before admitting Aftermath during initial configuration or later administration,
-   run `sui/vendors/aftermath_dao_presale`'s `node scripts/check_mainnet_abi.mjs`,
-   which pins the Aftermath AMM and DAO-fee revisions this package links to.
-   Prove a mainnet dev-inspect of `aftermath::migrate` with a fresh LP coin for
-   both coin orders: the local stubs prove types, not behavior. Creation tooling
-   should also dev-inspect the venue's `migrate` with each new sale's own venue
-   terms before listing it: Bluefin tick spacing and fee rate are checked only
-   locally at `prepare`, the Aftermath `Lp` and `CreatePoolCapV2` pairing not at
-   all, and a
-   sale the venue rejects refunds only at its liquidity deadline. Allow
-   only Quote types whose deny-list and pause controls Blast accepts (owner,
-   2026-10-02): payouts are pushed, so a denied fee recipient blocks that vault's
-   collection and a denied raise recipient blocks migration until the LP deadline. On
-   Cetus and Bluefin a denied fee recipient also blocks the re-split that would remove it,
-   because those venues collect under the old split first (ADR 0134, accepted trust
-   boundaries).
-   Create sale coins through Coin Registry without regulation. Finalization
-   enforces confirmed `Unregulated` status and rejects legacy `Unknown` status,
-   which can conceal an existing deny cap. Accept each presale partner deal, once it is registered
-   in `blast_partners`, as `FeeAdmin` with `creation_policy::add_partner`.
-8. Operate a keeper that calls `settle` and the venue's `migrate` in one PTB as
-   soon as a sale's `end_ms` passes, followed by
-   `blast_presale::pay_protocol_fees_with_partner` for a sale that names a
-   partner, which pays the partner and Blast the fees its migration held. After
-   each LP-fee collection on a partnered sale's vault, call
-   `blast_vault::vault::pay_protocol_fees_with_partner`. The seven-day LP-window floor keeps a
-   successful raise from being settled and cancelled in one transaction, but a
-   funded sale still reaches its refund exit after a week without migration. For
-   Bluefin, pass a `Coin<SUI>` equal to `config::get_pool_creation_fee_amount<SUI>`
-   read at submission time; Bluefin aborts on any other amount. For Cetus, the
-   Quote must be in Cetus's permission-pair allowlist at the sale's tick spacing
-   when the sale is created. For Aftermath, call `aftermath::migrate<Lp, Meme, Quote>`
-   with the LP coin type whose `CreatePoolCapV2` the sale's `prepare` kept in
-   `VenueConfig`; its DAO fees then wait as coins at the vault's address until a
-   keeper lists them in `aftermath::collect_fees`.
+   publishes fully paused with a zero admission notice, so admit the presale and launchpad
+   issuers and venues together, then raise the vault's notice to 48 hours and unpause it, as
+   [migrators DEPLOYING](../migrators/DEPLOYING.md) describes. A venue admitted later waits
+   that notice.
+7. Creation tooling should dev-inspect the venue's `migrate` with each new sale's own
+   venue terms before listing it: a sale the venue rejects refunds only at its liquidity
+   deadline. Allow only Quote types whose deny-list and pause controls Blast accepts
+   (owner, 2026-10-02): payouts are pushed, so a denied fee recipient blocks that vault's
+   collection and a denied raise recipient blocks migration until the LP deadline (ADR 0134,
+   accepted trust boundaries). Create sale coins through Coin Registry without regulation.
+   Finalization enforces confirmed `Unregulated` status and rejects legacy `Unknown` status,
+   which can conceal an existing deny cap. Accept each presale partner deal, once it is
+   registered in `blast_partners`, as `FeeAdmin` with `creation_policy::add_partner`.
+8. Operate a keeper that calls `settle`, `blast_presale::migrate` and the venue's `migrate`
+   in one PTB as soon as a sale's `end_ms` passes, followed by
+   `blast_presale::pay_protocol_fees_with_partner` for a sale that names a partner, which
+   pays the partner and Blast the fees its migration held. After each LP-fee collection on a
+   partnered sale's vault, call `blast_vault::vault::pay_protocol_fees_with_partner`. The
+   seven-day LP-window floor keeps a successful raise from being settled and cancelled in
+   one transaction, but a funded sale still reaches its refund exit after a week without
+   migration. Each venue's own arguments (Bluefin's creation fee, Cetus's coin order) are in
+   [migrators DEPLOYING](../migrators/DEPLOYING.md).
 9. Record publication, source verification, object IDs, transaction digests, each
    presale role granted with its `AdminCap` and holder, and the checks above.
 
@@ -135,8 +115,9 @@ with its amendments [0101](../../docs/decisions/0101-presale-protocol-fees.md),
 [0106](../../docs/decisions/0106-presale-partners.md), and
 [0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md).
 
-For later governed upgrades, increment both compiled generation constants. Schedule the digest with UpgradeAdmin, wait its snapshotted deadline, authorize
-it, execute the native upgrade, and call
-`commit_upgrade_and_advance` with the receipt and mutable PackageVersion in the
-same PTB. Refresh SDK package IDs while retaining the original type identity and
+For later governed upgrades, increment `constants::generation`. Schedule the digest with
+`blast_admin::package_admin::schedule_upgrade` under `UpgradeAdmin<BLAST_PRESALE_PACKAGE>`,
+wait its snapshotted deadline, authorize it, execute the native upgrade, and call
+`blast_admin::package_admin::commit_upgrade_and_advance` with the receipt and mutable
+PackageVersion in the same PTB. Refresh SDK package IDs while retaining the original type identity and
 shared objects. Never advance a version separately from the native commit.

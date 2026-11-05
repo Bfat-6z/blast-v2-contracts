@@ -98,7 +98,7 @@ fun adapter_boundaries_and_isolation() { exercise(Case::Success); }
 
 fun exercise(case: Case) {
     let mut ctx = sui::tx_context::dummy();
-    let mut version = package_version::new_for_testing(&mut ctx);
+    let mut version = blast_presale_package::version_for_testing(&mut ctx);
     let mut config = creation_policy::new_for_testing(&mut ctx);
     let mut clock = sui::clock::create_for_testing(&mut ctx);
     clock.set_for_testing(1234);
@@ -109,7 +109,7 @@ fun exercise(case: Case) {
         &blast_acl::witness_for_testing<ListingAdmin>(),
         true
     );
-    if (case == Case::StaleSchedule) version.set_for_testing(2);
+    if (case == Case::StaleSchedule) version.set_generation_for_testing(2);
     config.schedule_venue<AdapterA>(&version, &admin, &clock);
     if (case == Case::StaleSchedule) {
         destroy(config);
@@ -124,7 +124,7 @@ fun exercise(case: Case) {
         clock.set_for_testing(1234 + 2 * DELAY - 1);
     };
     if (case == Case::StaleCancel || case == Case::StaleRemove || case == Case::StaleApply)
-        version.set_for_testing(2);
+        version.set_generation_for_testing(2);
     if (case == Case::Cancelled || case == Case::StaleCancel || case == Case::Success)
         config.cancel_venue<AdapterA>(&version, &cancel);
     if (case == Case::Removed || case == Case::StaleRemove)
@@ -158,9 +158,10 @@ fun exercise(case: Case) {
 
 // === Imports ===
 
-use blast_presale::{
-    blast_presale_package::{Self as package_version}, creation_policy,
-    blast_presale_domain::{AdapterAdmin, CancelAdmin, ListingAdmin}
-};
 use blast_admin::blast_acl;
+
+use blast_core::blast_domain::{AdapterAdmin, CancelAdmin, ListingAdmin};
+
+use blast_presale::{blast_presale_package, creation_policy};
+
 use std::{type_name, unit_test::destroy};

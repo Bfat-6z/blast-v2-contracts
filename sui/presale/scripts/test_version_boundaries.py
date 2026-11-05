@@ -30,9 +30,8 @@ class VersionBoundaryTests(unittest.TestCase):
                 original = path.read_text()
                 for name in functions:
                     with self.subTest(module=module, function=name):
-                        start = original.index('public fun ' + name + '(') if name == 'commit_upgrade_and_advance' else original.index('public fun ' + name)
-                        guard = 'assert_next' if name == 'commit_upgrade_and_advance' else 'assert_current'
-                        statement = f'package_version.{guard}();'
+                        start = original.index('public fun ' + name + '<') if ('public fun ' + name + '<') in original else original.index('public fun ' + name + '(')
+                        statement = 'package_version.assert_current(constants::generation!());'
                         offset = original.index(statement, start)
                         path.write_text(original[:offset] + original[offset + len(statement):])
                         result = subprocess.run(['python3', str(check)], capture_output=True)

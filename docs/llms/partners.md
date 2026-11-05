@@ -83,13 +83,14 @@ off, Blast proposes and then applies a zero share; products that name it keep
 working and simply pay it nothing.
 
 **Product acceptance.** Each product accepts a partner in its own shared config,
-as a dynamic field keyed by `PartnerKey(partner_id)` whose `u64` value is the
-time the partner stops being accepted (`u64::MAX` until removed):
+mapping the partner's ID to the time it stops being accepted (`u64::MAX` until
+removed): a dynamic field keyed by `PartnerKey(partner_id)`, or, for the presale,
+the `acceptance_ends_at_ms` table of a `blast_partners::partner_list::PartnerList`:
 
 | Product | Config object and key | Admin |
 | --- | --- | --- |
 | Boosts | `blast_boosts_aftermath::blast_boosts_aftermath::Protocol`, `blast_boosts_aftermath::blast_boosts_aftermath::PartnerKey` | `RiskAdmin` role (`operations::add_partner`, `operations::remove_partner`) |
-| Presale | `creation_policy::CreationPolicy`, `creation_policy::PartnerKey` | presale `FeeAdmin` role (`creation_policy::add_partner`, `creation_policy::remove_partner`) |
+| Presale | `creation_policy::CreationPolicy`, its `partners` `blast_partners::partner_list::PartnerList` | core `FeeAdmin` role (`creation_policy::add_partner`, `creation_policy::remove_partner`) |
 
 Adding applies at once (and cancels a pending removal). Removing sets the value
 to `now` plus `blast_partners::blast_partners::delay_ms()`: the partner stays
@@ -292,10 +293,9 @@ Every event is emitted directly (no envelope).
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in
   its own event in the same transaction:
   `blast_boosts_aftermath::events::PartnerFeePaid` (Boosts),
-  `blast_core::blast_core_events::ProtocolFeesPaid` (launch claims and LP vaults),
-  and `blast_presale::blast_presale::ProtocolFeesPaid` (presale raise fee).
+  `blast_core::blast_core_events::ProtocolFeesPaid` (launch claims, LP vaults and presale fees).
   `blast_fun::events::LaunchCreated` and
-  `blast_presale::blast_presale::PresaleOpened` record the partner a launch or
+  `blast_presale::events::PresaleOpened` record the partner a launch or
   sale names.
 
 ### Aborts
