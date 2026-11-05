@@ -24,7 +24,7 @@ caller chooses them.
 Publication sends the package's only `AdminCap` to the publisher, and
 `scripts/publish_immutable.sh` makes the package immutable in the same
 transaction, so no one can change how a funded sale migrates. The `AdminCap`'s
-one power is preparing sale tokens: `prepare<Lp, SaleToken, Quote, Issuer>`
+one power is preparing sale tokens: `prepare<Lp, SaleToken, Quote, PackageWitness>`
 takes it with the LP coin's `CreatePoolCapV2`, shares a
 `PoolCreation<Lp, SaleToken>` holding that cap and the issuer type, and returns
 the `VenueTicket` that `blast_presale::new` redeems, so the sale can migrate
@@ -32,7 +32,7 @@ only here.
 
 The sale binding has two parts. The `AdminCap` holder pins the issuer at
 `prepare` by passing the presale's package witness,
-`blast_presale::blast_presale_package::PackageWitness`, as the `Issuer` type
+`blast_presale::blast_presale_package::PackageWitness`, as the `PackageWitness` type
 argument (no presale import is needed; primitive, standard-library and
 framework types are refused). `migrate` refuses a `Migration` whose terms any
 other package sealed, so a hostile package that seals its own hand-off for this
@@ -83,7 +83,7 @@ cannot migrate becomes refundable at its LP deadline.
 2. Run `scripts/verify.sh` and `node scripts/check_mainnet_abi.mjs`. The ABI
    gate fails on any newer Aftermath revision until it is reviewed.
 3. Run `scripts/publish_immutable.sh --preview`, then `--execute`.
-4. As Blast's presale `AdapterAdmin`, admit
+4. As Blast's presale `VenueAdmin`, admit
    `<package>::blast_aftermath_dao_presale::Venue` in the presale's
    `CreationPolicy` and, as `ListingAdmin`, allow the sale's Quote type. The
    venue creates no vault, so it is never listed in the `VaultRegistry`.

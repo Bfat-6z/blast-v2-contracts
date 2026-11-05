@@ -9,7 +9,7 @@
 /// Each presale snapshots the rates when it is created. Until the sale's window starts, the
 /// `FeeAdmin` may change that sale's rates, so its economics are fixed before commitments open;
 /// the LP-fee rates then pass to the sale's vault in its migration terms, which changes them per
-/// vault after notice. Blast's fees are paid to the one `blast_core::blast_treasury::Treasury`.
+/// vault after delay. Blast's fees are paid to the one `blast_core::blast_treasury::Treasury`.
 module blast_presale::fee_policy;
 
 // === Public Types ===
@@ -57,7 +57,7 @@ public fun schedule_fees(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let value = protocol_fees(raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps);
 
@@ -70,7 +70,7 @@ public fun apply_fees(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.fees.apply(clock);
 }
@@ -81,7 +81,7 @@ public fun cancel_fees(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.fees.cancel();
 }
@@ -107,7 +107,7 @@ public(package) fun protocol_fees(
     ProtocolFees { raise_bps, token_bps, lp_fee_meme_bps, lp_fee_quote_bps }
 }
 
-/// True when the rates' notice is guarded (see `creation_policy::unpause`).
+/// True when the rates' delay is guarded (see `creation_policy::unpause`).
 public(package) fun is_guarded(self: &FeePolicy): bool {
     self.fees.is_guarded()
 }
@@ -177,7 +177,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-/// Explicit zero-fee fixture with the 48-hour administrative notice.
+/// Explicit zero-fee fixture with the 48-hour administrative delay.
 public fun new_zero_fees_for_testing(ctx: &mut TxContext): FeePolicy {
     new(
         protocol_fees(bps::new(0), bps::new(0), bps::new(0), bps::new(0)),

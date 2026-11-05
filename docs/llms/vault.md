@@ -24,12 +24,12 @@ venue's calls, and call the owner, round, and payout functions on it directly.
 - `blast_vault::holder_rewards::Round<Meme, Quote>` (shared, one per published round) holds one
   round's holder budget, its Merkle root, the claimed-leaf bitmap, and an optional gas reserve.
 - `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>` (shared) gates every call by
-  code generation and holds the admin pause bit.
+  code version and holds the admin pause bit.
 - Owner authority is a `blast_core::owner_proof::OwnerProof` that the sale's product issues to its
   creator-authority holder in the same PTB. A vault accepts it only for its own sale and package
   witness.
 
-Blast admins hold these roles: `AdapterAdmin` admits and removes venue and issuer witnesses; `FeeAdmin` changes Blast's
+Blast admins hold these roles: `VenueAdmin` admits and removes venue and issuer witnesses; `FeeAdmin` changes Blast's
 per-vault share; `RewardsAdmin` schedules rounds and settles gas reserves; `BuybackAdmin` spends
 the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 
@@ -135,13 +135,13 @@ immutable after its audit. An `UpgradeAdmin<BLAST_VAULT_PACKAGE>` schedules that
 `blast_admin::package_admin::schedule_make_immutable` and, once the 48-hour upgrade notice has
 passed, executes it with `blast_vault::blast_vault_package::make_immutable` (the shared
 `PackageAdmin`, the role witness, the `PackageVersion` and `Clock`). The call runs only on the
-current vault generation (code 9 from `blast_admin::package_version` otherwise) and then destroys
+current vault version (code 9 from `blast_admin::package_version` otherwise) and then destroys
 the `UpgradeCap`; no later upgrade or repair is possible.
 
 ### Reading state
 
 - Find a sale's vault without an indexer: its object ID is derived from the shared
-  `blast_vault_package::VaultRegistry` and the key `blast_vault::vault::VaultKey { issuer, origin }`,
+  `blast_vault_package::VaultRegistry` and the key `blast_vault::vault::VaultKey { package_witness, origin }`,
   whose BCS is the sealing package witness's type name as a length-prefixed `String` (ULEB128
   length, then the ASCII name, with the original package ID written without `0x`) followed by the
   sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
@@ -173,7 +173,7 @@ the `UpgradeCap`; no later upgrade or repair is possible.
 
 ### Aborts
 
-- Vault creation: `unadmitted_venue`, then `unadmitted_issuer`. Scheduling Blast's share above
+- Vault creation: `unadmitted_venue`, then `unadmitted_package_witness`. Scheduling Blast's share above
   3,000 basis points per asset aborts with `invalid_protocol_bps`.
 - A venue's buyback or auto-LP return: `wrong_vault` for another vault's receipt,
   `returned_exceeds_taken` when it returns more than it took.

@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 
 SOURCES = Path(__file__).resolve().parent.parent / "sources"
-GUARD = "package_version.assert_current(constants::generation!());"
+GUARD = "package_version.assert_current(constants::version!());"
 GUARDED = {'blast_presale': ['new', 'set_supply', 'set_token_allocations', 'set_participant_vesting', 'set_raise', 'set_windows', 'set_eligibility', 'set_uncapped_phase', 'set_hard_cap', 'set_fee_split', 'set_partner', 'finalize', 'share', 'set_protocol_fees', 'commit_open', 'commit_allowlisted', 'commit_uncapped', 'settle', 'cancel_unlaunched', 'claim', 'migrate', 'prove_owner', 'pay_protocol_fees_with_partner'], 'creation_policy': ['schedule_venue_delay', 'apply_venue_delay', 'cancel_venue_delay', 'set_quote_allowed', 'schedule_venue', 'apply_venue', 'cancel_venue', 'remove_venue', 'add_partner', 'remove_partner', 'unpause'], 'fee_policy': ['schedule_fees', 'apply_fees', 'cancel_fees']}
 # Deletion of an inert, caller-owned cap needs no version.
 EXEMPT = {"destroy_cap"}
@@ -37,15 +37,15 @@ for path in SOURCES.glob("*.move"):
                       "operational_version", "upgrade_custody", "UpgradeCap"):
         assert forbidden not in production, (path.name, forbidden)
 assert not (SOURCES / "package_admin.move").exists()
-marker = (SOURCES / "blast_presale_package.move").read_text().split("// === Test-Only Functions ===")[0]
-assert "public struct BLAST_PRESALE_PACKAGE() has drop;" in marker
-assert "public struct PackageWitness() has drop;" in marker
-init = dict((name, body) for name, _, body in functions(marker))["init"]
+otw = (SOURCES / "blast_presale_package.move").read_text().split("// === Test-Only Functions ===")[0]
+assert "public struct BLAST_PRESALE_PACKAGE() has drop;" in otw
+assert "public struct PackageWitness() has drop;" in otw
+init = dict((name, body) for name, _, body in functions(otw))["init"]
 assert "package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)" in init
 assert ".keep(ctx)" in init and "share_object" not in init
-assert set(name for name, _, _ in functions(marker)) == {"init", "package_witness"}
-assert "public(package) fun package_witness(): PackageWitness {" in marker
-# Only the presale's unpause clears bits, after checking every presale notice.
+assert set(name for name, _, _ in functions(otw)) == {"init", "package_witness"}
+assert "public(package) fun package_witness(): PackageWitness {" in otw
+# Only the presale's unpause clears bits, after checking every presale delay.
 callers = [(path.stem, name) for path in SOURCES.glob("*.move")
            for name, _, body in functions(path.read_text()) if "clear_pause_bits(" in body]
 assert callers == [("creation_policy", "unpause")], callers

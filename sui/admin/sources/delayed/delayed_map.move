@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Keyed values under one shared notice, such as per-coin overrides. Every entry change,
-/// setting or clearing, waits the notice applied when it was scheduled, and its deadline is
-/// fixed then; a later notice change never moves it. See `delayed` for the shared rules.
+/// Keyed values under one shared delay, such as per-coin overrides. Every entry change,
+/// setting or clearing, waits the delay applied when it was scheduled, and its deadline is
+/// fixed then; a later delay change never moves it. See `delayed` for the shared rules.
 module blast_admin::delayed_map;
 
 // === Public Types ===
 
-/// Applied values by entry, one applied notice, at most one pending change per entry, and at
-/// most one proposed notice. Values live in a Table, so reads cost one entry and the map
+/// Applied values by entry, one applied delay, at most one pending change per entry, and at
+/// most one proposed delay. Values live in a Table, so reads cost one entry and the map
 /// grows without bound; pending changes are few and live inline.
 public struct DelayedMap<
     K: copy + drop + store,
@@ -21,26 +21,26 @@ public struct DelayedMap<
     entries: Table<E, V>,
     delay_ms: u64,
     pending: VecMap<E, EntryProposal<V>>,
-    pending_delay: Option<Notice>,
+    pending_delay: Option<PendingDelay>,
 }
 
-/// A proposed entry value, or none to clear the entry, and the notice it waits.
+/// A proposed entry value, or none to clear the entry, and the delay it waits.
 public struct EntryProposal<V: copy + drop + store> has copy, drop, store {
     value: Option<V>,
-    notice: Notice,
+    delay: PendingDelay,
 }
 
 /// What a map proposal does once applied.
 public enum MapChange<E: copy + drop + store, V: copy + drop + store> has copy, drop, store {
     /// Sets the entry to `value`, or clears it when `value` is none.
     Entry { entry: E, value: Option<V> },
-    /// Changes the notice for later entry changes.
+    /// Changes the delay for later entry changes.
     Delay,
 }
 
 // === Public Functions ===
 
-/// An empty map; every entry change waits the applied notice.
+/// An empty map; every entry change waits the applied delay.
 public fun new<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     key: K,
     owner: &UID,
@@ -70,7 +70,7 @@ public fun value<K: copy + drop + store, E: copy + drop + store, V: copy + drop 
     if (self.entries.contains(*entry)) option::some(self.entries[*entry]) else option::none()
 }
 
-/// The applied notice for entry changes, in milliseconds.
+/// The applied delay for entry changes, in milliseconds.
 public fun delay_ms<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): u64 {
@@ -85,15 +85,15 @@ public fun pending<K: copy + drop + store, E: copy + drop + store, V: copy + dro
     self.pending.try_get(entry)
 }
 
-/// The proposed next notice, if any.
+/// The proposed next delay, if any.
 public fun pending_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
-): Option<Notice> {
+): Option<PendingDelay> {
     self.pending_delay
 }
 
-/// Proposes setting `entry` to `value` (none clears it) after the applied notice, and
-/// returns when. A replaced change is cancelled and the full notice restarts. Aborts when
+/// Proposes setting `entry` to `value` (none clears it) after the applied delay, and
+/// returns when. A replaced change is cancelled and the full delay restarts. Aborts when
 /// `value` is already the applied value.
 public fun schedule<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &mut DelayedMap<K, E, V>,
@@ -103,10 +103,10 @@ public fun schedule<K: copy + drop + store, E: copy + drop + store, V: copy + dr
 ): u64 {
     assert!(value != self.value(&entry), blast_admin::errors::unchanged!());
     let ready_at_ms = delayed::ready_at_ms_after(self.delay_ms, 0, clock);
-    let notice = delayed::new_notice(self.delay_ms, ready_at_ms);
+    let delay = delayed::new_pending_delay(self.delay_ms, ready_at_ms);
 
     self.cancel_entry_if_pending(entry);
-    self.pending.insert(entry, EntryProposal { value, notice });
+    self.pending.insert(entry, EntryProposal { value, delay });
 
     sui::event::emit(MapScheduled {
         owner: self.owner,
@@ -126,8 +126,8 @@ public fun apply<K: copy + drop + store, E: copy + drop + store, V: copy + drop 
     clock: &Clock,
 ) {
     assert!(self.pending.contains(&entry), blast_admin::errors::no_pending!());
-    let EntryProposal { value, notice } = self.pending[&entry];
-    assert!(clock.timestamp_ms() >= notice.ready_at_ms(), blast_admin::errors::not_ready!());
+    let EntryProposal { value, delay } = self.pending[&entry];
+    assert!(clock.timestamp_ms() >= delay.ready_at_ms(), blast_admin::errors::not_ready!());
 
     self.pending.remove(&entry);
     if (self.entries.contains(entry)) {
@@ -139,7 +139,7 @@ public fun apply<K: copy + drop + store, E: copy + drop + store, V: copy + drop 
         owner: self.owner,
         key: self.key,
         change: MapChange::Entry { entry, value },
-        delay_ms: notice.delay_ms(),
+        delay_ms: delay.delay_ms(),
     });
 }
 
@@ -152,7 +152,7 @@ public fun cancel<K: copy + drop + store, E: copy + drop + store, V: copy + drop
     self.cancel_entry_if_pending(entry);
 }
 
-/// Proposes only a new notice, ready after the applied one, and returns when. Pending
+/// Proposes only a new delay, ready after the applied one, and returns when. Pending
 /// entry changes keep their deadlines.
 public fun schedule_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &mut DelayedMap<K, E, V>,
@@ -163,7 +163,7 @@ public fun schedule_delay<K: copy + drop + store, E: copy + drop + store, V: cop
     let ready_at_ms = delayed::ready_at_ms_after(self.delay_ms, delay_ms, clock);
 
     self.cancel_delay_if_pending();
-    self.pending_delay.fill(delayed::new_notice(delay_ms, ready_at_ms));
+    self.pending_delay.fill(delayed::new_pending_delay(delay_ms, ready_at_ms));
 
     sui::event::emit(MapScheduled<K, E, V> {
         owner: self.owner,
@@ -176,26 +176,26 @@ public fun schedule_delay<K: copy + drop + store, E: copy + drop + store, V: cop
     ready_at_ms
 }
 
-/// Applies the ready proposed notice to later entry changes.
+/// Applies the ready proposed delay to later entry changes.
 public fun apply_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &mut DelayedMap<K, E, V>,
     clock: &Clock,
 ) {
     assert!(self.pending_delay.is_some(), blast_admin::errors::no_pending!());
-    let notice = self.pending_delay.extract();
-    delayed::assert_ready_at(notice.ready_at_ms(), notice.delay_ms(), clock);
+    let delay = self.pending_delay.extract();
+    delayed::assert_ready_at(delay.ready_at_ms(), delay.delay_ms(), clock);
 
-    self.delay_ms = notice.delay_ms();
+    self.delay_ms = delay.delay_ms();
 
     sui::event::emit(MapApplied<K, E, V> {
         owner: self.owner,
         key: self.key,
         change: MapChange::Delay,
-        delay_ms: notice.delay_ms(),
+        delay_ms: delay.delay_ms(),
     });
 }
 
-/// Discards the proposed notice, even a ready one.
+/// Discards the proposed delay, even a ready one.
 public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &mut DelayedMap<K, E, V>,
 ) {
@@ -203,7 +203,7 @@ public fun cancel_delay<K: copy + drop + store, E: copy + drop + store, V: copy 
     self.cancel_delay_if_pending();
 }
 
-/// Deletes a map with no pending entry or notice change and records its end, which also
+/// Deletes a map with no pending entry or delay change and records its end, which also
 /// ends every remaining entry.
 public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: DelayedMap<K, E, V>,
@@ -224,9 +224,9 @@ public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>)
     self.value
 }
 
-/// The notice the change waits and when it becomes ready.
-public fun entry_proposal_notice<V: copy + drop + store>(self: &EntryProposal<V>): Notice {
-    self.notice
+/// The delay the change waits and when it becomes ready.
+public fun entry_proposal_delay<V: copy + drop + store>(self: &EntryProposal<V>): PendingDelay {
+    self.delay
 }
 
 /// Whether `entry` has a pending change.
@@ -242,7 +242,7 @@ public fun entry_ready_at_ms<K: copy + drop + store, E: copy + drop + store, V: 
     self: &DelayedMap<K, E, V>,
     entry: &E,
 ): Option<u64> {
-    self.pending.try_get(entry).map!(|proposal| proposal.notice.notice_ready_at_ms())
+    self.pending.try_get(entry).map!(|proposal| proposal.delay.pending_delay_ready_at_ms())
 }
 
 /// Whether `entry`'s pending change would apply now.
@@ -252,17 +252,17 @@ public fun is_ready<K: copy + drop + store, E: copy + drop + store, V: copy + dr
     clock: &Clock,
 ): bool {
     self.pending.try_get(entry).is_some_and!(|proposal| {
-        clock.timestamp_ms() >= proposal.notice.notice_ready_at_ms()
+        clock.timestamp_ms() >= proposal.delay.pending_delay_ready_at_ms()
     })
 }
 
-/// Whether a pending notice change would apply now.
+/// Whether a pending delay change would apply now.
 public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
     clock: &Clock,
 ): bool {
-    self.pending_delay.is_some_and!(|notice| {
-        delayed::is_ready_at(notice.notice_ready_at_ms(), notice.notice_delay_ms(), clock)
+    self.pending_delay.is_some_and!(|delay| {
+        delayed::is_ready_at(delay.pending_delay_ready_at_ms(), delay.pending_delay_ms(), clock)
     })
 }
 
@@ -289,7 +289,7 @@ public fun contains<K: copy + drop + store, E: copy + drop + store, V: copy + dr
 }
 
 /// How many entries have an applied value.
-public fun entry_count<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
+public fun length<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): u64 {
     self.entries.length()
@@ -302,17 +302,17 @@ public fun pending_count<K: copy + drop + store, E: copy + drop + store, V: copy
     self.pending.length()
 }
 
-/// True when every change still to come waits a nonzero notice: the applied notice is nonzero,
+/// True when every change still to come waits a nonzero delay: the applied delay is nonzero,
 /// no proposal would set it to zero, and no entry change scheduled earlier is pending.
 public fun is_guarded<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
     self: &DelayedMap<K, E, V>,
 ): bool {
     self.delay_ms > 0
         && self.pending.is_empty()
-        && self.pending_delay.is_none_or!(|notice| notice.notice_delay_ms() > 0)
+        && self.pending_delay.is_none_or!(|delay| delay.pending_delay_ms() > 0)
 }
 
-/// The entry a change touches, or none for a notice change.
+/// The entry a change touches, or none for a delay change.
 public fun changed_entry<E: copy + drop + store, V: copy + drop + store>(
     self: &MapChange<E, V>,
 ): Option<E> {
@@ -322,12 +322,13 @@ public fun changed_entry<E: copy + drop + store, V: copy + drop + store>(
     }
 }
 
-/// The value an entry change proposes (none clears), or none for a notice change.
+/// The value an entry change proposes, whose inner none clears the entry, or none for a delay
+/// change.
 public fun changed_value<E: copy + drop + store, V: copy + drop + store>(
     self: &MapChange<E, V>,
-): Option<V> {
+): Option<Option<V>> {
     match (self) {
-        MapChange::Entry { entry: _, value } => *value,
+        MapChange::Entry { entry: _, value } => option::some(*value),
         MapChange::Delay => option::none(),
     }
 }
@@ -339,14 +340,14 @@ fun cancel_entry_if_pending<K: copy + drop + store, E: copy + drop + store, V: c
     entry: E,
 ) {
     if (!self.pending.contains(&entry)) return;
-    let (_, EntryProposal { value, notice }) = self.pending.remove(&entry);
+    let (_, EntryProposal { value, delay }) = self.pending.remove(&entry);
 
     sui::event::emit(MapCancelled {
         owner: self.owner,
         key: self.key,
         change: MapChange::Entry { entry, value },
-        delay_ms: notice.delay_ms(),
-        ready_at_ms: notice.ready_at_ms(),
+        delay_ms: delay.delay_ms(),
+        ready_at_ms: delay.ready_at_ms(),
     });
 }
 
@@ -354,14 +355,14 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store, V: c
     self: &mut DelayedMap<K, E, V>,
 ) {
     if (self.pending_delay.is_none()) return;
-    let notice = self.pending_delay.extract();
+    let delay = self.pending_delay.extract();
 
     sui::event::emit(MapCancelled<K, E, V> {
         owner: self.owner,
         key: self.key,
         change: MapChange::Delay,
-        delay_ms: notice.delay_ms(),
-        ready_at_ms: notice.ready_at_ms(),
+        delay_ms: delay.delay_ms(),
+        ready_at_ms: delay.ready_at_ms(),
     });
 }
 
@@ -404,7 +405,7 @@ public fun map_destroyed_fields<K: copy + drop + store, E: copy + drop + store, 
 
 // === Events ===
 
-/// A map was created empty with its first applied notice.
+/// A map was created empty with its first applied delay.
 public struct MapCreated<
     K: copy + drop + store,
     phantom E: copy + drop + store,
@@ -415,8 +416,8 @@ public struct MapCreated<
     delay_ms: u64,
 }
 
-/// An entry change or notice change was proposed, ready from `ready_at_ms`. `delay_ms` is
-/// the notice an entry change waits, or the proposed next notice.
+/// An entry change or delay change was proposed, ready from `ready_at_ms`. `delay_ms` is
+/// the delay an entry change waits, or the proposed next delay.
 public struct MapScheduled<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -435,7 +436,7 @@ public struct MapCancelled<K: copy + drop + store, E: copy + drop + store, V: co
     ready_at_ms: u64,
 }
 
-/// An entry was set or cleared, or a notice change applied; `delay_ms` matches its
+/// An entry was set or cleared, or a delay change applied; `delay_ms` matches its
 /// `MapScheduled`.
 public struct MapApplied<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store> has copy, drop {
     owner: ID,
@@ -457,8 +458,8 @@ public struct MapDestroyed<
 // === Imports ===
 
 public use fun entry_proposal_value as EntryProposal.value;
-public use fun entry_proposal_notice as EntryProposal.notice;
+public use fun entry_proposal_delay as EntryProposal.delay;
 
-use blast_admin::delayed::{Self, Notice};
+use blast_admin::delayed::{Self, PendingDelay};
 
 use sui::{clock::Clock, table::{Self, Table}, vec_map::{Self, VecMap}};

@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Allowlists whose members join only after the applied notice and leave at once. See
+/// Allowlists whose members join only after the applied delay and leave at once. See
 /// `delayed` for the rules every delayed type shares.
 module blast_admin::delayed_set;
 
 // === Public Types ===
 
-/// Admitted members, one applied notice for new admissions, pending admissions with fixed
-/// deadlines, and at most one proposed notice. A notice change never moves a deadline.
+/// Admitted members, one applied delay for new admissions, pending admissions with fixed
+/// deadlines, and at most one proposed delay. A delay change never moves a deadline.
 public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has store {
     owner: ID,
     key: K,
     members: VecSet<E>,
     delay_ms: u64,
-    admissions: VecMap<E, Notice>,
-    pending_delay: Option<Notice>,
+    admissions: VecMap<E, PendingDelay>,
+    pending_delay: Option<PendingDelay>,
 }
 
 /// What a set proposal does once applied.
 public enum SetChange<E: copy + drop + store> has copy, drop, store {
     /// Admits the member.
     Admission(E),
-    /// Changes the notice for later admissions.
+    /// Changes the delay for later admissions.
     Delay,
 }
 
 // === Public Functions ===
 
-/// An empty set; every admission waits the applied notice.
+/// An empty set; every admission waits the applied delay.
 public fun new<K: copy + drop + store, E: copy + drop + store>(
     key: K,
     owner: &UID,
@@ -64,7 +64,7 @@ public fun members<K: copy + drop + store, E: copy + drop + store>(
     self.members
 }
 
-/// The applied notice for new admissions, in milliseconds.
+/// The applied delay for new admissions, in milliseconds.
 public fun delay_ms<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): u64 {
     self.delay_ms
 }
@@ -84,25 +84,25 @@ public fun pending_count<K: copy + drop + store, E: copy + drop + store>(
     self.admissions.length()
 }
 
-/// True when every admission still to come waits a nonzero notice: the applied notice is
+/// True when every admission still to come waits a nonzero delay: the applied delay is
 /// nonzero, no proposal would set it to zero, and no admission scheduled earlier is pending.
 public fun is_guarded<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
 ): bool {
     self.delay_ms > 0
         && self.admissions.is_empty()
-        && self.pending_delay.is_none_or!(|notice| notice.notice_delay_ms() > 0)
+        && self.pending_delay.is_none_or!(|delay| delay.pending_delay_ms() > 0)
 }
 
-/// The proposed next notice, if any.
+/// The proposed next delay, if any.
 public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
-): Option<Notice> {
+): Option<PendingDelay> {
     self.pending_delay
 }
 
-/// Proposes admitting `member` after the applied notice (never a proposed one) and returns
-/// when. Rescheduling a pending member cancels its admission and restarts the notice.
+/// Proposes admitting `member` after the applied delay (never a proposed one) and returns
+/// when. Rescheduling a pending member cancels its admission and restarts the delay.
 /// Aborts when `member` is already admitted.
 public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
     self: &mut DelayedSet<K, E>,
@@ -113,7 +113,7 @@ public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
     let ready_at_ms = delayed::ready_at_ms_after(self.delay_ms, 0, clock);
 
     self.cancel_admission_if_pending(member);
-    self.admissions.insert(member, delayed::new_notice(self.delay_ms, ready_at_ms));
+    self.admissions.insert(member, delayed::new_pending_delay(self.delay_ms, ready_at_ms));
 
     sui::event::emit(SetScheduled {
         owner: self.owner,
@@ -156,7 +156,7 @@ public fun cancel_add<K: copy + drop + store, E: copy + drop + store>(
     self.cancel_admission_if_pending(member);
 }
 
-/// Removes `member` at once and discards its pending admission, leaving the notice.
+/// Removes `member` at once and discards its pending admission, leaving the delay.
 /// Aborts when `member` is neither admitted nor pending.
 public fun remove<K: copy + drop + store, E: copy + drop + store>(
     self: &mut DelayedSet<K, E>,
@@ -172,7 +172,7 @@ public fun remove<K: copy + drop + store, E: copy + drop + store>(
     };
 }
 
-/// Proposes only a new notice, ready after the applied one, and returns when. Pending
+/// Proposes only a new delay, ready after the applied one, and returns when. Pending
 /// admissions keep their deadlines.
 public fun schedule_delay<K: copy + drop + store, E: copy + drop + store>(
     self: &mut DelayedSet<K, E>,
@@ -183,7 +183,7 @@ public fun schedule_delay<K: copy + drop + store, E: copy + drop + store>(
     let ready_at_ms = delayed::ready_at_ms_after(self.delay_ms, delay_ms, clock);
 
     self.cancel_delay_if_pending();
-    self.pending_delay.fill(delayed::new_notice(delay_ms, ready_at_ms));
+    self.pending_delay.fill(delayed::new_pending_delay(delay_ms, ready_at_ms));
 
     sui::event::emit(SetScheduled<K, E> {
         owner: self.owner,
@@ -196,26 +196,26 @@ public fun schedule_delay<K: copy + drop + store, E: copy + drop + store>(
     ready_at_ms
 }
 
-/// Applies the ready proposed notice to later admissions.
+/// Applies the ready proposed delay to later admissions.
 public fun apply_delay<K: copy + drop + store, E: copy + drop + store>(
     self: &mut DelayedSet<K, E>,
     clock: &Clock,
 ) {
     assert!(self.pending_delay.is_some(), blast_admin::errors::no_pending!());
-    let notice = self.pending_delay.extract();
-    delayed::assert_ready_at(notice.ready_at_ms(), notice.delay_ms(), clock);
+    let delay = self.pending_delay.extract();
+    delayed::assert_ready_at(delay.ready_at_ms(), delay.delay_ms(), clock);
 
-    self.delay_ms = notice.delay_ms();
+    self.delay_ms = delay.delay_ms();
 
     sui::event::emit(SetApplied<K, E> {
         owner: self.owner,
         key: self.key,
         change: SetChange::Delay,
-        delay_ms: notice.delay_ms(),
+        delay_ms: delay.delay_ms(),
     });
 }
 
-/// Discards the proposed notice, even a ready one.
+/// Discards the proposed delay, even a ready one.
 public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(
     self: &mut DelayedSet<K, E>,
 ) {
@@ -223,7 +223,7 @@ public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(
     self.cancel_delay_if_pending();
 }
 
-/// Deletes a set with no pending admission or notice change and records its end, which
+/// Deletes a set with no pending admission or delay change and records its end, which
 /// also ends every remaining membership.
 public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: DelayedSet<K, E>) {
     assert!(
@@ -237,7 +237,7 @@ public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: Delayed
 }
 
 /// How many members are admitted.
-public fun member_count<K: copy + drop + store, E: copy + drop + store>(
+public fun length<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
 ): u64 {
     self.members.length()
@@ -258,17 +258,17 @@ public fun is_ready<K: copy + drop + store, E: copy + drop + store>(
     clock: &Clock,
 ): bool {
     self.admissions.try_get(member).is_some_and!(|admission| {
-        clock.timestamp_ms() >= admission.notice_ready_at_ms()
+        clock.timestamp_ms() >= admission.pending_delay_ready_at_ms()
     })
 }
 
-/// Whether a pending notice change would apply now.
+/// Whether a pending delay change would apply now.
 public fun is_delay_ready<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
     clock: &Clock,
 ): bool {
-    self.pending_delay.is_some_and!(|notice| {
-        delayed::is_ready_at(notice.notice_ready_at_ms(), notice.notice_delay_ms(), clock)
+    self.pending_delay.is_some_and!(|delay| {
+        delayed::is_ready_at(delay.pending_delay_ready_at_ms(), delay.pending_delay_ms(), clock)
     })
 }
 
@@ -282,15 +282,15 @@ public fun key<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet
     self.key
 }
 
-/// The notice `member`'s pending admission waits and when it becomes ready, if one is pending.
-public fun admission_notice<K: copy + drop + store, E: copy + drop + store>(
+/// The delay `member`'s pending admission waits and when it becomes ready, if one is pending.
+public fun admission_delay<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
     member: &E,
-): Option<Notice> {
+): Option<PendingDelay> {
     self.admissions.try_get(member)
 }
 
-/// The member a change admits, or none for a notice change.
+/// The member a change admits, or none for a delay change.
 public fun member<E: copy + drop + store>(self: &SetChange<E>): Option<E> {
     match (self) {
         SetChange::Admission(member) => option::some(*member),
@@ -318,14 +318,14 @@ fun cancel_admission_if_pending<K: copy + drop + store, E: copy + drop + store>(
 
 fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store>(self: &mut DelayedSet<K, E>) {
     if (self.pending_delay.is_none()) return;
-    let notice = self.pending_delay.extract();
+    let delay = self.pending_delay.extract();
 
     sui::event::emit(SetCancelled<K, E> {
         owner: self.owner,
         key: self.key,
         change: SetChange::Delay,
-        delay_ms: notice.delay_ms(),
-        ready_at_ms: notice.ready_at_ms(),
+        delay_ms: delay.delay_ms(),
+        ready_at_ms: delay.ready_at_ms(),
     });
 }
 
@@ -375,15 +375,15 @@ public fun member_removed_fields<K: copy + drop + store, E: copy + drop + store>
 
 // === Events ===
 
-/// A set was created empty with its first applied notice.
+/// A set was created empty with its first applied delay.
 public struct SetCreated<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
     delay_ms: u64,
 }
 
-/// An admission or notice change was proposed, ready from `ready_at_ms`. `delay_ms` is the
-/// notice an admission waits, or the proposed next notice.
+/// An admission or delay change was proposed, ready from `ready_at_ms`. `delay_ms` is the
+/// delay an admission waits, or the proposed next delay.
 public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -392,7 +392,7 @@ public struct SetScheduled<K: copy + drop + store, E: copy + drop + store> has c
     ready_at_ms: u64,
 }
 
-/// A proposed admission or notice change was discarded, by cancellation, replacement or
+/// A proposed admission or delay change was discarded, by cancellation, replacement or
 /// removal; its fields match its `SetScheduled`.
 public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has copy, drop {
     owner: ID,
@@ -402,7 +402,7 @@ public struct SetCancelled<K: copy + drop + store, E: copy + drop + store> has c
     ready_at_ms: u64,
 }
 
-/// A member was admitted, or a notice change applied; `delay_ms` matches its `SetScheduled`.
+/// A member was admitted, or a delay change applied; `delay_ms` matches its `SetScheduled`.
 public struct SetApplied<K: copy + drop + store, E: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -425,6 +425,6 @@ public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 // === Imports ===
 
-use blast_admin::delayed::{Self, Notice};
+use blast_admin::delayed::{Self, PendingDelay};
 
 use sui::{clock::Clock, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};

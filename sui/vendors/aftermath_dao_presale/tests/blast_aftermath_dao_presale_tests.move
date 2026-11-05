@@ -90,7 +90,7 @@ fun migrate_refuses_a_hand_off_for_another_venue() {
 }
 
 #[test]
-#[expected_failure(abort_code = migrator::EWrongIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+#[expected_failure(abort_code = migrator::EWrongPackageWitness, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
 /// A hand-off for this venue whose terms another package sealed cannot consume the pool creation
 /// the AdminCap bound to the presale's issuer, so it can never set the sale's pool price.
 fun migrate_refuses_terms_another_issuer_sealed() {
@@ -117,7 +117,7 @@ fun migrate_checks_the_venue_before_the_issuer() {
 }
 
 #[test]
-#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+#[expected_failure(abort_code = migrator::EInvalidPackageWitness, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
 /// Anyone can construct a primitive, so it cannot be the issuer.
 fun prepare_rejects_a_primitive_issuer() {
     let mut scenario = publish();
@@ -128,7 +128,7 @@ fun prepare_rejects_a_primitive_issuer() {
 }
 
 #[test]
-#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+#[expected_failure(abort_code = migrator::EInvalidPackageWitness, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
 /// Anyone can construct a framework type such as `SUI`'s witness, so it cannot be the issuer.
 fun prepare_rejects_a_framework_issuer() {
     let mut scenario = publish();
@@ -139,7 +139,7 @@ fun prepare_rejects_a_framework_issuer() {
 }
 
 #[test]
-#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+#[expected_failure(abort_code = migrator::EInvalidPackageWitness, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
 /// Standard-library types are refused like framework types.
 fun prepare_rejects_a_standard_library_issuer() {
     let mut scenario = publish();
@@ -223,11 +223,11 @@ fun prepare(scenario: &mut Scenario): VenueTicket<SALE, QUOTE> {
 
 /// The publisher's AdminCap prepares `SALE` in `QUOTE` with a pool creation reserved for `LP` and
 /// bound to `Issuer`.
-fun prepare_for<Issuer>(scenario: &mut Scenario): VenueTicket<SALE, QUOTE> {
+fun prepare_for<PackageWitness>(scenario: &mut Scenario): VenueTicket<SALE, QUOTE> {
     let admin_cap = scenario.take_from_sender<AdminCap>();
     let create_pool_cap = amm_pool::create_pool_cap_for_testing(scenario.ctx());
 
-    let ticket = migrator::prepare<LP, SALE, QUOTE, Issuer>(&admin_cap, create_pool_cap, scenario.ctx());
+    let ticket = migrator::prepare<LP, SALE, QUOTE, PackageWitness>(&admin_cap, create_pool_cap, scenario.ctx());
 
     scenario.return_to_sender(admin_cap);
     ticket

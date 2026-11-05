@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 #[test_only]
-/// The generic publication, version, pause and upgrade-custody lifecycle every upgradeable
-/// package shares, exercised with the `0xa` test marker.
+/// The generic publication, version, pause and PackageAdmin lifecycle every upgradeable
+/// package shares, exercised with the `0xa` test one-time witness (OTW).
 module blast_admin::package_admin_tests;
 
 // === Constants ===
@@ -14,13 +14,13 @@ const OTHER_SENDER: address = @0xAD;
 
 const OTHER_PACKAGE_ID: address = @0xBAD;
 
-/// The test marker's original package address.
+/// The test OTW's original package address.
 const PACKAGE_ID: address = @0xa;
 
 /// Create 1, trade 2 and migrate 4, as both sale products define them.
 const VALID_PAUSE_BITS: u8 = 7;
 
-const NOTICE_MS: u64 = 48 * 60 * 60 * 1_000;
+const DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Test-Only Types ===
 
@@ -50,7 +50,7 @@ fun a_publication_cannot_supply_the_version_operations_require() {
 }
 
 #[test]
-fun the_publication_holds_the_marker_packages_publisher() {
+fun the_publication_holds_the_otw_packages_publisher() {
     let fixture = start_published();
 
     let publication = fixture.take_publication();
@@ -61,41 +61,41 @@ fun the_publication_holds_the_marker_packages_publisher() {
 }
 
 #[test]
-fun wrapping_shares_custody_and_a_fully_paused_version_and_consumes_the_publication() {
+fun wrapping_shares_the_package_admin_and_a_fully_paused_version_and_consumes_the_publication() {
     let mut fixture = start_published();
     let publication = fixture.take_publication();
     let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), fixture.scenario.ctx());
 
     package_admin::wrap(publication, upgrade_cap, fixture.scenario.ctx());
     let created = blast_admin_events::collect_one<
-        UpgradeCustodyCreated<PACKAGE_MARKER>,
+        PackageAdminCreated<PACKAGE_MARKER>,
     >(0);
 
     fixture.scenario.next_tx(PUBLISHER);
     let package_admin = fixture.scenario.take_shared<PackageAdmin<PACKAGE_MARKER>>();
     let package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
     let (
-        emitted_custodian_id,
+        emitted_package_admin_id,
         emitted_publisher_id,
         emitted_upgrade_cap_id,
         emitted_package_id,
-        emitted_native_version,
+        emitted_upgrade_cap_version,
         emitted_policy,
-    ) = created.upgrade_custody_created_fields();
+    ) = created.package_admin_created_fields();
 
     assert!(!fixture.scenario.has_most_recent_for_sender<Publication<PACKAGE_MARKER>>());
-    assert_eq!(emitted_custodian_id, object::id(&package_admin));
+    assert_eq!(emitted_package_admin_id, object::id(&package_admin));
     assert_eq!(emitted_publisher_id, object::id(package_admin.publisher_for_testing()));
     assert_eq!(emitted_upgrade_cap_id, package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(emitted_package_id, PACKAGE_ID.to_id());
-    assert_eq!(emitted_native_version, 1);
+    assert_eq!(emitted_upgrade_cap_version, 1);
     assert_eq!(emitted_policy, package::compatible_policy());
     assert!(package_admin.has_upgrade_cap());
     assert!(package_admin.publisher_for_testing().from_package<PACKAGE_MARKER>());
-    assert_eq!(package_admin.upgrade_for_testing().delay_ms(), NOTICE_MS);
+    assert_eq!(package_admin.upgrade_for_testing().delay_ms(), DELAY_MS);
     assert_eq!(package_version.paused_for_testing(), VALID_PAUSE_BITS);
     assert_eq!(package_version.valid_pause_bits_for_testing(), VALID_PAUSE_BITS);
-    assert_eq!(package_version.generation_for_testing(), 1);
+    assert_eq!(package_version.version_for_testing(), 1);
     package_version.assert_current(1);
 
     test_scenario::return_shared(package_admin);
@@ -148,7 +148,7 @@ fun a_publication_rejects_an_unpause_witness_from_another_package() {
     let mut ctx = tx_context::dummy();
 
     let publication = package_version::new_publication<PACKAGE_MARKER, ForeignWitness>(
-        package_marker::marker(),
+        package_marker::otw(),
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -162,7 +162,7 @@ fun a_publication_rejects_a_primitive_package_witness() {
     let mut ctx = tx_context::dummy();
 
     let publication = package_version::new_publication<PACKAGE_MARKER, u8>(
-        package_marker::marker(),
+        package_marker::otw(),
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -172,11 +172,11 @@ fun a_publication_rejects_a_primitive_package_witness() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidPackageWitness, location = blast_admin::package_version)]
-fun a_publication_rejects_its_own_marker_as_the_package_witness() {
+fun a_publication_rejects_its_own_otw_as_the_package_witness() {
     let mut ctx = tx_context::dummy();
 
     let publication = package_version::new_publication<PACKAGE_MARKER, PACKAGE_MARKER>(
-        package_marker::marker(),
+        package_marker::otw(),
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -231,7 +231,7 @@ fun wrap_rejects_an_already_upgraded_cap() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidUpgradeCap, location = blast_admin::package_admin)]
-/// A cap with an outstanding ticket reports no package, so it cannot enter custody.
+/// A cap with an outstanding ticket reports no package, so it cannot enter a PackageAdmin.
 fun wrap_rejects_a_cap_with_an_outstanding_authorization() {
     let mut fixture = start_published();
     let publication = fixture.take_publication();
@@ -246,7 +246,7 @@ fun wrap_rejects_a_cap_with_an_outstanding_authorization() {
 
 #[test]
 #[expected_failure(abort_code = errors::EUpgradeCapUnavailable, location = blast_admin::package_admin)]
-/// With a zero notice one transaction could authorize, then make the package immutable, then
+/// With a zero delay one transaction could authorize, then make the package immutable, then
 /// try to commit; the commit reports the missing cap.
 fun commit_is_rejected_after_immutability() {
     let mut owned = start();
@@ -271,7 +271,7 @@ fun commit_is_rejected_after_immutability() {
 }
 
 #[test]
-fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
+fun a_compatible_upgrade_commits_and_advances_one_version_together() {
     let mut owned = start();
     let fixture = &mut owned;
 
@@ -284,7 +284,7 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
         .package_admin
         .commit_upgrade_and_advance(&upgrade_admin(), &mut fixture.package_version, ticket.test_upgrade());
     let advanced = blast_admin_events::collect_one<
-        OperationalVersionAdvanced<PACKAGE_MARKER>,
+        VersionAdvanced<PACKAGE_MARKER>,
     >(0);
 
     let committed = blast_admin_events::collect_one<
@@ -292,42 +292,42 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
     >(0);
 
     let (
-        authorized_custodian_id,
+        authorized_package_admin_id,
         authorized_cap_id,
         authorized_package_id,
-        authorized_native_version,
+        authorized_upgrade_cap_version,
         authorized_policy,
         authorized_digest,
     ) = authorized.upgrade_authorized_fields();
-    assert_eq!(authorized_custodian_id, fixture.package_admin.id_for_testing());
+    assert_eq!(authorized_package_admin_id, fixture.package_admin.id_for_testing());
     assert_eq!(authorized_cap_id, fixture.package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(authorized_package_id, PACKAGE_ID.to_id());
-    assert_eq!(authorized_native_version, 1);
+    assert_eq!(authorized_upgrade_cap_version, 1);
     assert_eq!(authorized_policy, package::compatible_policy());
     assert_eq!(authorized_digest, package_digest());
     let (
-        committed_custodian_id,
+        committed_package_admin_id,
         committed_cap_id,
         committed_original_package_id,
         committed_package_id,
-        previous_native_version,
-        new_native_version,
+        previous_upgrade_cap_version,
+        new_upgrade_cap_version,
     ) = committed.upgrade_committed_fields();
-    assert_eq!(committed_custodian_id, fixture.package_admin.id_for_testing());
+    assert_eq!(committed_package_admin_id, fixture.package_admin.id_for_testing());
     assert_eq!(committed_cap_id, fixture.package_admin.upgrade_cap_id().destroy_some());
     assert_eq!(committed_original_package_id, PACKAGE_ID);
     assert_eq!(committed_package_id, fixture.package_admin.current_package_id().destroy_some());
     assert!(committed_package_id != PACKAGE_ID.to_id());
-    assert_eq!(previous_native_version, 1);
-    assert_eq!(new_native_version, 2);
-    let (container_id, original_package_id, previous_generation, new_generation) = advanced
-        .operational_version_advanced_fields();
+    assert_eq!(previous_upgrade_cap_version, 1);
+    assert_eq!(new_upgrade_cap_version, 2);
+    let (container_id, original_package_id, previous_version, new_version) = advanced
+        .version_advanced_fields();
     assert_eq!(container_id, object::id(&fixture.package_version));
     assert_eq!(original_package_id, PACKAGE_ID);
-    assert_eq!(previous_generation, 1);
-    assert_eq!(new_generation, 2);
-    assert_eq!(fixture.package_admin.native_version().destroy_some(), 2);
-    assert_eq!(fixture.package_version.generation_for_testing(), 2);
+    assert_eq!(previous_version, 1);
+    assert_eq!(new_version, 2);
+    assert_eq!(fixture.package_admin.upgrade_cap_version().destroy_some(), 2);
+    assert_eq!(fixture.package_version.version_for_testing(), 2);
     fixture.package_version.assert_current(2);
 
     owned.end();
@@ -335,7 +335,7 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
 
 #[test]
 #[expected_failure(
-    abort_code = errors::EOperationalVersionMismatch,
+    abort_code = errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun a_committed_upgrade_disables_the_old_bytecode() {
@@ -353,11 +353,11 @@ fun a_committed_upgrade_disables_the_old_bytecode() {
 
 #[test]
 #[expected_failure(arithmetic_error, location = blast_admin::package_version)]
-/// Unreachable in practice; the whole commit aborts rather than wrap the generation.
-fun commit_aborts_at_the_end_of_the_generation_range() {
+/// Unreachable in practice; the whole commit aborts rather than wrap the version.
+fun commit_aborts_at_the_end_of_the_version_range() {
     let mut owned = start();
     let fixture = &mut owned;
-    fixture.package_version.set_generation_for_testing(std::u64::max_value!());
+    fixture.package_version.set_version_for_testing(std::u64::max_value!());
     let ticket = fixture.authorize(package_digest());
 
     fixture
@@ -404,11 +404,11 @@ fun scheduling_rejects_a_digest_that_is_not_32_bytes() {
 
 #[test]
 #[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
-fun an_upgrade_waits_the_48_hour_publication_notice() {
+fun an_upgrade_waits_the_48_hour_publication_delay() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS - 1);
+    fixture.clock.set_for_testing(DELAY_MS - 1);
 
     let ticket = fixture
         .package_admin
@@ -424,7 +424,7 @@ fun authorization_rejects_a_digest_other_than_the_scheduled_one() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     let ticket = fixture
         .package_admin
@@ -440,7 +440,7 @@ fun authorization_rejects_a_ready_immutability_action() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     let ticket = fixture
         .package_admin
@@ -456,7 +456,7 @@ fun immutability_rejects_a_ready_upgrade_action() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     fixture
         .package_admin
@@ -487,12 +487,12 @@ fun package_admin_can_permanently_destroy_native_upgrade_authority() {
         UpgradeCapDestroyed<PACKAGE_MARKER>,
     >(0);
 
-    let (custodian_id, destroyed_cap_id, original_package_id, final_native_version, final_policy) =
+    let (package_admin_id, destroyed_cap_id, original_package_id, final_upgrade_cap_version, final_policy) =
         destroyed.upgrade_cap_destroyed_fields();
-    assert_eq!(custodian_id, fixture.package_admin.id_for_testing());
+    assert_eq!(package_admin_id, fixture.package_admin.id_for_testing());
     assert_eq!(destroyed_cap_id, upgrade_cap_id);
     assert_eq!(original_package_id, PACKAGE_ID);
-    assert_eq!(final_native_version, 1);
+    assert_eq!(final_upgrade_cap_version, 1);
     assert_eq!(final_policy, package::compatible_policy());
     assert!(!fixture.package_admin.has_upgrade_cap());
     assert_eq!(object::id(fixture.package_admin.publisher_for_testing()), publisher_id);
@@ -565,7 +565,7 @@ fun a_cancelled_upgrade_cannot_be_authorized() {
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
     fixture.package_admin.cancel_upgrade_action(&cancel_admin());
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     let ticket = fixture
         .package_admin
@@ -587,15 +587,15 @@ fun cancelling_with_nothing_scheduled_aborts() {
 }
 
 #[test]
-fun a_notice_change_waits_the_applied_notice_and_cancellation_keeps_it() {
+fun a_delay_change_waits_the_applied_delay_and_cancellation_keeps_it() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
     fixture.package_admin.cancel_upgrade_action(&cancel_admin());
-    assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), NOTICE_MS);
+    assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), DELAY_MS);
 
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 25, &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
     assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), 25);
@@ -604,11 +604,11 @@ fun a_notice_change_waits_the_applied_notice_and_cancellation_keeps_it() {
 
 #[test]
 #[expected_failure(abort_code = errors::ENotReady, location = blast_admin::delayed)]
-fun a_notice_reduction_cannot_be_applied_early() {
+fun a_delay_reduction_cannot_be_applied_early() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS - 1);
+    fixture.clock.set_for_testing(DELAY_MS - 1);
 
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
@@ -617,11 +617,11 @@ fun a_notice_reduction_cannot_be_applied_early() {
 
 #[test]
 #[expected_failure(abort_code = errors::EWrongChange, location = blast_admin::delayed_action)]
-fun a_ready_immutability_action_cannot_be_applied_as_a_notice_change() {
+fun a_ready_immutability_action_cannot_be_applied_as_a_delay_change() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
@@ -629,18 +629,18 @@ fun a_ready_immutability_action_cannot_be_applied_as_a_notice_change() {
 }
 
 #[test]
-fun an_upgrade_action_replaces_a_pending_notice_change() {
+fun an_upgrade_action_replaces_a_pending_delay_change() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 25, &fixture.clock);
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     let ticket = fixture
         .package_admin
         .authorize_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
 
-    assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), NOTICE_MS);
+    assert_eq!(fixture.package_admin.upgrade_for_testing().delay_ms(), DELAY_MS);
     destroy(ticket);
     owned.end();
 }
@@ -773,14 +773,14 @@ fun clearing_rejects_another_droppable_type_from_the_same_package() {
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
 
-    fixture.clear(other_package_marker::marker(), 1);
+    fixture.clear(other_package_marker::otw(), 1);
 
     owned.end();
 }
 
 #[test]
 #[expected_failure(abort_code = errors::EWrongUnpauseWitness, location = blast_admin::package_version)]
-fun the_witness_is_checked_before_the_upgrade_notice() {
+fun the_witness_is_checked_before_the_upgrade_delay() {
     let mut owned = start();
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
@@ -792,8 +792,8 @@ fun the_witness_is_checked_before_the_upgrade_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EUnguardedUpgradeNotice, location = blast_admin::package_admin)]
-fun clearing_rejects_a_pending_zero_upgrade_notice() {
+#[expected_failure(abort_code = errors::EUnguardedUpgradeDelay, location = blast_admin::package_admin)]
+fun clearing_rejects_a_pending_zero_upgrade_delay() {
     let mut owned = start();
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
@@ -805,13 +805,13 @@ fun clearing_rejects_a_pending_zero_upgrade_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EUnguardedUpgradeNotice, location = blast_admin::package_admin)]
-fun clearing_rejects_an_applied_zero_upgrade_notice() {
+#[expected_failure(abort_code = errors::EUnguardedUpgradeDelay, location = blast_admin::package_admin)]
+fun clearing_rejects_an_applied_zero_upgrade_delay() {
     let mut owned = start();
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
     fixture.clear(package_marker::package_witness(), 1);
@@ -820,8 +820,8 @@ fun clearing_rejects_an_applied_zero_upgrade_notice() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EUnguardedUpgradeNotice, location = blast_admin::package_admin)]
-fun the_upgrade_notice_is_checked_before_the_bits() {
+#[expected_failure(abort_code = errors::EUnguardedUpgradeDelay, location = blast_admin::package_admin)]
+fun the_upgrade_delay_is_checked_before_the_bits() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
@@ -895,7 +895,7 @@ fun the_publisher_rejects_a_witness_from_another_package() {
 fun the_publisher_rejects_another_droppable_type_from_the_same_package() {
     let owned = start();
 
-    owned.package_admin.publisher(other_package_marker::marker(), &owned.package_version);
+    owned.package_admin.publisher(other_package_marker::otw(), &owned.package_version);
 
     owned.end();
 }
@@ -911,7 +911,7 @@ fun the_publisher_rejects_a_primitive_witness() {
 }
 
 #[test]
-fun version_and_publication_readers_report_generation_bits_and_package_witness() {
+fun version_and_publication_readers_report_version_bits_and_package_witness() {
     let mut fixture = start_published();
     let publication = fixture.take_publication();
     let witness = type_name::with_defining_ids<PackageWitness>();
@@ -923,13 +923,13 @@ fun version_and_publication_readers_report_generation_bits_and_package_witness()
 
     fixture.scenario.next_tx(PUBLISHER);
     let mut package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
-    assert_eq!(package_version.generation(), 1);
+    assert_eq!(package_version.version(), 1);
     assert_eq!(package_version.valid_pause_bits(), VALID_PAUSE_BITS);
     assert_eq!(package_version.paused(), VALID_PAUSE_BITS);
     assert_eq!(package_version.package_witness(), witness);
     assert!(package_version.is_paused(2));
-    package_version.set_generation_for_testing(3);
-    assert_eq!(package_version.generation(), 3);
+    package_version.set_version_for_testing(3);
+    assert_eq!(package_version.version(), 3);
 
     test_scenario::return_shared(package_version);
     fixture.end();
@@ -941,13 +941,13 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
     let fixture = &mut owned;
     let upgrade_cap_id = fixture.package_admin.upgrade_cap_id().destroy_some();
 
-    assert_eq!(package_admin::initial_upgrade_delay_ms(), NOTICE_MS);
-    assert_eq!(fixture.package_admin.upgrade_delay_ms(), NOTICE_MS);
-    assert!(fixture.package_admin.is_upgrade_notice_guarded());
+    assert_eq!(package_admin::initial_upgrade_delay_ms(), DELAY_MS);
+    assert_eq!(fixture.package_admin.upgrade_delay_ms(), DELAY_MS);
+    assert!(fixture.package_admin.is_upgrade_delay_guarded());
     assert!(fixture.package_admin.pending_upgrade().is_none());
     assert!(fixture.package_admin.has_upgrade_cap());
     assert_eq!(fixture.package_admin.current_package_id(), option::some(PACKAGE_ID.to_id()));
-    assert_eq!(fixture.package_admin.native_version(), option::some(1));
+    assert_eq!(fixture.package_admin.upgrade_cap_version(), option::some(1));
     assert_eq!(fixture.package_admin.upgrade_policy(), option::some(package::compatible_policy()));
     assert_eq!(
         fixture.package_admin.publisher_id(),
@@ -961,7 +961,7 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
     let action = fixture.package_admin.pending_upgrade().destroy_some().value().action().destroy_some();
     assert!(action.upgrade_digest().is_none());
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
-    assert!(!fixture.package_admin.is_upgrade_notice_guarded());
+    assert!(!fixture.package_admin.is_upgrade_delay_guarded());
     fixture.package_admin.cancel_upgrade_action(&cancel_admin());
 
     fixture.package_admin.make_immutable_for_testing(
@@ -978,7 +978,7 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
     assert!(!fixture.package_admin.has_upgrade_cap());
     assert!(fixture.package_admin.upgrade_cap_id().is_none());
     assert!(fixture.package_admin.current_package_id().is_none());
-    assert!(fixture.package_admin.native_version().is_none());
+    assert!(fixture.package_admin.upgrade_cap_version().is_none());
     assert!(fixture.package_admin.upgrade_policy().is_none());
 
     owned.end();
@@ -1016,7 +1016,7 @@ fun the_mutable_publisher_rejects_a_witness_from_another_package() {
 fun the_mutable_publisher_rejects_another_droppable_type_from_the_same_package() {
     let AdminFixture { mut package_admin, package_version, clock, ctx: _ } = start();
 
-    package_admin.publisher_mut(other_package_marker::marker(), &package_version);
+    package_admin.publisher_mut(other_package_marker::otw(), &package_version);
 
     destroy(package_admin);
     destroy(package_version);
@@ -1043,7 +1043,7 @@ fun immutability_rejects_a_witness_from_another_package() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     fixture
         .package_admin
@@ -1063,11 +1063,11 @@ fun immutability_rejects_another_droppable_type_from_the_same_package() {
     let mut owned = start();
     let fixture = &mut owned;
     fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
-    fixture.clock.set_for_testing(NOTICE_MS);
+    fixture.clock.set_for_testing(DELAY_MS);
 
     fixture
         .package_admin
-        .make_immutable(&upgrade_admin(), other_package_marker::marker(), &fixture.package_version, &fixture.clock);
+        .make_immutable(&upgrade_admin(), other_package_marker::otw(), &fixture.package_version, &fixture.clock);
 
     owned.end();
 }
@@ -1096,20 +1096,20 @@ fun wrap_emits_the_package_version_created_with_its_exact_payload() {
     fixture.scenario.next_tx(PUBLISHER);
     let package_admin = fixture.scenario.take_shared<PackageAdmin<PACKAGE_MARKER>>();
     let package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
-    let (package_version_id, custodian_id, valid_pause_bits, paused, package_witness, generation) =
+    let (package_version_id, package_admin_id, valid_pause_bits, paused, package_witness, version) =
         created.package_version_created_fields();
     assert_eq!(package_version_id, object::id(&package_version));
-    assert_eq!(custodian_id, object::id(&package_admin));
+    assert_eq!(package_admin_id, object::id(&package_admin));
     assert_eq!(valid_pause_bits, VALID_PAUSE_BITS);
     assert_eq!(paused, VALID_PAUSE_BITS);
     assert_eq!(package_witness, type_name::with_defining_ids<PackageWitness>());
-    assert_eq!(generation, 1);
+    assert_eq!(version, 1);
     let mut expected = bcs::to_bytes(&package_version_id);
-    expected.append(bcs::to_bytes(&custodian_id));
+    expected.append(bcs::to_bytes(&package_admin_id));
     expected.append(bcs::to_bytes(&valid_pause_bits));
     expected.append(bcs::to_bytes(&paused));
     expected.append(bcs::to_bytes(&package_witness));
-    expected.append(bcs::to_bytes(&generation));
+    expected.append(bcs::to_bytes(&version));
     assert_eq!(bcs::to_bytes(&created), expected);
 
     test_scenario::return_shared(package_admin);
@@ -1161,7 +1161,7 @@ fun one_packages_upgrade_role_cannot_sign_in_for_another_package() {
 
 // === Test Helpers ===
 
-/// Runs the marker's publication as its initializer would.
+/// Runs the OTW's publication as its initializer would.
 fun start_published(): WrapFixture {
     start_published_with(VALID_PAUSE_BITS)
 }
@@ -1169,7 +1169,7 @@ fun start_published(): WrapFixture {
 fun start_published_with(valid_pause_bits: u8): WrapFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     package_version::new_publication<PACKAGE_MARKER, PackageWitness>(
-        package_marker::marker(),
+        package_marker::otw(),
         valid_pause_bits,
         scenario.ctx(),
     )
@@ -1186,7 +1186,7 @@ fun take_publication(self: &WrapFixture): Publication<PACKAGE_MARKER> {
 fun start(): AdminFixture {
     let mut ctx = tx_context::dummy();
     let package_admin = package_admin::new_for_testing<PACKAGE_MARKER>(
-        package::test_claim(package_marker::marker(), &mut ctx),
+        package::test_claim(package_marker::otw(), &mut ctx),
         package::test_publish(PACKAGE_ID.to_id(), &mut ctx),
         &mut ctx,
     );
@@ -1261,14 +1261,14 @@ use blast_admin::{
     blast_acl::{Self, AdminCap, AdminWitness},
     blast_admin_events::{
         Self,
-        OperationalVersionAdvanced,
+        VersionAdvanced,
         PackageVersionCreated,
         Paused,
         Unpaused,
         UpgradeAuthorized,
         UpgradeCapDestroyed,
         UpgradeCommitted,
-        UpgradeCustodyCreated,
+        PackageAdminCreated,
     },
     errors,
     package_admin::{Self, CancelAdmin, PackageAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin},

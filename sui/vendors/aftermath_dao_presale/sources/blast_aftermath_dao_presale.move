@@ -27,13 +27,13 @@ public struct AdminCap has key, store {
 }
 
 /// Shared reservation of one sale token's Aftermath pool creation: the `CreatePoolCapV2` of the
-/// fresh LP coin `Lp`, which only the migration of a `SaleToken` sale whose terms `issuer` sealed
+/// fresh LP coin `Lp`, which only the migration of a `SaleToken` sale whose terms `package_witness` sealed
 /// can consume.
 public struct PoolCreation<phantom Lp, phantom SaleToken> has key {
     id: UID,
     /// The original type of the product witness the `AdminCap` holder named at `prepare`; a
     /// `Migration` whose terms another package sealed cannot consume this reservation.
-    issuer: TypeName,
+    package_witness: TypeName,
     create_pool_cap: CreatePoolCapV2,
 }
 
@@ -46,32 +46,32 @@ fun init(ctx: &mut TxContext) {
 // === Public Functions ===
 
 /// Reserves `SaleToken`'s pool creation with `create_pool_cap`, minted by the fresh LP coin `Lp`,
-/// in a shared `PoolCreation` bound to `Issuer`, and returns the ticket for a sale of `SaleToken` in
-/// `Quote` that migrates here. `Issuer` is the presale's package witness
+/// in a shared `PoolCreation` bound to `PackageWitness`, and returns the ticket for a sale of
+/// `SaleToken` in `Quote` that migrates here. `PackageWitness` is the presale's package witness
 /// (`blast_presale::blast_presale_package::PackageWitness`), passed as a type argument, so only a
 /// `Migration` the presale sealed can consume the reservation; with the presale's one sale per
 /// sale token, that binds the reservation to one sale. Framework and primitive types are rejected
 /// because anyone can construct them. The pool's weights and fees are this module's constants, so
 /// the sale carries no pool terms. The presale's `CreationPolicy` must admit `Venue`.
-public fun prepare<Lp, SaleToken, Quote, Issuer>(
+public fun prepare<Lp, SaleToken, Quote, PackageWitness>(
     _: &AdminCap,
     create_pool_cap: CreatePoolCapV2,
     ctx: &mut TxContext,
 ): VenueTicket<SaleToken, Quote> {
-    let issuer = type_name::with_original_ids<Issuer>();
-    assert!(!issuer.is_primitive(), EInvalidIssuer);
-    let issuer_origin = type_name::original_id<Issuer>();
-    assert!(issuer_origin != @0x1 && issuer_origin != @0x2, EInvalidIssuer);
+    let package_witness = type_name::with_original_ids<PackageWitness>();
+    assert!(!package_witness.is_primitive(), EInvalidPackageWitness);
+    let package_witness_origin = type_name::original_id<PackageWitness>();
+    assert!(package_witness_origin != @0x1 && package_witness_origin != @0x2, EInvalidPackageWitness);
 
     let pool_creation = PoolCreation<Lp, SaleToken> {
         id: object::new(ctx),
-        issuer,
+        package_witness,
         create_pool_cap,
     };
     let pool_creation_id = object::id(&pool_creation);
 
     transfer::share_object(pool_creation);
-    event::emit(PoolCreationReserved<Lp, SaleToken, Quote> { pool_creation_id, issuer });
+    event::emit(PoolCreationReserved<Lp, SaleToken, Quote> { pool_creation_id, package_witness });
 
     migration::issue_ticket(Venue())
 }
@@ -92,10 +92,10 @@ public fun migrate<Lp, SaleToken, Quote>(
     ctx: &mut TxContext,
 ) {
     let (tokens, quote, terms) = migration.redeem(Venue());
-    assert!(terms.package_witness() == pool_creation.issuer, EWrongIssuer);
+    assert!(terms.package_witness() == pool_creation.package_witness, EWrongPackageWitness);
     let (token_amount, quote_amount) = (tokens.value(), quote.value());
 
-    let PoolCreation { id, issuer: _, create_pool_cap } = pool_creation;
+    let PoolCreation { id, package_witness: _, create_pool_cap } = pool_creation;
     id.delete();
 
     let (pool, lp) = if (sorts_before<SaleToken, Quote>()) {
@@ -232,9 +232,9 @@ public fun sorts_before_for_testing<A, B>(): bool {
 /// The `PoolCreationReserved` payload with this field, for comparing emitted events.
 public fun pool_creation_reserved_for_testing<Lp, SaleToken, Quote>(
     pool_creation_id: ID,
-    issuer: TypeName,
+    package_witness: TypeName,
 ): PoolCreationReserved<Lp, SaleToken, Quote> {
-    PoolCreationReserved { pool_creation_id, issuer }
+    PoolCreationReserved { pool_creation_id, package_witness }
 }
 
 #[test_only]
@@ -270,10 +270,10 @@ public fun assert_dao_fee_short_circuit_for_testing() {
 // === Events ===
 
 /// `prepare` reserved the sale token `SaleToken`'s Aftermath pool creation for the LP coin `Lp` in
-/// the shared `pool_creation_id`, which only a migration whose terms `issuer` sealed consumes.
+/// the shared `pool_creation_id`, which only a migration whose terms `package_witness` sealed consumes.
 public struct PoolCreationReserved<phantom Lp, phantom SaleToken, phantom Quote> has copy, drop {
     pool_creation_id: ID,
-    issuer: TypeName,
+    package_witness: TypeName,
 }
 
 /// The sale `presale_id` migrated into the Aftermath pool `pool_id`, which traders reach through
@@ -323,10 +323,10 @@ const EPoolMismatch: vector<u8> = b"The Aftermath pool must hold every sale toke
 const EDaoFeePoolMismatch: vector<u8> = b"The DAO-fee pool must charge this package's fee and pay the treasury.";
 
 #[error(code = 2)]
-const EInvalidIssuer: vector<u8> = b"The issuer must not be a primitive or framework type.";
+const EInvalidPackageWitness: vector<u8> = b"The package witness must not be a primitive or framework type.";
 
 #[error(code = 3)]
-const EWrongIssuer: vector<u8> = b"The migration's terms must be sealed by the issuer the pool creation pinned.";
+const EWrongPackageWitness: vector<u8> = b"The migration's terms must be sealed by the package witness the pool creation pinned.";
 
 // === Imports ===
 

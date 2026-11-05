@@ -6,8 +6,8 @@ module blast_fun::constants;
 
 // === Package Constants ===
 
-/// The package generation this bytecode serves.
-macro public(package) fun generation(): u64 {
+/// The package version this bytecode serves.
+macro public(package) fun version(): u64 {
     1
 }
 

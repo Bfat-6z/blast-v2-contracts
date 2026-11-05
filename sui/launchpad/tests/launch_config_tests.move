@@ -21,8 +21,8 @@ const PARTNER: address = @0x9A27;
 /// When the fixture clock removes a partner.
 const NOW_AT_MS: u64 = 1_000;
 
-/// The applied notice of every setting in `launch_config::new_zero_fees_for_testing`.
-const NOTICE_MS: u64 = 172_800_000;
+/// The applied delay of every setting in `launch_config::new_zero_fees_for_testing`.
+const DELAY_MS: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -218,7 +218,7 @@ fun protocol_allocation_rejects_quote_one_above_the_maximum() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -226,7 +226,7 @@ fun stale_package_version_rejects_protocol_allocation_before_its_bounds() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.set_protocol_allocation_for_testing(10_000, 10_000);
     });
@@ -309,7 +309,7 @@ fun protocol_lp_fees_reject_quote_one_above_the_maximum() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -317,7 +317,7 @@ fun stale_package_version_rejects_protocol_lp_fees_before_their_bounds() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.set_protocol_lp_fees_for_testing(10_000, 10_000);
     });
@@ -326,16 +326,16 @@ fun stale_package_version_rejects_protocol_lp_fees_before_their_bounds() {
 }
 
 #[test]
-fun a_protocol_lp_fee_change_waits_its_applied_notice() {
-    let mut fixture = start_with_notices();
+fun a_protocol_lp_fee_change_waits_its_applied_delay() {
+    let mut fixture = start_with_delays();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_protocol_lp_fees(1_200, 900);
-        f.clock.set_for_testing(NOW_AT_MS + NOTICE_MS - 1);
+        f.clock.set_for_testing(NOW_AT_MS + DELAY_MS - 1);
 
         assert_eq!(f.config.protocol_lp_fees_values(), vector[0, 0]);
 
-        f.clock.set_for_testing(NOW_AT_MS + NOTICE_MS);
+        f.clock.set_for_testing(NOW_AT_MS + DELAY_MS);
         f.config.apply_protocol_lp_fees(&f.package_version, &f.clock);
 
         assert_eq!(f.config.protocol_lp_fees_values(), vector[1_200, 900]);
@@ -346,11 +346,11 @@ fun a_protocol_lp_fee_change_waits_its_applied_notice() {
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun a_protocol_lp_fee_change_cannot_apply_one_millisecond_early() {
-    let mut fixture = start_with_notices();
+    let mut fixture = start_with_delays();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_protocol_lp_fees(1_200, 900);
-        f.clock.set_for_testing(NOW_AT_MS + NOTICE_MS - 1);
+        f.clock.set_for_testing(NOW_AT_MS + DELAY_MS - 1);
 
         f.config.apply_protocol_lp_fees(&f.package_version, &f.clock);
     });
@@ -360,12 +360,12 @@ fun a_protocol_lp_fee_change_cannot_apply_one_millisecond_early() {
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun a_cancelled_protocol_lp_fee_change_never_applies() {
-    let mut fixture = start_with_notices();
+    let mut fixture = start_with_delays();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_protocol_lp_fees(1_200, 900);
         f.config.cancel_protocol_lp_fees(&f.package_version, &blast_acl::witness_for_testing<CancelAdmin>());
-        f.clock.set_for_testing(NOW_AT_MS + NOTICE_MS);
+        f.clock.set_for_testing(NOW_AT_MS + DELAY_MS);
 
         f.config.apply_protocol_lp_fees(&f.package_version, &f.clock);
     });
@@ -383,10 +383,10 @@ fun admin_removes_and_readds_decimal_precision_for_future_tickets() {
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, false);
 
         assert_eq!(f.config.allowed_meme_decimals_count_for_testing(), 1);
-        assert_eq!(bcs::to_bytes(&collect_one<MemeDecimalsSet>()), vector[6, 0]);
+        assert_eq!(bcs::to_bytes(&collect_one<MemeDecimalsAllowed>()), vector[6, 0]);
 
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, true);
-        let set = collect<MemeDecimalsSet>();
+        let set = collect<MemeDecimalsAllowed>();
 
         assert_eq!(f.config.allowed_meme_decimals_count_for_testing(), 2);
         assert_eq!(set.length(), 2);
@@ -437,7 +437,7 @@ fun disallowing_an_unlisted_decimal_rejects_the_unchanged_set() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -446,7 +446,7 @@ fun stale_package_version_rejects_decimals_before_the_unchanged_check() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = listing_admin();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, true);
     });
@@ -510,7 +510,7 @@ fun admin_allows_quote_for_launch_snapshot() {
         let (_, _) = f.config.snapshot_for_launch<TEST_QUOTE>(test_venue(), MEME_DECIMALS);
 
         assert_eq!(f.config.allowed_quote_count_for_testing(), 1);
-        assert_eq!(bcs::to_bytes(&collect_one<QuoteSet<TEST_QUOTE>>()), quote_set_bytes(true));
+        assert_eq!(bcs::to_bytes(&collect_one<QuoteAllowed<TEST_QUOTE>>()), quote_allowed_bytes(true));
     });
 
     fixture.end();
@@ -526,11 +526,11 @@ fun disallowing_a_quote_removes_it_from_future_launches() {
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, true);
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, false);
 
-        let set = collect<QuoteSet<TEST_QUOTE>>();
+        let set = collect<QuoteAllowed<TEST_QUOTE>>();
 
         assert_eq!(f.config.allowed_quote_count_for_testing(), 0);
         assert_eq!(set.length(), 2);
-        assert_eq!(bcs::to_bytes(&set[1]), quote_set_bytes(false));
+        assert_eq!(bcs::to_bytes(&set[1]), quote_allowed_bytes(false));
     });
 
     fixture.end();
@@ -629,7 +629,7 @@ fun disallowing_an_unlisted_quote_aborts() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -638,7 +638,7 @@ fun stale_package_version_rejects_quote_before_the_set_update() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = listing_admin();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, false);
     });
@@ -800,7 +800,7 @@ fun trade_fees_reject_unchanged_pair() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -809,7 +809,7 @@ fun stale_package_version_rejects_trade_fees_before_their_bounds() {
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let admin_witness = fee_admin();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f
             .config
@@ -856,7 +856,7 @@ fun disallowing_a_venue_does_not_change_an_existing_launch_snapshot() {
             .config
             .set_venue_allowed_for_testing<TestVenue>(
                 &f.package_version,
-                &adapter_admin(),
+                &venue_admin(),
                 false,
              f.ctx!());
 
@@ -882,7 +882,7 @@ fun disallowing_a_venue_rejects_an_unlisted_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         f
             .config
@@ -925,7 +925,7 @@ fun allowing_a_venue_rejects_a_primitive_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         // The primitive check runs before the origin lookup, which no primitive type supports.
         f.config.set_venue_allowed_for_testing<bool>(&f.package_version, &admin_witness, true, f.ctx!());
@@ -945,7 +945,7 @@ fun allowing_a_venue_rejects_a_vector_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         // The primitive check runs before the origin lookup, which no primitive type supports.
         f
@@ -971,7 +971,7 @@ fun allowing_a_venue_rejects_a_standard_library_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         f
             .config
@@ -996,7 +996,7 @@ fun allowing_a_venue_rejects_a_sui_framework_type() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         f
             .config
@@ -1021,7 +1021,7 @@ fun disallowing_a_framework_type_reports_it_as_unlisted() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
+        let admin_witness = venue_admin();
 
         f
             .config
@@ -1038,7 +1038,7 @@ fun disallowing_a_framework_type_reports_it_as_unlisted() {
 #[test]
 #[
     expected_failure(
-        abort_code = blast_admin::errors::EOperationalVersionMismatch,
+        abort_code = blast_admin::errors::EVersionMismatch,
         location = blast_admin::package_version,
     ),
 ]
@@ -1046,8 +1046,8 @@ fun stale_package_version_rejects_a_venue_before_its_type_check() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        let admin_witness = adapter_admin();
-        f.package_version.set_generation_for_testing(2);
+        let admin_witness = venue_admin();
+        f.package_version.set_version_for_testing(2);
 
         f.config.set_venue_allowed_for_testing<bool>(&f.package_version, &admin_witness, true, f.ctx!());
     });
@@ -1129,12 +1129,12 @@ fun creation_fee_rejects_the_current_value() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_checks_the_version_before_the_current_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.set_creation_fee_for_testing(0);
     });
@@ -1187,7 +1187,7 @@ fun a_removed_partner_stays_accepted_for_the_partner_delay() {
 }
 
 #[test, expected_failure(abort_code = blast_partners::errors::EPartnerNotAccepted, location = blast_partners::partner_list)]
-fun a_removed_partner_is_refused_once_its_notice_ends() {
+fun a_removed_partner_is_refused_once_its_delay_ends() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
@@ -1266,13 +1266,13 @@ fun removing_an_unknown_partner_aborts() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun adding_a_partner_checks_the_version_first() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let partner = f.new_partner();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.add_partner(&partner);
         destroy(partner);
@@ -1281,13 +1281,13 @@ fun adding_a_partner_checks_the_version_first() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun removing_a_partner_checks_the_version_before_the_list() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         let partner = f.new_partner();
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.remove_partner(&partner);
         destroy(partner);
@@ -1313,8 +1313,8 @@ fun u64_bytes(value: u64): vector<u8> {
     bcs::to_bytes(&value)
 }
 
-/// Expected `QuoteSet` bytes for the test quote.
-fun quote_set_bytes(allowed: bool): vector<u8> {
+/// Expected `QuoteAllowed` bytes for the test quote.
+fun quote_allowed_bytes(allowed: bool): vector<u8> {
     bcs::to_bytes(&allowed)
 }
 
@@ -1373,8 +1373,8 @@ fun start_init(): InitFixture {
     InitFixture { scenario, config }
 }
 
-/// A configuration whose every change waits `NOTICE_MS`, with the clock at `NOW_AT_MS`.
-fun start_with_notices(): ConfigFixture {
+/// A configuration whose every change waits `DELAY_MS`, with the clock at `NOW_AT_MS`.
+fun start_with_delays(): ConfigFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     let package_version = package_version::version_for_testing(scenario.ctx());
     let config = launch_config::new_zero_fees_for_testing(scenario.ctx());
@@ -1407,7 +1407,7 @@ fun fee_admin(): AdminWitness<FeeAdmin> {
     blast_acl::witness_for_testing()
 }
 
-fun adapter_admin(): AdminWitness<AdapterAdmin> {
+fun venue_admin(): AdminWitness<VenueAdmin> {
     blast_acl::witness_for_testing()
 }
 
@@ -1442,7 +1442,7 @@ fun set_protocol_lp_fees_for_testing(self: &mut ConfigFixture, meme_bps: u64, qu
         );
 }
 
-/// Schedules Blast's LP-fee share as the fee admin, keeping the applied notice.
+/// Schedules Blast's LP-fee share as the fee admin, keeping the applied delay.
 fun schedule_protocol_lp_fees(self: &mut ConfigFixture, meme_bps: u64, quote_bps: u64) {
     self
         .config
@@ -1451,7 +1451,7 @@ fun schedule_protocol_lp_fees(self: &mut ConfigFixture, meme_bps: u64, quote_bps
             &fee_admin(),
             bps::new(meme_bps),
             bps::new(quote_bps),
-            NOTICE_MS,
+            DELAY_MS,
             &self.clock,
         );
 }
@@ -1469,7 +1469,7 @@ fun allow_test_venue(self: &mut ConfigFixture) {
         .config
         .set_venue_allowed_for_testing<TestVenue>(
             &self.package_version,
-            &adapter_admin(),
+            &venue_admin(),
             true,
          self.ctx!());
 }
@@ -1523,12 +1523,12 @@ use blast_admin::{
     package_version::PackageVersion
 };
 
-use blast_core::{bps, blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin}};
+use blast_core::{bps, blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin}};
 
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},
     constants,
-    events::{MemeDecimalsSet, QuoteSet},
+    events::{MemeDecimalsAllowed, QuoteAllowed},
     launch_config::{
         Self,
         CreationFeeKey,

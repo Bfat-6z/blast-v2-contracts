@@ -28,6 +28,18 @@ public struct PrepareFixture {
 // === Tests ===
 
 #[test]
+fun seed_keeps_the_preferred_side_when_both_balances_cover_the_venue_quote() {
+    assert!(bluefin::seed_fixed_side_for_testing(true, 10, 20, 10, 20));
+    assert!(!bluefin::seed_fixed_side_for_testing(false, 10, 20, 10, 19));
+}
+
+#[test]
+fun seed_flips_the_preferred_side_on_one_atom_of_rounding_overdraw() {
+    assert!(bluefin::seed_fixed_side_for_testing(false, 10, 20, 11, 20));
+    assert!(!bluefin::seed_fixed_side_for_testing(true, 10, 20, 10, 21));
+}
+
+#[test]
 fun prepare_issues_a_bluefin_ticket_at_the_smallest_tier() {
     let mut f = start(b"MEME");
 
@@ -147,12 +159,12 @@ fun prepare_checks_the_tier_before_the_symbol() {
 }
 
 #[test, expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
-fun prepare_checks_the_migrators_generation_before_the_tier() {
+fun prepare_checks_the_migrators_version_before_the_tier() {
     let mut f = start(symbol_of_length(33));
-    f.migrators_version.set_generation_for_testing(2);
+    f.migrators_version.set_version_for_testing(2);
 
     f.prepare(0, 0).redeem_ticket();
 
@@ -160,13 +172,13 @@ fun prepare_checks_the_migrators_generation_before_the_tier() {
 }
 
 #[test]
-/// The vault registry admits the Bluefin venue's witness at its publication notice of zero.
+/// The vault registry admits the Bluefin venue's witness at its publication delay of zero.
 fun the_vault_registry_admits_the_bluefin_venue() {
     let mut ctx = tx_context::dummy();
     let mut registry = blast_vault_package::empty_registry_for_testing(&mut ctx);
     let vault_version = blast_vault_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
-    let admin = blast_acl::witness_for_testing<AdapterAdmin>();
+    let admin = blast_acl::witness_for_testing<VenueAdmin>();
 
     registry.schedule_witness<Venue>(&admin, &vault_version, &clock);
     registry.apply_witness<Venue>(&vault_version, &clock);
@@ -477,7 +489,7 @@ const U64_MAX: u64 = 18_446_744_073_709_551_615;
 
 use blast_admin::{blast_acl, delayed_set::SetApplied, package_version::PackageVersion};
 
-use blast_core::{blast_domain::AdapterAdmin, migration::VenueTicket};
+use blast_core::{blast_domain::VenueAdmin, migration::VenueTicket};
 
 use blast_migrators::{
     blast_migrators::{Self as migrators_package, BLAST_MIGRATORS},

@@ -131,13 +131,13 @@ public fun metadata_cap_id_for_testing<Meme>(self: &LaunchTicket<Meme>): ID {
 }
 
 #[test_only]
-/// Overrides the sell-burn rate past this package's ceiling to model an old-generation ticket.
+/// Overrides the sell-burn rate past this package's ceiling to model an old-version ticket.
 public fun set_sell_burn_bps_for_testing<Meme>(self: &mut LaunchTicket<Meme>, value: u64) {
     self.sell_burn_bps = bps::new(value);
 }
 
 #[test_only]
-/// Burns part of the minted supply to model an old-generation ticket with another supply rule.
+/// Burns part of the minted supply to model an old-version ticket with another supply rule.
 public fun burn_meme_for_testing<Meme>(self: &mut LaunchTicket<Meme>, amount: u64) {
     self.meme.split(amount).destroy_for_testing();
 }

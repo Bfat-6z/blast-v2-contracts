@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Structural gates for blast_vault (ADR 0137): the one vault below every venue. It depends only on
 # the ACL, core, and partners; imports no product or venue; creates vaults only for an admitted
-# venue and an admitted issuer; keeps fee notices fixed; and keeps holder claims outside the admin
+# venue and an admitted issuer; keeps fee delays fixed; and keeps holder claims outside the admin
 # pause.
 set -euo pipefail
 
@@ -21,10 +21,10 @@ fi
   || fail "only blast_vault_package may initialize state"
 rg -q 'registry.assert_venue<Venue>\(\);' sources/vault.move \
   || fail "vault::new must require an admitted venue witness"
-rg -q 'registry.assert_issuer\(terms.package_witness\(\)\);' sources/vault.move \
+rg -q 'registry.assert_package_witness\(terms.package_witness\(\)\);' sources/vault.move \
   || fail "vault::new must require an admitted issuer witness"
 if rg -n 'self\.(fee_split|protocol_bps)\.schedule(_delay)?\(' sources; then
-  fail "fee-split and Blast-share changes must keep the fixed notice (schedule_value only)"
+  fail "fee-split and Blast-share changes must keep the fixed delay (schedule_value only)"
 fi
 claim="$(sed -n '/^public fun claim</,/^}/p' sources/holder_rewards.move)"
 [[ -n "$claim" ]] || fail "holder_rewards::claim not found"

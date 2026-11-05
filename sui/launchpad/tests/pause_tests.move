@@ -3,7 +3,7 @@
 
 #[test_only]
 /// The launchpad's unpause: it clears bits through `blast_admin::package_admin` only while every
-/// launchpad notice is guarded. Pause-bit arithmetic and the upgrade notice are the generic
+/// launchpad delay is guarded. Pause-bit arithmetic and the upgrade delay are the generic
 /// administration's and are tested there.
 module blast_fun::pause_tests;
 
@@ -19,18 +19,18 @@ public struct ReleaseFixture {
 // === Tests ===
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
-fun stale_generation_is_rejected_before_the_notice_gate() {
+#[expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
+fun stale_version_is_rejected_before_the_delay_gate() {
     let mut f = release_fixture_with(
         runtime_config::new_publication_for_testing(&mut tx_context::dummy()),
     );
-    f.version.set_generation_for_testing(2);
+    f.version.set_version_for_testing(2);
     f.unpause(constants::create_pause_bit!());
     abort
 }
 
 #[test]
-fun unpause_releases_once_every_notice_is_guarded() {
+fun unpause_releases_once_every_delay_is_guarded() {
     let mut f = release_fixture();
     f.unpause(constants::valid_pause_bits!());
     assert_eq!(f.version.paused_for_testing(), 0);
@@ -49,8 +49,8 @@ fun unpause_clears_only_the_requested_bits() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_fun::errors::EUnguardedNotice, location = blast_fun::launch_config)]
-fun unpause_rejects_the_zero_publication_notices() {
+#[expected_failure(abort_code = blast_fun::errors::EUnguardedDelay, location = blast_fun::launch_config)]
+fun unpause_rejects_the_zero_publication_delays() {
     let mut f = release_fixture_with(
         runtime_config::new_publication_for_testing(&mut tx_context::dummy()),
     );
@@ -59,23 +59,23 @@ fun unpause_rejects_the_zero_publication_notices() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_fun::errors::EUnguardedNotice, location = blast_fun::launch_config)]
-fun unpause_rejects_a_pending_change_to_a_zero_notice() {
-    let mut f = release_fixture().with_zero_notice_fee_share_proposal();
+#[expected_failure(abort_code = blast_fun::errors::EUnguardedDelay, location = blast_fun::launch_config)]
+fun unpause_rejects_a_pending_change_to_a_zero_delay() {
+    let mut f = release_fixture().with_zero_delay_fee_share_proposal();
     f.unpause(constants::create_pause_bit!());
     abort
 }
 
 #[test]
-#[expected_failure(abort_code = blast_fun::errors::EUnguardedNotice, location = blast_fun::launch_config)]
-fun unpause_rejects_a_pending_lp_fee_change_to_a_zero_notice() {
-    let mut f = release_fixture().with_zero_notice_lp_fee_proposal();
+#[expected_failure(abort_code = blast_fun::errors::EUnguardedDelay, location = blast_fun::launch_config)]
+fun unpause_rejects_a_pending_lp_fee_change_to_a_zero_delay() {
+    let mut f = release_fixture().with_zero_delay_lp_fee_proposal();
     f.unpause(constants::create_pause_bit!());
     abort
 }
 
 #[test]
-#[expected_failure(abort_code = blast_fun::errors::EUnguardedNotice, location = blast_fun::launch_config)]
+#[expected_failure(abort_code = blast_fun::errors::EUnguardedDelay, location = blast_fun::launch_config)]
 fun unpause_rejects_a_pending_signer_admission() {
     let mut f = release_fixture().with_pending_signer_admission();
     f.unpause(constants::create_pause_bit!());
@@ -83,9 +83,9 @@ fun unpause_rejects_a_pending_signer_admission() {
 }
 
 #[test]
-#[expected_failure(abort_code = blast_admin::errors::EUnguardedUpgradeNotice, location = blast_admin::package_admin)]
-fun unpause_rejects_a_pending_zero_upgrade_notice() {
-    let mut f = release_fixture().with_zero_upgrade_notice_proposal();
+#[expected_failure(abort_code = blast_admin::errors::EUnguardedUpgradeDelay, location = blast_admin::package_admin)]
+fun unpause_rejects_a_pending_zero_upgrade_delay() {
+    let mut f = release_fixture().with_zero_upgrade_delay_proposal();
     f.unpause(constants::create_pause_bit!());
     abort
 }
@@ -100,7 +100,7 @@ fun pause_flags_name_three_independent_operations() {
 
 // === Test Helpers ===
 
-/// A fully paused version with the 48-hour upgrade notice and policies whose notices were raised
+/// A fully paused version with the 48-hour upgrade delay and policies whose delays were raised
 /// to two days.
 fun release_fixture(): ReleaseFixture {
     release_fixture_with(runtime_config::new_zero_fee_share_for_testing(&mut tx_context::dummy()))
@@ -108,18 +108,18 @@ fun release_fixture(): ReleaseFixture {
 
 fun release_fixture_with(runtime_config: RuntimeConfig): ReleaseFixture {
     let ctx = &mut tx_context::dummy();
-    let mut version = marker::version_for_testing(ctx);
+    let mut version = otw::version_for_testing(ctx);
     package_admin::pause(&mut version, &pause_admin(), constants::valid_pause_bits!());
 
     ReleaseFixture {
         version,
-        package_admin: marker::package_admin_for_testing(ctx),
+        package_admin: otw::package_admin_for_testing(ctx),
         runtime_config,
         launch_config: launch_config::new_zero_fees_for_testing(ctx),
     }
 }
 
-fun with_zero_notice_fee_share_proposal(self: ReleaseFixture): ReleaseFixture {
+fun with_zero_delay_fee_share_proposal(self: ReleaseFixture): ReleaseFixture {
     let ReleaseFixture { version, package_admin, mut runtime_config, launch_config } = self;
     let clock = sui::clock::create_for_testing(&mut tx_context::dummy());
     runtime_config.schedule_protocol_fee_share(
@@ -134,7 +134,7 @@ fun with_zero_notice_fee_share_proposal(self: ReleaseFixture): ReleaseFixture {
     ReleaseFixture { version, package_admin, runtime_config, launch_config }
 }
 
-fun with_zero_notice_lp_fee_proposal(self: ReleaseFixture): ReleaseFixture {
+fun with_zero_delay_lp_fee_proposal(self: ReleaseFixture): ReleaseFixture {
     let ReleaseFixture { version, package_admin, runtime_config, mut launch_config } = self;
     let clock = sui::clock::create_for_testing(&mut tx_context::dummy());
     launch_config.schedule_protocol_lp_fees(
@@ -164,7 +164,7 @@ fun with_pending_signer_admission(self: ReleaseFixture): ReleaseFixture {
     ReleaseFixture { version, package_admin, runtime_config, launch_config }
 }
 
-fun with_zero_upgrade_notice_proposal(self: ReleaseFixture): ReleaseFixture {
+fun with_zero_upgrade_delay_proposal(self: ReleaseFixture): ReleaseFixture {
     let ReleaseFixture { version, mut package_admin, runtime_config, launch_config } = self;
     let clock = sui::clock::create_for_testing(&mut tx_context::dummy());
     package_admin.schedule_upgrade_delay(
@@ -206,7 +206,7 @@ use blast_admin::{
 use blast_core::{blast_domain::{ClaimSignerAdmin, FeeAdmin}, bps};
 
 use blast_fun::{
-    blast_fun::{Self as marker, BLAST_FUN},
+    blast_fun::{Self as otw, BLAST_FUN},
     constants,
     launch_config::{Self, LaunchConfig},
     runtime_config::{Self, RuntimeConfig}

@@ -8,21 +8,21 @@ module blast_core::blast_treasury_tests;
 
 const GENESIS: address = @0x7EA5;
 const NEXT: address = @0x7EA6;
-const NOTICE_MS: u64 = 48 * 60 * 60 * 1_000;
+const DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
 
 // === Tests ===
 
 #[test]
-fun a_new_destination_waits_the_applied_notice_and_anyone_applies_it() {
+fun a_new_destination_waits_the_applied_delay_and_anyone_applies_it() {
     let ctx = &mut tx_context::dummy();
     let mut clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
     assert!(treasury.is_guarded());
 
-    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, DELAY_MS, &clock);
     assert_eq!(treasury.destination(), GENESIS);
 
-    clock.increment_for_testing(NOTICE_MS);
+    clock.increment_for_testing(DELAY_MS);
     treasury.apply_destination(&clock);
     assert_eq!(treasury.destination(), NEXT);
     assert!(treasury.pending_destination().is_none());
@@ -32,14 +32,14 @@ fun a_new_destination_waits_the_applied_notice_and_anyone_applies_it() {
 }
 
 #[test]
-fun the_treasury_reads_its_notice_and_pending_destination() {
+fun the_treasury_reads_its_delay_and_pending_destination() {
     let ctx = &mut tx_context::dummy();
     let clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
-    assert_eq!(treasury.delay_ms(), NOTICE_MS);
+    assert_eq!(treasury.delay_ms(), DELAY_MS);
     assert!(treasury.pending_destination().is_none());
 
-    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, DELAY_MS, &clock);
     assert_eq!(treasury.pending_destination().destroy_some().value(), NEXT);
 
     treasury.cancel_destination(&blast_acl::witness_for_testing<CancelAdmin>());
@@ -52,13 +52,13 @@ fun the_treasury_reads_its_notice_and_pending_destination() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun a_destination_cannot_apply_before_its_notice() {
+fun a_destination_cannot_apply_before_its_delay() {
     let ctx = &mut tx_context::dummy();
     let mut clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
-    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, DELAY_MS, &clock);
 
-    clock.increment_for_testing(NOTICE_MS - 1);
+    clock.increment_for_testing(DELAY_MS - 1);
     treasury.apply_destination(&clock);
 
     abort
@@ -66,15 +66,15 @@ fun a_destination_cannot_apply_before_its_notice() {
 
 #[test]
 /// `is_destination_ready` answers what `apply_destination` would do: false with nothing scheduled,
-/// before the notice, after cancellation, and once applied; true from the ready time on.
-fun destination_readiness_follows_the_schedule_and_its_notice() {
+/// before the delay, after cancellation, and once applied; true from the ready time on.
+fun destination_readiness_follows_the_schedule_and_its_delay() {
     let ctx = &mut tx_context::dummy();
     let mut clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
     assert!(!treasury.is_destination_ready(&clock));
 
-    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
-    clock.increment_for_testing(NOTICE_MS - 1);
+    treasury.schedule_destination(&treasury_admin(), NEXT, DELAY_MS, &clock);
+    clock.increment_for_testing(DELAY_MS - 1);
     assert!(!treasury.is_destination_ready(&clock));
     clock.increment_for_testing(1);
     assert!(treasury.is_destination_ready(&clock));
@@ -84,8 +84,8 @@ fun destination_readiness_follows_the_schedule_and_its_notice() {
     treasury.cancel_destination(&blast_acl::witness_for_testing<CancelAdmin>());
     assert!(!treasury.is_destination_ready(&clock));
 
-    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
-    clock.increment_for_testing(NOTICE_MS);
+    treasury.schedule_destination(&treasury_admin(), NEXT, DELAY_MS, &clock);
+    clock.increment_for_testing(DELAY_MS);
     treasury.apply_destination(&clock);
     assert!(!treasury.is_destination_ready(&clock));
 
@@ -94,15 +94,15 @@ fun destination_readiness_follows_the_schedule_and_its_notice() {
 }
 
 #[test]
-/// A ready time whose next notice no longer fits in a timestamp is not ready, as
+/// A ready time whose next delay no longer fits in a timestamp is not ready, as
 /// `apply_destination` would abort.
-fun a_destination_is_not_ready_once_its_next_notice_would_overflow() {
+fun a_destination_is_not_ready_once_its_next_delay_would_overflow() {
     let ctx = &mut tx_context::dummy();
     let mut clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
-    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, DELAY_MS, &clock);
 
-    clock.set_for_testing(std::u64::max_value!() - NOTICE_MS);
+    clock.set_for_testing(std::u64::max_value!() - DELAY_MS);
     assert!(treasury.is_destination_ready(&clock));
     clock.increment_for_testing(1);
     assert!(!treasury.is_destination_ready(&clock));
@@ -113,13 +113,13 @@ fun a_destination_is_not_ready_once_its_next_notice_would_overflow() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::EInvalidDelay, location = blast_admin::delayed)]
-fun a_destination_cannot_apply_once_its_next_notice_would_overflow() {
+fun a_destination_cannot_apply_once_its_next_delay_would_overflow() {
     let ctx = &mut tx_context::dummy();
     let mut clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
-    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, DELAY_MS, &clock);
 
-    clock.set_for_testing(std::u64::max_value!() - NOTICE_MS + 1);
+    clock.set_for_testing(std::u64::max_value!() - DELAY_MS + 1);
     treasury.apply_destination(&clock);
 
     abort
@@ -131,10 +131,10 @@ fun a_cancelled_destination_cannot_apply() {
     let ctx = &mut tx_context::dummy();
     let mut clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
-    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), NEXT, DELAY_MS, &clock);
     treasury.cancel_destination(&blast_acl::witness_for_testing<CancelAdmin>());
 
-    clock.increment_for_testing(NOTICE_MS);
+    clock.increment_for_testing(DELAY_MS);
     treasury.apply_destination(&clock);
 
     abort
@@ -150,19 +150,19 @@ fun a_destination_must_be_a_nonzero_address() {
     let clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
 
-    treasury.schedule_destination(&treasury_admin(), @0x0, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), @0x0, DELAY_MS, &clock);
 
     abort
 }
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::EUnchanged, location = blast_admin::delayed)]
-fun an_unchanged_destination_and_notice_is_rejected() {
+fun an_unchanged_destination_and_delay_is_rejected() {
     let ctx = &mut tx_context::dummy();
     let clock = clock::create_for_testing(ctx);
     let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
 
-    treasury.schedule_destination(&treasury_admin(), GENESIS, NOTICE_MS, &clock);
+    treasury.schedule_destination(&treasury_admin(), GENESIS, DELAY_MS, &clock);
 
     abort
 }

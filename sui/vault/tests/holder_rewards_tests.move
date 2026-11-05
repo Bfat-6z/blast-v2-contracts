@@ -9,7 +9,7 @@ module blast_vault::holder_rewards_tests;
 const ALICE: address = @0xA11CE;
 const BOB: address = @0xB0B;
 const RELAYER: address = @0x4E1A;
-const ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;
+const ROUND_DELAY_MS: u64 = 2 * 60 * 60 * 1_000;
 const CLAIM_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 const MANIFEST: vector<u8> = x"0000000000000000000000000000000000000000000000000000000000000001";
 
@@ -24,7 +24,7 @@ fun a_published_round_pays_each_leaf_once_and_returns_the_rest_at_close() {
     let vault_id = object::id(&vault);
     let (alice, bob) = (leaf(vault_id, 0, 0, ALICE, 100, 10), leaf(vault_id, 0, 1, BOB, 50, 5));
     schedule(&mut vault, &f, 0, 0, 100, merkle::node(alice, bob), 2, 150, 20, 1);
-    let mut f = publish_after_notice(&mut scenario, f, &mut vault);
+    let mut f = publish_after_delay(&mut scenario, f, &mut vault);
 
     let (unreserved_meme, unreserved_quote) = vault.rewards_balances();
     assert_eq!(vector[unreserved_meme, unreserved_quote], vector[850, 979]);
@@ -57,7 +57,7 @@ fun publication_announces_the_round_once() {
     let mut scenario = vault_fixture::begin();
     let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
 
     holder_rewards::publish_round(&mut vault, f.version(), f.treasury(), f.clock(), scenario.ctx());
 
@@ -71,7 +71,7 @@ fun a_single_leaf_round_verifies_with_an_empty_proof() {
     let (f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     let alice = leaf(object::id(&vault), 0, 0, ALICE, 100, 0);
     schedule(&mut vault, &f, 0, 0, 100, alice, 1, 100, 0, 0);
-    let f = publish_after_notice(&mut scenario, f, &mut vault);
+    let f = publish_after_delay(&mut scenario, f, &mut vault);
 
     let mut round = take_round(&scenario);
     round.claim(f.version(), 0, ALICE, 100, 0, vector[], f.clock(), scenario.ctx());
@@ -88,7 +88,7 @@ fun claims_continue_while_the_package_is_paused() {
     let (f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     let alice = leaf(object::id(&vault), 0, 0, ALICE, 100, 0);
     schedule(&mut vault, &f, 0, 0, 100, alice, 1, 100, 0, 0);
-    let mut f = publish_after_notice(&mut scenario, f, &mut vault);
+    let mut f = publish_after_delay(&mut scenario, f, &mut vault);
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
 
     let mut round = take_round(&scenario);
@@ -281,7 +281,7 @@ fun a_round_cannot_start_before_the_previous_one_ended() {
     let mut scenario = vault_fixture::begin();
     let (f, mut vault) = start_with_rewards(&mut scenario, 200, 0);
     schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
-    let f = publish_after_notice(&mut scenario, f, &mut vault);
+    let f = publish_after_delay(&mut scenario, f, &mut vault);
 
     schedule(&mut vault, &f, 1, 99, 200, root(), 1, 100, 0, 0);
 
@@ -293,10 +293,10 @@ fun a_round_may_start_where_the_previous_one_ended() {
     let mut scenario = vault_fixture::begin();
     let (f, mut vault) = start_with_rewards(&mut scenario, 200, 0);
     schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
-    let f = publish_after_notice(&mut scenario, f, &mut vault);
+    let f = publish_after_delay(&mut scenario, f, &mut vault);
 
     schedule(&mut vault, &f, 1, 100, 200, root(), 1, 100, 0, 0);
-    let f = publish_after_notice(&mut scenario, f, &mut vault);
+    let f = publish_after_delay(&mut scenario, f, &mut vault);
 
     assert_eq!(vault.next_round(), 2);
     finish_vault(scenario, f, vault);
@@ -322,7 +322,7 @@ fun a_round_cannot_publish_beyond_the_rewards_left_at_publication() {
     let (meme, quote) = vault.withdraw_rewards_for_testing(1, 0);
     destroy(meme);
     destroy(quote);
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
 
     holder_rewards::publish_round(&mut vault, f.version(), f.treasury(), f.clock(), scenario.ctx());
 
@@ -344,11 +344,11 @@ fun a_round_cannot_publish_after_the_treasury_changed() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun a_round_cannot_publish_before_its_notice() {
+fun a_round_cannot_publish_before_its_delay() {
     let mut scenario = vault_fixture::begin();
     let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS - 1);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS - 1);
 
     holder_rewards::publish_round(&mut vault, f.version(), f.treasury(), f.clock(), scenario.ctx());
 
@@ -360,8 +360,8 @@ fun a_round_cannot_publish_before_its_notice() {
 fun a_claim_window_past_the_end_of_time_is_rejected_at_publication() {
     let mut scenario = vault_fixture::begin();
     let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
-    schedule_with_window(&mut vault, &f, 100, std::u64::max_value!() - ROUND_NOTICE_MS + 1);
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    schedule_with_window(&mut vault, &f, 100, std::u64::max_value!() - ROUND_DELAY_MS + 1);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
 
     holder_rewards::publish_round(&mut vault, f.version(), f.treasury(), f.clock(), scenario.ctx());
 
@@ -380,7 +380,7 @@ fun the_admin_pause_stops_round_scheduling() {
     abort_with_vault(scenario, f, vault)
 }
 
-// Cancellation and notice changes
+// Cancellation and delay changes
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
@@ -389,7 +389,7 @@ fun a_cancelled_round_cannot_publish() {
     let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
     holder_rewards::cancel_round(&mut vault, &cancel_admin(), f.version());
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
 
     holder_rewards::publish_round(&mut vault, f.version(), f.treasury(), f.clock(), scenario.ctx());
 
@@ -398,7 +398,7 @@ fun a_cancelled_round_cannot_publish() {
 
 #[test]
 #[expected_failure(abort_code = blast_vault::errors::EWrongRoundProposal, location = blast_vault::vault)]
-fun cancelling_a_round_cannot_discard_a_notice_change() {
+fun cancelling_a_round_cannot_discard_a_delay_change() {
     let mut scenario = vault_fixture::begin();
     let (f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     holder_rewards::schedule_round_delay(&mut vault, &rewards_admin(), f.version(), 1, f.clock());
@@ -410,7 +410,7 @@ fun cancelling_a_round_cannot_discard_a_notice_change() {
 
 #[test]
 #[expected_failure(abort_code = blast_vault::errors::EWrongRoundProposal, location = blast_vault::vault)]
-fun cancelling_a_notice_change_cannot_discard_a_round() {
+fun cancelling_a_delay_change_cannot_discard_a_round() {
     let mut scenario = vault_fixture::begin();
     let (f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
@@ -421,11 +421,11 @@ fun cancelling_a_notice_change_cannot_discard_a_round() {
 }
 
 #[test]
-fun a_round_notice_change_applies_after_the_current_notice() {
+fun a_round_delay_change_applies_after_the_current_delay() {
     let mut scenario = vault_fixture::begin();
     let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     holder_rewards::schedule_round_delay(&mut vault, &rewards_admin(), f.version(), 1, f.clock());
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
     holder_rewards::apply_round_delay(&mut vault, f.version(), f.clock());
 
     schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
@@ -439,12 +439,12 @@ fun a_round_notice_change_applies_after_the_current_notice() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed_action)]
-fun a_cancelled_notice_change_cannot_apply() {
+fun a_cancelled_delay_change_cannot_apply() {
     let mut scenario = vault_fixture::begin();
     let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     holder_rewards::schedule_round_delay(&mut vault, &rewards_admin(), f.version(), 1, f.clock());
     holder_rewards::cancel_round_delay(&mut vault, &cancel_admin(), f.version());
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
 
     holder_rewards::apply_round_delay(&mut vault, f.version(), f.clock());
 
@@ -585,7 +585,7 @@ fun the_admin_pause_stops_round_publication() {
     let mut scenario = vault_fixture::begin();
     let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     schedule(&mut vault, &f, 0, 0, 100, root(), 1, 100, 0, 0);
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
 
     holder_rewards::publish_round(&mut vault, f.version(), f.treasury(), f.clock(), scenario.ctx());
@@ -595,11 +595,11 @@ fun the_admin_pause_stops_round_publication() {
 
 #[test]
 #[expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
-fun the_admin_pause_stops_round_notice_changes() {
+fun the_admin_pause_stops_round_delay_changes() {
     let mut scenario = vault_fixture::begin();
     let (mut f, mut vault) = start_with_rewards(&mut scenario, 100, 0);
     holder_rewards::schedule_round_delay(&mut vault, &rewards_admin(), f.version(), 1, f.clock());
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
 
     holder_rewards::apply_round_delay(&mut vault, f.version(), f.clock());
@@ -685,7 +685,7 @@ fun two_leaf_round(): (
     let vault_id = object::id(&vault);
     let (alice, bob) = (leaf(vault_id, 0, 0, ALICE, 100, 10), leaf(vault_id, 0, 1, BOB, 50, 5));
     schedule(&mut vault, &f, 0, 0, 100, merkle::node(alice, bob), 2, 150, 20, 1);
-    let f = publish_after_notice(&mut scenario, f, &mut vault);
+    let f = publish_after_delay(&mut scenario, f, &mut vault);
     let round = take_round(&scenario);
 
     (scenario, f, vault, round, bob)
@@ -749,13 +749,13 @@ fun schedule_with_window(
     );
 }
 
-/// Waits out the round notice, publishes the scheduled round, and moves to the next transaction.
-fun publish_after_notice(
+/// Waits out the round delay, publishes the scheduled round, and moves to the next transaction.
+fun publish_after_delay(
     scenario: &mut Scenario,
     mut f: VaultFixture,
     vault: &mut Vault<VAULT_FIXTURE, QUOTE>,
 ): VaultFixture {
-    f.clock_mut().increment_for_testing(ROUND_NOTICE_MS);
+    f.clock_mut().increment_for_testing(ROUND_DELAY_MS);
     holder_rewards::publish_round(vault, f.version(), f.treasury(), f.clock(), scenario.ctx());
     scenario.next_tx(vault_fixture::sender());
 

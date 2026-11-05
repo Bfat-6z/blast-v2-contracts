@@ -16,6 +16,18 @@ public struct OTHER() has drop;
 // === Tests ===
 
 #[test]
+fun seed_keeps_the_preferred_side_when_both_balances_cover_the_venue_quote() {
+    assert!(cetus::seed_fixed_side_for_testing(true, 10, 20, 10, 20));
+    assert!(!cetus::seed_fixed_side_for_testing(false, 10, 20, 10, 19));
+}
+
+#[test]
+fun seed_flips_the_preferred_side_on_one_atom_of_rounding_overdraw() {
+    assert!(cetus::seed_fixed_side_for_testing(false, 10, 20, 11, 20));
+    assert!(!cetus::seed_fixed_side_for_testing(true, 10, 20, 10, 21));
+}
+
+#[test]
 /// One route serves both Cetus coin orders: it reports which side the Meme is on.
 fun the_route_locates_meme_in_either_coin_order() {
     assert!(cetus::is_meme_coin_a_for_testing<MEME, QUOTE, MEME, QUOTE>());
@@ -102,13 +114,13 @@ fun the_pool_reservation_records_the_pair_the_capability_and_the_tick_spacing() 
 }
 
 #[test]
-/// The vault registry admits the Cetus venue's witness at its publication notice of zero.
+/// The vault registry admits the Cetus venue's witness at its publication delay of zero.
 fun the_vault_registry_admits_the_cetus_venue() {
     let mut ctx = tx_context::dummy();
     let mut registry = blast_vault_package::empty_registry_for_testing(&mut ctx);
     let vault_version = blast_vault_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
-    let admin = blast_acl::witness_for_testing<AdapterAdmin>();
+    let admin = blast_acl::witness_for_testing<VenueAdmin>();
 
     registry.schedule_witness<Venue>(&admin, &vault_version, &clock);
     registry.apply_witness<Venue>(&vault_version, &clock);
@@ -127,7 +139,7 @@ fun the_vault_registry_admits_the_cetus_venue() {
 
 use blast_admin::{blast_acl, delayed_set::SetApplied};
 
-use blast_core::blast_domain::AdapterAdmin;
+use blast_core::blast_domain::VenueAdmin;
 
 use blast_migrators::{cetus::{Self, Venue}, events::{Self, CetusPoolReserved}};
 

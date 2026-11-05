@@ -3,7 +3,7 @@
 
 /// Blast's product administration roles in the shared Blast ACL, one set for the launchpad, the
 /// presale, the vault, and the venues (ADR 0137). Package-infrastructure roles (upgrade, pause,
-/// unpause) are generic over each package's marker in `blast_admin`.
+/// unpause) are generic over each package's one-time witness (OTW) in `blast_admin`.
 ///
 /// A role is a type. An `AdminCap` holding `Role` signs in to `AdminWitness<Role>`, and a
 /// function's witness parameter names the one role it accepts, so no role authorizes another's
@@ -21,8 +21,8 @@ public struct FeeAdmin()
 /// Admits or removes the Quotes and Meme decimals new sales may use.
 public struct ListingAdmin()
 
-/// Admits or removes migration adapters.
-public struct AdapterAdmin()
+/// Admits or removes venues and vault issuers.
+public struct VenueAdmin()
 
 /// Schedules holder-reward rounds and settles their gas reserves.
 public struct RewardsAdmin()

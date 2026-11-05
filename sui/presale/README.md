@@ -77,7 +77,7 @@ and Blast partners (a `blast_partners::partner_list::PartnerList`) new presales 
 creation, so delisting a type never affects a live sale. `blast_presale::new`,
 `finalize`, and `migrate` are public, so a venue in another package, `blast_migrators` or a
 partner's under [`sui/vendors`](../vendors/README.md), issues the ticket `new` redeems and redeems the
-hand-off `migrate` returns with its own sealed witness, once Blast's `AdapterAdmin` admits
+hand-off `migrate` returns with its own sealed witness, once Blast's `VenueAdmin` admits
 it; a primitive or vector, which anyone can construct, is never admitted
 ([ADR 0104](../../docs/decisions/0104-external-presale-migrators-and-vendor-packages.md)).
 
@@ -123,7 +123,7 @@ shared Blast ACL (`blast_admin`,
 [ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)) and its
 generic package objects. Product roles are `blast_core::blast_domain`'s, shared with the
 launchpad and the vault: `FeeAdmin` sets Blast's rates and the partners new sales may
-name, `ListingAdmin` and `AdapterAdmin` admit Quote types and venues for new sales, and
+name, `ListingAdmin` and `VenueAdmin` admit Quote types and venues for new sales, and
 `TreasuryAdmin` governs the core treasury. Package roles are
 `blast_admin::package_admin`'s `PauseAdmin`, `UnpauseAdmin`, `UpgradeAdmin` and
 `CancelAdmin` over `BLAST_PRESALE_PACKAGE`. [DEPLOYING.md](DEPLOYING.md) gives the

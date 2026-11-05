@@ -49,8 +49,8 @@ use sui_types::{
 /// be built from the same revision, or bytecode and framework could disagree.
 const PINNED_SUI_REVISION: &str = "51d177ad7d65";
 pub const TEST_GENESIS_RECIPIENT: &str = "0xa";
-/// The upgrade notice each package's `package_admin::wrap` applies at publication.
-pub const PUBLICATION_UPGRADE_NOTICE_MS: u64 = 172_800_000;
+/// The upgrade delay each package's `package_admin::wrap` applies at publication.
+pub const PUBLICATION_UPGRADE_DELAY_MS: u64 = 172_800_000;
 
 /// Keep fixture output with its checkout even when Cargo's compiler cache is shared.
 pub fn test_work_dir() -> PathBuf {
@@ -251,9 +251,9 @@ fn same_file(left: &Path, right: &Path) -> bool {
     matches!((left.canonicalize(), right.canonicalize()), (Ok(left), Ok(right)) if left == right)
 }
 
-/// `<presale>::blast_presale_package::BLAST_PRESALE_PACKAGE`, the presale's marker in
+/// `<presale>::blast_presale_package::BLAST_PRESALE_PACKAGE`, the presale's one-time witness (OTW) in
 /// `blast_admin`'s generic types.
-pub fn presale_marker(presale: ObjectID) -> Result<sui_types::TypeTag> {
+pub fn presale_otw(presale: ObjectID) -> Result<sui_types::TypeTag> {
     Ok(sui_types::parse_sui_type_tag(&format!("{presale}::blast_presale_package::BLAST_PRESALE_PACKAGE"))?)
 }
 
@@ -261,23 +261,23 @@ pub fn presale_marker(presale: ObjectID) -> Result<sui_types::TypeTag> {
 /// `PackageCancelAdmin` are `blast_admin`'s generic package roles over `BLAST_PRESALE_PACKAGE`;
 /// every other role is `blast_core::blast_domain`'s.
 pub fn presale_role(admin: ObjectID, core: ObjectID, presale: ObjectID, role: &str) -> Result<sui_types::TypeTag> {
-    let marker = format!("{presale}::blast_presale_package::BLAST_PRESALE_PACKAGE");
+    let otw = format!("{presale}::blast_presale_package::BLAST_PRESALE_PACKAGE");
     let tag = match role {
-        "UpgradeAdmin" | "PauseAdmin" | "UnpauseAdmin" => format!("{admin}::package_admin::{role}<{marker}>"),
-        "PackageCancelAdmin" => format!("{admin}::package_admin::CancelAdmin<{marker}>"),
+        "UpgradeAdmin" | "PauseAdmin" | "UnpauseAdmin" => format!("{admin}::package_admin::{role}<{otw}>"),
+        "PackageCancelAdmin" => format!("{admin}::package_admin::CancelAdmin<{otw}>"),
         _ => format!("{core}::blast_domain::{role}"),
     };
     Ok(sui_types::parse_sui_type_tag(&tag)?)
 }
 
-/// Appends `creation_policy::unpause`, which clears `bits` only while every presale notice and the
-/// package's upgrade notice are guarded.
+/// Appends `creation_policy::unpause`, which clears `bits` only while every presale delay and the
+/// package's upgrade delay are guarded.
 #[allow(clippy::too_many_arguments)]
 pub fn append_presale_unpause(
     h: &Harness,
     b: &mut ProgrammableTransactionBuilder,
     presale: ObjectID,
-    custody: ObjectID,
+    package_admin: ObjectID,
     version: ObjectID,
     witness: Argument,
     creation_policy: ObjectID,
@@ -286,15 +286,15 @@ pub fn append_presale_unpause(
 ) -> Result<()> {
     let creation_policy = b.obj(h.shared(creation_policy, false))?;
     let version = b.obj(h.shared(version, true))?;
-    let custody = b.obj(h.shared(custody, false))?;
+    let package_admin = b.obj(h.shared(package_admin, false))?;
     let fee_policy = b.obj(h.shared(fee_policy, false))?;
     let bits = b.pure(bits)?;
-    call(b, presale, "creation_policy", "unpause", vec![], vec![creation_policy, version, witness, custody, fee_policy, bits]);
+    call(b, presale, "creation_policy", "unpause", vec![], vec![creation_policy, version, witness, package_admin, fee_policy, bits]);
     Ok(())
 }
 
-/// `<blast>::blast_fun::BLAST_FUN`, the launchpad's marker in `blast_admin`'s generic types.
-pub fn launchpad_marker(blast: ObjectID) -> Result<sui_types::TypeTag> {
+/// `<blast>::blast_fun::BLAST_FUN`, the launchpad's one-time witness (OTW) in `blast_admin`'s generic types.
+pub fn launchpad_otw(blast: ObjectID) -> Result<sui_types::TypeTag> {
     Ok(sui_types::parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)
 }
 
@@ -310,14 +310,14 @@ pub fn launchpad_role(admin: ObjectID, core: ObjectID, blast: ObjectID, role: &s
     Ok(sui_types::parse_sui_type_tag(&tag)?)
 }
 
-/// Appends `launch_config::unpause`, which clears `bits` only while every launchpad notice and the
-/// package's upgrade notice are guarded.
+/// Appends `launch_config::unpause`, which clears `bits` only while every launchpad delay and the
+/// package's upgrade delay are guarded.
 #[allow(clippy::too_many_arguments)]
 pub fn append_launchpad_unpause(
     h: &Harness,
     b: &mut ProgrammableTransactionBuilder,
     blast: ObjectID,
-    custody: ObjectID,
+    package_admin: ObjectID,
     version: ObjectID,
     witness: Argument,
     runtime: ObjectID,
@@ -326,10 +326,10 @@ pub fn append_launchpad_unpause(
 ) -> Result<()> {
     let config = b.obj(h.shared(config, false))?;
     let runtime = b.obj(h.shared(runtime, false))?;
-    let custody = b.obj(h.shared(custody, false))?;
+    let package_admin = b.obj(h.shared(package_admin, false))?;
     let version = b.obj(h.shared(version, true))?;
     let bits = b.pure(bits)?;
-    call(b, blast, "launch_config", "unpause", vec![], vec![config, version, witness, custody, runtime, bits]);
+    call(b, blast, "launch_config", "unpause", vec![], vec![config, version, witness, package_admin, runtime, bits]);
     Ok(())
 }
 
@@ -412,9 +412,9 @@ pub struct Delayed<T> {
     pub pending: Option<Proposal<T>>,
 }
 
-/// Mirrors `blast_admin::delayed::Notice`.
+/// Mirrors `blast_admin::delayed::PendingDelay`.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
-pub struct Notice {
+pub struct PendingDelay {
     pub delay_ms: u64,
     pub ready_at_ms: u64,
 }
@@ -426,8 +426,8 @@ pub struct DelayedSet<E> {
     pub key: bool,
     pub members: Vec<E>,
     pub delay_ms: u64,
-    pub admissions: Vec<(E, Notice)>,
-    pub pending_delay: Option<Notice>,
+    pub admissions: Vec<(E, PendingDelay)>,
+    pub pending_delay: Option<PendingDelay>,
 }
 
 /// A `RuntimeConfig` in BCS field order: claim signers and protocol fee share.
@@ -454,7 +454,7 @@ pub type LaunchConfigContents = (
 pub type VaultRegistryContents = (ObjectID, DelayedSet<String>);
 
 /// A `blast_admin::package_version::PackageVersion<M>` in BCS field order: id, defined pause
-/// bits, paused bits, the unpause witness type and the generation.
+/// bits, paused bits, the unpause witness type and the version.
 pub type GenericPackageVersionContents = (ObjectID, u8, u8, String, u64);
 
 /// Mirrors `blast_admin::delayed_action::DelayedAction<K, A>`.
@@ -910,7 +910,7 @@ impl Harness {
         Ok((published[0], outcome))
     }
 
-    /// Seals the launchpad's publication in `blast_admin`'s generic custody and configures initial
+    /// Seals the launchpad's publication in `blast_admin`'s generic PackageAdmin and configures initial
     /// admission; operations remain paused until release (see `unpause_launchpad`). `venue` is the
     /// one venue witness type admitted; `core` is the `blast_core` package whose `Bps` the
     /// launchpad's settings take and whose `blast_domain` roles they require.
@@ -925,17 +925,17 @@ impl Harness {
         let cap = publication.created(self, "package", "UpgradeCap");
         assert_eq!(bootstrap.len(), 1);
         assert_eq!(cap.len(), 1);
-        // The publication pins the package witness; the generation starts at 1 only at wrap.
+        // The publication pins the package witness; the version starts at 1 only at wrap.
         let (bootstrap_id, publisher, valid_pause_bits, unpause_witness):
             (ObjectID, (ObjectID, String, String), u8, String) = bcs::from_bytes(&self.contents(bootstrap[0]))?;
-        let generation = 1u64;
+        let expected_version = 1u64;
         assert_eq!(valid_pause_bits, 7, "the launchpad defines Create, Trading and Migrate");
         assert!(unpause_witness.ends_with("::blast_fun::PackageWitness"), "{unpause_witness}");
         let cap_contents = self.contents(cap[0]);
         let mut builder = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = builder.obj(self.owned(bootstrap[0]))?;
         let cap_arg = builder.obj(self.owned(cap[0]))?;
-        call(&mut builder, admin, "package_admin", "wrap", vec![launchpad_marker(package)?], vec![bootstrap_arg, cap_arg]);
+        call(&mut builder, admin, "package_admin", "wrap", vec![launchpad_otw(package)?], vec![bootstrap_arg, cap_arg]);
         let outcome = self.execute(builder.finish())?;
         outcome.assert_success();
         assert_eq!(outcome.effects.deleted().iter().map(|object| object.0).collect::<Vec<_>>(), vec![bootstrap_id]);
@@ -948,39 +948,39 @@ impl Harness {
         self.shared(package_admin[0], false);
         let (admin_id, sealed_publisher, sealed_caps, upgrade) = self.package_admin(package_admin[0])?;
         assert!(upgrade.pending.is_none(), "fresh custody has no scheduled action");
-        assert_eq!(upgrade.delay_ms, PUBLICATION_UPGRADE_NOTICE_MS, "publication starts at the 48-hour upgrade notice");
+        assert_eq!(upgrade.delay_ms, PUBLICATION_UPGRADE_DELAY_MS, "publication starts at the 48-hour upgrade delay");
         assert_eq!(upgrade.owner, package_admin[0]);
         assert_eq!(admin_id, package_admin[0]);
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
         assert_eq!(bcs::to_bytes(&sealed_caps[0])?, cap_contents);
-        let (version_id, valid, paused, witness, active_generation): GenericPackageVersionContents =
+        let (version_id, valid, paused, witness, active_version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
-        assert_eq!((version_id, valid, paused, witness, active_generation),
-            (version[0], 7, 7, unpause_witness, generation));
+        assert_eq!((version_id, valid, paused, witness, active_version),
+            (version[0], 7, 7, unpause_witness, expected_version));
         let (_, signers, _): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode fresh RuntimeConfig")?;
         assert!(signers.members.is_empty() && signers.admissions.is_empty(), "publication admits no claim signer");
-        assert_eq!(signers.delay_ms, 0, "publication starts the signer notice at zero");
-        let config_cap = self.configuration_admin(admin, admin_publication, core, "blast_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "ClaimSignerAdmin"])?;
+        assert_eq!(signers.delay_ms, 0, "publication starts the signer delay at zero");
+        let config_cap = self.configuration_admin(admin, admin_publication, core, "blast_domain", &["ListingAdmin", "VenueAdmin", "FeeAdmin", "TreasuryAdmin", "ClaimSignerAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config = b.obj(self.shared(config_id, true))?;
         let version_arg = b.obj(self.shared(version[0], false))?;
         let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
         let listing = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "ListingAdmin")?;
-        let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "AdapterAdmin")?;
+        let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "VenueAdmin")?;
         let allowed = b.pure(true)?;
         call(&mut b, package, "launch_config", "set_quote_allowed", vec![quote], vec![config, version_arg, listing, allowed]);
-        // At the zero publication notice a venue's schedule and apply share one PTB.
+        // At the zero publication delay a venue's schedule and apply share one PTB.
         call(&mut b, package, "launch_config", "schedule_venue", vec![venue.clone()], vec![config, version_arg, adapter, clock]);
         call(&mut b, package, "launch_config", "apply_venue", vec![venue], vec![config, version_arg, clock]);
         let delay = b.pure(172_800_000u64)?;
         call(&mut b, package, "launch_config", "schedule_venue_delay", vec![], vec![config, version_arg, adapter, delay, clock]);
         call(&mut b, package, "launch_config", "apply_venue_delay", vec![], vec![config, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
-        // Raise every remaining publication notice from zero to 48 hours, keeping each published
-        // value, through ordinary ACL roles: at zero applied notice schedule and apply share a PTB.
-        // `launch_config::unpause` refuses while any notice is unguarded.
+        // Raise every remaining publication delay from zero to 48 hours, keeping each published
+        // value, through ordinary ACL roles: at zero applied delay schedule and apply share a PTB.
+        // `launch_config::unpause` refuses while any delay is unguarded.
         let (_, _, _, trade_fees, _, allocation, lp_fees, creation_fee, _): LaunchConfigContents =
             bcs::from_bytes(&self.contents(config_id)).context("decode LaunchConfig")?;
         let (_, _, fee_share): RuntimeConfigContents =
@@ -1005,7 +1005,7 @@ impl Harness {
         let quote_lp_fee = bps(&mut b, lp_fees.value.1)?;
         let share = bps(&mut b, fee_share.value)?;
         let creation_fee = b.pure(creation_fee.value)?;
-        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
+        let delay = b.pure(PUBLICATION_UPGRADE_DELAY_MS)?;
         call(&mut b, package, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee, quote_fee, meme_fee, delay, clock]);
         call(&mut b, package, "launch_config", "apply_trade_fees", vec![], vec![config_arg, version_arg, clock]);
         call(&mut b, package, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_role, meme_allocation, quote_allocation, delay, clock]);
@@ -1028,29 +1028,29 @@ impl Harness {
             fee_share.delay_ms];
         let pending = [trade_fees.pending.is_some(), allocation.pending.is_some(), lp_fees.pending.is_some(),
             creation_fee.pending.is_some(), fee_share.pending.is_some()];
-        ensure!(applied.iter().all(|delay| *delay == PUBLICATION_UPGRADE_NOTICE_MS) && !pending.contains(&true),
-            "every launchpad setting waits the 48-hour notice with nothing pending");
+        ensure!(applied.iter().all(|delay| *delay == PUBLICATION_UPGRADE_DELAY_MS) && !pending.contains(&true),
+            "every launchpad setting waits the 48-hour delay with nothing pending");
         ensure!(venues.members.len() == 1, "the launch config admits the one venue");
         for set in [(venues.delay_ms, venues.admissions.len(), venues.pending_delay.is_some()),
             (signers.delay_ms, signers.admissions.len(), signers.pending_delay.is_some())] {
-            ensure!(set == (PUBLICATION_UPGRADE_NOTICE_MS, 0, false), "every launchpad set waits 48 hours with nothing pending");
+            ensure!(set == (PUBLICATION_UPGRADE_DELAY_MS, 0, false), "every launchpad set waits 48 hours with nothing pending");
         }
         Ok((version[0], package_admin[0]))
     }
 
     /// Releases `bits` of the launchpad through the real ACL: grants a fresh `AdminCap` the
     /// generic `UnpauseAdmin<BLAST_FUN>` and calls `launch_config::unpause`, which needs every
-    /// launchpad notice guarded, without advancing the Clock.
+    /// launchpad delay guarded, without advancing the Clock.
     #[allow(clippy::too_many_arguments)]
     pub fn unpause_launchpad(&mut self, blast: ObjectID, admin: ObjectID, publication: &Outcome,
-        version: ObjectID, custody: ObjectID, runtime: ObjectID, config: ObjectID, bits: u8,
+        version: ObjectID, package_admin: ObjectID, runtime: ObjectID, config: ObjectID, bits: u8,
     ) -> Result<()> {
         let role = launchpad_role(admin, ObjectID::ZERO, blast, "UnpauseAdmin")?;
         let cap = self.grant_roles(admin, publication, std::slice::from_ref(&role))?;
         let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
         let mut b = ProgrammableTransactionBuilder::new();
         let witness = self.sign_in_as(&mut b, admin, publication, cap, role)?;
-        append_launchpad_unpause(self, &mut b, blast, custody, version, witness, runtime, config, bits)?;
+        append_launchpad_unpause(self, &mut b, blast, package_admin, version, witness, runtime, config, bits)?;
         self.execute(b.finish())?.assert_success();
         assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
         Ok(())
@@ -1110,46 +1110,46 @@ impl Harness {
 
     /// Wraps the vault package's publication with its never-upgraded cap through `blast_admin`'s
     /// generic custody. The package version starts fully paused and the registry admits no venue
-    /// at a zero admission notice, so nothing is released yet (see `release_vault`).
+    /// at a zero admission delay, so nothing is released yet (see `release_vault`).
     pub fn wrap_vault(&mut self, admin: ObjectID, vault: ObjectID, publication: &Outcome) -> Result<VaultStack> {
         let registry = [self.derived_registry(publication, "blast_vault_package", "VaultRegistry")?];
         let (registry_id, venues): VaultRegistryContents = bcs::from_bytes(&self.contents(registry[0]))?;
         ensure!(registry_id == registry[0] && venues.members.is_empty() && venues.delay_ms == 0,
-            "publication lists no venue at a zero admission notice");
+            "publication lists no venue at a zero admission delay");
         let bootstrap = publication.created(self, "package_version", "Publication");
         let cap = publication.created(self, "package", "UpgradeCap");
         ensure!(bootstrap.len() == 1 && cap.len() == 1, "one publication and one upgrade cap");
         ensure!(self.object(bootstrap[0]).owner().get_address_owner_address()? == self.sender, "the publisher keeps the publication");
-        let marker = sui_types::parse_sui_type_tag(&format!("{vault}::blast_vault_package::BLAST_VAULT_PACKAGE"))?;
+        let otw = sui_types::parse_sui_type_tag(&format!("{vault}::blast_vault_package::BLAST_VAULT_PACKAGE"))?;
         let mut b = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = b.obj(self.owned(bootstrap[0]))?;
         let cap_arg = b.obj(self.owned(cap[0]))?;
-        call(&mut b, admin, "package_admin", "wrap", vec![marker], vec![bootstrap_arg, cap_arg]);
+        call(&mut b, admin, "package_admin", "wrap", vec![otw], vec![bootstrap_arg, cap_arg]);
         let wrapped = self.execute(b.finish())?;
         wrapped.assert_success();
         ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
         ensure!(wrapped.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>() == cap, "custody seals the cap");
         let version = wrapped.created(self, "package_version", "PackageVersion");
-        let custody = wrapped.created(self, "package_admin", "PackageAdmin");
-        ensure!(version.len() == 1 && custody.len() == 1);
-        ensure!(self.object(version[0]).is_shared() && self.object(custody[0]).is_shared());
-        let (_, valid, paused, unpause_witness, generation): GenericPackageVersionContents =
+        let package_admin = wrapped.created(self, "package_admin", "PackageAdmin");
+        ensure!(version.len() == 1 && package_admin.len() == 1);
+        ensure!(self.object(version[0]).is_shared() && self.object(package_admin[0]).is_shared());
+        let (_, valid, paused, unpause_witness, stored_version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the vault PackageVersion")?;
-        ensure!((valid, paused, generation) == (1, 1, 1), "the vault version starts fully paused at generation 1");
+        ensure!((valid, paused, stored_version) == (1, 1, 1), "the vault version starts fully paused at version 1");
         ensure!(unpause_witness.ends_with("::blast_vault_package::PackageWitness"), "{unpause_witness}");
-        self.assert_publication_upgrade_notice(custody[0])?;
+        self.assert_publication_upgrade_delay(package_admin[0])?;
 
-        Ok(VaultStack { package: vault, version: version[0], custody: custody[0], registry: registry[0] })
+        Ok(VaultStack { package: vault, version: version[0], package_admin: package_admin[0], registry: registry[0] })
     }
 
-    /// Lists each of `venues` in the vault registry at the zero publication notice while the
-    /// package is paused, raises the admission notice to 48 hours, and unpauses the package
-    /// through its own unpause, through real ACL roles: `blast_core`'s `AdapterAdmin` and the
+    /// Lists each of `venues` in the vault registry at the zero publication delay while the
+    /// package is paused, raises the admission delay to 48 hours, and unpauses the package
+    /// through its own unpause, through real ACL roles: `blast_core`'s `VenueAdmin` and the
     /// vault package's `UnpauseAdmin`.
     pub fn release_vault(&mut self, admin: ObjectID, admin_publication: &Outcome, core: ObjectID, stack: &VaultStack,
         witnesses: &[sui_types::TypeTag],
     ) -> Result<()> {
-        let adapter_role = sui_types::parse_sui_type_tag(&format!("{core}::blast_domain::AdapterAdmin"))?;
+        let adapter_role = sui_types::parse_sui_type_tag(&format!("{core}::blast_domain::VenueAdmin"))?;
         let unpause_role = stack.unpause_role(admin)?;
         let cap = self.grant_roles(admin, admin_publication, &[adapter_role.clone(), unpause_role.clone()])?;
         let mut b = ProgrammableTransactionBuilder::new();
@@ -1161,13 +1161,13 @@ impl Harness {
             call(&mut b, stack.package, "blast_vault_package", "schedule_witness", vec![witness.clone()], vec![registry, adapter, version, clock]);
             call(&mut b, stack.package, "blast_vault_package", "apply_witness", vec![witness.clone()], vec![registry, version, clock]);
         }
-        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
+        let delay = b.pure(PUBLICATION_UPGRADE_DELAY_MS)?;
         call(&mut b, stack.package, "blast_vault_package", "schedule_witness_delay", vec![], vec![registry, adapter, version, delay, clock]);
         call(&mut b, stack.package, "blast_vault_package", "apply_witness_delay", vec![], vec![registry, version, clock]);
         self.execute(b.finish())?.assert_success();
         let (_, listed): VaultRegistryContents = bcs::from_bytes(&self.contents(stack.registry))?;
         ensure!(listed.members.len() == witnesses.len(), "every witness is listed");
-        ensure!((listed.delay_ms, listed.admissions.len(), listed.pending_delay.is_some()) == (PUBLICATION_UPGRADE_NOTICE_MS, 0, false),
+        ensure!((listed.delay_ms, listed.admissions.len(), listed.pending_delay.is_some()) == (PUBLICATION_UPGRADE_DELAY_MS, 0, false),
             "the registry waits 48 hours with nothing pending");
 
         let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
@@ -1182,21 +1182,21 @@ impl Harness {
     }
 
     /// Decodes any package's `PackageAdmin`: its id, sealed Publisher, sealed caps and upgrade slot.
-    pub fn package_admin(&self, custody: ObjectID) -> Result<PackageAdminContents> {
-        bcs::from_bytes(&self.contents(custody)).context("decode PackageAdmin")
+    pub fn package_admin(&self, package_admin: ObjectID) -> Result<PackageAdminContents> {
+        bcs::from_bytes(&self.contents(package_admin)).context("decode PackageAdmin")
     }
 
-    /// A fresh `PackageAdmin` waits the 48-hour publication notice with nothing scheduled.
-    pub fn assert_publication_upgrade_notice(&self, custody: ObjectID) -> Result<()> {
-        let (admin_id, _, sealed_caps, upgrade) = self.package_admin(custody)?;
-        ensure!(admin_id == custody && upgrade.owner == custody && sealed_caps.len() == 1);
+    /// A fresh `PackageAdmin` waits the 48-hour publication delay with nothing scheduled.
+    pub fn assert_publication_upgrade_delay(&self, package_admin: ObjectID) -> Result<()> {
+        let (admin_id, _, sealed_caps, upgrade) = self.package_admin(package_admin)?;
+        ensure!(admin_id == package_admin && upgrade.owner == package_admin && sealed_caps.len() == 1);
         ensure!(upgrade.pending.is_none(), "fresh custody has no scheduled action");
-        ensure!(upgrade.delay_ms == PUBLICATION_UPGRADE_NOTICE_MS, "publication starts at the 48-hour upgrade notice");
+        ensure!(upgrade.delay_ms == PUBLICATION_UPGRADE_DELAY_MS, "publication starts at the 48-hour upgrade delay");
         Ok(())
     }
 
     /// Wraps the migrators' publication with its never-upgraded cap through `blast_admin`'s generic
-    /// custody. The package defines no pause bits, so its version is shared unpaused at generation
+    /// custody. The package defines no pause bits, so its version is shared unpaused at version
     /// one with nothing to release.
     pub fn wrap_migrators(&mut self, admin: ObjectID, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
         ensure!(publication.created(self, "package_version", "PackageVersion").is_empty(), "no version before custody");
@@ -1204,40 +1204,40 @@ impl Harness {
         let cap = publication.created(self, "package", "UpgradeCap");
         ensure!(bootstrap.len() == 1 && cap.len() == 1, "one publication and one upgrade cap");
         ensure!(self.object(bootstrap[0]).owner().get_address_owner_address()? == self.sender, "the publisher keeps the publication");
-        let marker = sui_types::parse_sui_type_tag(&format!("{package}::blast_migrators::BLAST_MIGRATORS"))?;
+        let otw = sui_types::parse_sui_type_tag(&format!("{package}::blast_migrators::BLAST_MIGRATORS"))?;
         let mut b = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = b.obj(self.owned(bootstrap[0]))?;
         let cap_arg = b.obj(self.owned(cap[0]))?;
-        call(&mut b, admin, "package_admin", "wrap", vec![marker], vec![bootstrap_arg, cap_arg]);
+        call(&mut b, admin, "package_admin", "wrap", vec![otw], vec![bootstrap_arg, cap_arg]);
         let outcome = self.execute(b.finish())?;
         outcome.assert_success();
         ensure!(outcome.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
         ensure!(outcome.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>() == cap, "custody seals the cap");
         let version = outcome.created(self, "package_version", "PackageVersion");
-        let custody = outcome.created(self, "package_admin", "PackageAdmin");
-        ensure!(version.len() == 1 && custody.len() == 1);
-        ensure!(self.object(version[0]).is_shared() && self.object(custody[0]).is_shared());
-        let (_, valid, paused, package_witness, generation): GenericPackageVersionContents =
+        let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
+        ensure!(version.len() == 1 && package_admin.len() == 1);
+        ensure!(self.object(version[0]).is_shared() && self.object(package_admin[0]).is_shared());
+        let (_, valid, paused, package_witness, stored_version): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the migrators PackageVersion")?;
-        ensure!((valid, paused, generation) == (0, 0, 1), "the migrators version defines no pause bits at generation 1");
+        ensure!((valid, paused, stored_version) == (0, 0, 1), "the migrators version defines no pause bits at version 1");
         ensure!(package_witness.ends_with("::blast_migrators::PackageWitness"), "{package_witness}");
-        self.assert_publication_upgrade_notice(custody[0])?;
+        self.assert_publication_upgrade_delay(package_admin[0])?;
         Ok(version[0])
     }
 
     /// Releases `bits` of the presale through the real ACL: grants a fresh `AdminCap` the generic
     /// `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` and calls `creation_policy::unpause`, which needs every
-    /// presale notice guarded, without advancing the Clock.
+    /// presale delay guarded, without advancing the Clock.
     #[allow(clippy::too_many_arguments)]
     pub fn unpause_presale(&mut self, presale: ObjectID, admin: ObjectID, publication: &Outcome,
-        version: ObjectID, custody: ObjectID, creation_policy: ObjectID, fee_policy: ObjectID, bits: u8,
+        version: ObjectID, package_admin: ObjectID, creation_policy: ObjectID, fee_policy: ObjectID, bits: u8,
     ) -> Result<()> {
         let role = presale_role(admin, ObjectID::ZERO, presale, "UnpauseAdmin")?;
         let cap = self.grant_roles(admin, publication, std::slice::from_ref(&role))?;
         let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
         let mut b = ProgrammableTransactionBuilder::new();
         let witness = self.sign_in_as(&mut b, admin, publication, cap, role)?;
-        append_presale_unpause(self, &mut b, presale, custody, version, witness, creation_policy, fee_policy, bits)?;
+        append_presale_unpause(self, &mut b, presale, package_admin, version, witness, creation_policy, fee_policy, bits)?;
         self.execute(b.finish())?.assert_success();
         assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
         Ok(())
@@ -1320,7 +1320,7 @@ pub struct VaultStack {
     /// `blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>`.
     pub version: ObjectID,
     /// `blast_admin::package_admin::PackageAdmin<BLAST_VAULT_PACKAGE>`.
-    pub custody: ObjectID,
+    pub package_admin: ObjectID,
     pub registry: ObjectID,
 }
 
@@ -1334,22 +1334,22 @@ impl VaultStack {
     }
 
     /// Appends `blast_vault_package::unpause`, which clears `bits` only while the registry's
-    /// admission notice and the package's upgrade notice are guarded.
+    /// admission delay and the package's upgrade delay are guarded.
     pub fn append_unpause(&self, h: &Harness, b: &mut ProgrammableTransactionBuilder, witness: Argument, bits: u8) -> Result<()> {
         let registry = b.obj(h.shared(self.registry, false))?;
-        let custody = b.obj(h.shared(self.custody, false))?;
+        let package_admin = b.obj(h.shared(self.package_admin, false))?;
         let version = b.obj(h.shared(self.version, true))?;
         let bits = b.pure(bits)?;
-        call(b, self.package, "blast_vault_package", "unpause", vec![], vec![registry, witness, custody, version, bits]);
+        call(b, self.package, "blast_vault_package", "unpause", vec![], vec![registry, witness, package_admin, version, bits]);
         Ok(())
     }
 
-    /// The ID `vault::new` claims for the vault of terms sealed by `issuer` for `origin`:
-    /// `VaultKey { issuer, origin }` under the registry. The key's BCS is the issuer `TypeName`'s
+    /// The ID `vault::new` claims for the vault of terms sealed by `package_witness` for `origin`:
+    /// `VaultKey { package_witness, origin }` under the registry. The key's BCS is that `TypeName`'s
     /// string (original package IDs, no `0x`) followed by the 32-byte origin.
-    pub fn vault_id(&self, issuer: &sui_types::TypeTag, origin: ObjectID) -> Result<ObjectID> {
+    pub fn vault_id(&self, package_witness: &sui_types::TypeTag, origin: ObjectID) -> Result<ObjectID> {
         let key = sui_types::parse_sui_type_tag(&format!("{}::vault::VaultKey", self.package))?;
-        derived_id(self.registry, &key, &bcs::to_bytes(&(issuer.to_canonical_string(false), origin))?)
+        derived_id(self.registry, &key, &bcs::to_bytes(&(package_witness.to_canonical_string(false), origin))?)
     }
 }
 

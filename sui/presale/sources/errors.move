@@ -8,8 +8,8 @@ module blast_presale::errors;
 // === Errors ===
 
 #[test_only]
-/// Unpausing needs every policy notice nonzero, with no pending zero notice or admission.
-const EUnguardedNotice: u64 = 0;
+/// Unpausing needs every policy delay nonzero, with no pending zero delay or admission.
+const EUnguardedDelay: u64 = 0;
 
 #[test_only]
 /// An allowlist update must change whether the type or partner is allowed.
@@ -163,7 +163,7 @@ const EAboveFeePolicy: u64 = 37;
 /// A shared sale's fee override may only keep or lower each of its rates.
 const EProtocolFeesIncreased: u64 = 38;
 
-macro public(package) fun unguarded_notice(): u64 { 0 }
+macro public(package) fun unguarded_delay(): u64 { 0 }
 
 macro public(package) fun allowance_unchanged(): u64 { 1 }
 

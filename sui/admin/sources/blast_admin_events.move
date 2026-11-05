@@ -42,69 +42,69 @@ public struct SuperAdminCapDestroyed has copy, drop {
     super_admin_cap_id: ID,
 }
 
-/// A package version moved to its next generation; `container_id` is that `PackageVersion`.
-public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, drop {
+/// A package version moved to its next version; `container_id` is that `PackageVersion`.
+public struct VersionAdvanced<phantom OTW: drop> has copy, drop {
     container_id: ID,
     original_package_id: address,
-    previous_generation: u64,
-    new_generation: u64,
+    previous_version: u64,
+    new_version: u64,
 }
 
-/// A package version was created at wrap, beside the administration `custodian_id`, with its
-/// defined and paused bits, pinned package witness and first generation.
-public struct PackageVersionCreated<phantom PackageMarker: drop> has copy, drop {
+/// A package version was created at wrap, beside the administration `package_admin_id`, with its
+/// defined and paused bits, pinned package witness and first version.
+public struct PackageVersionCreated<phantom OTW: drop> has copy, drop {
     package_version_id: ID,
-    custodian_id: ID,
+    package_admin_id: ID,
     valid_pause_bits: u8,
     paused: u8,
     package_witness: TypeName,
-    generation: u64,
+    version: u64,
 }
 
-public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop {
-    custodian_id: ID,
+public struct PackageAdminCreated<phantom OTW: drop> has copy, drop {
+    package_admin_id: ID,
     publisher_id: ID,
     upgrade_cap_id: ID,
     original_package_id: ID,
-    native_version: u64,
+    upgrade_cap_version: u64,
     policy: u8,
 }
 
-public struct UpgradeAuthorized<phantom PackageMarker: drop> has copy, drop {
-    custodian_id: ID,
+public struct UpgradeAuthorized<phantom OTW: drop> has copy, drop {
+    package_admin_id: ID,
     upgrade_cap_id: ID,
     current_package_id: ID,
-    native_version: u64,
+    upgrade_cap_version: u64,
     policy: u8,
     digest: vector<u8>,
 }
 
-public struct UpgradeCommitted<phantom PackageMarker: drop> has copy, drop {
-    custodian_id: ID,
+public struct UpgradeCommitted<phantom OTW: drop> has copy, drop {
+    package_admin_id: ID,
     upgrade_cap_id: ID,
     original_package_id: address,
     new_package_id: ID,
-    previous_native_version: u64,
-    new_native_version: u64,
+    previous_upgrade_cap_version: u64,
+    new_upgrade_cap_version: u64,
 }
 
-public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
-    custodian_id: ID,
+public struct UpgradeCapDestroyed<phantom OTW: drop> has copy, drop {
+    package_admin_id: ID,
     upgrade_cap_id: ID,
     original_package_id: address,
-    final_native_version: u64,
+    final_upgrade_cap_version: u64,
     final_policy: u8,
 }
 
 /// Pause bits were set on a package version; `paused` is the resulting mask.
-public struct Paused<phantom PackageMarker: drop> has copy, drop {
+public struct Paused<phantom OTW: drop> has copy, drop {
     package_version_id: ID,
     bits: u8,
     paused: u8,
 }
 
 /// Pause bits were cleared on a package version; `paused` is the resulting mask.
-public struct Unpaused<phantom PackageMarker: drop> has copy, drop {
+public struct Unpaused<phantom OTW: drop> has copy, drop {
     package_version_id: ID,
     bits: u8,
     paused: u8,
@@ -112,12 +112,12 @@ public struct Unpaused<phantom PackageMarker: drop> has copy, drop {
 
 // === Package Functions ===
 
-public(package) fun paused<PackageMarker: drop>(package_version_id: ID, bits: u8, paused: u8) {
-    sui::event::emit(Paused<PackageMarker> { package_version_id, bits, paused });
+public(package) fun paused<OTW: drop>(package_version_id: ID, bits: u8, paused: u8) {
+    sui::event::emit(Paused<OTW> { package_version_id, bits, paused });
 }
 
-public(package) fun unpaused<PackageMarker: drop>(package_version_id: ID, bits: u8, paused: u8) {
-    sui::event::emit(Unpaused<PackageMarker> { package_version_id, bits, paused });
+public(package) fun unpaused<OTW: drop>(package_version_id: ID, bits: u8, paused: u8) {
+    sui::event::emit(Unpaused<OTW> { package_version_id, bits, paused });
 }
 
 public(package) fun admin_granted(admin_cap_id: ID, recipient: address) {
@@ -156,104 +156,104 @@ public(package) fun super_admin_cap_destroyed(super_admin_cap_id: ID) {
     sui::event::emit(SuperAdminCapDestroyed { super_admin_cap_id });
 }
 
-public(package) fun operational_version_advanced<PackageMarker: drop>(
+public(package) fun version_advanced<OTW: drop>(
     container_id: ID,
     original_package_id: address,
-    previous_generation: u64,
-    new_generation: u64,
+    previous_version: u64,
+    new_version: u64,
 ) {
-    sui::event::emit(OperationalVersionAdvanced<PackageMarker> {
+    sui::event::emit(VersionAdvanced<OTW> {
         container_id,
         original_package_id,
-        previous_generation,
-        new_generation,
+        previous_version,
+        new_version,
     });
 }
 
-public(package) fun package_version_created<PackageMarker: drop>(
+public(package) fun package_version_created<OTW: drop>(
     package_version_id: ID,
-    custodian_id: ID,
+    package_admin_id: ID,
     valid_pause_bits: u8,
     paused: u8,
     package_witness: TypeName,
-    generation: u64,
+    version: u64,
 ) {
-    sui::event::emit(PackageVersionCreated<PackageMarker> {
+    sui::event::emit(PackageVersionCreated<OTW> {
         package_version_id,
-        custodian_id,
+        package_admin_id,
         valid_pause_bits,
         paused,
         package_witness,
-        generation,
+        version,
     });
 }
 
-public(package) fun upgrade_custody_created<PackageMarker: drop>(
-    custodian_id: ID,
+public(package) fun package_admin_created<OTW: drop>(
+    package_admin_id: ID,
     publisher_id: ID,
     upgrade_cap_id: ID,
     original_package_id: ID,
-    native_version: u64,
+    upgrade_cap_version: u64,
     policy: u8,
 ) {
-    sui::event::emit(UpgradeCustodyCreated<PackageMarker> {
-        custodian_id,
+    sui::event::emit(PackageAdminCreated<OTW> {
+        package_admin_id,
         publisher_id,
         upgrade_cap_id,
         original_package_id,
-        native_version,
+        upgrade_cap_version,
         policy,
     });
 }
 
-public(package) fun upgrade_authorized<PackageMarker: drop>(
-    custodian_id: ID,
+public(package) fun upgrade_authorized<OTW: drop>(
+    package_admin_id: ID,
     upgrade_cap_id: ID,
     current_package_id: ID,
-    native_version: u64,
+    upgrade_cap_version: u64,
     policy: u8,
     digest: vector<u8>,
 ) {
-    sui::event::emit(UpgradeAuthorized<PackageMarker> {
-        custodian_id,
+    sui::event::emit(UpgradeAuthorized<OTW> {
+        package_admin_id,
         upgrade_cap_id,
         current_package_id,
-        native_version,
+        upgrade_cap_version,
         policy,
         digest,
     });
 }
 
-public(package) fun upgrade_committed<PackageMarker: drop>(
-    custodian_id: ID,
+public(package) fun upgrade_committed<OTW: drop>(
+    package_admin_id: ID,
     upgrade_cap_id: ID,
     original_package_id: address,
     new_package_id: ID,
-    previous_native_version: u64,
-    new_native_version: u64,
+    previous_upgrade_cap_version: u64,
+    new_upgrade_cap_version: u64,
 ) {
-    sui::event::emit(UpgradeCommitted<PackageMarker> {
-        custodian_id,
+    sui::event::emit(UpgradeCommitted<OTW> {
+        package_admin_id,
         upgrade_cap_id,
         original_package_id,
         new_package_id,
-        previous_native_version,
-        new_native_version,
+        previous_upgrade_cap_version,
+        new_upgrade_cap_version,
     });
 }
 
-public(package) fun upgrade_cap_destroyed<PackageMarker: drop>(
-    custodian_id: ID,
+public(package) fun upgrade_cap_destroyed<OTW: drop>(
+    package_admin_id: ID,
     upgrade_cap_id: ID,
     original_package_id: address,
-    final_native_version: u64,
+    final_upgrade_cap_version: u64,
     final_policy: u8,
 ) {
-    sui::event::emit(UpgradeCapDestroyed<PackageMarker> {
-        custodian_id,
+    sui::event::emit(UpgradeCapDestroyed<OTW> {
+        package_admin_id,
         upgrade_cap_id,
         original_package_id,
-        final_native_version,
+        final_upgrade_cap_version,
         final_policy,
     });
 }
@@ -303,93 +303,93 @@ public fun super_admin_cap_destroyed_fields(self: &SuperAdminCapDestroyed): ID {
 }
 
 #[test_only]
-public fun operational_version_advanced_fields<PackageMarker: drop>(
-    self: &OperationalVersionAdvanced<PackageMarker>,
+public fun version_advanced_fields<OTW: drop>(
+    self: &VersionAdvanced<OTW>,
 ): (ID, address, u64, u64) {
     (
         self.container_id,
         self.original_package_id,
-        self.previous_generation,
-        self.new_generation,
+        self.previous_version,
+        self.new_version,
     )
 }
 
 #[test_only]
-public fun package_version_created_fields<PackageMarker: drop>(
-    self: &PackageVersionCreated<PackageMarker>,
+public fun package_version_created_fields<OTW: drop>(
+    self: &PackageVersionCreated<OTW>,
 ): (ID, ID, u8, u8, TypeName, u64) {
     (
         self.package_version_id,
-        self.custodian_id,
+        self.package_admin_id,
         self.valid_pause_bits,
         self.paused,
         self.package_witness,
-        self.generation,
+        self.version,
     )
 }
 
 #[test_only]
-public fun upgrade_custody_created_fields<PackageMarker: drop>(
-    self: &UpgradeCustodyCreated<PackageMarker>,
+public fun package_admin_created_fields<OTW: drop>(
+    self: &PackageAdminCreated<OTW>,
 ): (ID, ID, ID, ID, u64, u8) {
     (
-        self.custodian_id,
+        self.package_admin_id,
         self.publisher_id,
         self.upgrade_cap_id,
         self.original_package_id,
-        self.native_version,
+        self.upgrade_cap_version,
         self.policy,
     )
 }
 
 #[test_only]
-public fun upgrade_authorized_fields<PackageMarker: drop>(
-    self: &UpgradeAuthorized<PackageMarker>,
+public fun upgrade_authorized_fields<OTW: drop>(
+    self: &UpgradeAuthorized<OTW>,
 ): (ID, ID, ID, u64, u8, vector<u8>) {
     (
-        self.custodian_id,
+        self.package_admin_id,
         self.upgrade_cap_id,
         self.current_package_id,
-        self.native_version,
+        self.upgrade_cap_version,
         self.policy,
         self.digest,
     )
 }
 
 #[test_only]
-public fun upgrade_committed_fields<PackageMarker: drop>(
-    self: &UpgradeCommitted<PackageMarker>,
+public fun upgrade_committed_fields<OTW: drop>(
+    self: &UpgradeCommitted<OTW>,
 ): (ID, ID, address, ID, u64, u64) {
     (
-        self.custodian_id,
+        self.package_admin_id,
         self.upgrade_cap_id,
         self.original_package_id,
         self.new_package_id,
-        self.previous_native_version,
-        self.new_native_version,
+        self.previous_upgrade_cap_version,
+        self.new_upgrade_cap_version,
     )
 }
 
 #[test_only]
-public fun upgrade_cap_destroyed_fields<PackageMarker: drop>(
-    self: &UpgradeCapDestroyed<PackageMarker>,
+public fun upgrade_cap_destroyed_fields<OTW: drop>(
+    self: &UpgradeCapDestroyed<OTW>,
 ): (ID, ID, address, u64, u8) {
     (
-        self.custodian_id,
+        self.package_admin_id,
         self.upgrade_cap_id,
         self.original_package_id,
-        self.final_native_version,
+        self.final_upgrade_cap_version,
         self.final_policy,
     )
 }
 
 #[test_only]
-public fun paused_fields<PackageMarker: drop>(self: &Paused<PackageMarker>): (ID, u8, u8) {
+public fun paused_fields<OTW: drop>(self: &Paused<OTW>): (ID, u8, u8) {
     (self.package_version_id, self.bits, self.paused)
 }
 
 #[test_only]
-public fun unpaused_fields<PackageMarker: drop>(self: &Unpaused<PackageMarker>): (ID, u8, u8) {
+public fun unpaused_fields<OTW: drop>(self: &Unpaused<OTW>): (ID, u8, u8) {
     (self.package_version_id, self.bits, self.paused)
 }
 

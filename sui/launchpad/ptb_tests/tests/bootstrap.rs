@@ -2,13 +2,13 @@
 //!
 //! The stack publishes `blast_core`, whose initializer shares the `Treasury`, and `blast_vault`,
 //! whose initializer shares the `VaultRegistry` and keeps its publication. The vault package
-//! starts fully paused with a zero venue notice: a venue is admitted at that notice, the notice is
+//! starts fully paused with a zero venue delay: a venue is admitted at that delay, the delay is
 //! raised, and only then does the package's own unpause release it.
 
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
-    Delayed, DelayedApplied, DelayedScheduled, Expected, Harness, Outcome, PUBLICATION_UPGRADE_NOTICE_MS, Proposal,
-    TEST_GENESIS_RECIPIENT, VaultStack, call, launchpad_marker, launchpad_role, publish_stack, sui_dir,
+    Delayed, DelayedApplied, DelayedScheduled, Expected, Harness, Outcome, PUBLICATION_UPGRADE_DELAY_MS, Proposal,
+    TEST_GENESIS_RECIPIENT, VaultStack, call, launchpad_otw, launchpad_role, publish_stack, sui_dir,
 };
 use sui_types::{
     TypeTag,
@@ -42,7 +42,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let mut b = ProgrammableTransactionBuilder::new();
     let bootstrap_arg = b.obj(h.owned(bootstrap))?;
     let cap_arg = b.obj(h.owned(foreign_cap))?;
-    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_marker(blast)?], vec![bootstrap_arg, cap_arg]);
+    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_otw(blast)?], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: admin, module: "package_admin", code: 10 },
@@ -54,21 +54,21 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let clock_before = h.contents(sui_types::SUI_CLOCK_OBJECT_ID);
     let runtime = publication.created(&h, "runtime_config", "RuntimeConfig")[0];
     let venue = parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?;
-    let (version, custody) = h.wrap_launchpad(blast, publication, admin, admin_publication, core, parse_sui_type_tag("0x2::sui::SUI")?, venue.clone())?;
-    h.unpause_launchpad(blast, admin, admin_publication, version, custody, runtime, config, 7)?;
+    let (version, package_admin) = h.wrap_launchpad(blast, publication, admin, admin_publication, core, parse_sui_type_tag("0x2::sui::SUI")?, venue.clone())?;
+    h.unpause_launchpad(blast, admin, admin_publication, version, package_admin, runtime, config, 7)?;
     h.shared(version, false);
     assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
     // Simulacrum resolves historical owned inputs; test_scenario covers repeated intake.
     assert!(h.sim.store().get_object(&bootstrap).is_none());
 
-    assert_delay_changes_use_the_old_notice(&mut h, blast, admin, core, admin_publication, version, config)?;
+    assert_delay_changes_use_the_old_delay(&mut h, blast, admin, core, admin_publication, version, config)?;
 
-    // The vault package is released only after its venue notice is raised.
+    // The vault package is released only after its venue delay is raised.
     let (vault, vault_publication) = stack.publish(&mut h, &sui_dir().join("vault"), &work)?;
     let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
-    assert_vault_release_waits_for_the_notice(&mut h, admin, admin_publication, core, &vault_stack, venue)?;
+    assert_vault_release_waits_for_the_delay(&mut h, admin, admin_publication, core, &vault_stack, venue)?;
     let later = parse_sui_type_tag(&format!("{blast}::blast_fun::PackageWitness"))?;
-    assert_vault_admission_waits_the_raised_notice(&mut h, admin, admin_publication, core, &vault_stack, later)?;
+    assert_vault_admission_waits_the_raised_delay(&mut h, admin, admin_publication, core, &vault_stack, later)?;
 
     // A native upgrade is possible before wrapping, but its cap can never activate this lineage.
     let (unwrapped, publication) = h.publish(code.clone())?;
@@ -92,7 +92,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
     let mut b = ProgrammableTransactionBuilder::new();
     let bootstrap_arg = b.obj(h.owned(bootstrap))?;
     let cap_arg = b.obj(h.owned(cap))?;
-    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_marker(unwrapped)?], vec![bootstrap_arg, cap_arg]);
+    call(&mut b, admin, "package_admin", "wrap", vec![launchpad_otw(unwrapped)?], vec![bootstrap_arg, cap_arg]);
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: admin, module: "package_admin", code: 10 },
@@ -104,7 +104,7 @@ fn only_fresh_matching_custody_enables_the_launchpad() -> Result<()> {
 }
 
 /// `blast_core`'s initializer shares the one `Treasury`, paying the configured genesis recipient
-/// behind the 48-hour notice with nothing pending.
+/// behind the 48-hour delay with nothing pending.
 fn assert_treasury_publication(h: &Harness, treasury: ObjectID) -> Result<()> {
     let (id, destination): (ObjectID, Delayed<SuiAddress>) = bcs::from_bytes(&h.contents(treasury))?;
     let recipient = SuiAddress::from(ObjectID::from_hex_literal(TEST_GENESIS_RECIPIENT)?);
@@ -113,10 +113,10 @@ fn assert_treasury_publication(h: &Harness, treasury: ObjectID) -> Result<()> {
     Ok(())
 }
 
-/// While the venue notice is zero the vault's own unpause refuses, committing nothing; once a
-/// venue is listed at that notice and the notice is raised to 48 hours, the same unpause releases
+/// While the venue delay is zero the vault's own unpause refuses, committing nothing; once a
+/// venue is listed at that delay and the delay is raised to 48 hours, the same unpause releases
 /// the package.
-fn assert_vault_release_waits_for_the_notice(h: &mut Harness, admin: ObjectID, publication: &Outcome, core: ObjectID,
+fn assert_vault_release_waits_for_the_delay(h: &mut Harness, admin: ObjectID, publication: &Outcome, core: ObjectID,
     vault: &VaultStack, venue: TypeTag,
 ) -> Result<()> {
     let role = vault.unpause_role(admin)?;
@@ -127,17 +127,17 @@ fn assert_vault_release_waits_for_the_notice(h: &mut Harness, admin: ObjectID, p
     h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: vault.package, module: "blast_vault_package", code: 2 },
-        &[vault.registry, vault.custody, vault.version, cap],
+        &[vault.registry, vault.package_admin, vault.version, cap],
         &[h.sender],
     )?;
     h.release_vault(admin, publication, core, vault, &[venue])
 }
 
-/// After release, a new venue admission waits the raised 48-hour notice.
-fn assert_vault_admission_waits_the_raised_notice(h: &mut Harness, admin: ObjectID, publication: &Outcome,
+/// After release, a new venue admission waits the raised 48-hour delay.
+fn assert_vault_admission_waits_the_raised_delay(h: &mut Harness, admin: ObjectID, publication: &Outcome,
     core: ObjectID, vault: &VaultStack, venue: TypeTag,
 ) -> Result<()> {
-    let role = parse_sui_type_tag(&format!("{core}::blast_domain::AdapterAdmin"))?;
+    let role = parse_sui_type_tag(&format!("{core}::blast_domain::VenueAdmin"))?;
     let cap = h.grant_roles(admin, publication, std::slice::from_ref(&role))?;
     let mut b = ProgrammableTransactionBuilder::new();
     let adapter = h.sign_in_as(&mut b, admin, publication, cap, role)?;
@@ -154,15 +154,15 @@ fn assert_vault_admission_waits_the_raised_notice(h: &mut Harness, admin: Object
         call(&mut b, vault.package, "blast_vault_package", "apply_witness", vec![venue.clone()], vec![registry, version, clock]);
         Ok(b.finish())
     };
-    h.sim.advance_clock(std::time::Duration::from_millis(PUBLICATION_UPGRADE_NOTICE_MS - 1));
+    h.sim.advance_clock(std::time::Duration::from_millis(PUBLICATION_UPGRADE_DELAY_MS - 1));
     h.assert_rolled_back(apply(h)?, Expected::Abort { package: admin, module: "delayed_set", code: 13 }, &[vault.registry], &[])?;
     h.sim.advance_clock(std::time::Duration::from_millis(1));
     h.execute(apply(h)?)?.assert_success();
     Ok(())
 }
 
-/// A delay-only proposal waits the old notice; a failed apply-then-schedule PTB rolls back both fields.
-fn assert_delay_changes_use_the_old_notice(h: &mut Harness, blast: ObjectID, admin: ObjectID, core: ObjectID,
+/// A delay-only proposal waits the old delay; a failed apply-then-schedule PTB rolls back both fields.
+fn assert_delay_changes_use_the_old_delay(h: &mut Harness, blast: ObjectID, admin: ObjectID, core: ObjectID,
     publication: &Outcome, version: ObjectID, config: ObjectID,
 ) -> Result<()> {
     let fee_role = launchpad_role(admin, core, blast, "FeeAdmin")?;
@@ -268,21 +268,21 @@ fn assert_initial_partner_payment(
     let partner_cap = registered.created(h, "blast_partners", "PartnerCap")[0];
 
     // The Partner carries both terms as keyed `Delayed` values owned by the partner, applied at
-    // once with the fixed notice; `PartnerUpdated` carries only the recipient.
+    // once with the fixed delay; `PartnerUpdated` carries only the recipient.
     type Partner = (ObjectID, SuiAddress, Delayed<u64>, Delayed<ObjectID>);
     type Created<T> = (ObjectID, bool, T, u64);
-    const NOTICE: u64 = 604_800_000;
+    const DELAY: u64 = 604_800_000;
     let state: Partner = bcs::from_bytes(&h.contents(partner))?;
     assert_eq!((state.0, state.1), (partner, recipient));
-    assert_eq!(state.2, Delayed { owner: partner, key: false, value: 8_000, delay_ms: NOTICE, pending: None });
-    assert_eq!(state.3, Delayed { owner: partner, key: false, value: partner_cap, delay_ms: NOTICE, pending: None });
+    assert_eq!(state.2, Delayed { owner: partner, key: false, value: 8_000, delay_ms: DELAY, pending: None });
+    assert_eq!(state.3, Delayed { owner: partner, key: false, value: partner_cap, delay_ms: DELAY, pending: None });
     let updates: Vec<_> = registered.events.iter().filter(|event| event.type_.name.as_str() == "PartnerUpdated").collect();
     assert_eq!(updates.len(), 1);
     assert_eq!(bcs::from_bytes::<(ObjectID, SuiAddress)>(&updates[0].contents)?, (partner, recipient));
     let share_created: Vec<Created<u64>> = registered.delayed("DelayedCreated", "blast_partners", "ShareKey")?;
     let cap_created: Vec<Created<ObjectID>> = registered.delayed("DelayedCreated", "blast_partners", "CapKey")?;
-    assert_eq!(share_created, vec![(partner, false, 8_000, NOTICE)]);
-    assert_eq!(cap_created, vec![(partner, false, partner_cap, NOTICE)]);
+    assert_eq!(share_created, vec![(partner, false, 8_000, DELAY)]);
+    assert_eq!(cap_created, vec![(partner, false, partner_cap, DELAY)]);
 
     // Payment reads the applied share and takes no Clock.
     let mut b = ProgrammableTransactionBuilder::new();
@@ -304,7 +304,7 @@ fn assert_initial_partner_payment(
     assert_eq!(bcs::from_bytes::<(ObjectID, u64)>(&payments[0].contents)?, (partner, 800));
     assert_eq!(h.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
 
-    // A real ACL witness proposes; anyone applies after the notice. An abort later in the same PTB
+    // A real ACL witness proposes; anyone applies after the delay. An abort later in the same PTB
     // rolls back the apply and its event.
     let sign_in = |h: &Harness, b: &mut ProgrammableTransactionBuilder| -> Result<Argument> {
         let acl_arg = b.obj(h.shared(acl, false))?;
@@ -321,10 +321,10 @@ fn assert_initial_partner_payment(
     scheduled_outcome.assert_success();
     let scheduled: Vec<DelayedScheduled<u64>> = scheduled_outcome.delayed("DelayedScheduled", "blast_partners", "ShareKey")?;
     assert_eq!(scheduled.len(), 1);
-    assert_eq!((scheduled[0].owner, scheduled[0].value, scheduled[0].delay_ms), (partner, 5_000, NOTICE));
+    assert_eq!((scheduled[0].owner, scheduled[0].value, scheduled[0].delay_ms), (partner, 5_000, DELAY));
     let ready_at_ms = scheduled[0].ready_at_ms;
     assert!(scheduled_outcome.events.iter().all(|event| event.type_.name.as_str() != "PartnerUpdated"));
-    h.sim.advance_clock(std::time::Duration::from_millis(NOTICE - 1));
+    h.sim.advance_clock(std::time::Duration::from_millis(DELAY - 1));
     let apply = |h: &Harness| -> Result<_> {
         let mut b = ProgrammableTransactionBuilder::new();
         let partner_arg = b.obj(h.shared(partner, true))?;
@@ -334,7 +334,7 @@ fn assert_initial_partner_payment(
     };
     h.assert_rolled_back(apply(h)?, Expected::Abort { package: admin, module: "delayed", code: 13 }, &[partner], &[h.sender])?;
     h.sim.advance_clock(std::time::Duration::from_millis(1));
-    let pending = Some(Proposal { value: 5_000, delay_ms: NOTICE, ready_at_ms });
+    let pending = Some(Proposal { value: 5_000, delay_ms: DELAY, ready_at_ms });
     assert_eq!(bcs::from_bytes::<Partner>(&h.contents(partner))?.2.pending, pending);
     let mut b = ProgrammableTransactionBuilder::new();
     let partner_arg = b.obj(h.shared(partner, true))?;
@@ -360,11 +360,11 @@ fn assert_initial_partner_payment(
     let applied = h.execute(apply(h)?)?;
     applied.assert_success();
     let state: Partner = bcs::from_bytes(&h.contents(partner))?;
-    assert_eq!(state.2, Delayed { owner: partner, key: false, value: 5_000, delay_ms: NOTICE, pending: None });
+    assert_eq!(state.2, Delayed { owner: partner, key: false, value: 5_000, delay_ms: DELAY, pending: None });
     let applied_events: Vec<DelayedApplied<u64>> = applied.delayed("DelayedApplied", "blast_partners", "ShareKey")?;
     assert_eq!(
         applied_events,
-        vec![DelayedApplied { owner: partner, key: false, previous_value: 8_000, value: 5_000, delay_ms: NOTICE }],
+        vec![DelayedApplied { owner: partner, key: false, previous_value: 8_000, value: 5_000, delay_ms: DELAY }],
     );
     assert!(applied.events.iter().all(|event| event.type_.name.as_str() != "PartnerUpdated"));
 

@@ -45,11 +45,11 @@ package's one-time witness and the type argument of its version, administration 
 Routine state-changing public calls below take `&PackageVersion<BLAST_PRESALE_PACKAGE>` immediately
 after their first object argument, including initializer setters, policy administration,
 migration, payouts, and `blast_presale::blast_presale::prove_owner`. It is a read-only shared input
-except during pause, unpause and upgrade commit-and-advance. A stale or future generation aborts in
+except during pause, unpause and upgrade commit-and-advance. A stale or future version aborts in
 `blast_admin::package_version` before effects. Pure value constructors, the initializer's
 `blast_presale::blast_presale::venue` getter and `blast_presale::blast_presale::destroy_cap` do not
 take it. Venue and vault calls take their own packages' versions, because each package checks only
-its own generation.
+its own version.
 
 ### Objects and authority
 
@@ -64,7 +64,7 @@ Shared singletons, created once at deployment (`PackageAdmin` and `PackageVersio
 - `blast_presale::blast_presale::PresaleRegistry`: every presale's object ID derives from it.
 - `blast_admin::package_admin::PackageAdmin<BLAST_PRESALE_PACKAGE>`: holds the package's Publisher
   and compatible upgrade cap.
-- `blast_admin::package_version::PackageVersion<BLAST_PRESALE_PACKAGE>`: the active generation and
+- `blast_admin::package_version::PackageVersion<BLAST_PRESALE_PACKAGE>`: the active version and
   pause bits.
 
 Calls also take objects from other packages:
@@ -121,7 +121,7 @@ signature:
 | `blast_core::blast_domain::CancelAdmin` | `fee_policy::cancel_fees`, `creation_policy::cancel_venue`, `creation_policy::cancel_venue_delay` |
 | `blast_core::blast_domain::FeeAdmin` | `fee_policy::schedule_fees`, `blast_presale::blast_presale::set_protocol_fees`, `creation_policy::add_partner`, `creation_policy::remove_partner` |
 | `blast_core::blast_domain::ListingAdmin` | `creation_policy::set_quote_allowed` |
-| `blast_core::blast_domain::AdapterAdmin` | `creation_policy::schedule_venue`, `creation_policy::remove_venue`, `creation_policy::schedule_venue_delay` |
+| `blast_core::blast_domain::VenueAdmin` | `creation_policy::schedule_venue`, `creation_policy::remove_venue`, `creation_policy::schedule_venue_delay` |
 | `blast_core::blast_domain::TreasuryAdmin` | The treasury's destination (core guide); the presale has no payee of its own. |
 
 The product roles are shared, so the same administrator governs the launchpad's and the presale's
@@ -160,7 +160,7 @@ or `Funded`. The vault never closes and its position is never removed.
 
 1. Publish the package. The deployer receives the unique
    `blast_admin::package_version::Publication<BLAST_PRESALE_PACKAGE>`, holding its canonical
-   Publisher, initial generation and pause bits. `FeePolicy`, `CreationPolicy` and
+   Publisher, initial version and pause bits. `FeePolicy`, `CreationPolicy` and
    `PresaleRegistry` are shared; no PackageVersion exists yet.
 2. Call `blast_admin::package_admin::wrap<BLAST_PRESALE_PACKAGE>` with the Publication by value and
    the matching never-upgraded UpgradeCap. It consumes the Publication permanently, seals native
@@ -174,15 +174,15 @@ or `Funded`. The vault never closes and its position is never removed.
    also be listed in the vault's `VaultRegistry` (`blast_vault_package::schedule_witness`), or its
    migrations abort.
 4. Apply or cancel every outstanding zero-delay proposal. Use each operation's own role to
-   schedule and apply its intended value and next notice. Upgrade custody already holds its 48-hour
+   schedule and apply its intended value and next notice. The PackageAdmin already holds its 48-hour
    notice from wrap. Read back every operation's notice and configured value before release.
 5. Sign in as `UnpauseAdmin<BLAST_PRESALE_PACKAGE>` and clear the intended bits (all = 7) with
    `creation_policy::unpause(creation_policy, package_version, unpause_admin, package_admin,
    fee_policy, bits)`. Unpause is immediate once every notice is guarded: the fee rates and
    the venue set each need a nonzero applied notice, no pending proposal that would set it to
    zero, and no pending venue admission; otherwise it aborts with
-   `blast_presale::errors::EUnguardedNotice` (0). The generic administration then requires the
-   upgrade notice to be guarded too (`blast_admin::errors::EUnguardedUpgradeNotice`).
+   `blast_presale::errors::EUnguardedDelay` (0). The generic administration then requires the
+   upgrade notice to be guarded too (`blast_admin::errors::EUnguardedUpgradeDelay`).
 
 Setup may span transactions. Pausing and upgrades never reset the administrative
 policy or recreate Publication. An outstanding zero-delay proposal remains ready
@@ -555,14 +555,14 @@ Integrators cannot call these; they explain state changes. Each takes the
 | --- | --- |
 | `fee_policy::schedule_fees` | Rates new sales snapshot. Raise and token rates at most 1,000 BPS each; each LP-fee rate at most `blast_core::constants::max_lp_fee_bps` (3,000) (`blast_presale::errors::EInvalidFees`). Compiled maximums: raising one needs a package upgrade. Anyone applies it once ready with `fee_policy::apply_fees`, which emits `delayed::DelayedApplied<fee_policy::FeesKey, fee_policy::ProtocolFees>`. |
 | `blast_presale::blast_presale::set_protocol_fees` | Takes the live `FeePolicy`; each proposed rate must be at or below its applied rate (`blast_presale::errors::EAboveFeePolicy`). Replaces one sale's four rates in its creation PTB before `share` (`Pending`), where a rate may rise, or while `Open` and before `start_ms`, where each rate may only stay or fall (`blast_presale::errors::EProtocolFeesIncreased` otherwise). Emits `blast_presale::events::ProtocolFeesChanged`. |
-| `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `blast_presale::events::QuoteSet`, typed by the Quote. |
+| `creation_policy::set_quote_allowed` | Allows or disallows a Quote type for later sales. Emits `blast_presale::events::QuoteAllowed`, typed by the Quote. |
 | `creation_policy::schedule_venue` | Schedules admission of a venue witness; rejects primitives, vectors, and `0x1`/`0x2` types (`blast_presale::errors::EInvalidVenue`). Anyone applies it once ready with `creation_policy::apply_venue`, which emits `delayed_set::SetApplied<creation_policy::VenueKey, TypeName>`. `creation_policy::remove_venue` removes immediately (emitting `delayed_set::MemberRemoved` for an admitted venue) and cancels a pending admission. |
 | `creation_policy::add_partner` | Lets new sales name a partner at once (also cancels a pending removal). Emits `blast_partners::partner_list::PartnerAdded` with the policy's ID as `owner`. |
 | `creation_policy::remove_partner` | New sales may still name the partner for `blast_partners::blast_partners::delay_ms` (7 days). Sales that already name it keep paying it. Emits `blast_partners::partner_list::PartnerRemoved`. |
 | `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance` | Compatible upgrades with atomic version cutover, typed `<BLAST_PRESALE_PACKAGE>` (admin guide). |
 
 `blast_admin::package_admin::wrap` consumes the Publication and the never-upgraded matching cap
-once. Each upgrade raises the compiled generation and commits and advances the version in one
+once. Each upgrade raises the compiled version and commits and advances the version in one
 PTB; old bytecode then rejects the advanced version.
 
 ### Delayed administration
@@ -617,7 +617,7 @@ and commit each action under the stored upgrade notice. Blast's fee destination 
 treasury's own delayed setting (core guide).
 
 Publication-owned policy singletons start with zero notice for ordinary
-role-authorized setup; package upgrade custody starts at 172,800,000 ms (48 hours), so
+role-authorized setup; the PackageAdmin starts at 172,800,000 ms (48 hours), so
 no upgrade or immutability action can run without notice, even during setup. Configure
 and apply each other operation's intended notice, and drain or cancel all earlier setup
 proposals before release. `creation_policy::unpause` enforces the minimum: it aborts unless the
@@ -631,7 +631,7 @@ Venue admissions share one applied notice across witness types, held in the
 `creation_policy::schedule_venue` accepts only the witness type in addition to its state,
 authority and Clock inputs. It snapshots the applied notice and deadline; application only admits
 that witness and preserves the live notice. `creation_policy::schedule_venue_delay` proposes a new
-notice under AdapterAdmin; anyone calls `creation_policy::apply_venue_delay`, and CancelAdmin uses
+notice under VenueAdmin; anyone calls `creation_policy::apply_venue_delay`, and CancelAdmin uses
 `creation_policy::cancel_venue_delay`. Existing admission deadlines remain fixed; settle or cancel
 all zero-notice admissions before completing setup. Immediate venue removal cancels that type's
 pending admission and preserves the applied notice. Scheduling an admitted venue, or removing one
@@ -656,7 +656,7 @@ sale starts, but takes the live `FeePolicy`; every rate must be at or below
 its applied rates. Scheduled increases cannot authorize larger sale overrides.
 Once a sale is shared it is public, so an override there may only keep or lower
 each of its four rates; only the creation PTB may raise one.
-AdapterAdmin may immediately remove a venue with `creation_policy::remove_venue`.
+VenueAdmin may immediately remove a venue with `creation_policy::remove_venue`.
 
 ### Economics
 
@@ -875,7 +875,7 @@ except `blast_presale::blast_presale::PresaleCreated`, which stays beside the sa
 | Partner pay | `blast_partners::blast_partners::PartnerPaid` (per asset with a positive cut), `blast_core::blast_core_events::ProtocolFeesPaid` | The partner's cut of each asset (`partner_meme_amount`, `partner_quote_amount`) and Blast's rest. |
 | Claim | `blast_presale::events::Claimed` | `tokens`, `quote_refund`, `remaining_participants`, `vesting_id`. |
 | Partner list | `blast_partners::partner_list::PartnerAdded`, `blast_partners::partner_list::PartnerRemoved` | `owner` is the `CreationPolicy`'s ID. |
-| Quote list | `blast_presale::events::QuoteSet` | Typed by the Quote; `allowed`. |
+| Quote list | `blast_presale::events::QuoteAllowed` | Typed by the Quote; `allowed`. |
 | Vesting | `VestingCreated`, `VestingClaimed` (from `blast_fun_vesting`) | Schedule terms and releases. |
 
 Collections, owner claims, partner LP payouts, and holder-reward rounds emit the venue's and the
@@ -935,7 +935,7 @@ maps each code to its name. Common ones by flow:
   then `blast_presale::errors::EPresaleStarted`, `blast_presale::errors::EProtocolFeesIncreased` (a shared sale's override raises a rate),
   `blast_presale::errors::EAboveFeePolicy`, `blast_presale::errors::EProtocolFeesUnchanged`, `blast_presale::errors::EInvalidFees`,
   `blast_presale::errors::EAllowanceUnchanged` (Quote already in that state), `blast_presale::errors::EInvalidVenue`,
-  `blast_presale::errors::EUnguardedNotice`, `blast_partners::errors::EUnchanged` (partner already
+  `blast_presale::errors::EUnguardedDelay`, `blast_partners::errors::EUnchanged` (partner already
   accepted, or its removal already pending); pause, unpause and upgrade aborts are the generic
   administration's (admin guide).
 - Delayed administration (policy fees, venue admission, upgrades): Blast admin's
@@ -1028,13 +1028,13 @@ holds the sale token's `TreasuryCap`), one PTB:
 1. Beforehand, in its own transaction, publish a fresh Aftermath LP coin `Lp` (one per sale); its
    publication yields the `CreatePoolCapV2` that the `AdminCap` holder passes in.
 2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken, Quote,
-   Issuer>(admin_cap, create_pool_cap)`, with the presale's package witness
-   `blast_presale::blast_presale_package::PackageWitness` as `Issuer`, shares the
+   PackageWitness>(admin_cap, create_pool_cap)`, with the presale's package witness
+   `blast_presale::blast_presale_package::PackageWitness` as `PackageWitness`, shares the
    `PoolCreation<Lp, SaleToken>` bound to that issuer, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
-   (`pool_creation_id`, `issuer`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
-   A primitive, standard-library, or framework `Issuer` aborts with
-   `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EInvalidIssuer` (code 2). Its pool's weights
+   (`pool_creation_id`, `package_witness`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
+   A primitive, standard-library, or framework `PackageWitness` aborts with
+   `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EInvalidPackageWitness` (code 2). Its pool's weights
    and fees are the module's constants, so it records no tier.
 3. `blast_presale::blast_presale::new` with the `TreasuryCap` and the ticket, as for any sale. The
    `CreationPolicy` must admit the vendor's `Venue`.
@@ -1060,7 +1060,7 @@ Migrate (*anyone*, while `Funded`), one PTB:
 
 The call redeems the hand-off with its `Venue` (`blast_core::errors::EWrongVenue` for a hand-off
 sealed for any other venue), refuses terms another package sealed
-(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongIssuer`, code 3), keeping only
+(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongPackageWitness`, code 3), keeping only
 the sale's ID from the vault terms (no vault exists for
 its pools), creates the pool from all LP tokens and Quote (50/50 weights, flatness 0, a 0.01%
 swap-in fee that compounds into the LP, no other pool fees, name "Blast Presale Pool"), checks it

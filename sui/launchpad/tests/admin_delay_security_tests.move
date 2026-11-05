@@ -46,7 +46,7 @@ public struct CoinB has drop {}
 fun protocol_share_early() { exercise(Setting::ProtocolShare, Case::Early); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun protocol_share_replacement_restarts_notice() { exercise(Setting::ProtocolShare, Case::Replacement); }
+fun protocol_share_replacement_restarts_delay() { exercise(Setting::ProtocolShare, Case::Replacement); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun protocol_share_cancelled() { exercise(Setting::ProtocolShare, Case::Cancelled); }
@@ -54,13 +54,13 @@ fun protocol_share_cancelled() { exercise(Setting::ProtocolShare, Case::Cancelle
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun protocol_share_replay() { exercise(Setting::ProtocolShare, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun protocol_share_stale_schedule() { exercise(Setting::ProtocolShare, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun protocol_share_stale_apply() { exercise(Setting::ProtocolShare, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun protocol_share_stale_cancel() { exercise(Setting::ProtocolShare, Case::StaleCancel); }
 
 #[test]
@@ -70,7 +70,7 @@ fun protocol_share_boundaries_and_cancel_reschedule() { exercise(Setting::Protoc
 fun trade_fees_early() { exercise(Setting::TradeFees, Case::Early); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun trade_fees_replacement_restarts_notice() { exercise(Setting::TradeFees, Case::Replacement); }
+fun trade_fees_replacement_restarts_delay() { exercise(Setting::TradeFees, Case::Replacement); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun trade_fees_cancelled() { exercise(Setting::TradeFees, Case::Cancelled); }
@@ -78,13 +78,13 @@ fun trade_fees_cancelled() { exercise(Setting::TradeFees, Case::Cancelled); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun trade_fees_replay() { exercise(Setting::TradeFees, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun trade_fees_stale_schedule() { exercise(Setting::TradeFees, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun trade_fees_stale_apply() { exercise(Setting::TradeFees, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun trade_fees_stale_cancel() { exercise(Setting::TradeFees, Case::StaleCancel); }
 
 #[test]
@@ -94,7 +94,7 @@ fun trade_fees_boundaries_and_cancel_reschedule() { exercise(Setting::TradeFees,
 fun allocation_early() { exercise(Setting::Allocation, Case::Early); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun allocation_replacement_restarts_notice() { exercise(Setting::Allocation, Case::Replacement); }
+fun allocation_replacement_restarts_delay() { exercise(Setting::Allocation, Case::Replacement); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun allocation_cancelled() { exercise(Setting::Allocation, Case::Cancelled); }
@@ -102,13 +102,13 @@ fun allocation_cancelled() { exercise(Setting::Allocation, Case::Cancelled); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun allocation_replay() { exercise(Setting::Allocation, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun allocation_stale_schedule() { exercise(Setting::Allocation, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun allocation_stale_apply() { exercise(Setting::Allocation, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun allocation_stale_cancel() { exercise(Setting::Allocation, Case::StaleCancel); }
 
 #[test]
@@ -118,7 +118,7 @@ fun allocation_boundaries_and_cancel_reschedule() { exercise(Setting::Allocation
 fun lp_fees_early() { exercise(Setting::LpFees, Case::Early); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun lp_fees_replacement_restarts_notice() { exercise(Setting::LpFees, Case::Replacement); }
+fun lp_fees_replacement_restarts_delay() { exercise(Setting::LpFees, Case::Replacement); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun lp_fees_cancelled() { exercise(Setting::LpFees, Case::Cancelled); }
@@ -126,13 +126,13 @@ fun lp_fees_cancelled() { exercise(Setting::LpFees, Case::Cancelled); }
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun lp_fees_replay() { exercise(Setting::LpFees, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun lp_fees_stale_schedule() { exercise(Setting::LpFees, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun lp_fees_stale_apply() { exercise(Setting::LpFees, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun lp_fees_stale_cancel() { exercise(Setting::LpFees, Case::StaleCancel); }
 
 #[test]
@@ -142,7 +142,7 @@ fun lp_fees_boundaries_and_cancel_reschedule() { exercise(Setting::LpFees, Case:
 fun creation_fee_early() { exercise(Setting::CreationFee, Case::Early); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
-fun creation_fee_replacement_restarts_notice() { exercise(Setting::CreationFee, Case::Replacement); }
+fun creation_fee_replacement_restarts_delay() { exercise(Setting::CreationFee, Case::Replacement); }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun creation_fee_cancelled() { exercise(Setting::CreationFee, Case::Cancelled); }
@@ -150,13 +150,13 @@ fun creation_fee_cancelled() { exercise(Setting::CreationFee, Case::Cancelled); 
 #[test, expected_failure(abort_code = blast_admin::errors::ENoPending, location = blast_admin::delayed)]
 fun creation_fee_replay() { exercise(Setting::CreationFee, Case::Replay); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_stale_schedule() { exercise(Setting::CreationFee, Case::StaleSchedule); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_stale_apply() { exercise(Setting::CreationFee, Case::StaleApply); }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun creation_fee_stale_cancel() { exercise(Setting::CreationFee, Case::StaleCancel); }
 
 #[test]
@@ -168,9 +168,9 @@ fun creation_fee_boundaries_and_cancel_reschedule() { exercise(Setting::Creation
 fun exercise(setting: Setting, case: Case) {
     let mut f = start(setting);
     let initial = snapshot(&f, setting);
-    if (case == Case::StaleSchedule) f.version.set_generation_for_testing(2);
+    if (case == Case::StaleSchedule) f.version.set_version_for_testing(2);
     schedule(&mut f, setting, 100);
-    assert_notice(&f, setting, 100, true);
+    assert_delay(&f, setting, 100, true);
     assert_eq!(snapshot(&f, setting), initial);
     f.clock.set_for_testing(START + DELAY - if (case == Case::Early) 1 else 0);
     assert_eq!(snapshot(&f, setting), initial);
@@ -181,14 +181,14 @@ fun exercise(setting: Setting, case: Case) {
         },
         Case::Replacement => {
             schedule(&mut f, setting, 200);
-            assert_notice(&f, setting, 200, true);
+            assert_delay(&f, setting, 200, true);
             f.clock.set_for_testing(START + 2 * DELAY - 1);
             apply(&mut f, setting);
             destroy(f);
         },
         Case::Cancelled => {
             cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false);
+            assert_delay(&f, setting, 100, false);
             assert_eq!(snapshot(&f, setting), initial);
             apply(&mut f, setting);
             destroy(f);
@@ -200,32 +200,32 @@ fun exercise(setting: Setting, case: Case) {
         },
         Case::StaleSchedule => destroy(f),
         Case::StaleApply => {
-            f.version.set_generation_for_testing(2);
+            f.version.set_version_for_testing(2);
             apply(&mut f, setting);
             destroy(f);
         },
         Case::StaleCancel => {
-            f.version.set_generation_for_testing(2);
+            f.version.set_version_for_testing(2);
             cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false);
+            assert_delay(&f, setting, 100, false);
             destroy(f);
         },
         Case::Success => {
             // A ready proposal can still be cancelled; a later proposal receives a full delay.
             cancel(&mut f, setting);
-            assert_notice(&f, setting, 100, false);
+            assert_delay(&f, setting, 100, false);
             assert_eq!(snapshot(&f, setting), initial);
             schedule(&mut f, setting, 100);
-            assert_notice(&f, setting, 100, true);
+            assert_delay(&f, setting, 100, true);
             f.clock.set_for_testing(START + 2 * DELAY);
             apply(&mut f, setting);
             assert_value(&f, setting, 100);
             // Replacement of a ready action keeps the applied value until explicit application.
             schedule(&mut f, setting, 200);
-            assert_notice(&f, setting, 200, true);
+            assert_delay(&f, setting, 200, true);
             f.clock.set_for_testing(START + 4 * DELAY);
             schedule(&mut f, setting, 300);
-            assert_notice(&f, setting, 300, true);
+            assert_delay(&f, setting, 300, true);
             let before = snapshot(&f, setting);
             f.clock.set_for_testing(START + 5 * DELAY + 1);
             assert_eq!(snapshot(&f, setting), before);
@@ -390,7 +390,7 @@ fun expected(setting: Setting, n: u64): vector<u8> {
 
 fun assert_value(f: &Fixture, setting: Setting, n: u64) { assert_eq!(snapshot(f, setting), expected(setting, n)); }
 
-fun assert_notice(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
+fun assert_delay(f: &Fixture, setting: Setting, n: u64, scheduled: bool) {
     let mut expected = match (setting) {
         Setting::ProtocolShare => { expected(setting, n) },
         Setting::TradeFees => { u64_fields_bytes(vector[n, n + 1]) },
@@ -424,7 +424,7 @@ fun u64_fields_bytes(values: vector<u64>): vector<u8> {
     bytes
 }
 
-/// The latest proposal's value, deadline and next notice, in the retired payload's order.
+/// The latest proposal's value, deadline and next delay, in the retired payload's order.
 fun last_scheduled<K: copy + drop + store, T: copy + drop + store>(): vector<u8> {
     let mut events = sui::event::events_by_type<DelayedScheduled<K, T>>();
     let (_, _, value, delay_ms, ready_at_ms) = events.pop_back().delayed_scheduled_fields();

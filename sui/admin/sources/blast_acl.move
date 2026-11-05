@@ -246,7 +246,7 @@ public fun admin_count(self: &ACL): u64 {
     self.admins.length()
 }
 
-/// The root transfer's delayed slot: its fixed notice and any pending nominee.
+/// The root transfer's delayed slot: its fixed delay and any pending nominee.
 public fun super_admin_transfer(self: &ACL): &DelayedAction<SuperAdminTransfer, address> {
     &self.super_admin_transfer
 }

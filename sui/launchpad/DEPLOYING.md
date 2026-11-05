@@ -8,9 +8,9 @@ for audit finding L-1, and by
 [ADR 0134](../../docs/decisions/0134-delayed-administration-pause-and-table-acl.md)
 for delayed policy and paused release.
 
-**Publish → wrap → verify custody → configure while paused → verify notices → unpause.**
+**Publish → wrap → verify the PackageAdmin → configure while paused → verify notices → unpause.**
 Publication creates an owned `blast_admin::package_version::Publication<BLAST_FUN>`
-retaining the canonical Publisher and initial generation. It creates no
+retaining the canonical Publisher and initial version. It creates no
 `PackageVersion`, so Move cannot satisfy the required input to launch creation
 or routine configuration setters. Publication authorizes no policy setters.
 `blast_admin::package_admin::wrap` consumes the proof and matching native
@@ -69,9 +69,9 @@ effects, not from an older deployment or an unfiltered wallet object list:
   `LAUNCHPAD_LAUNCH_CONFIG_ID` and the RuntimeConfig ID from these effects.
 
 Read each object with `sui client object <object-id> --json`. The native cap's
-version and the stored operational generation are separate values; neither is
+version and the stored version are separate values; neither is
 the Sui object storage version. Stop on a wrong owner, type, package, policy,
-generation, or missing object. Never try a raw upgrade to repair intake.
+version, or missing object. Never try a raw upgrade to repair intake.
 
 ## 3. Seal publication custody
 
@@ -104,29 +104,29 @@ Require all of the following and retain the readbacks:
   one shared `<blast_admin>::package_admin::PackageAdmin<...::BLAST_FUN>` and one
   shared `<blast_admin>::package_version::PackageVersion<...::BLAST_FUN>`. Take their IDs
   from this transaction's effects. The consumed Publication cannot be reused.
-- Its `UpgradeCustodyCreated<BLAST_FUN>` event, emitted by the resolved
+- Its `PackageAdminCreated<BLAST_FUN>` event, emitted by the resolved
   `blast_admin::blast_admin_events` module with the launchpad's canonical
   `<original-package-id>::blast_fun::BLAST_FUN` type argument, records the
-  exact `custodian_id`, `publisher_id`, `upgrade_cap_id`, `package_id`,
-  `native_version = 1`, and `policy = 0` identified above.
+  exact `package_admin_id`, `publisher_id`, `upgrade_cap_id`, `package_id`,
+  `upgrade_cap_version = 1`, and `policy = 0` identified above.
 - `sui client object <package-admin-id> --json` confirms shared ownership and
   nested custody containing that Publisher and exactly that UpgradeCap in
-  its `Option`. Their package identity, native version, and policy agree with
+  its `Option`. Their package identity, UpgradeCap version, and policy agree with
   the event. Wrapped capabilities are no longer standalone wallet objects;
   their absence from a wallet listing alone does not prove custody.
 - Reading the new `PackageVersion` confirms shared ownership and the compiled
-  current operational generation, initially `1`, pause mask `7` (Create,
+  current version, initially `1`, pause mask `7` (Create,
   Trading and Migrate), and the pinned unpause witness
   `<original-package-id>::blast_fun::PackageWitness`. An aborted wrap leaves the
   Publication and cap unchanged and creates neither shared output.
-- Publication-owned policies start at zero notice. Upgrade custody starts at
+- Publication-owned policies start at zero notice. The PackageAdmin starts at
   48 hours. Verify that neither has a pending proposal. This setup state is not
   the approved release policy.
 
 Write a normalized record under `deployments/sui/mainnet/` following
 [`deployments/README.md`](../../deployments/README.md). Include original and
 current package IDs; Publication, Publisher, UpgradeCap, PackageAdmin, and PackageVersion
-IDs; native cap version/policy and operational generation; publication and
+IDs; UpgradeCap version/policy and stored version; publication and
 wrap digests/status; source/toolchain identity; and the matching event and
 object evidence. Raw CLI output alone is not the record.
 
@@ -148,11 +148,11 @@ Read back the chosen values, routes and applied-value events.
 
 Before release, apply or cancel every outstanding zero-notice proposal, including
 each independent adapter admission. Configure and read back each operation's
-intended notice (172,800,000 ms = 48 hours for this rollout). Upgrade custody
+intended notice (172,800,000 ms = 48 hours for this rollout). The PackageAdmin
 already holds 48 hours; do not propose it again (an unchanged notice aborts).
 Raising a notice never rewrites an earlier proposal's deadline or proposed next
 notice. Record all applied notices and pending-proposal state. The release call
-below enforces the minimum: it aborts with `unguarded_notice` (32) while any
+below enforces the minimum: it aborts with `unguarded_delay` (32) while any
 covered notice is zero, any pending proposal would set one to zero, or any
 adapter or claim-signer admission is still pending. Initial setup may span transactions while fully paused.
 
@@ -178,11 +178,11 @@ under the currently applied upgrade notice. CancelAdmin can cancel until executi
 Then use the governed transaction: authorize with an `UpgradeAdmin<BLAST_FUN>`
 witness, execute the native Upgrade command, then commit the matching receipt
 through `blast_admin::package_admin::commit_upgrade_and_advance` in the same
-PTB. It advances the stored generation by one, so the new bytecode must compile
-`constants::generation!()` one higher. There
+PTB. It advances the stored version by one, so the new bytecode must compile
+`constants::version!()` one higher. There
 is no separate activation transaction or raw-cap escape path.
 
-The generic custody is tested in `blast_admin`; the launchpad's publication,
+The generic PackageAdmin is tested in `blast_admin`; the launchpad's publication,
 wrap, and unpause guard are tested here. Use `scripts/test_admin_delay.sh`,
 which substitutes fixture named addresses:
 

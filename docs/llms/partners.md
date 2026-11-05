@@ -123,7 +123,7 @@ change it.
   for a partner (accepted, removal pending, or removed);
   `blast_partners::partner_list::acceptance_ends_at_ms` returns that entry's end
   time and aborts in `sui::dynamic_field` without one;
-  `blast_partners::partner_list::entry_count` counts entries, removed ones included;
+  `blast_partners::partner_list::length` counts entries, removed ones included;
   `blast_partners::partner_list::owner` returns the embedding object's ID.
 - `blast_partners::partner_list::destroy` deletes the list with every entry and
   emits `PartnerListDestroyed`. It ends every acceptance at once, without the

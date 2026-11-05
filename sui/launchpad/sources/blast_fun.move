@@ -12,13 +12,13 @@
 /// The publication pins `PackageWitness`, the one witness the package passes wherever a sealed
 /// call must name the launchpad: the launch fee ledger, migration hand-off, vault terms and owner
 /// proofs, and the generic administration's pause release. `launch_config::unpause` releases pause
-/// bits once every launchpad notice is guarded; it lives beside the configurations it reads, which
+/// bits once every launchpad delay is guarded; it lives beside the configurations it reads, which
 /// name `BLAST_FUN`, so this module cannot import them.
 module blast_fun::blast_fun;
 
 // === Public Types ===
 
-/// The package's one-time witness and the marker of its version, publication, and roles.
+/// The package's one-time witness (OTW), typing its version, publication, and roles.
 public struct BLAST_FUN() has drop;
 
 /// The launchpad's package witness. Only this package constructs it, through `package_witness`;
@@ -55,7 +55,7 @@ public fun version_for_testing(ctx: &mut TxContext): PackageVersion<BLAST_FUN> {
 }
 
 #[test_only]
-/// Package administration around a test Publisher and upgrade cap, with the 48-hour notice.
+/// Package administration around a test Publisher and upgrade cap, with the 48-hour delay.
 public fun package_admin_for_testing(
     ctx: &mut TxContext,
 ): PackageAdmin<BLAST_FUN> {
@@ -67,7 +67,7 @@ public fun package_admin_for_testing(
 }
 
 #[test_only]
-/// Clears `bits` through the generic administration without the configuration notice checks.
+/// Clears `bits` through the generic administration without the configuration delay checks.
 public fun clear_pause_bits_for_testing(
     package_version: &mut PackageVersion<BLAST_FUN>,
     bits: u8,

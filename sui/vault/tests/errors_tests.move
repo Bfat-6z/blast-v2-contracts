@@ -12,7 +12,7 @@ fun error_registry_is_stable() {
     let codes = vector[
         errors::invalid_witness!(),
         errors::unadmitted_venue!(),
-        errors::unguarded_notice!(),
+        errors::unguarded_delay!(),
         errors::invalid_protocol_bps!(),
         errors::zero_liquidity!(),
         errors::wrong_venue!(),
@@ -43,7 +43,7 @@ fun error_registry_is_stable() {
         errors::reserve_settled!(),
         errors::over_reserve!(),
         errors::claims_still_open!(),
-        errors::unadmitted_issuer!(),
+        errors::unadmitted_package_witness!(),
         errors::returned_exceeds_taken!(),
     ];
     assert_eq!(codes.length(), 35);

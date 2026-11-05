@@ -130,7 +130,7 @@ fun replacement_cancels_the_previous_recipient_and_restarts_the_delay() {
 }
 
 #[test]
-fun the_transfer_slot_is_owned_by_the_acl_with_a_seven_day_notice() {
+fun the_transfer_slot_is_owned_by_the_acl_with_a_seven_day_delay() {
     let fixture = start();
 
     let created = events::collect_one<ActionCreated<SuperAdminTransfer, address>>(0);

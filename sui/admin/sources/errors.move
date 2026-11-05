@@ -35,7 +35,7 @@ const ENotPendingSuperAdminRecipient: u64 = 7;
 const ESuperAdminCapStillActive: u64 = 8;
 
 #[test_only]
-const EOperationalVersionMismatch: u64 = 9;
+const EVersionMismatch: u64 = 9;
 
 #[test_only]
 const EInvalidUpgradeCap: u64 = 10;
@@ -77,7 +77,7 @@ const EPaused: u64 = 21;
 const EWrongUpgradeAction: u64 = 22;
 
 #[test_only]
-const EUnguardedUpgradeNotice: u64 = 23;
+const EUnguardedUpgradeDelay: u64 = 23;
 
 #[test_only]
 const EInvalidPackageWitness: u64 = 24;
@@ -106,7 +106,7 @@ macro public(package) fun not_pending_super_admin_recipient(): u64 { 7 }
 
 macro public(package) fun super_admin_cap_still_active(): u64 { 8 }
 
-macro public(package) fun operational_version_mismatch(): u64 { 9 }
+macro public(package) fun version_mismatch(): u64 { 9 }
 
 macro public(package) fun invalid_upgrade_cap(): u64 { 10 }
 
@@ -134,7 +134,7 @@ macro public(package) fun paused(): u64 { 21 }
 
 macro public(package) fun wrong_upgrade_action(): u64 { 22 }
 
-macro public(package) fun unguarded_upgrade_notice(): u64 { 23 }
+macro public(package) fun unguarded_upgrade_delay(): u64 { 23 }
 
 macro public(package) fun invalid_package_witness(): u64 { 24 }
 

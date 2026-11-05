@@ -10,15 +10,15 @@
 /// `PauseAdmin<BLAST_PRESALE_PACKAGE>`, `UpgradeAdmin<BLAST_PRESALE_PACKAGE>`, and
 /// `CancelAdmin<BLAST_PRESALE_PACKAGE>`.
 ///
-/// The fee and creation policies start with zero notices so Blast configures them while the
-/// package is paused; `creation_policy::unpause` refuses until every notice is guarded, then clears
+/// The fee and creation policies start with zero delays so Blast configures them while the
+/// package is paused; `creation_policy::unpause` refuses until every delay is guarded, then clears
 /// bits with the package witness. It lives beside the policies it reads because they name
 /// `BLAST_PRESALE_PACKAGE`, so this module cannot import them.
 module blast_presale::blast_presale_package;
 
 // === Public Types ===
 
-/// The package's one-time witness and the marker of its version, publication, and roles.
+/// The package's one-time witness (OTW), typing its version, publication, and roles.
 public struct BLAST_PRESALE_PACKAGE() has drop;
 
 /// The presale's one package witness, pinned at publication. It seals each sale's protocol-fee
@@ -57,7 +57,7 @@ public fun version_for_testing(ctx: &mut TxContext): PackageVersion<BLAST_PRESAL
 }
 
 #[test_only]
-/// Package administration around a test Publisher and upgrade cap, with the 48-hour notice.
+/// Package administration around a test Publisher and upgrade cap, with the 48-hour delay.
 public fun package_admin_for_testing(ctx: &mut TxContext): PackageAdmin<BLAST_PRESALE_PACKAGE> {
     blast_admin::package_admin::new_for_testing(
         sui::package::test_claim(BLAST_PRESALE_PACKAGE(), ctx),

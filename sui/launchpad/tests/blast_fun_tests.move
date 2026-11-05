@@ -37,11 +37,11 @@ fun wrapping_the_publication_shares_a_fully_paused_version() {
     let fixture = start();
     assert!(!fixture.has_shared_version());
 
-    let (paused, valid_pause_bits, generation) = fixture.wrap();
+    let (paused, valid_pause_bits, version) = fixture.wrap();
 
     assert_eq!(paused, constants::valid_pause_bits!());
     assert_eq!(valid_pause_bits, constants::valid_pause_bits!());
-    assert_eq!(generation, constants::generation!());
+    assert_eq!(version, constants::version!());
 }
 
 // === Test Helpers ===
@@ -59,7 +59,7 @@ macro fun next_tx(
 
 fun start(): PublicationFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    marker::init_for_testing(scenario.ctx());
+    otw::init_for_testing(scenario.ctx());
 
     scenario.next_tx(PUBLISHER);
     let publication = scenario.take_from_sender<Publication<BLAST_FUN>>();
@@ -72,7 +72,7 @@ fun has_shared_version(_: &PublicationFixture): bool {
 }
 
 /// Wraps the publication with a test upgrade cap and returns the shared version's paused bits,
-/// defined bits, and generation; the scenario ends here.
+/// defined bits, and version; the scenario ends here.
 fun wrap(self: PublicationFixture): (u8, u8, u64) {
     let PublicationFixture { mut scenario, publication } = self;
     let upgrade_cap = sui::package::test_publish(@blast_fun.to_id(), scenario.ctx());
@@ -80,16 +80,16 @@ fun wrap(self: PublicationFixture): (u8, u8, u64) {
 
     scenario.next_tx(PUBLISHER);
     assert!(test_scenario::has_most_recent_shared<PackageAdmin<BLAST_FUN>>());
-    let version = scenario.take_shared<PackageVersion<BLAST_FUN>>();
-    let (paused, valid_pause_bits, generation) = (
-        version.paused_for_testing(),
-        version.valid_pause_bits_for_testing(),
-        version.generation_for_testing(),
+    let package_version = scenario.take_shared<PackageVersion<BLAST_FUN>>();
+    let (paused, valid_pause_bits, version) = (
+        package_version.paused_for_testing(),
+        package_version.valid_pause_bits_for_testing(),
+        package_version.version_for_testing(),
     );
-    test_scenario::return_shared(version);
+    test_scenario::return_shared(package_version);
     scenario.end();
 
-    (paused, valid_pause_bits, generation)
+    (paused, valid_pause_bits, version)
 }
 
 fun end(self: PublicationFixture) {
@@ -100,7 +100,7 @@ fun end(self: PublicationFixture) {
 
 use blast_admin::{package_admin::{Self, PackageAdmin}, package_version::{PackageVersion, Publication}};
 
-use blast_fun::{blast_fun::{Self as marker, BLAST_FUN}, constants};
+use blast_fun::{blast_fun::{Self as otw, BLAST_FUN}, constants};
 
 use std::unit_test::{assert_eq, destroy};
 

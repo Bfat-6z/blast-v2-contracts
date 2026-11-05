@@ -842,7 +842,7 @@ fun start(): OpeningRoundFixture {
     );
     config.set_venue_allowed_for_testing<TestVenue>(
         &package_version,
-        &blast_acl::witness_for_testing<AdapterAdmin>(),
+        &blast_acl::witness_for_testing<VenueAdmin>(),
         true,
      scenario.ctx());
     config.set_trade_fees_for_testing(
@@ -1089,7 +1089,7 @@ fun pause_bits(self: &mut OpeningRoundFixture, bits: u8) {
     );
 }
 
-/// Clears `bits` through the generic administration without the release notice checks.
+/// Clears `bits` through the generic administration without the release delay checks.
 fun clear_bits(self: &mut OpeningRoundFixture, bits: u8) {
     let ctx = self.scenario.ctx();
     blast_fun::blast_fun::clear_pause_bits_for_testing(&mut self.package_version, bits, ctx);
@@ -1099,7 +1099,7 @@ fun clear_bits(self: &mut OpeningRoundFixture, bits: u8) {
 
 use blast_admin::{blast_acl, package_admin::PauseAdmin, package_version::PackageVersion};
 
-use blast_core::{bps, fee_split, migration, blast_domain::{AdapterAdmin, FeeAdmin, ListingAdmin}};
+use blast_core::{bps, fee_split, migration, blast_domain::{VenueAdmin, FeeAdmin, ListingAdmin}};
 
 use blast_fun::{
     allocation::{Self, AllocationPlan},

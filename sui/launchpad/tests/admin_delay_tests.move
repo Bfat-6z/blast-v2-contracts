@@ -13,7 +13,7 @@ public struct TestVenue has drop {}
 #[test]
 fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
     let mut ctx = tx_context::dummy();
-    let version = marker::version_for_testing(&mut ctx);
+    let version = otw::version_for_testing(&mut ctx);
     let mut config = launch_config::new_zero_fees_for_testing(&mut ctx);
     let mut clock = clock::create_for_testing(&mut ctx);
     clock.set_for_testing(123);
@@ -92,7 +92,7 @@ fun launch_policy_schedules_and_cancellations_preserve_every_proposed_value() {
 
     config.schedule_venue<TestVenue>(
         &version,
-        &blast_acl::witness_for_testing<AdapterAdmin>(),
+        &blast_acl::witness_for_testing<VenueAdmin>(),
         &clock
     );
     let witness = std::type_name::with_original_ids<TestVenue>();
@@ -134,11 +134,11 @@ use blast_admin::{
     delayed_set::{SetCancelled, SetScheduled}
 };
 
-use blast_core::{bps, blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, TreasuryAdmin}};
+use blast_core::{bps, blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, TreasuryAdmin}};
 
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},
-    blast_fun as marker,
+    blast_fun as otw,
     launch_config::{
         Self,
         CreationFeeKey,

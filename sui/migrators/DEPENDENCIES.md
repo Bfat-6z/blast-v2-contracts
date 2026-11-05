@@ -502,10 +502,10 @@ Each Bluefin fixture must show:
 The package stays upgradeable (ADR 0088): venues gate callers by package
 version, so the venues must be able to relink after a venue upgrade, and its
 `UpgradeCap` is never destroyed. Every migrators upgrade uses the compatible
-policy, which no path narrows, and must bump `constants::generation`:
+policy, which no path narrows, and must bump `constants::version`:
 `blast_admin::package_admin::commit_upgrade_and_advance` always advances the
-stored generation, so a build that keeps the old constant fails every venue
-call's generation check until the next upgrade, which the generic
+stored version, so a build that keeps the old constant fails every venue
+call's version check until the next upgrade, which the generic
 administration can still schedule. Source omission
 does not make principal custody permanent while this package or `blast_vault`
 has an `UpgradeCap`: a compatible upgrade of either could add an extraction
@@ -518,8 +518,8 @@ A vault upgrade forces a migrators relink in the same release window: the
 venues call version-gated `blast_vault` functions, so once the vault commits its
 upgrade, migration and fee collection abort until the relink lands: a
 compatible migrators upgrade that rebinds the vault address and bumps
-`constants::generation`, since every `commit_upgrade_and_advance` advances the
-stored generation. Schedule both together and execute them
+`constants::version`, since every `commit_upgrade_and_advance` advances the
+stored version. Schedule both together and execute them
 back to back. A product upgrade forces no relink, since the venues take the
 `Migration` from the PTB.
 

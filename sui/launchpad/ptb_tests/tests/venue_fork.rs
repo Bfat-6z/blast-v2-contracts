@@ -26,7 +26,7 @@
 //! Meme at `@0x0` (the fixture's supply is fixed); the buyback administrator swaps the waiting burn
 //! Quote for Meme and burns it, and a minimum above the pool's output rolls back; collection against
 //! another pool of the same type is refused; the settled split is scheduled with an owner proof
-//! from the live curve-fee cap and applied permissionlessly after the vault's notice; a retired cap
+//! from the live curve-fee cap and applied permissionlessly after the vault's delay; a retired cap
 //! cannot prove ownership to schedule, cancel or claim, and an accepted proposal survives
 //! reassignment; the owner claims its balances; and a holder-reward round is published from the
 //! rewards balance and paid by Merkle proof. Every venue observation prints as a `VENUE_FORK` line.
@@ -102,7 +102,7 @@ const INVALID_TIER: u64 = 3;
 /// The `blast_core::blast_domain` roles this world's one `AdminCap` holds, for the launchpad and
 /// the vault alike.
 const CORE_ROLES: [&str; 7] =
-    ["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "CreatorAdmin", "BuybackAdmin", "RewardsAdmin"];
+    ["ListingAdmin", "VenueAdmin", "FeeAdmin", "TreasuryAdmin", "CreatorAdmin", "BuybackAdmin", "RewardsAdmin"];
 
 /// Blast's LP-fee share of new vaults from the launch config, then per-vault overrides.
 const DEFAULT_SHARES: (u64, u64) = (1_000, 500);
@@ -119,10 +119,10 @@ const RECIPIENT_A: ObjectID = address(&[0xA1]);
 const RECIPIENT_B: ObjectID = address(&[0xB2]);
 const RECIPIENT_C: ObjectID = address(&[0xC3]);
 const CAP_HOLDER: ObjectID = address(&[0xCA, 0xFE]);
-/// The vault's publication notice between scheduling and publishing a holder-reward round.
-const ROUND_NOTICE_MS: u64 = 2 * 60 * 60 * 1_000;
-/// The vault's fixed notice for fee-split and Blast-share changes.
-const VAULT_FEE_NOTICE_MS: u64 = 172_800_000;
+/// The vault's publication delay between scheduling and publishing a holder-reward round.
+const ROUND_DELAY_MS: u64 = 2 * 60 * 60 * 1_000;
+/// The vault's fixed delay for fee-split and Blast-share changes.
+const VAULT_FEE_DELAY_MS: u64 = 172_800_000;
 /// The second round's holder Quote: the least that funds a one-unit gas reserve at the 10% cap.
 const SECOND_ROUND_QUOTE: u64 = 10;
 const BENEFICIARY_A: ObjectID = address(&[0xBE, 0x01]);
@@ -597,8 +597,8 @@ impl World {
         let issuer_type = tag(&format!("{blast}::blast_fun::PackageWitness"));
         let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
         h.release_vault(admin, admin_published, core, &vault_stack, &[venue_type.clone(), issuer_type])?;
-        let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, case.quote(), venue_type)?;
-        h.unpause_launchpad(blast, admin, admin_published, version, custody, runtime, config, 7)?;
+        let (version, package_admin) = h.wrap_launchpad(blast, published, admin, admin_published, core, case.quote(), venue_type)?;
+        h.unpause_launchpad(blast, admin, admin_published, version, package_admin, runtime, config, 7)?;
         let (fixture, project_token) = if burnable {
             ("fixture/burnable_project", "burnable_token::BURNABLE_TOKEN")
         } else {
@@ -1383,8 +1383,8 @@ impl World {
         };
         let vault = self.vault(&m)?;
         ensure!(vault.pool_id == m.pool && vault.terms == *terms && vault.fee_split.value == launch.split);
-        ensure!(vault.protocol_bps.value == DEFAULT_SHARES && vault.protocol_bps.delay_ms == VAULT_FEE_NOTICE_MS);
-        ensure!(vault.fee_split.delay_ms == VAULT_FEE_NOTICE_MS && vault.fee_split.pending.is_none());
+        ensure!(vault.protocol_bps.value == DEFAULT_SHARES && vault.protocol_bps.delay_ms == VAULT_FEE_DELAY_MS);
+        ensure!(vault.fee_split.delay_ms == VAULT_FEE_DELAY_MS && vault.fee_split.pending.is_none());
         // Residuals go to the treasury at once: the ledger keeps nothing.
         ensure!((vault.protocol.meme, vault.protocol.quote, vault.protocol.sui) == (0, 0, 0));
         ensure!(outcome.coins_created_for(&self.h, LP_PROTOCOL.into()) == self.coins(launch, residual.0, residual.1));
@@ -1623,7 +1623,7 @@ impl World {
         Ok(call(b, self.blast, "launch", "prove_owner", self.pair(launch), vec![launch_arg, version, cap]))
     }
 
-    /// Proposes `split` on the vault with an owner proof from `cap`; the vault's notice is fixed.
+    /// Proposes `split` on the vault with an owner proof from `cap`; the vault's delay is fixed.
     fn schedule_fee_split_pt(&self, launch: &Launch, m: &Migration, cap: ObjectID, split: &FeeSplit) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
         let proof = self.prove_owner(&mut b, launch, cap)?;
@@ -1658,8 +1658,8 @@ impl World {
             self.h.execute(scheduled)?.assert_success();
             let pending = self.vault(m)?.fee_split;
             ensure!(pending.value == before.value && pending.delay_ms == before.delay_ms);
-            ensure!(pending.pending.as_ref().is_some_and(|p| p.value == *split && p.delay_ms == VAULT_FEE_NOTICE_MS));
-            // Seed only fixture generation bytes; the public wrapper must reject before readiness.
+            ensure!(pending.pending.as_ref().is_some_and(|p| p.value == *split && p.delay_ms == VAULT_FEE_DELAY_MS));
+            // Seed only fixture version bytes; the public wrapper must reject before readiness.
             let original = self.h.object(self.migrators_version);
             let (id, valid, paused, witness, _): GenericPackageVersionContents =
                 bcs::from_bytes(&self.h.contents(self.migrators_version))?;
@@ -1832,7 +1832,7 @@ impl World {
     }
 
     /// Blast's per-vault share: a `blast_core` fee administrator schedules it on the vault, and
-    /// anyone applies it after the vault's fixed notice; it applies from the next collection.
+    /// anyone applies it after the vault's fixed delay; it applies from the next collection.
     fn set_vault_shares(&mut self, launch: &Launch, m: &Migration, shares: (u64, u64)) -> Result<()> {
         let mut b = ProgrammableTransactionBuilder::new();
         let signed_in = self.sign_in_core(&mut b, "FeeAdmin")?;
@@ -1848,7 +1848,7 @@ impl World {
         ensure!(pending.value == self.shares && pending.pending.as_ref().is_some_and(|p| p.value == shares));
         let change = (self.vault_package(), "vault", "apply_protocol_bps", self.pair(launch), m.vault, self.vault_stack.version);
         blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![change])?;
-        ensure!(self.vault(m)?.protocol_bps.value == shares, "the share applies after the notice");
+        ensure!(self.vault(m)?.protocol_bps.value == shares, "the share applies after the delay");
 
         self.shares = shares;
 
@@ -1948,23 +1948,23 @@ impl World {
         let version = self.shared(&mut b, self.version, false)?;
         let recipient = b.pure(SuiAddress::from(CAP_HOLDER))?;
         let clock = self.clock(&mut b)?;
-        for name in ["schedule_curve_fee_cap_reassignment", "schedule_metadata_cap_reassignment"] {
+        for name in ["schedule_curve_fee_cap_reassignment", "schedule_creator_metadata_cap_reassignment"] {
             call(&mut b, self.blast, "launch", name, self.pair(launch),
                 vec![launch_arg, version, signed_in, recipient, clock]);
         }
         let scheduled = self.h.execute(b.finish())?;
         scheduled.assert_success();
         ensure!(scheduled.payload_names(self.blast).is_empty());
-        for key in ["CurveFeeCapReassignment", "MetadataCapReassignment"] {
+        for key in ["CurveFeeCapReassignment", "CreatorMetadataCapReassignment"] {
             let proposals: Vec<ActionScheduled<SuiAddress>> = scheduled.delayed("ActionScheduled", "launch", key)?;
             ensure!(proposals.len() == 1);
             ensure!(proposals[0].owner == launch.launch && proposals[0].change == Change::Action(SuiAddress::from(CAP_HOLDER)));
-            ensure!(proposals[0].delay_ms == 172_800_000, "recipient-only schedules retain the applied notice");
+            ensure!(proposals[0].delay_ms == 172_800_000, "recipient-only schedules retain the applied delay");
         }
         let pair = self.pair(launch);
         blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![
             (self.blast, "launch", "apply_curve_fee_cap_reassignment", pair.clone(), launch.launch, self.version),
-            (self.blast, "launch", "apply_metadata_cap_reassignment", pair, launch.launch, self.version),
+            (self.blast, "launch", "apply_creator_metadata_cap_reassignment", pair, launch.launch, self.version),
         ])?;
 
         let owners = [self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()];
@@ -2164,7 +2164,7 @@ impl World {
         Ok(())
     }
 
-    /// An administrator schedules a two-leaf round; after the vault's two-hour round notice anyone
+    /// An administrator schedules a two-leaf round; after the vault's two-hour round delay anyone
     /// publishes it from the rewards balance, and a relayed proof pays the first beneficiary once.
     fn holder_rewards(&mut self, launch: &Launch, m: &Migration) -> Result<()> {
         let before = self.vault(m)?;
@@ -2185,8 +2185,8 @@ impl World {
         let gas_reserve = quote / 10;
         let (_, now_at_ms): (ObjectID, u64) = bcs::from_bytes(&self.h.contents(SUI_CLOCK_OBJECT_ID))?;
         let claim_window_duration_ms = 1_000u64;
-        let deadline_at_ms = now_at_ms + ROUND_NOTICE_MS + claim_window_duration_ms;
-        ensure!(before.round_publication.delay_ms == ROUND_NOTICE_MS && before.round_publication.pending.is_none());
+        let deadline_at_ms = now_at_ms + ROUND_DELAY_MS + claim_window_duration_ms;
+        ensure!(before.round_publication.delay_ms == ROUND_DELAY_MS && before.round_publication.pending.is_none());
 
         let mut b = ProgrammableTransactionBuilder::new();
         let signed_in = self.sign_in_core(&mut b, "RewardsAdmin")?;
@@ -2215,7 +2215,7 @@ impl World {
         let outcome = self.h.execute(b.finish())?;
         outcome.assert_success();
         let scheduled: Vec<ActionScheduled<RoundTerms>> = outcome.delayed("ActionScheduled", "vault", "RoundPublicationKey")?;
-        ensure!(scheduled.len() == 1 && scheduled[0].owner == m.vault && scheduled[0].ready_at_ms == now_at_ms + ROUND_NOTICE_MS);
+        ensure!(scheduled.len() == 1 && scheduled[0].owner == m.vault && scheduled[0].ready_at_ms == now_at_ms + ROUND_DELAY_MS);
         ensure!(matches!(&scheduled[0].change, Change::Action(terms) if terms.number == 0
             && terms.root == root.to_vec() && terms.gas_reserve_amount == gas_reserve
             && terms.claim_window_duration_ms == claim_window_duration_ms
@@ -2229,7 +2229,7 @@ impl World {
             call(&mut b, w.vault_package(), "holder_rewards", "publish_round", vec![launch.meme.clone(), w.quote()], vec![vault, version, treasury, clock]);
             Ok(b.finish())
         };
-        self.h.sim.advance_clock(std::time::Duration::from_millis(ROUND_NOTICE_MS - 1));
+        self.h.sim.advance_clock(std::time::Duration::from_millis(ROUND_DELAY_MS - 1));
         let pt = publish(self)?;
         self.h.assert_rolled_back(pt, Expected::Abort { package: self.admin, module: "delayed", code: 13 }, &[m.vault], &[LP_PROTOCOL.into()])?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(1));
@@ -2335,7 +2335,7 @@ impl World {
         self.h.assert_rolled_back(pt, Expected::Abort { package: self.vault_package(), module: "holder_rewards", code: CLAIMS_STILL_OPEN }, &[round, m.vault], &[])?;
 
         // Publish another funded round after a deliberately skipped holding interval, once its
-        // notice has elapsed and the first round's claims have closed. Its reserve, the most a
+        // delay has elapsed and the first round's claims have closed. Its reserve, the most a
         // ten-unit Quote budget allows, stays unsettled until recovery after revocation.
         let mut b = ProgrammableTransactionBuilder::new();
         let signed_in = self.sign_in_core(&mut b, "RewardsAdmin")?;
@@ -2349,7 +2349,7 @@ impl World {
             b.pure(claim_window_duration_ms)?, b.pure(SuiAddress::from(LP_PROTOCOL))?, clock];
         call(&mut b, self.vault_package(), "holder_rewards", "schedule_round", vec![meme_type.clone(), self.quote()], args);
         self.h.execute(b.finish())?.assert_success();
-        self.h.sim.advance_clock(std::time::Duration::from_millis(ROUND_NOTICE_MS));
+        self.h.sim.advance_clock(std::time::Duration::from_millis(ROUND_DELAY_MS));
         let (_, second_published_at_ms): (ObjectID, u64) = bcs::from_bytes(&self.h.contents(SUI_CLOCK_OBJECT_ID))?;
         let second = self.h.execute(publish(self)?)?;
         second.assert_success();

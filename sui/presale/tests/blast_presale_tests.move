@@ -3265,7 +3265,7 @@ fun an_lp_rate_change_keeps_blasts_raise_and_token_amounts() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_precedes_partner_admission() {
@@ -3284,7 +3284,7 @@ fun stale_version_precedes_partner_admission() {
         &fee_policy,
     );
 
-    package_version.set_generation_for_testing(2);
+    package_version.set_version_for_testing(2);
     initializer.set_partner(&package_version, &creation_policy, &partner, &clock);
     std::unit_test::destroy(package_version);
     abort
@@ -3292,7 +3292,7 @@ fun stale_version_precedes_partner_admission() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun future_version_cannot_finalize() {
@@ -3312,7 +3312,7 @@ fun future_version_cannot_finalize() {
         creator_fee_split(),
     );
 
-    package_version.set_generation_for_testing(3);
+    package_version.set_version_for_testing(3);
     let mut registry = presale::registry_for_testing(&mut ctx);
     let (_sale, _cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
     destroy(registry);
@@ -3322,7 +3322,7 @@ fun future_version_cannot_finalize() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_rejects_commit_before_lifecycle_or_amount_checks() {
@@ -3331,7 +3331,7 @@ fun stale_version_rejects_commit_before_lifecycle_or_amount_checks() {
         let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_generation_for_testing(2);
+        package_version.set_version_for_testing(2);
         let mut sale = fixture.take_presale();
         let coin = coin::zero<QUOTE>(fixture.scenario.ctx());
         let change = sale.commit_open(
@@ -3349,7 +3349,7 @@ fun stale_version_rejects_commit_before_lifecycle_or_amount_checks() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_rejects_settle_before_lifecycle_or_amount_checks() {
@@ -3358,7 +3358,7 @@ fun stale_version_rejects_settle_before_lifecycle_or_amount_checks() {
         let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_generation_for_testing(2);
+        package_version.set_version_for_testing(2);
         let mut sale = fixture.take_presale();
         sale.settle(&package_version, &fixture.clock);
         destroy(sale);
@@ -3369,7 +3369,7 @@ fun stale_version_rejects_settle_before_lifecycle_or_amount_checks() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_rejects_cancel_before_lifecycle_or_amount_checks() {
@@ -3378,7 +3378,7 @@ fun stale_version_rejects_cancel_before_lifecycle_or_amount_checks() {
         let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_generation_for_testing(2);
+        package_version.set_version_for_testing(2);
         let mut sale = fixture.take_presale();
         sale.cancel_unlaunched(&package_version, &fixture.clock);
         destroy(sale);
@@ -3389,7 +3389,7 @@ fun stale_version_rejects_cancel_before_lifecycle_or_amount_checks() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_rejects_claim_before_lifecycle_or_amount_checks() {
@@ -3398,7 +3398,7 @@ fun stale_version_rejects_claim_before_lifecycle_or_amount_checks() {
         let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_generation_for_testing(2);
+        package_version.set_version_for_testing(2);
         let mut sale = fixture.take_presale();
         sale.claim(&package_version, ALICE, &fixture.clock, fixture.scenario.ctx());
         destroy(sale);
@@ -3409,7 +3409,7 @@ fun stale_version_rejects_claim_before_lifecycle_or_amount_checks() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_rejects_migrate_before_lifecycle_or_amount_checks() {
@@ -3418,7 +3418,7 @@ fun stale_version_rejects_migrate_before_lifecycle_or_amount_checks() {
         let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_generation_for_testing(2);
+        package_version.set_version_for_testing(2);
         let mut sale = fixture.take_presale();
         let (meme, quote, _) = sale
             .migrate(&package_version, &fixture.treasury, &fixture.clock, fixture.scenario.ctx())
@@ -3433,7 +3433,7 @@ fun stale_version_rejects_migrate_before_lifecycle_or_amount_checks() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_prevents_initializer_creation() {
@@ -3442,7 +3442,7 @@ fun stale_version_prevents_initializer_creation() {
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
-    package_version.set_generation_for_testing(2);
+    package_version.set_version_for_testing(2);
     let mut initializer = bare_initializer(
         &package_version,
         treasury_cap,
@@ -5255,7 +5255,7 @@ fun pause(version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>, bits: u8) {
 }
 
 /// Clears `bits` through the generic administration, as `creation_policy::unpause` does once every
-/// notice is guarded.
+/// delay is guarded.
 fun clear_pause_bits(version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>, bits: u8) {
     let package_admin = blast_presale_package::package_admin_for_testing(&mut tx_context::dummy());
     package_admin.clear_pause_bits(

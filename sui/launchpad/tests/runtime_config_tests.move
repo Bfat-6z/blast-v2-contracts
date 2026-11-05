@@ -13,8 +13,8 @@ const PROTOCOL_ADMIN: address = @0xAD;
 
 const ANYONE: address = @0xB0B;
 
-/// The signer notice the fixture raises after its zero-notice bootstrap.
-const NOTICE_MS: u64 = 172_800_000;
+/// The signer delay the fixture raises after its zero-delay bootstrap.
+const DELAY_MS: u64 = 172_800_000;
 
 // === Test-Only Types ===
 
@@ -100,12 +100,12 @@ fun protocol_fee_share_rejects_the_current_value() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun protocol_fee_share_checks_the_version_before_the_current_value() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.set_protocol_fee_share_for_testing(bps::new(0));
     });
@@ -116,8 +116,8 @@ fun protocol_fee_share_checks_the_version_before_the_current_value() {
 // --- Creator-claim signer ---
 
 #[test]
-/// Admission waits the applied notice; once ready, any sender applies it and the key signs.
-fun a_signer_key_waits_the_notice_and_anyone_applies_it() {
+/// Admission waits the applied delay; once ready, any sender applies it and the key signs.
+fun a_signer_key_waits_the_delay_and_anyone_applies_it() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
@@ -126,30 +126,30 @@ fun a_signer_key_waits_the_notice_and_anyone_applies_it() {
         assert!(f.config.creator_claim_signers().is_empty());
         let (_, _, change, delay_ms, ready_at_ms) = scheduled_one().set_scheduled_fields();
         assert_eq!(change.member(), option::some(signer_public_key()));
-        assert_eq!(delay_ms, NOTICE_MS);
-        assert_eq!(ready_at_ms, NOTICE_MS);
+        assert_eq!(delay_ms, DELAY_MS);
+        assert_eq!(ready_at_ms, DELAY_MS);
     });
 
     fixture.next_tx!(ANYONE, |f| {
-        f.clock.set_for_testing(NOTICE_MS);
+        f.clock.set_for_testing(DELAY_MS);
         f.apply_creator_claim_signer(signer_public_key());
 
         assert_eq!(f.config.creator_claim_signers(), vector[signer_public_key()]);
         let (_, _, change, delay_ms) = applied_one_signer().set_applied_fields();
         assert_eq!(change.member(), option::some(signer_public_key()));
-        assert_eq!(delay_ms, NOTICE_MS);
+        assert_eq!(delay_ms, DELAY_MS);
     });
 
     fixture.end();
 }
 
 #[test, expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed_set)]
-fun a_signer_key_cannot_apply_before_the_notice() {
+fun a_signer_key_cannot_apply_before_the_delay() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_creator_claim_signer(signer_public_key());
-        f.clock.set_for_testing(NOTICE_MS - 1);
+        f.clock.set_for_testing(DELAY_MS - 1);
 
         f.apply_creator_claim_signer(signer_public_key());
     });
@@ -158,20 +158,20 @@ fun a_signer_key_cannot_apply_before_the_notice() {
 }
 
 #[test]
-/// Publication's zero notice admits the first key in the bootstrap transaction; raising the
-/// notice there makes every later key wait it.
-fun zero_notice_bootstrap_admits_at_once_then_the_raised_notice_applies() {
+/// Publication's zero delay admits the first key in the bootstrap transaction; raising the
+/// delay there makes every later key wait it.
+fun zero_delay_bootstrap_admits_at_once_then_the_raised_delay_applies() {
     let (signer_public_keys, second_admission) = bootstrapped_signers(5);
 
     assert_eq!(signer_public_keys, vector[signer_public_key()]);
     let (_, _, change, delay_ms, ready_at_ms) = second_admission.set_scheduled_fields();
     assert_eq!(change.member(), option::some(second_signer_public_key()));
-    assert_eq!(delay_ms, NOTICE_MS);
-    assert_eq!(ready_at_ms, 5 + NOTICE_MS);
+    assert_eq!(delay_ms, DELAY_MS);
+    assert_eq!(ready_at_ms, 5 + DELAY_MS);
 }
 
 #[test]
-/// Revocation removes a live key in the same transaction, without waiting any notice.
+/// Revocation removes a live key in the same transaction, without waiting any delay.
 fun revoke_removes_a_live_key_at_once() {
     let mut fixture = start();
 
@@ -209,7 +209,7 @@ fun revoke_discards_a_pending_key_at_once() {
         assert!(event::events_by_type<MemberRemoved<ClaimSignerKey, vector<u8>>>().is_empty());
         let (_, _, change, _, ready_at_ms) = cancelled_one_signer().set_cancelled_fields();
         assert_eq!(change.member(), option::some(signer_public_key()));
-        assert_eq!(ready_at_ms, NOTICE_MS);
+        assert_eq!(ready_at_ms, DELAY_MS);
     });
 
     fixture.end();
@@ -222,7 +222,7 @@ fun a_revoked_pending_key_cannot_apply() {
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_creator_claim_signer(signer_public_key());
         f.revoke_creator_claim_signer(signer_public_key());
-        f.clock.set_for_testing(NOTICE_MS);
+        f.clock.set_for_testing(DELAY_MS);
 
         f.apply_creator_claim_signer(signer_public_key());
     });
@@ -267,12 +267,12 @@ fun claim_signer_rejects_a_key_that_is_not_32_bytes() {
     fixture.end();
 }
 
-#[test, expected_failure(abort_code = blast_admin::errors::EOperationalVersionMismatch, location = blast_admin::package_version)]
+#[test, expected_failure(abort_code = blast_admin::errors::EVersionMismatch, location = blast_admin::package_version)]
 fun claim_signer_checks_the_version_before_the_key_length() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.package_version.set_generation_for_testing(2);
+        f.package_version.set_version_for_testing(2);
 
         f.schedule_creator_claim_signer(x"00");
     });
@@ -309,7 +309,7 @@ fun claim_signer_checks_the_key_length_before_the_cap() {
 }
 
 #[test]
-/// Rescheduling a pending key under a full cap replaces its admission and restarts its notice;
+/// Rescheduling a pending key under a full cap replaces its admission and restarts its delay;
 /// revoking a key frees its slot.
 fun a_full_cap_reschedules_a_pending_key_and_revocation_frees_a_slot() {
     let mut fixture = start();
@@ -319,14 +319,14 @@ fun a_full_cap_reschedules_a_pending_key_and_revocation_frees_a_slot() {
     });
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.clock.set_for_testing(3 * NOTICE_MS);
+        f.clock.set_for_testing(3 * DELAY_MS);
         f.schedule_creator_claim_signer(third_signer_public_key());
 
         let (_, _, _, _, ready_at_ms) = scheduled_one().set_scheduled_fields();
-        assert_eq!(ready_at_ms, 4 * NOTICE_MS);
+        assert_eq!(ready_at_ms, 4 * DELAY_MS);
         let (_, _, change, _, cancelled_ready_at_ms) = cancelled_one_signer().set_cancelled_fields();
         assert_eq!(change.member(), option::some(third_signer_public_key()));
-        assert_eq!(cancelled_ready_at_ms, 3 * NOTICE_MS);
+        assert_eq!(cancelled_ready_at_ms, 3 * DELAY_MS);
     });
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
@@ -349,7 +349,7 @@ fun cancel_admin_cancels_a_ready_signer_key() {
     });
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.clock.set_for_testing(NOTICE_MS);
+        f.clock.set_for_testing(DELAY_MS);
         f.cancel_creator_claim_signer(signer_public_key());
 
         assert!(f.config.creator_claim_signers().is_empty());
@@ -361,35 +361,35 @@ fun cancel_admin_cancels_a_ready_signer_key() {
 }
 
 #[test]
-/// ClaimSignerAdmin proposes a notice that waits the applied one, anyone applies it, later
+/// ClaimSignerAdmin proposes a delay that waits the applied one, anyone applies it, later
 /// admissions wait it, and CancelAdmin discards a further proposal.
-fun the_signer_notice_follows_its_own_lifecycle() {
+fun the_signer_delay_follows_its_own_lifecycle() {
     let mut fixture = start();
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
-        f.schedule_creator_claim_signer_delay(NOTICE_MS / 2);
+        f.schedule_creator_claim_signer_delay(DELAY_MS / 2);
 
         let (_, _, change, delay_ms, ready_at_ms) = scheduled_one().set_scheduled_fields();
         assert!(change.member().is_none());
-        assert_eq!(delay_ms, NOTICE_MS / 2);
-        assert_eq!(ready_at_ms, NOTICE_MS);
+        assert_eq!(delay_ms, DELAY_MS / 2);
+        assert_eq!(ready_at_ms, DELAY_MS);
     });
 
     fixture.next_tx!(ANYONE, |f| {
-        f.clock.set_for_testing(NOTICE_MS);
+        f.clock.set_for_testing(DELAY_MS);
         f.apply_creator_claim_signer_delay();
     });
 
     fixture.next_tx!(PROTOCOL_ADMIN, |f| {
         f.schedule_creator_claim_signer(signer_public_key());
         let (_, _, _, _, ready_at_ms) = scheduled_one().set_scheduled_fields();
-        assert_eq!(ready_at_ms, NOTICE_MS + NOTICE_MS / 2);
+        assert_eq!(ready_at_ms, DELAY_MS + DELAY_MS / 2);
 
-        f.schedule_creator_claim_signer_delay(NOTICE_MS);
+        f.schedule_creator_claim_signer_delay(DELAY_MS);
         f.cancel_creator_claim_signer_delay();
         let (_, _, change, delay_ms, _) = cancelled_one_signer().set_cancelled_fields();
         assert!(change.member().is_none());
-        assert_eq!(delay_ms, NOTICE_MS);
+        assert_eq!(delay_ms, DELAY_MS);
     });
 
     fixture.end();
@@ -424,7 +424,7 @@ fun published_config(): (u64, vector<vector<u8>>, u64) {
 }
 
 /// Bootstraps the published configuration in one transaction at `now_ms`: admits
-/// `signer_public_key()` at the zero publication notice, raises the notice to `NOTICE_MS`, then
+/// `signer_public_key()` at the zero publication delay, raises the delay to `DELAY_MS`, then
 /// schedules `second_signer_public_key()`. Returns the admitted keys and that last admission.
 fun bootstrapped_signers(now_ms: u64): (vector<vector<u8>>, SetScheduled<ClaimSignerKey, vector<u8>>) {
     let mut scenario = test_scenario::begin(PUBLISHER);
@@ -437,7 +437,7 @@ fun bootstrapped_signers(now_ms: u64): (vector<vector<u8>>, SetScheduled<ClaimSi
     let mut config = scenario.take_shared<RuntimeConfig>();
     config.schedule_creator_claim_signer(&package_version, &claim_signer_admin(), signer_public_key(), &clock);
     config.apply_creator_claim_signer(&package_version, signer_public_key(), &clock);
-    config.schedule_creator_claim_signer_delay(&package_version, &claim_signer_admin(), NOTICE_MS, &clock);
+    config.schedule_creator_claim_signer_delay(&package_version, &claim_signer_admin(), DELAY_MS, &clock);
     config.apply_creator_claim_signer_delay(&package_version, &clock);
     config.schedule_creator_claim_signer(&package_version, &claim_signer_admin(), second_signer_public_key(), &clock);
     let signer_public_keys = config.creator_claim_signers();
@@ -452,7 +452,7 @@ fun bootstrapped_signers(now_ms: u64): (vector<vector<u8>>, SetScheduled<ClaimSi
     (signer_public_keys, second_admission)
 }
 
-/// A configuration with no claim signer and the signer notice raised to `NOTICE_MS`, at time zero.
+/// A configuration with no claim signer and the signer delay raised to `DELAY_MS`, at time zero.
 fun start(): ConfigFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     let package_version = package_version::version_for_testing(scenario.ctx());
@@ -509,15 +509,15 @@ fun config_cancel_creator_claim_signer_delay(self: &mut ConfigFixture) {
     self.config.cancel_creator_claim_signer_delay(&self.package_version, &cancel_admin());
 }
 
-/// Schedules `signer_public_key`, waits the notice on the fixture clock, and admits it.
+/// Schedules `signer_public_key`, waits the delay on the fixture clock, and admits it.
 fun config_admit_creator_claim_signer(self: &mut ConfigFixture, signer_public_key: vector<u8>) {
     self.schedule_creator_claim_signer(signer_public_key);
-    let ready_at_ms = self.clock.timestamp_ms() + NOTICE_MS;
+    let ready_at_ms = self.clock.timestamp_ms() + DELAY_MS;
     self.clock.set_for_testing(ready_at_ms);
     self.apply_creator_claim_signer(signer_public_key);
 }
 
-/// Two live keys and two pending ones, the third scheduled at `2 * NOTICE_MS`: the cap is full.
+/// Two live keys and two pending ones, the third scheduled at `2 * DELAY_MS`: the cap is full.
 fun config_fill_creator_claim_signers(self: &mut ConfigFixture) {
     self.admit_creator_claim_signer(signer_public_key());
     self.admit_creator_claim_signer(second_signer_public_key());
@@ -557,7 +557,7 @@ fun fifth_signer_public_key(): vector<u8> {
     x"5555555555555555555555555555555555555555555555555555555555555555"
 }
 
-/// The signer set's admission and notice proposals in this transaction, in order.
+/// The signer set's admission and delay proposals in this transaction, in order.
 fun scheduled_signers(): vector<SetScheduled<ClaimSignerKey, vector<u8>>> {
     event::events_by_type<SetScheduled<ClaimSignerKey, vector<u8>>>()
 }

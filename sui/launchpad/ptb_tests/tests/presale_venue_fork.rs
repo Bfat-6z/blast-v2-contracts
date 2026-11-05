@@ -23,7 +23,7 @@
 //! supplied plus residual reconciles exactly with the hand-off. The participant claims its tokens
 //! and overflow, real swaps accrue fees, permissionless collections pay every address route and
 //! grow the vault's holder-reward balances by the exact apportionment. A split change is proved
-//! with the `PresaleCap` and applied after the vault's notice; collection against another pool of
+//! with the `PresaleCap` and applied after the vault's delay; collection against another pool of
 //! the same type is refused, and the owner claims the migration residuals with an owner proof.
 //!
 //! A partnered Bluefin sale under nonzero Blast rates shows the fee ledger's two paths as PTB
@@ -42,7 +42,7 @@ use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock, time::Duration};
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
     CompiledPackage, Delayed, DelayedAction, DelayedApplied, Destination, Expected, FeeSplit,
-    GenericPackageVersionContents, Harness, Outcome, PUBLICATION_UPGRADE_NOTICE_MS, RoundTerms, UnlinkedPackage, VaultStack, append_presale_unpause, build,
+    GenericPackageVersionContents, Harness, Outcome, PUBLICATION_UPGRADE_DELAY_MS, RoundTerms, UnlinkedPackage, VaultStack, append_presale_unpause, build,
     build_unlinked, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
@@ -51,7 +51,7 @@ use blast_launchpad_ptb_tests::{
         UserFeeCollected, apportion, cetus_name, expected_sqrt_price, id, insert_snapshot, meme_is_cetus_a, sui, tag,
         venue_dependencies, venue_events,
     },
-    presale_marker, presale_role, publish_core_stack, sui_dir, unique_bps,
+    presale_otw, presale_role, publish_core_stack, sui_dir, unique_bps,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use sui_types::{
@@ -82,8 +82,8 @@ const HOLDER_REWARDS_BPS: u64 = 1_500;
 const DURATION_MS: u64 = 3_600_000;
 /// The shortest LP window `blast_presale::finalize` accepts: seven days.
 const LIQUIDITY_WINDOW_MS: u64 = 604_800_000;
-/// The vault's fixed notice for fee-split changes.
-const VAULT_FEE_NOTICE_MS: u64 = 172_800_000;
+/// The vault's fixed delay for fee-split changes.
+const VAULT_FEE_DELAY_MS: u64 = 172_800_000;
 
 /// Near-equal seed atoms from `fixside_sim.py`: fixing the larger side makes both venues demand
 /// `SMALL + 1` of the smaller side.
@@ -131,8 +131,8 @@ const fn address(suffix: &[u8]) -> ObjectID {
 // === Tests ===
 
 /// Every reachable pause state against every u8 input, through unmodified production bytecode.
-/// Pausing is `blast_admin`'s and reads no consumer generation; unpausing is the presale's
-/// `creation_policy::unpause`, which rejects a stale generation first.
+/// Pausing is `blast_admin`'s and reads no consumer version; unpausing is the presale's
+/// `creation_policy::unpause`, which rejects a stale version first.
 #[test]
 fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> Result<()> {
     let mut w = World::new(Route::Bluefin)?;
@@ -142,17 +142,17 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
     let states: [&[u8]; 8] = [&[], &[1], &[2], &[1, 2], &[4], &[1, 4], &[2, 4], &[1, 2, 4]];
     let sale = w.open_sale(&Terms::standard(Route::Bluefin))?;
     let watched = [w.version, w.acl, w.admin_cap, w.creation_policy, w.fee_policy,
-        w.venue_config, w.custody, sale.presale, sale.cap, sale.currency];
+        w.venue_config, w.package_admin, sale.presale, sale.cap, sale.currency];
     let mut successes = 0;
     let mut invalid = 0;
     let mut unchanged = 0;
     let mut stale = 0;
-    for generation in [1, 2] {
+    for version in [1, 2] {
         for flags in states {
             let mask: u8 = flags.iter().sum();
-            w.set_pause_generation_for_fixture(1)?;
+            w.set_pause_version_for_fixture(1)?;
             w.replace_pause_mask(mask)?;
-            w.set_pause_generation_for_fixture(generation)?;
+            w.set_pause_version_for_fixture(version)?;
             let before: BTreeSet<_> = flags.iter().copied().collect();
             for bits in 0..=u8::MAX {
                 for pausing in [true, false] {
@@ -164,7 +164,7 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
                         before.difference(&requested).copied().collect()
                     };
                     let pt = w.pause_command(pausing, bits)?;
-                    let rejected = if generation != 1 && !pausing {
+                    let rejected = if version != 1 && !pausing {
                         stale += 1;
                         Some(Expected::Abort { package: w.admin, module: "package_version", code: 9 })
                     } else if !(1..=7).contains(&bits) {
@@ -187,15 +187,15 @@ fn presale_pause_exhaustively_checks_masks_events_rollback_and_version_precedenc
                         assert_eq!(outcome.events.len(), 1);
                         assert_eq!(outcome.events_of("blast_admin_events", name),
                             [bcs::to_bytes(&(w.version, bits, next))?.as_slice()]);
-                        assert_eq!(w.pause_state()?, (w.version, next, generation));
+                        assert_eq!(w.pause_state()?, (w.version, next, version));
                         assert_eq!(w.h.snapshot(&watched[1..], &[w.h.sender]), untouched);
-                        w.set_pause_generation_for_fixture(1)?;
+                        w.set_pause_version_for_fixture(1)?;
                         w.replace_pause_mask(mask)?;
-                        w.set_pause_generation_for_fixture(generation)?;
+                        w.set_pause_version_for_fixture(version)?;
                         successes += 1;
                     }
-                    assert_eq!(w.pause_state()?, (w.version, mask, generation),
-                        "pausing={pausing}, bits={bits}, initial={mask}, generation={generation}");
+                    assert_eq!(w.pause_state()?, (w.version, mask, version),
+                        "pausing={pausing}, bits={bits}, initial={mask}, version={version}");
                 }
             }
         }
@@ -709,7 +709,7 @@ struct World {
     acl: ObjectID,
     root: ObjectID,
     admin_cap: ObjectID,
-    custody: ObjectID,
+    package_admin: ObjectID,
     venue_config: ObjectID,
     creation_policy: ObjectID,
     fee_policy: ObjectID,
@@ -803,7 +803,7 @@ impl World {
         let mut b = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = b.obj(h.owned(bootstrap[0]))?;
         let upgrade_cap_arg = b.obj(h.owned(upgrade_cap[0]))?;
-        call(&mut b, admin, "package_admin", "wrap", vec![presale_marker(presale)?], vec![bootstrap_arg, upgrade_cap_arg]);
+        call(&mut b, admin, "package_admin", "wrap", vec![presale_otw(presale)?], vec![bootstrap_arg, upgrade_cap_arg]);
         let wrapped = h.execute(b.finish())?;
         wrapped.assert_success();
         ensure!(wrapped.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
@@ -811,17 +811,17 @@ impl World {
         let versions = wrapped.created(&h, "package_version", "PackageVersion");
         ensure!(versions.len() == 1 && h.object(versions[0]).is_shared());
         let version = versions[0];
-        let (_, valid, paused, package_witness, generation): GenericPackageVersionContents =
+        let (_, valid, paused, package_witness, stored_version): GenericPackageVersionContents =
             bcs::from_bytes(&h.contents(version))?;
-        ensure!((valid, paused, generation) == (7, 7, 1), "the presale starts fully paused at generation 1");
+        ensure!((valid, paused, stored_version) == (7, 7, 1), "the presale starts fully paused at version 1");
         ensure!(package_witness.ends_with("::blast_presale_package::PackageWitness"), "{package_witness}");
-        let custody = wrapped.created(&h, "package_admin", "PackageAdmin");
-        ensure!(custody.len() == 1);
-        h.assert_publication_upgrade_notice(custody[0])?;
-        let config_cap = h.configuration_admin(admin, admin_published, core, "blast_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin"])?;
+        let package_admin = wrapped.created(&h, "package_admin", "PackageAdmin");
+        ensure!(package_admin.len() == 1);
+        h.assert_publication_upgrade_delay(package_admin[0])?;
+        let config_cap = h.configuration_admin(admin, admin_published, core, "blast_domain", &["ListingAdmin", "VenueAdmin", "FeeAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let listing = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "ListingAdmin")?;
-        let adapter = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "AdapterAdmin")?;
+        let adapter = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "VenueAdmin")?;
         let fee_admin = h.configuration_witness(&mut b, admin, admin_published, config_cap, core, "blast_domain", "FeeAdmin")?;
         let policy = b.obj(h.shared(creation_policy[0], true))?;
         let version_arg = b.obj(h.shared(version, false))?;
@@ -830,7 +830,7 @@ impl World {
         call(&mut b, presale, "creation_policy", "set_quote_allowed", vec![quote_type.clone()], vec![policy, version_arg, listing, allowed]);
         call(&mut b, presale, "creation_policy", "schedule_venue", vec![venue_type.clone()], vec![policy, version_arg, adapter, clock]);
         call(&mut b, presale, "creation_policy", "apply_venue", vec![venue_type], vec![policy, version_arg, clock]);
-        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
+        let delay = b.pure(PUBLICATION_UPGRADE_DELAY_MS)?;
         call(&mut b, presale, "creation_policy", "schedule_venue_delay", vec![], vec![policy, version_arg, adapter, delay, clock]);
         call(&mut b, presale, "creation_policy", "apply_venue_delay", vec![], vec![policy, version_arg, clock]);
         let fees = b.obj(h.shared(fee_policy[0], true))?;
@@ -840,7 +840,7 @@ impl World {
         call(&mut b, presale, "fee_policy", "schedule_fees", vec![], vec![fees, version_arg, fee_admin, zero_bps, zero_bps, zero_bps, zero_bps, delay, clock]);
         call(&mut b, presale, "fee_policy", "apply_fees", vec![], vec![fees, version_arg, clock]);
         h.execute(b.finish())?.assert_success();
-        h.unpause_presale(presale, admin, admin_published, version, custody[0], creation_policy[0], fee_policy[0], 7)?;
+        h.unpause_presale(presale, admin, admin_published, version, package_admin[0], creation_policy[0], fee_policy[0], 7)?;
         ensure!(h.contents(SUI_CLOCK_OBJECT_ID) == clock_before);
 
         Ok(World {
@@ -860,7 +860,7 @@ impl World {
             acl: admin_published.created(&h, "blast_acl", "ACL")[0],
             root: admin_published.created(&h, "blast_acl", "SuperAdminCap")[0],
             admin_cap: config_cap,
-            custody: custody[0],
+            package_admin: package_admin[0],
             venue_config: venue_config[0],
             creation_policy: creation_policy[0],
             fee_policy: fee_policy[0],
@@ -892,7 +892,7 @@ impl World {
         Ok(())
     }
 
-    /// Schedules Blast's raise and token rates under the 48-hour notice, waits it out, and applies
+    /// Schedules Blast's raise and token rates under the 48-hour delay, waits it out, and applies
     /// them; LP-fee rates stay zero.
     fn set_protocol_rates(&mut self, raise_bps: u64, token_bps: u64) -> Result<()> {
         let mut b = ProgrammableTransactionBuilder::new();
@@ -902,11 +902,11 @@ impl World {
         let raise = self.bps(&mut b, raise_bps)?;
         let token = self.bps(&mut b, token_bps)?;
         let zero = self.bps(&mut b, 0)?;
-        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
+        let delay = b.pure(PUBLICATION_UPGRADE_DELAY_MS)?;
         let clock = self.clock(&mut b)?;
         call(&mut b, self.presale, "fee_policy", "schedule_fees", vec![], vec![fees, version, witness, raise, token, zero, zero, delay, clock]);
         self.h.execute(b.finish())?.assert_success();
-        self.h.sim.advance_clock(Duration::from_millis(PUBLICATION_UPGRADE_NOTICE_MS));
+        self.h.sim.advance_clock(Duration::from_millis(PUBLICATION_UPGRADE_DELAY_MS));
         let mut b = ProgrammableTransactionBuilder::new();
         let fees = self.shared(&mut b, self.fee_policy, true)?;
         let version = self.shared(&mut b, self.version, false)?;
@@ -968,19 +968,19 @@ impl World {
     fn append_pause(&self, b: &mut ProgrammableTransactionBuilder, pause: bool, bits: u8, role: &str) -> Result<()> {
         let witness = self.sign_in(b, role)?;
         if !pause {
-            return append_presale_unpause(&self.h, b, self.presale, self.custody, self.version, witness,
+            return append_presale_unpause(&self.h, b, self.presale, self.package_admin, self.version, witness,
                 self.creation_policy, self.fee_policy, bits);
         }
         let version = b.obj(self.h.shared(self.version, true))?;
         let bits = b.pure(bits)?;
-        call(b, self.admin, "package_admin", "pause", vec![presale_marker(self.presale)?], vec![version, witness, bits]);
+        call(b, self.admin, "package_admin", "pause", vec![presale_otw(self.presale)?], vec![version, witness, bits]);
         Ok(())
     }
 
-    /// The version's ID, paused bits and generation.
+    /// The version's ID, paused bits and version.
     fn pause_state(&self) -> Result<(ObjectID, u8, u64)> {
-        let (id, _, paused, _, generation): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
-        Ok((id, paused, generation))
+        let (id, _, paused, _, version): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
+        Ok((id, paused, version))
     }
 
     fn replace_pause_mask(&mut self, mask: u8) -> Result<()> {
@@ -994,23 +994,23 @@ impl World {
         Ok(())
     }
 
-    /// Only seed the stored generation; masks are always reached through real public calls.
-    fn set_pause_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+    /// Only seed the stored version; masks are always reached through real public calls.
+    fn set_pause_version_for_fixture(&mut self, version: u64) -> Result<()> {
         let (id, valid, paused, witness, _): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
         let mut object = self.h.object(self.version);
         object.data.try_as_move_mut().expect("PackageVersion")
-            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, generation))?);
+            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, version))?);
         self.h.insert(object);
         Ok(())
     }
 
-    /// Seeds the stored generation of the migrators' generic `PackageVersion`.
-    fn set_venue_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+    /// Seeds the stored version of the migrators' generic `PackageVersion`.
+    fn set_venue_version_for_fixture(&mut self, version: u64) -> Result<()> {
         let (id, valid, paused, witness, _): GenericPackageVersionContents =
             bcs::from_bytes(&self.h.contents(self.venue_version))?;
         let mut object = self.h.object(self.venue_version);
         object.data.try_as_move_mut().context("migrators PackageVersion")?
-            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, generation))?);
+            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, version))?);
         self.h.insert(object);
         Ok(())
     }
@@ -1900,7 +1900,7 @@ impl World {
         Ok(fees)
     }
 
-    /// The owner proposes `split` with an owner proof; the vault's notice is fixed.
+    /// The owner proposes `split` with an owner proof; the vault's delay is fixed.
     fn schedule_split_pt(&self, sale: &Sale, m: &Migration, split: &FeeSplit) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
         let proof = self.prove_owner(&mut b, sale)?;
@@ -1917,13 +1917,13 @@ impl World {
         scheduled.assert_success();
         let pending = self.vault(m)?.fee_split;
         ensure!(pending.value == old.value, "scheduling retains the old routes");
-        ensure!(pending.pending.as_ref().is_some_and(|p| p.value == next_split() && p.delay_ms == VAULT_FEE_NOTICE_MS));
+        ensure!(pending.pending.as_ref().is_some_and(|p| p.value == next_split() && p.delay_ms == VAULT_FEE_DELAY_MS));
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
         let watched = [m.vault, m.pool, sale.currency];
-        self.set_venue_generation_for_fixture(2)?;
+        self.set_venue_version_for_fixture(2)?;
         let stale = self.collect_route_pt(sale, m, m.pool, true)?;
         self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "package_version", code: 9}, &watched, &owners)?;
-        self.set_venue_generation_for_fixture(1)?;
+        self.set_venue_version_for_fixture(1)?;
         let early = self.collect_route_pt(sale, m, m.pool, true)?;
         self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 13}, &watched, &owners)?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(old.delay_ms));
@@ -1934,7 +1934,7 @@ impl World {
         self.h.assert_rolled_back(rollback, Expected::Abort {package: self.admin, module: "delayed", code: 14}, &watched, &owners)?;
         self.collect_impl(sale, m, true)?; // Settles under the OLD split, then applies the new one.
         let active = self.vault(m)?.fee_split;
-        ensure!(active.value == next_split() && active.delay_ms == VAULT_FEE_NOTICE_MS && active.pending.is_none());
+        ensure!(active.value == next_split() && active.delay_ms == VAULT_FEE_DELAY_MS && active.pending.is_none());
         self.swap(sale, m, Side::QuoteIn, self.route.quote_unit())?;
         self.collect(sale, m)?; // The same oracle now reads the applied split.
         self.report("48-hour owner-proved split: early apply rejected; later PTB abort restores fees/proposal; settled apply pays old routes; next collection uses new split".into());
@@ -2024,7 +2024,7 @@ impl World {
         moved.routes[1].bps += 1;
         let schedule = self.schedule_split_pt(sale, m, &moved)?;
         self.h.execute(schedule)?.assert_success();
-        self.h.sim.advance_clock(std::time::Duration::from_millis(VAULT_FEE_NOTICE_MS));
+        self.h.sim.advance_clock(std::time::Duration::from_millis(VAULT_FEE_DELAY_MS));
         let ready_wrong_pool = self.collect_route_pt(sale, m, other, true)?;
         self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.venues, module: self.route.module(), code}, &[m.vault, other, sale.currency], &owners)?;
         let mut b = ProgrammableTransactionBuilder::new();

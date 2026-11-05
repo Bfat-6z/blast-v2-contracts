@@ -2,13 +2,13 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 /// One-shot actions, such as an upgrade or a capability reassignment, that run only after
-/// their slot's applied notice. The slot also governs its own notice. See `delayed` for
+/// their slot's applied delay. The slot also governs its own delay. See `delayed` for
 /// the rules every delayed type shares.
 module blast_admin::delayed_action;
 
 // === Public Types ===
 
-/// An applied notice and at most one proposed one-shot action or notice change.
+/// An applied delay and at most one proposed one-shot action or delay change.
 public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has store {
     owner: ID,
     key: K,
@@ -18,15 +18,15 @@ public struct DelayedAction<K: copy + drop + store, A: copy + drop + store> has 
 
 /// What a proposal does once applied.
 public enum Change<A: copy + drop + store> has copy, drop, store {
-    /// Hands the owner its action; the notice stays as applied.
+    /// Hands the owner its action; the delay stays as applied.
     Action(A),
-    /// Changes only the notice, to the proposal's `delay_ms`.
+    /// Changes only the delay, to the proposal's `delay_ms`.
     Delay,
 }
 
 // === Public Functions ===
 
-/// An action slot with nothing proposed; every action waits the applied notice.
+/// An action slot with nothing proposed; every action waits the applied delay.
 public fun new<K: copy + drop + store, A: copy + drop + store>(
     key: K,
     owner: &UID,
@@ -40,14 +40,14 @@ public fun new<K: copy + drop + store, A: copy + drop + store>(
     DelayedAction { owner, key, delay_ms, pending: option::none() }
 }
 
-/// The applied notice in milliseconds.
+/// The applied delay in milliseconds.
 public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(
     self: &DelayedAction<K, A>,
 ): u64 {
     self.delay_ms
 }
 
-/// True when every action still to come waits a nonzero notice: the applied notice is nonzero
+/// True when every action still to come waits a nonzero delay: the applied delay is nonzero
 /// and no proposal would set it to zero.
 public fun is_guarded<K: copy + drop + store, A: copy + drop + store>(
     self: &DelayedAction<K, A>,
@@ -55,15 +55,15 @@ public fun is_guarded<K: copy + drop + store, A: copy + drop + store>(
     self.delay_ms > 0 && self.pending.is_none_or!(|proposal| proposal.proposal_delay_ms() > 0)
 }
 
-/// The proposed action or notice change, if any.
+/// The proposed action or delay change, if any.
 public fun pending<K: copy + drop + store, A: copy + drop + store>(
     self: &DelayedAction<K, A>,
 ): Option<Proposal<Change<A>>> {
     self.pending
 }
 
-/// Proposes `action`, ready after the applied notice, and returns when. A replaced
-/// proposal is cancelled and the full applied notice restarts.
+/// Proposes `action`, ready after the applied delay, and returns when. A replaced
+/// proposal is cancelled and the full applied delay restarts.
 public fun schedule<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
     action: A,
@@ -73,7 +73,7 @@ public fun schedule<K: copy + drop + store, A: copy + drop + store>(
     self.propose(Change::Action(action), delay_ms, clock)
 }
 
-/// Proposes only a new notice, ready after the applied one, replacing any proposed action.
+/// Proposes only a new delay, ready after the applied one, replacing any proposed action.
 public fun schedule_delay<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
     delay_ms: u64,
@@ -84,7 +84,7 @@ public fun schedule_delay<K: copy + drop + store, A: copy + drop + store>(
 }
 
 /// Consumes the ready proposed action and returns it for the owner to perform.
-/// Aborts when the proposal is a notice change.
+/// Aborts when the proposal is a delay change.
 public fun take_action<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
     clock: &Clock,
@@ -94,7 +94,7 @@ public fun take_action<K: copy + drop + store, A: copy + drop + store>(
     change.action().destroy_some()
 }
 
-/// Applies the ready proposed notice. Aborts when the proposal is an action.
+/// Applies the ready proposed delay. Aborts when the proposal is an action.
 public fun apply_delay<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
     clock: &Clock,
@@ -102,7 +102,7 @@ public fun apply_delay<K: copy + drop + store, A: copy + drop + store>(
     self.take_ready(false, clock);
 }
 
-/// Discards the proposal, even a ready one, leaving the applied notice.
+/// Discards the proposal, even a ready one, leaving the applied delay.
 public fun cancel<K: copy + drop + store, A: copy + drop + store>(self: &mut DelayedAction<K, A>) {
     assert!(self.pending.is_some(), blast_admin::errors::no_pending!());
     self.cancel_replaced();
@@ -117,7 +117,7 @@ public fun destroy<K: copy + drop + store, A: copy + drop + store>(self: Delayed
     sui::event::emit(ActionDestroyed<K, A> { owner, key });
 }
 
-/// The proposed action, or none for a notice change.
+/// The proposed action, or none for a delay change.
 public fun action<A: copy + drop + store>(self: &Change<A>): Option<A> {
     match (self) {
         Change::Action(action) => option::some(*action),
@@ -125,25 +125,25 @@ public fun action<A: copy + drop + store>(self: &Change<A>): Option<A> {
     }
 }
 
-/// The proposed action, or none when nothing or a notice change is pending.
+/// The proposed action, or none when nothing or a delay change is pending.
 public fun pending_action<K: copy + drop + store, A: copy + drop + store>(
     self: &DelayedAction<K, A>,
 ): Option<A> {
     self.pending.and_ref!(|proposal| proposal.value().action())
 }
 
-/// The proposed next notice and when it becomes ready, or none when nothing or an action is
+/// The proposed next delay and when it becomes ready, or none when nothing or an action is
 /// pending.
 public fun pending_delay<K: copy + drop + store, A: copy + drop + store>(
     self: &DelayedAction<K, A>,
-): Option<Notice> {
+): Option<PendingDelay> {
     self.pending.and_ref!(|proposal| {
         if (proposal.value().action().is_some()) option::none()
-        else option::some(delayed::new_notice(proposal.proposal_delay_ms(), proposal.ready_at_ms()))
+        else option::some(delayed::new_pending_delay(proposal.proposal_delay_ms(), proposal.ready_at_ms()))
     })
 }
 
-/// Whether the pending proposal, an action or a notice change, would apply now.
+/// Whether the pending proposal, an action or a delay change, would apply now.
 public fun is_ready<K: copy + drop + store, A: copy + drop + store>(
     self: &DelayedAction<K, A>,
     clock: &Clock,
@@ -153,13 +153,13 @@ public fun is_ready<K: copy + drop + store, A: copy + drop + store>(
     })
 }
 
-/// Whether a pending notice change would apply now.
+/// Whether a pending delay change would apply now.
 public fun is_delay_ready<K: copy + drop + store, A: copy + drop + store>(
     self: &DelayedAction<K, A>,
     clock: &Clock,
 ): bool {
-    self.pending_delay().is_some_and!(|notice| {
-        delayed::is_ready_at(notice.notice_ready_at_ms(), notice.notice_delay_ms(), clock)
+    self.pending_delay().is_some_and!(|delay| {
+        delayed::is_ready_at(delay.pending_delay_ready_at_ms(), delay.pending_delay_ms(), clock)
     })
 }
 
@@ -191,7 +191,7 @@ fun propose<K: copy + drop + store, A: copy + drop + store>(
     ready_at_ms
 }
 
-/// Consumes the ready proposal of the expected kind and commits its notice.
+/// Consumes the ready proposal of the expected kind and commits its delay.
 fun take_ready<K: copy + drop + store, A: copy + drop + store>(
     self: &mut DelayedAction<K, A>,
     expects_action: bool,
@@ -268,15 +268,15 @@ public fun action_destroyed_fields<K: copy + drop + store, A: copy + drop + stor
 
 // === Events ===
 
-/// An action slot was created with its first applied notice.
+/// An action slot was created with its first applied delay.
 public struct ActionCreated<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
     delay_ms: u64,
 }
 
-/// An action or notice change was proposed, ready from `ready_at_ms`; `delay_ms` is the
-/// notice in force once it applies.
+/// An action or delay change was proposed, ready from `ready_at_ms`; `delay_ms` is the
+/// delay in force once it applies.
 public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -285,7 +285,7 @@ public struct ActionScheduled<K: copy + drop + store, A: copy + drop + store> ha
     ready_at_ms: u64,
 }
 
-/// A proposed action or notice change was discarded, by cancellation or replacement.
+/// A proposed action or delay change was discarded, by cancellation or replacement.
 public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -294,7 +294,7 @@ public struct ActionCancelled<K: copy + drop + store, A: copy + drop + store> ha
     ready_at_ms: u64,
 }
 
-/// A ready action was handed to its owner, or a notice change applied.
+/// A ready action was handed to its owner, or a delay change applied.
 public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has copy, drop {
     owner: ID,
     key: K,
@@ -310,6 +310,6 @@ public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + s
 
 // === Imports ===
 
-use blast_admin::delayed::{Self, Notice, Proposal};
+use blast_admin::delayed::{Self, PendingDelay, Proposal};
 
 use sui::clock::Clock;

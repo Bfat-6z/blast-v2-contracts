@@ -9,7 +9,7 @@ module 0xf::foreign_package_marker;
 
 public struct FOREIGN_PACKAGE_MARKER has drop {}
 
-/// A droppable witness from a package other than the marker's under test.
+/// A droppable witness from a package other than the OTW's under test.
 public struct ForeignWitness() has drop;
 
 // === Test Helpers ===

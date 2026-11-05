@@ -250,7 +250,7 @@ public fun new<SaleToken, Quote>(
     creation_policy: &CreationPolicy,
     fee_policy: &FeePolicy,
 ): PresaleInitializer<SaleToken, Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::create_pause_bit!());
 
@@ -294,7 +294,7 @@ public fun set_supply<SaleToken, Quote>(
     token_supply: u64,
     burnable: bool,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.token_supply = token_supply;
     self.burnable = burnable;
@@ -309,7 +309,7 @@ public fun set_token_allocations<SaleToken, Quote>(
     liquidity_token_allocation_bps: Bps,
     recipient_allocations: vector<RecipientShare>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.token_allocation_bps = token_allocation_bps;
     self.liquidity_token_allocation_bps = liquidity_token_allocation_bps;
@@ -323,7 +323,7 @@ public fun set_participant_vesting<SaleToken, Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     vesting_terms: VestingTerms,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.participant_vesting = option::some(vesting_terms);
 }
@@ -336,7 +336,7 @@ public fun set_raise<SaleToken, Quote>(
     raise_target: u64,
     raise_allocations: vector<RecipientShare>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.raise_target = raise_target;
     self.raise_allocations = raise_allocations;
@@ -350,7 +350,7 @@ public fun set_windows<SaleToken, Quote>(
     commitment_duration_ms: u64,
     liquidity_window_duration_ms: u64,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.duration_ms = commitment_duration_ms;
     self.liquidity_window_ms = liquidity_window_duration_ms;
@@ -362,7 +362,7 @@ public fun set_eligibility<SaleToken, Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     eligibility: EligibilityPolicy,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.eligibility = option::some(eligibility);
 }
@@ -373,7 +373,7 @@ public fun set_uncapped_phase<SaleToken, Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     uncapped: UncappedPhase,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.uncapped = option::some(uncapped);
 }
@@ -389,7 +389,7 @@ public fun set_hard_cap<SaleToken, Quote>(
     start_delay_ms: u64,
     closes_when_filled: bool,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.hard_cap = option::some(HardCap { starts_after_ms: start_delay_ms, closes_when_filled });
 }
@@ -401,7 +401,7 @@ public fun set_fee_split<SaleToken, Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     fee_split: FeeSplit,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.fee_split = option::some(fee_split);
 }
@@ -417,7 +417,7 @@ public fun set_partner<SaleToken, Quote>(
     partner: &Partner,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let partner_id = object::id(partner);
     creation_policy.assert_partner(partner_id, clock);
@@ -441,7 +441,7 @@ public fun finalize<SaleToken, Quote>(
     currency: &mut Currency<SaleToken>,
     ctx: &mut TxContext,
 ): (Presale<SaleToken, Quote>, PresaleCap) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     currency.assert_unregulated_currency();
 
@@ -468,7 +468,7 @@ public fun finalize<SaleToken, Quote>(
 
     let eligibility = eligibility.destroy_or!(abort blast_presale::errors::missing_setting!());
     let fee_split = fee_split.destroy_or!(abort blast_presale::errors::missing_setting!());
-    // Values built by superseded bytecode meet this generation's rules too.
+    // Values built by superseded bytecode meet this version's rules too.
     eligibility.assert_valid_eligibility();
     uncapped.do_ref!(|phase| phase.assert_valid_uncapped_access());
     assert!(raise_target > 0, blast_presale::errors::invalid_raise_target!());
@@ -607,7 +607,7 @@ public fun share<SaleToken, Quote>(
     commitment_starts_at_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::create_pause_bit!());
 
@@ -656,7 +656,7 @@ public fun set_protocol_fees<SaleToken, Quote>(
     lp_fee_quote_bps: Bps,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     match (self.lifecycle) {
         Lifecycle::Pending => (),
@@ -734,7 +734,7 @@ public fun commit_open<SaleToken, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): Coin<Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::commit_pause_bit!());
 
@@ -758,7 +758,7 @@ public fun commit_allowlisted<SaleToken, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): Coin<Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::commit_pause_bit!());
 
@@ -787,7 +787,7 @@ public fun commit_uncapped<SaleToken, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): Coin<Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::commit_pause_bit!());
 
@@ -812,7 +812,7 @@ public fun settle<SaleToken, Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(self.lifecycle == Lifecycle::Open, blast_presale::errors::invalid_lifecycle!());
 
@@ -849,7 +849,7 @@ public fun cancel_unlaunched<SaleToken, Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(self.lifecycle == Lifecycle::Funded, blast_presale::errors::invalid_lifecycle!());
     assert!(
@@ -872,7 +872,7 @@ public fun claim<SaleToken, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         self.lifecycle == Lifecycle::Migrated || self.lifecycle == Lifecycle::Cancelled,
@@ -924,7 +924,7 @@ public fun migrate<SaleToken, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): Migration<SaleToken, Quote> {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     package_version.assert_not_paused(constants::migration_pause_bit!());
 
@@ -973,7 +973,7 @@ public fun prove_owner<SaleToken, Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     cap: &PresaleCap,
 ): OwnerProof {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
     self.assert_cap(cap);
 
     owner_proof::new(blast_presale_package::package_witness(), self.id.to_inner())
@@ -990,7 +990,7 @@ public fun pay_protocol_fees_with_partner<SaleToken, Quote>(
     partner: &Partner,
     ctx: &mut TxContext,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.fee_ledger.pay_with_partner(treasury, partner, ctx);
 }

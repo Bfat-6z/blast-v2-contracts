@@ -113,7 +113,7 @@ fun a_fee_update_must_change_the_rates() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_cannot_set_fees() {
@@ -122,7 +122,7 @@ fun stale_version_cannot_set_fees() {
     );
     let mut policy = new_policy();
 
-    package_version.set_generation_for_testing(2);
+    package_version.set_version_for_testing(2);
     policy.set_fees_for_testing(
         &package_version,
         &fee_admin(),
@@ -158,7 +158,7 @@ fun stale_version_cannot_set_fees() {
 
 // === Test Helpers ===
 
-/// A fresh policy: zero rates under the 48-hour notice.
+/// A fresh policy: zero rates under the 48-hour delay.
 fun new_policy(): FeePolicy {
     let mut ctx = tx_context::dummy();
 

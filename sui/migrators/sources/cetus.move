@@ -65,7 +65,7 @@ public fun prepare<Meme, Quote>(
     tick_spacing: u32,
     ctx: &mut TxContext,
 ): VenueTicket<Meme, Quote> {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     // Aborts unless Cetus registers the spacing.
     let _ = config::get_fee_rate(tick_spacing, cetus_config);
 
@@ -114,7 +114,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     assert!(
         factory::is_right_order<CoinA, CoinB>(),
         blast_migrators::errors::invalid_coin_order!(),
@@ -191,7 +191,7 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
 
     self.settle_fees(
@@ -221,7 +221,7 @@ public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
     self.assert_fee_split_ready(clock);
 
@@ -258,7 +258,7 @@ public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
     assert!(self.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
 
@@ -301,9 +301,19 @@ fun is_coin_a_seed_side(
         prefer_a,
     );
 
-    let preference_fits = needed_a <= amount_a && needed_b <= amount_b;
+    seed_fixed_side(prefer_a, amount_a, amount_b, needed_a, needed_b)
+}
 
-    if (preference_fits) prefer_a else !prefer_a
+/// Keeps the preferred seed side if the venue's rounded requirements fit both balances, and fixes
+/// the other side otherwise.
+fun seed_fixed_side(
+    preferred: bool,
+    available_a: u64,
+    available_b: u64,
+    needed_a: u64,
+    needed_b: u64,
+): bool {
+    if (needed_a <= available_a && needed_b <= available_b) preferred else !preferred
 }
 
 /// Collects the position's fees, splits them through the vault, and adds the auto-LP share back.
@@ -555,6 +565,18 @@ fun cast<From: store, To: store>(scratch: &mut UID, value: From): To {
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// Runs the seed-side rule on explicit balances and venue requirements.
+public fun seed_fixed_side_for_testing(
+    preferred: bool,
+    available_a: u64,
+    available_b: u64,
+    needed_a: u64,
+    needed_b: u64,
+): bool {
+    seed_fixed_side(preferred, available_a, available_b, needed_a, needed_b)
+}
 
 #[test_only]
 /// Runs the pair proof: whether Meme is `CoinA`, aborting unless the pair is the sale's.

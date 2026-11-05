@@ -48,8 +48,8 @@ fun adding_an_accepted_partner_aborts() {
 }
 
 #[test]
-/// A removed partner stays accepted through the last millisecond of the fixed notice.
-fun a_removed_partner_stays_accepted_for_the_fixed_notice() {
+/// A removed partner stays accepted through the last millisecond of the fixed delay.
+fun a_removed_partner_stays_accepted_for_the_fixed_delay() {
     let (owner, mut list, partner, mut clock) = start();
     list.add(&partner);
     let partner_id = object::id(&partner);
@@ -73,7 +73,7 @@ fun a_removed_partner_stays_accepted_for_the_fixed_notice() {
     abort_code = blast_partners::errors::EPartnerNotAccepted,
     location = blast_partners::partner_list,
 )]
-fun a_removed_partner_is_refused_once_the_notice_ends() {
+fun a_removed_partner_is_refused_once_the_delay_ends() {
     let (owner, mut list, partner, mut clock) = start();
     list.add(&partner);
     let partner_id = object::id(&partner);
@@ -100,7 +100,7 @@ fun adding_a_partner_cancels_its_pending_removal() {
 }
 
 #[test]
-fun adding_a_partner_whose_notice_ended_accepts_it_again() {
+fun adding_a_partner_whose_delay_ended_accepts_it_again() {
     let (owner, mut list, partner, mut clock) = start();
     list.add(&partner);
     let partner_id = object::id(&partner);
@@ -110,7 +110,7 @@ fun adding_a_partner_whose_notice_ended_accepts_it_again() {
     list.add(&partner);
 
     list.assert_accepted(partner_id, &clock);
-    // A second removal starts its own notice from now.
+    // A second removal starts its own delay from now.
     list.remove(partner_id, &clock);
     let removed = event::events_by_type<PartnerRemoved>();
     let (_, _, acceptance_ends_at_ms) = removed[1].partner_removed_fields();
@@ -148,8 +148,8 @@ fun removing_a_partner_never_added_aborts() {
     abort_code = blast_partners::errors::EPartnerNotAccepted,
     location = blast_partners::partner_list,
 )]
-/// Precedence: once the notice ends, removing again reports the refusal, not an unchanged value.
-fun removing_a_partner_whose_notice_ended_reports_it_not_accepted() {
+/// Precedence: once the delay ends, removing again reports the refusal, not an unchanged value.
+fun removing_a_partner_whose_delay_ended_reports_it_not_accepted() {
     let (owner, mut list, partner, mut clock) = start();
     list.add(&partner);
     let partner_id = object::id(&partner);
@@ -189,7 +189,7 @@ fun a_new_list_names_its_owner_and_holds_no_entry() {
     let partner_id = object::id(&partner);
 
     assert_eq!(list.owner(), owner.to_inner());
-    assert_eq!(list.entry_count(), 0);
+    assert_eq!(list.length(), 0);
     assert!(!list.contains(partner_id));
     assert!(!list.is_accepted(partner_id, &clock));
     end(owner, list, partner, clock);
@@ -202,7 +202,7 @@ fun readers_follow_an_entry_through_add_and_removal() {
     list.add(&partner);
 
     assert!(list.contains(partner_id));
-    assert_eq!(list.entry_count(), 1);
+    assert_eq!(list.length(), 1);
     assert_eq!(list.acceptance_ends_at_ms(partner_id), std::u64::max_value!());
     assert!(list.is_accepted(partner_id, &clock));
 
@@ -216,7 +216,7 @@ fun readers_follow_an_entry_through_add_and_removal() {
     assert!(!list.is_accepted(partner_id, &clock));
     // A removed partner keeps its entry.
     assert!(list.contains(partner_id));
-    assert_eq!(list.entry_count(), 1);
+    assert_eq!(list.length(), 1);
     end(owner, list, partner, clock);
 }
 

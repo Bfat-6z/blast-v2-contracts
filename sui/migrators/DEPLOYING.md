@@ -8,7 +8,7 @@ and the shared launch stack of
 Record the result in the format [`deployments/README.md`](../../deployments/README.md)
 requires.
 
-**Publish → wrap → verify custody → admit the venues in each product and the
+**Publish → wrap → verify the PackageAdmin → admit the venues in each product and the
 vault → release the products and the vault.**
 
 ## 1. Prepare and publish
@@ -52,7 +52,7 @@ release here. That is a residual risk to accept at deployment: the package has n
 emergency stop of its own. Migration stops with each product's migration pause
 bit and `buyback_and_burn` with the vault's admin bit, but `prepare`,
 `collect_fees` and `settle_and_apply_fee_split` can be stopped only by advancing
-this package's generation through a delayed upgrade, which retires every call
+this package's version through a delayed upgrade, which retires every call
 to the old bytecode after the upgrade notice. Package upgrades take `blast_admin::package_admin`'s
 `UpgradeAdmin<BLAST_MIGRATORS>` and `CancelAdmin<BLAST_MIGRATORS>` roles, and
 buybacks the shared `blast_core::blast_domain::BuybackAdmin`. Blast's LP share
@@ -64,13 +64,13 @@ The venue witnesses are `<migrators>::cetus::Venue` and
 `<migrators>::bluefin::Venue`. Each must be admitted in each product that should
 offer it, and in the vault:
 
-1. **Products.** With each product's `AdapterAdmin`, schedule the venue in its
+1. **Products.** With each product's `VenueAdmin`, schedule the venue in its
    venue list (the launchpad's `launch_config`, the presale's
    `creation_policy`) and apply it after its notice, before that product's
    release ([launchpad DEPLOYING](../launchpad/DEPLOYING.md),
    [presale DEPLOYING](../presale/DEPLOYING.md)). A product's `new` rejects a
    ticket from any other venue.
-2. **Vault.** With the core `blast_domain::AdapterAdmin`, schedule
+2. **Vault.** With the core `blast_domain::VenueAdmin`, schedule
    `blast_vault_package::schedule_witness<Witness>` on the `VaultRegistry` for
    each venue witness and for each product's `PackageWitness` (the issuer of
    its sales' vault terms), and apply each with
@@ -89,7 +89,7 @@ offer it, and in the vault:
 
 Record the publication, source verification, the IDs above, transaction
 digests and the ABI check output. For later upgrades, increment
-`constants::generation`, schedule the digest with
+`constants::version`, schedule the digest with
 `UpgradeAdmin<BLAST_MIGRATORS>`, wait the applied notice, authorize, upgrade
 natively and call `package_admin::commit_upgrade_and_advance` in the same PTB.
 A vault upgrade requires a dependency-only relink of this package in the same

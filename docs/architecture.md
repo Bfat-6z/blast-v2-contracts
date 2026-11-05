@@ -68,7 +68,7 @@ until the call that must consume each one has run.
 | Component | Responsibility | Must not own |
 | --- | --- | --- |
 | Package bootstrap | canonical OTW and the package witness, which `blast_admin::package_version::new_publication` pins in an owned `Publication` beside the claimed `Publisher` | protocol administration, feature state, or upgrade authority |
-| Package administration (`blast_admin`) | the generic `PackageVersion<Marker>` and `PackageAdmin<Marker>`: sealed `Publisher` and `UpgradeCap` custody, pause bits, exact-digest upgrades under the compatible policy with the generation advanced in the same commit, and deliberate `make_immutable` | ACL membership storage, feature configuration, or state migration |
+| Package administration (`blast_admin`) | the generic `PackageVersion<OTW>` and `PackageAdmin<OTW>`: sealed `Publisher` and `UpgradeCap` custody, pause bits, exact-digest upgrades under the compatible policy with the version advanced in the same commit, and deliberate `make_immutable` | ACL membership storage, feature configuration, or state migration |
 | Protocol ACL | root rotation and revocable routine-admin membership | feature configuration, backend keys, creator recipients, or fees |
 | Runtime config | the creator-claim backend keys and the live bonding-curve trade protocol fee share | admin delegation, creator recipient or issuance, cold launch policy, accrued balances, total trade-fee rates, the treasury (`blast_core`), or claim authority |
 | Launch config | a table of admitted Quote types (the creator picks each launch's virtual Quote reserve), mutable generated-Meme decimal admission, Quote/Meme trade-fee rates, a future-launch migration-fee allocation that defaults to zero, Blast's delayed LP-fee share each new vault takes at migration, and the delayed venue allowlist that gates which venue's ticket may start a launch | live launch repricing, per-launch project allocation choices, quote currency-registry objects, DEX costs or dependencies, user balances, derived valuations, or hot trade configuration |
@@ -214,7 +214,7 @@ address, and completing its registration is permissionless; intake needs it.
 The creator recipient may be a wallet address or an opaque Blast account
 commitment and may differ from the launcher. The native metadata cap never
 leaves `Launch`. The creator claim issues a `CurveFeeCap<Meme>` for curve fees
-and a `BlastMetadataCap<Meme>` for metadata updates through the launch; a
+and a `CreatorMetadataCap<Meme>` for metadata updates through the launch; a
 creator administrator can reassign each independently
 ([ADR 0082](decisions/0082-revocable-creator-and-lp-fee-capabilities.md)). The
 creator always keeps the curve-fee cap: after migration its holder proves
@@ -315,16 +315,16 @@ Upgradeability is a product/security decision, not a default convenience.
   (ADR 0097) schedules an exact digest and, after the upgrade notice, authorizes
   it under the cap's compatible policy, which no path narrows (ADR 0137); the
   native receipt then commits against the same cap and
-  advances the generation, and `make_immutable` is the deliberate end of
+  advances the version, and `make_immutable` is the deliberate end of
   upgrades. A future governance design retires the routine-admin package path
   through the mandatory shared-object version gate after installing replacement
   authorization (ADR 0034); no pre-planted cutover flag exists.
-  The launchpad's OTW retains its Publisher and initial generation in an owned
+  The launchpad's OTW retains its Publisher and initial version in an owned
   `Publication`. Only validated capability wrapping consumes it and creates the
   shared `PackageVersion` required by launch creation and routine configuration setters
   ([ADR 0114](decisions/0114-launchpad-custody-before-activation.md)).
   The only upgrade finalizer commits the native receipt and advances the
-  package version to the exact next compiled generation in the same call;
+  package version to the exact next compiled version in the same call;
   there is no separate activation step.
 - `blast_migrators` keeps its `UpgradeCap` in its generic
   `PackageAdmin<BLAST_MIGRATORS>` and stays upgradeable: Cetus and Bluefin gate
@@ -332,17 +332,17 @@ Upgradeability is a product/security decision, not a default convenience.
   A vault upgrade forces one too, in the same release window, because the venues
   call version-gated vault functions. A product upgrade forces none, since the
   venues take the `Migration` from the PTB. Every migrators upgrade uses the
-  compatible policy and bumps its compiled generation constant; no path narrows
+  compatible policy and bumps its compiled version constant; no path narrows
   cap policy.
 - `blast_vault` publishes upgradeable and is made immutable after its audit and
   a quiet period (ADR 0137, #195).
 
 - Boosts Aftermath separates native receipt commit from successor activation
   ([ADR 0123](decisions/0123-successor-activated-boosts-upgrades.md)). The successor
-  proves its own compiled generation is exactly next before changing the shared
+  proves its own compiled version is exactly next before changing the shared
   `Protocol`; failed activation leaves existing operations usable. Authorization
   and receipt commit remain version-independent for repair. Compatible policy
-  cannot be narrowed; `make_immutable` still requires the current generation.
+  cannot be narrowed; `make_immutable` still requires the current version.
   These historical authorization paths remain callable with the live ACL's
   UpgradeAdmin role: a future governance replacement must revoke that role or
   explicitly account for it. Version cutover alone does not retire this authority.
@@ -356,10 +356,10 @@ Presale uses launchpad-style custody-before-activation (ADR 0117): an owned
 Publication precedes the shared PackageVersion. Its separate provenance module
 `blast_presale_package` avoids policy/economics module cycles. SDK callers pass
 the same version to each operational mutation; upgrade commit advances it
-atomically and makes prior-generation bytecode unusable.
+atomically and makes prior-version bytecode unusable.
 
 Launchpad, presale, migrators and the vault retain the canonical Publisher and
-generation in a unique owned Publication until validated custody wrap consumes
+version in a unique owned Publication until validated custody wrap consumes
 it; all four use `blast_admin`'s generic publication and package
 administration (ADR 0137). It has no policy authority. Wrap shares the canonical
 PackageVersion; launchpad, presale and the vault start fully paused. Ordinary ACL operations configure policy after wrap.
@@ -367,7 +367,7 @@ Each protected operation owns its applied notice, initially zero for publication
 policy. A proposal binds its value, next notice and a deadline derived from the old
 applied notice. Application commits both fields; cancellation preserves both applied
 fields. Delay-only changes follow the same timelock, with no immediate setter or
-bypass. Upgrade custody persists its own notice independently of other policy.
+bypass. The PackageAdmin persists its own notice independently of other policy.
 `blast_admin::delayed` stores settings as `Delayed`, one-shot actions as
 `DelayedAction` and venue allowlists as `DelayedSet`, each keyed by an
 owner-defined type and owner object ID; it emits every lifecycle event, so owners

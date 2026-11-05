@@ -16,8 +16,8 @@ const EInvalidWitness: u64 = 0;
 const EUnadmittedVenue: u64 = 1;
 
 #[test_only]
-/// Unpause needs a nonzero witness admission notice and no pending admission.
-const EUnguardedNotice: u64 = 2;
+/// Unpause needs a nonzero witness admission delay and no pending admission.
+const EUnguardedDelay: u64 = 2;
 
 #[test_only]
 /// Blast's share must be at most 3,000 basis points per asset.
@@ -141,7 +141,7 @@ const EClaimsStillOpen: u64 = 32;
 
 #[test_only]
 /// Only terms sealed by an admitted issuer may create vaults.
-const EUnadmittedIssuer: u64 = 33;
+const EUnadmittedPackageWitness: u64 = 33;
 
 #[test_only]
 /// A venue returns at most what it took from the vault.
@@ -151,7 +151,7 @@ macro public(package) fun invalid_witness(): u64 { 0 }
 
 macro public(package) fun unadmitted_venue(): u64 { 1 }
 
-macro public(package) fun unguarded_notice(): u64 { 2 }
+macro public(package) fun unguarded_delay(): u64 { 2 }
 
 macro public(package) fun invalid_protocol_bps(): u64 { 3 }
 
@@ -213,6 +213,6 @@ macro public(package) fun over_reserve(): u64 { 31 }
 
 macro public(package) fun claims_still_open(): u64 { 32 }
 
-macro public(package) fun unadmitted_issuer(): u64 { 33 }
+macro public(package) fun unadmitted_package_witness(): u64 { 33 }
 
 macro public(package) fun returned_exceeds_taken(): u64 { 34 }

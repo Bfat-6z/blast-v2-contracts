@@ -79,7 +79,7 @@ public fun schedule_protocol_allocation(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let value = allocation::protocol_allocation(meme_bps, quote_bps);
     self.protocol_allocation.schedule(value, delay_ms, clock);
@@ -91,7 +91,7 @@ public fun apply_protocol_allocation(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_allocation.apply(clock);
 }
@@ -102,13 +102,13 @@ public fun cancel_protocol_allocation(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_allocation.cancel();
 }
 
 /// Schedules Blast's share of each asset in the LP fees of vaults created afterward, each at most
-/// 3,000 bps, after the applied notice. Migrated launches' vaults keep the share they started with.
+/// 3,000 bps, after the applied delay. Migrated launches' vaults keep the share they started with.
 public fun schedule_protocol_lp_fees(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
@@ -118,7 +118,7 @@ public fun schedule_protocol_lp_fees(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_lp_fees.schedule(new_protocol_lp_fees(meme_bps, quote_bps), delay_ms, clock);
 }
@@ -129,7 +129,7 @@ public fun apply_protocol_lp_fees(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_lp_fees.apply(clock);
 }
@@ -140,7 +140,7 @@ public fun cancel_protocol_lp_fees(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.protocol_lp_fees.cancel();
 }
@@ -152,11 +152,11 @@ public fun set_meme_decimals_allowed(
     decimals: u8,
     allowed: bool,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     if (allowed) self.meme_decimals.insert(decimals) else self.meme_decimals.remove(&decimals);
 
-    events::meme_decimals_set(decimals, allowed);
+    events::meme_decimals_allowed(decimals, allowed);
 }
 
 /// Admits or removes `Quote` for future launches; existing launches keep trading in it.
@@ -166,13 +166,13 @@ public fun set_quote_allowed<Quote>(
     _: &AdminWitness<ListingAdmin>,
     allowed: bool,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let quote = type_name::with_original_ids<Quote>();
 
     if (allowed) self.quotes.insert(quote) else self.quotes.remove(&quote);
 
-    events::quote_set<Quote>(allowed);
+    events::quote_allowed<Quote>(allowed);
 }
 
 /// Sets the trade fees launches created afterward snapshot.
@@ -186,7 +186,7 @@ public fun schedule_trade_fees(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         quote_fee_bps.value() <= constants::max_trade_fee_bps!() && meme_fee_bps.value() <= constants::max_trade_fee_bps!(),
@@ -202,7 +202,7 @@ public fun apply_trade_fees(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.trade_fees.apply(clock);
 }
@@ -213,7 +213,7 @@ public fun cancel_trade_fees(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.trade_fees.cancel();
 }
@@ -228,7 +228,7 @@ public fun schedule_creation_fee(
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         creation_fee <= constants::max_creation_fee_mist!(),
@@ -243,7 +243,7 @@ public fun apply_creation_fee(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creation_fee.apply(clock);
 }
@@ -254,7 +254,7 @@ public fun cancel_creation_fee(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.creation_fee.cancel();
 }
@@ -267,12 +267,12 @@ public fun add_partner(
     _: &AdminWitness<FeeAdmin>,
     partner: &Partner,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.partners.add(partner);
 }
 
-/// Stops new launches naming `partner` after the notice Blast gives for every change to a
+/// Stops new launches naming `partner` after the delay Blast gives for every change to a
 /// partner, `blast_partners::delay_ms()`. Launches that already name it keep paying it.
 public fun remove_partner(
     self: &mut LaunchConfig,
@@ -281,23 +281,23 @@ public fun remove_partner(
     partner: &Partner,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.partners.remove(object::id(partner), clock);
 }
 
-/// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
+/// Admits a venue's witness type after the applied admission delay. An admitted venue's tickets
 /// start launches, and only that venue redeems their migrations; existing launches keep their
-/// venue. Rescheduling a pending admission restarts its notice.
+/// venue. Rescheduling a pending admission restarts its delay.
 ///
 /// Primitive and framework types are rejected because anyone can construct them.
 public fun schedule_venue<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     let venue = type_name::with_original_ids<Venue>();
     assert!(!venue.is_primitive(), blast_fun::errors::invalid_venue!());
@@ -313,7 +313,7 @@ public fun apply_venue<Venue: drop>(
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.apply_add(type_name::with_original_ids<Venue>(), clock);
 }
@@ -324,7 +324,7 @@ public fun cancel_venue<Venue: drop>(
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.cancel_add(type_name::with_original_ids<Venue>());
 }
@@ -333,52 +333,52 @@ public fun cancel_venue<Venue: drop>(
 public fun remove_venue<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.remove(type_name::with_original_ids<Venue>());
 }
 
-/// Proposes only the admission notice. Pending admissions keep their deadlines.
+/// Proposes only the admission delay. Pending admissions keep their deadlines.
 public fun schedule_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
-    _: &AdminWitness<AdapterAdmin>,
+    _: &AdminWitness<VenueAdmin>,
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.schedule_delay(delay_ms, clock);
 }
 
-/// Permissionlessly applies a ready admission-notice proposal.
+/// Permissionlessly applies a ready admission-delay proposal.
 public fun apply_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.apply_delay(clock);
 }
 
-/// Cancels only the admission-notice proposal.
+/// Cancels only the admission-delay proposal.
 public fun cancel_venue_delay(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     self.venues.cancel_delay();
 }
 
-/// Clears the requested pause bits once every launchpad notice is guarded: nonzero, with no
-/// pending change that would set one to zero and no pending admission. A notice left at its zero
+/// Clears the requested pause bits once every launchpad delay is guarded: nonzero, with no
+/// pending change that would set one to zero and no pending admission. A delay left at its zero
 /// publication value therefore blocks release instead of going live; the generic administration
-/// then checks the upgrade notice and the pinned witness. Claims and opening-round delivery never
+/// then checks the upgrade delay and the pinned witness. Claims and opening-round delivery never
 /// require unpausing; settling an opening round needs the trading bit clear.
 public fun unpause(
     self: &LaunchConfig,
@@ -388,11 +388,11 @@ public fun unpause(
     runtime_config: &RuntimeConfig,
     bits: u8,
 ) {
-    package_version.assert_current(constants::generation!());
+    package_version.assert_current(constants::version!());
 
     assert!(
         self.is_guarded() && runtime_config.is_guarded(),
-        blast_fun::errors::unguarded_notice!(),
+        blast_fun::errors::unguarded_delay!(),
     );
 
     package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);
@@ -430,7 +430,7 @@ public(package) fun protocol_lp_fees(self: &LaunchConfig): (Bps, Bps) {
     (meme_bps, quote_bps)
 }
 
-/// True when every launch policy's notice is guarded (see `unpause`).
+/// True when every launch policy's delay is guarded (see `unpause`).
 public(package) fun is_guarded(self: &LaunchConfig): bool {
     self.trade_fees.is_guarded()
         && self.venues.is_guarded()
@@ -486,7 +486,7 @@ fun new(
 // === Test-Only Functions ===
 
 #[test_only]
-/// Reads the applied admission notice independently of pending admissions.
+/// Reads the applied admission delay independently of pending admissions.
 public fun venue_delay_ms_for_testing(self: &LaunchConfig): u64 {
     self.venues.delay_ms()
 }
@@ -500,7 +500,7 @@ public fun venues_for_testing(self: &LaunchConfig): &DelayedSet<VenueKey, TypeNa
 public fun set_venue_allowed_for_testing<Venue: drop>(
     self: &mut LaunchConfig,
     package_version: &PackageVersion<BLAST_FUN>,
-    admin: &AdminWitness<AdapterAdmin>,
+    admin: &AdminWitness<VenueAdmin>,
     allowed: bool,
     ctx: &mut TxContext
 ) {
@@ -581,7 +581,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 }
 
 #[test_only]
-/// Explicit zero-fee fixture with the existing administrative notice.
+/// Explicit zero-fee fixture with the existing administrative delay.
 public fun new_zero_fees_for_testing(ctx: &mut TxContext): LaunchConfig {
     new(
         TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
@@ -593,7 +593,7 @@ public fun new_zero_fees_for_testing(ctx: &mut TxContext): LaunchConfig {
 }
 
 #[test_only]
-/// Shares a zero-fee genesis fixture without changing notice semantics.
+/// Shares a zero-fee genesis fixture without changing delay semantics.
 public fun init_zero_fees_for_testing(ctx: &mut TxContext) {
     transfer::share_object(new(
         TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
@@ -656,7 +656,7 @@ use blast_admin::{
 };
 
 use blast_core::{
-    blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
+    blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
     bps::{Self, Bps}
 };
 

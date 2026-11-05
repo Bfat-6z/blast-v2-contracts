@@ -43,7 +43,7 @@ public fun prepare<Meme, Quote>(
     tick_spacing: u32,
     fee_rate: u64,
 ): VenueTicket<Meme, Quote> {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     assert!(
         tick_spacing > 0 && tick_spacing <= constants::bluefin_max_tick_spacing!() && fee_rate > 0
             && fee_rate <= constants::bluefin_max_fee_rate!(),
@@ -85,7 +85,7 @@ public fun migrate<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     let (meme, quote, terms) = migration.redeem(Venue());
 
     let PoolTier { tick_spacing, fee_rate } = *venue_config.value(PoolTierKey<Meme>());
@@ -147,7 +147,7 @@ public fun collect_fees<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
 
     self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
 }
@@ -164,7 +164,7 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     self.assert_fee_split_ready(clock);
 
     self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
@@ -189,7 +189,7 @@ public fun buyback_and_burn<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current(constants::generation!());
+    migrators_version.assert_current(constants::version!());
     assert!(self.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
 
     let (quote, receipt) = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);
@@ -281,9 +281,19 @@ fun is_meme_seed_side<Meme, Quote>(
         prefer_meme,
     );
 
-    let preference_fits = needed_meme <= meme_amount && needed_quote <= quote_amount;
+    seed_fixed_side(prefer_meme, meme_amount, quote_amount, needed_meme, needed_quote)
+}
 
-    if (preference_fits) prefer_meme else !prefer_meme
+/// Keeps the preferred seed side if the venue's rounded requirements fit both balances, and fixes
+/// the other side otherwise.
+fun seed_fixed_side(
+    preferred: bool,
+    available_a: u64,
+    available_b: u64,
+    needed_a: u64,
+    needed_b: u64,
+): bool {
+    if (needed_a <= available_a && needed_b <= available_b) preferred else !preferred
 }
 
 /// Collects the position's fees, splits them through the vault, and adds the auto-LP share back.
@@ -416,6 +426,18 @@ fun can_fix_b(lower: u256, price: u256, upper: u256, amount_a: u64, amount_b: u6
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// Runs the seed-side rule on explicit balances and venue requirements.
+public fun seed_fixed_side_for_testing(
+    preferred: bool,
+    available_a: u64,
+    available_b: u64,
+    needed_a: u64,
+    needed_b: u64,
+): bool {
+    seed_fixed_side(preferred, available_a, available_b, needed_a, needed_b)
+}
 
 #[test_only]
 /// Runs the auto-LP side selection on explicit sqrt prices and balances.

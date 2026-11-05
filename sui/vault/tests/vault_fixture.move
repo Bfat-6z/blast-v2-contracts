@@ -286,12 +286,12 @@ public fun burn_buyback(
     );
 }
 
-/// Moves the treasury to `destination` through its full notice, advancing the fixture clock.
+/// Moves the treasury to `destination` through its full delay, advancing the fixture clock.
 public fun change_treasury(self: &mut VaultFixture, destination: address) {
-    let notice_ms = 48 * 60 * 60 * 1_000;
+    let delay_ms = 48 * 60 * 60 * 1_000;
     let treasury_admin: AdminWitness<TreasuryAdmin> = blast_acl::witness_for_testing();
-    self.treasury.schedule_destination(&treasury_admin, destination, notice_ms, &self.clock);
-    self.clock.increment_for_testing(notice_ms);
+    self.treasury.schedule_destination(&treasury_admin, destination, delay_ms, &self.clock);
+    self.clock.increment_for_testing(delay_ms);
     self.treasury.apply_destination(&self.clock);
 }
 

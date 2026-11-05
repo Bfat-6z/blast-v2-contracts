@@ -33,14 +33,14 @@ error inventory:
 Administration is `blast_admin`'s generic package administration:
 `PackageVersion<BLAST_MIGRATORS>` and `PackageAdmin<BLAST_MIGRATORS>`, under the
 package-scoped `blast_admin::package_admin` roles (`UpgradeAdmin`,
-`CancelAdmin`) typed by this package's marker. Buybacks take the shared
+`CancelAdmin`) typed by this package's one-time witness (OTW). Buybacks take the shared
 `blast_core::blast_domain::BuybackAdmin`; the package declares no roles of its
-own. Every venue call checks **this** package's generation; the vault calls it
+own. Every venue call checks **this** package's version; the vault calls it
 makes check the vault's.
 
 Publication transfers an owned `Publication<BLAST_MIGRATORS>`.
 `blast_admin::package_admin::wrap` consumes it with the matching fresh
-UpgradeCap and shares the version and the administration; upgrade custody
+UpgradeCap and shares the version and the administration; the PackageAdmin
 starts with a 48-hour notice. The package defines no pause bits: migration
 stops with the product's migration pause bit, and buybacks with the vault's
 admin pause bit (ADR 0134).

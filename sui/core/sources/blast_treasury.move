@@ -4,7 +4,7 @@
 // Package error macros preserve the treasury's abort location.
 #[allow(lint(abort_without_constant))]
 /// The one address every Blast fee is paid to, for every product and vault. A `TreasuryAdmin`
-/// schedules a change behind the applied notice, a `CancelAdmin` cancels it, and anyone applies a
+/// schedules a change behind the applied delay, a `CancelAdmin` cancels it, and anyone applies a
 /// ready one.
 module blast_core::blast_treasury;
 
@@ -28,7 +28,7 @@ fun init(ctx: &mut TxContext) {
 
 // === Public Functions ===
 
-/// Schedules a new nonzero destination and next notice, ready after the applied notice.
+/// Schedules a new nonzero destination and next delay, ready after the applied delay.
 public fun schedule_destination(
     self: &mut Treasury,
     _: &AdminWitness<TreasuryAdmin>,
@@ -56,23 +56,23 @@ public fun destination(self: &Treasury): address {
     self.destination.value()
 }
 
-/// The notice the next change waits, in milliseconds.
+/// The delay the next change waits, in milliseconds.
 public fun delay_ms(self: &Treasury): u64 {
     self.destination.delay_ms()
 }
 
-/// The scheduled destination with its next notice and ready time, if any.
+/// The scheduled destination with its next delay and ready time, if any.
 public fun pending_destination(self: &Treasury): Option<Proposal<address>> {
     self.destination.pending()
 }
 
 /// Whether `apply_destination` would succeed now: a destination is scheduled, its ready time has
-/// passed, and its next notice still fits in a Unix millisecond timestamp.
+/// passed, and its next delay still fits in a Unix millisecond timestamp.
 public fun is_destination_ready(self: &Treasury, clock: &Clock): bool {
     self.destination.is_ready(clock)
 }
 
-/// Whether every change waits a nonzero notice.
+/// Whether every change waits a nonzero delay.
 public fun is_guarded(self: &Treasury): bool {
     self.destination.is_guarded()
 }

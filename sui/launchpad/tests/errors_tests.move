@@ -42,7 +42,7 @@ fun error_registry_is_stable() {
     assert_eq!(blast_fun::errors::zero_opening_round_bid!(), 29);
     assert_eq!(blast_fun::errors::invalid_creation_fee!(), 30);
     assert_eq!(blast_fun::errors::too_many_claim_signers!(), 31);
-    assert_eq!(blast_fun::errors::unguarded_notice!(), 32);
+    assert_eq!(blast_fun::errors::unguarded_delay!(), 32);
     assert_eq!(blast_fun::errors::invalid_protocol_fee_share!(), 33);
     assert_eq!(blast_fun::errors::invalid_lp_fee_bps!(), 34);
 }

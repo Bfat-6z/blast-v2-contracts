@@ -53,13 +53,13 @@ fun the_admin_allows_a_quote_and_a_venue() {
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
 
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
-    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), true);
+    assert_eq!(last_event<QuoteAllowed<QUOTE>>().quote_allowed_fields(), true);
     let (owner, _, admission, _) = last_event<
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
@@ -116,7 +116,7 @@ fun disallowing_a_quote_stops_later_creations() {
 
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), false);
 
-    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), false);
+    assert_eq!(last_event<QuoteAllowed<QUOTE>>().quote_allowed_fields(), false);
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     std::unit_test::destroy(package_version);
     abort
@@ -136,7 +136,7 @@ fun disallowing_a_venue_stops_later_creations() {
 
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         false,
         &mut sui::tx_context::dummy()
     );
@@ -196,7 +196,7 @@ fun an_allowed_venue_cannot_be_allowed_again() {
 
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -217,7 +217,7 @@ fun an_unlisted_venue_cannot_be_disallowed() {
 
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         false,
         &mut sui::tx_context::dummy()
     );
@@ -239,7 +239,7 @@ fun a_primitive_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<u64>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -261,7 +261,7 @@ fun a_vector_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<vector<VENUE>>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
      &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
@@ -282,7 +282,7 @@ fun a_stdlib_type_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<TypeName>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -305,7 +305,7 @@ fun an_option_of_a_witness_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<Option<VENUE>>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
      &mut sui::tx_context::dummy());
     std::unit_test::destroy(package_version);
@@ -326,7 +326,7 @@ fun a_sui_framework_type_cannot_be_allowed_as_a_venue() {
 
     policy.set_venue_allowed_for_testing<ID>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
@@ -348,7 +348,7 @@ fun disallowing_a_primitive_is_an_unchanged_allowance() {
 
     policy.set_venue_allowed_for_testing<u64>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         false,
         &mut sui::tx_context::dummy()
     );
@@ -398,9 +398,9 @@ fun an_unlisted_partner_is_not_accepted() {
     abort_code = blast_partners::errors::EPartnerNotAccepted,
     location = blast_partners::partner_list,
 )]
-/// A removed partner stays accepted until one millisecond before Blast's partner notice ends, and
+/// A removed partner stays accepted until one millisecond before Blast's partner delay ends, and
 /// is refused from then on.
-fun a_removed_partner_is_accepted_until_its_notice_ends() {
+fun a_removed_partner_is_accepted_until_its_delay_ends() {
     let mut ctx = tx_context::dummy();
     let (policy, partner_id) = policy_with_removed_partner(&mut ctx);
     let acceptance_ends_at_ms = REMOVED_AT_MS + partners::delay_ms();
@@ -438,7 +438,7 @@ fun re_adding_a_partner_cancels_its_removal() {
 }
 
 #[test]
-/// Adding a partner whose notice has ended accepts it again.
+/// Adding a partner whose delay has ended accepts it again.
 fun re_adding_a_removed_partner_accepts_it_again() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
@@ -481,7 +481,7 @@ fun an_accepted_partner_cannot_be_added_again() {
     abort_code = blast_partners::errors::EUnchanged,
     location = blast_partners::partner_list,
 )]
-/// A pending removal cannot be restarted to push its notice back.
+/// A pending removal cannot be restarted to push its delay back.
 fun a_removed_partner_cannot_be_removed_again() {
     let mut ctx = tx_context::dummy();
     let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
@@ -515,7 +515,7 @@ fun an_unlisted_partner_cannot_be_removed() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_cannot_allow_quotes() {
@@ -524,17 +524,17 @@ fun stale_version_cannot_allow_quotes() {
     );
     let mut policy = allowing_nothing();
 
-    package_version.set_generation_for_testing(2);
+    package_version.set_version_for_testing(2);
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
-        &adapter_admin(),
+        &venue_admin(),
         true,
         &mut sui::tx_context::dummy()
     );
 
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
-    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), true);
+    assert_eq!(last_event<QuoteAllowed<QUOTE>>().quote_allowed_fields(), true);
     let (owner, _, admission, _) = last_event<
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
@@ -548,7 +548,7 @@ fun stale_version_cannot_allow_quotes() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    abort_code = blast_admin::errors::EVersionMismatch,
     location = blast_admin::package_version,
 )]
 fun stale_version_cannot_accept_partners() {
@@ -557,7 +557,7 @@ fun stale_version_cannot_accept_partners() {
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
 
-    package_version.set_generation_for_testing(2);
+    package_version.set_version_for_testing(2);
     policy.add_partner(&package_version, &fee_admin(), &partner);
     abort
 }
@@ -625,7 +625,7 @@ fun listing_admin(): AdminWitness<ListingAdmin> {
     blast_acl::witness_for_testing()
 }
 
-fun adapter_admin(): AdminWitness<AdapterAdmin> {
+fun venue_admin(): AdminWitness<VenueAdmin> {
     blast_acl::witness_for_testing()
 }
 
@@ -646,14 +646,14 @@ fun last_event<Event: copy + drop>(): Event {
 
 use blast_admin::{blast_acl::{Self, AdminWitness}, delayed_set::{MemberRemoved, SetApplied}};
 
-use blast_core::blast_domain::{AdapterAdmin, FeeAdmin, ListingAdmin};
+use blast_core::blast_domain::{VenueAdmin, FeeAdmin, ListingAdmin};
 
 use blast_partners::{
     blast_partners::{Self as partners, Partner},
     partner_list::{PartnerAdded, PartnerRemoved}
 };
 
-use blast_presale::{creation_policy::{Self, CreationPolicy, VenueKey}, events::QuoteSet};
+use blast_presale::{creation_policy::{Self, CreationPolicy, VenueKey}, events::QuoteAllowed};
 
 use std::{type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 

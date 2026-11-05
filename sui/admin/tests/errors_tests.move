@@ -18,7 +18,7 @@ fun shared_error_codes_are_stable() {
     assert_eq!(errors::invalid_super_admin_recipient!(), 6);
     assert_eq!(errors::not_pending_super_admin_recipient!(), 7);
     assert_eq!(errors::super_admin_cap_still_active!(), 8);
-    assert_eq!(errors::operational_version_mismatch!(), 9);
+    assert_eq!(errors::version_mismatch!(), 9);
     assert_eq!(errors::invalid_upgrade_cap!(), 10);
     assert_eq!(errors::invalid_package_digest!(), 11);
     assert_eq!(errors::upgrade_cap_unavailable!(), 12);
@@ -32,7 +32,7 @@ fun shared_error_codes_are_stable() {
     assert_eq!(errors::pause_unchanged!(), 20);
     assert_eq!(errors::paused!(), 21);
     assert_eq!(errors::wrong_upgrade_action!(), 22);
-    assert_eq!(errors::unguarded_upgrade_notice!(), 23);
+    assert_eq!(errors::unguarded_upgrade_delay!(), 23);
     assert_eq!(errors::invalid_package_witness!(), 24);
     assert_eq!(errors::wrong_unpause_witness!(), 25);
     assert_eq!(errors::wrong_package_witness!(), 26);
