@@ -251,7 +251,12 @@ fun wrap_rejects_a_cap_with_an_outstanding_authorization() {
 fun commit_is_rejected_after_immutability() {
     let mut owned = start();
     let fixture = &mut owned;
-    fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
+    fixture.package_admin.make_immutable_for_testing(
+        &upgrade_admin(),
+        package_marker::package_witness(),
+        &fixture.package_version,
+        &mut fixture.ctx,
+    );
     let mut foreign_cap = package::test_publish(OTHER_PACKAGE_ID.to_id(), &mut fixture.ctx);
     let receipt = foreign_cap
         .authorize_upgrade(package::compatible_policy(), package_digest())
@@ -453,7 +458,14 @@ fun immutability_rejects_a_ready_upgrade_action() {
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), package_digest(), &fixture.clock);
     fixture.clock.set_for_testing(NOTICE_MS);
 
-    fixture.package_admin.make_immutable(&upgrade_admin(), &fixture.clock);
+    fixture
+        .package_admin
+        .make_immutable(
+            &upgrade_admin(),
+            package_marker::package_witness(),
+            &fixture.package_version,
+            &fixture.clock,
+        );
 
     owned.end();
 }
@@ -465,7 +477,12 @@ fun package_admin_can_permanently_destroy_native_upgrade_authority() {
     let upgrade_cap_id = fixture.package_admin.upgrade_cap_id().destroy_some();
     let publisher_id = object::id(fixture.package_admin.publisher_for_testing());
 
-    fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
+    fixture.package_admin.make_immutable_for_testing(
+        &upgrade_admin(),
+        package_marker::package_witness(),
+        &fixture.package_version,
+        &mut fixture.ctx,
+    );
     let destroyed = blast_admin_events::collect_one<
         UpgradeCapDestroyed<PACKAGE_MARKER>,
     >(0);
@@ -488,7 +505,12 @@ fun package_admin_can_permanently_destroy_native_upgrade_authority() {
 fun scheduling_an_upgrade_is_rejected_after_immutability() {
     let mut owned = start();
     let fixture = &mut owned;
-    fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
+    fixture.package_admin.make_immutable_for_testing(
+        &upgrade_admin(),
+        package_marker::package_witness(),
+        &fixture.package_version,
+        &mut fixture.ctx,
+    );
 
     let ticket = fixture.authorize(package_digest());
 
@@ -502,7 +524,12 @@ fun scheduling_an_upgrade_is_rejected_after_immutability() {
 fun immutability_is_reported_before_a_malformed_digest() {
     let mut owned = start();
     let fixture = &mut owned;
-    fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
+    fixture.package_admin.make_immutable_for_testing(
+        &upgrade_admin(),
+        package_marker::package_witness(),
+        &fixture.package_version,
+        &mut fixture.ctx,
+    );
 
     fixture.package_admin.schedule_upgrade(&upgrade_admin(), vector[0u8], &fixture.clock);
 
@@ -514,9 +541,19 @@ fun immutability_is_reported_before_a_malformed_digest() {
 fun scheduling_immutability_again_is_rejected() {
     let mut owned = start();
     let fixture = &mut owned;
-    fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
+    fixture.package_admin.make_immutable_for_testing(
+        &upgrade_admin(),
+        package_marker::package_witness(),
+        &fixture.package_version,
+        &mut fixture.ctx,
+    );
 
-    fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
+    fixture.package_admin.make_immutable_for_testing(
+        &upgrade_admin(),
+        package_marker::package_witness(),
+        &fixture.package_version,
+        &mut fixture.ctx,
+    );
 
     owned.end();
 }
@@ -844,7 +881,7 @@ fun the_package_witness_borrows_the_packages_publisher() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
 fun the_publisher_rejects_a_witness_from_another_package() {
     let owned = start();
 
@@ -854,7 +891,7 @@ fun the_publisher_rejects_a_witness_from_another_package() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
 fun the_publisher_rejects_another_droppable_type_from_the_same_package() {
     let owned = start();
 
@@ -864,7 +901,7 @@ fun the_publisher_rejects_another_droppable_type_from_the_same_package() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
 fun the_publisher_rejects_a_primitive_witness() {
     let owned = start();
 
@@ -880,6 +917,7 @@ fun version_and_publication_readers_report_generation_bits_and_package_witness()
     let witness = type_name::with_defining_ids<PackageWitness>();
     assert_eq!(publication.valid_pause_bits(), VALID_PAUSE_BITS);
     assert_eq!(publication.package_witness(), witness);
+    assert_eq!(publication.publisher_id(), object::id(publication.publisher_for_testing()));
     let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), fixture.scenario.ctx());
     package_admin::wrap(publication, upgrade_cap, fixture.scenario.ctx());
 
@@ -926,7 +964,12 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
     assert!(!fixture.package_admin.is_upgrade_notice_guarded());
     fixture.package_admin.cancel_upgrade_action(&cancel_admin());
 
-    fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
+    fixture.package_admin.make_immutable_for_testing(
+        &upgrade_admin(),
+        package_marker::package_witness(),
+        &fixture.package_version,
+        &mut fixture.ctx,
+    );
     let destroyed = blast_admin_events::collect_one<
         UpgradeCapDestroyed<PACKAGE_MARKER>,
     >(0);
@@ -957,7 +1000,7 @@ fun the_package_witness_borrows_the_publisher_mutably() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
 fun the_mutable_publisher_rejects_a_witness_from_another_package() {
     let AdminFixture { mut package_admin, package_version, clock, ctx: _ } = start();
 
@@ -969,7 +1012,7 @@ fun the_mutable_publisher_rejects_a_witness_from_another_package() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
 fun the_mutable_publisher_rejects_another_droppable_type_from_the_same_package() {
     let AdminFixture { mut package_admin, package_version, clock, ctx: _ } = start();
 
@@ -981,7 +1024,7 @@ fun the_mutable_publisher_rejects_another_droppable_type_from_the_same_package()
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
 fun the_mutable_publisher_rejects_a_primitive_witness() {
     let AdminFixture { mut package_admin, package_version, clock, ctx: _ } = start();
 
@@ -990,6 +1033,88 @@ fun the_mutable_publisher_rejects_a_primitive_witness() {
     destroy(package_admin);
     destroy(package_version);
     clock.destroy_for_testing();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
+/// Only the package's own code, holding its witness, can end its upgrades; checked before the
+/// action is consumed.
+fun immutability_rejects_a_witness_from_another_package() {
+    let mut owned = start();
+    let fixture = &mut owned;
+    fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
+    fixture.clock.set_for_testing(NOTICE_MS);
+
+    fixture
+        .package_admin
+        .make_immutable(
+            &upgrade_admin(),
+            foreign_package_marker::witness(),
+            &fixture.package_version,
+            &fixture.clock,
+        );
+
+    owned.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
+fun immutability_rejects_another_droppable_type_from_the_same_package() {
+    let mut owned = start();
+    let fixture = &mut owned;
+    fixture.package_admin.schedule_make_immutable(&upgrade_admin(), &fixture.clock);
+    fixture.clock.set_for_testing(NOTICE_MS);
+
+    fixture
+        .package_admin
+        .make_immutable(&upgrade_admin(), other_package_marker::marker(), &fixture.package_version, &fixture.clock);
+
+    owned.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongPackageWitness, location = blast_admin::package_version)]
+/// The witness is checked before the action, so a wrong witness wins over a missing schedule.
+fun the_immutability_witness_is_checked_before_the_action() {
+    let mut owned = start();
+    let fixture = &mut owned;
+
+    fixture.package_admin.make_immutable(&upgrade_admin(), 7u8, &fixture.package_version, &fixture.clock);
+
+    owned.end();
+}
+
+#[test]
+/// Wrap records the new version, beside its administration, in one replay-complete event.
+fun wrap_emits_the_package_version_created_with_its_exact_payload() {
+    let mut fixture = start_published();
+    let publication = fixture.take_publication();
+    let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), fixture.scenario.ctx());
+    package_admin::wrap(publication, upgrade_cap, fixture.scenario.ctx());
+    let created = blast_admin_events::collect_one<PackageVersionCreated<PACKAGE_MARKER>>(0);
+
+    fixture.scenario.next_tx(PUBLISHER);
+    let package_admin = fixture.scenario.take_shared<PackageAdmin<PACKAGE_MARKER>>();
+    let package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
+    let (package_version_id, custodian_id, valid_pause_bits, paused, package_witness, generation) =
+        created.package_version_created_fields();
+    assert_eq!(package_version_id, object::id(&package_version));
+    assert_eq!(custodian_id, object::id(&package_admin));
+    assert_eq!(valid_pause_bits, VALID_PAUSE_BITS);
+    assert_eq!(paused, VALID_PAUSE_BITS);
+    assert_eq!(package_witness, type_name::with_defining_ids<PackageWitness>());
+    assert_eq!(generation, 1);
+    let mut expected = bcs::to_bytes(&package_version_id);
+    expected.append(bcs::to_bytes(&custodian_id));
+    expected.append(bcs::to_bytes(&valid_pause_bits));
+    expected.append(bcs::to_bytes(&paused));
+    expected.append(bcs::to_bytes(&package_witness));
+    expected.append(bcs::to_bytes(&generation));
+    assert_eq!(bcs::to_bytes(&created), expected);
+
+    test_scenario::return_shared(package_admin);
+    test_scenario::return_shared(package_version);
+    fixture.end();
 }
 
 #[test]
@@ -1137,6 +1262,7 @@ use blast_admin::{
     blast_admin_events::{
         Self,
         OperationalVersionAdvanced,
+        PackageVersionCreated,
         Paused,
         Unpaused,
         UpgradeAuthorized,
@@ -1149,7 +1275,7 @@ use blast_admin::{
     package_version::{Self, PackageVersion, Publication}
 };
 
-use std::{type_name, unit_test::{assert_eq, destroy}};
+use std::{bcs, type_name, unit_test::{assert_eq, destroy}};
 
 use sui::{
     clock::{Self, Clock},

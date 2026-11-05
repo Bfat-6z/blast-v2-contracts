@@ -50,6 +50,17 @@ public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, 
     new_generation: u64,
 }
 
+/// A package version was created at wrap, beside the administration `custodian_id`, with its
+/// defined and paused bits, pinned package witness and first generation.
+public struct PackageVersionCreated<phantom PackageMarker: drop> has copy, drop {
+    package_version_id: ID,
+    custodian_id: ID,
+    valid_pause_bits: u8,
+    paused: u8,
+    package_witness: TypeName,
+    generation: u64,
+}
+
 public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop {
     custodian_id: ID,
     publisher_id: ID,
@@ -156,6 +167,24 @@ public(package) fun operational_version_advanced<PackageMarker: drop>(
         original_package_id,
         previous_generation,
         new_generation,
+    });
+}
+
+public(package) fun package_version_created<PackageMarker: drop>(
+    package_version_id: ID,
+    custodian_id: ID,
+    valid_pause_bits: u8,
+    paused: u8,
+    package_witness: TypeName,
+    generation: u64,
+) {
+    sui::event::emit(PackageVersionCreated<PackageMarker> {
+        package_version_id,
+        custodian_id,
+        valid_pause_bits,
+        paused,
+        package_witness,
+        generation,
     });
 }
 
@@ -282,6 +311,20 @@ public fun operational_version_advanced_fields<PackageMarker: drop>(
         self.original_package_id,
         self.previous_generation,
         self.new_generation,
+    )
+}
+
+#[test_only]
+public fun package_version_created_fields<PackageMarker: drop>(
+    self: &PackageVersionCreated<PackageMarker>,
+): (ID, ID, u8, u8, TypeName, u64) {
+    (
+        self.package_version_id,
+        self.custodian_id,
+        self.valid_pause_bits,
+        self.paused,
+        self.package_witness,
+        self.generation,
     )
 }
 

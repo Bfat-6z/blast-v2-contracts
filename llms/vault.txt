@@ -302,6 +302,16 @@ collection, owner claims, partner payouts, holder claims, round closing, or canc
 Unpausing with `blast_vault_package::unpause` requires a nonzero witness admission notice, with no
 pending admission or change to zero.
 
+### Upgrades and immutability
+
+The vault is upgradeable through `blast_admin`'s generic administration and is to be made
+immutable after its audit. An `UpgradeAdmin<BLAST_VAULT_PACKAGE>` schedules that with
+`blast_admin::package_admin::schedule_make_immutable` and, once the 48-hour upgrade notice has
+passed, executes it with `blast_vault::blast_vault_package::make_immutable` (the shared
+`PackageAdmin`, the role witness, the `PackageVersion` and `Clock`). The call runs only on the
+current vault generation (code 9 from `blast_admin::package_version` otherwise) and then destroys
+the `UpgradeCap`; no later upgrade or repair is possible.
+
 ### Reading state
 
 - Find a sale's vault without an indexer: its object ID is derived from the shared
@@ -752,6 +762,16 @@ public fun unpause(
     package_admin: &blast_admin::package_admin::PackageAdmin<BLAST_VAULT_PACKAGE>,
     package_version: &mut blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
     bits: u8,
+)
+
+/// Ends the vault package's upgrades once its scheduled immutability action is ready (#195,
+/// after the audit). It runs only on the live generation; the generic administration then checks
+/// the package witness, consumes the action and destroys the UpgradeCap.
+public fun make_immutable(
+    package_admin: &mut blast_admin::package_admin::PackageAdmin<BLAST_VAULT_PACKAGE>,
+    upgrade_admin: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UpgradeAdmin<BLAST_VAULT_PACKAGE>>,
+    package_version: &blast_admin::package_version::PackageVersion<BLAST_VAULT_PACKAGE>,
+    clock: &Clock,
 )
 ```
 
@@ -2143,7 +2163,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 23 | `EUnguardedUpgradeNotice` |  |
 | 24 | `EInvalidPackageWitness` |  |
 | 25 | `EWrongUnpauseWitness` |  |
-| 26 | `EWrongPublisherWitness` |  |
+| 26 | `EWrongPackageWitness` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -2309,6 +2329,17 @@ public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, 
     original_package_id: address,
     previous_generation: u64,
     new_generation: u64,
+}
+
+/// A package version was created at wrap, beside the administration `custodian_id`, with its
+/// defined and paused bits, pinned package witness and first generation.
+public struct PackageVersionCreated<phantom PackageMarker: drop> has copy, drop {
+    package_version_id: ID,
+    custodian_id: ID,
+    valid_pause_bits: u8,
+    paused: u8,
+    package_witness: TypeName,
+    generation: u64,
 }
 
 public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop {
@@ -3262,10 +3293,15 @@ public fun commit_upgrade_and_advance<PackageMarker: drop>(
 
 /// Consumes the ready immutability action and irreversibly destroys native upgrade authority;
 /// the Publisher stays sealed. This is the one terminal upgrade action: the cap's policy is
-/// never narrowed in between.
-public fun make_immutable<PackageMarker: drop>(
+/// never narrowed in between. The package itself must pass its package witness (aborts with
+/// `EWrongPackageWitness` otherwise), so only its own code can end its upgrades. Each package
+/// that may end its upgrades wraps this call in a thin function that first runs
+/// `package_version.assert_current(constants::generation!())`, so only its live bytecode can.
+public fun make_immutable<PackageMarker: drop, PackageWitness: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    _: PackageWitness,
+    package_version: &package_version::PackageVersion<PackageMarker>,
     clock: &Clock,
 )
 
@@ -3313,7 +3349,7 @@ public fun publisher<PackageMarker: drop, PackageWitness: drop>(
 ): &Publisher
 
 /// Borrows the sealed Publisher mutably for package `PackageMarker` itself, gated exactly like
-/// `publisher` (aborts with `EWrongPublisherWitness`), for framework calls that take
+/// `publisher` (aborts with `EWrongPackageWitness`), for framework calls that take
 /// `&mut Publisher` such as `sui::display_registry::new_with_publisher`. A Publisher has no
 /// `drop`, so a mutable reference cannot overwrite it, and the pinned framework has no call that
 /// moves a value out from behind one. If a later framework adds a generic swap, only the package
@@ -3392,7 +3428,8 @@ public struct PackageVersion<phantom PackageMarker: drop> has key {
     valid_pause_bits: u8,
     paused: u8,
     /// The package witness: the exact type, with defining IDs, whose value only the package's own
-    /// code passes to `package_admin::clear_pause_bits` and `package_admin::publisher`.
+    /// code passes to `package_admin::clear_pause_bits`, `package_admin::publisher` and
+    /// `package_admin::make_immutable`.
     package_witness: TypeName,
     /// The only generation whose compiled bytecode passes `assert_current`.
     generation: u64,
@@ -3445,6 +3482,9 @@ public fun package_witness<PackageMarker: drop>(self: &PackageVersion<PackageMar
 
 /// The pause bits the publication will define once wrapped.
 public fun publication_valid_pause_bits<PackageMarker: drop>(self: &Publication<PackageMarker>): u8
+
+/// The ID of the Publisher the publication holds.
+public fun publication_publisher_id<PackageMarker: drop>(self: &Publication<PackageMarker>): ID
 
 /// The package witness type, with defining IDs, the publication pins.
 public fun publication_package_witness<PackageMarker: drop>(

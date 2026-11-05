@@ -129,6 +129,16 @@ collection, owner claims, partner payouts, holder claims, round closing, or canc
 Unpausing with `blast_vault_package::unpause` requires a nonzero witness admission notice, with no
 pending admission or change to zero.
 
+### Upgrades and immutability
+
+The vault is upgradeable through `blast_admin`'s generic administration and is to be made
+immutable after its audit. An `UpgradeAdmin<BLAST_VAULT_PACKAGE>` schedules that with
+`blast_admin::package_admin::schedule_make_immutable` and, once the 48-hour upgrade notice has
+passed, executes it with `blast_vault::blast_vault_package::make_immutable` (the shared
+`PackageAdmin`, the role witness, the `PackageVersion` and `Clock`). The call runs only on the
+current vault generation (code 9 from `blast_admin::package_version` otherwise) and then destroys
+the `UpgradeCap`; no later upgrade or repair is possible.
+
 ### Reading state
 
 - Find a sale's vault without an indexer: its object ID is derived from the shared

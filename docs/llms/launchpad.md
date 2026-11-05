@@ -479,8 +479,9 @@ inside `sui::vec_set` when the entry already has the requested state.
 - Upgrades (`UpgradeAdmin<BLAST_FUN>`): `blast_admin::package_admin::authorize_upgrade` returns an
   `UpgradeTicket` for an exact, scheduled digest; after the Upgrade command,
   `blast_admin::package_admin::commit_upgrade_and_advance` commits the receipt and advances
-  `PackageVersion` in the same transaction; `blast_admin::package_admin::make_immutable` ends
-  upgrades for good. The admin guide documents these calls.
+  `PackageVersion` in the same transaction. Ending upgrades needs a launchpad wrapper around
+  `blast_admin::package_admin::make_immutable`, which takes the launchpad's package witness; the
+  launchpad has none yet, so only a later upgrade can add it. The admin guide documents these calls.
 
 Each `schedule_*` setting has an `apply_*` that anyone calls once ready and a `cancel_*` for
 CancelAdmin, named after it (for example `launch_config::apply_protocol_lp_fees` and
@@ -530,8 +531,9 @@ is immediate, so a rotation admits the new key before revoking the old one.
 Upgrade custody is `blast_admin`'s generic administration and starts with a 48-hour notice.
 `blast_admin::package_admin::schedule_upgrade` takes an exact 32-byte digest;
 `blast_admin::package_admin::authorize_upgrade` consumes only that ready digest.
-`blast_admin::package_admin::schedule_make_immutable` and `blast_admin::package_admin::make_immutable`
-end upgrades. `blast_admin::package_admin::schedule_upgrade_delay` proposes only the notice,
+`blast_admin::package_admin::schedule_make_immutable` schedules the end of upgrades, which
+`blast_admin::package_admin::make_immutable` executes only from the launchpad's own code (a later
+upgrade must add that wrapper). `blast_admin::package_admin::schedule_upgrade_delay` proposes only the notice,
 replacing any pending action; anyone applies it with `blast_admin::package_admin::apply_upgrade_delay`.
 `blast_admin::package_admin::cancel_upgrade_action` (`CancelAdmin<BLAST_FUN>`) cancels any of these.
 

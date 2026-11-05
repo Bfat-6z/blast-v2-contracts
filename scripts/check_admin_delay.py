@@ -216,8 +216,20 @@ require(generic['schedule_make_immutable'][1], 'self.upgrade.schedule(UpgradeAct
 for name, action, effect in [('authorize_upgrade', 'Upgrade(digest)', 'upgrade_cap.authorize(policy, digest)'),
                              ('make_immutable', 'MakeImmutable', 'package::make_immutable(upgrade_cap)')]:
     body = generic[name][1]
-    assert body.startswith('let action = self.upgrade.take_action(clock);'), name
-    assert body.index(f'action == UpgradeAction::{action}') < body.index(effect), name
+    require(body, 'let action = self.upgrade.take_action(clock);')
+    assert body.index('self.upgrade.take_action(clock)') < body.index(f'action == UpgradeAction::{action}') < body.index(effect), name
+# Only the package's own code, with its pinned package witness, ends its upgrades; checked first.
+require(generic['make_immutable'][0], '_: PackageWitness', 'package_version: &PackageVersion<PackageMarker>')
+assert generic['make_immutable'][1].startswith('package_version.assert_package_witness<_, PackageWitness>();')
+# The vault (immutable after audit, #195) wraps it on its live generation only; the upgradeable
+# products add a wrapper only in a later upgrade if they ever need one.
+signature, body = functions('vault', 'blast_vault_package')['make_immutable']
+require(signature, '&AdminWitness<UpgradeAdmin<BLAST_VAULT_PACKAGE>>', 'package_version: &PackageVersion<BLAST_VAULT_PACKAGE>')
+assert body.startswith('package_version.assert_current(constants::generation!());'), body
+require(body, 'package_admin.make_immutable(upgrade_admin, PackageWitness(), package_version, clock)')
+for package in ('launchpad', 'presale', 'migrators'):
+    for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
+        assert '.make_immutable(' not in path.read_text(), path
 require(generic['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin<PackageMarker>>')
 require(generic['cancel_upgrade_action'][1], 'self.upgrade.cancel()')
 require(generic['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
@@ -234,7 +246,7 @@ require(generic['publisher'][0], 'self: &PackageAdmin<PackageMarker>', '_: Packa
 require(generic['publisher_mut'][0], 'self: &mut PackageAdmin<PackageMarker>', '_: PackageWitness',
         'package_version: &PackageVersion<PackageMarker>', '): &mut Publisher')
 for name in ('publisher', 'publisher_mut'):
-    assert generic[name][1].startswith('package_version.assert_publisher_witness<_, PackageWitness>();'), name
+    assert generic[name][1].startswith('package_version.assert_package_witness<_, PackageWitness>();'), name
 clear = generic['clear_pause_bits'][1]
 assert clear.index('assert_unpause_witness') < clear.index('self.upgrade.is_guarded()') < clear.index('package_version.clear_pause_bits(bits)')
 require(generic['wrap'][0], 'publication: Publication<PackageMarker>', 'upgrade_cap: UpgradeCap')

@@ -97,6 +97,17 @@ It checks a version match only and does not prove that no upgrade is pending or
 that the latest installed code is correct. No later repair is possible once the
 cap is destroyed.
 
+## Vault immutability
+
+The vault ships upgradeable and is made immutable after its audit and a quiet
+period (#195). Schedule it with `package_admin::schedule_make_immutable` under
+`UpgradeAdmin<BLAST_VAULT_PACKAGE>`, wait the applied upgrade notice, then call
+`blast_vault_package::make_immutable` from the current vault package. It checks
+the live generation before the generic administration checks the vault's package
+witness, consumes the action and destroys the cap. Before you execute it, record
+the installed package ID and digest, and verify the migrators' relink against
+that exact vault. Nothing can be repaired afterwards.
+
 ## Imported utility records
 
 The September 2026 OTC, vesting, and timelock records retain their original

@@ -835,7 +835,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 23 | `EUnguardedUpgradeNotice` |  |
 | 24 | `EInvalidPackageWitness` |  |
 | 25 | `EWrongUnpauseWitness` |  |
-| 26 | `EWrongPublisherWitness` |  |
+| 26 | `EWrongPackageWitness` |  |
 
 ### `blast_admin::blast_acl`
 
@@ -1001,6 +1001,17 @@ public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, 
     original_package_id: address,
     previous_generation: u64,
     new_generation: u64,
+}
+
+/// A package version was created at wrap, beside the administration `custodian_id`, with its
+/// defined and paused bits, pinned package witness and first generation.
+public struct PackageVersionCreated<phantom PackageMarker: drop> has copy, drop {
+    package_version_id: ID,
+    custodian_id: ID,
+    valid_pause_bits: u8,
+    paused: u8,
+    package_witness: TypeName,
+    generation: u64,
 }
 
 public struct UpgradeCustodyCreated<phantom PackageMarker: drop> has copy, drop {
@@ -1954,10 +1965,15 @@ public fun commit_upgrade_and_advance<PackageMarker: drop>(
 
 /// Consumes the ready immutability action and irreversibly destroys native upgrade authority;
 /// the Publisher stays sealed. This is the one terminal upgrade action: the cap's policy is
-/// never narrowed in between.
-public fun make_immutable<PackageMarker: drop>(
+/// never narrowed in between. The package itself must pass its package witness (aborts with
+/// `EWrongPackageWitness` otherwise), so only its own code can end its upgrades. Each package
+/// that may end its upgrades wraps this call in a thin function that first runs
+/// `package_version.assert_current(constants::generation!())`, so only its live bytecode can.
+public fun make_immutable<PackageMarker: drop, PackageWitness: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &blast_acl::AdminWitness<UpgradeAdmin<PackageMarker>>,
+    _: PackageWitness,
+    package_version: &package_version::PackageVersion<PackageMarker>,
     clock: &Clock,
 )
 
@@ -2005,7 +2021,7 @@ public fun publisher<PackageMarker: drop, PackageWitness: drop>(
 ): &Publisher
 
 /// Borrows the sealed Publisher mutably for package `PackageMarker` itself, gated exactly like
-/// `publisher` (aborts with `EWrongPublisherWitness`), for framework calls that take
+/// `publisher` (aborts with `EWrongPackageWitness`), for framework calls that take
 /// `&mut Publisher` such as `sui::display_registry::new_with_publisher`. A Publisher has no
 /// `drop`, so a mutable reference cannot overwrite it, and the pinned framework has no call that
 /// moves a value out from behind one. If a later framework adds a generic swap, only the package
@@ -2084,7 +2100,8 @@ public struct PackageVersion<phantom PackageMarker: drop> has key {
     valid_pause_bits: u8,
     paused: u8,
     /// The package witness: the exact type, with defining IDs, whose value only the package's own
-    /// code passes to `package_admin::clear_pause_bits` and `package_admin::publisher`.
+    /// code passes to `package_admin::clear_pause_bits`, `package_admin::publisher` and
+    /// `package_admin::make_immutable`.
     package_witness: TypeName,
     /// The only generation whose compiled bytecode passes `assert_current`.
     generation: u64,
@@ -2137,6 +2154,9 @@ public fun package_witness<PackageMarker: drop>(self: &PackageVersion<PackageMar
 
 /// The pause bits the publication will define once wrapped.
 public fun publication_valid_pause_bits<PackageMarker: drop>(self: &Publication<PackageMarker>): u8
+
+/// The ID of the Publisher the publication holds.
+public fun publication_publisher_id<PackageMarker: drop>(self: &Publication<PackageMarker>): ID
 
 /// The package witness type, with defining IDs, the publication pins.
 public fun publication_package_witness<PackageMarker: drop>(

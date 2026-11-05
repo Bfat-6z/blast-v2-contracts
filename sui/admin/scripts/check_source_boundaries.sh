@@ -323,6 +323,7 @@ expected_package_version_public="$(printf '%s\n' \
   package_witness \
   paused \
   publication_package_witness \
+  publication_publisher_id \
   publication_valid_pause_bits \
   valid_pause_bits \
   | sort)"
@@ -383,8 +384,11 @@ grep -Fq 'package_version.assert_unpause_witness<_, PackageWitness>();' "$packag
   || fail "Only publisher (and its test-only twin) may return the Publisher by immutable reference."
 [[ "$(function_declarations "$package_admin_file" | grep -cE '\)[[:space:]]*:[[:space:]]*&mut[[:space:]]+Publisher[[:space:]]*\{')" -eq 1 ]] \
   || fail "Only publisher_mut may return the Publisher by mutable reference."
-[[ "$(grep -Fc 'package_version.assert_publisher_witness<_, PackageWitness>();' "$package_admin_file")" -eq 2 ]] \
-  || fail "publisher and publisher_mut must each check the pinned package witness."
+[[ "$(grep -Fc 'package_version.assert_package_witness<_, PackageWitness>();' "$package_admin_file")" -eq 3 ]] \
+  || fail "publisher, publisher_mut and make_immutable must each check the pinned package witness."
+sed -n '/^public fun make_immutable</,/^}/p' "$package_admin_file" \
+  | grep -Fq 'package_version.assert_package_witness<_, PackageWitness>();' \
+  || fail "make_immutable must check the pinned package witness before ending upgrades."
 for role in UpgradeAdmin PauseAdmin UnpauseAdmin CancelAdmin; do
   grep -Fqx "public struct $role<phantom PackageMarker>()" "$package_admin_file" \
     || fail "$role must be an ability-free role typed by its package marker."

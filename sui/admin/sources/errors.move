@@ -86,7 +86,7 @@ const EInvalidPackageWitness: u64 = 24;
 const EWrongUnpauseWitness: u64 = 25;
 
 #[test_only]
-const EWrongPublisherWitness: u64 = 26;
+const EWrongPackageWitness: u64 = 26;
 
 macro public(package) fun invalid_super_admin_cap(): u64 { 0 }
 
@@ -140,4 +140,4 @@ macro public(package) fun invalid_package_witness(): u64 { 24 }
 
 macro public(package) fun wrong_unpause_witness(): u64 { 25 }
 
-macro public(package) fun wrong_publisher_witness(): u64 { 26 }
+macro public(package) fun wrong_package_witness(): u64 { 26 }

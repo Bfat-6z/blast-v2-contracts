@@ -179,7 +179,15 @@ generation can still schedule and install a repair.
 `blast_admin::package_admin::schedule_make_immutable` and
 `blast_admin::package_admin::make_immutable` destroy the `UpgradeCap` the same
 way (emits `UpgradeCapDestroyed`); the `Publisher` stays sealed. Once the cap is
-destroyed, both schedule calls abort with code 12.
+destroyed, both schedule calls abort with code 12. `make_immutable` also takes
+a value of the package witness and the `PackageVersion<M>`, and aborts with
+code 26 for any other type before it consumes the action. Only the package's
+own code can therefore end its upgrades. Each package that may end them wraps
+the call in a thin function that first runs
+`package_version::assert_current(constants::generation!())`, so only its live
+bytecode can: the vault does, with `blast_vault::blast_vault_package::make_immutable`.
+The launchpad, presale and migrators are upgradeable and have no such wrapper
+yet; one of their upgrades must add it before they can be made immutable.
 `blast_admin::package_admin::schedule_upgrade_delay` proposes only a new notice,
 which anyone applies with `blast_admin::package_admin::apply_upgrade_delay` once
 ready; `blast_admin::package_admin::cancel_upgrade_action` (`CancelAdmin<M>`)
@@ -217,7 +225,7 @@ for its own types inside one of its functions. Any other type aborts with code
 26. `blast_admin::package_admin::publisher_mut` is the same call returning
 `&mut Publisher`, for framework calls that take one, such as
 `sui::display_registry::new_with_publisher`; it checks the same witness and
-aborts with the same code 26. A `Publisher` has no `drop`, so neither reference
+aborts with the same code 26 (`EWrongPackageWitness`). A `Publisher` has no `drop`, so neither reference
 can overwrite or burn it, and the pinned framework has no call that moves a
 value out from behind a mutable reference. Should a later framework add a
 generic swap, only package `M` itself, the holder of its witness, could use it,
@@ -372,7 +380,8 @@ can also read object content over RPC, or replay events.
   `package_version::paused`, `package_version::is_paused` (any of the given bits
   set) and `package_version::package_witness`; a `Publication` exposes
   `package_version::publication_valid_pause_bits` and
-  `package_version::publication_package_witness`.
+  `package_version::publication_package_witness` and
+  `package_version::publication_publisher_id`.
 - Package administration: `blast_admin::package_admin::upgrade_delay_ms`,
   `blast_admin::package_admin::pending_upgrade` (read its action with
   `delayed_action::action` and the digest with
@@ -409,6 +418,7 @@ the owner's key `K` and the value, action, member or entry types, and carry
 | `blast_admin_events::SuperAdminTransferred` | `accept_super_admin_transfer` | old and new root cap IDs, recipient |
 | `blast_admin_events::SuperAdminCapDestroyed` | `destroy_retired_super_admin_cap` | retired root deleted |
 | `blast_admin_events::UpgradeCustodyCreated` | `blast_admin::package_admin::wrap` | `PackageAdmin<M>` created: Publisher, cap, package, native version, policy |
+| `blast_admin_events::PackageVersionCreated` | `blast_admin::package_admin::wrap` | `PackageVersion<M>` created beside its `PackageAdmin<M>` (`custodian_id`): defined and paused bits, package witness, generation 1 |
 | `blast_admin_events::UpgradeAuthorized` | `blast_admin::package_admin::authorize_upgrade` | the exact digest authorized, from `current_package_id` |
 | `blast_admin_events::UpgradeCommitted` | `blast_admin::package_admin::commit_upgrade_and_advance` | new package ID and native version |
 | `blast_admin_events::OperationalVersionAdvanced` | `blast_admin::package_admin::commit_upgrade_and_advance` | generation bump of package `M` |
@@ -451,7 +461,7 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | Code | Name | Module | Cause and fix |
 | --- | --- | --- | --- |
 | 0 | `EInvalidSuperAdminCap` | `blast_acl` | the root cap is not the active one |
-| 1 | `EInvalidAdminCap` | `blast_acl` | the `AdminCap` is revoked or unknown (in `sign_in`, `grant_role`, `revoke_role`, `revoke_admin`) |
+| 1 | `EInvalidAdminCap` | `blast_acl` | the `AdminCap` is revoked or unknown (in `sign_in`, `grant_role`, `revoke_role`, `revoke_admin`, `admin_roles`) |
 | 2 | `EInvalidAdminRecipient` | `blast_acl` | `grant_admin` to `0x0` |
 | 3 | `EAdminRoleCapacityReached` | `blast_acl` | the cap already holds 32 roles |
 | 4 | `EAdminRoleAlreadyGranted` | `blast_acl` | the cap already holds the role |
@@ -476,7 +486,7 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 23 | `EUnguardedUpgradeNotice` | `blast_admin::package_admin` | clearing pause bits while the upgrade notice is zero or a pending change would make it zero |
 | 24 | `EInvalidPackageWitness` | `package_version` | the package witness type given to `new_publication` is a primitive, the package's marker, or from another package |
 | 25 | `EWrongUnpauseWitness` | `package_version` | `clear_pause_bits` received a value of a type other than the package witness pinned at publication |
-| 26 | `EWrongPublisherWitness` | `package_version` | `blast_admin::package_admin::publisher` received a value of a type other than the package witness pinned at publication |
+| 26 | `EWrongPackageWitness` | `package_version` | `blast_admin::package_admin::publisher`, `blast_admin::package_admin::publisher_mut` or `blast_admin::package_admin::make_immutable` received a value of a type other than the package witness pinned at publication |
 
 A marker that is not a one-time witness aborts in the framework's
 `sui::package::claim` inside `package_version::new_publication`.

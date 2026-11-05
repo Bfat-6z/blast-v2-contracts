@@ -39,7 +39,8 @@ public struct PackageVersion<phantom PackageMarker: drop> has key {
     valid_pause_bits: u8,
     paused: u8,
     /// The package witness: the exact type, with defining IDs, whose value only the package's own
-    /// code passes to `package_admin::clear_pause_bits` and `package_admin::publisher`.
+    /// code passes to `package_admin::clear_pause_bits`, `package_admin::publisher` and
+    /// `package_admin::make_immutable`.
     package_witness: TypeName,
     /// The only generation whose compiled bytecode passes `assert_current`.
     generation: u64,
@@ -128,6 +129,11 @@ public fun publication_valid_pause_bits<PackageMarker: drop>(
     self.valid_pause_bits
 }
 
+/// The ID of the Publisher the publication holds.
+public fun publication_publisher_id<PackageMarker: drop>(self: &Publication<PackageMarker>): ID {
+    object::id(&self.publisher)
+}
+
 /// The package witness type, with defining IDs, the publication pins.
 public fun publication_package_witness<PackageMarker: drop>(
     self: &Publication<PackageMarker>,
@@ -157,8 +163,21 @@ public(package) fun into_version<PackageMarker: drop>(
     (publisher, version)
 }
 
-/// Shares the version so the package's operations can read it.
-public(package) fun share<PackageMarker: drop>(self: PackageVersion<PackageMarker>) {
+/// Records the new version beside the administration `custodian_id` that wraps it, then shares it
+/// so the package's operations can read it.
+public(package) fun share<PackageMarker: drop>(
+    self: PackageVersion<PackageMarker>,
+    custodian_id: ID,
+) {
+    blast_admin_events::package_version_created<PackageMarker>(
+        self.id.to_inner(),
+        custodian_id,
+        self.valid_pause_bits,
+        self.paused,
+        self.package_witness,
+        self.generation,
+    );
+
     transfer::share_object(self);
 }
 
@@ -172,13 +191,14 @@ public(package) fun assert_unpause_witness<PackageMarker: drop, PackageWitness: 
     );
 }
 
-/// Rejects borrowing the Publisher with any witness other than the package witness.
-public(package) fun assert_publisher_witness<PackageMarker: drop, PackageWitness: drop>(
+/// Rejects borrowing the Publisher, or ending upgrades, with any witness other than the package
+/// witness.
+public(package) fun assert_package_witness<PackageMarker: drop, PackageWitness: drop>(
     self: &PackageVersion<PackageMarker>,
 ) {
     assert!(
         type_name::with_defining_ids<PackageWitness>() == self.package_witness,
-        blast_admin::errors::wrong_publisher_witness!(),
+        blast_admin::errors::wrong_package_witness!(),
     );
 }
 
@@ -284,6 +304,7 @@ public fun valid_pause_bits_for_testing<PackageMarker: drop>(
 
 public use fun publication_valid_pause_bits as Publication.valid_pause_bits;
 public use fun publication_package_witness as Publication.package_witness;
+public use fun publication_publisher_id as Publication.publisher_id;
 
 use blast_admin::blast_admin_events;
 

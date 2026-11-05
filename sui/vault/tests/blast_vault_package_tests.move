@@ -340,6 +340,43 @@ fun a_cancelled_admission_notice_change_cannot_apply() {
     abort
 }
 
+#[test]
+/// After its notice, the vault's own make_immutable on the live generation destroys the cap.
+fun the_vault_makes_itself_immutable_after_the_notice() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let mut package_admin = new_package_admin(scenario.ctx());
+    package_admin.schedule_make_immutable(&upgrade_admin(), f.clock());
+    f.clock_mut().increment_for_testing(package_admin.upgrade_delay_ms());
+
+    blast_vault_package::make_immutable(&mut package_admin, &upgrade_admin(), f.version(), f.clock());
+
+    assert!(!package_admin.has_upgrade_cap());
+    assert!(package_admin.upgrade_cap_id().is_none());
+    destroy(package_admin);
+    f.end();
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_admin::errors::EOperationalVersionMismatch,
+    location = blast_admin::package_version,
+)]
+/// Stale vault bytecode cannot end the package's upgrades.
+fun make_immutable_rejects_a_stale_generation() {
+    let mut scenario = vault_fixture::begin();
+    let mut f = vault_fixture::start(&mut scenario);
+    let mut package_admin = new_package_admin(scenario.ctx());
+    package_admin.schedule_make_immutable(&upgrade_admin(), f.clock());
+    f.clock_mut().increment_for_testing(package_admin.upgrade_delay_ms());
+    f.version_mut().set_generation_for_testing(constants::generation!() + 1);
+
+    blast_vault_package::make_immutable(&mut package_admin, &upgrade_admin(), f.version(), f.clock());
+
+    abort
+}
+
 // === Test Helpers ===
 
 /// A registry after launch: only the test sale's issuer admitted, with the 48-hour admission
@@ -367,6 +404,10 @@ fun adapter_admin(): AdminWitness<AdapterAdmin> { blast_acl::witness_for_testing
 
 fun cancel_admin(): AdminWitness<CancelAdmin> { blast_acl::witness_for_testing() }
 
+fun upgrade_admin(): AdminWitness<UpgradeAdmin<BLAST_VAULT_PACKAGE>> {
+    blast_acl::witness_for_testing()
+}
+
 fun pause_admin(): AdminWitness<PauseAdmin<BLAST_VAULT_PACKAGE>> {
     blast_acl::witness_for_testing()
 }
@@ -379,7 +420,7 @@ fun unpause_admin(): AdminWitness<UnpauseAdmin<BLAST_VAULT_PACKAGE>> {
 
 use blast_admin::{
     blast_acl::{Self, AdminWitness},
-    package_admin::{Self, PackageAdmin, PauseAdmin, UnpauseAdmin}
+    package_admin::{Self, PackageAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin}
 };
 
 use blast_core::blast_domain::{AdapterAdmin, CancelAdmin};

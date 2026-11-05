@@ -278,8 +278,14 @@ edit '/package_version.assert_unpause_witness<_, PackageWitness>();/d' \
 expect_rejected "$case_dir"
 
 case_dir="$(new_case unchecked_publisher_witness)"
-edit '/package_version.assert_publisher_witness<_, PackageWitness>();/d' \
+edit '/package_version.assert_package_witness<_, PackageWitness>();/d' \
   "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case unchecked_immutability_witness)"
+awk '/^public fun make_immutable</ { inside = 1 } inside && /assert_package_witness/ { inside = 0; next } { print }' \
+  "$case_dir/sources/package_admin.move" > "$case_dir/next.move"
+mv "$case_dir/next.move" "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case mutable_publisher)"

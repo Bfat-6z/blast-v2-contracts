@@ -270,8 +270,9 @@ receipt and moves `PackageVersion<BLAST_MIGRATORS>` to the next generation in th
 From then on every call to the old package's code aborts the generation check, so integrators must
 call the current package address; type names keep the original address. Upgrading this package
 leaves the products and the vault on their own generations; an upgrade of the vault requires a
-relink of this package. `blast_admin::package_admin::schedule_make_immutable` and
-`blast_admin::package_admin::make_immutable` end upgrades;
+relink of this package. `blast_admin::package_admin::schedule_make_immutable` schedules the end of upgrades, which
+`blast_admin::package_admin::make_immutable` executes only from this package's own code (a later
+upgrade must add that wrapper);
 `blast_admin::package_admin::schedule_upgrade_delay` changes the notice. The package defines no
 pause bits: migration stops with the product's migration pause bit, and buybacks with the vault's
 admin pause bit.

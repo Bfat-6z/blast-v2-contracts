@@ -78,9 +78,10 @@ public fun wrap<PackageMarker: drop>(
     );
 
     let (publisher, package_version) = publication.into_version(ctx);
+    let package_admin = new<PackageMarker>(publisher, upgrade_cap, ctx);
 
-    transfer::share_object(new<PackageMarker>(publisher, upgrade_cap, ctx));
-    package_version.share();
+    package_version.share(package_admin.id.to_inner());
+    transfer::share_object(package_admin);
 }
 
 /// Schedules one exact code digest under the applied notice, replacing any previous action.
@@ -191,12 +192,18 @@ public fun commit_upgrade_and_advance<PackageMarker: drop>(
 
 /// Consumes the ready immutability action and irreversibly destroys native upgrade authority;
 /// the Publisher stays sealed. This is the one terminal upgrade action: the cap's policy is
-/// never narrowed in between.
-public fun make_immutable<PackageMarker: drop>(
+/// never narrowed in between. The package itself must pass its package witness (aborts with
+/// `EWrongPackageWitness` otherwise), so only its own code can end its upgrades. Each package
+/// that may end its upgrades wraps this call in a thin function that first runs
+/// `package_version.assert_current(constants::generation!())`, so only its live bytecode can.
+public fun make_immutable<PackageMarker: drop, PackageWitness: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
+    _: PackageWitness,
+    package_version: &PackageVersion<PackageMarker>,
     clock: &Clock,
 ) {
+    package_version.assert_package_witness<_, PackageWitness>();
     let action = self.upgrade.take_action(clock);
     assert!(action == UpgradeAction::MakeImmutable, blast_admin::errors::wrong_upgrade_action!());
 
@@ -269,13 +276,13 @@ public fun publisher<PackageMarker: drop, PackageWitness: drop>(
     _: PackageWitness,
     package_version: &PackageVersion<PackageMarker>,
 ): &Publisher {
-    package_version.assert_publisher_witness<_, PackageWitness>();
+    package_version.assert_package_witness<_, PackageWitness>();
 
     &self.publisher
 }
 
 /// Borrows the sealed Publisher mutably for package `PackageMarker` itself, gated exactly like
-/// `publisher` (aborts with `EWrongPublisherWitness`), for framework calls that take
+/// `publisher` (aborts with `EWrongPackageWitness`), for framework calls that take
 /// `&mut Publisher` such as `sui::display_registry::new_with_publisher`. A Publisher has no
 /// `drop`, so a mutable reference cannot overwrite it, and the pinned framework has no call that
 /// moves a value out from behind one. If a later framework adds a generic swap, only the package
@@ -285,7 +292,7 @@ public fun publisher_mut<PackageMarker: drop, PackageWitness: drop>(
     _: PackageWitness,
     package_version: &PackageVersion<PackageMarker>,
 ): &mut Publisher {
-    package_version.assert_publisher_witness<_, PackageWitness>();
+    package_version.assert_package_witness<_, PackageWitness>();
 
     &mut self.publisher
 }
@@ -416,15 +423,17 @@ public fun authorize_upgrade_for_testing<PackageMarker: drop>(
 }
 
 #[test_only]
-public fun make_immutable_for_testing<PackageMarker: drop>(
+public fun make_immutable_for_testing<PackageMarker: drop, PackageWitness: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     admin: &AdminWitness<UpgradeAdmin<PackageMarker>>,
+    package_witness: PackageWitness,
+    package_version: &PackageVersion<PackageMarker>,
     ctx: &mut TxContext,
 ) {
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_make_immutable(admin, &clock);
     clock.set_for_testing(INITIAL_UPGRADE_DELAY_MS);
-    self.make_immutable(admin, &clock);
+    self.make_immutable(admin, package_witness, package_version, &clock);
     clock.destroy_for_testing();
 }
 
