@@ -47,6 +47,16 @@ PACKAGES = [
     ("sui/admin", "Administration"),
     ("sui/vendors/aftermath_dao_presale", "Aftermath DAO-pool presale migrator"),
 ]
+# Packages kept out of regeneration, with the issue that brings each back. blast_sui (#191) and
+# Boosts (#205) are outside the launch-stack scope and do not yet build against the folded
+# blast_admin, so they are neither built nor regenerated: every committed section and product file
+# made only of them is kept verbatim, and guide names pointing into them are not checked.
+FROZEN = {
+    "sui/blast_sui": "#191",
+    "sui/boosts/core": "#205",
+    "sui/boosts/products": "#205",
+    "sui/boosts/aftermath_adapter": "#205",
+}
 # Each guide with the packages whose deployment status it opens with.
 GUIDES = [
     ("basics.md", []),
@@ -226,6 +236,8 @@ def package_name(path: str) -> str:
 
 def build_summaries(out: Path) -> None:
     for path, _ in PACKAGES:
+        if path in FROZEN:
+            continue
         name = package_name(path)
         result = subprocess.run(
             [
@@ -655,28 +667,66 @@ def check_guides(guides: dict[str, str], pkgs: list[Package]) -> list[str]:
 # --- Main -------------------------------------------------------------------------------------------
 
 
-def assemble(header: str, guide_names: list[str], pkgs: list[Package], guides: dict[str, str], first_party: set[str]) -> str:
+def committed_sections(text: str) -> dict[str, list[str]]:
+    """Each top-level section of a committed reference, by its `## ` heading, up to the next one."""
+    lines = text.split("\n")
+    starts = [i for i, line in enumerate(lines) if line.startswith("## ")] + [len(lines)]
+    return {lines[a]: lines[a:b] for a, b in zip(starts, starts[1:])}
+
+
+def frozen_guides() -> set[str]:
+    return {g for g, paths in GUIDES if paths and all(p in FROZEN for p in paths)}
+
+
+def guide_heading(guide: str) -> str:
+    return (GUIDES_DIR / guide).read_text().split("\n", 1)[0]
+
+
+def reference_heading(pkg: Package) -> str:
+    return f"## API reference: `{pkg.name}` ({pkg.title})"
+
+
+def assemble(
+    header: str,
+    guide_names: list[str],
+    pkgs: list[Package],
+    guides: dict[str, str],
+    first_party: set[str],
+    committed: dict[str, list[str]] | None = None,
+) -> str:
+    """`committed` supplies the verbatim sections of frozen guides and packages."""
     repo = REPO_URL.rsplit("/blob/", 1)[0]
+    committed = committed or {}
+    frozen = frozen_guides()
     out = [header, LAYOUT.format(repo=repo), *status_table(pkgs)]
     for g in guide_names:
-        out += [guides[g], ""]
+        out += committed[guide_heading(g)] if g in frozen else [guides[g], ""]
     for pkg in pkgs:
-        out += package_reference(pkg, first_party)
+        out += committed[reference_heading(pkg)] if pkg.path in FROZEN else package_reference(pkg, first_party)
     return "\n".join(out).rstrip() + "\n"
 
 
 def generate(summaries: Path) -> dict[Path, str]:
     """Every reference this script owns, by output path."""
-    pkgs = {path: load_package(path, title, summaries) for path, title in PACKAGES}
+    pkgs = {
+        path: Package(path=path, title=title, name=package_name(path)) if path in FROZEN
+        else load_package(path, title, summaries)
+        for path, title in PACKAGES
+    }
     first_party = {p.name for p in pkgs.values()}
     raw = {g: (GUIDES_DIR / g).read_text().strip() for g, _ in GUIDES if (GUIDES_DIR / g).exists()}
     missing = [g for g, _ in GUIDES if g not in raw]
     if missing:
         sys.exit(f"missing guides: {', '.join(missing)}")
-    problems = check_guides(raw, list(pkgs.values()))
+    frozen = frozen_guides()
+    problems = check_guides(
+        {g: text for g, text in raw.items() if g not in frozen},
+        [p for p in pkgs.values() if p.path not in FROZEN],
+    )
     if problems:
         sys.exit("guides name members that do not resolve:\n  " + "\n  ".join(problems))
     guides = {g: with_status(raw[g], [pkgs[p] for p in paths]) for g, paths in GUIDES}
+    committed = committed_sections(OUTPUT.read_text()) if OUTPUT.exists() else {}
     unknown = [p for product in PRODUCTS for p in product.packages + product.depends if p not in pkgs]
     unknown += [g for product in PRODUCTS for g in product.guides if g not in guides]
     if unknown:
@@ -686,10 +736,15 @@ def generate(summaries: Path) -> dict[Path, str]:
     basics = GUIDES[0][0]
     files = {
         OUTPUT: assemble(
-            HEADER.format(products=products), [g for g, _ in GUIDES], list(pkgs.values()), guides, first_party
+            HEADER.format(products=products), [g for g, _ in GUIDES], list(pkgs.values()), guides, first_party,
+            committed,
         )
     }
     for product in PRODUCTS:
+        path = PRODUCT_DIR / f"{product.slug}.txt"
+        if all(p in FROZEN for p in product.packages):
+            files[path] = path.read_text()
+            continue
         depends = [f"`{pkgs[p].name}`" for p in product.depends]
         header = PRODUCT_HEADER.format(
             title=product.title,
@@ -698,7 +753,7 @@ def generate(summaries: Path) -> dict[Path, str]:
             depends=f" It also covers the packages its calls depend on: {', '.join(depends)}." if depends else "",
         )
         refs = [pkgs[p] for p in product.packages + product.depends]
-        files[PRODUCT_DIR / f"{product.slug}.txt"] = assemble(header, [basics, *product.guides], refs, guides, first_party)
+        files[path] = assemble(header, [basics, *product.guides], refs, guides, first_party, committed)
     return files
 
 
