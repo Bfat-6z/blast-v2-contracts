@@ -10,7 +10,8 @@ module blast_core::blast_treasury;
 
 // === Public Types ===
 
-/// Shared singleton holding the protocol destination.
+/// Shared singleton holding the protocol destination. It has no destroy: every ledger pays
+/// through it, so deleting it would strand Blast's held fees in every launch, presale, and vault.
 public struct Treasury has key {
     id: UID,
     destination: Delayed<DestinationKey, address>,
@@ -55,6 +56,16 @@ public fun destination(self: &Treasury): address {
     self.destination.value()
 }
 
+/// The notice the next change waits, in milliseconds.
+public fun delay_ms(self: &Treasury): u64 {
+    self.destination.delay_ms()
+}
+
+/// The scheduled destination with its next notice and ready time, if any.
+public fun pending_destination(self: &Treasury): Option<Proposal<address>> {
+    self.destination.pending()
+}
+
 /// Whether every change waits a nonzero notice.
 public fun is_guarded(self: &Treasury): bool {
     self.destination.is_guarded()
@@ -84,7 +95,7 @@ public fun new_for_testing(destination: address, ctx: &mut TxContext): Treasury 
 
 // === Imports ===
 
-use blast_admin::{blast_acl::AdminWitness, delayed::{Self, Delayed}};
+use blast_admin::{blast_acl::AdminWitness, delayed::{Self, Delayed, Proposal}};
 
 use blast_core::{blast_domain::{CancelAdmin, TreasuryAdmin}, constants};
 

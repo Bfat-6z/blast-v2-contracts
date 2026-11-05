@@ -4180,7 +4180,7 @@ fun migration_hands_the_stored_venue_the_pool_share_and_the_vault_terms() {
         assert_eq!(protocol_meme_bps.value(), 1_200);
         assert_eq!(protocol_quote_bps.value(), 900);
         assert_eq!(terms.partner_id(), option::none());
-        assert!(terms.has_protocol_residuals());
+        assert!(terms.residuals().is_protocol());
 
         destroy(meme);
         destroy(quote);

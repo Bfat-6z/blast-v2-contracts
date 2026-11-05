@@ -571,7 +571,7 @@ fun oversubscription_uses_one_fill_rate_and_refunds_the_rest() {
     let (protocol_meme_bps, protocol_quote_bps) = terms.protocol_bps();
     assert_eq!(vector[protocol_meme_bps.value(), protocol_quote_bps.value()], vector[0, 0]);
     assert_eq!(terms.partner_id(), option::none());
-    assert!(!terms.has_protocol_residuals());
+    assert!(terms.residuals().is_owner());
 
     let (presale_id, venue, quote, liquidity_tokens, recipient_tokens) = only_event<
         PresaleMigrated<BLAST_PRESALE_TESTS, QUOTE>,

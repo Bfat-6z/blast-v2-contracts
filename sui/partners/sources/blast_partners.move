@@ -28,7 +28,9 @@ module blast_partners::blast_partners;
 /// propose or cancel shares and moves between caps.
 public struct PartnerAdmin()
 
-/// One Blast partner. Shared, and read by immutable reference on every trade that names it.
+/// One Blast partner. Shared, and read by immutable reference on every trade that names it. It has
+/// no destroy: launches, presales, and vaults bind its ID for good and pay Blast's held fees only
+/// with it, so deleting it would strand those fees. A zero share switches it off instead.
 public struct Partner has key {
     id: UID,
     /// Where the partner's share is sent; set by the live cap's holder.
@@ -173,6 +175,36 @@ public fun delay_ms(): u64 {
     PARTNER_CHANGE_DELAY_MS
 }
 
+/// The largest share of Blast's fee one partner may earn, in basis points: 8,000.
+public fun max_share_bps(): u64 {
+    MAX_SHARE_BPS
+}
+
+/// Where the partner's share is sent now.
+public fun recipient(self: &Partner): address {
+    self.recipient
+}
+
+/// The applied share of Blast's fee, in basis points; `pay` uses it.
+public fun share_bps(self: &Partner): u64 {
+    self.share_bps.value()
+}
+
+/// The proposed share with its ready time, if any. It changes nothing until applied.
+public fun pending_share_bps(self: &Partner): Option<Proposal<u64>> {
+    self.share_bps.pending()
+}
+
+/// The ID of the applied cap, the only one that may set the recipient.
+public fun cap_id(self: &Partner): ID {
+    self.cap_id.value()
+}
+
+/// The proposed managing cap's ID with its ready time, if any. It changes nothing until applied.
+public fun pending_cap_id(self: &Partner): Option<Proposal<ID>> {
+    self.cap_id.pending()
+}
+
 // === Private Functions ===
 
 /// A partner with `share_bps` and `cap_id` applied at once and the fixed notice.
@@ -215,12 +247,6 @@ public fun new_scheduled_for_testing(
 }
 
 #[test_only]
-/// The partner's recipient, applied share and applied cap.
-public fun terms_for_testing(self: &Partner): (address, u64, ID) {
-    (self.recipient, self.share_bps.value(), self.cap_id.value())
-}
-
-#[test_only]
 public fun partner_paid_fields<T>(self: &PartnerPaid<T>): (ID, u64) {
     (self.partner_id, self.amount)
 }
@@ -259,6 +285,6 @@ const BASIS_POINTS: u64 = 10_000;
 
 // === Imports ===
 
-use blast_admin::{blast_acl::AdminWitness, delayed::{Self, Delayed}};
+use blast_admin::{blast_acl::AdminWitness, delayed::{Self, Delayed, Proposal}};
 
 use sui::{balance::Balance, clock::Clock, event};

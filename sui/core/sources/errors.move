@@ -59,6 +59,10 @@ const EInvalidLpFeeBps: u64 = 11;
 /// A payout recipient must be a nonzero address.
 const EInvalidRecipient: u64 = 12;
 
+#[test_only]
+/// A ledger must hold no fees to be destroyed.
+const ELedgerNotEmpty: u64 = 13;
+
 macro public(package) fun invalid_bps(): u64 { 0 }
 
 macro public(package) fun invalid_apportionment(): u64 { 1 }
@@ -84,3 +88,5 @@ macro public(package) fun wrong_package_witness(): u64 { 10 }
 macro public(package) fun invalid_lp_fee_bps(): u64 { 11 }
 
 macro public(package) fun invalid_recipient(): u64 { 12 }
+
+macro public(package) fun ledger_not_empty(): u64 { 13 }

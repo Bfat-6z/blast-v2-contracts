@@ -28,6 +28,42 @@ fun a_ticket_names_its_venue() {
 }
 
 #[test]
+/// Reading a ticket's venue leaves `redeem_ticket` its one consuming path.
+fun a_ticket_reads_its_venue_before_redemption() {
+    let ticket = migration::issue_ticket<MEME, QUOTE, _>(VenueWitness());
+
+    assert_eq!(ticket.venue(), type_name::with_original_ids<VenueWitness>());
+    assert_eq!(ticket.redeem_ticket(), type_name::with_original_ids<VenueWitness>());
+}
+
+#[test]
+/// A migration's readers return its venue, amounts, and terms; only `redeem` releases the
+/// balances.
+fun a_migration_reads_its_venue_amounts_and_terms_before_redemption() {
+    let migration = new_migration(type_name::with_original_ids<VenueWitness>());
+
+    assert_eq!(migration.venue(), type_name::with_original_ids<VenueWitness>());
+    let (meme_amount, quote_amount) = migration.balances();
+    assert_eq!(vector[meme_amount, quote_amount], vector[100, 200]);
+    assert_eq!(*migration.terms(), sale_terms());
+
+    let (meme, quote, terms) = migration.redeem(VenueWitness());
+    assert_eq!(terms, sale_terms());
+    destroy(meme);
+    destroy(quote);
+}
+
+#[test]
+fun terms_read_their_residual_policy() {
+    let to_protocol = sale_terms().residuals();
+    let to_owner = migration::residuals_to_owner();
+
+    assert_eq!(to_protocol, migration::residuals_to_protocol());
+    assert!(to_protocol.is_protocol() && !to_protocol.is_owner());
+    assert!(to_owner.is_owner() && !to_owner.is_protocol());
+}
+
+#[test]
 fun the_stored_venue_redeems_the_balances_and_terms() {
     let migration = new_migration(type_name::with_original_ids<VenueWitness>());
     let (meme, quote, terms) = migration.redeem(VenueWitness());
@@ -39,7 +75,7 @@ fun the_stored_venue_redeems_the_balances_and_terms() {
     let (meme_share, quote_share) = terms.protocol_bps();
     assert_eq!(vector[meme_share, quote_share], vector[bps::new(1_500), bps::new(1_000)]);
     assert_eq!(terms.partner_id(), option::none());
-    assert!(terms.has_protocol_residuals());
+    assert!(terms.residuals().is_protocol());
     assert!(terms.fee_split().routes()[0].destination().is_owner());
 
     destroy(meme);
@@ -85,9 +121,18 @@ fun standalone_terms_verify_owner_proofs_from_their_issuer() {
         option::none(),
         migration::residuals_to_owner(),
     );
-    assert!(!terms.has_protocol_residuals());
+    assert!(terms.residuals().is_owner());
 
     owner_proof::new(OtherPackageWitness(), sale_id()).assert_terms(&terms);
+}
+
+#[test]
+fun an_owner_proof_reads_its_package_witness_and_sale() {
+    let proof = owner_proof::new(TestPackageWitness(), sale_id());
+
+    assert_eq!(proof.package_witness(), type_name::with_original_ids<TestPackageWitness>());
+    assert_eq!(proof.origin(), sale_id());
+    proof.assert_terms(&sale_terms());
 }
 
 #[test]
@@ -174,19 +219,19 @@ fun the_test_issuer_hands_off_to_the_test_venue() {
     );
     owner_proof::new(migration::test_issuer(), sale_id()).assert_terms(&terms);
     let ticket = migration::issue_ticket<MEME, QUOTE, _>(migration::test_venue());
-    assert_eq!(ticket.redeem_ticket(), type_name::with_original_ids<migration::TestVenue>());
+    assert_eq!(ticket.redeem_ticket(), type_name::with_original_ids<TestVenue>());
 
     let migration = migration::new(
         migration::test_issuer(),
         balance::create_for_testing<MEME>(7),
         balance::create_for_testing<QUOTE>(9),
-        type_name::with_original_ids<migration::TestVenue>(),
+        type_name::with_original_ids<TestVenue>(),
         terms,
     );
     let (meme, quote, redeemed) = migration.redeem(migration::test_venue());
 
     assert_eq!(vector[meme.value(), quote.value()], vector[7, 9]);
-    assert_eq!(redeemed.package_witness(), type_name::with_original_ids<migration::TestIssuer>());
+    assert_eq!(redeemed.package_witness(), type_name::with_original_ids<TestIssuer>());
     destroy(meme);
     destroy(quote);
 }
@@ -302,7 +347,7 @@ fun seedability_agrees_for_both_coin_orders() {
 
 fun sale_id(): ID { object::id_from_address(@0x5A1E) }
 
-fun owner_split(): fee_split::FeeSplit {
+fun owner_split(): FeeSplit {
     fee_split::new(vector[fee_split::route(fee_split::owner_destination(), bps::new(10_000))])
 }
 
@@ -318,7 +363,7 @@ fun sale_terms(): VaultTerms {
     )
 }
 
-fun new_migration(venue: type_name::TypeName): Migration<MEME, QUOTE> {
+fun new_migration(venue: TypeName): Migration<MEME, QUOTE> {
     migration::new(
         TestPackageWitness(),
         balance::create_for_testing<MEME>(100),
@@ -330,8 +375,14 @@ fun new_migration(venue: type_name::TypeName): Migration<MEME, QUOTE> {
 
 // === Imports ===
 
-use blast_core::{bps, constants, fee_split, migration::{Self, Migration, VaultTerms}, owner_proof};
+use blast_core::{
+    bps,
+    constants,
+    fee_split::{Self, FeeSplit},
+    migration::{Self, Migration, TestIssuer, TestVenue, VaultTerms},
+    owner_proof
+};
 
-use std::{type_name, unit_test::{assert_eq, destroy}};
+use std::{type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 
 use sui::balance;

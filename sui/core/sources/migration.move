@@ -83,6 +83,10 @@ public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName 
     venue
 }
 
+/// The original type of the venue witness that issued the ticket. Called as `ticket.venue()`;
+/// `redeem_ticket` stays the ticket's one consuming path.
+public fun ticket_venue<Meme, Quote>(self: &VenueTicket<Meme, Quote>): TypeName { self.venue }
+
 /// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
 /// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
 /// most `constants::max_lp_fee_bps!()`, 3,000 basis points, so a vault trusts sealed terms.
@@ -143,6 +147,18 @@ public fun redeem<Meme, Quote, Venue: drop>(
     (meme, quote, terms)
 }
 
+/// The original type of the only venue witness that can redeem the migration.
+public fun venue<Meme, Quote>(self: &Migration<Meme, Quote>): TypeName { self.venue }
+
+/// The Meme and Quote the migration carries to the pool. Only `redeem` releases them.
+public fun balances<Meme, Quote>(self: &Migration<Meme, Quote>): (u64, u64) {
+    (self.meme.value(), self.quote.value())
+}
+
+/// The vault's terms the migration carries. A copy authorizes nothing: an admitted venue never
+/// takes terms from its caller, and each sale has one vault.
+public fun terms<Meme, Quote>(self: &Migration<Meme, Quote>): &VaultTerms { &self.terms }
+
 /// The launch or presale the vault belongs to.
 public fun origin(self: &VaultTerms): ID { self.origin }
 
@@ -160,10 +176,14 @@ public fun protocol_bps(self: &VaultTerms): (Bps, Bps) {
 /// The partner the sale named, if any.
 public fun partner_id(self: &VaultTerms): Option<ID> { self.partner_id }
 
-/// Whether the migration residuals go to Blast rather than the owner.
-public fun has_protocol_residuals(self: &VaultTerms): bool {
-    self.residuals == ResidualPolicy::Protocol
-}
+/// What happens to the migration residuals.
+public fun residuals(self: &VaultTerms): ResidualPolicy { self.residuals }
+
+/// Whether the policy pays residuals to Blast.
+public fun is_protocol(self: &ResidualPolicy): bool { *self == ResidualPolicy::Protocol }
+
+/// Whether the policy holds residuals for the sale's owner.
+public fun is_owner(self: &ResidualPolicy): bool { *self == ResidualPolicy::Owner }
 
 // Pool price
 
@@ -215,6 +235,8 @@ public fun test_venue(): TestVenue { TestVenue() }
 public fun test_issuer(): TestIssuer { TestIssuer() }
 
 // === Imports ===
+
+public use fun ticket_venue as VenueTicket.venue;
 
 use blast_core::{bps::Bps, constants, fee_split::FeeSplit};
 

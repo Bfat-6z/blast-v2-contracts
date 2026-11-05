@@ -115,10 +115,37 @@ public fun pay_with_partner<Meme, Quote>(
     self.pay_treasury(treasury, partner_meme_amount, partner_quote_amount, partner_sui_amount, ctx);
 }
 
+/// Deletes a ledger that holds nothing; pay it out first. Aborts while any fee is held, so no
+/// destruction loses Blast's or the partner's fees.
+public fun destroy<Meme, Quote>(self: Ledger<Meme, Quote>) {
+    let (meme_amount, quote_amount, sui_amount) = self.balances();
+    assert!(
+        meme_amount == 0 && quote_amount == 0 && sui_amount == 0,
+        blast_core::errors::ledger_not_empty!(),
+    );
+
+    let Ledger { meme, quote, sui, .. } = self;
+
+    meme.destroy_zero();
+    quote.destroy_zero();
+    sui.destroy_zero();
+}
+
 /// The Meme, Quote, and SUI held.
 public fun balances<Meme, Quote>(self: &Ledger<Meme, Quote>): (u64, u64, u64) {
     (self.meme.value(), self.quote.value(), self.sui.value())
 }
+
+/// The original type of the package witness that created the ledger.
+public fun package_witness<Meme, Quote>(self: &Ledger<Meme, Quote>): TypeName {
+    self.package_witness
+}
+
+/// The launch, presale, or vault whose fees the ledger holds.
+public fun origin<Meme, Quote>(self: &Ledger<Meme, Quote>): ID { self.origin }
+
+/// The partner the ledger pays with, fixed at creation, if any.
+public fun partner_id<Meme, Quote>(self: &Ledger<Meme, Quote>): Option<ID> { self.partner_id }
 
 // === Private Functions ===
 

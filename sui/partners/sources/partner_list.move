@@ -10,14 +10,16 @@
 /// reach it mutably. Adding a partner accepts it at once. Removing one keeps it accepted for the
 /// fixed notice Blast gives for every change to a partner, `blast_partners::delay_ms()`, so
 /// anything built to name it keeps working that long. Sales and trades that already name a
-/// removed partner keep paying it; the list only gates naming it anew.
+/// removed partner keep paying it; the list only gates naming it anew. Destroying the list ends
+/// every acceptance at once, without the notice, so a product destroys it only with the object
+/// that embeds it.
 module blast_partners::partner_list;
 
 // === Public Types ===
 
 /// The partners one product accepts: each partner's ID maps to the time, in Unix epoch
-/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the object that embeds the list, named
-/// by its events.
+/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the
+/// object that embeds the list, named by its events.
 public struct PartnerList has store {
     owner: ID,
     acceptance_ends_at_ms: Table<ID, u64>,
@@ -70,15 +72,56 @@ public fun assert_accepted(self: &PartnerList, partner_id: ID, clock: &Clock) {
     self.assert_accepted_at(partner_id, clock.timestamp_ms());
 }
 
+/// Deletes the list and every entry, accepted or removed, and emits `PartnerListDestroyed`. The
+/// embedding module alone holds the list by value, so it alone decides when its acceptance ends.
+public fun destroy(self: PartnerList) {
+    let PartnerList { owner, acceptance_ends_at_ms } = self;
+
+    acceptance_ends_at_ms.drop();
+
+    event::emit(PartnerListDestroyed { owner });
+}
+
+/// Whether the list accepts `partner_id` now; `assert_accepted` aborts exactly when this is false.
+public fun is_accepted(self: &PartnerList, partner_id: ID, clock: &Clock): bool {
+    self.is_accepted_at(partner_id, clock.timestamp_ms())
+}
+
+/// Whether the list has an entry for `partner_id`: accepted, removal pending, or removed.
+public fun contains(self: &PartnerList, partner_id: ID): bool {
+    self.acceptance_ends_at_ms.contains(partner_id)
+}
+
+/// When the list stops accepting `partner_id`, in Unix epoch milliseconds and exclusive:
+/// `u64::MAX` until removed. Aborts in `sui::dynamic_field` unless the list `contains` it.
+public fun acceptance_ends_at_ms(self: &PartnerList, partner_id: ID): u64 {
+    self.acceptance_ends_at_ms[partner_id]
+}
+
+/// The number of entries, removed partners included.
+public fun entry_count(self: &PartnerList): u64 {
+    self.acceptance_ends_at_ms.length()
+}
+
+/// The object that embeds the list, named by its events.
+public fun owner(self: &PartnerList): ID {
+    self.owner
+}
+
 // === Private Functions ===
 
 /// Aborts unless the list accepts `partner_id` at `now_at_ms`.
 fun assert_accepted_at(self: &PartnerList, partner_id: ID, now_at_ms: u64) {
     assert!(
-        self.acceptance_ends_at_ms.contains(partner_id)
-            && now_at_ms < self.acceptance_ends_at_ms[partner_id],
+        self.is_accepted_at(partner_id, now_at_ms),
         blast_partners::errors::partner_not_accepted!(),
     );
+}
+
+/// Whether the list accepts `partner_id` at `now_at_ms`.
+fun is_accepted_at(self: &PartnerList, partner_id: ID, now_at_ms: u64): bool {
+    self.acceptance_ends_at_ms.contains(partner_id)
+        && now_at_ms < self.acceptance_ends_at_ms[partner_id]
 }
 
 // === Test-Only Functions ===
@@ -94,10 +137,8 @@ public fun partner_removed_fields(self: &PartnerRemoved): (ID, ID, u64) {
 }
 
 #[test_only]
-/// Destroys a list whose table may hold entries, for tests that end with one.
-public fun destroy_for_testing(self: PartnerList) {
-    let PartnerList { owner: _, acceptance_ends_at_ms } = self;
-    acceptance_ends_at_ms.drop();
+public fun partner_list_destroyed_fields(self: &PartnerListDestroyed): ID {
+    self.owner
 }
 
 // === Events ===
@@ -114,6 +155,11 @@ public struct PartnerRemoved has copy, drop {
     owner: ID,
     partner_id: ID,
     acceptance_ends_at_ms: u64,
+}
+
+/// The owner's list was deleted: it accepts no partner from now on.
+public struct PartnerListDestroyed has copy, drop {
+    owner: ID,
 }
 
 // === Imports ===

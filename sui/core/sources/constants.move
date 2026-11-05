@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Core constants exposed as zero-cost macros. The basis-points denominator and Blast's LP-fee
-/// share maximum are public, so every launch package uses the one value.
+/// Core constants exposed as zero-cost macros. The basis-points denominator, Blast's LP-fee share
+/// maximum, and the bounds of core's public constructors are public, so every launch package uses
+/// the one value.
 module blast_core::constants;
 
 // === Package Constants ===
@@ -20,13 +21,13 @@ public macro fun max_lp_fee_bps(): u64 {
 
 /// Maximum routes in one fee split, so 16 recipients still fit beside the four special kinds.
 /// Every collection pays them in the same transaction.
-macro public(package) fun max_routes(): u64 {
+public macro fun max_routes(): u64 {
     20
 }
 
 /// A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292
 /// million years, the schedule's end still fits in u64, so payout cannot overflow creating it.
-macro public(package) fun max_vesting_duration_ms(): u64 {
+public macro fun max_vesting_duration_ms(): u64 {
     1 << 63
 }
 

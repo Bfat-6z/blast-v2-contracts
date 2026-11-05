@@ -191,13 +191,18 @@ values between product and venue calls.
   always sum to the amount.
 - Every launch package uses one basis-points denominator, `blast_core::constants::basis_points_denominator`
   (10,000), and one cap on Blast's share of LP fees, `blast_core::constants::max_lp_fee_bps`
-  (3,000 per asset). Both are public compile-time macros.
+  (3,000 per asset). The bounds core's constructors enforce are public too:
+  `blast_core::constants::max_routes` (20 routes per fee split) and
+  `blast_core::constants::max_vesting_duration_ms` (2^63 ms). All four are public compile-time
+  macros.
 - A `payout::Recipient`, built with `payout::recipient`, is a nonzero destination address and
   optional `payout::VestingTerms` (from `payout::vesting_terms`); the zero address aborts.
   `payout::pay_or_vest` pays an amount to a recipient as a coin or, when it vests, locks the amount
   in an irrevocable, shared `blast_fun_linear_vesting::Vesting` schedule that starts at the payout
   and returns its ID. A zero amount sends and locks nothing. Each product keeps its own recipient
-  lists and shares.
+  lists and shares. `payout::destination` and `payout::recipient_vesting_terms` (called as
+  `recipient.vesting_terms()`) read a recipient; `payout::cliff_delay_ms`,
+  `payout::period_duration_ms`, and `payout::periods` read its terms.
 
 ### Fee splits
 
@@ -216,14 +221,19 @@ creation to the partner its sale named, or to none. `protocol_fees::pay` pays ev
 treasury and aborts when a partner is bound; `protocol_fees::pay_with_partner` first pays that
 partner its cut of each asset through `blast_partners::blast_partners::pay`, then the treasury the
 rest. Both emit `blast_core_events::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
-may make.
+may make. `protocol_fees::balances`, `protocol_fees::package_witness`, `protocol_fees::origin`, and
+`protocol_fees::partner_id` read a ledger. `protocol_fees::destroy` deletes one that holds nothing
+and aborts while any fee is held, so its owner pays it out first.
 
 `blast_treasury::Treasury` is a shared singleton holding the address Blast's fees go to. A Blast
 admin with `blast_domain::TreasuryAdmin` schedules a new address with
 `blast_treasury::schedule_destination`; anyone applies it with `blast_treasury::apply_destination`
 once its notice has passed (48 hours from publication); a Blast admin with
 `blast_domain::CancelAdmin` cancels it with `blast_treasury::cancel_destination`. Read the current
-address with `blast_treasury::destination`.
+address with `blast_treasury::destination`, the notice the next change waits with
+`blast_treasury::delay_ms`, and a scheduled change, as a `delayed::Proposal<address>`, with
+`blast_treasury::pending_destination`. The treasury is never deleted: every ledger pays through
+it.
 
 ### Migration hand-off and owner proof
 
@@ -246,6 +256,16 @@ address with `blast_treasury::destination`.
   the vault's package witness and sale.
 
 None of these values can be dropped, copied, or stored, so the PTB that creates one must consume it.
+
+Readers never consume them. `migration::ticket_venue` (called as `ticket.venue()`) reads a ticket's
+venue. `migration::venue`, `migration::balances` (the Meme and Quote amounts), and
+`migration::terms` read a migration; only `migration::redeem` releases its balances, and a copy of
+its terms authorizes nothing, since an admitted venue never takes terms from its caller and each
+sale has one vault. `migration::origin`, `migration::package_witness`, `migration::fee_split`,
+`migration::protocol_bps`, `migration::partner_id`, and `migration::residuals` read terms;
+`migration::is_protocol` and `migration::is_owner` read the `migration::ResidualPolicy` it
+returns. `owner_proof::package_witness` and `owner_proof::origin` read
+a proof.
 
 ### Pool seed price
 
@@ -300,6 +320,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 10 | `EWrongPackageWitness` | The vault terms must be sealed by the package witness creating the migration. |
 | 11 | `EInvalidLpFeeBps` | Blast's LP-fee share of each asset must be at most 3,000 basis points. |
 | 12 | `EInvalidRecipient` | A payout recipient must be a nonzero address. |
+| 13 | `ELedgerNotEmpty` | A ledger must hold no fees to be destroyed. |
 
 ### `blast_core::blast_core_events`
 
@@ -372,7 +393,8 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/co
 #### Types
 
 ```move
-/// Shared singleton holding the protocol destination.
+/// Shared singleton holding the protocol destination. It has no destroy: every ledger pays
+/// through it, so deleting it would strand Blast's held fees in every launch, presale, and vault.
 public struct Treasury has key {
     id: UID,
     destination: blast_admin::delayed::Delayed<DestinationKey, address>,
@@ -405,6 +427,12 @@ public fun cancel_destination(
 
 /// The address Blast's fees are paid to now.
 public fun destination(self: &Treasury): address
+
+/// The notice the next change waits, in milliseconds.
+public fun delay_ms(self: &Treasury): u64
+
+/// The scheduled destination with its next notice and ready time, if any.
+public fun pending_destination(self: &Treasury): Option<blast_admin::delayed::Proposal<address>>
 
 /// Whether every change waits a nonzero notice.
 public fun is_guarded(self: &Treasury): bool
@@ -443,7 +471,7 @@ public fun apportion(rates: vector<Bps>, total: u64, rounded_up: Option<u64>): v
 
 ### `blast_core::constants`
 
-Core constants exposed as zero-cost macros. The basis-points denominator and Blast's LP-fee share maximum are public, so every launch package uses the one value.
+Core constants exposed as zero-cost macros. The basis-points denominator, Blast's LP-fee share maximum, and the bounds of core's public constructors are public, so every launch package uses the one value.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/constants.move
 
@@ -456,12 +484,18 @@ public fun basis_points_denominator(): u64
 /// Blast's largest share of each asset in a vault's LP fees, in basis points. `vault_terms`
 /// enforces it when a sale or issuer seals a vault's terms.
 public fun max_lp_fee_bps(): u64
+
+/// Maximum routes in one fee split, so 16 recipients still fit beside the four special kinds.
+/// Every collection pays them in the same transaction.
+public fun max_routes(): u64
+
+/// A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292
+/// million years, the schedule's end still fits in u64, so payout cannot overflow creating it.
+public fun max_vesting_duration_ms(): u64
 ```
 
 #### Constants
 
-- `max_routes: u64 = 20`: Maximum routes in one fee split, so 16 recipients still fit beside the four special kinds. Every collection pays them in the same transaction.
-- `max_vesting_duration_ms: u64 = 1 << 63`: A technical bound on a vesting schedule's duration: from any clock below 2^63 ms, about 292 million years, the schedule's end still fits in u64, so payout cannot overflow creating it.
 - `digest_length: u64 = 32`: Byte length of a Blake2b-256 digest: Merkle roots, leaves, and proof siblings.
 - `min_sqrt_price_x64: u128 = 4_295_048_016`: The lowest sqrt price, Q64.64, the Cetus and Bluefin `tick_math` modules accept.
 - `max_sqrt_price_x64: u128 = 79_226_673_515_401_279_992_447_579_055`: The highest sqrt price, Q64.64, the Cetus and Bluefin `tick_math` modules accept.
@@ -646,6 +680,10 @@ public fun issue_ticket<Meme, Quote, Venue: drop>(_: Venue): VenueTicket<Meme, Q
 /// Redeems a ticket, returning the venue witness type to admit and store.
 public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName
 
+/// The original type of the venue witness that issued the ticket. Called as `ticket.venue()`;
+/// `redeem_ticket` stays the ticket's one consuming path.
+public fun ticket_venue<Meme, Quote>(self: &VenueTicket<Meme, Quote>): TypeName
+
 /// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
 /// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
 /// most `constants::max_lp_fee_bps!()`, 3,000 basis points, so a vault trusts sealed terms.
@@ -676,6 +714,16 @@ public fun redeem<Meme, Quote, Venue: drop>(
     _: Venue,
 ): (Balance<Meme>, Balance<Quote>, VaultTerms)
 
+/// The original type of the only venue witness that can redeem the migration.
+public fun venue<Meme, Quote>(self: &Migration<Meme, Quote>): TypeName
+
+/// The Meme and Quote the migration carries to the pool. Only `redeem` releases them.
+public fun balances<Meme, Quote>(self: &Migration<Meme, Quote>): (u64, u64)
+
+/// The vault's terms the migration carries. A copy authorizes nothing: an admitted venue never
+/// takes terms from its caller, and each sale has one vault.
+public fun terms<Meme, Quote>(self: &Migration<Meme, Quote>): &VaultTerms
+
 /// The launch or presale the vault belongs to.
 public fun origin(self: &VaultTerms): ID
 
@@ -691,8 +739,14 @@ public fun protocol_bps(self: &VaultTerms): (bps::Bps, bps::Bps)
 /// The partner the sale named, if any.
 public fun partner_id(self: &VaultTerms): Option<ID>
 
-/// Whether the migration residuals go to Blast rather than the owner.
-public fun has_protocol_residuals(self: &VaultTerms): bool
+/// What happens to the migration residuals.
+public fun residuals(self: &VaultTerms): ResidualPolicy
+
+/// Whether the policy pays residuals to Blast.
+public fun is_protocol(self: &ResidualPolicy): bool
+
+/// Whether the policy holds residuals for the sale's owner.
+public fun is_owner(self: &ResidualPolicy): bool
 
 /// The pool's seed price from the migration's atomic amounts, `floor(sqrt(B / A) * 2^64)` in the
 /// Q64.64 form concentrated-liquidity venues take: B / A is Quote / Meme when Meme is coin A, and
@@ -731,6 +785,12 @@ public fun new<PackageWitness: drop>(_: PackageWitness, origin: ID): OwnerProof
 
 /// Consumes the proof, aborting unless it names `terms`' package witness and sale.
 public fun assert_terms(self: OwnerProof, terms: &migration::VaultTerms)
+
+/// The original type of the package witness that issued the proof.
+public fun package_witness(self: &OwnerProof): TypeName
+
+/// The sale whose creator authority the proof attests.
+public fun origin(self: &OwnerProof): ID
 ```
 
 ### `blast_core::payout`
@@ -771,6 +831,19 @@ public fun recipient(destination: address, vesting_terms: Option<VestingTerms>):
 
 /// The address the recipient's payouts go to, or vest for.
 public fun destination(self: &Recipient): address
+
+/// The terms the recipient's payouts vest under, or none when they are paid outright. Called as
+/// `recipient.vesting_terms()`.
+public fun recipient_vesting_terms(self: &Recipient): Option<VestingTerms>
+
+/// The delay from a payout to its first available step, in milliseconds.
+public fun cliff_delay_ms(self: &VestingTerms): u64
+
+/// The length of each equal step, in milliseconds.
+public fun period_duration_ms(self: &VestingTerms): u64
+
+/// The number of equal steps.
+public fun periods(self: &VestingTerms): u64
 
 /// Pays `amount` of `balance` to `recipient`: outright, or locked in an irrevocable linear
 /// schedule starting now when it vests, returning the schedule's ID. A zero amount sends and
@@ -866,8 +939,21 @@ public fun pay_with_partner<Meme, Quote>(
     ctx: &mut TxContext,
 )
 
+/// Deletes a ledger that holds nothing; pay it out first. Aborts while any fee is held, so no
+/// destruction loses Blast's or the partner's fees.
+public fun destroy<Meme, Quote>(self: Ledger<Meme, Quote>)
+
 /// The Meme, Quote, and SUI held.
 public fun balances<Meme, Quote>(self: &Ledger<Meme, Quote>): (u64, u64, u64)
+
+/// The original type of the package witness that created the ledger.
+public fun package_witness<Meme, Quote>(self: &Ledger<Meme, Quote>): TypeName
+
+/// The launch, presale, or vault whose fees the ledger holds.
+public fun origin<Meme, Quote>(self: &Ledger<Meme, Quote>): ID
+
+/// The partner the ledger pays with, fixed at creation, if any.
+public fun partner_id<Meme, Quote>(self: &Ledger<Meme, Quote>): Option<ID>
 ```
 
 ## API reference: `blast_partners` (Partner codes)
@@ -899,7 +985,9 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pa
 /// propose or cancel shares and moves between caps.
 public struct PartnerAdmin {}
 
-/// One Blast partner. Shared, and read by immutable reference on every trade that names it.
+/// One Blast partner. Shared, and read by immutable reference on every trade that names it. It has
+/// no destroy: launches, presales, and vaults bind its ID for good and pay Blast's held fees only
+/// with it, so deleting it would strand those fees. A zero share switches it off instead.
 public struct Partner has key {
     id: UID,
     /// Where the partner's share is sent; set by the live cap's holder.
@@ -989,6 +1077,24 @@ public fun pay<T>(self: &Partner, fee: &mut Balance<T>, ctx: &mut TxContext): u6
 /// The fixed notice every change Blast makes to a partner waits. Products use it
 /// for their own notice, such as how long a partner they remove stays accepted.
 public fun delay_ms(): u64
+
+/// The largest share of Blast's fee one partner may earn, in basis points: 8,000.
+public fun max_share_bps(): u64
+
+/// Where the partner's share is sent now.
+public fun recipient(self: &Partner): address
+
+/// The applied share of Blast's fee, in basis points; `pay` uses it.
+public fun share_bps(self: &Partner): u64
+
+/// The proposed share with its ready time, if any. It changes nothing until applied.
+public fun pending_share_bps(self: &Partner): Option<blast_admin::delayed::Proposal<u64>>
+
+/// The ID of the applied cap, the only one that may set the recipient.
+public fun cap_id(self: &Partner): ID
+
+/// The proposed managing cap's ID with its ready time, if any. It changes nothing until applied.
+public fun pending_cap_id(self: &Partner): Option<blast_admin::delayed::Proposal<ID>>
 ```
 
 #### Events
@@ -1016,7 +1122,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 ### `blast_partners::partner_list`
 
-The partners one Blast product accepts, one list per product.  A product embeds a `PartnerList` in the object holding its policy and alone decides who may change it: the list has `store` and no authority of its own, so only the embedding module can reach it mutably. Adding a partner accepts it at once. Removing one keeps it accepted for the fixed notice Blast gives for every change to a partner, `blast_partners::delay_ms()`, so anything built to name it keeps working that long. Sales and trades that already name a removed partner keep paying it; the list only gates naming it anew.
+The partners one Blast product accepts, one list per product.  A product embeds a `PartnerList` in the object holding its policy and alone decides who may change it: the list has `store` and no authority of its own, so only the embedding module can reach it mutably. Adding a partner accepts it at once. Removing one keeps it accepted for the fixed notice Blast gives for every change to a partner, `blast_partners::delay_ms()`, so anything built to name it keeps working that long. Sales and trades that already name a removed partner keep paying it; the list only gates naming it anew. Destroying the list ends every acceptance at once, without the notice, so a product destroys it only with the object that embeds it.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/partner_list.move
 
@@ -1024,8 +1130,8 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pa
 
 ```move
 /// The partners one product accepts: each partner's ID maps to the time, in Unix epoch
-/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the object that embeds the list, named
-/// by its events.
+/// milliseconds, it stops being accepted, `u64::MAX` until the product removes it. `owner` is the
+/// object that embeds the list, named by its events.
 public struct PartnerList has store {
     owner: ID,
     acceptance_ends_at_ms: Table<ID, u64>,
@@ -1050,6 +1156,26 @@ public fun remove(self: &mut PartnerList, partner_id: ID, clock: &Clock)
 /// Aborts unless the list accepts `partner_id` now: it was added, and any removal's notice has
 /// not yet passed.
 public fun assert_accepted(self: &PartnerList, partner_id: ID, clock: &Clock)
+
+/// Deletes the list and every entry, accepted or removed, and emits `PartnerListDestroyed`. The
+/// embedding module alone holds the list by value, so it alone decides when its acceptance ends.
+public fun destroy(self: PartnerList)
+
+/// Whether the list accepts `partner_id` now; `assert_accepted` aborts exactly when this is false.
+public fun is_accepted(self: &PartnerList, partner_id: ID, clock: &Clock): bool
+
+/// Whether the list has an entry for `partner_id`: accepted, removal pending, or removed.
+public fun contains(self: &PartnerList, partner_id: ID): bool
+
+/// When the list stops accepting `partner_id`, in Unix epoch milliseconds and exclusive:
+/// `u64::MAX` until removed. Aborts in `sui::dynamic_field` unless the list `contains` it.
+public fun acceptance_ends_at_ms(self: &PartnerList, partner_id: ID): u64
+
+/// The number of entries, removed partners included.
+public fun entry_count(self: &PartnerList): u64
+
+/// The object that embeds the list, named by its events.
+public fun owner(self: &PartnerList): ID
 ```
 
 #### Events
@@ -1067,6 +1193,11 @@ public struct PartnerRemoved has copy, drop {
     owner: ID,
     partner_id: ID,
     acceptance_ends_at_ms: u64,
+}
+
+/// The owner's list was deleted: it accepts no partner from now on.
+public struct PartnerListDestroyed has copy, drop {
+    owner: ID,
 }
 ```
 

@@ -25,6 +25,15 @@ rg -q 'public struct Migration<phantom Meme, phantom Quote> \{' sources/migratio
   && rg -q 'public struct VenueTicket<phantom Meme, phantom Quote> \{' sources/migration.move \
   && rg -q 'public struct OwnerProof \{' sources/owner_proof.move \
   || fail "hand-off, venue ticket, and owner proof must have no abilities"
+# Readers never consume a hand-off: each is unpacked only in its one consuming call. The treasury
+# is never unpacked, since every ledger pays through it.
+for pattern in 'let VenueTicket \{' 'let Migration \{' 'let OwnerProof \{'; do
+  [[ "$(rg -c "$pattern" sources | awk -F: '{ total += $2 } END { print total + 0 }')" == "1" ]] \
+    || fail "a hand-off must be unpacked only by its one consuming call ($pattern)"
+done
+if rg -n 'let Treasury \{' sources; then
+  fail "the treasury must never be destroyed"
+fi
 rg -q "let redeeming_venue = type_name::with_original_ids<Venue>\(\);" sources/migration.move \
   && rg -q "assert!\(self.venue == redeeming_venue, blast_core::errors::wrong_venue!\(\)\);" sources/migration.move \
   || fail "redeem must check the stored venue's original witness type"

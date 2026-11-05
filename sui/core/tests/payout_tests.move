@@ -152,6 +152,20 @@ fun vesting_rejects_a_schedule_beyond_the_technical_bound() {
 }
 
 #[test]
+fun a_recipient_reads_its_vesting_terms() {
+    let terms = payout::vesting_terms(10, 100, 4);
+    let vested = payout::recipient(BOB, option::some(terms));
+    let outright = payout::recipient(BOB, option::none());
+
+    assert_eq!(vested.vesting_terms(), option::some(terms));
+    assert!(outright.vesting_terms().is_none());
+    assert_eq!(
+        vector[terms.cliff_delay_ms(), terms.period_duration_ms(), terms.periods()],
+        vector[10, 100, 4],
+    );
+}
+
+#[test]
 #[expected_failure(abort_code = blast_core::errors::EInvalidRecipient, location = blast_core::payout)]
 fun an_outright_recipient_rejects_the_zero_address() {
     payout::recipient(@0x0, option::none());
