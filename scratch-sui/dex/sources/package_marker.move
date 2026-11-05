@@ -29,11 +29,6 @@ public fun init_for_testing(ctx: &mut TxContext) {
 
 #[test_only]
 /// Claims the canonical Publisher without transferring it.
-public fun publisher_for_testing(ctx: &mut TxContext): Publisher {
+public fun publisher_for_testing(ctx: &mut TxContext): sui::package::Publisher {
     sui::package::test_claim(PACKAGE_MARKER {}, ctx)
 }
-
-// === Imports ===
-
-#[test_only]
-use sui::package::Publisher;

@@ -35,7 +35,7 @@ fun permissionless_native_migration_locks_complete_position_and_empty_collection
     f.migrate!();
     let (_, _, migrated) = f.launch.lifecycle_for_testing();
     assert!(migrated);
-    let events = sui::event::events_by_type<Migrated>();
+    let events = sui::event::events_by_type<migration::Migrated>();
     assert_eq!(events.length(), 1);
     f.next_tx!(@0xB, |f| {
         let mut pool = f.take_pool();
@@ -61,7 +61,7 @@ fun permissionless_native_migration_locks_complete_position_and_empty_collection
         let (_, _, protocol, creator) = vault.snapshot_for_testing();
         assert_eq!(protocol, 0);
         assert_eq!(creator, 0);
-        assert!(sui::event::events_by_type<FeesCollected>().is_empty());
+        assert!(sui::event::events_by_type<migration::FeesCollected>().is_empty());
         return_pool(pool);
         return_vault(vault);
     });
@@ -89,7 +89,7 @@ fun collected_quote_is_split_and_claimed_without_changing_locked_principal() {
         assert_eq!(protocol + creator + fees_after, fees_before);
         assert!(protocol > 0 && creator > 0);
         assert_eq!(vault.shares_for_testing(), shares);
-        let events = sui::event::events_by_type<FeesCollected>();
+        let events = sui::event::events_by_type<migration::FeesCollected>();
         let mut expected = bcs::to_bytes(&object::id(&vault));
         expected.append(bcs::to_bytes(&(protocol + creator)));
         expected.append(bcs::to_bytes(&f.lp_fee_policy.protocol_fee_share<MIGRATION_TESTS>().value()));
@@ -112,11 +112,11 @@ fun collected_quote_is_split_and_claimed_without_changing_locked_principal() {
         let (_, _, protocol_after, creator_after) = vault.snapshot_for_testing();
         assert_eq!(protocol_after, 0);
         assert_eq!(creator_after, 0);
-        let events = sui::event::events_by_type<CreatorFeesClaimed>();
+        let events = sui::event::events_by_type<migration::CreatorFeesClaimed>();
         let mut expected = bcs::to_bytes(&object::id(&vault));
         expected.append(bcs::to_bytes(&creator));
         assert_eq!(bcs::to_bytes(&events[0]), expected);
-        let events = sui::event::events_by_type<ProtocolFeesClaimed>();
+        let events = sui::event::events_by_type<migration::ProtocolFeesClaimed>();
         let mut expected = bcs::to_bytes(&object::id(&vault));
         expected.append(bcs::to_bytes(&protocol));
         assert_eq!(bcs::to_bytes(&events[0]), expected);
@@ -288,7 +288,7 @@ fun native_collection_applies_the_project_lp_share_instead_of_the_trade_share() 
         assert!(protocol > 0);
         assert_eq!(creator, 0);
         assert_eq!(f.runtime.protocol_fee_share_bps(), 5_000);
-        let events = sui::event::events_by_type<FeesCollected>();
+        let events = sui::event::events_by_type<migration::FeesCollected>();
         let mut expected = bcs::to_bytes(&object::id(&vault));
         expected.append(bcs::to_bytes(&protocol));
         expected.append(bcs::to_bytes(&10_000u64));
@@ -393,7 +393,7 @@ fun admin_issues_lp_fee_caps_and_each_reissue_retires_the_previous_cap() {
         let mut vault = f.take_vault();
         let witness = f.authority.sign_in(&f.admin);
         vault.issue_lp_fee_cap(&witness, &f.factory, &f.version, @0xB, f.ctx!());
-        let events = sui::event::events_by_type<LpFeeCapIssued>();
+        let events = sui::event::events_by_type<migration::LpFeeCapIssued>();
         let mut expected = bcs::to_bytes(&object::id(&vault));
         expected.append(bcs::to_bytes(&option::none<ID>()));
         expected.append(bcs::to_bytes(&vault.lp_fee_cap_id_for_testing().destroy_some()));
@@ -408,7 +408,7 @@ fun admin_issues_lp_fee_caps_and_each_reissue_retires_the_previous_cap() {
         vault.assert_lp_fee_cap(&retired);
         let witness = f.authority.sign_in(&f.admin);
         vault.issue_lp_fee_cap(&witness, &f.factory, &f.version, @0xC, f.ctx!());
-        let events = sui::event::events_by_type<LpFeeCapIssued>();
+        let events = sui::event::events_by_type<migration::LpFeeCapIssued>();
         let mut expected = bcs::to_bytes(&object::id(&vault));
         expected.append(bcs::to_bytes(&option::some(object::id(&retired))));
         expected.append(bcs::to_bytes(&vault.lp_fee_cap_id_for_testing().destroy_some()));
@@ -488,7 +488,7 @@ fun locking_destroys_the_lp_fee_cap_and_binds_native_fees_forever() {
         let lp_fee_cap = vault.issue_lp_fee_cap_for_testing(f.ctx!());
         let lp_fee_cap_id = object::id(&lp_fee_cap);
         vault.lock_creator_fees(lp_fee_cap, &custodian, &f.factory);
-        let events = sui::event::events_by_type<LpFeesLocked>();
+        let events = sui::event::events_by_type<migration::LpFeesLocked>();
         let mut expected = bcs::to_bytes(&object::id(&vault));
         expected.append(bcs::to_bytes(&lp_fee_cap_id));
         expected.append(bcs::to_bytes(&custodian.to_inner()));
@@ -617,7 +617,7 @@ fun start_with_policy<SelectedWitness: drop>(
     scenario.next_tx(@0xA);
     let admin = scenario.take_from_sender<AdminCap<BLAST_FUN_DOMAIN>>();
     let witness = authority.sign_in(&admin);
-    let mut config = scenario.take_shared<LaunchConfig>();
+    let mut config = scenario.take_shared<launch_config::LaunchConfig>();
     config.allow_quote<QUOTE>(&version, &witness, 5_000_000, 25_000_000);
     config.allow_migration_witness<SelectedWitness>(&version, &witness);
     config.set_trade_fees(&version, &witness, bps::new(100), bps::new(100));
@@ -713,7 +713,7 @@ use blast_fun::{
     bps,
     creator_authority::{Self, CurveFeeCap, LpFeeCap},
     launch::{Self, Launch},
-    launch_config::{Self, LaunchConfig},
+    launch_config,
     launch_ticket,
     blast_fun_domain::{Self, BLAST_FUN_DOMAIN},
     lp_fee_policy::{Self, LpFeePolicy},
@@ -724,17 +724,7 @@ use blast_fun::{
 use blast_fun_dex::{
     domain_fixture,
     math,
-    migration::{
-        Self,
-        CreatorFeesClaimed,
-        FeesCollected,
-        LockedLpVault,
-        LpFeeCapIssued,
-        LpFeesLocked,
-        Migrated,
-        ProtocolFeesClaimed,
-        Witness
-    },
+    migration::{Self, LockedLpVault, Witness},
     pool::{Self, Factory, Pool, Position}
 };
 

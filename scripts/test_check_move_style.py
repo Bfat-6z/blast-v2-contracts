@@ -247,11 +247,11 @@ public fun make(): payout::Recipient { abort }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with patch("check_move_style.ROOT", root):
-                for package in ("blast_sui", "boosts/core", "launchpad"):
-                    path = root / "sui" / package / "sources" / "value.move"
+                for package in ("sui/blast_sui", "sui/boosts/core", "scratch-sui/dex", "sui/launchpad"):
+                    path = root / package / "sources" / "value.move"
                     path.parent.mkdir(parents=True)
                     path.write_text(source)
-                    if package == "launchpad":
+                    if package == "sui/launchpad":
                         with self.assertRaisesRegex(ValueError, "import types"):
                             check(path)
                     else:

@@ -81,7 +81,7 @@ fun cap_updates_preserve_history_and_already_earned_fees() {
     f.set_max_fee(0);
     f.set_max_fee(300);
     f.set_max_fee(500);
-    let changes = sui::event::events_by_type<MaximumFeeChanged>();
+    let changes = sui::event::events_by_type<pool::MaximumFeeChanged>();
     assert_eq!(changes.length(), 3);
     assert_eq!(bcs::to_bytes(&changes[0]), fee_change_bytes(object::id(&f.pool), 200, 0));
     assert_eq!(bcs::to_bytes(&changes[1]), fee_change_bytes(object::id(&f.pool), 0, 300));
@@ -185,7 +185,7 @@ fun the_factory_advances_to_the_next_compiled_generation() {
     f.factory.advance_for_testing();
 
     let advanced = blast_admin::events::collect_one<
-        OperationalVersionAdvanced<PACKAGE_MARKER>,
+        blast_admin::events::OperationalVersionAdvanced<PACKAGE_MARKER>,
     >(0);
     let (_, _, previous_generation, new_generation) =
         advanced.operational_version_advanced_fields();
@@ -264,7 +264,7 @@ fun empty_fee_claim_returns_zero_without_emitting_an_economic_event() {
     let mut f = start(0);
     let fees = f.claim_fees();
     assert_eq!(fees.value(), 0);
-    assert!(sui::event::events_by_type<FeesClaimed>().is_empty());
+    assert!(sui::event::events_by_type<pool::FeesClaimed>().is_empty());
     destroy(fees);
     f.end();
 }
@@ -523,13 +523,13 @@ fun fee_change_bytes(pool_id: ID, previous: u64, maximum: u64): vector<u8> {
 
 // === Imports ===
 
-use blast_admin::{acl::{Authority, AdminCap, SuperAdminCap}, events::OperationalVersionAdvanced};
+use blast_admin::acl::{Authority, AdminCap, SuperAdminCap};
 
 use blast_fun_dex::{
     dex_domain::{Self, DEX_DOMAIN},
     domain_fixture,
     package_marker::PACKAGE_MARKER,
-    pool::{Self, Factory, FeesClaimed, MaximumFeeChanged, Pool, Position}
+    pool::{Self, Factory, Pool, Position}
 };
 
 use std::{bcs, unit_test::{assert_eq, destroy}};

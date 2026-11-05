@@ -22,8 +22,9 @@ UTILITY_SECTIONS = [
 ]
 ERROR_NAME = r"E[A-Z](?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]*"
 # blast_sui and boosts are out of the one-way stack scope and adopt the type
-# import rule with their own administration rework (#191, #205).
-QUALIFIED_TYPES_EXEMPT = ("blast_sui", "boosts")
+# import rule with their own administration rework (#191, #205); scratch-sui is
+# parked, out of scope.
+QUALIFIED_TYPES_EXEMPT = ("sui/blast_sui", "sui/boosts", "scratch-sui")
 # A lowercase module segment followed by a type segment: `module::Type`,
 # `pkg::module::Type`, `module::Type::Variant`. Calls through a module
 # (`payout::pay_or_vest`, `errors::x!`) and `Enum::Variant` stay allowed.
@@ -192,8 +193,8 @@ def check(path):
     if not (in_order(SECTIONS) or in_order(TAIL_SECTIONS) or utility_layout):
         raise ValueError("sections must occur once, in the order in AGENTS.md")
     if not any(
-        path.resolve().is_relative_to(ROOT / "sui" / package)
-        for package in QUALIFIED_TYPES_EXEMPT
+        path.resolve().is_relative_to(ROOT / directory)
+        for directory in QUALIFIED_TYPES_EXEMPT
     ):
         check_qualified_types(source)
     previous_kind = None
