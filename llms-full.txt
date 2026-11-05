@@ -22,7 +22,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | --- | --- | --- | --- | --- |
 | `blast_presale` | Presale | not yet published | — | — |
 | `blast_fun` | Launchpad | not yet published | — | — |
-| `blast_fun_migrators` | Cetus and Bluefin venues | not yet published | — | — |
+| `blast_migrators` | Cetus and Bluefin venues | not yet published | — | — |
 | `blast_partners` | Partner codes | not yet published | — | — |
 | `blast_boosts_core` | Boosts core | live; source has changed since | `0xac10e88ff25bd98a841f60cfcdc4006b4ad3d3afb577b5024043798ff7f4cafe` | `0xac10e88ff25bd98a841f60cfcdc4006b4ad3d3afb577b5024043798ff7f4cafe` |
 | `blast_boosts_products` | Boost product tags | live; source has changed since | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` |
@@ -31,7 +31,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | `blast_core` | Shared core | not yet published | — | — |
 | `blast_vault` | LP vault | not yet published | — | — |
 | `blast_admin` | Administration | not yet published | — | — |
-| `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | live; source has changed since | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` |
+| `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | not yet published | — | — |
 
 ## Calling Blast contracts
 
@@ -43,8 +43,8 @@ product guide below assumes it.
 
 | Product | What users do | Packages |
 | --- | --- | --- |
-| Presale | commit Quote to a capped or overflow sale, claim tokens or refunds, earn LP fees and holder rewards after migration | `blast_presale`; one-off partner migrators such as `blast_aftermath_dao_presale` |
-| Launchpad | launch a coin on a bonding curve, trade it, graduate it into a DEX pool | `blast_fun` (curve, lifecycle, fees), a generated coin package per launch, `blast_fun_migrators` (venue start, migration, LP vault, LP fees, holder rewards) |
+| Presale | commit Quote to a capped or overflow sale, claim tokens or refunds, earn LP fees and holder rewards after migration | `blast_presale`; the shared venues `blast_migrators`; one-off partner venues such as `blast_aftermath_dao_presale` |
+| Launchpad | launch a coin on a bonding curve, trade it, graduate it into a DEX pool | `blast_fun` (curve, lifecycle, fees), a generated coin package per launch, `blast_migrators` (Cetus and Bluefin venues for both products: venue start, migration, LP fees), `blast_vault` (LP vault, holder rewards) |
 | Partner codes | earn a share of Blast's fee on the flow an app brings | `blast_partners` |
 | Boosts | hold a leveraged long or short coin backed by Aftermath perpetuals | `blast_boosts_core`, `blast_boosts_products`, `blast_boosts_aftermath` |
 | blastSUI | stake SUI with one validator through funSUI and blastSUI | `blast_sui` |
@@ -53,7 +53,7 @@ product guide below assumes it.
 Each package and what it depends on:
 
 ```text
-blast_fun_migrators          -> blast_fun, blast_admin, Cetus, Bluefin
+blast_migrators              -> blast_core, blast_vault, blast_admin, Cetus, Bluefin
 blast_fun                    -> blast_partners, blast_admin
 blast_partners               -> blast_admin
 blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
@@ -137,7 +137,7 @@ Upgrade rules depend on the package lineage.
 | --- | --- | --- |
 | Immutable | `blast_admin`, `blast_partners`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
-| Version-gated | `blast_presale`, `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events
@@ -157,8 +157,8 @@ Upgrade rules depend on the package lineage.
 A failed call returns a Move abort naming the module and function that aborted
 and a `u64` code. Blast uses two styles:
 
-- **Named errors** (`#[error]` constants): `blast_partners`,
-  `blast_fun_migrators`, and `blast_aftermath_dao_presale`. Sui's RPC and SDKs
+- **Named errors** (`#[error]` constants): `blast_partners` and
+  `blast_aftermath_dao_presale`. Sui's RPC and SDKs
   decode these into the constant's name and message; the reference lists each
   module's constants with their messages.
 - **Numeric codes**: `blast_fun`, `blast_presale`, `blast_sui`, `blast_boosts_core`,
@@ -179,7 +179,7 @@ run) before signing it.
 
 ## Presale
 
-> **Deployment status:** `blast_presale` is not yet published on mainnet; its interface may change before publication. `blast_aftermath_dao_presale` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
+> **Deployment status:** `blast_presale` and `blast_aftermath_dao_presale` are not yet published on mainnet; their interface may change before publication.
 
 ### What it is
 
@@ -1349,75 +1349,71 @@ refunds, LP deadline, the seed-price check) applies unchanged.
 
 #### `blast_aftermath_dao_presale`
 
-A one-off, immutable package for one partner. Its sales migrate into a new 50/50 Aftermath
+A one-off, immutable package for one partner: a plain venue over `blast_core` that imports no
+product, so a presale upgrade never strands it. Its sales migrate into a new 50/50 Aftermath
 weighted pool wrapped in Aftermath's DAO-fee pool, which charges 2% (200 BPS) on every swap,
-deposit, and withdrawal and sends it straight to the partner treasury compiled into the module.
-It creates no vault.
+deposit, and withdrawal and sends it straight to the partner treasury compiled into the module. It
+creates no vault.
 
 Objects:
 
 - `blast_aftermath_dao_presale::blast_aftermath_dao_presale::Venue`: the sealed venue witness. It
-  issues the ticket `new` redeems and redeems that sale's migration hand-off.
-- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`: the vendor's own admin, sent to the publisher. Its one
-  power is creating sales, through `new` and `finalize`. It is not Blast's `blast_acl::AdminCap`.
-- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreation<Lp>`: shared; binds one sale to the Aftermath
-  `CreatePoolCapV2` of a freshly published LP coin `Lp`.
+  issues the ticket `prepare` returns and redeems that sale's migration hand-off.
+- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`: the vendor's own admin, sent
+  to the publisher. Its one power is preparing sale tokens through `prepare`. It is not Blast's
+  `blast_acl::AdminCap`.
+- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreation<Lp, SaleToken>`: shared;
+  reserves one sale token's pool creation with the Aftermath `CreatePoolCapV2` of a freshly
+  published LP coin `Lp`.
 
-Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`), one PTB:
+Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`, who also
+holds the sale token's `TreasuryCap`), one PTB:
 
 1. Beforehand, in its own transaction, publish a fresh Aftermath LP coin `Lp` (one per sale); its
    publication yields the `CreatePoolCapV2` that the `AdminCap` holder passes in.
-2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::new<SaleToken, Quote>(admin_cap,
-   package_version, treasury_cap, creation_policy, fee_policy)` issues the venue's ticket, calls
-   `blast_presale::blast_presale::new`, and returns the `PresaleInitializer`. Its pool's weights
-   and fees are the module's constants, so it records no tier. The `CreationPolicy` must admit its
-   `Venue`.
-3. The `blast_presale::blast_presale` setters as for any sale (no LP-fee split needed), including
-   the optional `blast_presale::blast_presale::set_partner`.
-4. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::finalize<Lp, SaleToken,
-   Quote>(admin_cap, package_version, initializer, currency, create_pool_cap)` first checks
-   `blast_presale::blast_presale::venue` against its own `Venue`
-   (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongVenue`, code 3), sets a core
-   fee split of one address route paying its treasury 10,000 BPS (replacing any split set
-   earlier), runs `blast_presale::blast_presale::finalize`, sends the `PresaleCap` to the treasury,
-   shares the `PoolCreation<Lp>`, emits
+2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken,
+   Quote>(admin_cap, create_pool_cap)` shares the `PoolCreation<Lp, SaleToken>`, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
-   (`presale_id`, `pool_creation_id`), and returns the unshared `Presale`. A vendor sale finalized
-   with `blast_presale::blast_presale::finalize` directly has no `PoolCreation`, so it can never
-   migrate and refunds after its LP deadline.
-5. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, the only
-   point where they may rise (up to the applied policy), which needs
-   Blast's presale `FeeAdmin` signed in within the same transaction; then
-   `blast_presale::blast_presale::share(presale, package_version, commitment_starts_at_ms, clock)`.
+   (`pool_creation_id`), and returns the venue's `VenueTicket<SaleToken, Quote>`. Its pool's weights
+   and fees are the module's constants, so it records no tier.
+3. `blast_presale::blast_presale::new` with the `TreasuryCap` and the ticket, as for any sale. The
+   `CreationPolicy` must admit the vendor's `Venue`.
+4. The `blast_presale::blast_presale` setters as for any sale, including the optional
+   `blast_presale::blast_presale::set_partner`. The sale's LP-fee split never applies, because no
+   vault exists.
+5. `blast_presale::blast_presale::finalize`, the optional
+   `blast_presale::blast_presale::set_protocol_fees(...)` (which needs Blast's presale `FeeAdmin`
+   signed in within the same transaction), then `blast_presale::blast_presale::share`.
 
-Migrate (*anyone*, while `Funded`):
+Migrate (*anyone*, while `Funded`), one PTB:
 
 1. `blast_presale::blast_presale::settle` if needed.
-2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::migrate<Lp, SaleToken, Quote>(presale,
-   package_version, pool_creation, fee_policy, pool_registry, dao_fee_version, clock)`.
-   `pool_creation` is the sale's shared `PoolCreation<Lp>`, passed by value and deleted;
-   `pool_registry` is Aftermath's shared `PoolRegistry` (mutable); `dao_fee_version` is the DAO-fee
-   package's shared `Version`. Type arguments are always `<Lp, SaleToken, Quote>`; the module sorts
-   the coins into Aftermath's order itself.
-3. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
+2. `blast_presale::blast_presale::migrate`, which returns the sale's `Migration<SaleToken, Quote>`.
+3. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::migrate<Lp, SaleToken,
+   Quote>(migration, pool_creation, pool_registry, dao_fee_version)`. `migration` is the
+   result of step 2; `pool_creation` is the sale token's shared `PoolCreation<Lp, SaleToken>`, passed
+   by value and deleted; `pool_registry` is Aftermath's shared `PoolRegistry` (mutable);
+   `dao_fee_version` is the DAO-fee package's shared `Version`.
+   Type arguments are always `<Lp, SaleToken, Quote>`; the module sorts the coins into Aftermath's
+   order itself.
+4. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
 
-The call checks the binding (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongPresale`),
-runs `blast_presale::blast_presale::migrate` and redeems the hand-off with its `Venue`, dropping the
-vault terms (no vault exists for its pools), creates the pool from all LP tokens and Quote (50/50
-weights, flatness 0, a 0.01% swap-in fee that compounds into the LP, no other pool fees, name
-"Blast Presale Pool"), checks it holds every unit
-(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EPoolMismatch`), wraps it in a DAO-fee
-pool at 200 BPS paying the treasury
-(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EDaoFeePoolMismatch`), shares the
-DAO-fee pool (the object traders use), sends its `OwnerCap` to the treasury, and sends the whole LP
-coin to `0x0`, where nobody can ever use it. Emits
-`blast_aftermath_dao_presale::blast_aftermath_dao_presale::Migrated` with the pool, DAO-fee pool,
-owner cap, and LP coin IDs and the LP amount.
+The call redeems the hand-off with its `Venue` (`blast_core::errors::EWrongVenue` for a hand-off
+sealed for any other venue), keeping only the sale's ID from the vault terms (no vault exists for
+its pools), creates the pool from all LP tokens and Quote (50/50 weights, flatness 0, a 0.01%
+swap-in fee that compounds into the LP, no other pool fees, name "Blast Presale Pool"), checks it
+holds every unit (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EPoolMismatch`, code
+0), wraps it in a DAO-fee pool at 200 BPS paying the treasury
+(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EDaoFeePoolMismatch`, code 1), shares
+the DAO-fee pool (the object traders use), sends its `OwnerCap` to the treasury, and
+sends the whole LP coin to `0x0`, where nobody can ever use it. Emits
+`blast_aftermath_dao_presale::blast_aftermath_dao_presale::Migrated` with the sale ID, the pool,
+DAO-fee pool, owner cap, and LP coin IDs and the LP amount.
 
 With the `OwnerCap` the treasury can change its pool's DAO fee or recipient directly through
-Aftermath. The `PresaleCap` can only be destroyed after a cancellation. If the `CreatePoolCapV2`
-belongs to a different LP coin than `Lp`, or Aftermath retires the versions this package links
-to, migration aborts and the sale becomes refundable at its LP deadline.
+Aftermath. If the `CreatePoolCapV2` belongs to a different LP coin than `Lp`, or Aftermath retires the
+versions this package links to, migration aborts and the sale becomes refundable at its LP
+deadline.
 
 ### Q&A
 
@@ -1700,18 +1696,20 @@ initializer, and the launch are values returned by earlier commands of the same 
 1. Prepare the coin on the chosen venue (holder of the `TreasuryCap`). Both calls return a
    `blast_core::migration::VenueTicket<Meme, Quote>` sealed by the venue's witness, for exactly this
    Meme and Quote:
-   - Cetus: `blast_fun_migrators::cetus::prepare` with the migrators'
-     `blast_fun_migrators::blast_fun_migrators::PackageVersion` (shared), the migrators'
-     `blast_fun_migrators::venue_config::VenueConfig` (shared, mutable), Cetus's `GlobalConfig`
+   - Cetus: `blast_migrators::cetus::prepare` with the migrators'
+     `PackageVersion<BLAST_MIGRATORS>` (shared), the migrators'
+     `blast_migrators::venue_config::VenueConfig` (shared, mutable), Cetus's `GlobalConfig`
      (shared) and `Pools` (shared, mutable), the `TreasuryCap<Meme>` (owned, by mutable reference),
      and `tick_spacing: u32`. It mints the Meme type's single Cetus `PoolCreationCap` from the
      treasury cap, registers the pair at that tick spacing, keeps the cap and the tick spacing in
-     `VenueConfig`, and emits `blast_fun_migrators::blast_events::CetusPoolReserved`. It aborts when
+     `VenueConfig`, and emits `blast_migrators::events::CetusPoolReserved`. It aborts when
      Cetus does not register the spacing or refuses the pair at it.
-   - Bluefin: `blast_fun_migrators::bluefin::prepare` with the migrators' `PackageVersion`,
-     `VenueConfig` (mutable), the `TreasuryCap<Meme>` (owned, by immutable reference), `tick_spacing:
-     u32` (1 to 400), and `fee_rate: u64` (1 to 20,000, Bluefin's units). It records the tier in
-     `VenueConfig`; out-of-range values abort with `blast_fun_migrators::bluefin::EInvalidTier`.
+   - Bluefin: `blast_migrators::bluefin::prepare` with the migrators' `PackageVersion`,
+     `VenueConfig` (mutable), the `TreasuryCap<Meme>` (owned, by immutable reference), the
+     `Currency<Meme>`, `tick_spacing: u32` (1 to 400), and `fee_rate: u64` (1 to 20,000, Bluefin's
+     units). It records the tier in `VenueConfig`; out-of-range values abort with
+     `blast_migrators::errors::EInvalidTier`, and a Meme symbol over 32 bytes with
+     `blast_migrators::errors::ESymbolTooLong`.
 
    The venue keeps the pool tier; it can never change afterwards.
 2. `launch::new` with the `LaunchTicket<Meme>` (owned, by value), the same `TreasuryCap<Meme>` (owned,
@@ -1877,13 +1875,13 @@ migration are paid by the vault, not here.
 
 #### Migration, launchpad side (anyone, through the launch's venue)
 
-Anyone migrates a `MigrationReady` launch by calling its venue's migrate,
-`blast_fun_migrators::cetus::migrate` or `blast_fun_migrators::bluefin::migrate` (arguments in the
-venues guide). That one call runs the whole hand-off: it calls `launch::migrate` with the launch,
-`PackageVersion`, `LaunchConfig`, and `Currency<Meme>`, then redeems the returned `Migration` with
-its own witness and builds the pool and the vault. `launch::migrate` is public, but its `Migration`
-has no abilities and only the stored venue's witness can redeem it, so calling it on its own makes
-the transaction fail. `launch::migrate`:
+Anyone migrates a `MigrationReady` launch with two calls in one PTB: `launch::migrate` with the
+launch, `PackageVersion`, `LaunchConfig`, and `Currency<Meme>`, which returns the launch's
+`Migration`, then its venue's migrate, `blast_migrators::cetus::migrate` or
+`blast_migrators::bluefin::migrate`, with that `Migration` first (arguments in the venues guide),
+which redeems it with its own witness and builds the pool and the vault. The `Migration` has no
+abilities and only the stored venue's witness can redeem it, so a PTB that does not pass it to that
+venue fails. `launch::migrate`:
 
 1. Checks the current generation, that Migrate is not paused, and that the launch is
    `MigrationReady`.
@@ -1921,7 +1919,7 @@ inside `sui::vec_set` when the entry already has the requested state.
 - `launch_config::set_meme_decimals_allowed` (ListingAdmin), with `decimals: u8` and `allowed`.
   Emits `blast_fun::events::MemeDecimalsSet`.
 - `launch_config::schedule_venue` (AdapterAdmin, type argument the venue's witness, for example
-  `blast_fun_migrators::cetus::Venue`), with `Clock`: schedules admission after the applied venue
+  `blast_migrators::cetus::Venue`), with `Clock`: schedules admission after the applied venue
   notice; rejects primitive types and types defined at `0x1` or `0x2`. Anyone applies it with
   `launch_config::apply_venue` once ready; CancelAdmin discards it with
   `launch_config::cancel_venue`, even when ready. `launch_config::remove_venue` (AdapterAdmin)
@@ -2227,7 +2225,7 @@ keeps it in `VenueConfig` (see the venues guide).
 | Progress to graduation | `real_quote_reserve / graduation_target` |
 | Quote still needed | `ceil((graduation_target - real_quote_reserve) * 10,000 / (10,000 - quote_fee_bps))` gross |
 | Tradeable? | buy: `lifecycle` is `Live`; sell: also `public_start_ms` is set |
-| Which venue migrates it? | `venue`: `blast_fun_migrators::cetus::Venue` or `blast_fun_migrators::bluefin::Venue` |
+| Which venue migrates it? | `venue`: `blast_migrators::cetus::Venue` or `blast_migrators::bluefin::Venue` |
 | Opening round end | `public_start_ms + opening_round_ms` |
 | One bidder's pending bid | dynamic field `launch::OpeningRoundBidKey(address)` on the launch (a `u64`); absent once delivered |
 | Unclaimed creator / Blast launch fees | `fee_ledger` balances |
@@ -2279,7 +2277,7 @@ Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSe
 and the partner list's `blast_partners::partner_list::PartnerAdded` and
 `blast_partners::partner_list::PartnerRemoved`. From other packages: the
 pause and version events of `blast_admin::blast_admin_events`, the delayed modules' events (see "Delayed administration"), the Cetus venue's
-`blast_fun_migrators::blast_events::CetusPoolReserved` at creation, the vault's
+`blast_migrators::events::CetusPoolReserved` at creation, the vault's
 `blast_vault_events::VaultCreated` at migration, and `blast_partners::blast_partners::PartnerPaid`
 for each partner payout.
 
@@ -2298,7 +2296,7 @@ fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partner
 | package administration | 26 `EWrongUpgradeAction`, 13 `EInvalidPackageDigest` from `blast_admin::package_admin` | execute the exact scheduled action; use a 32-byte digest |
 | delayed administration | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin's delayed modules | wait for `ready_at_ms`; schedule before applying or cancelling; choose a notice of at most 30 days; change the value or notice; apply with the call matching the pending change |
 | publish | 7 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 20 `blast_fun::errors::EInvalidCreatorRecipient`, 21 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
-| prepare | `blast_fun_migrators::bluefin::EInvalidTier`; Cetus aborts in its own modules | a tier within Bluefin's bounds; a tick spacing Cetus registers and a pair it accepts |
+| prepare | `blast_migrators::errors::EInvalidTier`, `blast_migrators::errors::ESymbolTooLong`; Cetus aborts in its own modules | a tier within Bluefin's bounds and a Meme symbol of at most 32 bytes; a tick spacing Cetus registers and a pair it accepts |
 | start | 9 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 27 `blast_fun::errors::EQuoteNotAllowed`, 2 `blast_fun::errors::EVenueNotAllowed`, 1 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, venue, and decimals |
 | building values | 0 `blast_core::errors::EInvalidBps` (`blast_core::bps`); 3 `blast_core::errors::EInvalidRoute`, 4 `blast_core::errors::EInvalidFeeSplit` (`blast_core::fee_split`); 12 `blast_core::errors::EInvalidRecipient` (`blast_core::payout`); 2 `blast_core::errors::EInvalidVestingTerms` (`blast_core::payout`); 5 `blast_fun::errors::EInvalidShares` (`allocation`) | rates at most 10,000; positive route shares and non-zero addresses; at most 20 distinct routes summing to 10,000; positive vesting periods; curve Meme and pool Meme/Quote positive |
@@ -2381,8 +2379,9 @@ needed to bring the real reserve to the target and returns the rest as the secon
 `launch::buy`. The launch becomes `MigrationReady` and all buys and sells stop.
 
 **Who migrates the launch, and when?** Anyone, as soon as it is `MigrationReady`, through the venue
-the launch stores (`blast_fun_migrators::cetus::migrate` or `blast_fun_migrators::bluefin::migrate`).
-The `Migration` that `launch::migrate` returns can be redeemed only by that venue.
+the launch stores: `launch::migrate`, then `blast_migrators::cetus::migrate` or
+`blast_migrators::bluefin::migrate` with the returned `Migration` in the same PTB, which only that
+venue can redeem.
 
 **What happens to unsold tokens and the sell burn?** Both are disposed of at migration: burned when
 the supply is burn-only, or sent to `@0x0` when it is fixed. `blast_fun::events::Migrated` reports
@@ -2412,21 +2411,23 @@ never reaches its target stays `Live`, and holders exit by selling to the curve.
 
 ## Cetus and Bluefin venues
 
-> **Deployment status:** `blast_fun_migrators` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_migrators` is not yet published on mainnet; its interface may change before publication.
 
 ### What it is
 
-Package `blast_fun_migrators` holds the two venues a Blast launch can graduate to: Cetus
-(`blast_fun_migrators::cetus`) and Bluefin (`blast_fun_migrators::bluefin`). A venue takes part in a
-launch twice. At creation its `prepare` call records the coin's pool tier and returns a sealed
-`blast_core::migration::VenueTicket` that `launch::new` redeems, so the launch can migrate only to
-that venue. When the curve fills and the launch is `MigrationReady`, anyone calls the venue's
-`migrate`: it takes the launch's sealed hand-off, creates a new full-range pool seeded with the
-pool's Meme and Quote, and locks the position in a new shared `blast_vault::vault::Vault`, which has
-no removal path. Afterwards anyone collects the position's trading fees through the venue; the vault
-pays Blast its share and splits the rest by the vault's fee split. The vault itself (fee split,
-owner claims, partner payouts, holder rewards) is described in the vault guide; this guide covers
-what the venues do and what each call needs.
+Package `blast_migrators` holds the two venues a Blast sale can migrate to: Cetus
+(`blast_migrators::cetus`) and Bluefin (`blast_migrators::bluefin`). Both products use them:
+launchpad launches and presales. A venue takes part in a sale twice. At creation its `prepare` call
+records the coin's pool tier and returns a sealed `blast_core::migration::VenueTicket` that the
+product's `new` (for a launch, `launch::new`) redeems, so the sale can migrate only to that venue.
+When the sale is ready, one PTB calls the product's own `migrate` (for a launch, `launch::migrate`),
+which returns the sealed `blast_core::migration::Migration`, and then the venue's `migrate`, which
+redeems it, creates a new full-range pool seeded with the sale's Meme and Quote, and locks the
+position in a new shared `blast_vault::vault::Vault`, which has no removal path. Afterwards anyone
+collects the position's trading fees through the venue; the vault pays Blast its share and splits
+the rest by the vault's fee split. The vault itself (fee split, owner claims, partner payouts,
+holder rewards) is described in the vault guide; this guide covers what the venues do and what each
+call needs. The package imports no product and no product imports it.
 
 ### Objects and authority
 
@@ -2434,50 +2435,52 @@ what the venues do and what each call needs.
 
 | Object | How many | What it does |
 | --- | --- | --- |
-| `blast_fun_migrators::venue_config::VenueConfig` | singleton | Venue-owned records, written once per coin and never removed: each Cetus coin's `PoolCreationCap` and tick spacing, and each Bluefin coin's tier. |
-| `blast_fun_migrators::blast_fun_migrators::PackageVersion` | singleton | This package's operational generation; every venue call checks it first. |
-| `blast_fun_migrators::package_admin::PackageAdmin` | singleton | Sealed custody of this package's `Publisher` and `UpgradeCap`. |
-| `blast_vault::vault::Vault<Meme, Quote>` | one per migrated launch | Created and shared by `migrate`; holds the venue position and the fee balances (vault guide). |
+| `blast_migrators::venue_config::VenueConfig` | singleton | Venue-owned records, written once per coin and never removed: each Cetus coin's `PoolCreationCap` and tick spacing, and each Bluefin coin's tier. |
+| `blast_admin::package_version::PackageVersion` | singleton, typed `PackageVersion<BLAST_MIGRATORS>` by `blast_migrators::blast_migrators::BLAST_MIGRATORS` | This package's operational generation; every venue call checks it first. It defines no pause bits. |
+| `blast_admin::package_admin::PackageAdmin` | singleton, typed `PackageAdmin<BLAST_MIGRATORS>` | Sealed custody of this package's `Publisher` and `UpgradeCap`, in Blast's generic package administration. |
+| `blast_vault::vault::Vault<Meme, Quote>` | one per migrated sale | Created and shared by `migrate`; holds the venue position and the fee balances (vault guide). |
 
 Calls also take objects from other packages:
 
-- Launchpad: the shared `launch::Launch` (`Launch<Meme, Quote>`, migrate only), the launchpad's
-  `package_version::PackageVersion<BLAST_FUN>` (typed by `blast_fun::blast_fun::BLAST_FUN`), and `launch_config::LaunchConfig` (migrate only). At
-  creation the launcher also passes its owned `TreasuryCap<Meme>` to `prepare`.
+- The product: at creation the creator passes its owned `TreasuryCap<Meme>` to `prepare`; at
+  migration the venue takes the `blast_core::migration::Migration<Meme, Quote>` value the product's
+  `migrate` returned earlier in the PTB, and no product object.
 - Vault: `blast_vault_package::VaultRegistry` (migrate only), the vault package's
   `blast_admin::package_version::PackageVersion` (typed by `blast_vault_package::BLAST_VAULT_PACKAGE`),
   and the shared `blast_core::blast_treasury::Treasury` that Blast's LP fees go to.
-- Sui: the Meme's Coin Registry `Currency<Meme>` (shared; mutable because migration and collections
-  burn Meme), the Quote's `Currency<Quote>` (Bluefin migration only), and `Clock` at `0x6`.
+- Sui: the Meme's Coin Registry `Currency<Meme>` (shared; mutable for collections and buybacks,
+  which burn Meme; read-only in Bluefin `prepare` and `migrate`), the Quote's `Currency<Quote>`
+  (Bluefin migration only), and `Clock` at `0x6`.
 - Cetus: `GlobalConfig`, `Pools`, the pair's `Pool<CoinA, CoinB>`, and Cetus LP Burn's
   `BurnManager`, all shared.
 - Bluefin: its `GlobalConfig` and the pair's `Pool<Meme, Quote>`, both shared.
 
 #### Venue witnesses
 
-`blast_fun_migrators::cetus::Venue` and `blast_fun_migrators::bluefin::Venue` are the venues'
+`blast_migrators::cetus::Venue` and `blast_migrators::bluefin::Venue` are the venues'
 sealed witnesses; only their own module constructs them. A venue's witness issues its tickets,
-redeems its launches' migrations, keys its position inside the vault, and authorizes its fee
-collections. Blast admits each witness type twice: in `LaunchConfig` (so launches may start on it)
-and in the vault's `VaultRegistry` (so it may create vaults), which must also list the launchpad's
-`blast_fun::blast_fun::PackageWitness` as the issuer of every launch's vault terms.
+redeems its sales' migrations, keys its position inside the vault, and authorizes its fee
+collections. Blast admits each witness type in each product's venue list (the launchpad's
+`LaunchConfig`, so launches may start on it) and in the vault's `VaultRegistry` (so it may create
+vaults), which must also list each product's package witness, for launches
+`blast_fun::blast_fun::PackageWitness`, as the issuer of its sales' vault terms.
 
 #### Who may call what
 
 | Call | Who |
 | --- | --- |
-| `blast_fun_migrators::cetus::prepare`, `blast_fun_migrators::bluefin::prepare` | holder of the coin's `TreasuryCap<Meme>` (the launcher), in the launch's creation PTB |
-| `blast_fun_migrators::cetus::migrate`, `blast_fun_migrators::bluefin::migrate` | anyone, once the launch is `MigrationReady` |
-| `blast_fun_migrators::cetus::collect_fees`, `blast_fun_migrators::bluefin::collect_fees` | anyone |
-| `blast_fun_migrators::cetus::settle_and_apply_fee_split`, `blast_fun_migrators::bluefin::settle_and_apply_fee_split` | anyone, once the vault's proposed split is ready |
-| `blast_fun_migrators::cetus::buyback_and_burn`, `blast_fun_migrators::bluefin::buyback_and_burn` | Blast admin: `blast_core::blast_domain::BuybackAdmin` |
-| `blast_fun_migrators::package_admin::schedule_upgrade`, `blast_fun_migrators::package_admin::schedule_make_immutable`, `blast_fun_migrators::package_admin::schedule_upgrade_delay`, `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance`, `blast_fun_migrators::package_admin::make_immutable` | Blast admin: the launchpad's `blast_fun_domain::UpgradeAdmin` |
-| `blast_fun_migrators::package_admin::cancel_upgrade_action` | Blast admin: the launchpad's `blast_fun_domain::CancelAdmin` |
-| `blast_fun_migrators::package_admin::apply_upgrade_delay` | anyone, once the notice change is ready |
-| `blast_fun_migrators::package_admin::wrap` | holder of the package's `blast_fun_migrators::blast_fun_migrators::Publication` and native `UpgradeCap` (once, at deployment) |
+| `blast_migrators::cetus::prepare`, `blast_migrators::bluefin::prepare` | holder of the coin's `TreasuryCap<Meme>` (the creator), in the sale's creation PTB |
+| `blast_migrators::cetus::migrate`, `blast_migrators::bluefin::migrate` | anyone, with the `Migration` the product's `migrate` returned in the same PTB |
+| `blast_migrators::cetus::collect_fees`, `blast_migrators::bluefin::collect_fees` | anyone |
+| `blast_migrators::cetus::settle_and_apply_fee_split`, `blast_migrators::bluefin::settle_and_apply_fee_split` | anyone, once the vault's proposed split is ready |
+| `blast_migrators::cetus::buyback_and_burn`, `blast_migrators::bluefin::buyback_and_burn` | Blast admin: `blast_core::blast_domain::BuybackAdmin` |
+| `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance`, `blast_admin::package_admin::schedule_make_immutable`, `blast_admin::package_admin::make_immutable`, `blast_admin::package_admin::schedule_upgrade_delay`, typed `<BLAST_MIGRATORS>` | Blast admin: `blast_admin::package_admin::UpgradeAdmin<BLAST_MIGRATORS>` |
+| `blast_admin::package_admin::cancel_upgrade_action<BLAST_MIGRATORS>` | Blast admin: `blast_admin::package_admin::CancelAdmin<BLAST_MIGRATORS>` |
+| `blast_admin::package_admin::wrap<BLAST_MIGRATORS>` | holder of the package's `blast_admin::package_version::Publication` and native `UpgradeCap` (once, at deployment) |
 
 The vault's own calls (owner claims, fee-split proposals, partner payouts, holder rewards) are listed
-in the vault guide; the owner acts there with an owner proof from `launch::prove_owner`. A Blast
+in the vault guide; the owner acts there with an owner proof from the sale's product (for a launch,
+`launch::prove_owner`). A Blast
 admin signs in with `blast_acl::sign_in` on the shared `blast_acl::ACL` to get the role's
 `blast_acl::AdminWitness`. Integrators cannot call admin functions.
 
@@ -2489,8 +2492,8 @@ admin signs in with `blast_acl::sign_in` on the shared `blast_acl::ACL` to get t
   `CetusLPBurnProof` can only collect fees.
 - **Venue operators.** Cetus's pool-manager role can create a reserved pair's pool without the
   coin's `PoolCreationCap`. If it does so first, Cetus migration aborts, and only a migrators
-  upgrade could recover the launch. If Cetus stops registering the launch's tick spacing, migration
-  aborts and the launch stays `MigrationReady`.
+  upgrade could recover the sale. If Cetus stops registering the sale's tick spacing, migration
+  aborts and the sale stays ready to migrate.
 - **Auto-LP price-move skim.** Auto-LP adds at the pool's current price. A caller can move the price
   in the same transaction, collect, and move it back, skimming part of that call's auto-LP amount.
   Frequent collection keeps each slice small. Buybacks are admin-only with a minimum output for the
@@ -2501,86 +2504,90 @@ admin signs in with `blast_acl::sign_in` on the shared `blast_acl::ACL` to get t
 ### Lifecycle
 
 1. **Prepare** (creation PTB): the venue records the coin's tier in `VenueConfig` and returns a
-   `VenueTicket<Meme, Quote>`; `launch::new` redeems it and stores the venue. A coin is prepared
-   once: its records are write-once.
-2. **Curve**: the launch trades until `MigrationReady` (launchpad guide).
-3. **Migrate**: the venue redeems the launch's `Migration`, creates the pool, and creates and shares
-   the vault. The launch becomes `Migrated`. A failed migration aborts the whole transaction and
-   leaves the launch `MigrationReady`.
+   `VenueTicket<Meme, Quote>`; the product's `new` redeems it and stores the venue. A coin is
+   prepared once: its records are write-once.
+2. **Sale**: the launch trades until `MigrationReady`, or the presale fills (product guides).
+3. **Migrate**: in one PTB the product's `migrate` returns the sale's `Migration`, and the venue's
+   `migrate` redeems it, creates the pool, and creates and shares the vault. A `Migration` cannot be
+   dropped or stored, so a PTB that does not redeem it aborts, and a failed venue migration aborts the
+   whole transaction, product step included: the sale stays ready to migrate.
 4. **Collect**: any number of fee collections, fee-split changes, and buybacks through the venue.
    The vault never closes and its positions are never removed.
 
 ### Flows
 
-Every venue call takes the migrators `PackageVersion` (shared) and checks it before anything else.
-Calls that also mutate the launchpad or the vault take that package's version too, because each
-package checks only its own generation.
+Every venue call takes the migrators `PackageVersion<BLAST_MIGRATORS>` (shared) and checks it
+before anything else. Calls that also mutate the vault take the vault package's version too, because
+each package checks only its own generation.
 
-#### Prepare a coin on Cetus (launcher, inside the launch's creation PTB)
+#### Prepare a coin on Cetus (creator, inside the sale's creation PTB)
 
-`blast_fun_migrators::cetus::prepare` (type arguments `<Meme, Quote>`) takes, in order: the migrators
+`blast_migrators::cetus::prepare` (type arguments `<Meme, Quote>`) takes, in order: the migrators
 `PackageVersion`, `VenueConfig` (mutable), Cetus `GlobalConfig`, Cetus `Pools` (mutable), the
 `TreasuryCap<Meme>` (owned, by mutable reference), and `tick_spacing: u32`. It:
 
 1. Checks that Cetus registers a fee rate for `tick_spacing` (Cetus aborts otherwise).
 2. Mints the Meme type's single Cetus `PoolCreationCap` from the treasury cap and registers the pair
    at `tick_spacing`. Cetus aborts if it refuses the pair there.
-3. Stores the cap under `blast_fun_migrators::cetus::CreationCapKey` and the tick spacing under
-   `blast_fun_migrators::cetus::PoolTierKey` in `VenueConfig`, with no path to remove either, and
-   emits `blast_fun_migrators::blast_events::CetusPoolReserved`.
+3. Stores the cap under `blast_migrators::cetus::CreationCapKey` and the tick spacing under
+   `blast_migrators::cetus::PoolTierKey` in `VenueConfig`, with no path to remove either, and
+   emits `blast_migrators::events::CetusPoolReserved`.
 4. Returns a `blast_core::migration::VenueTicket<Meme, Quote>` sealed by
-   `blast_fun_migrators::cetus::Venue`.
+   `blast_migrators::cetus::Venue`.
 
 After this, only that cap (or Cetus's pool-manager role) can create the pair's Cetus pool at that
 tick spacing, so no buyer can pre-create the migration pool at a price of their choosing. The fee
 rate is whatever Cetus registers for the tick spacing.
 
-#### Prepare a coin on Bluefin (launcher, inside the launch's creation PTB)
+#### Prepare a coin on Bluefin (creator, inside the sale's creation PTB)
 
-`blast_fun_migrators::bluefin::prepare` (type arguments `<Meme, Quote>`) takes, in order: the
-migrators `PackageVersion`, `VenueConfig` (mutable), the `TreasuryCap<Meme>` (owned, by immutable
-reference, proving the caller controls the coin), `tick_spacing: u32`, and `fee_rate: u64`. It aborts
-with `blast_fun_migrators::bluefin::EInvalidTier` unless `tick_spacing` is in 1..=400 and `fee_rate`
-in 1..=20,000 (Bluefin's own pool-creation bounds, checked here because Bluefin checks them only at
-pool creation). It stores a `blast_fun_migrators::bluefin::PoolTier` under
-`blast_fun_migrators::bluefin::PoolTierKey` in `VenueConfig` and returns a `VenueTicket<Meme, Quote>`
-sealed by `blast_fun_migrators::bluefin::Venue`. It needs no Bluefin objects.
+`blast_migrators::bluefin::prepare` (type arguments `<Meme, Quote>`) takes, in order: the migrators
+`PackageVersion`, `VenueConfig` (mutable), the `TreasuryCap<Meme>` (owned, by immutable reference,
+proving the caller controls the coin), the Meme's `Currency<Meme>` (read-only), `tick_spacing: u32`,
+and `fee_rate: u64`. It aborts with `blast_migrators::errors::EInvalidTier` unless `tick_spacing` is
+in 1..=400 and `fee_rate` in 1..=20,000 (Bluefin's own pool-creation bounds, checked here because
+Bluefin checks them only at pool creation), then with `blast_migrators::errors::ESymbolTooLong`
+when the Meme symbol is longer than 32 bytes (the pool and its position store it). It stores a
+`blast_migrators::bluefin::PoolTier` under `blast_migrators::bluefin::PoolTierKey` in `VenueConfig`,
+emits `blast_migrators::events::BluefinPoolTierRecorded`, and returns a `VenueTicket<Meme, Quote>`
+sealed by `blast_migrators::bluefin::Venue`. It needs no Bluefin objects.
 
-Either way, pass the ticket to `launch::new` in the same PTB, then pass the same `TreasuryCap` to
-`launch::new` by value (launchpad guide, Flow 3). The ticket cannot be stored or dropped.
+Either way, pass the ticket to the product's `new` in the same PTB (for a launch, `launch::new`,
+with the same `TreasuryCap` by value; launchpad guide, Flow 3). The ticket cannot be stored or
+dropped.
 
 #### Migrate to Cetus (anyone)
 
-Nothing requires a separate transaction, so the PTB that graduates the curve can migrate too.
+Nothing requires a separate transaction, so the PTB that completes a sale can migrate too.
 
 1. Work out Cetus's coin order. Cetus orders a pool's coins `CoinA` and `CoinB` by type name, and
    the venue checks the order with Cetus's own `is_right_order<CoinA, CoinB>` (in Cetus's `factory`
    module). Dev-inspect it, or dry-run `migrate` with either order: the wrong one aborts with
-   `blast_fun_migrators::cetus::EInvalidCoinOrder`.
-2. Call `blast_fun_migrators::cetus::migrate` with type arguments `<Meme, Quote, CoinA, CoinB>` and,
-   in order: the `Launch<Meme, Quote>` (mutable), the migrators `PackageVersion`, the launchpad
-   `PackageVersion`, `LaunchConfig`, `Currency<Meme>` (mutable), `VenueConfig`, Cetus
-   `GlobalConfig`, Cetus `Pools` (mutable), LP Burn `BurnManager` (mutable), `VaultRegistry`, the
-   vault `PackageVersion`, `Treasury`, and `Clock`. It returns nothing; the caller receives no
-   object.
+   `blast_migrators::errors::EInvalidCoinOrder`.
+2. Call the product's `migrate` (for a launch, `launch::migrate`; launchpad guide). It returns the
+   sale's `Migration<Meme, Quote>`.
+3. Call `blast_migrators::cetus::migrate` with type arguments `<Meme, Quote, CoinA, CoinB>` and, in
+   order: the `Migration` result of step 2 (by value), the migrators `PackageVersion`,
+   `VenueConfig`, Cetus `GlobalConfig`, Cetus `Pools` (mutable), LP Burn `BurnManager` (mutable),
+   `VaultRegistry` (mutable), the vault `PackageVersion`, `Treasury`, and `Clock`. It returns
+   nothing; the caller receives no object.
 
-Inside the call, in order:
+Inside the venue call, in order:
 
-1. Checks the coin order (`blast_fun_migrators::cetus::EInvalidCoinOrder`) and that `{CoinA, CoinB}`
-   is exactly `{Meme, Quote}` (`blast_fun_migrators::cetus::EWrongCoinPair`).
+1. Checks the coin order (`blast_migrators::errors::EInvalidCoinOrder`) and that `{CoinA, CoinB}`
+   is exactly `{Meme, Quote}` (`blast_migrators::errors::EWrongCoinPair`).
 2. Reads the coin's tick spacing from `VenueConfig` and Cetus's full-range ticks for it.
-3. Calls `launch::migrate`, which pays the allocation's recipients, accrues Blast's one-time fee in
-   the launch, disposes of the unsold Meme, marks the launch `Migrated`, and returns the sealed
-   `Migration` (launchpad guide). The venue redeems it with its witness, receiving the pool's Meme
-   and Quote and the vault's terms; any other venue's witness aborts.
-4. Computes the opening price from those atomic amounts (see Economics), creates the pool with the
-   reserved `PoolCreationCap` at the recorded tick spacing, and seeds full-range liquidity with
-   exactly the handed-off balances. It never adopts an existing pool.
+3. Redeems the `Migration` with its witness, receiving the pool's Meme and Quote and the vault's
+   terms; a hand-off sealed for any other venue aborts.
+4. Computes the opening price from those atomic amounts with
+   `blast_core::migration::sqrt_price_x64` (see Economics), creates the pool with the reserved
+   `PoolCreationCap` at the recorded tick spacing, and seeds full-range liquidity with exactly the
+   handed-off balances. It never adopts an existing pool.
 5. Burns the position through Cetus LP Burn; Cetus records the liquidity as permanently locked.
 6. Creates the vault from the terms with `blast_vault::vault::new` (aborts unless the registry
-   admits `blast_fun_migrators::cetus::Venue`), attaches the `CetusLPBurnProof` and Cetus's leftover
-   coins with `blast_vault::vault::share_with_position`, and shares the vault. The leftovers are
-   migration residuals and go to Blast.
+   admits `blast_migrators::cetus::Venue` and the terms' issuer), attaches the `CetusLPBurnProof`
+   and Cetus's leftover coins with `blast_vault::vault::share_with_position`, and shares the vault.
+   The leftovers are migration residuals, settled by the terms.
 
 #### Migrate to Bluefin (anyone)
 
@@ -2588,17 +2595,17 @@ Bluefin pools always have Meme as coin A: `Pool<Meme, Quote>`.
 
 1. Split a `Coin<SUI>` worth exactly the SUI pool-creation fee Bluefin currently configures. Bluefin
    aborts on any other amount, and the whole coin is paid.
-2. Call `blast_fun_migrators::bluefin::migrate` with type arguments `<Meme, Quote>` and, in order:
-   the `Launch` (mutable), the migrators `PackageVersion`, the launchpad `PackageVersion`,
-   `LaunchConfig`, `Currency<Meme>` (mutable), `Currency<Quote>`, `VenueConfig`, Bluefin
-   `GlobalConfig` (mutable), `VaultRegistry`, the vault `PackageVersion`, `Treasury`, the `Coin<SUI>`
-   fee (by value), and `Clock`.
+2. Call the product's `migrate`; it returns the sale's `Migration<Meme, Quote>`.
+3. Call `blast_migrators::bluefin::migrate` with type arguments `<Meme, Quote>` and, in order: the
+   `Migration` result (by value), the migrators `PackageVersion`, `VenueConfig`, `Currency<Meme>`,
+   `Currency<Quote>`, Bluefin `GlobalConfig` (mutable), `VaultRegistry` (mutable), the vault
+   `PackageVersion`, `Treasury`, the `Coin<SUI>` fee (by value), and `Clock`.
 
-Inside the call: it reads the coin's tier from `VenueConfig`; runs `launch::migrate` and redeems the
-`Migration` as above; creates `Pool<Meme, Quote>` at the tier, named `MEME-QUOTE` from the two Coin
-Registry symbols, with no Meme icon and the Quote's icon; opens a position across the widest tick
-range Bluefin's configured bounds allow at that spacing; seeds it with the handed-off balances;
-creates the vault with the position and Bluefin's leftovers (residuals to Blast) and shares it; and
+Inside the call: it reads the coin's tier from `VenueConfig`; redeems the `Migration` as above;
+creates `Pool<Meme, Quote>` at the tier, named `MEME-QUOTE` from the two Coin Registry symbols, with
+no Meme icon and the Quote's icon; opens a position across the widest tick range Bluefin's
+configured bounds allow at that spacing; seeds it with the handed-off balances; creates the vault
+with the position and Bluefin's leftovers (residuals, settled by the terms) and shares it; and
 shares the pool. The caller receives no object, but Bluefin records the caller as the new pool's
 manager, a Bluefin role limited to the pool's reward emissions and to handing the role on.
 
@@ -2606,23 +2613,23 @@ manager, a Bluefin role limited to the pool's reward emissions and to handing th
 
 Anyone may collect, as often as they like. A collection that finds no fees is valid.
 
-- Cetus: `blast_fun_migrators::cetus::collect_fees`, type arguments `<Meme, Quote, CoinA, CoinB>`,
+- Cetus: `blast_migrators::cetus::collect_fees`, type arguments `<Meme, Quote, CoinA, CoinB>`,
   with the `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`,
   `Treasury`, `Currency<Meme>` (mutable), Cetus `GlobalConfig`, LP Burn `BurnManager`, the vault's
   Cetus `Pool<CoinA, CoinB>` (mutable), and `Clock`.
-- Bluefin: `blast_fun_migrators::bluefin::collect_fees`, type arguments `<Meme, Quote>`, with the
+- Bluefin: `blast_migrators::bluefin::collect_fees`, type arguments `<Meme, Quote>`, with the
   `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`, `Treasury`,
   `Currency<Meme>` (mutable), Bluefin `GlobalConfig`, the vault's `Pool<Meme, Quote>` (mutable), and
   `Clock`.
 
 Order of operations:
 
-1. On Cetus, prove the coin pair (`blast_fun_migrators::cetus::EWrongCoinPair`). Check the pool is
-   the vault's own (`EPositionPoolMismatch` in the venue's module).
+1. On Cetus, prove the coin pair (`blast_migrators::errors::EWrongCoinPair`). Check the pool is
+   the vault's own (`blast_migrators::errors::EPositionPoolMismatch`).
 2. Collect fees. Cetus: from the burned position through LP Burn, plus the auto-LP position's fees
    once it exists. Bluefin: from the migration position.
 3. Split through `blast_vault::vault::split_fees`: Blast's share of each asset (rounded up) is paid to
-   the `Treasury` at once, or held for the partner when the launch named one; the rest is apportioned
+   the `Treasury` at once, or held for the partner when the sale named one; the rest is apportioned
    over the vault's fee split. Address routes are paid as coins; the owner, auto-LP, and
    holder-reward routes accrue in the vault; the burn route's Meme is burned and its Quote kept for
    buybacks. A zero collection moves and emits nothing.
@@ -2643,11 +2650,11 @@ Auto-LP per venue:
 
 #### Settle and apply a new fee split (anyone)
 
-The owner proposes a split on the vault with an owner proof (`launch::prove_owner`, then
-`blast_vault::vault::schedule_fee_split`; launchpad and vault guides). It is ready after a fixed
-48-hour notice. Once ready, anyone calls
-`blast_fun_migrators::cetus::settle_and_apply_fee_split` (`<Meme, Quote, CoinA, CoinB>`) or
-`blast_fun_migrators::bluefin::settle_and_apply_fee_split` (`<Meme, Quote>`) with the same arguments
+The owner proposes a split on the vault with an owner proof from the sale's product (for a launch,
+`launch::prove_owner`), then `blast_vault::vault::schedule_fee_split` (product and vault guides). It
+is ready after a fixed 48-hour notice. Once ready, anyone calls
+`blast_migrators::cetus::settle_and_apply_fee_split` (`<Meme, Quote, CoinA, CoinB>`) or
+`blast_migrators::bluefin::settle_and_apply_fee_split` (`<Meme, Quote>`) with the same arguments
 as `collect_fees`. It checks the proposal is ready (`blast_vault::vault::assert_fee_split_ready`),
 collects and splits every position's fees under the current split, adds auto-LP, and then applies
 the new split (`blast_vault::vault::apply_fee_split`), so each fee follows the split it accrued
@@ -2655,29 +2662,31 @@ under. The call takes no split of its own: it applies only the stored proposal.
 
 #### Buyback and burn (Blast admin: `blast_core::blast_domain::BuybackAdmin`)
 
-A `BuybackAdmin` calls `blast_fun_migrators::cetus::buyback_and_burn` (`<Meme, Quote, CoinA, CoinB>`)
-or `blast_fun_migrators::bluefin::buyback_and_burn` (`<Meme, Quote>`) with the vault, the migrators
+A `BuybackAdmin` calls `blast_migrators::cetus::buyback_and_burn` (`<Meme, Quote, CoinA, CoinB>`)
+or `blast_migrators::bluefin::buyback_and_burn` (`<Meme, Quote>`) with the vault, the migrators
 `PackageVersion`, the vault `PackageVersion`, the `AdminWitness` for `BuybackAdmin`,
 `Currency<Meme>`, the venue's `GlobalConfig`, the vault's pool, `quote_in` (atomic Quote),
 `min_meme_out` (atomic Meme), and `Clock`. It checks the pool is the vault's
-(`EPositionPoolMismatch`), takes exactly `quote_in` of the vault's burn Quote, swaps it for Meme in
-the vault's pool up to the widest price limit, burns the Meme bought (or sends it to `@0x0` when the
-supply is fixed), keeps any Quote the pool did not take for the next buyback, and emits
-`blast_vault_events::BuybackBurned`. The admin sets `min_meme_out` from an off-chain price, because
-anyone can move the pool price inside a transaction.
+(`blast_migrators::errors::EPositionPoolMismatch`), takes exactly `quote_in` of the vault's burn
+Quote, swaps it for Meme in the vault's pool up to the widest price limit, burns the Meme bought (or
+sends it to `@0x0` when the supply is fixed), keeps any Quote the pool did not take for the next
+buyback, and emits `blast_vault_events::BuybackBurned`. The admin sets `min_meme_out` from an
+off-chain price, because anyone can move the pool price inside a transaction.
 
-#### Package upgrades (Blast admin: `UpgradeAdmin`)
+#### Package upgrades (Blast admin: `UpgradeAdmin<BLAST_MIGRATORS>`)
 
-`blast_fun_migrators::package_admin::schedule_upgrade` announces an exact 32-byte digest. After the
-notice, `blast_fun_migrators::package_admin::authorize_upgrade` returns its upgrade ticket, and
-`blast_fun_migrators::package_admin::commit_upgrade_and_advance` commits the receipt and moves
-`PackageVersion` to the next generation in the same transaction. From then on every call to the old
-package's code aborts the generation check, so integrators must call the current package address;
-type names keep the original address. Upgrading this package leaves the launchpad and the vault on
-their own generations. `blast_fun_migrators::package_admin::schedule_make_immutable` and
-`blast_fun_migrators::package_admin::make_immutable` end upgrades;
-`blast_fun_migrators::package_admin::schedule_upgrade_delay` changes the notice. The package has no
-pause of its own: migration stops with the launchpad's Migrate bit, and buybacks with the vault's
+The package uses Blast's generic package administration, typed by
+`blast_migrators::blast_migrators::BLAST_MIGRATORS`. `blast_admin::package_admin::schedule_upgrade`
+announces an exact 32-byte digest. After the notice, `blast_admin::package_admin::authorize_upgrade`
+returns its upgrade ticket, and `blast_admin::package_admin::commit_upgrade_and_advance` commits the
+receipt and moves `PackageVersion<BLAST_MIGRATORS>` to the next generation in the same transaction.
+From then on every call to the old package's code aborts the generation check, so integrators must
+call the current package address; type names keep the original address. Upgrading this package
+leaves the products and the vault on their own generations; an upgrade of the vault requires a
+relink of this package. `blast_admin::package_admin::schedule_make_immutable` and
+`blast_admin::package_admin::make_immutable` end upgrades;
+`blast_admin::package_admin::schedule_upgrade_delay` changes the notice. The package defines no
+pause bits: migration stops with the product's migration pause bit, and buybacks with the vault's
 admin pause bit.
 
 ### Economics
@@ -2686,21 +2695,23 @@ All amounts are atomic units. BPS are out of 10,000.
 
 #### Migration seed and residuals
 
-The opening sqrt price is `floor(sqrt(coin_b / coin_a) × 2^64)` from the handed-off atomic amounts:
-Quote/Meme when Meme is coin A, Meme/Quote otherwise. Display decimals never enter it. The seed fixes
+The opening sqrt price is `blast_core::migration::sqrt_price_x64`,
+`floor(sqrt(coin_b / coin_a) × 2^64)` from the handed-off atomic amounts: Quote/Meme when Meme is
+coin A, Meme/Quote otherwise. Display decimals never enter it. The seed fixes
 the side with more atoms (Meme on a tie), unless the venue's math says that would overdraw the other
 side by rounding, in which case it fixes the other side. Whatever the venue does not take is the
-migration residual; a launch's terms send residuals to Blast, paid to the `Treasury` at once, or held
-for the partner when the launch named one. Position principal plus residuals equals the hand-off.
+migration residual, settled by the sale's terms: residuals to Blast are paid to the `Treasury` at
+once, or held for the partner when the sale named one; residuals to the owner wait in the vault.
+Position principal plus residuals equals the hand-off.
 
 #### Blast's LP-fee share and the split
 
 Each collection takes Blast's share of each asset, `ceil(gross × bps / 10,000)`, with the vault's
-per-asset share. A launch's vault starts with the `LaunchConfig.protocol_lp_fees` value applied at
-migration (1,500 BPS each by default, at most 3,000); Blast can change one vault's share only after a
+per-asset share. A sale's vault starts with the share its product sealed into the `Migration`
+(for a launch, the `LaunchConfig.protocol_lp_fees` value applied at migration), at most 3,000 BPS; Blast can change one vault's share only after a
 fixed 48-hour notice. The rest of each asset is apportioned over the fee split's routes by largest
 remainder, so the routes always sum to what is left. This is separate from Blast's one-time
-migration allocation, which the launchpad takes at migration. The vault guide has the details,
+fees a product takes at migration. The vault guide has the details,
 including partner payouts.
 
 #### Auto-LP math
@@ -2721,23 +2732,23 @@ burn Quote. Every Meme bought is burned, or sent to `@0x0` under a fixed supply.
 
 ### Time rules
 
-- Preparation happens only in the launch's creation PTB; the tier never changes afterwards.
-- Migration has no deadline: a `MigrationReady` launch can migrate at any later time, unless the
-  launchpad's Migrate bit is paused.
+- Preparation happens only in the sale's creation PTB; the tier never changes afterwards.
+- The venue adds no migration deadline: the product decides when its `migrate` may return a
+  `Migration`, and its migration pause bit stops it.
 - A proposed fee split waits a fixed 48 hours; once ready it stays ready until someone settles and
   applies it, or the owner cancels it. Until then collections use the current split.
 - Collections have no deadline or cooldown.
 
 ### Reading state
 
-- Which venue a launch uses: the launch's `venue` field, the type name of
-  `blast_fun_migrators::cetus::Venue` or `blast_fun_migrators::bluefin::Venue`.
+- Which venue a sale uses: the sale's stored venue, the type name of
+  `blast_migrators::cetus::Venue` or `blast_migrators::bluefin::Venue`.
 - A Cetus coin's tier: the `u32` tick spacing in the `VenueConfig` dynamic field keyed by
-  `blast_fun_migrators::cetus::PoolTierKey` (typed by the Meme); its `PoolCreationCap` is the dynamic
-  object field keyed by `blast_fun_migrators::cetus::CreationCapKey`, whose ID matches
+  `blast_migrators::cetus::PoolTierKey` (typed by the Meme); its `PoolCreationCap` is the dynamic
+  object field keyed by `blast_migrators::cetus::CreationCapKey`, whose ID matches
   `CetusPoolReserved`.
-- A Bluefin coin's tier: the `blast_fun_migrators::bluefin::PoolTier` (`tick_spacing`, `fee_rate`)
-  in the `VenueConfig` dynamic field keyed by `blast_fun_migrators::bluefin::PoolTierKey`.
+- A Bluefin coin's tier: the `blast_migrators::bluefin::PoolTier` (`tick_spacing`, `fee_rate`)
+  in the `VenueConfig` dynamic field keyed by `blast_migrators::bluefin::PoolTierKey`.
 - A vault's pool: `blast_vault::vault::pool_id`, or the `pool_id` in its `VaultCreated` event. The
   vault's type arguments name the Meme and Quote; the `VaultCreated` event's third type argument
   names the venue.
@@ -2750,8 +2761,9 @@ burn Quote. Every Meme bought is burned, or sent to `@0x0` under a fixed supply.
 
 | Event | Emitted by | What to derive |
 | --- | --- | --- |
-| `blast_fun_migrators::blast_events::CetusPoolReserved` | `blast_fun_migrators::cetus::prepare` | `meme`, `quote`, `pool_creation_cap_id`, `tick_spacing`: the Cetus pair is reserved |
-| launchpad `blast_fun::events::MigrationAllocationPaid`, `blast_fun::events::ProtocolFeesAccrued`, `blast_fun::events::Migrated` | `migrate`, inside `launch::migrate` | recipients paid, Blast's one-time allocation, pool amounts and disposal |
+| `blast_migrators::events::CetusPoolReserved` | `blast_migrators::cetus::prepare` | type arguments `<Meme, Quote>`, `pool_creation_cap_id`, `tick_spacing`: the Cetus pair is reserved |
+| `blast_migrators::events::BluefinPoolTierRecorded` | `blast_migrators::bluefin::prepare` | type arguments `<Meme, Quote>`, `tick_spacing`, `fee_rate`: the Bluefin tier |
+| the product's migration events | the product's `migrate`, earlier in the same PTB | recipients paid, Blast's one-time fees, pool amounts (product guides) |
 | `blast_vault_events::VaultCreated` | `migrate` | `vault_id`, `pool_id`, `position_id`, `liquidity`, the sealed `terms`, residual amounts; type arguments `<Meme, Quote, Venue>` |
 | `blast_vault_events::FeesCollected` | `collect_fees`, `settle_and_apply_fee_split` | gross amounts, Blast's cut, each route's amounts in route order |
 | `blast_vault_events::AutoLpPositionOpened`, `blast_vault_events::AutoLiquidityAdded` | collections | Cetus's auto-LP position; liquidity added and what still waits |
@@ -2759,38 +2771,39 @@ burn Quote. Every Meme bought is burned, or sent to `@0x0` under a fixed supply.
 | `blast_core::blast_core_events::ProtocolFeesPaid` | migration and collections on a vault without a partner | Blast's residuals and LP-fee cut paid to the treasury |
 | `delayed::DelayedApplied` | `settle_and_apply_fee_split` | keyed by `blast_vault::vault::FeeSplitKey` with the vault ID as `owner`: the previous and new split |
 
-`CetusPoolReserved` and the vault and core events are plain Sui events (not wrapped in an envelope);
-so are the launchpad's. Cetus and Bluefin emit their
-own pool, position, and swap events in the same transactions.
+The migrators, vault, and core events are plain Sui events (not wrapped in an envelope), typed by
+the pair's `Meme` and `Quote`. Cetus and Bluefin emit their own pool, position, and swap events in
+the same transactions.
 
 ### Aborts
 
 | Flow | Abort | Fix |
 | --- | --- | --- |
-| any | code 9 in `blast_admin::operational_version` | call the current package ID of the migrators, launchpad, or vault package |
+| any | code 9 in `blast_admin::operational_version` | call the current package ID of the migrators, product, or vault package |
 | Cetus prepare | Cetus aborts in its own modules | choose a tick spacing Cetus registers, for a pair it accepts |
-| Bluefin prepare | `blast_fun_migrators::bluefin::EInvalidTier` | tick spacing 1..=400, fee rate 1..=20,000 |
-| Cetus migrate, collect, buyback | `blast_fun_migrators::cetus::EInvalidCoinOrder` (migrate), `blast_fun_migrators::cetus::EWrongCoinPair` | pass the pool's coin order; `CoinA` and `CoinB` must be the launch's Meme and Quote |
-| migrate | `sui::dynamic_field` code 1 reading the tier; 8 `blast_core::errors::EWrongVenue` in `blast_core::migration` | call the migrate of the venue the launch stores |
-| migrate | 12 `blast_fun::errors::EInvalidLaunchLifecycle`, 25 `blast_admin::errors::EPaused` (`package_version`) | wait for `MigrationReady`; wait for Migrate to be unpaused |
-| migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedIssuer`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the launchpad's `PackageWitness` must be listed in `VaultRegistry`; the seed must give positive liquidity |
-| migrate | Cetus aborts when the pair's pool already exists or the tick spacing is no longer registered; Bluefin aborts on a wrong creation fee | the launch stays `MigrationReady`; pass the exact Bluefin fee |
-| collect, settle, buyback | `blast_fun_migrators::cetus::EPositionPoolMismatch`, `blast_fun_migrators::bluefin::EPositionPoolMismatch` | pass the vault's own pool |
+| Bluefin prepare | 3 `blast_migrators::errors::EInvalidTier`, then 4 `blast_migrators::errors::ESymbolTooLong` | tick spacing 1..=400, fee rate 1..=20,000; a Meme symbol of at most 32 bytes |
+| Cetus migrate, collect, buyback | 0 `blast_migrators::errors::EInvalidCoinOrder` (migrate), 2 `blast_migrators::errors::EWrongCoinPair` | pass the pool's coin order; `CoinA` and `CoinB` must be the sale's Meme and Quote |
+| migrate | `sui::dynamic_field` code 1 reading the tier; 8 `blast_core::errors::EWrongVenue` in `blast_core::migration` | call the migrate of the venue the sale stores, with that sale's `Migration` |
+| migrate | the product's own lifecycle or pause abort in its `migrate` (product guides) | wait until the sale is ready to migrate and its migration is unpaused |
+| migrate | 1 `blast_vault::errors::EUnadmittedVenue`, 33 `blast_vault::errors::EUnadmittedIssuer`, 4 `blast_vault::errors::EZeroLiquidity` (vault) | the venue and the product's package witness must be listed in `VaultRegistry`; the seed must give positive liquidity |
+| migrate | Cetus aborts when the pair's pool already exists or the tick spacing is no longer registered; Bluefin aborts on a wrong creation fee | the sale stays ready to migrate; pass the exact Bluefin fee |
+| collect, settle, buyback | 1 `blast_migrators::errors::EPositionPoolMismatch` in the venue's module | pass the vault's own pool |
 | settle and apply | 18 `ENoPending` or 17 `ENotReady` from Blast admin's `delayed` module | wait until the scheduled split is ready |
 | buyback | 7 `blast_vault::errors::EBuybackQuoteOutOfRange`, 8 `blast_vault::errors::EBuybackBelowMinimum`; Blast admin `EPaused` when the vault's admin bit is set | spend a positive amount up to the burn Quote; re-quote `min_meme_out` |
-| package administration | `blast_fun_migrators::package_admin::EWrongUpgradeAction`, `blast_fun_migrators::package_admin::EInvalidDigest` | execute the exact scheduled action; use a 32-byte digest |
 
 ### Pitfalls
 
-- Calling `prepare` outside the creation PTB. The `VenueTicket` cannot be stored, so prepare,
-  `launch::new`, `launch::finalize`, and `launch::share` share one PTB.
+- Calling `prepare` outside the creation PTB. The `VenueTicket` cannot be stored, so prepare and the
+  product's creation calls (for a launch, `launch::new`, `launch::finalize`, and `launch::share`)
+  share one PTB.
 - Passing the `TreasuryCap` by value to `prepare`. Cetus takes it by mutable reference and Bluefin
-  by immutable reference; `launch::new` takes it by value afterwards.
-- Choosing a Cetus tick spacing Cetus does not register, or a Bluefin tier outside its bounds:
-  creation aborts, and the tier can never change after creation.
+  by immutable reference; the product's `new` takes it by value afterwards.
+- Choosing a Cetus tick spacing Cetus does not register, a Bluefin tier outside its bounds, or a
+  Meme symbol longer than 32 bytes on Bluefin: creation aborts, and the tier can never change after
+  creation.
 - Passing Cetus coin types in Meme/Quote order instead of the pool's order.
-- Calling `launch::migrate` directly. Its `Migration` must be redeemed by the venue; call the venue's
-  `migrate`, which calls it.
+- Calling the product's `migrate` without the venue's `migrate` in the same PTB. Its `Migration`
+  cannot be dropped, so the transaction aborts; pass it to the stored venue's `migrate`.
 - Forgetting the Bluefin pool-creation fee coin, or passing a different amount.
 - Expecting the burned Cetus position to grow: auto-LP goes to the second position.
 - Expecting a ready fee split to apply by itself. Someone must call `settle_and_apply_fee_split`.
@@ -2798,41 +2811,47 @@ own pool, position, and swap events in the same transactions.
 
 ### Q&A
 
-**Which venue does a launch migrate to?** The one whose `prepare` produced the ticket the launch
-redeemed; the launch stores that venue's witness type in `venue`. Only that venue's `migrate`
-succeeds.
+**Which venue does a sale migrate to?** The one whose `prepare` produced the ticket the sale
+redeemed; the sale stores that venue's witness type. Only that venue's `migrate` can redeem its
+`Migration`.
 
-**What is the PTB to start a launch on Cetus?** `blast_fun_migrators::cetus::prepare` with the
-`TreasuryCap` by mutable reference (returns the `VenueTicket`), `launch::new` with the ticket, the
-`TreasuryCap` by value, and the venue ticket, the launch setters, `launch::finalize`, and
-`launch::share`, in that order.
+**What is the PTB to start a launch on Cetus?** `blast_migrators::cetus::prepare` with the
+`TreasuryCap` by mutable reference (returns the `VenueTicket`), `launch::new` with the ticket and
+the `TreasuryCap` by value, the launch setters, `launch::finalize`, and `launch::share`, in that
+order.
+
+**What is the PTB to migrate?** Two calls: the product's `migrate` (for a launch, `launch::migrate`),
+then the venue's `migrate` with the returned `Migration` as its first argument. They succeed or abort
+together.
 
 **Can anyone withdraw the migrated liquidity?** No. The vault holds the position under the venue's
 key with no removal path, and the Cetus migration position is also burned through Cetus LP Burn.
 
-**Who can migrate a graduated launch?** Anyone, with no deadline, by calling the venue's `migrate`.
-The PTB that makes the final buy can migrate in the same transaction.
+**Who can migrate a sale?** Anyone, once the product's `migrate` accepts it. The PTB that completes
+the sale can migrate in the same transaction.
 
 **Why do Cetus calls take `CoinA` and `CoinB`?** Cetus orders a pool's coins by type name, so the
-pool's types may be `Pool<Quote, Meme>`. The venue proves the pair matches the launch and retypes
+pool's types may be `Pool<Quote, Meme>`. The venue proves the pair matches the sale and retypes
 balances between the two orders.
 
-**Who receives the migration residuals?** Blast: they are paid to the `Treasury`, or held in the
-vault for the partner payout when the launch named a partner.
+**Who receives the migration residuals?** Whoever the sale's terms name: Blast, paid to the
+`Treasury` or held for the partner payout, or the owner, held in the vault.
 
 **How often should LP fees be collected?** As often as useful; collection is permissionless and
 cheap to retry. Frequent collection also keeps the auto-LP price-move exposure small.
 
-**How does the creator change the LP-fee split?** With the curve-fee cap, call `launch::prove_owner`
-and `blast_vault::vault::schedule_fee_split` in one PTB. After 48 hours anyone applies it with the
-venue's `settle_and_apply_fee_split`, which first settles fees under the old split.
+**How does the creator change the LP-fee split?** With an owner proof from the product (for a
+launch, the curve-fee cap and `launch::prove_owner`), call `blast_vault::vault::schedule_fee_split`
+in one PTB. After 48 hours anyone applies it with the venue's `settle_and_apply_fee_split`, which
+first settles fees under the old split.
 
-**Does pausing the launchpad stop collections?** No. The Migrate bit stops migration only; fee
-collection never pauses, and buybacks stop only with the vault's admin pause.
+**Does pausing a product stop collections?** No. A product's migration pause stops new migrations
+only; fee collection never pauses, and buybacks stop only with the vault's admin pause.
 
 **Why might a Cetus migration fail?** Cetus no longer registers the tick spacing, Cetus's
-pool-manager role created the pair's pool first, the vault registry does not admit the venue, or the
-launchpad's Migrate bit is paused. The launch stays `MigrationReady` in every case.
+pool-manager role created the pair's pool first, the vault registry does not admit the venue or the
+product's witness, or the product's migration is paused. The sale stays ready to migrate in every
+case.
 
 ## Partner codes
 
@@ -5138,7 +5157,7 @@ outdated bytecode, and an upgrade custody that seals a package's `Publisher` and
 `UpgradeCap` so upgrades happen only through role-gated calls. Blast publishes
 `blast_admin` immutable (its `UpgradeCap` is destroyed in the publish
 transaction), so none of these rules can change. The launchpad (`blast_fun`),
-migrators (`blast_fun_migrators`), Blast SUI (`blast_sui`), Boosts
+migrators (`blast_migrators`), Blast SUI (`blast_sui`), Boosts
 (`blast_boosts_core` and `blast_boosts_aftermath`), partners
 (`blast_partners`), and presales (`blast_presale`) use it.
 
@@ -5174,7 +5193,7 @@ Same-named roles in different packages are different types.
 | Package | Declared in | Roles |
 | --- | --- | --- |
 | `blast_fun` (launchpad) | declares none | the generic `blast_admin::package_admin::UpgradeAdmin<M>`, `blast_admin::package_admin::PauseAdmin<M>`, `blast_admin::package_admin::UnpauseAdmin<M>` and `blast_admin::package_admin::CancelAdmin<M>` for `blast_fun::blast_fun::BLAST_FUN`, and the product roles of `blast_core::blast_domain` (`CreatorAdmin`, `TreasuryAdmin`, `FeeAdmin`, `ListingAdmin`, `AdapterAdmin`, `ClaimSignerAdmin`, `CancelAdmin`) |
-| `blast_fun_migrators` | declares none | the generic `UpgradeAdmin<M>` (its own delay policy and upgrades) and `CancelAdmin<M>` (pending administration) for its marker `blast_fun_migrators::blast_fun_migrators::BLAST_FUN_MIGRATORS`; its buybacks take `blast_core::blast_domain::BuybackAdmin` |
+| `blast_migrators` | declares none | the generic `UpgradeAdmin<M>` (its own delay policy and upgrades) and `CancelAdmin<M>` (pending administration) for its marker `blast_migrators::blast_migrators::BLAST_MIGRATORS`; its buybacks take `blast_core::blast_domain::BuybackAdmin` |
 | `blast_sui` | `blast_sui_domain` | `blast_sui_domain::UpgradeAdmin` (attach package capabilities; authorize, commit, restrict, or seal upgrades), `blast_sui_domain::FeeAdmin` (blastSUI redemption fee) |
 | `blast_boosts_core` | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer` (issue a Vault and its share currency, update its metadata), `blast_boosts_core::blast_boosts_core::RiskAdmin` (fees, NAV cap, max order notional, withdraw admin fees, accepted partners), `blast_boosts_core::blast_boosts_core::ShutdownAdmin` (begin a Vault's shutdown), `blast_boosts_core::blast_boosts_core::UpgradeAdmin` (adapter package upgrades) |
 | `blast_boosts_aftermath` | declares none | uses the four Boosts core roles |
@@ -5306,7 +5325,7 @@ genuine one-time witness, so the value can only be created in that package's
 
 | Package | Version object |
 | --- | --- |
-| `blast_fun_migrators` | `blast_fun_migrators::blast_fun_migrators::PackageVersion` |
+| `blast_migrators` | `blast_admin::package_version::PackageVersion`, typed `PackageVersion<BLAST_MIGRATORS>` |
 | `blast_sui` | `blast_sui_package::PackageVersion` |
 | `blast_boosts_aftermath` | `blast_boosts_aftermath::blast_boosts_aftermath::Protocol` |
 
@@ -5342,7 +5361,7 @@ use its own Publisher and UpgradeCap directly:
 
 | Package | Custody object | Transitions exposed |
 | --- | --- | --- |
-| `blast_fun_migrators` | `blast_fun_migrators::package_admin::PackageAdmin` | `blast_fun_migrators::package_admin::wrap`, `blast_fun_migrators::package_admin::authorize_upgrade`, `blast_fun_migrators::package_admin::commit_upgrade_and_advance`, delayed `blast_fun_migrators::package_admin::make_immutable` |
+| `blast_migrators` | `blast_admin::package_admin::PackageAdmin`, typed `PackageAdmin<BLAST_MIGRATORS>` | `blast_admin::package_admin::wrap`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance`, delayed `blast_admin::package_admin::make_immutable` |
 | `blast_sui` | `blast_sui::package_admin::PackageAdmin` | `blast_sui::package_admin::new`, `blast_sui::package_admin::add_capability`, `blast_sui::package_admin::share`, `blast_sui::package_admin::authorize_upgrade`, `blast_sui::package_admin::commit_upgrade_and_advance`, `blast_sui::package_admin::restrict_to_additive`, `blast_sui::package_admin::make_immutable`, `blast_sui::package_admin::has_upgrade_cap` |
 | `blast_boosts_aftermath` | `blast_boosts_aftermath::package_admin::PackageAdmin` | `blast_boosts_aftermath::package_admin::wrap`, `blast_boosts_aftermath::package_admin::authorize_upgrade`, `blast_boosts_aftermath::package_admin::commit_upgrade`, `blast_boosts_aftermath::package_admin::activate_upgrade`, `blast_boosts_aftermath::package_admin::make_immutable` |
 
@@ -5659,7 +5678,7 @@ PTB built against an old package ID after an upgrade.
   not ownership, to know whether a cap works.
 - Role names repeat across packages (`UpgradeAdmin`, `FeeAdmin`). Always compare
   the full type name, including the package address.
-- After any upgrade of `blast_fun`, `blast_fun_migrators`, `blast_sui`, or
+- After any upgrade of `blast_fun`, `blast_migrators`, `blast_sui`, or
   `blast_boosts_aftermath`, PTBs pinned to the old package ID abort with code
   9.
 
@@ -5687,8 +5706,8 @@ package is a different type, so the transaction does not type-check.
 
 **Which Blast packages can still be upgraded?** Those whose `PackageAdmin` still
 holds an `UpgradeCap`: check each one's custody. `blast_admin`,
-`blast_partners`, and `blast_boosts_core` are immutable. `blast_fun_migrators`
-exposes no way to restrict or seal itself.
+`blast_partners`, and `blast_boosts_core` are immutable. `blast_migrators`
+exposes no way to restrict itself; only a delayed `make_immutable` seals it.
 
 **What stops a stale package version from moving funds?** Every protected call
 checks the shared generation against the generation compiled into the bytecode,
@@ -8393,72 +8412,43 @@ public fun revoke_creator_claim_signer(
 )
 ```
 
-## API reference: `blast_fun_migrators` (Cetus and Bluefin venues)
+## API reference: `blast_migrators` (Cetus and Bluefin venues)
 
 Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 
-### `blast_fun_migrators::blast_events`
+Abort codes: this package aborts with the numeric codes below from whichever module detects the failure; the abort location names that module.
 
-Typed replay facts for Cetus pool reservations and Bluefin pool tiers. Vault custody, LP-fee collection, auto-LP, buybacks, and holder rewards are recorded by `blast_vault`'s events.
+| Code | Constant | Meaning |
+| --- | --- | --- |
+| 0 | `EInvalidCoinOrder` | `CoinA` and `CoinB` must follow the Cetus coin order. |
+| 1 | `EPositionPoolMismatch` | The pool must be the vault's own pool. |
+| 2 | `EWrongCoinPair` | `CoinA` and `CoinB` must be exactly the sale's Meme and Quote. |
+| 3 | `EInvalidTier` | A Bluefin tier needs a tick spacing in 1..=400 and a fee rate in 1..=20,000. |
+| 4 | `ESymbolTooLong` | A Bluefin Meme symbol must be at most 32 bytes. |
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/blast_events.move
+### `blast_migrators::blast_migrators`
 
-#### Events
+The migrators package's publication.  `init` turns the one-time witness into `blast_admin`'s owned `Publication`, which the publisher wraps with the package's `UpgradeCap` through `blast_admin::package_admin::wrap`; that shares `PackageVersion<BLAST_MIGRATORS>` and `PackageAdmin<BLAST_MIGRATORS>`. Venues define no pause bits, so the version starts unpaused and the package has no unpause. Upgrades are scheduled, authorized and committed through the generic `package_admin` under this package's own `UpgradeAdmin<BLAST_MIGRATORS>` role. The products never import this package: each venue redeems the `Migration` its product's own `migrate` returned earlier in the transaction.
 
-```move
-/// Records Cetus pool creation reserved for one pair at the tick spacing its migration uses.
-public struct CetusPoolReserved has copy, drop {
-    meme: TypeName,
-    quote: TypeName,
-    pool_creation_cap_id: ID,
-    tick_spacing: u32,
-}
-
-/// Records the Bluefin pool tier a prepared pair's migration uses.
-public struct BluefinPoolTierRecorded has copy, drop {
-    meme: TypeName,
-    quote: TypeName,
-    tick_spacing: u32,
-    fee_rate: u64,
-}
-```
-
-### `blast_fun_migrators::blast_fun_migrators`
-
-Canonical publication custody and operational generation.  `init` seeds the generation from the one-time witness and then claims the Publisher with it, so no other package can create this package's generation. The marker never declares an administration role: Migrators reuses the Launchpad's roles in the shared Blast ACL and owns only its package-local state. Migrators does not treat the Launchpad generation as its own; a composed call that mutates both packages supplies both version objects, because each package checks only the transitions it implements.
-
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/blast_fun_migrators.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/blast_migrators.move
 
 #### Types
 
 ```move
-/// One-time witness: it seeds the package generation and claims this package's Publisher.
-public struct BLAST_FUN_MIGRATORS() has drop;
+/// The package's one-time witness and the marker of its version, administration, and roles.
+public struct BLAST_MIGRATORS() has drop;
 
-/// Linear publication provenance; consumed permanently when native custody is sealed.
-public struct Publication has key {
-    id: UID,
-    publisher: Publisher,
-    generation: blast_admin::operational_version::OperationalVersion<BLAST_FUN_MIGRATORS>,
-}
-
-/// Singleton operational package generation.
-public struct PackageVersion has key {
-    id: UID,
-    generation: blast_admin::operational_version::OperationalVersion<BLAST_FUN_MIGRATORS>,
-}
+/// The package witness `blast_admin` pins at publication, the one type that authorizes this
+/// package's own administration calls such as unpause. Only this module could construct it, and it
+/// is never stored or returned; the package defines no pause bits, so nothing constructs it.
+public struct PackageWitness() has drop;
 ```
 
-#### Constants
+### `blast_migrators::bluefin`
 
-- `PACKAGE_VERSION: u64 = 1`: Current package generation accepted by every protected mutation.
-- `NEXT_PACKAGE_VERSION: u64 = 2`: The generation this bytecode hands over to in a governed upgrade.
-
-### `blast_fun_migrators::bluefin`
-
-Bluefin coin preparation, migration into `blast_vault` custody, fee collection with auto-LP, settled fee-split updates, and buybacks over custodied concentrated-liquidity principal.  Bluefin pools are keyed by their exact type-parameter order, so this module always creates and expects `Pool<Meme, Quote>` with Meme as coin A.
+Bluefin coin preparation, migration into `blast_vault` custody, fee collection with auto-LP, settled fee-split updates, and buybacks over custodied concentrated-liquidity principal, for launches and presales alike.  Bluefin pools are keyed by their exact type-parameter order, so this module always creates and expects `Pool<Meme, Quote>` with Meme as coin A.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/bluefin.move
 
@@ -8466,7 +8456,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 
 ```move
 /// The Bluefin venue's sealed witness: it issues tickets, redeems migrations, and keys the position
-/// in the vault, so a launch and the vault registry admit this one type.
+/// in the vault, so each product's venue list and the vault registry admit this one type.
 public struct Venue() has drop;
 
 /// A prepared coin's Bluefin pool tier.
@@ -8482,37 +8472,38 @@ public struct PoolTierKey<phantom Meme>() has copy, drop, store;
 #### Functions
 
 ```move
-/// Prepares `Meme` for a Bluefin launch in `Quote` at the creator's tier, recording the tier, and
-/// returns the ticket `launch::new` redeems. `treasury_cap` proves the caller controls the coin,
-/// so no one else can record its tier first.
+/// Prepares `Meme` for a Bluefin sale in `Quote` at the creator's tier, recording the tier, and
+/// returns the ticket the product's `new` redeems. `treasury_cap` proves the caller controls the
+/// coin, so no one else can record its tier first.
 ///
-/// Bluefin checks the tier only when migration creates the pool, and a launch cannot change its
-/// tier, so the same bounds apply here first.
+/// Bluefin checks the tier only when migration creates the pool, and a sale cannot change its
+/// tier, so the same bounds apply here first. The pool and its position store the Meme symbol, so
+/// it is bounded here too.
 public fun prepare<Meme, Quote>(
-    migrators_version: &blast_fun_migrators::PackageVersion,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     venue_config: &mut venue_config::VenueConfig,
     _: &TreasuryCap<Meme>,
+    currency: &Currency<Meme>,
     tick_spacing: u32,
     fee_rate: u64,
 ): blast_core::migration::VenueTicket<Meme, Quote>
 
-/// Migrates a MigrationReady launch into a new full-range pool at the recorded tier and a
-/// `blast_vault` vault.
+/// Migrates a sale into a new full-range pool at the recorded tier and a `blast_vault` vault:
+/// `migration` is the hand-off the launch's or presale's own `migrate` returned earlier in the
+/// transaction.
 ///
-/// Redeems the launch's hand-off. The opening price derives from the handed-off balances, which
+/// Redeems the hand-off. The opening price derives from the handed-off balances, which
 /// seed the position on the side `is_meme_seed_side` chooses. `creation_fee` is paid whole, and
 /// Bluefin aborts unless it is exactly the configured SUI fee. The position and the venue
 /// residuals go to the vault, which has no withdrawal path. The caller receives no object; Bluefin
 /// records it as the new pool's manager, a role limited to the pool's reward emissions and to
 /// handing the role on (ADR 0088).
 public fun migrate<Meme, Quote>(
-    launch: &mut blast_fun::launch::Launch<Meme, Quote>,
-    migrators_version: &blast_fun_migrators::PackageVersion,
-    package_version: &blast_admin::package_version::PackageVersion<blast_fun::blast_fun::BLAST_FUN>,
-    config: &blast_fun::launch_config::LaunchConfig,
-    currency: &mut Currency<Meme>,
-    quote_currency: &Currency<Quote>,
+    migration: blast_core::migration::Migration<Meme, Quote>,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     venue_config: &venue_config::VenueConfig,
+    currency: &Currency<Meme>,
+    quote_currency: &Currency<Quote>,
     bluefin_config: &mut config::GlobalConfig,
     registry: &mut blast_vault::blast_vault_package::VaultRegistry,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
@@ -8526,7 +8517,7 @@ public fun migrate<Meme, Quote>(
 /// auto-LP share back to the position. Anyone may call it.
 public fun collect_fees<Meme, Quote>(
     self: &mut blast_vault::vault::Vault<Meme, Quote>,
-    migrators_version: &blast_fun_migrators::PackageVersion,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
     treasury: &blast_core::blast_treasury::Treasury,
     currency: &mut Currency<Meme>,
@@ -8539,7 +8530,7 @@ public fun collect_fees<Meme, Quote>(
 /// Anyone may settle accrued fees under the current split, then apply the stored ready proposal.
 public fun settle_and_apply_fee_split<Meme, Quote>(
     self: &mut blast_vault::vault::Vault<Meme, Quote>,
-    migrators_version: &blast_fun_migrators::PackageVersion,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
     treasury: &blast_core::blast_treasury::Treasury,
     currency: &mut Currency<Meme>,
@@ -8555,7 +8546,7 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
 /// the pool's price within a transaction. Quote the pool does not take stays for the next buyback.
 public fun buyback_and_burn<Meme, Quote>(
     self: &mut blast_vault::vault::Vault<Meme, Quote>,
-    migrators_version: &blast_fun_migrators::PackageVersion,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
     admin_witness: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::BuybackAdmin>,
     currency: &mut Currency<Meme>,
@@ -8568,16 +8559,9 @@ public fun buyback_and_burn<Meme, Quote>(
 )
 ```
 
-#### Errors
+### `blast_migrators::cetus`
 
-| Constant | Code | Message |
-| --- | --- | --- |
-| `EPositionPoolMismatch` | 0 | Custodied position must belong to the supplied pool. |
-| `EInvalidTier` | 1 | Bluefin tier needs a tick spacing in 1..=400 and a fee rate in 1..=20,000. |
-
-### `blast_fun_migrators::cetus`
-
-Cetus coin preparation, pool-creation reservation, migration into `blast_vault` custody, and collection.  Anyone holding Meme can create a Cetus pool, and Cetus allows one pool per pair and tick spacing, so a buyer could pre-create the migration pool at a price of their choosing. Preparing the coin therefore mints the Meme type's single Cetus `PoolCreationCap` from its treasury capability, before any Meme can leave the launch ticket, registers the pair at the creator's tick spacing, and returns a `VenueTicket` for that pair the launch redeems; afterwards only that capability or Cetus's pool-manager role can create the pair's pool there. Trusting that role is a venue-operator assumption: a pool it creates first makes the pair's migration abort, and only a migrators upgrade could recover the launch. The capability stays in `VenueConfig` under a key only this module constructs, with no extraction or unregistration path.  Migration redeems the launch's hand-off and burns the full-range position through Cetus LP Burn, so Cetus itself records the launch liquidity as permanently locked; the `blast_vault` vault keeps the `CetusLPBurnProof`, which can only collect fees. A burned position cannot receive liquidity, so auto-LP adds to a second full-range position the vault opens on first use and keeps with no removal path.  Cetus orders a pool's coin types by type name. Each route after `prepare` takes the pool's coin types as `CoinA` and `CoinB` beside the launch's `Meme` and `Quote`, proves they are the same pair, and retypes balances between the two orders through a checked dynamic-field round trip (ADR 0100).
+Cetus coin preparation, pool-creation reservation, migration into `blast_vault` custody, and collection, for launches and presales alike.  Anyone holding Meme can create a Cetus pool, and Cetus allows one pool per pair and tick spacing, so a buyer could pre-create the migration pool at a price of their choosing. Preparing the coin therefore mints the Meme type's single Cetus `PoolCreationCap` from its treasury capability, before any Meme can leave the sale's custody, registers the pair at the creator's tick spacing, and returns a `VenueTicket` for that pair the sale redeems; afterwards only that capability or Cetus's pool-manager role can create the pair's pool there. Trusting that role is a venue-operator assumption: a pool it creates first makes the pair's migration abort, and only a migrators upgrade could recover the sale. The capability stays in `VenueConfig` under a key only this module constructs, with no extraction or unregistration path.  Migration redeems the `Migration` the sale's own `migrate` returned earlier in the transaction and burns the full-range position through Cetus LP Burn, so Cetus itself records the sale's liquidity as permanently locked; the `blast_vault` vault keeps the `CetusLPBurnProof`, which can only collect fees. A burned position cannot receive liquidity, so auto-LP adds to a second full-range position the vault opens on first use and keeps with no removal path.  Cetus orders a pool's coin types by type name. Each route after `prepare` takes the pool's coin types as `CoinA` and `CoinB` beside the sale's `Meme` and `Quote`, proves they are the same pair, and retypes balances between the two orders through a checked dynamic-field round trip (ADR 0100).
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/cetus.move
 
@@ -8585,7 +8569,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 
 ```move
 /// The Cetus venue's sealed witness: it issues tickets, redeems migrations, and keys the position
-/// in the vault, so a launch and the vault registry admit this one type.
+/// in the vault, so each product's venue list and the vault registry admit this one type.
 public struct Venue() has drop;
 
 /// Sealed `VenueConfig` object-field name for the Meme type's Cetus `PoolCreationCap`.
@@ -8604,15 +8588,15 @@ public struct CastKey() has copy, drop, store;
 #### Functions
 
 ```move
-/// Prepares `Meme` for a Cetus launch in `Quote` at the creator's `tick_spacing`, reserving Cetus
-/// pool creation for the pair, and returns the ticket `launch::new` redeems.
+/// Prepares `Meme` for a Cetus sale in `Quote` at the creator's `tick_spacing`, reserving Cetus
+/// pool creation for the pair, and returns the ticket the product's `new` redeems.
 ///
 /// The Meme type's single `PoolCreationCap` is minted from `treasury_cap` before any Meme can
-/// leave the launch ticket, the pair is registered at `tick_spacing`, and the spacing is recorded.
+/// leave the sale's custody, the pair is registered at `tick_spacing`, and the spacing is recorded.
 /// Aborts, leaving Cetus unchanged, when Cetus does not register the spacing or refuses the pair
 /// at it, so the creator can choose another tier or venue instead.
 public fun prepare<Meme, Quote>(
-    migrators_version: &blast_fun_migrators::PackageVersion,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     venue_config: &mut venue_config::VenueConfig,
     cetus_config: &config::GlobalConfig,
     pools: &mut factory::Pools,
@@ -8621,21 +8605,19 @@ public fun prepare<Meme, Quote>(
     ctx: &mut TxContext,
 ): blast_core::migration::VenueTicket<Meme, Quote>
 
-/// Migrates a MigrationReady launch into a `blast_vault` vault. `CoinA` and `CoinB` name the
-/// launch's Meme and Quote in Cetus's canonical coin order.
+/// Migrates a sale into a Cetus pool and a `blast_vault` vault: `migration` is the hand-off the
+/// launch's or presale's own `migrate` returned earlier in the transaction. `CoinA` and `CoinB`
+/// name the sale's Meme and Quote in Cetus's canonical coin order.
 ///
-/// Redeems the launch's hand-off, creates the pair's pool with the reserved capability at the
-/// recorded tick spacing, priced from the handed-off balances, seeds full-range liquidity with
-/// exactly those balances on the side `is_coin_a_seed_side` chooses, burns the position, and
-/// creates the vault from the launch's terms with the burn proof and Cetus's residual. Any Cetus
-/// refusal, including a tier Cetus no longer registers, aborts the whole migration and leaves the
-/// launch MigrationReady.
+/// Redeems the hand-off, creates the pair's pool with the reserved capability at the recorded
+/// tick spacing, priced from the handed-off balances, seeds full-range liquidity with exactly
+/// those balances on the side `is_coin_a_seed_side` chooses, burns the position, and creates the
+/// vault from the sale's terms with the burn proof and Cetus's residual. Any Cetus refusal,
+/// including a tier Cetus no longer registers, aborts the whole transaction, the product's
+/// `migrate` with it, so the sale stays ready to migrate.
 public fun migrate<Meme, Quote, CoinA, CoinB>(
-    launch: &mut blast_fun::launch::Launch<Meme, Quote>,
-    migrators_version: &blast_fun_migrators::PackageVersion,
-    package_version: &blast_admin::package_version::PackageVersion<blast_fun::blast_fun::BLAST_FUN>,
-    config: &blast_fun::launch_config::LaunchConfig,
-    currency: &mut Currency<Meme>,
+    migration: blast_core::migration::Migration<Meme, Quote>,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     venue_config: &venue_config::VenueConfig,
     cetus_config: &config::GlobalConfig,
     pools: &mut factory::Pools,
@@ -8652,7 +8634,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
 /// pool's coin order.
 public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     self: &mut blast_vault::vault::Vault<Meme, Quote>,
-    migrators_version: &blast_fun_migrators::PackageVersion,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
     treasury: &blast_core::blast_treasury::Treasury,
     currency: &mut Currency<Meme>,
@@ -8667,7 +8649,7 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
 /// and `CoinB` are the pool's coin order.
 public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     self: &mut blast_vault::vault::Vault<Meme, Quote>,
-    migrators_version: &blast_fun_migrators::PackageVersion,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
     treasury: &blast_core::blast_treasury::Treasury,
     currency: &mut Currency<Meme>,
@@ -8685,7 +8667,7 @@ public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
 /// `CoinA` and `CoinB` are the pool's coin order.
 public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
     self: &mut blast_vault::vault::Vault<Meme, Quote>,
-    migrators_version: &blast_fun_migrators::PackageVersion,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
     vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
     admin_witness: &blast_admin::blast_acl::AdminWitness<blast_core::blast_domain::BuybackAdmin>,
     currency: &mut Currency<Meme>,
@@ -8698,15 +8680,7 @@ public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
 )
 ```
 
-#### Errors
-
-| Constant | Code | Message |
-| --- | --- | --- |
-| `EInvalidCoinOrder` | 0 | CoinA and CoinB must follow the Cetus coin order. |
-| `EPositionPoolMismatch` | 1 | Pool must be the vault's own pool. |
-| `EWrongCoinPair` | 2 | CoinA and CoinB must be exactly the launch's Meme and Quote. |
-
-### `blast_fun_migrators::constants`
+### `blast_migrators::constants`
 
 Package-wide migrator constants exposed as zero-cost macros.
 
@@ -8714,138 +8688,40 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 
 #### Constants
 
+- `generation: u64 = 1`: The package generation this bytecode serves.
 - `bluefin_max_tick_spacing: u32 = 400`: Bluefin pool creation's own tick-spacing bound (`pool` aborts 1026 above it).
 - `bluefin_max_fee_rate: u64 = 20_000`: Bluefin pool creation's own fee-rate bound (`pool` aborts 1027 above it).
+- `max_meme_symbol_length: u64 = 32`: Longest Meme symbol, in bytes, a Bluefin pool accepts: the pool and its position store the symbol, and the pool name repeats it, so a longer one would make the position too large.
 - `min_swap_sqrt_price: u128 = 4_295_048_017`: Lowest sqrt price a Cetus or Bluefin swap accepts as its limit; buybacks selling Quote as coin A run to it and rely on the caller's minimum Meme out instead.
 - `max_swap_sqrt_price: u128 = 79_226_673_515_401_279_992_447_579_054`: Highest sqrt price a Cetus or Bluefin swap accepts as its limit, for buybacks selling Quote as coin B.
 - `q64_shift: u8 = 64`: Fractional bits of a Q64.64 sqrt price.
-- `q128_shift: u8 = 128`: Fractional bits of the Q128 price ratio the seed sqrt price is taken from.
-- `sqrt_upper_bound_shift: u8 = 96`: Exponent of the integer square-root search's upper bound: a positive u64/u64 Q128 ratio is below 2^192, so its root is below 2^96.
+- `q128_shift: u8 = 128`: Fractional bits of a Q128 value; a fixed-A auto-LP liquidity must stay below it.
 - `auto_lp_margin: u256 = 2`: Atoms of the other asset kept in reserve beyond the estimate, covering the venue's own rounding of the liquidity it derives from the fixed amount.
 
-### `blast_fun_migrators::package_admin`
+### `blast_migrators::events`
 
-Sealed custody for the migrators package's Publisher and UpgradeCap.  Migrators shares the Launchpad's administration roles, so its governed transitions take `AdminWitness<UpgradeAdmin>`, the role Launchpad declares. Custody itself stays package-local: advancing Migrators leaves Launchpad on its own generation.
+Event payloads and their package-only emitters for `blast_migrators`: the pool tier each venue records while preparing a pair. Vault creation, LP-fee collection, auto-LP, buybacks, and holder rewards emit from `blast_vault`; versions and upgrades from `blast_admin`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/package_admin.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/events.move
 
-#### Types
+#### Events
 
 ```move
-/// The exact code digest or irreversible end of upgrades approved for execution.
-public enum UpgradeAction has copy, drop, store {
-    Upgrade(vector<u8>),
-    MakeImmutable,
+/// Cetus pool creation for the pair is reserved under `pool_creation_cap_id`, the Meme type's one
+/// `PoolCreationCap`, at the tick spacing its migration uses.
+public struct CetusPoolReserved<phantom Meme, phantom Quote> has copy, drop {
+    pool_creation_cap_id: ID,
+    tick_spacing: u32,
 }
 
-/// Keys the upgrade custody's delayed lifecycle.
-public struct UpgradeKey() has copy, drop, store;
-
-/// Shared custody for this package's framework Publisher and UpgradeCap.
-public struct PackageAdmin has key {
-    id: UID,
-    custody: blast_admin::upgrade_custody::UpgradeCustody<blast_fun_migrators::BLAST_FUN_MIGRATORS>,
-    upgrade: blast_admin::delayed_action::DelayedAction<UpgradeKey, UpgradeAction>,
+/// The Bluefin pool tier the pair's migration uses.
+public struct BluefinPoolTierRecorded<phantom Meme, phantom Quote> has copy, drop {
+    tick_spacing: u32,
+    fee_rate: u64,
 }
 ```
 
-#### Functions
-
-```move
-/// Schedules one exact code digest under the applied notice, replacing any previous action.
-/// Changing the notice requires a separate policy-only proposal.
-public fun schedule_upgrade(
-    self: &mut PackageAdmin,
-    package_version: &blast_fun_migrators::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UpgradeAdmin<blast_fun_migrators::BLAST_FUN_MIGRATORS>>,
-    digest: vector<u8>,
-    clock: &Clock,
-)
-
-/// Schedules the irreversible destruction of upgrade authority under the applied notice.
-public fun schedule_make_immutable(
-    self: &mut PackageAdmin,
-    package_version: &blast_fun_migrators::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UpgradeAdmin<blast_fun_migrators::BLAST_FUN_MIGRATORS>>,
-    clock: &Clock,
-)
-
-/// Cancels any scheduled action or notice change, even after its execution threshold.
-public fun cancel_upgrade_action(
-    self: &mut PackageAdmin,
-    package_version: &blast_fun_migrators::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::CancelAdmin<blast_fun_migrators::BLAST_FUN_MIGRATORS>>,
-)
-
-/// Consumes Publication forever, seals native capabilities, and enables Migrators.
-public fun wrap(
-    publication: blast_fun_migrators::Publication,
-    upgrade_cap: UpgradeCap,
-    ctx: &mut TxContext,
-)
-
-/// Authorizes the exact package digest under the sealed cap's compatible policy.
-///
-/// No path narrows that policy: every upgrade commits through `commit_upgrade_and_advance`,
-/// whose new bytecode must compile the next generation constants.
-public fun authorize_upgrade(
-    self: &mut PackageAdmin,
-    package_version: &blast_fun_migrators::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UpgradeAdmin<blast_fun_migrators::BLAST_FUN_MIGRATORS>>,
-    digest: vector<u8>,
-    clock: &Clock,
-): UpgradeTicket
-
-/// Commits the native receipt and advances one operational generation at once.
-///
-/// Every commit advances, so each upgrade must bump both constants in `package_version`: bytecode
-/// that still compiles the old generation fails every generation check, `authorize_upgrade`
-/// included, and would freeze the package.
-public fun commit_upgrade_and_advance(
-    self: &mut PackageAdmin,
-    package_version: &mut blast_fun_migrators::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UpgradeAdmin<blast_fun_migrators::BLAST_FUN_MIGRATORS>>,
-    receipt: UpgradeReceipt,
-)
-
-/// Executes a ready immutability decision under the live upgrade role.
-public fun make_immutable(
-    self: &mut PackageAdmin,
-    package_version: &blast_fun_migrators::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UpgradeAdmin<blast_fun_migrators::BLAST_FUN_MIGRATORS>>,
-    clock: &Clock,
-)
-
-/// Changes only the upgrade notice period, after the currently applied notice.
-/// Replaces any pending upgrade or immutability action.
-public fun schedule_upgrade_delay(
-    self: &mut PackageAdmin,
-    package_version: &blast_fun_migrators::PackageVersion,
-    _: &blast_admin::blast_acl::AdminWitness<blast_admin::package_admin::UpgradeAdmin<blast_fun_migrators::BLAST_FUN_MIGRATORS>>,
-    delay_ms: u64,
-    clock: &Clock,
-)
-
-/// Applies a ready policy-only proposal; cannot consume an upgrade authorization.
-public fun apply_upgrade_delay(
-    self: &mut PackageAdmin,
-    package_version: &blast_fun_migrators::PackageVersion,
-    clock: &Clock,
-)
-```
-
-#### Errors
-
-| Constant | Code | Message |
-| --- | --- | --- |
-| `EWrongUpgradeAction` | 0 | The ready action must match the requested upgrade digest or immutability. |
-| `EInvalidDigest` | 1 | A package digest must contain 32 bytes. |
-
-#### Constants
-
-- `INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000`: The notice every upgrade or immutability action waits from publication until changed.
-
-### `blast_fun_migrators::venue_config`
+### `blast_migrators::venue_config`
 
 Shared venue state: write-once entries only their venue module can key.  Venue modules add authority-bearing objects (the Meme type's Cetus `PoolCreationCap`) as dynamic object fields, so each object keeps its ID and stays readable by it, and plain records (a prepared coin's pool tier) as dynamic fields, while preparing a coin. No entry is ever removed, replaced, or borrowed mutably. New venue modules add entries without changing this object's layout.
 
@@ -12709,8 +12585,9 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/va
 /// The package's one-time witness and the marker of its version, publication, and roles.
 public struct BLAST_VAULT_PACKAGE() has drop;
 
-/// The witness `unpause` passes to clear pause bits; only this module constructs it.
-public struct UnpauseWitness() has drop;
+/// The package witness `blast_admin` pins at publication: `unpause` passes it to clear pause bits.
+/// Only this module constructs it, and it is never stored or returned.
+public struct PackageWitness() has drop;
 
 /// Keys the admitted witnesses' delayed lifecycle.
 public struct WitnessesKey() has copy, drop, store;
@@ -14462,37 +14339,34 @@ public fun make_immutable<PackageMarker: drop>(
 
 ## API reference: `blast_aftermath_dao_presale` (Aftermath DAO-pool presale migrator)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 
 ### `blast_aftermath_dao_presale::blast_aftermath_dao_presale`
 
-A one-off `blast_presale` migrator built for a partner. The `AdminCap` creates each sale with the Aftermath pool-creation capability of its LP coin, which stays bound to that sale. Anyone may then migrate the funded sale into a 50/50 Aftermath weighted pool wrapped in Aftermath's DAO-fee pool, which pays a 2% fee on every swap, deposit, and withdrawal straight to the partner treasury. The treasury also receives each sale's `PresaleCap` and each DAO-fee pool's owner cap, with which it may change that pool's fee or recipient; the sale's LP is locked forever.
+A one-off presale venue built for a partner, over `blast_core` alone. The `AdminCap` prepares each sale token with the Aftermath pool-creation capability of its LP coin and receives the `VenueTicket` that `blast_presale::new` redeems, so the sale can migrate only here. Anyone may then migrate the funded sale: the PTB passes the `Migration` the presale's own `migrate` returned, and this module seeds a 50/50 Aftermath weighted pool wrapped in Aftermath's DAO-fee pool, which pays a 2% fee on every swap, deposit, and withdrawal straight to the partner treasury. The treasury also receives each DAO-fee pool's owner cap, with which it may change that pool's fee or recipient; the sale's LP is locked forever.  The package never imports a product, so a presale upgrade never strands it.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vendors/aftermath_dao_presale/sources/blast_aftermath_dao_presale.move
 
 #### Types
 
 ```move
-/// The package's sealed venue witness: it issues the ticket a sale redeems when `new` starts it and
+/// The package's sealed venue witness: it issues the ticket a sale redeems at creation and
 /// redeems that sale's migration hand-off. Only this module constructs it, so only `migrate` can
 /// release the sale's liquidity.
 public struct Venue() has drop;
 
 /// The package's only administrator, sent to the publisher at publication. Its one power is
-/// creating sales through `new` and `finalize`.
+/// preparing sale tokens through `prepare`.
 public struct AdminCap has key, store {
     id: UID,
 }
 
-/// Shared reservation of one sale's Aftermath pool creation: the `CreatePoolCapV2` of the fresh LP
-/// coin `Lp`, which only `migrate` of the sale `presale_id` can consume. A sale `new` started but
-/// finalized directly in `blast_presale` has none, so it can never migrate and refunds after its
-/// LP deadline.
-public struct PoolCreation<phantom Lp> has key {
+/// Shared reservation of one sale token's Aftermath pool creation: the `CreatePoolCapV2` of the
+/// fresh LP coin `Lp`, which only the migration of a `SaleToken` sale can consume.
+public struct PoolCreation<phantom Lp, phantom SaleToken> has key {
     id: UID,
-    presale_id: ID,
     create_pool_cap: pool::CreatePoolCapV2,
 }
 ```
@@ -14500,46 +14374,27 @@ public struct PoolCreation<phantom Lp> has key {
 #### Functions
 
 ```move
-/// Starts a presale that migrates through this module, with a ticket for the pair this venue
-/// issues. Its pool's weights and fees are this module's constants, so the sale carries no pool
-/// terms. The sale is set like any other, then finalized only through this module's `finalize`,
-/// which reserves its pool creation. The `CreationPolicy` must admit `Venue`.
-public fun new<SaleToken, Quote>(
+/// Reserves `SaleToken`'s pool creation with `create_pool_cap`, minted by the fresh LP coin `Lp`,
+/// in a shared `PoolCreation`, and returns the ticket for a sale of `SaleToken` in `Quote` that
+/// migrates here. The pool's weights and fees are this module's constants, so the sale carries no
+/// pool terms. The presale's `CreationPolicy` must admit `Venue`.
+public fun prepare<Lp, SaleToken, Quote>(
     _: &AdminCap,
-    package_version: &blast_presale::blast_presale_package::PackageVersion,
-    treasury_cap: TreasuryCap<SaleToken>,
-    creation_policy: &blast_presale::creation_policy::CreationPolicy,
-    fee_policy: &blast_presale::fee_policy::FeePolicy,
-): blast_presale::blast_presale::PresaleInitializer<SaleToken, Quote>
-
-/// Finalizes a sale `new` started, sends its `PresaleCap` to the treasury, and shares a
-/// `PoolCreation` binding `create_pool_cap`, minted by the fresh LP coin `Lp`, to it. Every LP fee
-/// its pool pays reaches the treasury, so this sets the sale's LP-fee split to name the treasury as
-/// its only route. The initializer must be one `new` started: another venue's sale could never
-/// consume the pool creation.
-public fun finalize<Lp, SaleToken, Quote>(
-    _: &AdminCap,
-    package_version: &blast_presale::blast_presale_package::PackageVersion,
-    initializer: blast_presale::blast_presale::PresaleInitializer<SaleToken, Quote>,
-    registry: &mut blast_presale::blast_presale::PresaleRegistry,
-    currency: &mut Currency<SaleToken>,
     create_pool_cap: pool::CreatePoolCapV2,
     ctx: &mut TxContext,
-): blast_presale::blast_presale::Presale<SaleToken, Quote>
+): blast_core::migration::VenueTicket<SaleToken, Quote>
 
-/// Anyone may migrate a funded sale `finalize` created, consuming the `PoolCreation` bound to it: it
-/// redeems the sale's hand-off, seeds a 50/50 Aftermath pool with all of the sale's LP tokens and
-/// Quote, wraps it in a DAO-fee pool paying the treasury, shares that pool, sends its owner cap to
-/// the treasury, and locks the LP at `BURN_ADDRESS`. No vault is created, so the hand-off's vault
-/// terms are dropped.
+/// Anyone may migrate a funded sale prepared here: it redeems `migration`, the hand-off the
+/// presale's own `migrate` returned earlier in the transaction, consumes the sale token's
+/// `PoolCreation`, seeds a 50/50 Aftermath pool with all of the sale's tokens and Quote, wraps it in
+/// a DAO-fee pool paying the treasury, shares that pool, sends its owner cap to the treasury, and
+/// locks the LP at `BURN_ADDRESS`. No vault is created, so the
+/// hand-off's vault terms are dropped after naming the sale in the event.
 public fun migrate<Lp, SaleToken, Quote>(
-    sale: &mut blast_presale::blast_presale::Presale<SaleToken, Quote>,
-    package_version: &blast_presale::blast_presale_package::PackageVersion,
-    pool_creation: PoolCreation<Lp>,
-    fee_policy: &blast_presale::fee_policy::FeePolicy,
+    migration: blast_core::migration::Migration<SaleToken, Quote>,
+    pool_creation: PoolCreation<Lp, SaleToken>,
     pool_registry: &mut pool_registry::PoolRegistry,
     dao_fee_version: &version::Version,
-    clock: &Clock,
     ctx: &mut TxContext,
 )
 ```
@@ -14547,16 +14402,16 @@ public fun migrate<Lp, SaleToken, Quote>(
 #### Events
 
 ```move
-/// `finalize` reserved the sale `presale_id`'s Aftermath pool creation for the LP coin `Lp` in the
-/// shared `pool_creation_id`, which its migration consumes.
+/// `prepare` reserved the sale token `SaleToken`'s Aftermath pool creation for the LP coin `Lp` in
+/// the shared `pool_creation_id`, which its migration consumes.
 public struct PoolCreationReserved<phantom Lp, phantom SaleToken, phantom Quote> has copy, drop {
-    presale_id: ID,
     pool_creation_id: ID,
 }
 
-/// A sale migrated into the Aftermath pool `pool_id`, which traders reach through the shared
-/// DAO-fee pool `dao_fee_pool_id`. The treasury holds that pool's owner cap `owner_cap_id`, and
-/// `BURN_ADDRESS` holds the LP coin `lp_coin_id`, which locks the sale's `lp` units forever.
+/// The sale `presale_id` migrated into the Aftermath pool `pool_id`, which traders reach through
+/// the shared DAO-fee pool `dao_fee_pool_id`. The treasury holds that pool's owner cap
+/// `owner_cap_id`, and `BURN_ADDRESS` holds the LP coin `lp_coin_id`, which locks the sale's `lp`
+/// units forever.
 public struct Migrated<phantom Lp, phantom SaleToken, phantom Quote> has copy, drop {
     presale_id: ID,
     pool_id: ID,
@@ -14573,16 +14428,13 @@ public struct Migrated<phantom Lp, phantom SaleToken, phantom Quote> has copy, d
 | --- | --- | --- |
 | `EPoolMismatch` | 0 | The Aftermath pool must hold every sale token and Quote unit the presale released. |
 | `EDaoFeePoolMismatch` | 1 | The DAO-fee pool must charge this package's fee and pay the treasury. |
-| `EWrongPresale` | 2 | The pool creation is bound to a different presale. |
-| `EWrongVenue` | 3 | Only a sale this package's `new` started can be finalized here. |
 
 #### Constants
 
-- `TREASURY: address = @0x37cf46b499f740e653644bd2f7a8ed97f248e8b3c69d5d12c97d7845a54c0cd8`: Receives every sale's `PresaleCap` and every pool's DAO fees and owner cap.
+- `TREASURY: address = @0x37cf46b499f740e653644bd2f7a8ed97f248e8b3c69d5d12c97d7845a54c0cd8`: The partner treasury: receives every pool's DAO fees and owner cap.
 - `BURN_ADDRESS: address = @0x0`: Owns every pool's LP coin. No one can sign for the zero address, so nothing it owns can ever be used in a transaction again.
 - `DAO_FEE_BPS: u16 = 200`: The DAO fee, 2%, that Aftermath sends to the treasury from every swap, deposit, and withdrawal until the owner cap changes it.
 - `HALF_WEIGHT: u64 = 500_000_000_000_000_000`: Each coin's weight: half of Aftermath's `1e18` fixed-point one.
 - `FLATNESS: u64 = 0`: Selects Aftermath's uncorrelated weighted-product curve.
 - `BASE_SWAP_FEE: u64 = 100_000_000_000_000`: Aftermath's minimum base swap-in fee, 0.01% in its `1e18` unit; it rejects zero. This part compounds into the locked LP.
 - `POOL_NAME: vector<u8> = b"Blast Presale Pool"`
-- `ALL_BPS: u64 = 10_000`: The whole LP-fee split, which the treasury's address route takes.
