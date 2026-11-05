@@ -21,8 +21,9 @@
 //! pool at the launch's tier, burns the Cetus position through LP Burn, builds and shares the
 //! `blast_vault` vault, pays the allocations, and pays the migration residuals to the treasury;
 //! permissionless collections split real swap fees exactly by Blast's vault share (the launch
-//! config's, then a per-vault override) and the fee split, skip auto-LP while its balances are
-//! one-sided or tiny, and otherwise add auto-LP back at the pool price, and burn the burn route's
+//! config's, then a per-vault override) and the fee split, and the compounding appended to each
+//! collection skips auto-LP while its balances are one-sided or tiny and otherwise adds auto-LP
+//! back at the pool price; collections burn the burn route's
 //! Meme at `@0x0` (the fixture's supply is fixed); the buyback administrator swaps the waiting burn
 //! Quote for Meme and burns it, and a minimum above the pool's output rolls back; collection against
 //! another pool of the same type is refused; the settled split is scheduled with an owner proof
@@ -596,9 +597,9 @@ impl World {
         let venue_type = tag(&format!("{migrators}::{}::Venue", case.module()));
         let issuer_type = tag(&format!("{blast}::blast_fun::PackageWitness"));
         let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
-        h.release_vault(admin, admin_published, core, &vault_stack, &[venue_type.clone(), issuer_type])?;
+        h.release_vault(admin, admin_published, core, &vault_stack, stack.treasury, &[venue_type.clone(), issuer_type])?;
         let (version, package_admin) = h.wrap_launchpad(blast, published, admin, admin_published, core, case.quote(), venue_type)?;
-        h.unpause_launchpad(blast, admin, admin_published, version, package_admin, runtime, config, 7)?;
+        h.unpause_launchpad(blast, admin, admin_published, version, package_admin, runtime, config, stack.treasury, 7)?;
         let (fixture, project_token) = if burnable {
             ("fixture/burnable_project", "burnable_token::BURNABLE_TOKEN")
         } else {
@@ -1597,19 +1598,39 @@ impl World {
         let treasury = self.shared(&mut b, self.treasury, false)?;
         let mut args = vec![vault, migrators_version, vault_version, treasury];
         args.push(self.shared(&mut b, launch.currency, true)?);
-        if self.case.is_cetus() {
-            args.push(self.shared(&mut b, self.venue("cetus_global_config"), false)?);
+        let venue_config = if self.case.is_cetus() {
+            let config = self.shared(&mut b, self.venue("cetus_global_config"), false)?;
+            args.push(config);
             args.push(self.shared(&mut b, self.venue("cetus_burn_manager"), false)?);
+            config
         } else {
-            args.push(self.shared(&mut b, self.venue("bluefin_global_config"), false)?);
-        }
-        args.push(self.shared(&mut b, pool, true)?);
-        args.push(self.clock(&mut b)?);
+            let config = self.shared(&mut b, self.venue("bluefin_global_config"), false)?;
+            args.push(config);
+            config
+        };
+        let pool = self.shared(&mut b, pool, true)?;
+        args.push(pool);
+        let clock = self.clock(&mut b)?;
         let function = match update {
             Some(_) => "settle_and_apply_fee_split",
             None => "collect_fees",
         };
+        // Cetus's `collect_fees` neither compounds nor applies a split, so it takes no Clock.
+        if !(self.case.is_cetus() && update.is_none()) {
+            args.push(clock);
+        }
         call(&mut b, self.migrators, self.case.module(), function, self.route_types(launch), args);
+        // Collection leaves the auto-LP share waiting; compounding is its own permissionless route,
+        // appended here so one PTB collects and adds, as a collection worker would, and the auto-LP
+        // assertions read the same outcome.
+        call(
+            &mut b,
+            self.migrators,
+            self.case.module(),
+            "compound_auto_lp",
+            self.route_types(launch),
+            vec![vault, migrators_version, vault_version, venue_config, pool, clock],
+        );
 
         Ok(b.finish())
     }
@@ -1677,8 +1698,10 @@ impl World {
             self.h.sim.advance_clock(std::time::Duration::from_millis(before.delay_ms));
             // A later failing command must roll back the ready application, venue collection,
             // payouts, and proposal consumption together.
+            // The apply is the PTB's first command; compounding follows it. A second apply finds
+            // no pending proposal.
             let mut rollback = self.collect_pt(launch, m, m.pool, update)?;
-            rollback.commands.push(rollback.commands.last().expect("apply").clone());
+            rollback.commands.push(rollback.commands.first().expect("apply").clone());
             let expected = Expected::Abort { package: self.admin, module: "delayed", code: 14 };
             self.h.assert_rolled_back(rollback, expected, &[m.vault, m.pool, launch.currency], &watched_payees)?;
         }
@@ -2583,6 +2606,8 @@ struct MigrationAllocationPaid {
     destination: SuiAddress,
     meme: u64,
     quote: u64,
+    _meme_vesting_id: Option<ObjectID>,
+    _quote_vesting_id: Option<ObjectID>,
 }
 
 #[derive(Deserialize)]
