@@ -18,16 +18,17 @@ class PublicationTests(unittest.TestCase):
             fake_sui.chmod(0o755)
             for mode in ['--preview', '--execute']:
                 result = subprocess.run(
-                    ['bash', str(script), '0x10', '0x20', '0x30', mode],
+                    ['bash', str(script), '0x1a', '0x10', '0x20', '0x30', mode],
                     env={**os.environ, 'PATH': temp + os.pathsep + os.environ['PATH']},
                     capture_output=True, text=True, check=True,
                 )
                 expected = ['client', '--client.env', 'mainnet', 'ptb', '--move-call',
-                            '0x10::package_admin::wrap', '@0x20', '@0x30', '--json']
+                            '0x1a::package_admin::wrap<0x10::blast_presale_package::BLAST_PRESALE_PACKAGE>',
+                            '@0x20', '@0x30', '--json']
                 if mode == '--preview':
                     expected.append('--preview')
                 self.assertEqual(result.stdout.splitlines(), expected)
-            result = subprocess.run(['bash', str(script), '0x10', '0x30', '--execute'],
+            result = subprocess.run(['bash', str(script), '0x1a', '0x10', '0x30', '--execute'],
                                     capture_output=True, text=True, check=False)
             self.assertEqual(result.returncode, 2)
 

@@ -1019,57 +1019,6 @@ fun another_venue_cannot_attach_an_auto_lp_position() {
 }
 
 #[test]
-fun the_venue_receives_coins_sent_to_the_vault() {
-    let mut scenario = vault_fixture::begin();
-    let mut f = vault_fixture::start(&mut scenario);
-    let terms = f.terms_for(owner_split(), 0, 0, false, false);
-    f.share_vault(&mut scenario, terms, 0, 0);
-    let vault = vault_fixture::take_vault(&scenario);
-    let vault_id = object::id(&vault);
-    test_scenario::return_shared(vault);
-    transfer::public_transfer(coin::mint_for_testing<QUOTE>(25, scenario.ctx()), vault_id.to_address());
-    scenario.next_tx(vault_fixture::sender());
-    let mut vault = vault_fixture::take_vault(&scenario);
-
-    let received = vault.receive_coin(
-        &vault_fixture::venue(),
-        f.version(),
-        test_scenario::most_recent_receiving_ticket<Coin<QUOTE>>(&vault_id),
-    );
-
-    assert_eq!(received.value(), 25);
-    destroy(received);
-    test_scenario::return_shared(vault);
-    f.end();
-    scenario.end();
-}
-
-#[test]
-#[expected_failure(abort_code = blast_vault::errors::EWrongVenue, location = blast_vault::vault)]
-fun another_venue_cannot_receive_the_vaults_coins() {
-    let mut scenario = vault_fixture::begin();
-    let mut f = vault_fixture::start(&mut scenario);
-    let terms = f.terms_for(owner_split(), 0, 0, false, false);
-    f.share_vault(&mut scenario, terms, 0, 0);
-    let vault = vault_fixture::take_vault(&scenario);
-    let vault_id = object::id(&vault);
-    test_scenario::return_shared(vault);
-    transfer::public_transfer(coin::mint_for_testing<QUOTE>(25, scenario.ctx()), vault_id.to_address());
-    scenario.next_tx(vault_fixture::sender());
-    let mut vault = vault_fixture::take_vault(&scenario);
-
-    destroy(
-        vault.receive_coin(
-            &vault_fixture::other_venue(),
-            f.version(),
-            test_scenario::most_recent_receiving_ticket<Coin<QUOTE>>(&vault_id),
-        ),
-    );
-
-    abort
-}
-
-#[test]
 #[expected_failure(abort_code = blast_admin::errors::EPaused, location = blast_admin::package_version)]
 fun the_admin_pause_stops_buybacks() {
     let mut scenario = vault_fixture::begin();
@@ -1220,4 +1169,4 @@ use blast_vault::{
 
 use std::unit_test::{assert_eq, destroy};
 
-use sui::{balance, coin::{Self, Coin}, event, test_scenario::{Self, Scenario}};
+use sui::{balance, event, test_scenario::{Self, Scenario}};

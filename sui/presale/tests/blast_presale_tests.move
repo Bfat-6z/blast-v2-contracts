@@ -14,7 +14,6 @@ const RECIPIENT_A: address = @0xA110C;
 const RECIPIENT_B: address = @0xB110C;
 const FEE_PARTNER: address = @0xFEE;
 const TREASURY: address = @0x7EA5;
-const NEW_TREASURY: address = @0x7EA6;
 const ADMIN: address = @0xAD;
 
 /// Scheduled sales are created and shared here, ahead of `COMMITMENT_STARTS_AT_MS`.
@@ -42,8 +41,6 @@ const RECIPIENT_A_TOKENS: u64 = 5_000;
 const RECIPIENT_B_TOKENS: u64 = 3_000;
 const RECIPIENT_TOKENS: u64 = RECIPIENT_A_TOKENS + RECIPIENT_B_TOKENS;
 const WALLET_CAP: u64 = 5_000;
-const TICK_SPACING: u32 = 10;
-const POOL_FEE_RATE: u64 = 1_000;
 const CREATOR_FEE_BPS: u64 = 5_000;
 const FEE_PARTNER_BPS: u64 = 2_000;
 const HOLDER_REWARDS_BPS: u64 = 3_000;
@@ -74,6 +71,7 @@ public struct Fixture {
     scenario: Scenario,
     clock: Clock,
     fee_policy: FeePolicy,
+    treasury: Treasury,
     presale_id: ID,
 }
 
@@ -106,19 +104,16 @@ public struct HardCapTerms has copy, drop {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_pause_blocks_new() {
     let mut ctx = tx_context::dummy();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury, currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::create_pause_bit!()
-    );
+    pause(&mut version, constants::create_pause_bit!());
     destroy(
         presale::new<BLAST_PRESALE_TESTS, QUOTE>(
             treasury,
@@ -136,20 +131,17 @@ fun security_pause_blocks_new() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_partial_unpause_keeps_new_paused() {
     let mut ctx = tx_context::dummy();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury, currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::valid_pause_bits!()
-    );
-    version.clear_pause_bits(constants::commit_pause_bit!());
+    pause(&mut version, constants::valid_pause_bits!());
+    clear_pause_bits(&mut version, constants::commit_pause_bit!());
     destroy(
         presale::new<BLAST_PRESALE_TESTS, QUOTE>(
             treasury,
@@ -169,7 +161,7 @@ fun security_partial_unpause_keeps_new_paused() {
 /// ADR 0134 gates presale new/share; finishing an existing initializer is deliberately allowed.
 fun security_presale_finalize_remains_available_as_specified() {
     let mut ctx = tx_context::dummy();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
@@ -180,10 +172,7 @@ fun security_presale_finalize_remains_available_as_specified() {
         &creation_policy,
         &fee_policy
     );
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::create_pause_bit!()
-    );
+    pause(&mut version, constants::create_pause_bit!());
     let mut registry = presale::registry_for_testing(&mut ctx);
     let (sale, cap) = initializer.finalize(&version, &mut registry, &mut currency, &mut ctx);
     destroy(registry);
@@ -197,12 +186,12 @@ fun security_presale_finalize_remains_available_as_specified() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_pause_blocks_share() {
     let mut ctx = tx_context::dummy();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
@@ -216,10 +205,7 @@ fun security_pause_blocks_share() {
     let mut registry = presale::registry_for_testing(&mut ctx);
     let (sale, cap) = initializer.finalize(&version, &mut registry, &mut currency, &mut ctx);
     destroy(registry);
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::create_pause_bit!()
-    );
+    pause(&mut version, constants::create_pause_bit!());
     let clock = clock::create_for_testing(&mut ctx);
     sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
     destroy(cap);
@@ -232,12 +218,12 @@ fun security_pause_blocks_share() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_partial_unpause_keeps_share_paused() {
     let mut ctx = tx_context::dummy();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
@@ -251,11 +237,8 @@ fun security_partial_unpause_keeps_share_paused() {
     let mut registry = presale::registry_for_testing(&mut ctx);
     let (sale, cap) = initializer.finalize(&version, &mut registry, &mut currency, &mut ctx);
     destroy(registry);
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::valid_pause_bits!()
-    );
-    version.clear_pause_bits(constants::commit_pause_bit!());
+    pause(&mut version, constants::valid_pause_bits!());
+    clear_pause_bits(&mut version, constants::commit_pause_bit!());
     let clock = clock::create_for_testing(&mut ctx);
     sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
     destroy(cap);
@@ -268,16 +251,13 @@ fun security_partial_unpause_keeps_share_paused() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_pause_blocks_commit_open() {
     let mut fixture = start_sale(single_wallet_eligibility());
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::commit_pause_bit!()
-    );
+    let mut version = blast_presale::blast_presale_package::version_for_testing(fixture.ctx!());
+    pause(&mut version, constants::commit_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         destroy(sale.commit_open(
@@ -294,16 +274,13 @@ fun security_pause_blocks_commit_open() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_pause_blocks_commit_allowlisted() {
     let mut fixture = start_sale(single_wallet_eligibility());
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::commit_pause_bit!()
-    );
+    let mut version = blast_presale::blast_presale_package::version_for_testing(fixture.ctx!());
+    pause(&mut version, constants::commit_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         destroy(sale.commit_allowlisted(
@@ -323,16 +300,13 @@ fun security_pause_blocks_commit_allowlisted() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_pause_blocks_commit_uncapped() {
     let mut fixture = start_sale(single_wallet_eligibility());
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::commit_pause_bit!()
-    );
+    let mut version = blast_presale::blast_presale_package::version_for_testing(fixture.ctx!());
+    pause(&mut version, constants::commit_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         destroy(sale.commit_uncapped(
@@ -349,20 +323,17 @@ fun security_pause_blocks_commit_uncapped() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_pause_blocks_migrate() {
     let mut fixture = start_funded_sale();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::migration_pause_bit!()
-    );
+    let mut version = blast_presale::blast_presale_package::version_for_testing(fixture.ctx!());
+    pause(&mut version, constants::migration_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         let (meme, quote, _) = sale
-            .migrate(&version, &f.fee_policy, &f.clock, f.ctx!())
+            .migrate(&version, &f.treasury, &f.clock, f.ctx!())
             .redeem(TEST_VENUE());
         destroy(meme);
         destroy(quote);
@@ -374,21 +345,18 @@ fun security_pause_blocks_migrate() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 fun security_partial_unpause_keeps_migrate_paused() {
     let mut fixture = start_funded_sale();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::valid_pause_bits!()
-    );
-    version.clear_pause_bits(constants::commit_pause_bit!());
+    let mut version = blast_presale::blast_presale_package::version_for_testing(fixture.ctx!());
+    pause(&mut version, constants::valid_pause_bits!());
+    clear_pause_bits(&mut version, constants::commit_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         let (meme, quote, _) = sale
-            .migrate(&version, &f.fee_policy, &f.clock, f.ctx!())
+            .migrate(&version, &f.treasury, &f.clock, f.ctx!())
             .redeem(TEST_VENUE());
         destroy(meme);
         destroy(quote);
@@ -401,12 +369,9 @@ fun security_partial_unpause_keeps_migrate_paused() {
 #[test]
 fun security_partial_unpause_restores_commitments() {
     let mut fixture = start_sale(single_wallet_eligibility());
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::valid_pause_bits!()
-    );
-    version.clear_pause_bits(constants::commit_pause_bit!());
+    let mut version = blast_presale::blast_presale_package::version_for_testing(fixture.ctx!());
+    pause(&mut version, constants::valid_pause_bits!());
+    clear_pause_bits(&mut version, constants::commit_pause_bit!());
     fixture.next_tx!(ALICE, |f| {
         let mut sale = f.take_presale();
         sale
@@ -429,11 +394,8 @@ fun security_fully_paused_funded_claim_pays_all_tokens() {
     let mut fixture = start_funded_sale();
     fixture.migrate();
     fixture.take_recipient_allocations();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::valid_pause_bits!()
-    );
+    let mut version = blast_presale::blast_presale_package::version_for_testing(fixture.ctx!());
+    pause(&mut version, constants::valid_pause_bits!());
     fixture.next_tx!(KEEPER, |f| {
         let mut sale = f.take_presale();
         sale.claim(&version, ALICE, &f.clock, f.ctx!());
@@ -450,11 +412,8 @@ fun security_fully_paused_funded_claim_pays_all_tokens() {
 fun security_fully_paused_unlaunched_cancellation_preserves_refund() {
     let mut fixture = start_funded_sale();
     fixture.set_time(LIQUIDITY_DEADLINE_AT_MS);
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.ctx!());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::valid_pause_bits!()
-    );
+    let mut version = blast_presale::blast_presale_package::version_for_testing(fixture.ctx!());
+    pause(&mut version, constants::valid_pause_bits!());
     fixture.next_tx!(KEEPER, |f| {
         let mut sale = f.take_presale();
         sale.cancel_unlaunched(&version, &f.clock);
@@ -474,11 +433,8 @@ fun pause_keeps_settlement_and_refunds_open() {
     let mut fixture = start_sale(presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2));
     fixture.commit_open(ALICE, 500);
     fixture.set_time(COMMITMENT_ENDS_AT_MS);
-    let mut version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
-    version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::valid_pause_bits!()
-    );
+    let mut version = blast_presale_package::version_for_testing(fixture.scenario.ctx());
+    pause(&mut version, constants::valid_pause_bits!());
     fixture.next_tx!(KEEPER, |f| {
         let mut sale = f.take_presale();
         sale.settle(&version, &f.clock);
@@ -501,7 +457,7 @@ fun pause_keeps_settlement_and_refunds_open() {
 /// scheduled policy increase lifts that ceiling only once it applies.
 fun a_pending_policy_increase_does_not_raise_the_sales_immediate_fee_ceiling() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let mut fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
@@ -521,7 +477,7 @@ fun a_pending_policy_increase_does_not_raise_the_sales_immediate_fee_ceiling() {
         bps::new(0),
         bps::new(0),
         bps::new(0),
-        172_800_000,
+        blast_admin::package_admin::initial_upgrade_delay_ms_for_testing(),
         &clock,
     );
 
@@ -566,7 +522,10 @@ fun oversubscription_uses_one_fill_rate_and_refunds_the_rest() {
     // The hand-off seals the vault's terms for this sale under the presale's package witness: its
     // LP-fee split, Blast's zero LP-fee rates, no partner, and residuals kept for the owner.
     assert_eq!(terms.origin(), fixture.presale_id);
-    assert_eq!(terms.package_witness(), type_name::with_original_ids<presale::PackageWitness>());
+    assert_eq!(
+        terms.package_witness(),
+        type_name::with_original_ids<PackageWitness>(),
+    );
     assert_eq!(terms.fee_split(), creator_fee_split());
     let (protocol_meme_bps, protocol_quote_bps) = terms.protocol_bps();
     assert_eq!(vector[protocol_meme_bps.value(), protocol_quote_bps.value()], vector[0, 0]);
@@ -1341,7 +1300,7 @@ fun a_hard_cap_must_start_inside_the_window() {
 )]
 fun a_sale_cannot_be_finalized_without_an_eligibility_policy() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
@@ -1370,7 +1329,7 @@ fun a_sale_cannot_be_finalized_without_an_eligibility_policy() {
 )]
 fun a_sale_cannot_be_finalized_without_an_lp_fee_split() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
@@ -1397,7 +1356,7 @@ fun a_sale_cannot_be_finalized_without_an_lp_fee_split() {
 /// A sale whose raise was never set has a zero raise target.
 fun a_sale_cannot_be_finalized_without_a_raise() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
@@ -1550,7 +1509,7 @@ fun a_liquidity_window_below_seven_days_is_rejected() {
 /// A raise allocation is paid in Quote at migration and the LP takes the rest.
 fun raise_allocations_are_paid_at_migration_and_the_lp_takes_the_rest() {
     let mut fixture = start_with_raise_allocations(vector[
-        presale::recipient_share(RAISE_RECIPIENT, bps::new(2_000)),
+        outright_share(RAISE_RECIPIENT, 2_000),
     ]);
     fixture.commit_open(ALICE, RAISE_TARGET);
     fixture.set_time(COMMITMENT_ENDS_AT_MS);
@@ -1578,8 +1537,8 @@ fun raise_allocations_are_paid_at_migration_and_the_lp_takes_the_rest() {
 /// The LP must always keep part of the raise.
 fun raise_allocations_must_leave_the_lp_a_share() {
     start_with_raise_allocations(vector[
-        presale::recipient_share(RAISE_RECIPIENT, bps::new(6_000)),
-        presale::recipient_share(CAROL, bps::new(4_000)),
+        outright_share(RAISE_RECIPIENT, 6_000),
+        outright_share(CAROL, 4_000),
     ]).end();
 }
 
@@ -1590,7 +1549,7 @@ fun raise_allocations_must_leave_the_lp_a_share() {
 )]
 fun a_positive_raise_share_cannot_round_to_zero_for_its_recipient() {
     start_with_raise_allocations(vector[
-        presale::recipient_share(RAISE_RECIPIENT, bps::new(1)),
+        outright_share(RAISE_RECIPIENT, 1),
     ]).end();
 }
 
@@ -1601,7 +1560,7 @@ fun a_positive_raise_share_cannot_round_to_zero_for_its_recipient() {
 )]
 fun a_positive_liquidity_share_cannot_round_to_zero_quote() {
     start_with_raise_allocations(vector[
-        presale::recipient_share(RAISE_RECIPIENT, bps::new(9_999)),
+        outright_share(RAISE_RECIPIENT, 9_999),
     ]).end();
 }
 
@@ -1613,7 +1572,7 @@ fun a_positive_liquidity_share_cannot_round_to_zero_quote() {
 /// A zero share is a raise-allocation error, not a token-allocation one.
 fun a_raise_allocation_must_take_a_positive_share() {
     start_with_raise_allocations(vector[
-        presale::recipient_share(RAISE_RECIPIENT, bps::new(0)),
+        outright_share(RAISE_RECIPIENT, 0),
     ]).end();
 }
 
@@ -1624,8 +1583,8 @@ fun a_raise_allocation_must_take_a_positive_share() {
 )]
 fun raise_allocation_recipients_must_be_distinct() {
     start_with_raise_allocations(vector[
-        presale::recipient_share(RAISE_RECIPIENT, bps::new(1_000)),
-        presale::recipient_share(RAISE_RECIPIENT, bps::new(1_000)),
+        outright_share(RAISE_RECIPIENT, 1_000),
+        outright_share(RAISE_RECIPIENT, 1_000),
     ]).end();
 }
 
@@ -1693,14 +1652,14 @@ fun a_funded_sale_cannot_be_cancelled_before_the_liquidity_deadline() {
 /// Only the venue the sale stored redeems its hand-off; the abort undoes the whole migration.
 fun another_venue_cannot_redeem_the_hand_off() {
     let mut fixture = start_funded_sale();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(fixture
+    let package_version = blast_presale::blast_presale_package::version_for_testing(fixture
         .scenario
         .ctx());
 
     fixture.next_tx!(KEEPER, |fixture| {
         let mut sale = fixture.take_presale();
         let (liquidity_tokens, quote, _) = sale
-            .migrate(&package_version, &fixture.fee_policy, &fixture.clock, fixture.scenario.ctx())
+            .migrate(&package_version, &fixture.treasury, &fixture.clock, fixture.scenario.ctx())
             .redeem(OTHER_VENUE());
         destroy(liquidity_tokens);
         destroy(quote);
@@ -1744,8 +1703,8 @@ fun sale_token_and_quote_types_must_differ() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPaused,
-    location = blast_presale::blast_presale_package,
+    abort_code = blast_admin::errors::EPaused,
+    location = blast_admin::package_version,
 )]
 /// The create pause precedes the venue check: a paused package refuses even an unadmitted venue's
 /// ticket by its pause.
@@ -1867,7 +1826,7 @@ fun regulated_burnable_sale_currency_with_global_pause_is_rejected() {
 )]
 fun regulated_sale_currency_is_rejected_before_missing_settings() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_regulated_currency(false, &mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
@@ -2004,7 +1963,7 @@ fun a_positive_recipient_share_cannot_round_to_zero_tokens() {
     terms.token_supply = 2;
     terms.token_allocation_bps = 5_000;
     terms.liquidity_token_allocation_bps = 4_999;
-    terms.recipient_allocations = vector[presale::recipient_share(RECIPIENT_A, bps::new(1))];
+    terms.recipient_allocations = vector[outright_share(RECIPIENT_A, 1)];
 
     create_sale<QUOTE>(terms);
 }
@@ -2038,52 +1997,6 @@ fun an_overflowing_liquidity_share_cannot_be_constructed() {
 }
 
 #[test]
-/// Bluefin accepts a Meme symbol at the 32-byte bound.
-fun bluefin_accepts_a_thirty_two_byte_meme_symbol() {
-    create_bluefin_sale<QUOTE, bluefin::Venue>(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::ESymbolTooLong,
-    location = blast_presale::bluefin,
-)]
-/// A longer symbol would grow every Bluefin position past Sui's object size limit.
-fun bluefin_rejects_a_thirty_three_byte_meme_symbol() {
-    create_bluefin_sale<QUOTE, bluefin::Venue>(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456");
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EQuoteNotAllowed,
-    location = blast_presale::creation_policy,
-)]
-/// A venue cannot create a sale raising a Quote type Blast has not allowed.
-fun a_sale_cannot_raise_a_quote_blast_has_not_allowed() {
-    create_bluefin_sale<BLAST_PRESALE_TESTS, bluefin::Venue>(b"SALE");
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EVenueNotAllowed,
-    location = blast_presale::creation_policy,
-)]
-/// A venue cannot create a sale while Blast has not allowed its migration witness.
-fun a_sale_cannot_use_a_venue_blast_has_not_allowed() {
-    create_bluefin_sale<QUOTE, cetus::Venue>(b"SALE");
-}
-
-#[test]
-/// The seed price must sit at least a factor of two inside both venues' sqrt-price bounds.
-fun seed_prices_must_sit_inside_the_venue_bounds() {
-    assert!(migration_math::is_seedable(4295048016 * 2));
-    assert!(!migration_math::is_seedable(4295048016 * 2 - 1));
-    assert!(migration_math::is_seedable(79226673515401279992447579055 / 2));
-    assert!(!migration_math::is_seedable(79226673515401279992447579055 / 2 + 1));
-    assert!(migration_math::is_seedable(1 << 64));
-}
-
-#[test]
 #[expected_failure(
     abort_code = blast_presale::errors::EUnseedablePrice,
     location = blast_presale::blast_presale,
@@ -2114,18 +2027,18 @@ fun burnable_supply_is_locked_to_burn_only_at_creation() {
 }
 
 #[test]
-/// Migration pays Blast the shares snapshotted at creation, even after the rates change, at the
-/// policy's current destination. Blast's raise share is apportioned with the raise recipients'
-/// and the LP keeps the rest; participants' fills and refunds are unchanged.
-fun migration_pays_blast_its_snapshotted_shares_at_the_current_destination() {
+/// Migration pays the treasury the shares snapshotted at creation, even after the rates change.
+/// Blast's raise share is apportioned with the raise recipients' and the LP keeps the rest;
+/// participants' fills and refunds are unchanged.
+fun migration_pays_the_treasury_its_snapshotted_shares() {
     let mut fixture = start_with_protocol_fees(
-        vector[presale::recipient_share(RAISE_RECIPIENT, bps::new(2_000))],
+        vector[outright_share(RAISE_RECIPIENT, 2_000)],
         presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2),
         PROTOCOL_RAISE_BPS,
         PROTOCOL_TOKEN_BPS,
         FEE_PAYING_RECIPIENT_B_BPS,
     );
-    let package_version = blast_presale::blast_presale_package::new_for_testing(fixture
+    let package_version = blast_presale::blast_presale_package::version_for_testing(fixture
         .scenario
         .ctx());
     let (protocol_bps, protocol_quote, protocol_tokens) = only_event<
@@ -2151,23 +2064,15 @@ fun migration_pays_blast_its_snapshotted_shares_at_the_current_destination() {
             bps::new(0),
             fixture.scenario.ctx()
         );
-    fixture
-        .fee_policy
-        .set_destination_for_testing(
-            &package_version,
-            &treasury_admin(),
-            NEW_TREASURY,
-            fixture.scenario.ctx()
-        );
 
     assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 767]);
 
     let paid = only_event<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>();
-    let (presale_id, destination, paid_quote, paid_tokens) = paid.protocol_fees_paid_fields();
+    let (presale_id, destination, paid_quote, paid_tokens) = paid.paid_fields();
     assert_eq!(presale_id, fixture.presale_id);
-    assert_eq!(destination, NEW_TREASURY);
+    assert_eq!(destination, TREASURY);
     assert_eq!(vector[paid_quote, paid_tokens], vector[33, PROTOCOL_TOKENS]);
-    assert_eq!(paid.protocol_fees_paid_partner_quote(), 0);
+    assert_eq!(paid.paid_partner_quote(), 0);
 
     let (_, _, lp_quote, liquidity_tokens, recipient_tokens) = only_event<
         PresaleMigrated<BLAST_PRESALE_TESTS, QUOTE>,
@@ -2176,8 +2081,8 @@ fun migration_pays_blast_its_snapshotted_shares_at_the_current_destination() {
         vector[lp_quote, liquidity_tokens, recipient_tokens],
         vector[767, LIQUIDITY_TOKENS, RECIPIENT_A_TOKENS + FEE_PAYING_RECIPIENT_B_TOKENS],
     );
-    assert_eq!(fixture.unpaid_protocol_quote(), option::none());
-    fixture.take_payout(NEW_TREASURY, PROTOCOL_TOKENS, 33);
+    assert_eq!(fixture.held_protocol_fees(), vector[0, 0]);
+    fixture.take_payout(TREASURY, PROTOCOL_TOKENS, 33);
     fixture.take_quote(RAISE_RECIPIENT, 200);
 
     assert_eq!(fixture.claim(KEEPER, ALICE), vector[1_000, 2_500, 750, 1]);
@@ -2252,7 +2157,7 @@ fun a_start_whose_windows_end_past_u64_milliseconds_is_rejected() {
 /// down; the recipients keep their amounts, and migration and claims use the new terms.
 fun the_admin_can_replace_a_sales_rates_before_it_starts() {
     let mut fixture = schedule_with_creation_rates(
-        vector[presale::recipient_share(RAISE_RECIPIENT, bps::new(2_000))],
+        vector[outright_share(RAISE_RECIPIENT, 2_000)],
         PROTOCOL_RAISE_BPS,
         PROTOCOL_TOKEN_BPS,
         FEE_PAYING_RECIPIENT_B_BPS,
@@ -2458,7 +2363,7 @@ fun a_rate_increase_after_the_start_reports_the_started_sale() {
 /// then opens the sale on the new amounts.
 fun an_unshared_sales_rates_can_change_before_its_share() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let mut fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
@@ -2598,7 +2503,7 @@ fun a_sale_fee_update_keeps_the_policy_bounds() {
 /// Blast's new raise share must still leave the LP Quote after the raise recipients'.
 fun a_raise_share_that_leaves_the_lp_nothing_is_rejected() {
     schedule_with_creation_rates(
-        vector[presale::recipient_share(RAISE_RECIPIENT, bps::new(9_000))],
+        vector[outright_share(RAISE_RECIPIENT, 9_000)],
         0,
         0,
         RECIPIENT_B_BPS,
@@ -2620,8 +2525,8 @@ fun a_token_share_that_leaves_buyers_nothing_is_rejected() {
     let mut terms = valid_sale_terms();
     terms.token_allocation_bps = 500;
     terms.recipient_allocations = vector[
-        presale::recipient_share(RECIPIENT_A, bps::new(RECIPIENT_A_BPS)),
-        presale::recipient_share(RECIPIENT_B, bps::new(6_000)),
+        outright_share(RECIPIENT_A, RECIPIENT_A_BPS),
+        outright_share(RECIPIENT_B, 6_000),
     ];
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let (mut sale, _cap) = new_presale<QUOTE>(
@@ -2648,7 +2553,7 @@ fun a_token_share_that_leaves_buyers_nothing_is_rejected() {
 fun a_raise_share_cut_that_seeds_an_unpoolable_price_is_rejected() {
     let raise_target = 5_000_000_000_000_000_000;
     let mut scenario = test_scenario::begin(CREATOR);
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let package_version = blast_presale::blast_presale_package::version_for_testing(scenario.ctx());
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(SCHEDULED_AT_MS);
     // With one LP token, 90% of 5 * 10^18 Quote seeds a poolable price and all of it does not.
@@ -2678,7 +2583,13 @@ fun a_raise_share_cut_that_seeds_an_unpoolable_price_is_rejected() {
     destroy(cap);
     destroy(currency);
     destroy(creation_policy);
-    let mut fixture = Fixture { scenario, clock, fee_policy, presale_id };
+    let mut fixture = Fixture {
+            treasury: blast_treasury::new_for_testing(TREASURY, scenario.ctx()),
+            scenario,
+            clock,
+            fee_policy,
+            presale_id,
+        };
 
     fixture.set_protocol_fees(vector[0, 0, 0, 0]);
 
@@ -2694,11 +2605,8 @@ fun a_zero_rate_sale_pays_blast_nothing() {
 
     assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, RAISE_TARGET]);
 
-    let (_, destination, paid_quote, paid_tokens) = only_event<
-        ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>,
-    >().protocol_fees_paid_fields();
-    assert_eq!(destination, TREASURY);
-    assert_eq!(vector[paid_quote, paid_tokens], vector[0, 0]);
+    // An empty ledger sends and emits nothing.
+    assert!(event::events_by_type<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>().is_empty());
     fixture.assert_treasury_received_nothing();
 
     fixture.end();
@@ -2764,7 +2672,7 @@ fun allocations_must_leave_room_for_blasts_token_share() {
 /// Blast's raise share and the raise recipients' together must leave the LP a share.
 fun raise_allocations_must_leave_the_lp_a_share_after_blasts() {
     start_with_protocol_fees(
-        vector[presale::recipient_share(RAISE_RECIPIENT, bps::new(10_000 - PROTOCOL_RAISE_BPS))],
+        vector[outright_share(RAISE_RECIPIENT, 10_000 - PROTOCOL_RAISE_BPS)],
         single_wallet_eligibility(),
         PROTOCOL_RAISE_BPS,
         0,
@@ -2777,8 +2685,8 @@ fun raise_allocations_must_leave_the_lp_a_share_after_blasts() {
 /// for its recipient from the migration time, and pays every unvested share at once.
 fun migration_locks_each_vesting_share_in_its_own_schedule() {
     let mut fixture = start_with_team_vesting(vector[
-        presale::vested_recipient_share(RAISE_RECIPIENT, bps::new(2_000), team_vesting_terms()),
-        presale::recipient_share(CAROL, bps::new(1_000)),
+        vested_share(RAISE_RECIPIENT, 2_000, team_vesting_terms()),
+        outright_share(CAROL, 1_000),
     ]);
     fixture.commit_open(ALICE, RAISE_TARGET);
     fixture.set_time(COMMITMENT_ENDS_AT_MS);
@@ -2886,7 +2794,7 @@ fun vested_recipient_tokens_wait_for_the_cliff_after_migration() {
 /// the rest of the raise.
 fun vested_raise_allocations_lock_quote_in_a_schedule_from_migration() {
     let mut fixture = start_with_raise_allocations(vector[
-        presale::vested_recipient_share(RAISE_RECIPIENT, bps::new(2_000), team_vesting_terms()),
+        vested_share(RAISE_RECIPIENT, 2_000, team_vesting_terms()),
     ]);
     fixture.commit_open(ALICE, RAISE_TARGET);
     fixture.set_time(COMMITMENT_ENDS_AT_MS);
@@ -3045,54 +2953,10 @@ fun a_cancelled_vesting_sale_refunds_without_a_schedule() {
 }
 
 #[test]
-/// The longest schedule is the technical bound, with the cliff at most its whole duration.
-fun vesting_terms_accept_the_technical_bound_with_a_full_cliff() {
-    let max_duration_ms = constants::max_vesting_duration_ms!();
-    presale::vesting_terms(max_duration_ms, max_duration_ms, 1);
-    presale::vesting_terms(0, 1, max_duration_ms);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidVestingTerms,
-    location = blast_presale::blast_presale,
-)]
-fun vesting_terms_need_a_positive_period() {
-    presale::vesting_terms(0, 0, 1);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidVestingTerms,
-    location = blast_presale::blast_presale,
-)]
-fun vesting_terms_need_a_positive_period_count() {
-    presale::vesting_terms(0, 1, 0);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidVestingTerms,
-    location = blast_presale::blast_presale,
-)]
-fun vesting_terms_keep_the_cliff_within_the_duration() {
-    presale::vesting_terms(VESTING_DURATION_MS + 1, VESTING_PERIOD_DURATION_MS, VESTING_PERIODS);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidVestingTerms,
-    location = blast_presale::blast_presale,
-)]
-fun vesting_terms_stay_within_the_technical_bound() {
-    presale::vesting_terms(0, constants::max_vesting_duration_ms!() / 2 + 1, 2);
-}
-
-#[test]
 /// A sale naming a Blast partner releases the same raise and LP as any sale, but its migration
-/// holds Blast's fees. `pay_protocol_fees_with_partner` then pays the partner its cut of Blast's
-/// raise fee only, and Blast the rest of it and its whole token fee; claims are unchanged.
-fun a_partnered_sale_pays_its_partner_a_cut_of_blasts_raise_fee_only() {
+/// holds Blast's fees in the sale's ledger. `pay_protocol_fees_with_partner` then pays the partner
+/// its cut of each of them, and Blast the rest (ADR 0137); claims are unchanged.
+fun a_partnered_sale_pays_its_partner_a_cut_of_each_blast_fee() {
     let mut ctx = tx_context::dummy();
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let mut fixture = partner.start_partnered_sale();
@@ -3101,25 +2965,28 @@ fun a_partnered_sale_pays_its_partner_a_cut_of_blasts_raise_fee_only() {
     assert_eq!(released, vector[LIQUIDITY_TOKENS, 767]);
     assert!(event::events_by_type<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>().is_empty());
     assert_eq!(terms.partner_id(), option::some(object::id(&partner)));
-    assert_eq!(fixture.unpaid_protocol_quote(), option::some(33));
+    assert_eq!(fixture.held_protocol_fees(), vector[PROTOCOL_TOKENS, 33]);
     fixture.take_quote(RAISE_RECIPIENT, 200);
     fixture.assert_treasury_received_nothing();
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
 
-    // 40% of Blast's 33 Quote is 13.2: the partner takes 13 and Blast keeps 20 and every token.
+    // 40% of Blast's 33 Quote is 13.2 and of its 1,000 tokens 400: the partner takes 13 and 400,
+    // Blast keeps 20 and 600.
     let paid = only_event<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>();
-    let (presale_id, destination, paid_quote, paid_tokens) = paid.protocol_fees_paid_fields();
+    let (presale_id, destination, paid_quote, paid_tokens) = paid.paid_fields();
     assert_eq!(presale_id, fixture.presale_id);
     assert_eq!(destination, TREASURY);
-    assert_eq!(vector[paid_quote, paid_tokens], vector[20, PROTOCOL_TOKENS]);
-    assert_eq!(paid.protocol_fees_paid_partner_quote(), 13);
+    assert_eq!(vector[paid_quote, paid_tokens], vector[20, 600]);
+    assert_eq!(paid.paid_partner_quote(), 13);
     let (partner_id, partner_quote) = only_event<PartnerPaid<QUOTE>>().partner_paid_fields();
     assert_eq!(partner_id, object::id(&partner));
     assert_eq!(partner_quote, 13);
-    assert!(event::events_by_type<PartnerPaid<BLAST_PRESALE_TESTS>>().is_empty());
-    fixture.take_payout(TREASURY, PROTOCOL_TOKENS, 20);
-    assert_eq!(fixture.unpaid_protocol_quote(), option::none());
+    let (_, partner_tokens) = only_event<PartnerPaid<BLAST_PRESALE_TESTS>>().partner_paid_fields();
+    assert_eq!(partner_tokens, 400);
+    fixture.take_payout(TREASURY, 600, 20);
+    fixture.take_payout(PARTNER_RECIPIENT, 400, 13);
+    assert_eq!(fixture.held_protocol_fees(), vector[0, 0]);
 
     assert_eq!(fixture.claim(KEEPER, ALICE), vector[1_000, 2_500, 750, 1]);
     assert_eq!(fixture.claim(KEEPER, BOB), vector[3_000, 7_501, 2_250, 0]);
@@ -3152,18 +3019,18 @@ fun the_partner_is_paid_its_cut_applied_at_payment() {
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
 
-    // 80% of 33 is 26.4: the partner takes 26 and Blast keeps 7.
+    // 80% of 33 is 26.4 and of 1,000 is 800: the partner takes 26 and 800, Blast keeps 7 and 200.
     let paid = only_event<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>();
-    let (_, _, paid_quote, _) = paid.protocol_fees_paid_fields();
-    assert_eq!(vector[paid_quote, paid.protocol_fees_paid_partner_quote()], vector[7, 26]);
+    let (_, _, paid_quote, paid_tokens) = paid.paid_fields();
+    assert_eq!(vector[paid_quote, paid_tokens, paid.paid_partner_quote()], vector[7, 200, 26]);
 
     destroy(partner);
     fixture.end();
 }
 
 #[test]
-/// A partner whose cut is zero is paid nothing and emits no `PartnerPaid`; Blast keeps its whole
-/// raise fee.
+/// A partner whose cut is zero is paid nothing and emits no `PartnerPaid`; Blast keeps all its
+/// fees.
 fun a_zero_cut_partner_is_paid_nothing() {
     let mut ctx = tx_context::dummy();
     let partner = new_partner(0, &mut ctx);
@@ -3173,10 +3040,11 @@ fun a_zero_cut_partner_is_paid_nothing() {
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
 
     let paid = only_event<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>();
-    let (_, _, paid_quote, paid_tokens) = paid.protocol_fees_paid_fields();
+    let (_, _, paid_quote, paid_tokens) = paid.paid_fields();
     assert_eq!(vector[paid_quote, paid_tokens], vector[33, PROTOCOL_TOKENS]);
-    assert_eq!(paid.protocol_fees_paid_partner_quote(), 0);
+    assert_eq!(paid.paid_partner_quote(), 0);
     assert!(event::events_by_type<PartnerPaid<QUOTE>>().is_empty());
+    assert!(event::events_by_type<PartnerPaid<BLAST_PRESALE_TESTS>>().is_empty());
 
     destroy(partner);
     fixture.end();
@@ -3184,13 +3052,13 @@ fun a_zero_cut_partner_is_paid_nothing() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPartnerNotAccepted,
-    location = blast_presale::creation_policy,
+    abort_code = blast_partners::errors::EPartnerNotAccepted,
+    location = blast_partners::partner_list,
 )]
 /// A sale may name only a partner Blast accepts for new presales.
 fun a_sale_cannot_name_a_partner_blast_has_not_accepted() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
@@ -3210,41 +3078,48 @@ fun a_sale_cannot_name_a_partner_blast_has_not_accepted() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::ENoPartnerPayout,
-    location = blast_presale::blast_presale,
-)]
-/// A funded sale that has not migrated owes its partner nothing: it may still be refunded.
-fun a_partner_cannot_be_paid_before_migration() {
+/// A funded sale that has not migrated holds nothing for its partner, so paying sends and emits
+/// nothing; it may still be refunded or migrate.
+fun paying_a_partner_before_migration_sends_nothing() {
     let mut ctx = tx_context::dummy();
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let mut fixture = partner.start_partnered_sale();
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
-    abort
+
+    assert!(event::events_by_type<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>().is_empty());
+    assert!(event::events_by_type<PartnerPaid<QUOTE>>().is_empty());
+    assert_eq!(fixture.custody()[6], PROTOCOL_TOKENS);
+    fixture.assert_treasury_received_nothing();
+
+    destroy(partner);
+    fixture.end();
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::ENoPartnerPayout,
-    location = blast_presale::blast_presale,
-)]
-/// A partnered sale pays Blast and its partner once.
+/// A partnered sale pays Blast and its partner once: a second payout finds the ledger empty and
+/// sends and emits nothing.
 fun a_partner_is_paid_once() {
     let mut ctx = tx_context::dummy();
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let mut fixture = partner.start_partnered_sale();
     fixture.migrate();
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
+    fixture.take_payout(TREASURY, 600, 20);
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
-    abort
+
+    assert!(event::events_by_type<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>().is_empty());
+    fixture.assert_treasury_received_nothing();
+
+    destroy(partner);
+    fixture.end();
 }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EWrongPartner,
-    location = blast_presale::blast_presale,
+    abort_code = blast_core::errors::EPartnerMismatch,
+    location = blast_core::protocol_fees,
 )]
 /// Only the partner the sale named is paid, checked before anything is owed.
 fun another_partner_cannot_be_paid() {
@@ -3259,8 +3134,8 @@ fun another_partner_cannot_be_paid() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EWrongPartner,
-    location = blast_presale::blast_presale,
+    abort_code = blast_core::errors::EPartnerMismatch,
+    location = blast_core::protocol_fees,
 )]
 /// A sale without a partner pays Blast at migration and never pays a partner.
 fun an_unpartnered_sale_pays_no_partner() {
@@ -3274,10 +3149,6 @@ fun an_unpartnered_sale_pays_no_partner() {
 }
 
 #[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::ENoPartnerPayout,
-    location = blast_presale::blast_presale,
-)]
 /// A partnered sale cancelled at its LP deadline holds nothing for its partner: the raise is
 /// refundable and Blast's tokens stay locked with the rest of the supply.
 fun a_cancelled_partnered_sale_pays_no_partner() {
@@ -3286,17 +3157,22 @@ fun a_cancelled_partnered_sale_pays_no_partner() {
     let mut fixture = partner.start_partnered_sale();
     fixture.set_time(LIQUIDITY_DEADLINE_AT_MS);
     fixture.cancel_unlaunched(KEEPER);
-    assert_eq!(fixture.unpaid_protocol_quote(), option::none());
+    assert_eq!(fixture.held_protocol_fees(), vector[0, 0]);
     assert_eq!(fixture.custody()[6], PROTOCOL_TOKENS);
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
-    abort
+
+    assert!(event::events_by_type<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>().is_empty());
+    assert_eq!(fixture.custody()[6], PROTOCOL_TOKENS);
+
+    destroy(partner);
+    fixture.end();
 }
 
 #[test]
-/// Under a zero raise rate the partner has nothing to take, but the payout still releases Blast's
-/// tokens, which the partnered migration held.
-fun a_zero_raise_rate_partnered_sale_pays_blast_its_tokens() {
+/// Under a zero raise rate the partner's cut is of Blast's tokens alone, which the partnered
+/// migration held.
+fun a_zero_raise_rate_partnered_sale_pays_the_token_fee() {
     let mut ctx = tx_context::dummy();
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let mut fixture = partner.share_partnered_sale(COMMITMENT_STARTS_AT_MS, 0);
@@ -3304,16 +3180,17 @@ fun a_zero_raise_rate_partnered_sale_pays_blast_its_tokens() {
 
     // The LP takes the raise after the recipient's 200.
     assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 800]);
-    assert_eq!(fixture.unpaid_protocol_quote(), option::some(0));
+    assert_eq!(fixture.held_protocol_fees(), vector[PROTOCOL_TOKENS, 0]);
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
 
     let paid = only_event<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>();
-    let (_, _, paid_quote, paid_tokens) = paid.protocol_fees_paid_fields();
-    assert_eq!(vector[paid_quote, paid_tokens], vector[0, PROTOCOL_TOKENS]);
-    assert_eq!(paid.protocol_fees_paid_partner_quote(), 0);
+    let (_, _, paid_quote, paid_tokens) = paid.paid_fields();
+    assert_eq!(vector[paid_quote, paid_tokens], vector[0, 600]);
+    assert_eq!(paid.paid_partner_quote(), 0);
     assert!(event::events_by_type<PartnerPaid<QUOTE>>().is_empty());
-    fixture.take_tokens(TREASURY, PROTOCOL_TOKENS);
+    fixture.take_tokens(TREASURY, 600);
+    fixture.take_tokens(PARTNER_RECIPIENT, 400);
 
     destroy(partner);
     fixture.end();
@@ -3321,7 +3198,7 @@ fun a_zero_raise_rate_partnered_sale_pays_blast_its_tokens() {
 
 #[test]
 /// A rate the FeeAdmin lowers before the start is the one a partnered migration holds: the
-/// partner is paid its cut of Blast's new raise fee.
+/// partner is paid its cut of Blast's new fees.
 fun a_partnered_sale_holds_the_rates_set_before_its_start() {
     let mut ctx = tx_context::dummy();
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
@@ -3331,16 +3208,17 @@ fun a_partnered_sale_holds_the_rates_set_before_its_start() {
 
     // 1,000 * 500 / 10,000 = 50 Quote for Blast: the LP keeps 1,000 - 200 - 50.
     assert_eq!(fixture.migrate(), vector[LIQUIDITY_TOKENS, 750]);
-    assert_eq!(fixture.unpaid_protocol_quote(), option::some(50));
+    assert_eq!(fixture.held_protocol_fees(), vector[500, 50]);
 
     fixture.pay_protocol_fees_with_partner(KEEPER, &partner);
 
-    // 40% of 50 is 20; Blast keeps 30 and its 500 tokens.
+    // 40% of 50 is 20 and of 500 is 200; Blast keeps 30 and 300.
     let paid = only_event<ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>>();
-    let (_, _, paid_quote, paid_tokens) = paid.protocol_fees_paid_fields();
-    assert_eq!(vector[paid_quote, paid_tokens], vector[30, 500]);
-    assert_eq!(paid.protocol_fees_paid_partner_quote(), 20);
-    fixture.take_payout(TREASURY, 500, 30);
+    let (_, _, paid_quote, paid_tokens) = paid.paid_fields();
+    assert_eq!(vector[paid_quote, paid_tokens], vector[30, 300]);
+    assert_eq!(paid.paid_partner_quote(), 20);
+    fixture.take_payout(TREASURY, 300, 30);
+    fixture.take_payout(PARTNER_RECIPIENT, 200, 20);
 
     destroy(partner);
     fixture.end();
@@ -3392,7 +3270,7 @@ fun an_lp_rate_change_keeps_blasts_raise_and_token_amounts() {
 )]
 fun stale_version_precedes_partner_admission() {
     let mut ctx = tx_context::dummy();
-    let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let partner = new_partner(PARTNER_CUT_BPS, &mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
@@ -3406,7 +3284,7 @@ fun stale_version_precedes_partner_admission() {
         &fee_policy,
     );
 
-    package_version.set_for_testing(2);
+    package_version.set_generation_for_testing(2);
     initializer.set_partner(&package_version, &creation_policy, &partner, &clock);
     std::unit_test::destroy(package_version);
     abort
@@ -3419,7 +3297,7 @@ fun stale_version_precedes_partner_admission() {
 )]
 fun future_version_cannot_finalize() {
     let mut ctx = tx_context::dummy();
-    let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
@@ -3434,7 +3312,7 @@ fun future_version_cannot_finalize() {
         creator_fee_split(),
     );
 
-    package_version.set_for_testing(3);
+    package_version.set_generation_for_testing(3);
     let mut registry = presale::registry_for_testing(&mut ctx);
     let (_sale, _cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
     destroy(registry);
@@ -3450,10 +3328,10 @@ fun future_version_cannot_finalize() {
 fun stale_version_rejects_commit_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.next_tx!(ALICE, |fixture| {
-        let mut package_version = blast_presale::blast_presale_package::new_for_testing(fixture
+        let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_for_testing(2);
+        package_version.set_generation_for_testing(2);
         let mut sale = fixture.take_presale();
         let coin = coin::zero<QUOTE>(fixture.scenario.ctx());
         let change = sale.commit_open(
@@ -3477,10 +3355,10 @@ fun stale_version_rejects_commit_before_lifecycle_or_amount_checks() {
 fun stale_version_rejects_settle_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.next_tx!(ALICE, |fixture| {
-        let mut package_version = blast_presale::blast_presale_package::new_for_testing(fixture
+        let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_for_testing(2);
+        package_version.set_generation_for_testing(2);
         let mut sale = fixture.take_presale();
         sale.settle(&package_version, &fixture.clock);
         destroy(sale);
@@ -3497,10 +3375,10 @@ fun stale_version_rejects_settle_before_lifecycle_or_amount_checks() {
 fun stale_version_rejects_cancel_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.next_tx!(ALICE, |fixture| {
-        let mut package_version = blast_presale::blast_presale_package::new_for_testing(fixture
+        let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_for_testing(2);
+        package_version.set_generation_for_testing(2);
         let mut sale = fixture.take_presale();
         sale.cancel_unlaunched(&package_version, &fixture.clock);
         destroy(sale);
@@ -3517,10 +3395,10 @@ fun stale_version_rejects_cancel_before_lifecycle_or_amount_checks() {
 fun stale_version_rejects_claim_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.next_tx!(ALICE, |fixture| {
-        let mut package_version = blast_presale::blast_presale_package::new_for_testing(fixture
+        let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_for_testing(2);
+        package_version.set_generation_for_testing(2);
         let mut sale = fixture.take_presale();
         sale.claim(&package_version, ALICE, &fixture.clock, fixture.scenario.ctx());
         destroy(sale);
@@ -3537,13 +3415,13 @@ fun stale_version_rejects_claim_before_lifecycle_or_amount_checks() {
 fun stale_version_rejects_migrate_before_lifecycle_or_amount_checks() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.next_tx!(ALICE, |fixture| {
-        let mut package_version = blast_presale::blast_presale_package::new_for_testing(fixture
+        let mut package_version = blast_presale::blast_presale_package::version_for_testing(fixture
             .scenario
             .ctx());
-        package_version.set_for_testing(2);
+        package_version.set_generation_for_testing(2);
         let mut sale = fixture.take_presale();
         let (meme, quote, _) = sale
-            .migrate(&package_version, &fixture.fee_policy, &fixture.clock, fixture.scenario.ctx())
+            .migrate(&package_version, &fixture.treasury, &fixture.clock, fixture.scenario.ctx())
             .redeem(TEST_VENUE());
         destroy(meme);
         destroy(quote);
@@ -3560,11 +3438,11 @@ fun stale_version_rejects_migrate_before_lifecycle_or_amount_checks() {
 )]
 fun stale_version_prevents_initializer_creation() {
     let mut ctx = tx_context::dummy();
-    let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
-    package_version.set_for_testing(2);
+    package_version.set_generation_for_testing(2);
     let mut initializer = bare_initializer(
         &package_version,
         treasury_cap,
@@ -3656,7 +3534,7 @@ fun a_cancelled_sales_rates_cannot_change() {
 )]
 fun an_open_sale_cannot_be_shared_again() {
     let mut fixture = start_sale(single_wallet_eligibility());
-    let version = blast_presale::blast_presale_package::new_for_testing(fixture.scenario.ctx());
+    let version = blast_presale::blast_presale_package::version_for_testing(fixture.scenario.ctx());
 
     fixture.next_tx!(ADMIN, |f| {
         let sale = f.take_presale();
@@ -3789,7 +3667,7 @@ fun a_delivered_commitment_cannot_be_claimed_twice() {
 fun a_fresh_cap_for_the_same_sale_cannot_prove_ownership() {
     let mut fixture = start_sale(single_wallet_eligibility());
     fixture.next_tx!(CREATOR, |f| {
-        let version = blast_presale::blast_presale_package::new_for_testing(f.ctx!());
+        let version = blast_presale::blast_presale_package::version_for_testing(f.ctx!());
         let sale = f.take_presale();
         let other_cap = presale::cap_for_testing(f.presale_id, f.ctx!());
         destroy(sale.prove_owner(&version, &other_cap));
@@ -3798,47 +3676,11 @@ fun a_fresh_cap_for_the_same_sale_cannot_prove_ownership() {
     abort
 }
 
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidTier,
-    location = blast_presale::bluefin,
-)]
-fun bluefin_rejects_zero_tick_spacing() {
-    create_bluefin_tier(0, 1000);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidTier,
-    location = blast_presale::bluefin,
-)]
-fun bluefin_rejects_tick_spacing_above_max() {
-    create_bluefin_tier(401, 1000);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidTier,
-    location = blast_presale::bluefin,
-)]
-fun bluefin_rejects_zero_fee() {
-    create_bluefin_tier(10, 0);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = blast_presale::errors::EInvalidTier,
-    location = blast_presale::bluefin,
-)]
-fun bluefin_rejects_fee_above_max() {
-    create_bluefin_tier(10, 20001);
-}
-
 // === Test Helpers ===
 
 fun propose_rates_under_zero_fee_policy(token_rate: u64, meme_lp_rate: u64) {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     let (treasury_cap, mut currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
@@ -4075,7 +3917,7 @@ fun schedule_with_creation_rates(
 /// Creates a fee-free sale at `now_at_ms`, shares it to start at `commitment_starts_at_ms`, and returns its ID.
 fun share_new_sale(commitment_starts_at_ms: u64, now_at_ms: u64): ID {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let result = {
         let mut clock = clock::create_for_testing(&mut ctx);
         clock.set_for_testing(now_at_ms);
@@ -4136,7 +3978,7 @@ fun start_configured(
     creation_rates: Option<vector<u64>>,
 ): Fixture {
     let mut scenario = test_scenario::begin(CREATOR);
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let package_version = blast_presale::blast_presale_package::version_for_testing(scenario.ctx());
     let result = {
         let mut clock = clock::create_for_testing(scenario.ctx());
         clock.set_for_testing(created_at_ms);
@@ -4150,12 +3992,12 @@ fun start_configured(
             TEST_VENUE,
         >(scenario.ctx());
 
-        let raise_vesting = raise_allocations.map_ref!(|share| share.vesting_terms_for_testing());
+        let raise_recipients = raise_allocations.map_ref!(|share| share.recipient_for_testing());
 
         let mut terms = valid_sale_terms();
         terms.recipient_allocations = vector[
             recipient_a_share(recipient_a_vesting),
-            presale::recipient_share(RECIPIENT_B, bps::new(recipient_b_bps)),
+            outright_share(RECIPIENT_B, recipient_b_bps),
         ];
         terms.burnable = burnable;
         terms.raise_allocations = raise_allocations;
@@ -4185,8 +4027,11 @@ fun start_configured(
             burnable,
             recipient_b_bps,
             participant_vesting,
-            vector[recipient_a_vesting, option::none()],
-            raise_vesting,
+            vector[
+                payout::recipient(RECIPIENT_A, recipient_a_vesting),
+                payout::recipient(RECIPIENT_B, option::none()),
+            ],
+            raise_recipients,
             hard_cap,
         );
         assert_eq!(currency.is_supply_fixed(), !burnable);
@@ -4205,13 +4050,19 @@ fun start_configured(
         );
         transfer::public_transfer(cap, CREATOR);
 
-        Fixture { scenario, clock, fee_policy, presale_id }
+        Fixture {
+            treasury: blast_treasury::new_for_testing(TREASURY, scenario.ctx()),
+            scenario,
+            clock,
+            fee_policy,
+            presale_id,
+        }
     };
     std::unit_test::destroy(package_version);
     result
 }
 
-/// Creates the sale `migration_pays_blast_its_snapshotted_shares_at_the_current_destination`
+/// Creates the sale `migration_pays_the_treasury_its_snapshotted_shares`
 /// creates, names `partner` before sharing it, then lets Alice and Bob overfill it and a keeper
 /// settle it as funded.
 fun start_partnered_sale(partner: &Partner): Fixture {
@@ -4225,7 +4076,7 @@ fun start_partnered_sale(partner: &Partner): Fixture {
 /// shares it to open at `COMMITMENT_STARTS_AT_MS`.
 fun share_partnered_sale(partner: &Partner, created_at_ms: u64, protocol_raise_bps: u64): Fixture {
     let mut scenario = test_scenario::begin(CREATOR);
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
+    let package_version = blast_presale::blast_presale_package::version_for_testing(scenario.ctx());
     let result = {
         let mut clock = clock::create_for_testing(scenario.ctx());
         clock.set_for_testing(created_at_ms);
@@ -4238,10 +4089,10 @@ fun share_partnered_sale(partner: &Partner, created_at_ms: u64, protocol_raise_b
         let mut terms = valid_sale_terms();
         terms.recipient_allocations = vector[
             recipient_a_share(option::none()),
-            presale::recipient_share(RECIPIENT_B, bps::new(FEE_PAYING_RECIPIENT_B_BPS)),
+            outright_share(RECIPIENT_B, FEE_PAYING_RECIPIENT_B_BPS),
         ];
         terms.raise_allocations = vector[
-            presale::recipient_share(RAISE_RECIPIENT, bps::new(2_000)),
+            outright_share(RAISE_RECIPIENT, 2_000),
         ];
         terms.eligibility = presale::open_eligibility(WALLET_CAP, 2, RAISE_TARGET / 2);
         let (treasury_cap, mut currency) = new_currency(scenario.ctx());
@@ -4265,7 +4116,13 @@ fun share_partnered_sale(partner: &Partner, created_at_ms: u64, protocol_raise_b
         transfer::public_transfer(cap, CREATOR);
         destroy(currency);
         creation_policy.destroy_for_testing();
-        Fixture { scenario, clock, fee_policy, presale_id }
+        Fixture {
+            treasury: blast_treasury::new_for_testing(TREASURY, scenario.ctx()),
+            scenario,
+            clock,
+            fee_policy,
+            presale_id,
+        }
     };
     std::unit_test::destroy(package_version);
     result
@@ -4282,7 +4139,7 @@ fun fund_partnered_sale(self: &mut Fixture) {
 
 /// A creation policy allowing the fixture's Quote and venue that also accepts `partner`.
 fun accepting_partner(partner: &Partner, ctx: &mut TxContext): CreationPolicy {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(ctx);
     let result = {
         let mut creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(ctx);
         creation_policy.add_partner(&package_version, &fee_admin(), partner);
@@ -4304,10 +4161,9 @@ fun treasury_fee_policy(
     protocol_token_bps: u64,
     ctx: &mut TxContext,
 ): FeePolicy {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(ctx);
     let result = {
         let mut fee_policy = fee_policy::new_zero_fees_for_testing(ctx);
-        fee_policy.set_destination_for_testing(&package_version, &treasury_admin(), TREASURY, ctx);
         if (protocol_raise_bps > 0 || protocol_token_bps > 0)
             fee_policy.set_fees_for_testing(
                 &package_version,
@@ -4333,8 +4189,8 @@ fun assert_created_event(
     burnable: bool,
     recipient_b_bps: u64,
     participant_vesting: Option<VestingTerms>,
-    recipient_vesting: vector<Option<VestingTerms>>,
-    raise_vesting: vector<Option<VestingTerms>>,
+    recipients: vector<Recipient>,
+    raise_recipients: vector<Recipient>,
     hard_cap: Option<HardCapTerms>,
 ) {
     let created = only_event<PresaleCreated<BLAST_PRESALE_TESTS, QUOTE>>();
@@ -4378,19 +4234,14 @@ fun assert_created_event(
     assert_eq!(venue, type_name::with_original_ids<TEST_VENUE>());
     assert_eq!(created_fee_split, creator_fee_split());
 
-    let (recipients, recipient_bps, created_burnable) = created.created_supply_fields();
-    assert_eq!(recipients, vector[RECIPIENT_A, RECIPIENT_B]);
+    let (created_recipients, recipient_bps, created_burnable) = created.created_supply_fields();
+    assert_eq!(created_recipients, recipients);
     assert_eq!(recipient_bps, vector[RECIPIENT_A_BPS, recipient_b_bps]);
     assert_eq!(created_burnable, burnable);
 
-    let (
-        created_participant_vesting,
-        created_recipient_vesting,
-        created_raise_vesting,
-    ) = created.created_vesting_fields();
-    assert_eq!(created_participant_vesting, participant_vesting);
-    assert_eq!(created_recipient_vesting, recipient_vesting);
-    assert_eq!(created_raise_vesting, raise_vesting);
+    let (created_raise_recipients, _) = created.created_raise_fields();
+    assert_eq!(created_raise_recipients, raise_recipients);
+    assert_eq!(created.created_participant_vesting(), participant_vesting);
     assert_eq!(
         created.created_hard_cap(),
         hard_cap.map!(
@@ -4485,8 +4336,9 @@ fun assert_opened_event(
 }
 
 fun end(self: Fixture) {
-    let Fixture { scenario, clock, fee_policy, presale_id: _ } = self;
+    let Fixture { scenario, clock, fee_policy, treasury, presale_id: _ } = self;
     clock.destroy_for_testing();
+    destroy(treasury);
     fee_policy.destroy_for_testing();
     scenario.end();
 }
@@ -4519,7 +4371,7 @@ fun hard_cap_at(start_delay_ms: u64, closes_when_filled: bool): HardCapTerms {
 
 /// A sale started for the fixture's venue with nothing set.
 fun bare_initializer(
-    package_version: &blast_presale::blast_presale_package::PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
     creation_policy: &CreationPolicy,
     fee_policy: &FeePolicy,
@@ -4538,14 +4390,11 @@ fun bare_initializer(
 /// already minted; the start must abort.
 fun start_unadmitted<Quote, ListedQuote>(paused: bool, minted: bool) {
     let mut ctx = tx_context::dummy();
-    let mut version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let (mut treasury_cap, currency) = new_currency(&mut ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
     let creation_policy = creation_policy::allowing_for_testing<ListedQuote, OTHER_VENUE>(&mut ctx);
-    if (paused) version.pause(
-        &blast_acl::witness_for_testing<blast_presale::blast_presale_domain::PauseAdmin>(),
-        constants::create_pause_bit!(),
-    );
+    if (paused) pause(&mut version, constants::create_pause_bit!());
     if (minted) {
         treasury_cap.mint(1, &mut ctx).burn_for_testing();
     };
@@ -4577,7 +4426,7 @@ fun new_presale<Quote>(
     fee_policy: &FeePolicy,
     ctx: &mut TxContext,
 ): (Presale<BLAST_PRESALE_TESTS, Quote>, PresaleCap) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(ctx);
     let mut registry = presale::registry_for_testing(ctx);
     let (result_0, result_1) = {
         new_initializer<Quote>(
@@ -4595,7 +4444,7 @@ fun new_presale<Quote>(
 
 /// Starts a sale with the fixture's venue and sets every one of `terms`.
 fun new_initializer<Quote>(
-    package_version: &blast_presale::blast_presale_package::PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
     terms: SaleTerms,
     creation_policy: &CreationPolicy,
@@ -4666,7 +4515,7 @@ fun finalize_valid_sale(
     registry: &mut PresaleRegistry,
     ctx: &mut TxContext,
 ): (Presale<BLAST_PRESALE_TESTS, QUOTE>, PresaleCap) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(ctx);
     let (treasury_cap, mut currency) = new_currency(ctx);
     let fee_policy = fee_policy::new_zero_fees_for_testing(ctx);
     let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(ctx);
@@ -4726,88 +4575,6 @@ fun create_with_windows(commitment_duration_ms: u64, liquidity_window_duration_m
     terms.liquidity_window_ms = liquidity_window_duration_ms;
 
     create_sale<QUOTE>(terms);
-}
-
-fun create_bluefin_tier(tick_spacing: u32, pool_fee_rate: u64) {
-    let mut ctx = tx_context::dummy();
-    let version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
-    let (treasury, currency) = new_currency(&mut ctx);
-    let mut venues = venue_config::new_for_testing(&mut ctx);
-    std::unit_test::destroy(
-        bluefin::prepare<BLAST_PRESALE_TESTS, QUOTE>(
-            &version,
-            &mut venues,
-            &treasury,
-            &currency,
-            tick_spacing,
-            pool_fee_rate,
-        )
-    );
-    abort
-}
-
-/// Creates a Bluefin sale under a creation policy that allows only `AllowedQuote` and
-/// `AllowedVenue`, and checks the pool tier it reserved.
-fun create_bluefin_sale<AllowedQuote, AllowedVenue>(symbol: vector<u8>) {
-    let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
-    let (treasury_cap, mut currency) = new_currency_with_symbol(symbol, &mut ctx);
-    let fee_policy = fee_policy::new_zero_fees_for_testing(&mut ctx);
-    let creation_policy = creation_policy::allowing_for_testing<AllowedQuote, AllowedVenue>(
-        &mut ctx,
-    );
-    let mut venue_config = venue_config::new_for_testing(&mut ctx);
-
-    let ticket = bluefin::prepare<BLAST_PRESALE_TESTS, QUOTE>(
-        &package_version,
-        &mut venue_config,
-        &treasury_cap,
-        &currency,
-        TICK_SPACING,
-        POOL_FEE_RATE,
-    );
-    let mut initializer = presale::new(
-        treasury_cap,
-        &package_version,
-        ticket,
-        &creation_policy,
-        &fee_policy,
-    );
-    let (reserved_tick_spacing, reserved_fee_rate) = only_event<
-        PoolTierReserved<BLAST_PRESALE_TESTS, QUOTE, bluefin::Venue>,
-    >().pool_tier_reserved_fields();
-    assert_eq!(reserved_tick_spacing, TICK_SPACING);
-    assert_eq!(reserved_fee_rate, POOL_FEE_RATE);
-    let (stored_tick_spacing, stored_fee_rate) = venue_config.pool_tier<BLAST_PRESALE_TESTS>();
-    assert_eq!(stored_tick_spacing, TICK_SPACING);
-    assert_eq!(stored_fee_rate, POOL_FEE_RATE);
-    initializer.set_supply(&package_version, TOKEN_SUPPLY, false);
-    initializer.set_token_allocations(
-        &package_version,
-        bps::new(TOKEN_ALLOCATION_BPS),
-        bps::new(LIQUIDITY_TOKEN_ALLOCATION_BPS),
-        recipient_allocations(),
-    );
-    initializer.set_raise(&package_version, RAISE_TARGET, vector[]);
-    initializer.set_windows(&package_version, COMMITMENT_DURATION_MS, LIQUIDITY_WINDOW_DURATION_MS);
-    initializer.set_eligibility(&package_version, single_wallet_eligibility());
-    initializer.set_fee_split(
-        &package_version,
-        creator_fee_split(),
-    );
-    let mut registry = presale::registry_for_testing(&mut ctx);
-    let (sale, cap) = initializer.finalize(&package_version, &mut registry, &mut currency, &mut ctx);
-    destroy(registry);
-
-    destroy(sale);
-    destroy(cap);
-    destroy(currency);
-    destroy(fee_policy);
-    destroy(creation_policy);
-    destroy(venue_config);
-    destroy(ctx);
-
-    std::unit_test::destroy(package_version);
 }
 
 fun new_currency(
@@ -4900,19 +4667,32 @@ fun test_ticket<SaleToken, Quote>(): VenueTicket<SaleToken, Quote> {
 fun recipient_a_share(vesting: Option<VestingTerms>): RecipientShare {
     vesting
         .map!(|terms| {
-            presale::vested_recipient_share(RECIPIENT_A, bps::new(RECIPIENT_A_BPS), terms)
+            vested_share(RECIPIENT_A, RECIPIENT_A_BPS, terms)
         })
-        .destroy_or!(presale::recipient_share(RECIPIENT_A, bps::new(RECIPIENT_A_BPS)))
+        .destroy_or!(outright_share(RECIPIENT_A, RECIPIENT_A_BPS))
+}
+
+/// A share of `share_bps` paid outright to `destination`.
+fun outright_share(destination: address, share_bps: u64): RecipientShare {
+    presale::recipient_share(payout::recipient(destination, option::none()), bps::new(share_bps))
+}
+
+/// A share of `share_bps` vested to `destination` under `vesting_terms`.
+fun vested_share(destination: address, share_bps: u64, vesting_terms: VestingTerms): RecipientShare {
+    presale::recipient_share(
+        payout::recipient(destination, option::some(vesting_terms)),
+        bps::new(share_bps),
+    )
 }
 
 fun team_vesting_terms(): VestingTerms {
-    presale::vesting_terms(VESTING_CLIFF_DELAY_MS, VESTING_PERIOD_DURATION_MS, VESTING_PERIODS)
+    payout::vesting_terms(VESTING_CLIFF_DELAY_MS, VESTING_PERIOD_DURATION_MS, VESTING_PERIODS)
 }
 
 fun recipient_allocations(): vector<RecipientShare> {
     vector[
-        presale::recipient_share(RECIPIENT_A, bps::new(RECIPIENT_A_BPS)),
-        presale::recipient_share(RECIPIENT_B, bps::new(RECIPIENT_B_BPS)),
+        outright_share(RECIPIENT_A, RECIPIENT_A_BPS),
+        outright_share(RECIPIENT_B, RECIPIENT_B_BPS),
     ]
 }
 
@@ -4942,7 +4722,7 @@ fun return_presale(_self: &Fixture, presale: Presale<BLAST_PRESALE_TESTS, QUOTE>
 /// Commits `amount` under the open policy and returns
 /// `[wallet_commitment, total_commitments, participants]`.
 fun commit_open(self: &mut Fixture, sender: address, amount: u64): vector<u64> {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     let result = {
@@ -4975,7 +4755,7 @@ fun commit_allowlisted(
     wallet_cap: u64,
     proof: vector<vector<u8>>,
 ): vector<u64> {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     let result = {
@@ -5015,7 +4795,7 @@ fun committed_totals(self: &Fixture, amount: u64): vector<u64> {
 
 /// Commits under the open policy and returns `[accepted, change]`.
 fun commit_open_for_change(self: &mut Fixture, sender: address, amount: u64): vector<u64> {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     let result = {
@@ -5045,7 +4825,7 @@ fun commit_open_for_change(self: &mut Fixture, sender: address, amount: u64): ve
 
 /// Commits through the open-to-anyone uncapped route and returns `[accepted, change]`.
 fun commit_uncapped(self: &mut Fixture, sender: address, amount: u64): vector<u64> {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     let result = {
@@ -5115,7 +4895,7 @@ fun override_protocol_fees(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(ctx);
     if (fee_policy.fees() != fee_policy::protocol_fees_for_testing(1_000, 1_000, 3_000, 3_000))
         fee_policy.set_fees_for_testing(
             &package_version,
@@ -5169,7 +4949,7 @@ fun funded_deadlines(_self: &Fixture): vector<u64> {
 }
 
 fun settle(self: &mut Fixture, sender: address) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     self.next_tx!(sender, |fixture| {
@@ -5192,7 +4972,7 @@ fun migrate(self: &mut Fixture): vector<u64> {
 /// Migrates, redeems the hand-off with the admitted venue, and returns the released
 /// `[liquidity_tokens, quote]` and the vault terms it carried.
 fun migrate_with_terms(self: &mut Fixture): (vector<u64>, VaultTerms) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     let mut vault_terms = option::none();
@@ -5201,7 +4981,7 @@ fun migrate_with_terms(self: &mut Fixture): (vector<u64>, VaultTerms) {
         self.next_tx!(KEEPER, |fixture| {
             let mut sale = fixture.take_presale();
             let (liquidity_tokens, quote, terms) = sale
-                .migrate(&package_version, &fixture.fee_policy, &fixture.clock, fixture.ctx!())
+                .migrate(&package_version, &fixture.treasury, &fixture.clock, fixture.ctx!())
                 .redeem(TEST_VENUE());
             released.push_back(liquidity_tokens.into_coin(fixture.ctx!()).burn_for_testing());
             released.push_back(quote.into_coin(fixture.ctx!()).burn_for_testing());
@@ -5219,14 +4999,14 @@ fun migrate_with_terms(self: &mut Fixture): (vector<u64>, VaultTerms) {
 
 /// Has `sender` pay the sale's partner and Blast the fees its migration held.
 fun pay_protocol_fees_with_partner(self: &mut Fixture, sender: address, partner: &Partner) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     self.next_tx!(sender, |fixture| {
         let mut sale = fixture.take_presale();
         sale.pay_protocol_fees_with_partner(
             &package_version,
-            &fixture.fee_policy,
+            &fixture.treasury,
             partner,
             fixture.ctx!(),
         );
@@ -5236,16 +5016,17 @@ fun pay_protocol_fees_with_partner(self: &mut Fixture, sender: address, partner:
     std::unit_test::destroy(package_version);
 }
 
-/// Blast's raise fee the sale holds for `pay_protocol_fees_with_partner`, if it still does.
-fun unpaid_protocol_quote(self: &mut Fixture): Option<u64> {
-    let mut unpaid = vector[];
+/// The `[tokens, quote]` of Blast's fees the sale's ledger holds.
+fun held_protocol_fees(self: &mut Fixture): vector<u64> {
+    let mut held = vector[];
     self.next_tx!(KEEPER, |fixture| {
         let sale = fixture.take_presale();
-        unpaid.push_back(sale.unpaid_protocol_quote_for_testing());
+        let (tokens, quote, _) = sale.protocol_fee_balances_for_testing();
+        held.append(vector[tokens, quote]);
         fixture.return_presale(sale);
     });
 
-    unpaid.pop_back()
+    held
 }
 
 fun take_recipient_allocations(self: &mut Fixture) {
@@ -5270,7 +5051,7 @@ fun destroy_migrated_cap(self: &mut Fixture) {
 }
 
 fun cancel_unlaunched(self: &mut Fixture, sender: address) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     self.next_tx!(sender, |fixture| {
@@ -5298,7 +5079,7 @@ fun claim_with_vesting(
     sender: address,
     participant: address,
 ): (vector<u64>, Option<ID>) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(self
+    let package_version = blast_presale::blast_presale_package::version_for_testing(self
         .scenario
         .ctx());
     let (result_0, result_1) = {
@@ -5448,55 +5229,97 @@ fun only_event<Event: copy + drop>(): Event {
     events.pop_back()
 }
 
-fun fee_admin(): AdminWitness<FeeAdmin> {
-    blast_acl::witness_for_testing()
+/// A core fee payment's `(origin, treasury, quote, tokens)`.
+fun paid_fields(
+    event: &ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>,
+): (ID, address, u64, u64) {
+    let (_, origin, treasury, tokens, quote, _, _, _, _, _) = event.protocol_fees_paid_fields();
+
+    (origin, treasury, quote, tokens)
 }
 
-fun treasury_admin(): AdminWitness<TreasuryAdmin> {
+/// The partner's cut of Blast's Quote in a core fee payment.
+fun paid_partner_quote(event: &ProtocolFeesPaid<BLAST_PRESALE_TESTS, QUOTE>): u64 {
+    let (_, _, _, _, _, _, _, _, partner_quote, _) = event.protocol_fees_paid_fields();
+
+    partner_quote
+}
+
+/// Sets `bits` through the generic administration.
+fun pause(version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>, bits: u8) {
+    package_admin::pause(
+        version,
+        &blast_acl::witness_for_testing<PauseAdmin<BLAST_PRESALE_PACKAGE>>(),
+        bits,
+    );
+}
+
+/// Clears `bits` through the generic administration, as `creation_policy::unpause` does once every
+/// notice is guarded.
+fun clear_pause_bits(version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>, bits: u8) {
+    let package_admin = blast_presale_package::package_admin_for_testing(&mut tx_context::dummy());
+    package_admin.clear_pause_bits(
+        &blast_acl::witness_for_testing<UnpauseAdmin<BLAST_PRESALE_PACKAGE>>(),
+        blast_presale_package::package_witness(),
+        version,
+        bits,
+    );
+    destroy(package_admin);
+}
+
+fun fee_admin(): AdminWitness<FeeAdmin> {
     blast_acl::witness_for_testing()
 }
 
 // === Imports ===
 
-use blast_admin::blast_acl::{Self, AdminWitness};
+use blast_admin::{
+    blast_acl::{Self, AdminWitness},
+    package_admin::{Self, PauseAdmin, UnpauseAdmin},
+    package_version::PackageVersion
+};
+
+use blast_core::{
+    blast_core_events::ProtocolFeesPaid,
+    blast_domain::FeeAdmin,
+    blast_treasury::{Self, Treasury},
+    bps,
+    fee_split::{Self, FeeSplit},
+    migration::{Self, VaultTerms, VenueTicket},
+    payout::{Self, Recipient, VestingTerms}
+};
 
 use blast_fun_vesting::blast_fun_linear_vesting::{Vesting, VestingCreated};
 
 use blast_partners::blast_partners::{Self as partners, Partner, PartnerPaid};
 
-use blast_core::{bps, fee_split::{Self, FeeSplit}, migration::{Self, VaultTerms, VenueTicket}};
-
 use blast_presale::{
     blast_presale::{
         Self as presale,
-        Claimed,
-        Committed,
         EligibilityPolicy,
-        RaiseAllocated,
-        RecipientAllocated,
         Presale,
-        PresaleCancelled,
         PresaleCap,
         PresaleInitializer,
         PresaleCreated,
         PresaleRegistry,
+        RecipientShare,
+        UncappedPhase
+    },
+    blast_presale_package::{Self, BLAST_PRESALE_PACKAGE, PackageWitness},
+    constants,
+    creation_policy::{Self, CreationPolicy},
+    events::{
+        Claimed,
+        Committed,
+        PresaleCancelled,
         PresaleFunded,
         PresaleMigrated,
         PresaleOpened,
         ProtocolFeesChanged,
-        RecipientShare,
-        UncappedPhase,
-        VestingTerms,
-        ProtocolFeesPaid,
+        RaiseAllocated,
+        RecipientAllocated
     },
-    blast_presale_domain::{FeeAdmin, TreasuryAdmin},
-    bluefin,
-    cetus,
-    constants,
-    creation_policy::{Self, CreationPolicy},
-    fee_policy::{Self, FeePolicy},
-    migration_math,
-    venue_config::{Self, PoolTierReserved}
+    fee_policy::{Self, FeePolicy}
 };
 
 use std::{type_name, unit_test::{assert_eq, destroy}};
@@ -5520,3 +5343,7 @@ use fun share_partnered_sale as Partner.share_partnered_sale;
 use fun start_partnered_sale as Partner.start_partnered_sale;
 
 use fun team_schedule_id as VestingCreated.team_schedule_id;
+
+use fun paid_fields as ProtocolFeesPaid.paid_fields;
+
+use fun paid_partner_quote as ProtocolFeesPaid.paid_partner_quote;

@@ -68,8 +68,6 @@ fn main() -> Result<()> {
     for (venue, version) in [
         ("Cetus", fork::CETUS),
         ("Bluefin", fork::BLUEFIN),
-        ("Aftermath DAO fee", fork::AFTERMATH_DAO_FEE),
-        ("Aftermath AMM", fork::AFTERMATH_AMM),
     ] {
         let count: usize = observed
             .get(&fork::id(version))

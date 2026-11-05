@@ -3,8 +3,9 @@
 
 // Package error macros preserve the module's abort location.
 #[allow(lint(abort_without_constant))]
-/// Blast's allowlists for new presales: the Quote coins a sale may raise, the venues, in this
-/// package or another, whose tickets may start a sale, and the Blast partners a sale may name.
+/// Blast's allowlists for new presales: the Quote coins a sale may raise, the venues whose tickets
+/// may start a sale, and the Blast partners a sale may name; and the presale's `unpause`, which
+/// reads these and the fee policy's notices.
 ///
 /// A presale is checked once, when it is created. Later changes apply only to later sales, so a
 /// delisting never strands a live sale's commitments, blocks its migration, or stops paying its
@@ -13,19 +14,16 @@ module blast_presale::creation_policy;
 
 // === Public Types ===
 
-/// Shared singleton holding the Quote types and venues new presales may use.
+/// Shared singleton holding the Quote types, venues, and partners new presales may use.
 public struct CreationPolicy has key {
     id: UID,
     allowed_quotes: VecSet<TypeName>,
     venues: DelayedSet<VenueKey, TypeName>,
+    partners: PartnerList,
 }
 
 /// Keys the delayed lifecycle of venue admissions and their notice.
 public struct VenueKey() has copy, drop, store;
-
-/// Dynamic-field key of a Blast partner new presales may name. Its value is the time the partner
-/// stops being accepted: `u64::MAX` until Blast removes it.
-public struct PartnerKey(ID) has copy, drop, store;
 
 // === Private Initialization ===
 
@@ -38,11 +36,11 @@ fun init(ctx: &mut TxContext) {
 /// Allows or disallows `Quote` for presales created afterward; existing ones keep it.
 public fun set_quote_allowed<Quote>(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<ListingAdmin>,
     allowed: bool,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     let quote = type_name::with_original_ids<Quote>();
     assert!(
@@ -52,7 +50,7 @@ public fun set_quote_allowed<Quote>(
 
     if (allowed) self.allowed_quotes.insert(quote) else self.allowed_quotes.remove(&quote);
 
-    event::emit(QuoteSet { quote, allowed });
+    events::quote_set<Quote>(allowed);
 }
 
 /// Admits a venue's witness type after the applied admission notice. An admitted venue's tickets
@@ -65,11 +63,11 @@ public fun set_quote_allowed<Quote>(
 /// any of which a caller can construct, is rejected.
 public fun schedule_venue<Venue: drop>(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<AdapterAdmin>,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     let venue = type_name::with_original_ids<Venue>();
     assert!(!venue.is_primitive(), blast_presale::errors::invalid_venue!());
@@ -82,10 +80,10 @@ public fun schedule_venue<Venue: drop>(
 /// Permissionlessly applies the approved admission once ready.
 public fun apply_venue<Venue: drop>(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.venues.apply_add(type_name::with_original_ids<Venue>(), clock);
 }
@@ -93,10 +91,10 @@ public fun apply_venue<Venue: drop>(
 /// Cancels a pending venue admission, including after its threshold.
 public fun cancel_venue<Venue: drop>(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.venues.cancel_add(type_name::with_original_ids<Venue>());
 }
@@ -104,10 +102,10 @@ public fun cancel_venue<Venue: drop>(
 /// Immediately removes a venue for new presales and cancels any pending admission.
 public fun remove_venue<Venue: drop>(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<AdapterAdmin>,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.venues.remove(type_name::with_original_ids<Venue>());
 }
@@ -116,64 +114,38 @@ public fun remove_venue<Venue: drop>(
 /// the removal; adding a removed partner accepts it again.
 public fun add_partner(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<FeeAdmin>,
     partner: &Partner,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
-    let partner_id = object::id(partner);
-    let key = PartnerKey(partner_id);
-
-    if (self.id.has_dynamic_field(key)) {
-        let acceptance_ends_at_ms: &mut u64 = self.id.dynamic_field_mut(key);
-        assert!(
-            *acceptance_ends_at_ms != std::u64::max_value!(),
-            blast_presale::errors::allowance_unchanged!(),
-        );
-        *acceptance_ends_at_ms = std::u64::max_value!();
-    } else {
-        self.id.add_dynamic_field(key, std::u64::max_value!());
-    };
-
-    event::emit(PartnerAdded { partner_id });
+    self.partners.add(partner);
 }
 
 /// Stops new presales naming `partner` after the notice Blast gives for every change to a
 /// partner, `blast_partners::delay_ms()`. Sales that already name it keep paying it.
 public fun remove_partner(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<FeeAdmin>,
     partner: &Partner,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
-    let partner_id = object::id(partner);
-    let now_at_ms = clock.timestamp_ms();
-    self.assert_partner(partner_id, now_at_ms);
-    let notice_ends_at_ms = now_at_ms + partners::delay_ms();
-
-    let acceptance_ends_at_ms: &mut u64 = self.id.dynamic_field_mut(PartnerKey(partner_id));
-    assert!(
-        *acceptance_ends_at_ms == std::u64::max_value!(),
-        blast_presale::errors::allowance_unchanged!(),
-    );
-    *acceptance_ends_at_ms = notice_ends_at_ms;
-
-    event::emit(PartnerRemoved { partner_id, accepted_until_ms: notice_ends_at_ms });
+    self.partners.remove(object::id(partner), clock);
 }
 
 /// Proposes only the admission notice. Existing admission deadlines remain fixed.
 public fun schedule_venue_delay(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<AdapterAdmin>,
     delay_ms: u64,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.venues.schedule_delay(delay_ms, clock);
 }
@@ -181,10 +153,10 @@ public fun schedule_venue_delay(
 /// Permissionlessly applies a ready admission-notice proposal.
 public fun apply_venue_delay(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.venues.apply_delay(clock);
 }
@@ -192,17 +164,40 @@ public fun apply_venue_delay(
 /// Cancels only the admission-notice proposal.
 public fun cancel_venue_delay(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     _: &AdminWitness<CancelAdmin>,
 ) {
-    package_version.assert_current();
+    package_version.assert_current(constants::generation!());
 
     self.venues.cancel_delay();
 }
 
+/// Clears the requested pause bits once every presale notice is guarded: nonzero, with no
+/// pending change that would set one to zero and no pending admission. A notice left at its zero
+/// publication value therefore blocks release instead of going live; the generic administration
+/// then checks the upgrade notice and the pinned witness. Settlement, cancellation, refunds and
+/// claims never require unpausing.
+public fun unpause(
+    self: &CreationPolicy,
+    package_version: &mut PackageVersion<BLAST_PRESALE_PACKAGE>,
+    unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_PRESALE_PACKAGE>>,
+    package_admin: &PackageAdmin<BLAST_PRESALE_PACKAGE>,
+    fee_policy: &FeePolicy,
+    bits: u8,
+) {
+    package_version.assert_current(constants::generation!());
+
+    assert!(
+        self.is_guarded() && fee_policy.is_guarded(),
+        blast_presale::errors::unguarded_notice!(),
+    );
+
+    package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);
+}
+
 // === Package Functions ===
 
-/// True when the venue allowlist's notice is guarded (see `package_admin::unpause`).
+/// True when the venue allowlist's notice is guarded (see `unpause`).
 public(package) fun is_guarded(self: &CreationPolicy): bool {
     self.venues.is_guarded()
 }
@@ -216,14 +211,9 @@ public(package) fun assert_allowed<Quote>(self: &CreationPolicy, venue: TypeName
     assert!(self.venues.contains(&venue), blast_presale::errors::venue_not_allowed!());
 }
 
-/// Aborts unless a new presale may name the partner `partner_id` at `now_at_ms`.
-public(package) fun assert_partner(self: &CreationPolicy, partner_id: ID, now_at_ms: u64) {
-    let key = PartnerKey(partner_id);
-
-    assert!(self.id.has_dynamic_field(key), blast_presale::errors::partner_not_accepted!());
-
-    let acceptance_ends_at_ms: u64 = *self.id.dynamic_field(key);
-    assert!(now_at_ms < acceptance_ends_at_ms, blast_presale::errors::partner_not_accepted!());
+/// Aborts unless a new presale may name the partner `partner_id` now.
+public(package) fun assert_partner(self: &CreationPolicy, partner_id: ID, clock: &Clock) {
+    self.partners.assert_accepted(partner_id, clock);
 }
 
 // === Private Functions ===
@@ -231,8 +221,9 @@ public(package) fun assert_partner(self: &CreationPolicy, partner_id: ID, now_at
 fun new(delay_ms: u64, ctx: &mut TxContext): CreationPolicy {
     let id = object::new(ctx);
     let venues = delayed_set::new(VenueKey(), &id, delay_ms);
+    let partners = partner_list::new(&id, ctx);
 
-    CreationPolicy { id, allowed_quotes: vec_set::empty(), venues }
+    CreationPolicy { id, allowed_quotes: vec_set::empty(), venues, partners }
 }
 
 // === Test-Only Functions ===
@@ -251,7 +242,7 @@ public fun venues_for_testing(self: &CreationPolicy): &DelayedSet<VenueKey, Type
 #[test_only]
 public fun set_venue_allowed_for_testing<Venue: drop>(
     self: &mut CreationPolicy,
-    package_version: &PackageVersion,
+    package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     admin: &AdminWitness<AdapterAdmin>,
     allowed: bool,
     ctx: &mut TxContext,
@@ -262,7 +253,7 @@ public fun set_venue_allowed_for_testing<Venue: drop>(
     };
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_venue<Venue>(package_version, admin, &clock);
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(self.venues.delay_ms());
     self.apply_venue<Venue>(package_version, &clock);
     clock.destroy_for_testing();
 }
@@ -274,7 +265,7 @@ public fun init_for_testing(ctx: &mut TxContext) {
 
 #[test_only]
 public fun new_for_testing(ctx: &mut TxContext): CreationPolicy {
-    new(172_800_000, ctx)
+    new(blast_admin::package_admin::initial_upgrade_delay_ms_for_testing(), ctx)
 }
 
 #[test_only]
@@ -293,7 +284,9 @@ public fun allowing_for_testing<Quote, Venue>(ctx: &mut TxContext): CreationPoli
     policy.allowed_quotes.insert(type_name::with_original_ids<Quote>());
     policy.venues.schedule_add(venue, &clock);
     policy.venues.apply_add(venue, &clock);
-    policy.venues.schedule_delay(172_800_000, &clock);
+    policy
+        .venues
+        .schedule_delay(blast_admin::package_admin::initial_upgrade_delay_ms_for_testing(), &clock);
     policy.venues.apply_delay(&clock);
     clock.destroy_for_testing();
 
@@ -302,68 +295,32 @@ public fun allowing_for_testing<Quote, Venue>(ctx: &mut TxContext): CreationPoli
 
 #[test_only]
 public fun destroy_for_testing(self: CreationPolicy) {
-    let CreationPolicy { id, allowed_quotes: _, venues } = self;
+    let CreationPolicy { id, allowed_quotes: _, venues, partners } = self;
     std::unit_test::destroy(venues);
+    partners.destroy();
     id.delete();
-}
-
-#[test_only]
-public fun quote_set_fields(event: &QuoteSet): (TypeName, bool) {
-    (event.quote, event.allowed)
-}
-
-#[test_only]
-public fun partner_added_fields(event: &PartnerAdded): ID {
-    event.partner_id
-}
-
-#[test_only]
-public fun partner_removed_fields(event: &PartnerRemoved): (ID, u64) {
-    (event.partner_id, event.accepted_until_ms)
-}
-
-// === Events ===
-
-/// Presales created afterward may (`allowed`) or may not raise `quote`.
-public struct QuoteSet has copy, drop {
-    quote: TypeName,
-    allowed: bool,
-}
-
-/// Presales created from now on may name the partner `partner_id`.
-public struct PartnerAdded has copy, drop {
-    partner_id: ID,
-}
-
-/// Presales created before `accepted_until_ms` may still name the partner `partner_id`; later ones
-/// may not.
-public struct PartnerRemoved has copy, drop {
-    partner_id: ID,
-    accepted_until_ms: u64,
 }
 
 // === Imports ===
 
-use sui::{clock::Clock, dynamic_field, event, vec_set::{Self, VecSet}};
-
 use blast_admin::{
-    delayed_set::{Self, DelayedSet},
     blast_acl::AdminWitness,
+    delayed_set::{Self, DelayedSet},
+    package_admin::{PackageAdmin, UnpauseAdmin},
+    package_version::PackageVersion
 };
 
-use blast_partners::blast_partners::{Self as partners, Partner};
+use blast_core::blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin};
+
+use blast_partners::{blast_partners::Partner, partner_list::{Self, PartnerList}};
 
 use blast_presale::{
-    blast_presale_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, ListingAdmin},
-    blast_presale_package::{PackageVersion}
+    blast_presale_package::{BLAST_PRESALE_PACKAGE, package_witness},
+    constants,
+    events,
+    fee_policy::FeePolicy
 };
 
 use std::type_name::{Self, TypeName};
 
-use fun dynamic_field::add as UID.add_dynamic_field;
-
-use fun dynamic_field::borrow as UID.dynamic_field;
-
-use fun dynamic_field::borrow_mut as UID.dynamic_field_mut;
-
-use fun dynamic_field::exists as UID.has_dynamic_field;
+use sui::{clock::Clock, vec_set::{Self, VecSet}};

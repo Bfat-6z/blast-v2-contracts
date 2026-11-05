@@ -48,7 +48,7 @@ fun init(ctx: &mut TxContext) {
 /// Reserves `SaleToken`'s pool creation with `create_pool_cap`, minted by the fresh LP coin `Lp`,
 /// in a shared `PoolCreation` bound to `Issuer`, and returns the ticket for a sale of `SaleToken` in
 /// `Quote` that migrates here. `Issuer` is the presale's package witness
-/// (`blast_presale::blast_presale::PackageWitness`), passed as a type argument, so only a
+/// (`blast_presale::blast_presale_package::PackageWitness`), passed as a type argument, so only a
 /// `Migration` the presale sealed can consume the reservation; with the presale's one sale per
 /// sale token, that binds the reservation to one sale. Framework and primitive types are rejected
 /// because anyone can construct them. The pool's weights and fees are this module's constants, so

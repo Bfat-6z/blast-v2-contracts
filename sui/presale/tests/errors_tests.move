@@ -10,19 +10,12 @@ module blast_presale::errors_tests;
 /// Pins every registry code to its position, so a reorder or gap fails here first.
 fun error_registry_is_stable() {
     let codes = vector[
-        errors::invalid_pause_bits!(),
-        errors::pause_unchanged!(),
-        errors::paused!(),
-        errors::wrong_upgrade_action!(),
-        errors::invalid_digest!(),
         errors::unguarded_notice!(),
         errors::allowance_unchanged!(),
         errors::quote_not_allowed!(),
         errors::venue_not_allowed!(),
         errors::invalid_venue!(),
-        errors::partner_not_accepted!(),
         errors::invalid_fees!(),
-        errors::invalid_destination!(),
         errors::invalid_asset_pair!(),
         errors::invalid_raise_target!(),
         errors::invalid_token_allocation!(),
@@ -48,27 +41,16 @@ fun error_registry_is_stable() {
         errors::uncapped_phase_not_open!(),
         errors::presale_filled!(),
         errors::invalid_raise_allocation!(),
-        errors::invalid_vesting_terms!(),
         errors::presale_not_started!(),
         errors::presale_started!(),
         errors::protocol_fees_unchanged!(),
-        errors::wrong_partner!(),
-        errors::no_partner_payout!(),
         errors::invalid_hard_cap!(),
         errors::missing_setting!(),
         errors::sale_token_not_unregulated!(),
         errors::above_fee_policy!(),
         errors::protocol_fees_increased!(),
-        errors::invalid_coin_order!(),
-        errors::position_pool_mismatch!(),
-        errors::wrong_coin_pair!(),
-        errors::invalid_tier!(),
-        errors::symbol_too_long!(),
-        errors::pool_mismatch!(),
-        errors::dao_fee_pool_mismatch!(),
-        errors::invalid_dao_fee!(),
     ];
-    assert_eq!(codes.length(), 57);
+    assert_eq!(codes.length(), 39);
     codes.length().do!(|i| assert_eq!(codes[i], i));
 }
 

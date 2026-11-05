@@ -90,34 +90,49 @@ assert signature.split('(', 1)[1].replace(' ', '').replace('\n', '') == (
 assert body.startswith(f'package_version.assert_current{LAUNCHPAD_CURRENT}'), body
 assert body.index('self.is_guarded() && runtime_config.is_guarded()') < body.index('clear_pause_bits('), body
 require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')
-governed('presale', 'fee_policy', {'destination': 'TreasuryAdmin', 'fees': 'FeeAdmin'})
-for package, upgrade_role, cancel_role in (('presale', 'UpgradeAdmin', 'CancelAdmin'),):
-    fs = functions(package, 'package_admin')
-    source = (ROOT / 'sui' / package / 'sources' / 'package_admin.move').read_text()
-    require(source, 'upgrade: DelayedAction<UpgradeKey, UpgradeAction>,', 'public struct UpgradeKey() has copy, drop, store;')
-    assert 'DelayOnly' not in source and 'delay_ms: u64,\n' not in source.split('public struct PackageAdmin')[1].split('}')[0], package
-    for name in ('schedule_upgrade', 'schedule_make_immutable', 'authorize_upgrade', 'make_immutable'):
-        signature, body = fs[name]
-        require(signature, f'&AdminWitness<{upgrade_role}>', 'clock: &Clock')
-        assert body.startswith('package_version.assert_current();'), (package, name)
-    require(fs['schedule_upgrade'][1], 'digest.length() == 32', 'self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock)')
-    require(fs['schedule_make_immutable'][1], 'self.upgrade.schedule(UpgradeAction::MakeImmutable, clock)')
-    for name in ('schedule_upgrade', 'schedule_make_immutable'):
-        assert 'delay_ms: u64' not in fs[name][0], (package, name)
-    for name, action in [('authorize_upgrade', 'Upgrade(digest)'), ('make_immutable', 'MakeImmutable')]:
-        body = fs[name][1]
-        require(body, 'self.upgrade.take_action(clock)', f'action == UpgradeAction::{action}')
-        assert body.index('self.upgrade.take_action(clock)') < body.index(f'action == UpgradeAction::{action}') < body.index('self.custody.'), name
-    require(fs['cancel_upgrade_action'][0], f'&AdminWitness<{cancel_role}>')
-    require(fs['cancel_upgrade_action'][1], 'self.upgrade.cancel()')
-    require(fs['wrap'][1], 'upgrade_custody::new')
-    require(fs['wrap'][0], 'publication: Publication')
-    require(fs['wrap'][1], 'publication.destroy()', 'generation.share_version(ctx)')
-    assert fs['wrap'][1].index('upgrade_custody::new') < fs['wrap'][1].index('generation.share_version(ctx)')
-    assert fs['commit_upgrade_and_advance'][1].startswith('package_version.assert_next();')
-    require(fs['commit_upgrade_and_advance'][1], 'self.custody.commit_upgrade(custodian_id, receipt); package_version.advance();')
-    for signature, _ in fs.values():
-        assert not re.search(r'\):\s*&?(?:mut )?(Publisher|UpgradeCap)', signature)
+# The presale runs on the generic package administration too, and pays Blast's fees to the core
+# treasury, so it governs no destination of its own.
+PRESALE_CURRENT = '(constants::generation!());'
+governed('presale', 'fee_policy', {'fees': 'FeeAdmin'}, current=PRESALE_CURRENT)
+assert not any('destination' in name for name in functions('presale', 'fee_policy'))
+for name in ('package_admin', 'blast_presale_domain', 'cetus', 'bluefin', 'aftermath', 'venue_config', 'migration_math'):
+    assert not list((ROOT / 'sui/presale/sources').rglob(f'{name}.move')), name
+presale_marker = (ROOT / 'sui/presale/sources/blast_presale_package.move').read_text()
+require(presale_marker, 'public struct BLAST_PRESALE_PACKAGE() has drop;', 'public struct PackageWitness() has drop;',
+        'package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)')
+presale_marker_fs = functions('presale', 'blast_presale_package')
+assert set(presale_marker_fs) == {'init', 'package_witness'}, presale_marker_fs
+assert presale_marker_fs['package_witness'][1] == 'PackageWitness()', presale_marker_fs['package_witness']
+for path in (ROOT / 'sui/presale/sources').rglob('*.move'):
+    for name, (signature, _) in functions('presale', path.stem).items():
+        assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_presale_package', 'package_witness'), (path, name)
+# Only the presale's unpause clears bits, after checking every presale notice.
+presale_callers = [(path.stem, name) for path in (ROOT / 'sui/presale/sources').rglob('*.move')
+                   for name, (_, body) in functions('presale', path.stem).items() if 'clear_pause_bits(' in body]
+assert presale_callers == [('creation_policy', 'unpause')], presale_callers
+signature, body = functions('presale', 'creation_policy')['unpause']
+assert signature.split('(', 1)[1].replace(' ', '').replace('\n', '') == (
+    'self:&CreationPolicy,package_version:&mutPackageVersion<BLAST_PRESALE_PACKAGE>,'
+    'unpause_admin:&AdminWitness<UnpauseAdmin<BLAST_PRESALE_PACKAGE>>,'
+    'package_admin:&PackageAdmin<BLAST_PRESALE_PACKAGE>,fee_policy:&FeePolicy,bits:u8,)'
+), signature
+assert body.startswith(f'package_version.assert_current{PRESALE_CURRENT}'), body
+assert body.index('self.is_guarded() && fee_policy.is_guarded()') < body.index('clear_pause_bits('), body
+require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')
+for path in (ROOT / 'sui/presale/sources').rglob('*.move'):
+    production = path.read_text().split('// === Test-Only Functions ===')[0]
+    assert 'Bootstrap' not in production and 'set_now' not in production, path
+    if path.stem != 'blast_presale_package':
+        assert not re.search(r'\bPublication\b', production), path
+    for name, (signature, body) in functions('presale', path.stem).items():
+        if not re.search(r'\.schedule(_add|_value)?\(', body):
+            continue
+        require(signature, 'clock: &Clock')
+        if name == 'schedule_venue':
+            assert 'delay_ms: u64' not in signature, (path, name)
+        else:
+            require(signature, 'delay_ms: u64')
+        assert 'new_pending' not in body and 'take_ready' not in body, (path, name)
 
 for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_policy')]:
     fs = functions(package, module)
@@ -169,7 +184,7 @@ for package, module, current, actions in [
         'sell': 'constants::trading_pause_bit!()',
         'migrate': 'constants::migration_pause_bit!()',
     }),
-    ('presale', 'blast_presale', '();', {
+    ('presale', 'blast_presale', PRESALE_CURRENT, {
         'new': 'constants::create_pause_bit!()',
         'share': 'constants::create_pause_bit!()',
         'commit_open': 'constants::commit_pause_bit!()',
@@ -191,23 +206,14 @@ assert 'MAX_ADMINS' not in acl and 'Timelocked' not in acl
 print('ADR 0134 administration boundaries: OK')
 
 # Publication proves unique native custody intake; it never authorizes policy changes.
-for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_package')]:
+for package, marker in [('launchpad', 'blast_fun')]:
     marker_fs = functions(package, marker)
     source = (ROOT / 'sui' / package / 'sources' / f'{marker}.move').read_text()
     assert 'admin_delay' not in source
-    if package == 'launchpad':
-        # The generic `package_version::new_publication` claims the Publisher and seeds the version.
-        require(marker_fs['init'][1], '.keep(ctx)')
-        assert 'share_object' not in marker_fs['init'][1] and 'public struct Publication' not in source
-    else:
-        require(marker_fs['init'][1], 'transfer::transfer(Publication', 'sui::package::claim(otw, ctx)')
-        assert 'share_object' not in marker_fs['init'][1]
-        require(marker_fs['destroy'][0], 'self: Publication')
-        assert {name for name, (_, body) in marker_fs.items() if re.search(r'\bPublication\s*{', body)} == {'init', 'destroy'}
-        require(source, 'public struct Publication has key {')
+    # The generic `package_version::new_publication` claims the Publisher and seeds the version.
+    require(marker_fs['init'][1], '.keep(ctx)')
+    assert 'share_object' not in marker_fs['init'][1] and 'public struct Publication' not in source
     assert marker_fs['init'][0].startswith('fun init(')
-    if package == 'presale':
-        assert 'paused: 0' not in marker_fs['share_version'][1]
     for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
         production = path.read_text().split('// === Test-Only Functions ===')[0]
         assert 'Bootstrap' not in production, path
@@ -269,15 +275,11 @@ require(fs['apply_fee_split'][0], '_: &Venue')
 require(fs['apply_fee_split'][1], 'self.assert_position<_, _, Venue>()', 'self.fee_split.apply(clock)')
 for package, venue, settlement in (
     ('migrators', 'bluefin', 'self.settle_fees('), ('migrators', 'cetus', 'self.settle_fees('),
-    ('presale', 'bluefin', 'collect_fees('), ('presale', 'cetus', 'collect_fees('),
 ):
     signature, body = functions(package, venue)['settle_and_apply_fee_split']
     assert 'FeeSplit' not in signature and 'Cap' not in signature, (package, venue)
     assert body.index('.assert_fee_split_ready(clock)') < body.index(settlement) < body.index(
         '.apply_fee_split(&Venue(), vault_version, clock)'), (package, venue)
-aftermath = functions('presale', 'aftermath')['apply_fee_split'][1]
-assert aftermath.index('vault.assert_fee_split_ready(clock)') < aftermath.index(
-    'vault.apply_fee_split(&Venue(), vault_version, clock)')
 
 # Holder-reward rounds publish only from each vault's delayed action slot: RewardsAdmin schedules
 # checked terms and the notice, CancelAdmin cancels either kind, and anyone publishes a ready round
@@ -366,13 +368,6 @@ require(signer['cancel_creator_claim_signer_delay'][1], 'self.creator_claim_sign
 for name in ('apply_creator_claim_signer', 'apply_creator_claim_signer_delay'):
     assert 'AdminWitness' not in signer[name][0], name
 assert 'set_creator_claim_signer' not in signer
-for package, upgrade_role in (('presale', 'UpgradeAdmin'),):
-    fs = functions(package, 'package_admin')
-    require(fs['schedule_upgrade_delay'][0], f'&AdminWitness<{upgrade_role}>', 'delay_ms: u64')
-    require(fs['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
-    require(fs['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
-    assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]
-    require(fs['wrap'][1], 'delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS)')
 # The migrators adopt blast_admin's generic administration: the publication defines no pause bits
 # and pins a package witness nothing constructs, no local custody or generation copy exists, and
 # every public venue route checks this package's compiled generation before anything else.

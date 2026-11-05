@@ -45,7 +45,7 @@ fun publication_shares_a_policy_that_allows_nothing() {
 #[test]
 /// The administrator allows a Quote type and a venue, and each change emits its type.
 fun the_admin_allows_a_quote_and_a_venue() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -59,9 +59,7 @@ fun the_admin_allows_a_quote_and_a_venue() {
     );
 
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
-    let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
-    assert_eq!(quote, type_name<QUOTE>());
-    assert_eq!(allowed, true);
+    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), true);
     let (owner, _, admission, _) = last_event<
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
@@ -93,7 +91,7 @@ fun allowing_one_quote_allows_no_other() {
 )]
 /// An allowed Quote type is not enough without an allowed venue.
 fun an_allowed_quote_still_needs_an_allowed_venue() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -111,16 +109,14 @@ fun an_allowed_quote_still_needs_an_allowed_venue() {
 )]
 /// Disallowing a Quote type emits it and stops later creations from raising it.
 fun disallowing_a_quote_stops_later_creations() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing<QUOTE, VENUE>();
 
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), false);
 
-    let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
-    assert_eq!(quote, type_name<QUOTE>());
-    assert_eq!(allowed, false);
+    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), false);
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     std::unit_test::destroy(package_version);
     abort
@@ -133,7 +129,7 @@ fun disallowing_a_quote_stops_later_creations() {
 )]
 /// Disallowing a venue emits it and stops later creations through it.
 fun disallowing_a_venue_stops_later_creations() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing<QUOTE, VENUE>();
@@ -161,7 +157,7 @@ fun disallowing_a_venue_stops_later_creations() {
     location = blast_presale::creation_policy,
 )]
 fun an_allowed_quote_cannot_be_allowed_again() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing<QUOTE, VENUE>();
@@ -177,7 +173,7 @@ fun an_allowed_quote_cannot_be_allowed_again() {
     location = blast_presale::creation_policy,
 )]
 fun an_unlisted_quote_cannot_be_disallowed() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing<QUOTE, VENUE>();
@@ -193,7 +189,7 @@ fun an_unlisted_quote_cannot_be_disallowed() {
     location = blast_admin::delayed_set,
 )]
 fun an_allowed_venue_cannot_be_allowed_again() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing<QUOTE, VENUE>();
@@ -214,7 +210,7 @@ fun an_allowed_venue_cannot_be_allowed_again() {
     location = blast_admin::delayed_set,
 )]
 fun an_unlisted_venue_cannot_be_disallowed() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -236,7 +232,7 @@ fun an_unlisted_venue_cannot_be_disallowed() {
 )]
 /// Any caller can make a primitive, so allowing one would let anyone create and migrate sales.
 fun a_primitive_cannot_be_allowed_as_a_venue() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -258,7 +254,7 @@ fun a_primitive_cannot_be_allowed_as_a_venue() {
 )]
 /// Any caller can make a vector of droppable values, so it is rejected like a primitive.
 fun a_vector_cannot_be_allowed_as_a_venue() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -279,7 +275,7 @@ fun a_vector_cannot_be_allowed_as_a_venue() {
 )]
 /// Any caller can make `TypeName` with `type_name::with_original_ids`, so a stdlib type is rejected.
 fun a_stdlib_type_cannot_be_allowed_as_a_venue() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -302,7 +298,7 @@ fun a_stdlib_type_cannot_be_allowed_as_a_venue() {
 /// Any caller can make an `Option<VENUE>` with `option::none`, so a generic stdlib type wrapping
 /// a reviewed witness is rejected too.
 fun an_option_of_a_witness_cannot_be_allowed_as_a_venue() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -323,7 +319,7 @@ fun an_option_of_a_witness_cannot_be_allowed_as_a_venue() {
 )]
 /// Any caller can make an `ID` with `object::id_from_address`, so a Sui framework type is rejected.
 fun a_sui_framework_type_cannot_be_allowed_as_a_venue() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -345,7 +341,7 @@ fun a_sui_framework_type_cannot_be_allowed_as_a_venue() {
 )]
 /// Disallowing never needs the struct check: a primitive can never have been allowed.
 fun disallowing_a_primitive_is_an_unchanged_allowance() {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(
+    let package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
@@ -366,14 +362,16 @@ fun disallowing_a_primitive_is_an_unchanged_allowance() {
 /// The administrator lets new presales name a partner at once, and the change emits it.
 fun an_added_partner_is_accepted_at_once() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
 
     policy.add_partner(&package_version, &fee_admin(), &partner);
 
-    policy.assert_partner(object::id(&partner), 0);
-    assert_eq!(last_event<PartnerAdded>().partner_added_fields(), object::id(&partner));
+    policy.assert_partner_at(object::id(&partner), 0);
+    let (owner, added_id) = last_event<PartnerAdded>().partner_added_fields();
+    assert_eq!(owner, object::id(&policy));
+    assert_eq!(added_id, object::id(&partner));
     destroy(partner);
     policy.destroy_for_testing();
 
@@ -382,8 +380,8 @@ fun an_added_partner_is_accepted_at_once() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPartnerNotAccepted,
-    location = blast_presale::creation_policy,
+    abort_code = blast_partners::errors::EPartnerNotAccepted,
+    location = blast_partners::partner_list,
 )]
 /// A partner the administrator never added cannot be named.
 fun an_unlisted_partner_is_not_accepted() {
@@ -391,14 +389,14 @@ fun an_unlisted_partner_is_not_accepted() {
     let policy = creation_policy::new_for_testing(&mut ctx);
     let partner = new_partner(&mut ctx);
 
-    policy.assert_partner(object::id(&partner), 0);
+    policy.assert_partner_at(object::id(&partner), 0);
     abort
 }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPartnerNotAccepted,
-    location = blast_presale::creation_policy,
+    abort_code = blast_partners::errors::EPartnerNotAccepted,
+    location = blast_partners::partner_list,
 )]
 /// A removed partner stays accepted until one millisecond before Blast's partner notice ends, and
 /// is refused from then on.
@@ -407,12 +405,14 @@ fun a_removed_partner_is_accepted_until_its_notice_ends() {
     let (policy, partner_id) = policy_with_removed_partner(&mut ctx);
     let acceptance_ends_at_ms = REMOVED_AT_MS + partners::delay_ms();
 
-    let (removed_id, removed_acceptance_ends_at_ms) = last_event<PartnerRemoved>().partner_removed_fields();
+    let (owner, removed_id, removed_acceptance_ends_at_ms) = last_event<PartnerRemoved>()
+        .partner_removed_fields();
+    assert_eq!(owner, object::id(&policy));
     assert_eq!(removed_id, partner_id);
     assert_eq!(removed_acceptance_ends_at_ms, acceptance_ends_at_ms);
-    policy.assert_partner(partner_id, acceptance_ends_at_ms - 1);
+    policy.assert_partner_at(partner_id, acceptance_ends_at_ms - 1);
 
-    policy.assert_partner(partner_id, acceptance_ends_at_ms);
+    policy.assert_partner_at(partner_id, acceptance_ends_at_ms);
     abort
 }
 
@@ -420,7 +420,7 @@ fun a_removed_partner_is_accepted_until_its_notice_ends() {
 /// Adding a partner whose removal is pending cancels the removal.
 fun re_adding_a_partner_cancels_its_removal() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
     let clock = clock_at(REMOVED_AT_MS, &mut ctx);
@@ -429,7 +429,7 @@ fun re_adding_a_partner_cancels_its_removal() {
 
     policy.add_partner(&package_version, &fee_admin(), &partner);
 
-    policy.assert_partner(object::id(&partner), std::u64::max_value!() - 1);
+    policy.assert_partner_at(object::id(&partner), std::u64::max_value!() - 1);
     destroy(partner);
     clock.destroy_for_testing();
     policy.destroy_for_testing();
@@ -441,7 +441,7 @@ fun re_adding_a_partner_cancels_its_removal() {
 /// Adding a partner whose notice has ended accepts it again.
 fun re_adding_a_removed_partner_accepts_it_again() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
     let mut clock = clock_at(REMOVED_AT_MS, &mut ctx);
@@ -451,7 +451,7 @@ fun re_adding_a_removed_partner_accepts_it_again() {
 
     policy.add_partner(&package_version, &fee_admin(), &partner);
 
-    policy.assert_partner(object::id(&partner), clock.timestamp_ms());
+    policy.assert_partner_at(object::id(&partner), clock.timestamp_ms());
     destroy(partner);
     clock.destroy_for_testing();
     policy.destroy_for_testing();
@@ -461,12 +461,12 @@ fun re_adding_a_removed_partner_accepts_it_again() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EAllowanceUnchanged,
-    location = blast_presale::creation_policy,
+    abort_code = blast_partners::errors::EUnchanged,
+    location = blast_partners::partner_list,
 )]
 fun an_accepted_partner_cannot_be_added_again() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
     policy.add_partner(&package_version, &fee_admin(), &partner);
@@ -478,13 +478,13 @@ fun an_accepted_partner_cannot_be_added_again() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EAllowanceUnchanged,
-    location = blast_presale::creation_policy,
+    abort_code = blast_partners::errors::EUnchanged,
+    location = blast_partners::partner_list,
 )]
 /// A pending removal cannot be restarted to push its notice back.
 fun a_removed_partner_cannot_be_removed_again() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
     let clock = clock_at(REMOVED_AT_MS, &mut ctx);
@@ -498,12 +498,12 @@ fun a_removed_partner_cannot_be_removed_again() {
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EPartnerNotAccepted,
-    location = blast_presale::creation_policy,
+    abort_code = blast_partners::errors::EPartnerNotAccepted,
+    location = blast_partners::partner_list,
 )]
 fun an_unlisted_partner_cannot_be_removed() {
     let mut ctx = tx_context::dummy();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
     let clock = clock_at(REMOVED_AT_MS, &mut ctx);
@@ -519,12 +519,12 @@ fun an_unlisted_partner_cannot_be_removed() {
     location = blast_admin::operational_version,
 )]
 fun stale_version_cannot_allow_quotes() {
-    let mut package_version = blast_presale::blast_presale_package::new_for_testing(
+    let mut package_version = blast_presale::blast_presale_package::version_for_testing(
         &mut tx_context::dummy(),
     );
     let mut policy = allowing_nothing();
 
-    package_version.set_for_testing(2);
+    package_version.set_generation_for_testing(2);
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), true);
     policy.set_venue_allowed_for_testing<VENUE>(
         &package_version,
@@ -534,9 +534,7 @@ fun stale_version_cannot_allow_quotes() {
     );
 
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
-    let (quote, allowed) = last_event<QuoteSet>().quote_set_fields();
-    assert_eq!(quote, type_name<QUOTE>());
-    assert_eq!(allowed, true);
+    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), true);
     let (owner, _, admission, _) = last_event<
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
@@ -555,19 +553,13 @@ fun stale_version_cannot_allow_quotes() {
 )]
 fun stale_version_cannot_accept_partners() {
     let mut ctx = tx_context::dummy();
-    let mut package_version = blast_presale::blast_presale_package::new_for_testing(&mut ctx);
+    let mut package_version = blast_presale::blast_presale_package::version_for_testing(&mut ctx);
     let mut policy = empty_policy(&mut ctx);
     let partner = new_partner(&mut ctx);
 
-    package_version.set_for_testing(2);
+    package_version.set_generation_for_testing(2);
     policy.add_partner(&package_version, &fee_admin(), &partner);
-
-    policy.assert_partner(object::id(&partner), 0);
-    assert_eq!(last_event<PartnerAdded>().partner_added_fields(), object::id(&partner));
-    destroy(partner);
-    policy.destroy_for_testing();
-
-    std::unit_test::destroy(package_version);
+    abort
 }
 
 // === Test Helpers ===
@@ -604,7 +596,7 @@ fun clock_at(timestamp_ms: u64, ctx: &mut TxContext): Clock {
 /// A policy whose administrator added a partner and removed it at `REMOVED_AT_MS`, and the
 /// partner's ID.
 fun policy_with_removed_partner(ctx: &mut TxContext): (CreationPolicy, ID) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(ctx);
+    let package_version = blast_presale::blast_presale_package::version_for_testing(ctx);
     let (result_0, result_1) = {
         let mut policy = empty_policy(ctx);
         let partner = new_partner(ctx);
@@ -620,6 +612,13 @@ fun policy_with_removed_partner(ctx: &mut TxContext): (CreationPolicy, ID) {
     };
     std::unit_test::destroy(package_version);
     (result_0, result_1)
+}
+
+/// Aborts unless the policy accepts `partner_id` at `timestamp_ms`.
+fun assert_partner_at(policy: &CreationPolicy, partner_id: ID, timestamp_ms: u64) {
+    let clock = clock_at(timestamp_ms, &mut tx_context::dummy());
+    policy.assert_partner(partner_id, &clock);
+    clock.destroy_for_testing();
 }
 
 fun listing_admin(): AdminWitness<ListingAdmin> {
@@ -647,20 +646,17 @@ fun last_event<Event: copy + drop>(): Event {
 
 use blast_admin::{blast_acl::{Self, AdminWitness}, delayed_set::{MemberRemoved, SetApplied}};
 
-use blast_partners::blast_partners::{Self as partners, Partner};
+use blast_core::blast_domain::{AdapterAdmin, FeeAdmin, ListingAdmin};
 
-use blast_presale::{
-    blast_presale_domain::{AdapterAdmin, FeeAdmin, ListingAdmin},
-    creation_policy::{
-        Self,
-        CreationPolicy,
-        VenueKey,
-        PartnerAdded,
-        PartnerRemoved,
-        QuoteSet,
-    }
+use blast_partners::{
+    blast_partners::{Self as partners, Partner},
+    partner_list::{PartnerAdded, PartnerRemoved}
 };
+
+use blast_presale::{creation_policy::{Self, CreationPolicy, VenueKey}, events::QuoteSet};
 
 use std::{type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 
 use sui::{clock::{Self, Clock}, event, test_scenario};
+
+use fun assert_partner_at as CreationPolicy.assert_partner_at;

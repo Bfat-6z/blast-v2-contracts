@@ -109,11 +109,11 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 // Venue: creation and custody
 
 /// Builds a vault for `terms`, unshared so the venue attaches its position and settles the
-/// migration residuals in `share_with_position` before anyone can reach it. Aborts unless `Venue` and the terms' sealing
-/// witness are admitted; Blast's share needs no check, since `migration::vault_terms` capped it
-/// when the terms were sealed. The vault's ID derives from the registry, the sealing witness, and
-/// the sale, so each sale has exactly one vault and a client computes its address from the sale
-/// alone. The vault has `key` without `store`, so it cannot
+/// migration residuals in `share_with_position` before anyone can reach it. Aborts unless `Venue`
+/// and the terms' sealing witness are admitted; Blast's share needs no check, since
+/// `migration::vault_terms` capped it when the terms were sealed. The vault's ID derives from the
+/// registry, the sealing witness, and the sale, so each sale has exactly one vault and a client
+/// computes its address from the sale alone. The vault has `key` without `store`, so it cannot
 /// leave this transaction except through `share_with_position`.
 public fun new<Meme, Quote, Venue>(
     registry: &mut VaultRegistry,
@@ -260,20 +260,6 @@ public fun auto_lp_position_mut<Meme, Quote, Venue, Position: key + store>(
     package_version.assert_current(constants::generation!());
 
     self.id.dynamic_object_field_mut(AutoLpPositionKey<Venue>())
-}
-
-/// Receives one coin sent to the vault's address, such as Aftermath's DAO fees, for the venue that
-/// holds the position.
-public fun receive_coin<Meme, Quote, Venue, Asset>(
-    self: &mut Vault<Meme, Quote>,
-    _: &Venue,
-    package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
-    coin: Receiving<Coin<Asset>>,
-): Balance<Asset> {
-    package_version.assert_current(constants::generation!());
-    self.assert_position<_, _, Venue>();
-
-    transfer::public_receive(&mut self.id, coin).into_balance()
 }
 
 // Venue: fee collection
@@ -940,8 +926,7 @@ use sui::{
     coin::Coin,
     coin_registry::Currency,
     derived_object,
-    dynamic_object_field,
-    transfer::Receiving
+    dynamic_object_field
 };
 
 use fun dynamic_object_field::add as UID.add_dynamic_object_field;

@@ -2,8 +2,7 @@
 //! venue-fork tests share.
 //!
 //! `fork/snapshot/` holds, at one pinned mainnet checkpoint, every package Cetus CLMM, Cetus LP
-//! Burn, Bluefin Spot, and Aftermath load, plus the shared objects and dynamic fields the fork
-//! cases use. `fork/fetch.py` records why each entry is there.
+//! Burn, and Bluefin Spot load, plus the shared objects and dynamic fields the fork cases use. `fork/fetch.py` records why each entry is there.
 
 use std::{
     collections::BTreeMap,
@@ -27,8 +26,6 @@ use crate::{Harness, Outcome};
 pub const CETUS: &str = "0x260693ec785a6e6c9d81d58c7d2ff72f1288ae0fa6a9725abe05a6478b11f084";
 pub const LP_BURN: &str = "0xc4aabc874f5060d3147d8f74c14e3a8a1f9f8d92edea138a51635395ed167cd9";
 pub const BLUEFIN: &str = "0xd075338d105482f1527cbfd363d6413558f184dec36d9138a70261e87f486e9c";
-pub const AFTERMATH_AMM: &str = "0xf948935b111990c2b604900c9b2eeb8f24dcf9868a45d1ea1653a5f282c10e29";
-pub const AFTERMATH_DAO_FEE: &str = "0x5ad6890968efcf3d20899e0cec735214f1067b96e77e77d86408989998468bb2";
 pub const USDC: &str = "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
 
 /// Cetus's `tick_math` bounds, the price limits of a swap that runs to completion.
@@ -119,8 +116,7 @@ pub fn insert_snapshot(h: &mut Harness) -> Result<(u64, BTreeMap<String, ObjectI
 }
 
 /// The venue packages a venue adapter links: Cetus, LP Burn, Bluefin, and every package in their
-/// linkage tables at the highest version any of them names, as publication requires. The presale
-/// also links Aftermath even when the test exercises a different venue.
+/// linkage tables at the highest version any of them names, as publication requires.
 pub fn venue_dependencies(h: &Harness) -> Result<Vec<ObjectID>> {
     let mut table: BTreeMap<ObjectID, (ObjectID, SequenceNumber)> = BTreeMap::new();
     let mut add = |original: ObjectID, current: ObjectID, version: SequenceNumber| {
@@ -129,13 +125,7 @@ pub fn venue_dependencies(h: &Harness) -> Result<Vec<ObjectID>> {
             *entry = (current, version);
         }
     };
-    for root in [
-        CETUS,
-        LP_BURN,
-        BLUEFIN,
-        "0xf948935b111990c2b604900c9b2eeb8f24dcf9868a45d1ea1653a5f282c10e29",
-        AFTERMATH_DAO_FEE,
-    ] {
+    for root in [CETUS, LP_BURN, BLUEFIN] {
         let object = h.object(id(root));
         let package = object.data.try_as_package().context("venue package")?;
         add(package.original_package_id(), package.id(), package.version());
