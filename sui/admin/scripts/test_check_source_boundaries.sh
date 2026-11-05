@@ -86,23 +86,23 @@ printf '\n[dependencies]\nUnsafe = { local = "../unsafe" }\n' >> "$case_dir/Move
 expect_rejected "$case_dir"
 
 case_dir="$(new_case exposes_capability)"
-printf '\n#[test_only]\npublic fun upgrade_capability_for_testing<PackageMarker: drop>(self: &mut UpgradeCustody<PackageMarker>): &mut UpgradeCap { self.upgrade_cap.borrow_mut() }\n' \
-  >> "$case_dir/sources/upgrade_custody.move"
+printf '\n#[test_only]\npublic fun upgrade_capability_for_testing<PackageMarker: drop>(self: &mut PackageAdmin<PackageMarker>): &mut UpgradeCap { self.upgrade_cap.borrow_mut() }\n' \
+  >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case exposes_capability_tuple)"
-printf '\n#[test_only]\npublic fun capabilities_for_testing<PackageMarker: drop>(self: UpgradeCustody<PackageMarker>): (Publisher, UpgradeCap) { abort 0 }\n' \
-  >> "$case_dir/sources/upgrade_custody.move"
+printf '\n#[test_only]\npublic fun capabilities_for_testing<PackageMarker: drop>(self: PackageAdmin<PackageMarker>): (Publisher, UpgradeCap) { abort 0 }\n' \
+  >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case exposes_publisher_by_value)"
-printf '\n#[test_only]\npublic fun publisher_for_testing<PackageMarker: drop>(self: UpgradeCustody<PackageMarker>): Publisher { abort 0 }\n' \
-  >> "$case_dir/sources/upgrade_custody.move"
+printf '\n#[test_only]\npublic fun publisher_by_value_for_testing<PackageMarker: drop>(self: PackageAdmin<PackageMarker>): Publisher { abort 0 }\n' \
+  >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case exposes_publisher_mutably)"
-printf '\n#[test_only]\npublic fun publisher_mut_for_testing<PackageMarker: drop>(self: &mut UpgradeCustody<PackageMarker>): &mut Publisher { &mut self.publisher }\n' \
-  >> "$case_dir/sources/upgrade_custody.move"
+printf '\n#[test_only]\npublic fun publisher_mut_for_testing<PackageMarker: drop>(self: &mut PackageAdmin<PackageMarker>): &mut Publisher { &mut self.publisher }\n' \
+  >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case publication_without_record)"
@@ -117,13 +117,56 @@ case_dir="$(new_case publication_with_matching_record)"
 publish_record "$case_dir" "$(bash "$package_dir/scripts/source_digest.sh" "$case_dir")"
 expect_accepted "$case_dir"
 
-case_dir="$(new_case unwitnessed_generation)"
-edit 's/sui::types::is_one_time_witness(otw)/true/' "$case_dir/sources/operational_version.move"
+case_dir="$(new_case unclaimed_publication)"
+edit 's/sui::package::claim(otw, ctx)/sui::package::test_claim(otw, ctx)/' "$case_dir/sources/package_version.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case adds_activation_path)"
-printf '\npublic fun activate<PackageMarker: drop>(self: &mut OperationalVersion<PackageMarker>) {}\n' \
-  >> "$case_dir/sources/operational_version.move"
+printf '\nfun activate<PackageMarker: drop>(self: &mut PackageVersion<PackageMarker>) {}\n' \
+  >> "$case_dir/sources/package_version.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case skips_generations)"
+edit 's/self.generation = previous_generation + 1;/self.generation = previous_generation + 2;/' \
+  "$case_dir/sources/package_version.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case second_generation_write)"
+printf '\nfun rewind<PackageMarker: drop>(self: &mut PackageVersion<PackageMarker>) { self.generation = 1; }\n' \
+  >> "$case_dir/sources/package_version.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case public_version_constructor)"
+printf '\npublic fun new<PackageMarker: drop>(ctx: &mut TxContext): PackageVersion<PackageMarker> { abort 0 }\n' \
+  >> "$case_dir/sources/package_version.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case public_custody_constructor)"
+printf '\npublic fun new_custody<PackageMarker: drop>(publisher: Publisher, upgrade_cap: UpgradeCap, ctx: &mut TxContext): PackageAdmin<PackageMarker> { new(publisher, upgrade_cap, ctx) }\n' \
+  >> "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case second_custody_constructor)"
+printf '\nfun rogue<PackageMarker: drop>(publisher: Publisher, upgrade_cap: UpgradeCap, upgrade: DelayedAction<UpgradeKey<PackageMarker>, UpgradeAction>, ctx: &mut TxContext): PackageAdmin<PackageMarker> { PackageAdmin { id: object::new(ctx), publisher, upgrade_cap: option::some(upgrade_cap), upgrade } }\n' \
+  >> "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case narrows_upgrade_policy)"
+printf '\nfun rogue<PackageMarker: drop>(self: &mut PackageAdmin<PackageMarker>) { self.upgrade_cap.borrow_mut().only_additive_upgrades(); }\n' \
+  >> "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case readds_a_folded_module)"
+printf 'module blast_admin::operational_version;\n' > "$case_dir/sources/operational_version.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case readds_delayed_map)"
+printf 'module blast_admin::delayed_map;\n' > "$case_dir/sources/delayed/delayed_map.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case delayed_destructor)"
+printf '\npublic fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>) { abort 0 }\n' \
+  >> "$case_dir/sources/delayed/delayed.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case adds_acl_entry_path)"
@@ -132,8 +175,8 @@ printf '\npublic entry fun rogue(self: &mut ACL) {}\n' \
 expect_rejected "$case_dir"
 
 case_dir="$(new_case adds_custody_entry_path)"
-printf '\npublic entry fun rogue<PackageMarker: drop>(self: &mut UpgradeCustody<PackageMarker>) {}\n' \
-  >> "$case_dir/sources/upgrade_custody.move"
+printf '\npublic entry fun rogue<PackageMarker: drop>(self: &mut PackageAdmin<PackageMarker>) {}\n' \
+  >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case adds_bare_acl_entry_path)"
@@ -142,8 +185,8 @@ printf '\nentry fun rogue(self: &mut ACL) {}\n' \
 expect_rejected "$case_dir"
 
 case_dir="$(new_case adds_bare_custody_entry_path)"
-printf '\nentry fun rogue<PackageMarker: drop>(self: &mut UpgradeCustody<PackageMarker>) {}\n' \
-  >> "$case_dir/sources/upgrade_custody.move"
+printf '\nentry fun rogue<PackageMarker: drop>(self: &mut PackageAdmin<PackageMarker>) {}\n' \
+  >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case copyable_admin_witness)"
@@ -173,8 +216,8 @@ mkdir -p "$case_dir/sources/extra"
 cp "$case_dir/sources/errors.move" "$case_dir/sources/extra/errors_copy.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case map_immediate_setter)"
-printf '\npublic fun force_value(self: &mut u64) { *self = 0; }\n' >> "$case_dir/sources/delayed/delayed_map.move"
+case_dir="$(new_case set_immediate_setter)"
+printf '\npublic fun force_value(self: &mut u64) { *self = 0; }\n' >> "$case_dir/sources/delayed/delayed_set.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case delayed_immediate_setter)"

@@ -36,7 +36,7 @@ fun an_action_waits_the_applied_notice_and_is_handed_back_once() {
     assert_eq!(slot.delay_ms(), NOTICE_MS);
     assert!(slot.pending().is_none());
 
-    slot.destroy();
+    destroy(slot);
     clock.destroy_for_testing();
 }
 
@@ -54,7 +54,7 @@ fun a_notice_change_waits_the_applied_notice_and_replaces_a_pending_action() {
     assert_eq!(cancelled_change.action(), option::some(42));
     let pending = slot.pending().destroy_some();
     assert!(pending.value().action().is_none());
-    assert_eq!(pending.delay_ms(), 0);
+    assert_eq!(pending.proposal_delay_ms(), 0);
 
     clock.set_for_testing(110);
     slot.apply_delay(&clock);
@@ -62,7 +62,7 @@ fun a_notice_change_waits_the_applied_notice_and_replaces_a_pending_action() {
     assert_eq!(slot.schedule(7, &clock), 110);
     assert_eq!(slot.take_action(&clock), 7);
 
-    slot.destroy();
+    destroy(slot);
     clock.destroy_for_testing();
 }
 
@@ -126,20 +126,8 @@ fun a_ready_action_can_still_be_cancelled() {
     assert!(slot.pending().is_none());
     assert_eq!(slot.delay_ms(), 10);
 
-    slot.destroy();
+    destroy(slot);
     clock.destroy_for_testing();
-}
-
-#[test]
-#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed_action)]
-fun a_slot_with_a_proposal_cannot_be_destroyed() {
-    let clock = clock_at(0);
-    let mut slot = new_slot(10);
-    slot.schedule(1, &clock);
-
-    slot.destroy();
-
-    abort
 }
 
 #[test]
@@ -168,18 +156,8 @@ fun an_applied_notice_change_records_the_new_notice() {
     assert_eq!(delay_ms, 20);
     assert_eq!(slot.delay_ms(), 20);
 
-    slot.destroy();
+    destroy(slot);
     clock.destroy_for_testing();
-}
-
-#[test]
-fun destruction_records_the_end_of_the_slot() {
-    let slot = new_slot(0);
-
-    slot.destroy();
-
-    let (slot_owner, _) = collect<ActionDestroyed<Upgrade, u64>>().action_destroyed_fields();
-    assert_eq!(slot_owner, owner());
 }
 
 #[test]
@@ -187,7 +165,7 @@ fun destruction_records_the_end_of_the_slot() {
 fun creation_rejects_a_notice_above_the_ceiling() {
     let slot = new_slot(delayed::max_delay_ms() + 1);
 
-    slot.destroy();
+    destroy(slot);
 
     abort
 }
@@ -220,7 +198,7 @@ fun a_slot_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal() {
     assert!(!slot.is_guarded());
 
     slot.cancel();
-    slot.destroy();
+    destroy(slot);
     clock.destroy_for_testing();
 }
 
@@ -229,7 +207,7 @@ fun a_slot_accepts_the_ceiling_notice() {
     let slot = new_slot(delayed::max_delay_ms());
 
     assert_eq!(slot.delay_ms(), delayed::max_delay_ms());
-    slot.destroy();
+    destroy(slot);
 }
 
 // === Test Helpers ===
@@ -273,13 +251,12 @@ use blast_admin::{
         ActionApplied,
         ActionCancelled,
         ActionCreated,
-        ActionDestroyed,
         ActionScheduled,
         DelayedAction,
     },
     errors,
 };
 
-use std::unit_test::assert_eq;
+use std::unit_test::{assert_eq, destroy};
 
 use sui::clock::{Self, Clock};

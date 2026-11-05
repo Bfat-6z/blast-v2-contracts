@@ -25,7 +25,7 @@ fun creation_records_owner_key_value_and_notice() {
     assert_eq!(value, 7);
     assert_eq!(delay_ms, NOTICE_MS);
 
-    setting.destroy();
+    destroy(setting);
 }
 
 #[test]
@@ -43,7 +43,7 @@ fun zero_notice_schedules_and_applies_in_one_transaction() {
     assert_eq!(setting.schedule_value(9, &clock), 10 + NOTICE_MS);
 
     setting.cancel();
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -67,7 +67,7 @@ fun reads_stay_applied_until_an_explicit_apply_at_the_boundary() {
     assert_eq!(delay_ms, NOTICE_MS);
     assert!(setting.pending().is_none());
 
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -90,7 +90,7 @@ fun value_and_notice_apply_together_and_a_shorter_notice_waits_the_applied_one()
     assert_eq!(setting.schedule_value(3, &clock), 135);
 
     setting.cancel();
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -123,7 +123,7 @@ fun replacement_cancels_the_previous_proposal_and_restarts_the_notice() {
     assert_eq!(setting.pending().destroy_some().value(), 2);
 
     setting.cancel();
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -142,7 +142,7 @@ fun cancellation_after_readiness_preserves_the_applied_value_and_notice() {
     assert_eq!(setting.delay_ms(), NOTICE_MS);
     assert!(setting.pending().is_none());
 
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -157,7 +157,7 @@ fun a_cancelled_proposal_cannot_be_cancelled_again() {
 
     setting.cancel();
 
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -175,7 +175,7 @@ fun readiness_validation_is_repeatable_and_changes_nothing() {
     assert_eq!(setting.delay_ms(), 10);
     assert_eq!(setting.apply(&clock), 9);
 
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -239,18 +239,6 @@ fun one_millisecond_before_ready_rejects() {
 }
 
 #[test]
-#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed)]
-fun a_setting_with_a_proposal_cannot_be_destroyed() {
-    let clock = clock_at(0);
-    let mut setting = new_setting(0, NOTICE_MS);
-    setting.schedule_value(1, &clock);
-
-    setting.destroy();
-
-    abort
-}
-
-#[test]
 fun the_largest_representable_deadline_is_valid() {
     let max = std::u64::max_value!();
     let mut clock = clock_at(max - delayed::max_delay_ms());
@@ -260,7 +248,7 @@ fun the_largest_representable_deadline_is_valid() {
     clock.set_for_testing(max);
     assert_eq!(setting.apply(&clock), 2);
 
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -278,7 +266,7 @@ fun the_ceiling_notice_is_accepted_and_can_be_changed_again() {
     setting.apply(&clock);
 
     assert_eq!(setting.delay_ms(), NOTICE_MS);
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -287,7 +275,7 @@ fun the_ceiling_notice_is_accepted_and_can_be_changed_again() {
 fun creation_rejects_a_notice_above_the_ceiling() {
     let setting = new_setting(7, delayed::max_delay_ms() + 1);
 
-    setting.destroy();
+    destroy(setting);
 
     abort
 }
@@ -351,16 +339,6 @@ fun an_unchanged_proposal_rejects_before_ceiling_and_overflow_checks() {
 }
 
 #[test]
-fun destruction_records_the_end_of_the_setting() {
-    let setting = new_setting(7, 0);
-
-    setting.destroy();
-
-    let (setting_owner, _) = collect<DelayedDestroyed<Fee, u64>>().delayed_destroyed_fields();
-    assert_eq!(setting_owner, owner());
-}
-
-#[test]
 fun a_setting_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal() {
     let clock = clock_at(0);
     let mut setting = new_setting(7, 0);
@@ -379,7 +357,7 @@ fun a_setting_is_guarded_only_with_a_nonzero_notice_and_no_zero_notice_proposal(
     setting.cancel();
     assert!(setting.is_guarded());
 
-    setting.destroy();
+    destroy(setting);
     clock.destroy_for_testing();
 }
 
@@ -424,12 +402,11 @@ use blast_admin::{
         DelayedApplied,
         DelayedCancelled,
         DelayedCreated,
-        DelayedDestroyed,
         DelayedScheduled,
     },
     errors,
 };
 
-use std::unit_test::assert_eq;
+use std::unit_test::{assert_eq, destroy};
 
 use sui::clock::{Self, Clock};

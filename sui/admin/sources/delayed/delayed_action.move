@@ -40,11 +40,6 @@ public fun new<K: copy + drop + store, A: copy + drop + store>(
     DelayedAction { owner, key, delay_ms, pending: option::none() }
 }
 
-/// The applied notice in milliseconds.
-public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64 {
-    self.delay_ms
-}
-
 /// True when every action still to come waits a nonzero notice: the applied notice is nonzero
 /// and no proposal would set it to zero.
 public fun is_guarded<K: copy + drop + store, A: copy + drop + store>(
@@ -106,15 +101,6 @@ public fun cancel<K: copy + drop + store, A: copy + drop + store>(self: &mut Del
     self.cancel_replaced();
 }
 
-/// Deletes an action slot with no proposal and records its end; cancel a proposal first.
-public fun destroy<K: copy + drop + store, A: copy + drop + store>(self: DelayedAction<K, A>) {
-    assert!(self.pending.is_none(), blast_admin::errors::proposal_pending!());
-
-    let DelayedAction { owner, key, delay_ms: _, pending: _ } = self;
-
-    sui::event::emit(ActionDestroyed<K, A> { owner, key });
-}
-
 /// The proposed action, or none for a notice change.
 public fun action<A: copy + drop + store>(self: &Change<A>): Option<A> {
     match (self) {
@@ -151,16 +137,16 @@ fun take_ready<K: copy + drop + store, A: copy + drop + store>(
     let proposal = *self.pending.borrow();
     let change = proposal.value();
     assert!(change.action().is_some() == expects_action, blast_admin::errors::wrong_change!());
-    delayed::assert_ready_at(proposal.ready_at_ms(), proposal.delay_ms(), clock);
+    delayed::assert_ready_at(proposal.ready_at_ms(), proposal.proposal_delay_ms(), clock);
 
     self.pending = option::none();
-    self.delay_ms = proposal.delay_ms();
+    self.delay_ms = proposal.proposal_delay_ms();
 
     sui::event::emit(ActionApplied {
         owner: self.owner,
         key: self.key,
         change,
-        delay_ms: proposal.delay_ms(),
+        delay_ms: proposal.proposal_delay_ms(),
     });
 
     change
@@ -174,12 +160,18 @@ fun cancel_replaced<K: copy + drop + store, A: copy + drop + store>(self: &mut D
         owner: self.owner,
         key: self.key,
         change: proposal.value(),
-        delay_ms: proposal.delay_ms(),
+        delay_ms: proposal.proposal_delay_ms(),
         ready_at_ms: proposal.ready_at_ms(),
     });
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// The applied notice in milliseconds.
+public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64 {
+    self.delay_ms
+}
 
 #[test_only]
 public fun action_created_fields<K: copy + drop + store, A: copy + drop + store>(
@@ -207,13 +199,6 @@ public fun action_applied_fields<K: copy + drop + store, A: copy + drop + store>
     self: &ActionApplied<K, A>,
 ): (ID, K, Change<A>, u64) {
     (self.owner, self.key, self.change, self.delay_ms)
-}
-
-#[test_only]
-public fun action_destroyed_fields<K: copy + drop + store, A: copy + drop + store>(
-    self: &ActionDestroyed<K, A>,
-): (ID, K) {
-    (self.owner, self.key)
 }
 
 // === Events ===
@@ -250,12 +235,6 @@ public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has 
     key: K,
     change: Change<A>,
     delay_ms: u64,
-}
-
-/// An action slot was deleted with nothing pending.
-public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
-    owner: ID,
-    key: K,
 }
 
 // === Imports ===

@@ -26,6 +26,13 @@ public enum SetChange<E: copy + drop + store> has copy, drop, store {
     Delay,
 }
 
+/// A notice period and the time it elapses: the notice a pending admission waits, or a
+/// proposed next notice. Either is ready from `ready_at_ms`.
+public struct Notice has copy, drop, store {
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
 // === Public Functions ===
 
 /// An empty set; every admission waits the applied notice.
@@ -72,7 +79,7 @@ public fun admission_ready_at_ms<K: copy + drop + store, E: copy + drop + store>
     self: &DelayedSet<K, E>,
     member: &E,
 ): Option<u64> {
-    self.admissions.try_get(member).map!(|admission| admission.ready_at_ms())
+    self.admissions.try_get(member).map!(|admission| admission.ready_at_ms)
 }
 
 /// How many admissions are pending.
@@ -85,14 +92,7 @@ public fun pending_count<K: copy + drop + store, E: copy + drop + store>(self: &
 public fun is_guarded<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): bool {
     self.delay_ms > 0
         && self.admissions.is_empty()
-        && self.pending_delay.is_none_or!(|notice| notice.notice_delay_ms() > 0)
-}
-
-/// The proposed next notice, if any.
-public fun pending_delay<K: copy + drop + store, E: copy + drop + store>(
-    self: &DelayedSet<K, E>,
-): Option<Notice> {
-    self.pending_delay
+        && self.pending_delay.is_none_or!(|notice| notice.delay_ms > 0)
 }
 
 /// Proposes admitting `member` after the applied notice (never a proposed one) and returns
@@ -107,7 +107,7 @@ public fun schedule_add<K: copy + drop + store, E: copy + drop + store>(
     let ready_at_ms = delayed::ready_at_ms_after(self.delay_ms, 0, clock);
 
     self.cancel_admission_if_pending(member);
-    self.admissions.insert(member, delayed::new_notice(self.delay_ms, ready_at_ms));
+    self.admissions.insert(member, Notice { delay_ms: self.delay_ms, ready_at_ms });
 
     sui::event::emit(SetScheduled {
         owner: self.owner,
@@ -128,7 +128,7 @@ public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
 ) {
     assert!(self.admissions.contains(&member), blast_admin::errors::no_pending!());
     let admission = self.admissions[&member];
-    assert!(clock.timestamp_ms() >= admission.ready_at_ms(), blast_admin::errors::not_ready!());
+    assert!(clock.timestamp_ms() >= admission.ready_at_ms, blast_admin::errors::not_ready!());
 
     self.admissions.remove(&member);
     self.members.insert(member);
@@ -137,7 +137,7 @@ public fun apply_add<K: copy + drop + store, E: copy + drop + store>(
         owner: self.owner,
         key: self.key,
         change: SetChange::Admission(member),
-        delay_ms: admission.delay_ms(),
+        delay_ms: admission.delay_ms,
     });
 }
 
@@ -177,7 +177,7 @@ public fun schedule_delay<K: copy + drop + store, E: copy + drop + store>(
     let ready_at_ms = delayed::ready_at_ms_after(self.delay_ms, delay_ms, clock);
 
     self.cancel_delay_if_pending();
-    self.pending_delay.fill(delayed::new_notice(delay_ms, ready_at_ms));
+    self.pending_delay.fill(Notice { delay_ms, ready_at_ms });
 
     sui::event::emit(SetScheduled<K, E> {
         owner: self.owner,
@@ -197,15 +197,15 @@ public fun apply_delay<K: copy + drop + store, E: copy + drop + store>(
 ) {
     assert!(self.pending_delay.is_some(), blast_admin::errors::no_pending!());
     let notice = self.pending_delay.extract();
-    delayed::assert_ready_at(notice.ready_at_ms(), notice.delay_ms(), clock);
+    delayed::assert_ready_at(notice.ready_at_ms, notice.delay_ms, clock);
 
-    self.delay_ms = notice.delay_ms();
+    self.delay_ms = notice.delay_ms;
 
     sui::event::emit(SetApplied<K, E> {
         owner: self.owner,
         key: self.key,
         change: SetChange::Delay,
-        delay_ms: notice.delay_ms(),
+        delay_ms: notice.delay_ms,
     });
 }
 
@@ -213,19 +213,6 @@ public fun apply_delay<K: copy + drop + store, E: copy + drop + store>(
 public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(self: &mut DelayedSet<K, E>) {
     assert!(self.pending_delay.is_some(), blast_admin::errors::no_pending!());
     self.cancel_delay_if_pending();
-}
-
-/// Deletes a set with no pending admission or notice change and records its end, which
-/// also ends every remaining membership.
-public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: DelayedSet<K, E>) {
-    assert!(
-        self.admissions.is_empty() && self.pending_delay.is_none(),
-        blast_admin::errors::proposal_pending!(),
-    );
-
-    let DelayedSet { owner, key, members: _, delay_ms: _, admissions: _, pending_delay: _ } = self;
-
-    sui::event::emit(SetDestroyed<K, E> { owner, key });
 }
 
 // === Private Functions ===
@@ -241,8 +228,8 @@ fun cancel_admission_if_pending<K: copy + drop + store, E: copy + drop + store>(
         owner: self.owner,
         key: self.key,
         change: SetChange::Admission(member),
-        delay_ms: admission.delay_ms(),
-        ready_at_ms: admission.ready_at_ms(),
+        delay_ms: admission.delay_ms,
+        ready_at_ms: admission.ready_at_ms,
     });
 }
 
@@ -254,12 +241,20 @@ fun cancel_delay_if_pending<K: copy + drop + store, E: copy + drop + store>(self
         owner: self.owner,
         key: self.key,
         change: SetChange::Delay,
-        delay_ms: notice.delay_ms(),
-        ready_at_ms: notice.ready_at_ms(),
+        delay_ms: notice.delay_ms,
+        ready_at_ms: notice.ready_at_ms,
     });
 }
 
 // === Test-Only Functions ===
+
+#[test_only]
+/// The proposed next notice, if any.
+public fun pending_delay_ms_for_testing<K: copy + drop + store, E: copy + drop + store>(
+    self: &DelayedSet<K, E>,
+): Option<u64> {
+    self.pending_delay.map_ref!(|notice| notice.delay_ms)
+}
 
 #[test_only]
 /// The member a change admits, or none for a notice change.
@@ -296,13 +291,6 @@ public fun set_applied_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &SetApplied<K, E>,
 ): (ID, K, SetChange<E>, u64) {
     (self.owner, self.key, self.change, self.delay_ms)
-}
-
-#[test_only]
-public fun set_destroyed_fields<K: copy + drop + store, E: copy + drop + store>(
-    self: &SetDestroyed<K, E>,
-): (ID, K) {
-    (self.owner, self.key)
 }
 
 #[test_only]
@@ -356,14 +344,8 @@ public struct MemberRemoved<K: copy + drop + store, E: copy + drop + store> has 
     member: E,
 }
 
-/// A set was deleted with nothing pending; its remaining members leave with it.
-public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
-    owner: ID,
-    key: K,
-}
-
 // === Imports ===
 
-use blast_admin::delayed::{Self, Notice};
+use blast_admin::delayed;
 
 use sui::{clock::Clock, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};

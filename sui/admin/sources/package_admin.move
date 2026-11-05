@@ -6,16 +6,25 @@
 /// One package's sealed Publisher and UpgradeCap, its delayed upgrade decisions, and the
 /// role-gated pause controls of its `PackageVersion`, typed by the package's one-time witness.
 ///
-/// Each role is generic over the package marker, so the ACL stores `UpgradeAdmin<A>` and
-/// `UpgradeAdmin<B>` as distinct grants and one package's administrator never reaches another's
-/// custody. This package is immutable: no consumer bytecode generation gates these calls, and a
-/// consumer whose new bytecode compiles the wrong generation can still schedule a repair.
+/// The native capabilities never leave the shared `PackageAdmin`: nothing returns or lends the
+/// Publisher or the UpgradeCap, and the cap acts only through a scheduled upgrade or the one
+/// terminal `make_immutable`. Each role is generic over the package marker, so the ACL stores
+/// `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator
+/// never reaches another's custody. This package is immutable: no consumer bytecode generation
+/// gates these calls, and a consumer whose new bytecode compiles the wrong generation can still
+/// schedule a repair.
 module blast_admin::package_admin;
 
 // === Constants ===
 
 /// The notice every upgrade or immutability action waits from publication until changed.
 const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;
+
+/// The byte length of a package digest, the only length `schedule_upgrade` accepts.
+const PACKAGE_DIGEST_LENGTH: u64 = 32;
+
+/// The framework stamps a freshly published package's `UpgradeCap` with version one.
+const INITIAL_NATIVE_VERSION: u64 = 1;
 
 // === Public Types ===
 
@@ -31,7 +40,9 @@ public struct UpgradeKey<phantom PackageMarker: drop>() has copy, drop, store;
 /// Shared custody for one package's framework Publisher and UpgradeCap.
 public struct PackageAdmin<phantom PackageMarker: drop> has key {
     id: UID,
-    custody: UpgradeCustody<PackageMarker>,
+    publisher: Publisher,
+    /// Native upgrade authority; `none` once the package is immutable.
+    upgrade_cap: Option<UpgradeCap>,
     upgrade: DelayedAction<UpgradeKey<PackageMarker>, UpgradeAction>,
 }
 
@@ -49,20 +60,24 @@ public struct CancelAdmin<phantom PackageMarker>()
 
 // === Public Functions ===
 
-/// Consumes the unique publication proof, seals the native capabilities and shares both the
-/// administration and the package version. The version starts with every defined bit paused;
-/// an `UnpauseAdmin` releases it through the package's own unpause.
+/// Consumes the unique publication proof, seals the never-upgraded native cap of the marker's
+/// package beside its Publisher, and shares both the administration and the package version.
+/// The version starts with every defined bit paused; an `UnpauseAdmin` releases it through the
+/// package's own unpause.
 public fun wrap<PackageMarker: drop>(
     publication: Publication<PackageMarker>,
     upgrade_cap: UpgradeCap,
     ctx: &mut TxContext,
 ) {
-    let (publisher, package_version) = publication.into_version(ctx);
-    let id = object::new(ctx);
-    let custody = upgrade_custody::new<PackageMarker>(id.to_inner(), publisher, upgrade_cap);
-    let upgrade = delayed_action::new(UpgradeKey<PackageMarker>(), &id, INITIAL_UPGRADE_DELAY_MS);
+    assert!(
+        upgrade_cap.package().to_address() == type_name::original_id<PackageMarker>()
+            && upgrade_cap.version() == INITIAL_NATIVE_VERSION,
+        blast_admin::errors::invalid_upgrade_cap!(),
+    );
 
-    transfer::share_object(PackageAdmin { id, custody, upgrade });
+    let (publisher, package_version) = publication.into_version(ctx);
+
+    transfer::share_object(new<PackageMarker>(publisher, upgrade_cap, ctx));
     package_version.share();
 }
 
@@ -75,9 +90,9 @@ public fun schedule_upgrade<PackageMarker: drop>(
     digest: vector<u8>,
     clock: &Clock,
 ) {
-    assert!(self.custody.has_upgrade_cap(), blast_admin::errors::upgrade_cap_unavailable!());
+    assert!(self.upgrade_cap.is_some(), blast_admin::errors::upgrade_cap_unavailable!());
     assert!(
-        digest.length() == upgrade_custody::package_digest_length(),
+        digest.length() == PACKAGE_DIGEST_LENGTH,
         blast_admin::errors::invalid_package_digest!(),
     );
 
@@ -91,7 +106,7 @@ public fun schedule_make_immutable<PackageMarker: drop>(
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
     clock: &Clock,
 ) {
-    assert!(self.custody.has_upgrade_cap(), blast_admin::errors::upgrade_cap_unavailable!());
+    assert!(self.upgrade_cap.is_some(), blast_admin::errors::upgrade_cap_unavailable!());
 
     self.upgrade.schedule(UpgradeAction::MakeImmutable, clock);
 }
@@ -105,7 +120,8 @@ public fun cancel_upgrade_action<PackageMarker: drop>(
 }
 
 /// Consumes the ready upgrade action for exactly `digest` and authorizes it under the sealed
-/// cap's current policy.
+/// cap's current policy. A scheduled upgrade implies the cap: scheduling requires it, and only a
+/// consumed immutability action removes it.
 public fun authorize_upgrade<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
@@ -118,26 +134,62 @@ public fun authorize_upgrade<PackageMarker: drop>(
         blast_admin::errors::wrong_upgrade_action!(),
     );
 
-    self.custody.authorize_upgrade(self.id.to_inner(), digest)
+    let custodian_id = self.id.to_inner();
+    let upgrade_cap = self.upgrade_cap.borrow_mut();
+    let upgrade_cap_id = object::id(upgrade_cap);
+    let package_id = upgrade_cap.package();
+    let native_version = upgrade_cap.version();
+    let policy = upgrade_cap.policy();
+
+    let ticket = upgrade_cap.authorize(policy, digest);
+
+    blast_admin_events::upgrade_authorized<PackageMarker>(
+        custodian_id,
+        upgrade_cap_id,
+        package_id,
+        native_version,
+        policy,
+        *ticket.digest(),
+    );
+
+    ticket
 }
 
-/// Commits the native receipt into the sealed cap and advances the package version by one
-/// generation, together. The new bytecode must compile that generation; bytecode compiling any
-/// other fails every `assert_current`, while these calls stay available to schedule a repair.
+/// Commits the native receipt into the sealed cap that authorized it, then advances the package
+/// version by one generation in the same call. The new bytecode must compile that generation; bytecode
+/// compiling any other fails every `assert_current`, while these calls stay available to schedule
+/// a repair.
 public fun commit_upgrade_and_advance<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
     package_version: &mut PackageVersion<PackageMarker>,
     receipt: UpgradeReceipt,
 ) {
-    // Computed first so a generation overflow aborts before the receipt is committed or emitted.
-    let next_generation = package_version.next_generation();
+    assert!(self.upgrade_cap.is_some(), blast_admin::errors::upgrade_cap_unavailable!());
 
-    self.custody.commit_upgrade(self.id.to_inner(), receipt);
-    package_version.advance(next_generation);
+    let custodian_id = self.id.to_inner();
+    let upgrade_cap = self.upgrade_cap.borrow_mut();
+    let upgrade_cap_id = object::id(upgrade_cap);
+    let previous_native_version = upgrade_cap.version();
+    let new_package_id = receipt.package();
+
+    upgrade_cap.commit(receipt);
+
+    blast_admin_events::upgrade_committed<PackageMarker>(
+        custodian_id,
+        upgrade_cap_id,
+        type_name::original_id<PackageMarker>(),
+        new_package_id,
+        previous_native_version,
+        upgrade_cap.version(),
+    );
+
+    package_version.advance();
 }
 
-/// Consumes the ready immutability action and irreversibly destroys native upgrade authority.
+/// Consumes the ready immutability action and irreversibly destroys native upgrade authority;
+/// the Publisher stays sealed. This is the one terminal upgrade action: the cap's policy is
+/// never narrowed in between.
 public fun make_immutable<PackageMarker: drop>(
     self: &mut PackageAdmin<PackageMarker>,
     _: &AdminWitness<UpgradeAdmin<PackageMarker>>,
@@ -146,7 +198,20 @@ public fun make_immutable<PackageMarker: drop>(
     let action = self.upgrade.take_action(clock);
     assert!(action == UpgradeAction::MakeImmutable, blast_admin::errors::wrong_upgrade_action!());
 
-    self.custody.make_immutable(self.id.to_inner());
+    let upgrade_cap = self.upgrade_cap.extract();
+    let upgrade_cap_id = object::id(&upgrade_cap);
+    let final_native_version = upgrade_cap.version();
+    let final_policy = upgrade_cap.policy();
+
+    package::make_immutable(upgrade_cap);
+
+    blast_admin_events::upgrade_cap_destroyed<PackageMarker>(
+        self.id.to_inner(),
+        upgrade_cap_id,
+        type_name::original_id<PackageMarker>(),
+        final_native_version,
+        final_policy,
+    );
 }
 
 /// Proposes only a new upgrade notice, ready after the applied one; replaces any pending
@@ -194,20 +259,48 @@ public fun clear_pause_bits<PackageMarker: drop, UnpauseWitness: drop>(
     package_version.clear_pause_bits(bits);
 }
 
-// === Test-Only Functions ===
+// === Private Functions ===
 
-#[test_only]
-/// Seals a consumer's test Publisher and unit-test UpgradeCap, left unshared.
-public fun new_for_testing<PackageMarker: drop>(
+/// Seals an already checked cap beside its Publisher, under the initial notice. The Publisher
+/// needs no check: only the marker's one-time witness could have claimed it.
+fun new<PackageMarker: drop>(
     publisher: Publisher,
     upgrade_cap: UpgradeCap,
     ctx: &mut TxContext,
 ): PackageAdmin<PackageMarker> {
     let id = object::new(ctx);
-    let custody = upgrade_custody::new<PackageMarker>(id.to_inner(), publisher, upgrade_cap);
+    let custodian_id = id.to_inner();
+    let publisher_id = object::id(&publisher);
+    let upgrade_cap_id = object::id(&upgrade_cap);
+    let package_id = upgrade_cap.package();
+    let native_version = upgrade_cap.version();
+    let policy = upgrade_cap.policy();
     let upgrade = delayed_action::new(UpgradeKey<PackageMarker>(), &id, INITIAL_UPGRADE_DELAY_MS);
 
-    PackageAdmin { id, custody, upgrade }
+    let package_admin = PackageAdmin { id, publisher, upgrade_cap: option::some(upgrade_cap), upgrade };
+
+    blast_admin_events::upgrade_custody_created<PackageMarker>(
+        custodian_id,
+        publisher_id,
+        upgrade_cap_id,
+        package_id,
+        native_version,
+        policy,
+    );
+
+    package_admin
+}
+
+// === Test-Only Functions ===
+
+#[test_only]
+/// Seals a consumer's test Publisher and unit-test UpgradeCap, left unshared and unchecked.
+public fun new_for_testing<PackageMarker: drop>(
+    publisher: Publisher,
+    upgrade_cap: UpgradeCap,
+    ctx: &mut TxContext,
+): PackageAdmin<PackageMarker> {
+    new(publisher, upgrade_cap, ctx)
 }
 
 #[test_only]
@@ -253,24 +346,50 @@ public fun upgrade_for_testing<PackageMarker: drop>(
 }
 
 #[test_only]
-public fun custody_for_testing<PackageMarker: drop>(
-    self: &PackageAdmin<PackageMarker>,
-): &UpgradeCustody<PackageMarker> {
-    &self.custody
+public fun id_for_testing<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): ID {
+    self.id.to_inner()
 }
 
 #[test_only]
-public fun id_for_testing<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): ID {
-    self.id.to_inner()
+public fun publisher_for_testing<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): &Publisher {
+    &self.publisher
+}
+
+#[test_only]
+public fun has_upgrade_cap_for_testing<PackageMarker: drop>(
+    self: &PackageAdmin<PackageMarker>,
+): bool {
+    self.upgrade_cap.is_some()
+}
+
+#[test_only]
+public fun upgrade_cap_id_for_testing<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): ID {
+    object::id(self.upgrade_cap.borrow())
+}
+
+#[test_only]
+public fun native_version_for_testing<PackageMarker: drop>(
+    self: &PackageAdmin<PackageMarker>,
+): u64 {
+    self.upgrade_cap.borrow().version()
+}
+
+#[test_only]
+public fun current_package_id_for_testing<PackageMarker: drop>(
+    self: &PackageAdmin<PackageMarker>,
+): ID {
+    self.upgrade_cap.borrow().package()
 }
 
 // === Imports ===
 
 use blast_admin::{
     blast_acl::AdminWitness,
+    blast_admin_events,
     delayed_action::{Self, DelayedAction},
-    package_version::{PackageVersion, Publication},
-    upgrade_custody::{Self, UpgradeCustody}
+    package_version::{PackageVersion, Publication}
 };
 
-use sui::{clock::Clock, package::{Publisher, UpgradeCap, UpgradeReceipt, UpgradeTicket}};
+use std::type_name;
+
+use sui::{clock::Clock, package::{Self, Publisher, UpgradeCap, UpgradeReceipt, UpgradeTicket}};

@@ -200,6 +200,42 @@ for package, module, current, actions in [
     for name, (_, body) in fs.items():
         if name not in actions: assert 'assert_not_paused' not in body, (package, name)
 
+# The generic package administration every upgradeable package shares: role-gated, waits the
+# package's own upgrade notice, and keeps the native capabilities sealed.
+generic = functions('admin', 'package_admin')
+generic_source = (ROOT / 'sui/admin/sources/package_admin.move').read_text()
+require(generic_source, 'upgrade: DelayedAction<UpgradeKey<PackageMarker>, UpgradeAction>,',
+        'upgrade_cap: Option<UpgradeCap>,', 'const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;')
+for name in ('schedule_upgrade', 'schedule_make_immutable', 'authorize_upgrade', 'make_immutable', 'schedule_upgrade_delay'):
+    require(generic[name][0], '&AdminWitness<UpgradeAdmin<PackageMarker>>', 'clock: &Clock')
+for name in ('schedule_upgrade', 'schedule_make_immutable'):
+    assert 'delay_ms: u64' not in generic[name][0], name
+    assert generic[name][1].startswith('assert!(self.upgrade_cap.is_some(), blast_admin::errors::upgrade_cap_unavailable!());'), name
+require(generic['schedule_upgrade'][1], 'digest.length() == PACKAGE_DIGEST_LENGTH', 'self.upgrade.schedule(UpgradeAction::Upgrade(digest), clock)')
+require(generic['schedule_make_immutable'][1], 'self.upgrade.schedule(UpgradeAction::MakeImmutable, clock)')
+for name, action, effect in [('authorize_upgrade', 'Upgrade(digest)', 'upgrade_cap.authorize(policy, digest)'),
+                             ('make_immutable', 'MakeImmutable', 'package::make_immutable(upgrade_cap)')]:
+    body = generic[name][1]
+    assert body.startswith('let action = self.upgrade.take_action(clock);'), name
+    assert body.index(f'action == UpgradeAction::{action}') < body.index(effect), name
+require(generic['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin<PackageMarker>>')
+require(generic['cancel_upgrade_action'][1], 'self.upgrade.cancel()')
+require(generic['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
+require(generic['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
+assert 'AdminWitness' not in generic['apply_upgrade_delay'][0]
+commit = generic['commit_upgrade_and_advance']
+require(commit[0], '&AdminWitness<UpgradeAdmin<PackageMarker>>', 'package_version: &mut PackageVersion<PackageMarker>')
+assert commit[1].index('upgrade_cap.commit(receipt);') < commit[1].index('package_version.advance();')
+require(generic['pause'][0], '&AdminWitness<PauseAdmin<PackageMarker>>')
+require(generic['clear_pause_bits'][0], '&AdminWitness<UnpauseAdmin<PackageMarker>>', '_: UnpauseWitness')
+clear = generic['clear_pause_bits'][1]
+assert clear.index('assert_unpause_witness') < clear.index('self.upgrade.is_guarded()') < clear.index('package_version.clear_pause_bits(bits)')
+require(generic['wrap'][0], 'publication: Publication<PackageMarker>', 'upgrade_cap: UpgradeCap')
+require(generic['new'][1], 'delayed_action::new(UpgradeKey<PackageMarker>(), &id, INITIAL_UPGRADE_DELAY_MS)')
+assert {name for name, (_, body) in generic.items() if 'PackageAdmin {' in body} == {'new'}
+assert not any(re.search(r'\):\s*&?(?:mut )?(Publisher|UpgradeCap)', signature) for signature, _ in generic.values())
+assert not any(word in generic_source for word in ('only_additive_upgrades', 'only_dep_upgrades', 'restrict_to'))
+
 acl = (ROOT / 'sui/admin/sources/blast_acl.move').read_text()
 require(acl, 'admins: Table<ID, VecSet<TypeName>>,', 'super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,')
 assert 'MAX_ADMINS' not in acl and 'Timelocked' not in acl
@@ -247,8 +283,7 @@ require(primitive['ready_at_ms_after'][1], 'clock.timestamp_ms().checked_add(app
 require(primitive['assert_ready_at'][1], 'clock.timestamp_ms() >= ready_at_ms', 'clock.timestamp_ms().checked_add(next_delay_ms).is_some()')
 require(primitive['schedule'][1], 'ready_at_ms_after(self.delay_ms, delay_ms, clock)')
 require(functions('admin', 'delayed_set')['schedule_add'][1], 'delayed::ready_at_ms_after(self.delay_ms, 0, clock)')
-require(functions('admin', 'delayed_map')['schedule'][1], 'delayed::ready_at_ms_after(self.delay_ms, 0, clock)')
-for module in ('delayed_action', 'delayed_set', 'delayed_map'):
+for module in ('delayed_action', 'delayed_set'):
     assert not any(name.startswith(('set_', 'force', 'bypass')) for name in functions('admin', module)), module
 require(primitive['apply'][1], 'self.assert_ready(clock)', 'self.value = value;', 'self.delay_ms = delay_ms;')
 for name in ('schedule_value', 'schedule_delay'):

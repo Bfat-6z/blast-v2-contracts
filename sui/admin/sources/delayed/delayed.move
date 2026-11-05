@@ -6,7 +6,7 @@
 ///
 /// A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then
 /// apply; cancellable until applied. Settings live here; one-shot actions in
-/// `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.
+/// `delayed_action` and allowlists in `delayed_set`.
 ///
 /// Every value carries an owner-defined key `K` and the ID of the object that stores it.
 /// Constructors take that object's `&UID`, which only the code creating or holding the
@@ -17,8 +17,9 @@
 ///
 /// Every change, a shorter notice included, waits the notice applied when it was scheduled.
 /// A notice can start at zero, so a schedule and its apply in one transaction then act as a
-/// setter; there is no other mutation path. No notice exceeds `max_delay_ms`, so a notice
-/// can always be changed again. Readers need no Clock.
+/// setter; there is no other mutation path. No notice exceeds `MAX_DELAY_MS`, so a notice
+/// can always be changed again. Readers need no Clock. A delayed value has no destructor: every
+/// owner holds it for the owner's lifetime.
 module blast_admin::delayed;
 
 // === Public Types ===
@@ -39,13 +40,6 @@ public struct Proposal<T: copy + drop + store> has copy, drop, store {
     ready_at_ms: u64,
 }
 
-/// A notice period and the time it elapses: the notice an admission or entry change waits,
-/// or a proposed next notice. Either is ready from `ready_at_ms`.
-public struct Notice has copy, drop, store {
-    delay_ms: u64,
-    ready_at_ms: u64,
-}
-
 // === Public Functions ===
 
 /// A setting in force at once; every later change waits the applied notice.
@@ -61,11 +55,6 @@ public fun new<K: copy + drop + store, T: copy + drop + store>(
     sui::event::emit(DelayedCreated { owner, key, value, delay_ms });
 
     Delayed { owner, key, value, delay_ms, pending: option::none() }
-}
-
-/// The longest notice any delayed type accepts, in milliseconds.
-public fun max_delay_ms(): u64 {
-    MAX_DELAY_MS
 }
 
 /// The applied value.
@@ -172,31 +161,20 @@ public fun cancel<K: copy + drop + store, T: copy + drop + store>(self: &mut Del
     self.cancel_replaced();
 }
 
-/// Deletes a setting with no proposal and records its end; cancel a proposal first.
-public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>) {
-    assert!(self.pending.is_none(), blast_admin::errors::proposal_pending!());
-
-    let Delayed { owner, key, value: _, delay_ms: _, pending: _ } = self;
-
-    sui::event::emit(DelayedDestroyed<K, T> { owner, key });
-}
-
 /// The proposed value, or the proposed change for an action slot.
 public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T { self.value }
 
+// === Package Functions ===
+
 /// The notice in force once the proposal applies.
-public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64 { self.delay_ms }
+public(package) fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64 {
+    self.delay_ms
+}
 
 /// The Unix millisecond time from which the proposal can apply.
-public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64 { self.ready_at_ms }
-
-/// The notice waited, or the proposed next notice.
-public fun notice_delay_ms(self: &Notice): u64 { self.delay_ms }
-
-/// The Unix millisecond time from which the change can apply.
-public fun notice_ready_at_ms(self: &Notice): u64 { self.ready_at_ms }
-
-// === Package Functions ===
+public(package) fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64 {
+    self.ready_at_ms
+}
 
 /// A proposal for another delayed module, built from an already checked deadline.
 public(package) fun new_proposal<T: copy + drop + store>(
@@ -205,11 +183,6 @@ public(package) fun new_proposal<T: copy + drop + store>(
     ready_at_ms: u64,
 ): Proposal<T> {
     Proposal { value, delay_ms, ready_at_ms }
-}
-
-/// A notice for another delayed module, built from an already checked deadline.
-public(package) fun new_notice(delay_ms: u64, ready_at_ms: u64): Notice {
-    Notice { delay_ms, ready_at_ms }
 }
 
 /// Rejects a notice longer than `max_delay_ms`.
@@ -249,6 +222,12 @@ fun cancel_replaced<K: copy + drop + store, T: copy + drop + store>(self: &mut D
 // === Test-Only Functions ===
 
 #[test_only]
+/// The longest notice any delayed type accepts, in milliseconds.
+public fun max_delay_ms(): u64 {
+    MAX_DELAY_MS
+}
+
+#[test_only]
 public fun delayed_created_fields<K: copy + drop + store, T: copy + drop + store>(
     self: &DelayedCreated<K, T>,
 ): (ID, K, T, u64) {
@@ -274,13 +253,6 @@ public fun delayed_applied_fields<K: copy + drop + store, T: copy + drop + store
     self: &DelayedApplied<K, T>,
 ): (ID, K, T, T, u64) {
     (self.owner, self.key, self.previous_value, self.value, self.delay_ms)
-}
-
-#[test_only]
-public fun delayed_destroyed_fields<K: copy + drop + store, T: copy + drop + store>(
-    self: &DelayedDestroyed<K, T>,
-): (ID, K) {
-    (self.owner, self.key)
 }
 
 // === Events ===
@@ -320,22 +292,13 @@ public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has
     delay_ms: u64,
 }
 
-/// A setting was deleted with nothing pending.
-public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
-    owner: ID,
-    key: K,
-}
-
 // === Constants ===
 
-/// The longest notice any delayed value, action, set or map accepts: 30 days.
+/// The longest notice any delayed value, action or set accepts: 30 days.
 const MAX_DELAY_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 // === Imports ===
 
 public use fun proposal_value as Proposal.value;
-public use fun proposal_delay_ms as Proposal.delay_ms;
-public use fun notice_delay_ms as Notice.delay_ms;
-public use fun notice_ready_at_ms as Notice.ready_at_ms;
 
 use sui::clock::Clock;

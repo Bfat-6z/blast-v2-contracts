@@ -42,8 +42,7 @@ public struct SuperAdminCapDestroyed has copy, drop {
     super_admin_cap_id: ID,
 }
 
-/// Emitted by a value that only its package's one-time witness could create; `container_id` is
-/// the UID the advancing module held.
+/// A package version moved to its next generation; `container_id` is that `PackageVersion`.
 public struct OperationalVersionAdvanced<phantom PackageMarker: drop> has copy, drop {
     container_id: ID,
     original_package_id: address,
@@ -76,15 +75,6 @@ public struct UpgradeCommitted<phantom PackageMarker: drop> has copy, drop {
     new_package_id: ID,
     previous_native_version: u64,
     new_native_version: u64,
-}
-
-public struct UpgradePolicyRestricted<phantom PackageMarker: drop> has copy, drop {
-    custodian_id: ID,
-    upgrade_cap_id: ID,
-    original_package_id: address,
-    native_version: u64,
-    previous_policy: u8,
-    new_policy: u8,
 }
 
 public struct UpgradeCapDestroyed<phantom PackageMarker: drop> has copy, drop {
@@ -223,24 +213,6 @@ public(package) fun upgrade_committed<PackageMarker: drop>(
     });
 }
 
-public(package) fun upgrade_policy_restricted<PackageMarker: drop>(
-    custodian_id: ID,
-    upgrade_cap_id: ID,
-    original_package_id: address,
-    native_version: u64,
-    previous_policy: u8,
-    new_policy: u8,
-) {
-    sui::event::emit(UpgradePolicyRestricted<PackageMarker> {
-        custodian_id,
-        upgrade_cap_id,
-        original_package_id,
-        native_version,
-        previous_policy,
-        new_policy,
-    });
-}
-
 public(package) fun upgrade_cap_destroyed<PackageMarker: drop>(
     custodian_id: ID,
     upgrade_cap_id: ID,
@@ -352,20 +324,6 @@ public fun upgrade_committed_fields<PackageMarker: drop>(
         self.new_package_id,
         self.previous_native_version,
         self.new_native_version,
-    )
-}
-
-#[test_only]
-public fun upgrade_policy_restricted_fields<PackageMarker: drop>(
-    self: &UpgradePolicyRestricted<PackageMarker>,
-): (ID, ID, address, u64, u8, u8) {
-    (
-        self.custodian_id,
-        self.upgrade_cap_id,
-        self.original_package_id,
-        self.native_version,
-        self.previous_policy,
-        self.new_policy,
     )
 }
 
