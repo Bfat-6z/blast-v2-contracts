@@ -409,7 +409,7 @@ public fun set_fee_split<SaleToken, Quote>(
 /// Names the sale's Blast partner, one the `CreationPolicy` lets new presales name; from
 /// `finalize` on it is the sale's partner for good. The partner earns its cut of Blast's raise and
 /// token fees, which migration holds until `pay_protocol_fees_with_partner` pays them, and its
-/// vault inherits the partner, which then earns its cut of Blast's LP fees (ADRs 0107, 0137).
+/// vault inherits the partner, which then earns its cut of Blast's LP fees (ADR 0137).
 public fun set_partner<SaleToken, Quote>(
     self: &mut PresaleInitializer<SaleToken, Quote>,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,

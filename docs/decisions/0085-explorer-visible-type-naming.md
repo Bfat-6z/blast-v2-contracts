@@ -2,8 +2,6 @@
 
 - Status: accepted
 - Date: 2026-09-16
-- Amends: [0001](0001-sui-package-and-module-layout.md),
-  [0031](0031-package-witness-and-publisher-custody.md)
 - Names: the leveraged-coin packages are **Blast Boosts** on chain, the same
   word the app and deck use; "leverage" stays the descriptive term in prose.
 

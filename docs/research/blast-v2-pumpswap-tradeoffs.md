@@ -59,7 +59,7 @@ incentive: more Quote reaches liquidity, with future swap revenue replacing an
 upfront protocol charge. Gas and genuine object/pool creation costs still
 exist and should be disclosed separately.
 
-However, the [recommended SUI preset](../decisions/0054-v3-dex-migrators-and-locked-lp-fees.md)
+However, the recommended SUI preset
 already sets `protocol_quote_migration_fee_bps = 0`. There is no incremental discount
 relative to that preset. Do not introduce an external-route surcharge merely
 to advertise free internal migration. Current live Blast launch settings were

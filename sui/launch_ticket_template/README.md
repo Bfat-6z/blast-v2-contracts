@@ -31,9 +31,9 @@ against the current ceiling, then fixes the supply as fixed or burn-only.
 
 The publication boundary is defined by
 [ADR 0051](../../docs/decisions/0051-generated-meme-package-template.md) (this
-package's name by [ADR 0108](../../docs/decisions/0108-standalone-coin-template.md)), the
-adapter-started launch by
-[ADR 0089](../../docs/decisions/0089-migrators-own-post-migration-and-start-launches.md),
+package's name by [ADR 0108](../../docs/decisions/0108-standalone-coin-template.md)), venue
+preparation before the launch by
+[ADR 0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md),
 and the coin lifecycle by the related accepted ADRs in the
 [decision index](../../docs/decisions/README.md). The SDK artifact and its
 verification checks own the embedded bytecode hash. This package's source,

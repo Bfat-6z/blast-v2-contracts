@@ -1,12 +1,10 @@
 # Deploying the launchpad
 
-Use this procedure for a new mainnet publication. It implements the capability
-custody required by [ADR 0031](../../docs/decisions/0031-package-witness-and-publisher-custody.md)
-and [ADR 0032](../../docs/decisions/0032-admin-authorized-upgrade-cap-custody.md),
-as amended by [ADR 0114](../../docs/decisions/0114-launchpad-custody-before-activation.md)
-for audit finding L-1, and by
-[ADR 0134](../../docs/decisions/0134-delayed-administration-pause-and-table-acl.md)
-for delayed policy and paused release.
+Use this procedure for a new mainnet publication. It implements the generic
+package custody of
+[ADR 0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md)
+and the delayed policy and paused release of
+[ADR 0134](../../docs/decisions/0134-delayed-administration-pause-and-table-acl.md).
 
 **Publish → wrap → verify the PackageAdmin → configure while paused → verify notices → unpause.**
 Publication creates an owned `blast_admin::package_version::Publication<BLAST_FUN>`

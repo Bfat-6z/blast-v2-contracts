@@ -256,7 +256,7 @@ Aftermath base-pool trading fees already accrue into reserves, while Blast's
 DAO-fee wrapper supplies separately claimable revenue. Its future auto-LP
 adapter must deposit that revenue and retain the newly minted LP coins; it
 must not withdraw existing LP to manufacture claimable fees. See
-[ADR 0066](../decisions/0066-aftermath-dao-fee-pool.md).
+ADR 0066.
 
 Implementation acceptance must cover real cap enrollment; both fee sources;
 no cap, balance, or principal extraction; frozen destination and pair ordering;

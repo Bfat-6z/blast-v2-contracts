@@ -2,16 +2,9 @@
 
 - Status: accepted
 - Date: 2026-09-13
-- Amends: [0013](0013-creator-fee-authority-and-x-claims.md),
-  [0015](0015-protocol-authority-and-x-signer-state.md),
-  [0017](0017-coin-type-domain-for-x-creator-claims.md),
-  [0024](0024-generated-coin-launch-ticket.md),
-  [0028](0028-hot-cold-runtime-configuration.md),
-  [0029](0029-composable-creator-identity.md),
-  [0030](0030-singleton-event-identity.md),
-  [0038](0038-standard-method-names.md),
-  [0051](0051-generated-meme-package-template.md),
-  [0059](0059-production-launchpad-abi-and-sdk-parity.md), and
+- Amends: [0024](0024-generated-coin-launch-ticket.md),
+  [0028](0028-hot-cold-runtime-configuration.md), [0038](0038-standard-method-names.md),
+  [0051](0051-generated-meme-package-template.md), and
   [0079](0079-compact-launch-state-and-events.md)
 
 ## Context

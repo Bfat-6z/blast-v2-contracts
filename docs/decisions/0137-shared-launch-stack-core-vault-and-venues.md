@@ -4,27 +4,15 @@
 - Date: 2026-11-04
 - Owner decision: 2026-11-04, Jose accepted the design below with one exception (D7: each
   product keeps its own Quote allowlist and partner list)
-- Supersedes: [0054](0054-v3-dex-migrators-and-locked-lp-fees.md) (one migrators package),
-  [0089](0089-migrators-own-post-migration-and-start-launches.md) (migrators own everything after
-  migration), [0044](0044-validated-basis-points-unit.md) (a `Bps` per package),
-  [0107](0107-partner-cut-of-lp-fees.md) (partner cut rules),
-  [0109](0109-vaults-without-a-presale.md) (presale-only standalone vaults),
-  [0111](0111-venue-owned-presale-pool-tiers.md) (presale-only tier records),
-  [0113](0113-presale-gas-reserve-and-holder-meme-routing.md) (holder Meme routed to the treasury),
-  [0116](0116-aftermath-adapter-with-vault-addressed-dao-fees.md) (`FinalizeTicket`),
-  and the presale rate model of [0101](0101-presale-protocol-fees.md), which becomes the shared rule
-- Amends: [0001](0001-sui-package-and-module-layout.md) and
-  [0010](0010-migration-and-venue-adapters.md) (package layout and adapters),
-  [0014](0014-typed-creator-cap-and-diagnostic-modules.md) (the event envelope is dropped),
-  [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (dependency direction becomes
-  symmetric), [0094](0094-one-role-per-administrator-action.md) and
-  [0097](0097-one-singleton-acl-with-typed-roles.md) (one product role set, generic package roles),
-  [0099](0099-standalone-overflow-presale.md) (presale no longer keeps its own copies),
-  [0104](0104-external-presale-migrators-and-vendor-packages.md) (vendors redeem the hand-off),
-  [0106](0106-presale-partners.md) (the partner also shares the token fee),
-  [0117](0117-presale-versioning-and-activation.md) and
+- Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (dependency direction
+  becomes symmetric), [0097](0097-one-singleton-acl-with-typed-roles.md) (one product role set,
+  generic package roles), [0099](0099-standalone-overflow-presale.md) (presale no longer keeps its
+  own copies), [0104](0104-external-presale-migrators-and-vendor-packages.md) (vendors redeem the
+  hand-off), [0106](0106-presale-partners.md) (the partner also shares the token fee), and
   [0134](0134-delayed-administration-pause-and-table-acl.md) (one generic package administration;
   vault and venue postures)
+- Supersedes: the earlier migrators, presale vault and venue, Bps, partner-cut and package-administration
+  records, retired on 2026-11-05
 - Design record: the 2026-11-04 Fable architecture review
 
 ## Context
@@ -36,7 +24,7 @@ burnt or locked in a vault, and the vault keeps collecting LP fees for Blast, pa
 and holder rewards.
 
 ADR 0099 forbids presale from importing the launchpad, and the vault and venue adapters live in the
-migrators package, which imports the launchpad (ADR 0089). Presale therefore cloned them. The
+migrators package, which imports the launchpad. Presale therefore cloned them. The
 2026-11-04 review measured about 2,300 to 2,600 near-duplicate production lines across the launch
 stack (about 15,200 production lines): two LP vaults, two holder-reward engines, two Merkle verifiers,
 two Cetus and two Bluefin adapters, three package-administration and version modules, three governed
@@ -165,9 +153,9 @@ The owner accepted these behaviour changes on 2026-11-04:
 
 1. **One vault and one fee-split model.** Presale vaults gain owner, auto-LP and burn routes;
    launchpad vaults may name address routes. Holder rewards accrue in both assets and rounds may pay
-   either. ADR 0113's routing of holder Meme to the treasury ends.
+   either. The presale's routing of holder Meme to the treasury ends.
 2. **Blast's LP share** is snapshotted at vault creation and changeable per vault after 48 hours'
-   notice, the presale model of ADR 0101. The launchpad's live defaults and per-coin overrides end,
+   notice, the presale's earlier model. The launchpad's live defaults and per-coin overrides end,
    so Blast can no longer change every vault's share in one proposal.
 3. **The partner takes its cut of every Blast fee**, including the presale token fee that ADR 0106
    excluded.

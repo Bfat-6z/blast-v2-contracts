@@ -3,7 +3,9 @@
 - Status: accepted
 - Date: 2026-08-24
 - Implements: [0023](0023-generated-coin-supply-and-metadata-custody.md)
-- Amended by: [0035](0035-initializer-finalized-meme-supply.md), [0036](0036-fixed-nine-decimal-generated-memes.md), [0037](0037-remove-redundant-ticket-burn-mode.md), [0038](0038-standard-method-names.md), [0043](0043-versioned-launch-trading-and-atomic-migration.md), [0047](0047-coin-registry-authoritative-supply-mode.md), [0077](0077-fixed-creator-selected-sell-burn.md)
+- Amended by: [0038](0038-standard-method-names.md),
+  [0047](0047-coin-registry-authoritative-supply-mode.md), and
+  [0077](0077-fixed-creator-selected-sell-burn.md)
 
 ## Context
 

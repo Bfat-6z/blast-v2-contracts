@@ -5,7 +5,7 @@
 // packages the local interface stubs link to are still the exact revisions pinned here, that every
 // consumed struct keeps its defining package, module bytecode, and normalized ABI, and that each
 // stub's Move.toml names the same package ids. The response validation and ABI rendering are the
-// migrators package's former Aftermath gate (ADR 0063, ADR 0066), narrowed to the consumed surface.
+// migrators package's former Aftermath gate, narrowed to the consumed surface.
 // Uses Node built-ins only.
 //
 // Run `node scripts/check_mainnet_abi.mjs` from the package directory. Run with `--emit` to print
@@ -56,7 +56,7 @@ const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // === Expected Packages ===
 
-/// Facts recorded on 2026-09-02 for the migrators' Aftermath adapter (ADR 0066), the last live
+/// Facts recorded on 2026-09-02 for the migrators' former Aftermath adapter, the last live
 /// read. A newer revision fails the gate until it is reviewed and adopted with `--emit`.
 const PACKAGES = [
     {

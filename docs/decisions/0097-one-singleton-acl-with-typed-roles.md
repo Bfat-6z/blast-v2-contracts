@@ -8,8 +8,6 @@
 - Amended by: [0134](0134-delayed-administration-pause-and-table-acl.md) (2026-11-03) —
   the root transfer is a `delayed_action::DelayedAction` with the same fixed seven days;
   `blast_admin` no longer depends on `blast_fun_timelock`
-- Supersedes: [0094](0094-one-role-per-administrator-action.md)'s role bits,
-  checks, and gate map; keeps its role grouping
 - Amends: [0053](0053-single-validator-funsui-and-blastsui.md),
   [0061](0061-blastsui-routine-admin-and-composable-package-custody.md),
   [0073](0073-series-one-adapter-owned-vaults.md), and

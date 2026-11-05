@@ -660,7 +660,7 @@ public struct VaultTerms has copy, drop, store {
 
 /// A venue's sealed ticket for the `Meme` and `Quote` pair it prepared, redeemed by the product
 /// that admits it for a sale of exactly that pair. The venue keeps the pair's pool tier and any
-/// reserved pool-creation authority itself (ADR 0111).
+/// reserved pool-creation authority itself (ADR 0137).
 public struct VenueTicket<phantom Meme, phantom Quote> {
     venue: TypeName,
 }

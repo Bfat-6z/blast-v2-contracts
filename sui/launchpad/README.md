@@ -22,8 +22,6 @@ version. There is no separate activation step.
 
 Use these sources instead of a duplicated module inventory:
 
-- [Asymptotic audit](../../audits/README.md) for the October 2026 report,
-  reviewed commits, scope, and remediation status;
 - [deployment procedure](DEPLOYING.md) for mandatory capability wrapping and
   custody verification before launch activity;
 - [architecture](../../docs/architecture.md) for package and SDK boundaries;

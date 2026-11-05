@@ -2,9 +2,8 @@
 
 - Status: accepted
 - Date: 2026-09-24
-- Amends: [0047](0047-coin-registry-authoritative-supply-mode.md),
-  [0088](0088-reusable-launch-accounting-and-atomic-migration.md), and
-  [0089](0089-migrators-own-post-migration-and-start-launches.md)
+- Amends: [0047](0047-coin-registry-authoritative-supply-mode.md) and
+  [0088](0088-reusable-launch-accounting-and-atomic-migration.md)
 
 ## Context
 

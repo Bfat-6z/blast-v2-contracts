@@ -28,9 +28,22 @@ Blast SUI uses its [deployment](../sui/blast_sui/DEPLOYING.md) and
 same normalized evidence while following their accepted ADRs and verification
 scripts.
 
-ADR 0134 uses a fresh launch stack. The October 28 package IDs and source
-revisions remain in the historical deployment records. The fresh stack receives
-compiler publication bindings after its own publication.
+## Records
+
+The launch stack is greenfield: none of its packages has a live publication, and
+the records of the retired launchpad, migrators, presale, timelock, admin and
+partners lineages and their rehearsals and end-to-end runs were deleted on
+2026-11-05 (they remain in Git history). The fresh stack receives its records
+and compiler publication bindings after its own publication.
+
+The kept records are for still-published packages the fresh stack does not
+replace:
+
+- [`2026-09-24-otc-and-vesting.json`](sui/mainnet/2026-09-24-otc-and-vesting.json):
+  the immutable OTC and vesting utilities. `blast_core` links the published
+  vesting package.
+- `2026-09-22-nvda-alpha-boosts*.json` and `assets/`: the Boosts alpha
+  deployment, its rehearsal and its metadata updates.
 
 ## Fresh launch stack
 
@@ -174,7 +187,7 @@ that exact vault. Nothing can be repaired afterwards.
 
 ## Imported utility records
 
-The September 2026 OTC, vesting, and timelock records retain their original
-repository URLs and commit IDs as historical provenance. Their full Git history
-is imported here; see [utility verification](../docs/utilities.md). Consolidation
-does not publish, upgrade, or replace an on-chain package.
+The September 2026 OTC and vesting record retains its original repository URL
+and commit IDs as provenance. Their full Git history is imported here; see
+[utility verification](../docs/utilities.md). Consolidation does not publish,
+upgrade, or replace an on-chain package.

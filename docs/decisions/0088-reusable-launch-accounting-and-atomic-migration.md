@@ -1,8 +1,7 @@
 # 0088: Reusable launch accounting and atomic migration
 
-- Status: accepted; amended by [0089](0089-migrators-own-post-migration-and-start-launches.md)
-  (recurring LP-fee routing and policy move to the migrators, launches start in the adapter
-  through a launch initializer, and the creator chooses the pool tier)
+- Status: accepted; launches start through a `LaunchInitializer` the creator configures before
+  `finalize`; post-migration custody, fee routing and venue preparation follow ADR 0137
 - Amended by: [0137](0137-shared-launch-stack-core-vault-and-venues.md) (shared launch stack, 2026-11-04)
 - Date: 2026-09-22
 - Revised: 2026-09-22, rewritten in place after the founder rulings of the same day, then
@@ -13,26 +12,7 @@
   amended 2026-09-23 again for the owner's rulings (the upgrade finalizer checks the version
   first; Bluefin receives an empty Meme icon; launch intake bounds the Meme symbol at 32 bytes;
   launchpad policy narrowing is removed)
-- Supersedes: [0036](0036-fixed-nine-decimal-generated-memes.md),
-  [0068](0068-compact-lp-fee-principal-snapshot.md),
-  [0081](0081-separate-lp-fee-share-policy.md), and
-  [0083](0083-migrators-own-lp-fee-policy-and-authority.md)
-- Amends: [0001](0001-sui-package-and-module-layout.md),
-  [0007](0007-acl-pause-and-versioning.md),
-  [0015](0015-protocol-authority-and-x-signer-state.md),
-  [0022](0022-dual-asset-fee-ledger-and-claims.md),
-  [0032](0032-admin-authorized-upgrade-cap-custody.md),
-  [0034](0034-remove-premature-governance-cutover.md),
-  [0035](0035-initializer-finalized-meme-supply.md),
-  [0042](0042-key-only-shared-launch.md),
-  [0043](0043-versioned-launch-trading-and-atomic-migration.md),
-  [0046](0046-witness-authorized-migration-redemption.md),
-  [0054](0054-v3-dex-migrators-and-locked-lp-fees.md),
-  [0059](0059-production-launchpad-abi-and-sdk-parity.md),
-  [0063](0063-aftermath-weighted-pool-migrator.md),
-  [0067](0067-retire-full-sail-migrator.md),
-  [0069](0069-consolidate-launch-graduation-and-move-migration-math.md),
-  [0075](0075-independent-holder-fee-distributor.md),
+- Amends: [0022](0022-dual-asset-fee-ledger-and-claims.md), [0042](0042-key-only-shared-launch.md),
   [0079](0079-compact-launch-state-and-events.md), and
   [0082](0082-revocable-creator-and-lp-fee-capabilities.md)
 

@@ -7,11 +7,10 @@ chain implementation. An unexplained numeric difference is a release blocker.
 
 | File | Covers | Owning decision |
 | --- | --- | --- |
-| [`curve.json`](curve.json) | buy, sell, capped threshold crossing, both burn moments, boundaries, round trip | [`../decisions/0004-bonding-curve.md`](../decisions/0004-bonding-curve.md), [`../decisions/0003-treasury-cap-lifetime-and-burn.md`](../decisions/0003-treasury-cap-lifetime-and-burn.md), [`../decisions/0039-deterministic-quote-valuations.md`](../decisions/0039-deterministic-quote-valuations.md) |
+| [`curve.json`](curve.json) | buy, sell, capped threshold crossing, both burn moments, boundaries, round trip | [`../decisions/0004-bonding-curve.md`](../decisions/0004-bonding-curve.md), [`../decisions/0026-deferred-sell-burn.md`](../decisions/0026-deferred-sell-burn.md), [`../decisions/0092-creator-picks-the-virtual-quote.md`](../decisions/0092-creator-picks-the-virtual-quote.md) |
 | [`dex-fees.json`](dex-fees.json) | integrated volume fees, full-width bounds, exponential decay and cadence | [`../decisions/0076-native-v2-and-auto-lp.md`](../decisions/0076-native-v2-and-auto-lp.md) |
 | [`fees.json`](fees.json) | configurable protocol/creator shares, rounding, update sequences, maximum width | [`../decisions/0022-dual-asset-fee-ledger-and-claims.md`](../decisions/0022-dual-asset-fee-ledger-and-claims.md) |
-| [`quote-decimals.json`](quote-decimals.json) | decimal combinations, both pair orientations, `sqrt_price_x64`, display price | [`../decisions/0005-quote-asset-generalisation.md`](../decisions/0005-quote-asset-generalisation.md), [`../decisions/0010-migration-and-venue-adapters.md`](../decisions/0010-migration-and-venue-adapters.md) |
-| [`x-creator-claim.json`](x-creator-claim.json) | canonical coin-type-bound X claim BCS encoding and Ed25519 verification fixture | [`../decisions/0017-coin-type-domain-for-x-creator-claims.md`](../decisions/0017-coin-type-domain-for-x-creator-claims.md) |
+| [`quote-decimals.json`](quote-decimals.json) | decimal combinations, both pair orientations, `sqrt_price_x64`, display price | [`../decisions/0137-shared-launch-stack-core-vault-and-venues.md`](../decisions/0137-shared-launch-stack-core-vault-and-venues.md) |
 
 ## Rules
 
@@ -31,11 +30,8 @@ chain implementation. An unexplained numeric difference is a release blocker.
    `fees.json` are accepted by ADR 0022; the remaining curve, migration-fee, and burn parameters are
    proposed. Changing any value invalidates every dependent vector, and the files must be regenerated
    rather than edited by hand.
-5. **Every implementation consumes shared economic files.** Signature-domain
-   fixtures may be chain-specific where chains expose different native type
-   systems. ADR 0017 binds the Sui claim to the generated coin's original
-   `TypeName`. Any future difference must be documented in an ADR, per
-   `../architecture.md`.
+5. **Every implementation consumes shared economic files.** Any future difference must be documented
+   in an ADR, per `../architecture.md`.
 6. **Unreachable cases are labelled.** A case whose `expect` names `EUnreachableByConstruction` pins pure
    arithmetic at a boundary the lifecycle cannot produce. It is a maths oracle, never evidence that the
    trade can execute.
@@ -60,20 +56,13 @@ unrelated abort.
 `properties` entries are not per-case oracles. They are invariants the implementation must prove by test;
 one carries a `status` field recording that it is asserted rather than yet evidenced.
 
-`x-creator-claim.json` instead records the exact typed-field order, signed BCS
-bytes, digest, public key, Ed25519 signature, and the canonical 73-byte value
-inside the X branch's `Some(vector<u8>)` call argument. Its
-`vector_schema_version` describes the JSON fixture, not a field in the signed
-message. The address branch sends `None`. The file deliberately contains no
-private key and no production credential.
-
 ## Reproduction
 
 The curve cases follow the formulas in
 [`../decisions/0004-bonding-curve.md`](../decisions/0004-bonding-curve.md) exactly: floor for user
 payouts, ceiling for protocol fees and seller obligations, and floor-floor on the burn ramp with a single
-ceiling on the burn amount. The sqrt price cases follow
-[`../decisions/0005-quote-asset-generalisation.md`](../decisions/0005-quote-asset-generalisation.md):
+ceiling on the burn amount. The sqrt price cases follow `blast_core::migration`
+(ADR 0137):
 
 ```text
 sqrt_price_x64 = isqrt( (numerator_atomic << 128) / denominator_atomic )
@@ -84,7 +73,7 @@ where the numerator is the asset that is coin B and the denominator the asset th
 Regenerate `curve.json` and `quote-decimals.json` together with `python3 docs/vectors/generate_curve.py`
 from the repository root. Its buys apply the graduation cap first: a buy whose post-fee Quote would pass
 `T` is charged `ceil((T - Q) * 10_000 / (10_000 - quote_fee_bps))` and refunds the rest
-([`../decisions/0039-deterministic-quote-valuations.md`](../decisions/0039-deterministic-quote-valuations.md)).
+(`curve::cap_buy_quote_input`).
 The migration prices start from the terminal state that the capped crossing buy reaches.
 
 Regenerate the native DEX cases with `python3 docs/vectors/generate_dex_fees.py`

@@ -2,7 +2,6 @@
 
 - Status: accepted
 - Date: 2026-08-29
-- Amends: [0001](0001-sui-package-and-module-layout.md)
 
 ## Context
 

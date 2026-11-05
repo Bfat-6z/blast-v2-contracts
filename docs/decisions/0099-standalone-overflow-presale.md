@@ -6,19 +6,12 @@
 - Amended: 2026-10-20 (owner request): presale finalization requires confirmed
   unregulated sale coins on chain; regulated and unknown legacy currencies are
   rejected. Quote admission remains governed by Blast's allowlist.
-- Amended by: [0101](0101-presale-protocol-fees.md): Blast takes admin-set,
-  creation-snapshotted shares of the raise, the token supply, and LP fees;
-  [0102](0102-presale-creation-allowlists.md): Blast allowlists the Quote types
-  and migrators new presales may use
-  [0104](0104-external-presale-migrators-and-vendor-packages.md): `new` and
-  `migrate` are public, so an allowed migrator in another package can create and
-  migrate sales;
-  [0110](0110-presale-initializer-and-early-close.md): sales are created through a
-  `PresaleInitializer`, the hard cap is a sale setting rather than the uncapped
-  phase's, and a sale whose hard cap closes it when filled settles once its raise
-  is full;
-  [0111](0111-venue-owned-presale-pool-tiers.md): the pool tier belongs to the
-  venue, not the sale
+- Amended by: [0102](0102-presale-creation-allowlists.md): Blast allowlists the Quote types and
+  migrators new presales may use; [0104](0104-external-presale-migrators-and-vendor-packages.md):
+  `new` and `migrate` are public, so an allowed migrator in another package can create and migrate
+  sales; and [0110](0110-presale-initializer-and-early-close.md): sales are created through a
+  `PresaleInitializer`, the hard cap is a sale setting rather than the uncapped phase's, and a sale
+  whose hard cap closes it when filled settles once its raise is full
 - Amended: 2026-10-02, after the pre-launch security review (owner rulings of
   the same day): the LP-migration window has a seven-day floor; an
   open-to-anyone phase under an allowlist must reach the raise with the slots
@@ -47,8 +40,8 @@
 - Amended: 2026-10-08 (owner decision): presale administration returns to the
   shared Blast ACL. `blast_presale_domain` declares six roles, and the
   package-local `AdminCap`, `SuperAdminCap`, and `AdminRegistry` are deleted
-- Amended: 2026-11-04 (owner decision): presale adopts ADR 0014's diagnostic
-  registry. `blast_presale::errors` holds one numeric namespace, renumbered from
+- Amended: 2026-11-04 (owner decision): presale adopts the launchpad's numeric
+  error registry. `blast_presale::errors` holds one numeric namespace, renumbered from
   zero for the ADR 0134 fresh lineage, and each check raises its macro at the
   owning module, so the abort location is unchanged while the code is the
   registry's; the module-local `#[error]` messages become the registry's
@@ -57,8 +50,8 @@
   `ENotAftermathVault`. `blast_presale::constants` names the pause bits
   (create 1, commit 2, migration 4, the launchpad's layout), protocol limits and venue facts
 
-Amended by [ADR 0117](0117-presale-versioning-and-activation.md): new publications
-use compatible upgrades and custody-gated operational versioning. The earlier
+Amended by [ADR 0137](0137-shared-launch-stack-core-vault-and-venues.md): new publications use compatible
+upgrades under the generic `blast_admin` package administration. The earlier
 dependency-only policy below is historical.
 
 ## Context

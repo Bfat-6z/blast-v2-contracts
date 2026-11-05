@@ -31,7 +31,7 @@ identified only through its package one-time witness (OTW); ADR 0085 records why
 | `blast_boosts_aftermath` | Publisher one-time witness | `aftermath::AFTERMATH` | `blast_boosts_aftermath::BLAST_BOOSTS_AFTERMATH` |
 | `blast_boosts_core` | administration roles shared with the adapter; no one-time witness or Publisher (ADR 0097) | `blast_boosts_core::BLAST_BOOSTS_CORE` | `blast_boosts_core::VaultIssuer`, `RiskAdmin`, `ShutdownAdmin`, `UpgradeAdmin` |
 | `blast_partners` | administration role (ADR 0097); no one-time witness or Publisher | `blast_partners::BLAST_PARTNERS` (ADR 0095) | `blast_partners::PartnerAdmin` |
-| `blast_presale` | Publisher one-time witness (ADR 0117) | — | `blast_presale_package::BLAST_PRESALE_PACKAGE` |
+| `blast_presale` | Publisher one-time witness (ADR 0137) | — | `blast_presale_package::BLAST_PRESALE_PACKAGE` |
 | `blast_presale` | administration roles (ADR 0137) | `blast_presale_admin::SuperAdminCap`, `AdminCap` (ADR 0099) | none of its own: product roles from `blast_core::blast_domain`; package roles `blast_admin::package_admin::UpgradeAdmin`, `PauseAdmin`, `UnpauseAdmin`, `CancelAdmin`, each typed `<BLAST_PRESALE_PACKAGE>` |
 | `blast_presale` | package witness (ADR 0137) | — | `blast_presale_package::PackageWitness` |
 | `blast_boosts_products` | Publisher one-time witness (new package) | — | `blast_boosts_products::BLAST_BOOSTS_PRODUCTS` |
@@ -77,7 +77,7 @@ is what an auditor reads on every package-administration object.
 | `blast_fun` | `launch::LaunchRegistry` | new (ADR 0137); shared singleton from which each launch's ID derives | *residual* |
 | `blast_fun` | `package_admin::PackageAdmin` | `blast_admin::package_admin::PackageAdmin<BLAST_FUN>` (ADR 0137) | OTW |
 | `blast_fun` | `package_version::PackageVersion` | `blast_admin::package_version::PackageVersion<BLAST_FUN>` (ADR 0137) | OTW |
-| `blast_fun` | `blast_fun::Publication` | `blast_admin::package_version::Publication<BLAST_FUN>` (ADRs 0114 and 0137); deployer-owned until custody intake | OTW |
+| `blast_fun` | `blast_fun::Publication` | `blast_admin::package_version::Publication<BLAST_FUN>` (ADR 0137); deployer-owned until custody intake | OTW |
 | `blast_migrators` | `venue_config::VenueConfig` | unchanged | *residual* |
 | `blast_migrators` | `package_admin::PackageAdmin` | `blast_admin::package_admin::PackageAdmin<BLAST_MIGRATORS>` (ADR 0137) | OTW |
 | `blast_migrators` | `package_version::PackageVersion` | `blast_admin::package_version::PackageVersion<BLAST_MIGRATORS>` (ADR 0137) | OTW |
@@ -98,7 +98,7 @@ is what an auditor reads on every package-administration object.
 | `blast_presale` | `package_admin::PackageAdmin` | `blast_admin::package_admin::PackageAdmin<BLAST_PRESALE_PACKAGE>` (ADR 0137) | OTW |
 | `blast_presale` | `blast_presale_package::PackageVersion` | `blast_admin::package_version::PackageVersion<BLAST_PRESALE_PACKAGE>` (ADR 0137) | OTW |
 | `blast_presale` | `creation_policy::CreationPolicy` | new (ADR 0102); shared, one per package | *residual* |
-| `blast_presale` | `fee_policy::FeePolicy` | new (ADR 0101); shared, one per package | *residual* |
+| `blast_presale` | `fee_policy::FeePolicy` | new (ADR 0137); shared, one per package | *residual* |
 | `blast_aftermath_dao_presale` | `blast_aftermath_dao_presale::AdminCap` | new (ADR 0104); publisher-held, one per package | module |
 | `blast_aftermath_dao_presale` | `blast_aftermath_dao_presale::PoolCreation<Lp, SaleToken>` | new (ADRs 0104 and 0137); shared, one per prepared sale token | module |
 
@@ -151,7 +151,7 @@ the same `blast_events::Event<T>` envelope (ADR 0130).
 (`package_marker::PACKAGE_MARKER`, `dex_domain::DEX_DOMAIN`) and modules (`pool`,
 `migration`) are renamed when it returns to `sui/`.
 
-Presale activation (ADR 0117) types the generic `Publication`, `PackageVersion`
+Presale activation (ADR 0137) types the generic `Publication`, `PackageVersion`
 and `PackageAdmin` by `blast_presale_package::BLAST_PRESALE_PACKAGE`. The
 separate provenance module avoids cycles between the economic module and policy
 modules that must borrow PackageVersion.

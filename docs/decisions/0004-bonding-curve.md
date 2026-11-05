@@ -89,7 +89,7 @@ M'             = M + meme_eff
 Q'             = Q - quote_gross
 ```
 
-The burn is specified in [ADR 0003](0003-treasury-cap-lifetime-and-burn.md); it appears here because it
+The burn is specified in ADR 0003; it appears here because it
 changes the curve inputs. Applying the burn to `meme_after_fee` makes both percentage obligations
 well-defined without requiring their sum to stay below 10,000 basis points. A sell producing
 `meme_after_fee == 0`, `meme_eff == 0`, `quote_gross == 0`, or `quote_net == 0` is rejected with a named
@@ -140,7 +140,7 @@ user receives: `meme_net` on buys and `quote_net` on sells. Each enabled fee is 
 `crossed` becomes true when `Q >= T` after a buy. Crossing closes trading and moves the launch to
 `MigrationPending`; it never happens on a sell. The launch state at the moment of crossing — `M`, `Q`,
 and both decimals — is the sole input to the migration price
-([ADR 0005](0005-quote-asset-generalisation.md), [ADR 0010](0010-migration-and-venue-adapters.md)).
+(ADR 0005, ADR 0010).
 
 ### Intermediate width
 
@@ -165,7 +165,7 @@ use checked `u64` arithmetic. Helpers are named by rounding direction.
 
 At these parameters the terminal state is `M_T = 200_000_000_000_000_001` meme atomic and
 `Q_T = 3_000_000_000_000` quote atomic for the vectored buy sequence: its final buy is capped at `T`
-and refunds the excess Quote ([ADR 0039](0039-deterministic-quote-valuations.md)).
+and refunds the excess Quote (ADR 0039).
 
 ## Alternatives considered
 
@@ -192,7 +192,7 @@ the entire inventory.
 - Zero-output trades abort rather than silently succeeding.
 - The curve never strands value in a clamp.
 - The terminal state is fully determined by `M`, `Q`, and the two decimal values, which is what makes the
-  generic quote of [ADR 0005](0005-quote-asset-generalisation.md) possible.
+  generic quote of ADR 0005 possible.
 - Changing any proposed parameter changes every vector and requires regenerating
   [`../vectors/curve.json`](../vectors/curve.json).
 

@@ -15,19 +15,10 @@ publication and `make_immutable` transactions:
 
 - [OTC and vesting](../deployments/sui/mainnet/2026-09-24-otc-and-vesting.json).
 
-### Retired timelock
-
-The immutable `blast_fun_timelock` package stays published on mainnet, but its source
-left this repository on 2026-11-03 once no Blast package depended on it; Blast's
-delayed administration uses `blast_admin`'s delayed modules. Its records remain:
-[canonical](../deployments/sui/mainnet/2026-09-26-timelock-unbounded-delay.json) and
-[superseded](../deployments/sui/mainnet/2026-09-26-timelock.json) (ten-year maximum delay).
-Its source is at commit `96e9d25` and the archival tag below.
-
 ## Move dependencies
 
 Packages in this repository use local paths. External consumers can pin the
-history-preserving import commit, which contains all three packages and their
+history-preserving import commit, which contains both packages with their
 publication metadata:
 
 ```toml
@@ -45,15 +36,12 @@ that commit is preserved in this repository's imported history. The old reposito
 
 Later style changes moved source lines used by `#[error]` abort codes. Current
 source therefore must not be presented as byte-for-byte publication source.
-The original commits are retained: use `e1a7c62` for OTC and vesting, and
-`96e9d25` for timelock. Create a separate checkout at the relevant commit and
-run `sui client verify-source sui/otc`, `sui client verify-source sui/vesting`,
-or, for the retired timelock, `sui client verify-source sui/timelock` there with Sui CLI `1.77.2`.
+The original commit is retained: use `e1a7c62` for OTC and vesting. Create a
+separate checkout at that commit and run `sui client verify-source sui/otc` or
+`sui client verify-source sui/vesting` there with Sui CLI `1.77.2`.
 Historical records use the current repository URL for retrieval and retain the
 original repository name in `original_repository`. Commit IDs, source hashes,
-publication identities and working-tree qualifications are unchanged. The original
-September 26 timelock publication commit is also retained under the archival tag
-[`archive/utility-timelock-2026-09-26`](https://github.com/interest-protocol/blast-v2-contracts/tree/archive/utility-timelock-2026-09-26).
+publication identities and working-tree qualifications are unchanged.
 
 For an older checkout that still pins the removed Git remote, change its dependency
 URL to this repository while retaining the exact revision. To preserve a shared

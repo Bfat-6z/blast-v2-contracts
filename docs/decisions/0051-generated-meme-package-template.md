@@ -3,9 +3,7 @@
 - Status: accepted; publish-time immutability amended by [0088](0088-reusable-launch-accounting-and-atomic-migration.md);
   package renamed `launch_ticket_template` by [0108](0108-standalone-coin-template.md)
 - Date: 2026-08-29
-- Amends: [0001](0001-sui-package-and-module-layout.md),
-  [0002](0002-coin-creation-and-currency-authority.md),
-  [0048](0048-sui-package-workspace.md)
+- Amends: [0048](0048-sui-package-workspace.md)
 
 > ADR 0088 keeps the one-time-witness initializer and the ticket transfer to
 > the publisher, but generated packages stay upgradeable: the publisher keeps
