@@ -1108,9 +1108,15 @@ public struct Proposal<T: copy + drop + store> has copy, drop, store {
     ready_at_ms: u64,
 }
 
-/// A delay period and the time it elapses: the delay an admission or entry change waits,
-/// or a proposed next delay. Either is ready from `ready_at_ms`.
+/// A proposed next delay, ready from `ready_at_ms`; the delay stays representable at apply.
 public struct PendingDelay has copy, drop, store {
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A fixed deadline and the applied delay a change was scheduled under; a later delay change
+/// never moves it.
+public struct Deadline has copy, drop, store {
     delay_ms: u64,
     ready_at_ms: u64,
 }
@@ -1198,11 +1204,17 @@ public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64
 /// The Unix millisecond time from which the proposal can apply.
 public fun proposal_ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
 
-/// The delay waited, or the proposed next delay.
+/// The proposed next delay.
 public fun pending_delay_ms(self: &PendingDelay): u64
 
-/// The Unix millisecond time from which the change can apply.
+/// The Unix millisecond time from which the proposed delay can apply.
 public fun pending_delay_ready_at_ms(self: &PendingDelay): u64
+
+/// The applied delay the change waits, as its Scheduled event reported.
+public fun deadline_delay_ms(self: &Deadline): u64
+
+/// The Unix millisecond time from which the change can apply.
+public fun deadline_ready_at_ms(self: &Deadline): u64
 
 /// The ID of the object that stores this setting.
 public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID
@@ -1449,10 +1461,10 @@ public struct DelayedMap<K: copy + drop + store, E: copy + drop + store, V: copy
     pending_delay: Option<delayed::PendingDelay>,
 }
 
-/// A proposed entry value, or none to clear the entry, and the delay it waits.
+/// A proposed entry value, or none to clear the entry, and its fixed deadline.
 public struct EntryProposal<V: copy + drop + store> has copy, drop, store {
     value: Option<V>,
-    delay: delayed::PendingDelay,
+    deadline: delayed::Deadline,
 }
 
 /// What a map proposal does once applied.
@@ -1551,10 +1563,10 @@ public fun destroy<K: copy + drop + store, E: copy + drop + store, V: copy + dro
 /// The proposed value, or none when the change clears the entry.
 public fun entry_proposal_value<V: copy + drop + store>(self: &EntryProposal<V>): Option<V>
 
-/// The delay the change waits and when it becomes ready.
-public fun entry_proposal_delay<V: copy + drop + store>(
+/// The deadline the change waits.
+public fun entry_proposal_deadline<V: copy + drop + store>(
     self: &EntryProposal<V>,
-): delayed::PendingDelay
+): delayed::Deadline
 
 /// Whether `entry` has a pending change.
 public fun is_pending<K: copy + drop + store, E: copy + drop + store, V: copy + drop + store>(
@@ -1687,7 +1699,7 @@ public struct DelayedSet<K: copy + drop + store, E: copy + drop + store> has sto
     key: K,
     members: VecSet<E>,
     delay_ms: u64,
-    admissions: VecMap<E, delayed::PendingDelay>,
+    admissions: VecMap<E, delayed::Deadline>,
     pending_delay: Option<delayed::PendingDelay>,
 }
 
@@ -1822,11 +1834,11 @@ public fun owner<K: copy + drop + store, E: copy + drop + store>(self: &DelayedS
 /// The owner-defined key of this set.
 public fun key<K: copy + drop + store, E: copy + drop + store>(self: &DelayedSet<K, E>): K
 
-/// The delay `member`'s pending admission waits and when it becomes ready, if one is pending.
-public fun admission_delay<K: copy + drop + store, E: copy + drop + store>(
+/// The deadline of `member`'s pending admission, if one is pending.
+public fun admission_deadline<K: copy + drop + store, E: copy + drop + store>(
     self: &DelayedSet<K, E>,
     member: &E,
-): Option<delayed::PendingDelay>
+): Option<delayed::Deadline>
 
 /// The member a change admits, or none for a delay change.
 public fun member<E: copy + drop + store>(self: &SetChange<E>): Option<E>

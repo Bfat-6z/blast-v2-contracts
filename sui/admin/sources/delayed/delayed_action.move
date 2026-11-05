@@ -159,7 +159,7 @@ public fun is_delay_ready<K: copy + drop + store, A: copy + drop + store>(
     clock: &Clock,
 ): bool {
     self.pending_delay().is_some_and!(|delay| {
-        delayed::is_ready_at(delay.pending_delay_ready_at_ms(), delay.pending_delay_ms(), clock)
+        delayed::is_ready_at(delay.ready_at_ms(), delay.delay_ms(), clock)
     })
 }
 

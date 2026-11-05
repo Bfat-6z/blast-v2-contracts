@@ -39,9 +39,15 @@ public struct Proposal<T: copy + drop + store> has copy, drop, store {
     ready_at_ms: u64,
 }
 
-/// A delay period and the time it elapses: the delay an admission or entry change waits,
-/// or a proposed next delay. Either is ready from `ready_at_ms`.
+/// A proposed next delay, ready from `ready_at_ms`; the delay stays representable at apply.
 public struct PendingDelay has copy, drop, store {
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
+/// A fixed deadline and the applied delay a change was scheduled under; a later delay change
+/// never moves it.
+public struct Deadline has copy, drop, store {
     delay_ms: u64,
     ready_at_ms: u64,
 }
@@ -192,11 +198,17 @@ public fun proposal_ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64
     self.ready_at_ms
 }
 
-/// The delay waited, or the proposed next delay.
+/// The proposed next delay.
 public fun pending_delay_ms(self: &PendingDelay): u64 { self.delay_ms }
 
-/// The Unix millisecond time from which the change can apply.
+/// The Unix millisecond time from which the proposed delay can apply.
 public fun pending_delay_ready_at_ms(self: &PendingDelay): u64 { self.ready_at_ms }
+
+/// The applied delay the change waits, as its Scheduled event reported.
+public fun deadline_delay_ms(self: &Deadline): u64 { self.delay_ms }
+
+/// The Unix millisecond time from which the change can apply.
+public fun deadline_ready_at_ms(self: &Deadline): u64 { self.ready_at_ms }
 
 /// The ID of the object that stores this setting.
 public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID {
@@ -228,9 +240,14 @@ public(package) fun new_proposal<T: copy + drop + store>(
     Proposal { value, delay_ms, ready_at_ms }
 }
 
-/// A delay for another delayed module, built from an already checked deadline.
+/// A proposed next delay for another delayed module, built from an already checked deadline.
 public(package) fun new_pending_delay(delay_ms: u64, ready_at_ms: u64): PendingDelay {
     PendingDelay { delay_ms, ready_at_ms }
+}
+
+/// A deadline for another delayed module, already checked by `ready_at_ms_after`.
+public(package) fun new_deadline(delay_ms: u64, ready_at_ms: u64): Deadline {
+    Deadline { delay_ms, ready_at_ms }
 }
 
 /// Rejects a delay longer than `max_delay_ms`.
@@ -369,5 +386,7 @@ public use fun proposal_delay_ms as Proposal.delay_ms;
 public use fun proposal_ready_at_ms as Proposal.ready_at_ms;
 public use fun pending_delay_ms as PendingDelay.delay_ms;
 public use fun pending_delay_ready_at_ms as PendingDelay.ready_at_ms;
+public use fun deadline_delay_ms as Deadline.delay_ms;
+public use fun deadline_ready_at_ms as Deadline.ready_at_ms;
 
 use sui::clock::Clock;
