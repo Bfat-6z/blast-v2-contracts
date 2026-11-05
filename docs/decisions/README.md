@@ -438,6 +438,7 @@ test passes, and none is asserted as a cited fact in the records.
 | [0118](0118-limit-priced-vault-orders-and-a-widening-unwind-bound.md) | Limit-priced vault orders and a widening unwind bound | **proposed** |
 | [0119](0119-execution-priced-order-caps-and-minimum-lot-closes.md) | Execution-priced order caps and minimum-lot closes | **accepted** |
 | [0120](0120-priority-gas-for-emergency-reductions-and-unwind.md) | Priority gas for emergency reductions and unwind | **accepted** |
+| [0121](0121-reviewed-recovery-after-a-forced-venue-reduction.md) | Reviewed recovery after a forced venue reduction | **accepted** |
 | [0122](0122-bounded-profit-realization-before-redemption.md) | Bounded profit realization before redemption | **accepted** |
 | [0123](0123-successor-activated-boosts-upgrades.md) | Successor-activated Boosts upgrades | **accepted** |
 | [0124](0124-margin-recovery-and-initial-headroom.md) | Margin recovery and initial headroom | **accepted** |
@@ -445,7 +446,11 @@ test passes, and none is asserted as a cited fact in the records.
 | [0126](0126-capacity-aware-rebalance-progress.md) | Capacity-aware rebalance progress | **accepted** |
 | [0127](0127-emergency-rebalance-mark-divergence.md) | Emergency rebalance admission during mark divergence | **accepted** |
 | [0128](0128-reserve-aware-rebalance-increases.md) | Reserve-aware rebalance increases | **accepted** |
+| [0129](0129-reserve-consistent-emergency-reductions.md) | Reserve-consistent reductions and emergency exposure progress | **accepted** |
 | [0130](0130-protected-permissionless-shutdown.md) | Protected permissionless shutdown of a size-locked Boost | **accepted** |
+| [0131](0131-funding-consistent-rebalance-preview.md) | Funding-consistent rebalance preview | **accepted** |
+| [0132](0132-closed-market-funding-accounting.md) | Book funding settled inside a closed-market unwind | **accepted** |
+| [0133](0133-required-order-fill-proof.md) | Require consumption of every order fill receipt | **accepted** |
 | [0134](0134-delayed-administration-pause-and-table-acl.md) | Delayed administration, pause, and a Table-backed ACL | proposed; amended by 0137 |
 | [0137](0137-shared-launch-stack-core-vault-and-venues.md) | Shared launch stack: core, vault, and venues | proposed; amended 2026-11-05: seven packages, one `blast_migrators` venue package (Cetus and Bluefin) in place of `blast_venues`, the Aftermath DAO vendor as a plain venue, two-call migration, standalone vaults cut, one package witness and one package administration, no repair or policy narrowing, vault immutable after audit |
 
