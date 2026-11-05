@@ -21,7 +21,7 @@ public struct TradeFees has copy, drop, store {
 public struct LaunchConfig has key {
     id: UID,
     meme_decimals: VecSet<u8>,
-    quotes: Table<TypeName, bool>,
+    quotes: VecSet<TypeName>,
     trade_fees: Delayed<TradeFeesKey, TradeFees>,
     venues: DelayedSet<VenueKey, TypeName>,
     protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>,
@@ -170,10 +170,7 @@ public fun set_quote_allowed<Quote>(
 
     let quote = type_name::with_original_ids<Quote>();
 
-    if (allowed) self.quotes.add(quote, true)
-    else {
-        self.quotes.remove(quote);
-    };
+    if (allowed) self.quotes.insert(quote) else self.quotes.remove(&quote);
 
     events::quote_set<Quote>(allowed);
 }
@@ -385,10 +382,10 @@ public fun cancel_venue_delay(
 /// require unpausing; settling an opening round needs the trading bit clear.
 public fun unpause(
     self: &LaunchConfig,
-    runtime_config: &RuntimeConfig,
+    package_version: &mut PackageVersion<BLAST_FUN>,
     unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_FUN>>,
     package_admin: &PackageAdmin<BLAST_FUN>,
-    package_version: &mut PackageVersion<BLAST_FUN>,
+    runtime_config: &RuntimeConfig,
     bits: u8,
 ) {
     package_version.assert_current(constants::generation!());
@@ -410,7 +407,7 @@ public(package) fun snapshot_for_launch<Quote>(
     decimals: u8,
 ): (Bps, Bps) {
     assert!(
-        self.quotes.contains(type_name::with_original_ids<Quote>()),
+        self.quotes.contains(&type_name::with_original_ids<Quote>()),
         blast_fun::errors::quote_not_allowed!(),
     );
     assert!(
@@ -475,7 +472,7 @@ fun new(
 
     LaunchConfig {
         meme_decimals: vec_set::from_keys(vector[6, 9]),
-        quotes: table::new(ctx),
+        quotes: vec_set::empty(),
         trade_fees: delayed::new(TradeFeesKey(), &id, trade_fees, delay_ms),
         venues: delayed_set::new(VenueKey(), &id, delay_ms),
         protocol_allocation: delayed::new(ProtocolAllocationKey(), &id, protocol_allocation, delay_ms),
@@ -513,7 +510,7 @@ public fun set_venue_allowed_for_testing<Venue: drop>(
     };
     let mut clock = sui::clock::create_for_testing(ctx);
     self.schedule_venue<Venue>(package_version, admin, &clock);
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(initial_upgrade_delay_ms_for_testing());
     self.apply_venue<Venue>(package_version, &clock);
     clock.destroy_for_testing();
 }
@@ -538,7 +535,7 @@ public fun set_protocol_allocation_for_testing(
         delay_ms,
         &clock
     );
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(initial_upgrade_delay_ms_for_testing());
     self.apply_protocol_allocation(package_version, &clock);
     clock.destroy_for_testing();
 }
@@ -555,7 +552,7 @@ public fun set_creation_fee_for_testing(
     let mut clock = sui::clock::create_for_testing(ctx);
     let delay_ms = self.creation_fee.delay_ms();
     self.schedule_creation_fee(package_version, admin, creation_fee, delay_ms, &clock);
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(initial_upgrade_delay_ms_for_testing());
     self.apply_creation_fee(package_version, &clock);
     clock.destroy_for_testing();
 }
@@ -573,7 +570,7 @@ public fun set_trade_fees_for_testing(
     let mut clock = sui::clock::create_for_testing(ctx);
     let delay_ms = self.trade_fees.delay_ms();
     self.schedule_trade_fees(package_version, admin, quote_fee_bps, meme_fee_bps, delay_ms, &clock);
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(initial_upgrade_delay_ms_for_testing());
     self.apply_trade_fees(package_version, &clock);
     clock.destroy_for_testing();
 }
@@ -590,7 +587,7 @@ public fun new_zero_fees_for_testing(ctx: &mut TxContext): LaunchConfig {
         TradeFees { quote_fee_bps: bps::new(0), meme_fee_bps: bps::new(0) },
         allocation::protocol_allocation(bps::new(0), bps::new(0)),
         new_protocol_lp_fees(bps::new(0), bps::new(0)),
-        172_800_000,
+        initial_upgrade_delay_ms_for_testing(),
         ctx,
     )
 }
@@ -640,14 +637,15 @@ public fun set_protocol_lp_fees_for_testing(
     let mut clock = sui::clock::create_for_testing(ctx);
     let delay_ms = self.protocol_lp_fees.delay_ms();
     self.schedule_protocol_lp_fees(package_version, admin, meme_bps, quote_bps, delay_ms, &clock);
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(initial_upgrade_delay_ms_for_testing());
     self.apply_protocol_lp_fees(package_version, &clock);
     clock.destroy_for_testing();
 }
 
 // === Imports ===
 
-use sui::{clock::Clock, table::{Self, Table}, vec_set::{Self, VecSet}};
+#[test_only]
+use blast_admin::package_admin::initial_upgrade_delay_ms_for_testing;
 
 use blast_admin::{
     blast_acl::AdminWitness,
@@ -673,3 +671,5 @@ use blast_fun::{
 use blast_partners::{blast_partners::Partner, partner_list::{Self, PartnerList}};
 
 use std::type_name::{Self, TypeName};
+
+use sui::{clock::Clock, vec_set::{Self, VecSet}};

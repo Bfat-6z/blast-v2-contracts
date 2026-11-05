@@ -82,7 +82,11 @@ callers = [(path, name) for path in (ROOT / 'sui/launchpad/sources').rglob('*.mo
            if 'clear_pause_bits(' in body]
 assert [(path.stem, name) for path, name in callers] == [('launch_config', 'unpause')], callers
 signature, body = functions('launchpad', 'launch_config')['unpause']
-require(signature, '&AdminWitness<UnpauseAdmin<BLAST_FUN>>', '&PackageAdmin<BLAST_FUN>', '&mut PackageVersion<BLAST_FUN>')
+assert signature.split('(', 1)[1].replace(' ', '').replace('\n', '') == (
+    'self:&LaunchConfig,package_version:&mutPackageVersion<BLAST_FUN>,'
+    'unpause_admin:&AdminWitness<UnpauseAdmin<BLAST_FUN>>,package_admin:&PackageAdmin<BLAST_FUN>,'
+    'runtime_config:&RuntimeConfig,bits:u8,)'
+), signature
 assert body.startswith(f'package_version.assert_current{LAUNCHPAD_CURRENT}'), body
 assert body.index('self.is_guarded() && runtime_config.is_guarded()') < body.index('clear_pause_bits('), body
 require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')

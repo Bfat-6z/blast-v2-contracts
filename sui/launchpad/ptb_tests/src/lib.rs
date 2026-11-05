@@ -309,7 +309,7 @@ pub fn append_launchpad_unpause(
     let custody = b.obj(h.shared(custody, false))?;
     let version = b.obj(h.shared(version, true))?;
     let bits = b.pure(bits)?;
-    call(b, blast, "launch_config", "unpause", vec![], vec![config, runtime, witness, custody, version, bits]);
+    call(b, blast, "launch_config", "unpause", vec![], vec![config, version, witness, custody, runtime, bits]);
     Ok(())
 }
 
@@ -413,14 +413,14 @@ pub struct DelayedSet<E> {
 /// A `RuntimeConfig` in BCS field order: claim signers and protocol fee share.
 pub type RuntimeConfigContents = (ObjectID, DelayedSet<Vec<u8>>, Delayed<u64>);
 
-/// A `LaunchConfig` in BCS field order: meme decimals, the quote `Table` (id, size), trade fees
+/// A `LaunchConfig` in BCS field order: meme decimals, the admitted quote type names, trade fees
 /// (quote, meme), admitted venues, protocol allocation (meme, quote), Blast's LP-fee share of new
 /// vaults (meme, quote), creation fee, and the accepted partners' `PartnerList` (owner and its
 /// `Table` (id, size)).
 pub type LaunchConfigContents = (
     ObjectID,
     Vec<u8>,
-    (ObjectID, u64),
+    Vec<String>,
     Delayed<(u64, u64)>,
     DelayedSet<String>,
     Delayed<(u64, u64)>,

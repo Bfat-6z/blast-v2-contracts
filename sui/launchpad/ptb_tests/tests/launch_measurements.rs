@@ -578,13 +578,13 @@ impl World {
             let payee = call(builder, self.core, "payout", "recipient", vec![], vec![destination, outright]);
             let meme_bps = self.bps(builder, meme[i + 1])?;
             let quote_bps = self.bps(builder, quote[i + 1])?;
-            recipients.push(call(builder, self.blast, "allocation", "recipient", vec![], vec![
+            recipients.push(call(builder, self.blast, "allocation", "recipient_share", vec![], vec![
                 payee,
                 meme_bps,
                 quote_bps,
             ]));
         }
-        let recipients = builder.command(Command::MakeMoveVec(Some(self.allocation_type("Recipient")?), recipients));
+        let recipients = builder.command(Command::MakeMoveVec(Some(self.allocation_type("RecipientShare")?), recipients));
         let curve_meme_bps = self.bps(builder, CURVE_BPS)?;
         let lp_meme_bps = self.bps(builder, meme[0])?;
         let lp_quote_bps = self.bps(builder, quote[0])?;

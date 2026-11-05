@@ -169,16 +169,16 @@ blast_fun_migrators:package:fun assert_current(self: &PackageVersion)
 blast_fun_migrators:package:fun assert_next(self: &PackageVersion)
 blast_fun_migrators:package:fun destroy( self: Publication ): (Publisher, OperationalVersion<BLAST_FUN_MIGRATORS>)
 blast_fun_migrators:package:fun share_version( generation: OperationalVersion<BLAST_FUN_MIGRATORS>, ctx: &mut TxContext )
-bluefin:public:fun buyback_and_burn<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
-bluefin:public:fun collect_fees<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
-bluefin:public:fun migrate<Meme, Quote>( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, quote_currency: &Currency<Quote>, venue_config: &VenueConfig, bluefin_config: &mut GlobalConfig, registry: &mut VaultRegistry, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, creation_fee: Coin<SUI>, clock: &Clock, ctx: &mut TxContext, )
+bluefin:public:fun buyback_and_burn<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
+bluefin:public:fun collect_fees<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
+bluefin:public:fun migrate<Meme, Quote>( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, quote_currency: &Currency<Quote>, venue_config: &VenueConfig, bluefin_config: &mut GlobalConfig, registry: &mut VaultRegistry, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, creation_fee: Coin<SUI>, clock: &Clock, ctx: &mut TxContext, )
 bluefin:public:fun prepare<Meme, Quote>( migrators_version: &MigratorsVersion, venue_config: &mut VenueConfig, _: &TreasuryCap<Meme>, tick_spacing: u32, fee_rate: u64, ): VenueTicket<Meme, Quote>
-bluefin:public:fun settle_and_apply_fee_split<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
-cetus:public:fun buyback_and_burn<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, pool: &mut Pool<CoinA, CoinB>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
-cetus:public:fun collect_fees<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
-cetus:public:fun migrate<Meme, Quote, CoinA, CoinB>( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, venue_config: &VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, burn_manager: &mut BurnManager, registry: &mut VaultRegistry, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, clock: &Clock, ctx: &mut TxContext, )
+bluefin:public:fun settle_and_apply_fee_split<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
+cetus:public:fun buyback_and_burn<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, pool: &mut Pool<CoinA, CoinB>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
+cetus:public:fun collect_fees<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
+cetus:public:fun migrate<Meme, Quote, CoinA, CoinB>( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>, venue_config: &VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, burn_manager: &mut BurnManager, registry: &mut VaultRegistry, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun prepare<Meme, Quote>( migrators_version: &MigratorsVersion, venue_config: &mut VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, treasury_cap: &mut TreasuryCap<Meme>, tick_spacing: u32, ctx: &mut TxContext, ): VenueTicket<Meme, Quote>
-cetus:public:fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
+cetus:public:fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
 constants:package:fun auto_lp_margin(): u256
 constants:package:fun bluefin_max_fee_rate(): u64
 constants:package:fun bluefin_max_tick_spacing(): u32
@@ -225,7 +225,6 @@ bluefin: compound as Vault.compound
 bluefin: fixed_side as Pool.fixed_side
 bluefin: full_range_tick_range as GlobalConfig.full_range_tick_range
 bluefin: is_meme_seed_side as Pool.is_meme_seed_side
-bluefin: package_version::PackageVersion as VaultVersion
 bluefin: pool_name as Currency.pool_name
 bluefin: seed as Pool.seed
 bluefin: settle_fees as Vault.settle_fees
@@ -235,7 +234,6 @@ cetus: cast as UID.cast
 cetus: collect_position_fees as Vault.collect_position_fees
 cetus: compound as Vault.compound
 cetus: fixed_side as Pool.fixed_side
-cetus: package_version::PackageVersion as VaultVersion
 cetus: pool_creation_cap as VenueConfig.pool_creation_cap
 cetus: settle_fees as Vault.settle_fees
 cetus: swap as Pool.swap
@@ -246,16 +244,17 @@ venue_config: dynamic_field::borrow as UID.dynamic_field
 venue_config: dynamic_object_field::add as UID.add_dynamic_object_field
 venue_config: dynamic_object_field::borrow as UID.dynamic_object_field
 EOF
-# `MigratorsVersion` must name this package's generation, not the launchpad's, and `VaultVersion`
+# `MigratorsVersion` must name this package's generation, not the launchpad's, and `PackageVersion`
 # must be `blast_admin`'s generic package version, which each venue route types to the vault
-# package.
+# package and the launchpad.
 for module in bluefin cetus; do
     [[ "$(move_norm "$SOURCE_DIR/${module}.move" | rg -o 'use [^;]*\bMigratorsVersion\b[^;]*;' \
         | rg -c '^use blast_fun_migrators::\{')" == 1 ]] || \
         fail "${module}.move must import MigratorsVersion once, from this package's marker module"
-    [[ "$(move_norm "$SOURCE_DIR/${module}.move" | rg -o 'use [^;]*\bVaultVersion\b[^;]*;')" \
-        == 'use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion as VaultVersion};' ]] || \
-        fail "${module}.move must import VaultVersion once, as blast_admin's package version"
+    [[ "$(move_norm "$SOURCE_DIR/${module}.move" | rg -o 'use [^;]*\bPackageVersion\b[^;]*;' \
+        | rg -v '^use blast_fun_migrators::')" \
+        == 'use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};' ]] || \
+        fail "${module}.move must import PackageVersion once, as blast_admin's package version"
 done
 # Every source error is an explicitly coded constant, so the per-module code pins see them all.
 if rg -q '#\[error\]|\bconst E\w*\s*:\s*u(8|16|32|64|128|256)\b' "$SOURCE_DIR"; then
@@ -575,9 +574,9 @@ EOF
 for entry in prepare migrate collect_fees settle_and_apply_fee_split buyback_and_burn; do
     case "$entry" in
         prepare) expected="( migrators_version: &MigratorsVersion, venue_config: &mut VenueConfig," ;;
-        migrate) expected="( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>," ;;
-        collect_fees|settle_and_apply_fee_split) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>," ;;
-        buyback_and_burn) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>," ;;
+        migrate) expected="( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>," ;;
+        collect_fees|settle_and_apply_fee_split) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>," ;;
+        buyback_and_burn) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>," ;;
         *) fail "unhandled venue entry ${entry}" ;;
     esac
     [[ "$(awk -F'\t' -v name="$entry" '$1 == "FN" && $2 == name && $6 == 0 { print $9 }' \
@@ -732,9 +731,9 @@ EOF
 for entry in prepare migrate collect_fees settle_and_apply_fee_split buyback_and_burn; do
     case "$entry" in
         prepare) expected="( migrators_version: &MigratorsVersion, venue_config: &mut VenueConfig," ;;
-        migrate) expected="( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>," ;;
-        collect_fees|settle_and_apply_fee_split) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>," ;;
-        buyback_and_burn) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>," ;;
+        migrate) expected="( launch: &mut Launch<Meme, Quote>, migrators_version: &MigratorsVersion, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, currency: &mut Currency<Meme>," ;;
+        collect_fees|settle_and_apply_fee_split) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>," ;;
+        buyback_and_burn) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &MigratorsVersion, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>," ;;
         *) fail "unhandled venue entry ${entry}" ;;
     esac
     [[ "$(awk -F'\t' -v name="$entry" '$1 == "FN" && $2 == name && $6 == 0 { print $9 }' \

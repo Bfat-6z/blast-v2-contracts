@@ -64,14 +64,14 @@ public fun prepare<Meme, Quote>(
 public fun migrate<Meme, Quote>(
     launch: &mut Launch<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    package_version: &blast_admin::package_version::PackageVersion<BLAST_FUN>,
+    package_version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<Meme>,
     quote_currency: &Currency<Quote>,
     venue_config: &VenueConfig,
     bluefin_config: &mut GlobalConfig,
     registry: &mut VaultRegistry,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     creation_fee: Coin<SUI>,
     clock: &Clock,
@@ -133,7 +133,7 @@ public fun migrate<Meme, Quote>(
 public fun collect_fees<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
@@ -150,7 +150,7 @@ public fun collect_fees<Meme, Quote>(
 public fun settle_and_apply_fee_split<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
@@ -173,7 +173,7 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
 public fun buyback_and_burn<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     migrators_version: &MigratorsVersion,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     admin_witness: &AdminWitness<BuybackAdmin>,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
@@ -287,7 +287,7 @@ fun is_meme_seed_side<Meme, Quote>(
 /// Collects the position's fees, splits them through the vault, and adds the auto-LP share back.
 fun settle_fees<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
     bluefin_config: &GlobalConfig,
@@ -303,7 +303,7 @@ fun settle_fees<Meme, Quote>(
 /// Collects the attached position's fees from `pool`, which must be the position's own pool.
 fun collect_position_fees<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
     clock: &Clock,
@@ -321,7 +321,7 @@ fun collect_position_fees<Meme, Quote>(
 /// keeps the rest for the next call. `collect_position_fees` already matched the pool.
 fun compound<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     bluefin_config: &GlobalConfig,
     pool: &mut Pool<Meme, Quote>,
     clock: &Clock,
@@ -379,7 +379,7 @@ const EInvalidTier: vector<u8> = b"Bluefin tier needs a tick spacing in 1..=400 
 
 // === Imports ===
 
-use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion as VaultVersion};
+use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};
 
 use blast_core::{
     blast_domain::BuybackAdmin,

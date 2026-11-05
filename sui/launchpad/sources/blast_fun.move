@@ -58,8 +58,8 @@ public fun version_for_testing(ctx: &mut TxContext): PackageVersion<BLAST_FUN> {
 /// Package administration around a test Publisher and upgrade cap, with the 48-hour notice.
 public fun package_admin_for_testing(
     ctx: &mut TxContext,
-): blast_admin::package_admin::PackageAdmin<BLAST_FUN> {
-    blast_admin::package_admin::new_for_testing(
+): PackageAdmin<BLAST_FUN> {
+    package_admin::new_for_testing(
         sui::package::test_claim(BLAST_FUN(), ctx),
         sui::package::test_publish(@blast_fun.to_id(), ctx),
         ctx,
@@ -74,14 +74,15 @@ public fun clear_pause_bits_for_testing(
     ctx: &mut TxContext,
 ) {
     let package_admin = package_admin_for_testing(ctx);
-    let unpause_admin = blast_admin::blast_acl::witness_for_testing<
-        blast_admin::package_admin::UnpauseAdmin<BLAST_FUN>,
-    >();
+    let unpause_admin = blast_admin::blast_acl::witness_for_testing<UnpauseAdmin<BLAST_FUN>>();
     package_admin.clear_pause_bits(&unpause_admin, PackageWitness(), package_version, bits);
     std::unit_test::destroy(package_admin);
 }
 
 // === Imports ===
+
+#[test_only]
+use blast_admin::package_admin::{Self, PackageAdmin, UnpauseAdmin};
 
 use blast_admin::package_version::{Self, PackageVersion};
 

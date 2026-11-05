@@ -1681,8 +1681,8 @@ impl World {
         let outright = call(builder, sui_types::MOVE_STDLIB_PACKAGE_ID, "option", "none", vec![vesting_terms], vec![]);
         let payee = call(builder, self.core, "payout", "recipient", vec![], vec![destination, outright]);
         let share = self.bps(builder, 500)?;
-        let recipient = call(builder, self.blast, "allocation", "recipient", vec![], vec![payee, share, share]);
-        let recipient_type = parse_sui_type_tag(&format!("{}::allocation::Recipient", self.blast))?;
+        let recipient = call(builder, self.blast, "allocation", "recipient_share", vec![], vec![payee, share, share]);
+        let recipient_type = parse_sui_type_tag(&format!("{}::allocation::RecipientShare", self.blast))?;
         let recipients = builder.command(Command::make_move_vec(Some(recipient_type), vec![recipient]));
         let curve_meme = self.bps(builder, 7_000)?;
         let lp_meme = self.bps(builder, 2_000)?;

@@ -50,7 +50,7 @@ fun address_ticket_mints_supply_and_fixes_it_at_intake() {
             false,
             0,
         );
-        let created = collect_one<events::LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
+        let created = collect_one<LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
 
         assert_eq!(
             bcs::to_bytes(&created),
@@ -112,7 +112,7 @@ fun account_ticket_is_composable_and_records_burn_only_selection() {
             SELL_BURN_BPS,
         );
         let created_ticket_id = object::id(&ticket);
-        let created = collect_one<events::LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
+        let created = collect_one<LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
         let metadata_cap_id = ticket.metadata_cap_id_for_testing();
 
         assert_eq!(
@@ -174,7 +174,7 @@ fun ticket_accepts_fifty_percent_sell_burn() {
             false,
             5_000,
         );
-        let created = collect_one<events::LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
+        let created = collect_one<LaunchTicketCreated<LAUNCH_TICKET_TESTS>>();
 
         assert_eq!(
             bcs::to_bytes(&created),
@@ -440,7 +440,7 @@ fun end(self: TicketFixture) {
 
 use blast_fun::{
     creator_authority::{Self, CreatorRecipient},
-    events,
+    events::LaunchTicketCreated,
     launch_ticket::{Self, LaunchTicket},
 };
 

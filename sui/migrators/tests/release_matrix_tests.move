@@ -14,7 +14,7 @@ public struct MatrixFixture {
     version: PackageVersion<BLAST_FUN>,
     config: LaunchConfig,
     registry: VaultRegistry,
-    vault_version: VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: PackageVersion<BLAST_VAULT_PACKAGE>,
     clock: Clock,
 }
 
@@ -108,7 +108,7 @@ const ADMIN: address = @0xAD;
 use blast_admin::{
     blast_acl,
     delayed_set::SetApplied,
-    package_version::{PackageVersion, PackageVersion as VaultVersion}
+    package_version::PackageVersion
 };
 
 use blast_core::blast_domain::AdapterAdmin as VaultAdapterAdmin;

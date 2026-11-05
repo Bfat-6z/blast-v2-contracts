@@ -201,7 +201,7 @@ fun allocation_sums_precede_an_invalid_opening_round() {
         bps::new(2_000),
         bps::new(10_000),
         vector[
-            allocation::recipient(
+            allocation::recipient_share(
                 blast_core::payout::recipient(CREATOR, option::none()),
                 bps::new(1),
                 bps::new(0),

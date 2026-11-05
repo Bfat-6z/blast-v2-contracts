@@ -3,7 +3,7 @@
 
 // Package error macros preserve the configuration's abort location.
 #[allow(lint(abort_without_constant))]
-/// Settings every curve trade, creator claim, and protocol fee claim reads live.
+/// Settings every curve trade and creator claim reads live.
 module blast_fun::runtime_config;
 
 // === Public Types ===
@@ -230,7 +230,7 @@ public fun set_protocol_fee_share_for_testing(
         delay_ms,
         &clock
     );
-    clock.set_for_testing(172_800_000);
+    clock.set_for_testing(initial_upgrade_delay_ms_for_testing());
     self.apply_protocol_fee_share(package_version, &clock);
     clock.destroy_for_testing();
 }
@@ -266,18 +266,26 @@ public fun new_zero_fee_share_with_signer_for_testing(
         creator_claim_signers.schedule_add(signer_public_key, &clock);
         creator_claim_signers.apply_add(signer_public_key, &clock);
     };
-    creator_claim_signers.schedule_delay(172_800_000, &clock);
+    creator_claim_signers.schedule_delay(initial_upgrade_delay_ms_for_testing(), &clock);
     creator_claim_signers.apply_delay(&clock);
     clock.destroy_for_testing();
 
     RuntimeConfig {
         creator_claim_signers,
-        protocol_fee_share_bps: delayed::new(ProtocolFeeShareKey(), &id, bps::new(0), 172_800_000),
+        protocol_fee_share_bps: delayed::new(
+            ProtocolFeeShareKey(),
+            &id,
+            bps::new(0),
+            initial_upgrade_delay_ms_for_testing(),
+        ),
         id,
     }
 }
 
 // === Imports ===
+
+#[test_only]
+use blast_admin::package_admin::initial_upgrade_delay_ms_for_testing;
 
 use blast_admin::{
     blast_acl::AdminWitness,

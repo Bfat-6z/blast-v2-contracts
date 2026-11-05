@@ -69,14 +69,14 @@ public struct Q16() has drop;
 /// Package-initialization facts only; carries no ACL or admin state.
 public struct InitFixture {
     scenario: Scenario,
-    config: launch_config::LaunchConfig,
+    config: LaunchConfig,
 }
 
 /// Cold-policy administration under each setter's own role.
 public struct ConfigFixture {
     scenario: Scenario,
     package_version: PackageVersion<BLAST_FUN>,
-    config: launch_config::LaunchConfig,
+    config: LaunchConfig,
     clock: Clock,
 }
 
@@ -383,10 +383,10 @@ fun admin_removes_and_readds_decimal_precision_for_future_tickets() {
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, false);
 
         assert_eq!(f.config.allowed_meme_decimals_count_for_testing(), 1);
-        assert_eq!(bcs::to_bytes(&collect_one<events::MemeDecimalsSet>()), vector[6, 0]);
+        assert_eq!(bcs::to_bytes(&collect_one<MemeDecimalsSet>()), vector[6, 0]);
 
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, true);
-        let set = collect<events::MemeDecimalsSet>();
+        let set = collect<MemeDecimalsSet>();
 
         assert_eq!(f.config.allowed_meme_decimals_count_for_testing(), 2);
         assert_eq!(set.length(), 2);
@@ -510,7 +510,7 @@ fun admin_allows_quote_for_launch_snapshot() {
         let (_, _) = f.config.snapshot_for_launch<TEST_QUOTE>(test_venue(), MEME_DECIMALS);
 
         assert_eq!(f.config.allowed_quote_count_for_testing(), 1);
-        assert_eq!(bcs::to_bytes(&collect_one<events::QuoteSet<TEST_QUOTE>>()), quote_set_bytes(true));
+        assert_eq!(bcs::to_bytes(&collect_one<QuoteSet<TEST_QUOTE>>()), quote_set_bytes(true));
     });
 
     fixture.end();
@@ -526,7 +526,7 @@ fun disallowing_a_quote_removes_it_from_future_launches() {
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, true);
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, false);
 
-        let set = collect<events::QuoteSet<TEST_QUOTE>>();
+        let set = collect<QuoteSet<TEST_QUOTE>>();
 
         assert_eq!(f.config.allowed_quote_count_for_testing(), 0);
         assert_eq!(set.length(), 2);
@@ -590,8 +590,8 @@ fun many_quotes_can_be_admitted() {
 #[test]
 #[
     expected_failure(
-        abort_code = sui::dynamic_field::EFieldAlreadyExists,
-        location = sui::dynamic_field,
+        abort_code = sui::vec_set::EKeyAlreadyExists,
+        location = sui::vec_set,
     ),
 ]
 fun allowing_an_admitted_quote_aborts() {
@@ -610,8 +610,8 @@ fun allowing_an_admitted_quote_aborts() {
 #[test]
 #[
     expected_failure(
-        abort_code = sui::dynamic_field::EFieldDoesNotExist,
-        location = sui::dynamic_field,
+        abort_code = sui::vec_set::EKeyDoesNotExist,
+        location = sui::vec_set,
     ),
 ]
 fun disallowing_an_unlisted_quote_aborts() {
@@ -975,7 +975,7 @@ fun allowing_a_venue_rejects_a_standard_library_type() {
 
         f
             .config
-            .set_venue_allowed_for_testing<std::string::String>(
+            .set_venue_allowed_for_testing<String>(
                 &f.package_version,
                 &admin_witness,
                 true,
@@ -1000,7 +1000,7 @@ fun allowing_a_venue_rejects_a_sui_framework_type() {
 
         f
             .config
-            .set_venue_allowed_for_testing<sui::object::ID>(
+            .set_venue_allowed_for_testing<ID>(
                 &f.package_version,
                 &admin_witness,
                 true,
@@ -1025,7 +1025,7 @@ fun disallowing_a_framework_type_reports_it_as_unlisted() {
 
         f
             .config
-            .set_venue_allowed_for_testing<sui::object::ID>(
+            .set_venue_allowed_for_testing<ID>(
                 &f.package_version,
                 &admin_witness,
                 false,
@@ -1368,7 +1368,7 @@ fun start_init(): InitFixture {
     assert_eq!(event::num_events(), 5);
 
     scenario.next_tx(PUBLISHER);
-    let config = scenario.take_shared<launch_config::LaunchConfig>();
+    let config = scenario.take_shared<LaunchConfig>();
 
     InitFixture { scenario, config }
 }
@@ -1394,7 +1394,7 @@ fun start(): ConfigFixture {
     clock.set_for_testing(NOW_AT_MS);
 
     scenario.next_tx(PROTOCOL_ADMIN);
-    let config = scenario.take_shared<launch_config::LaunchConfig>();
+    let config = scenario.take_shared<LaunchConfig>();
 
     ConfigFixture { scenario, package_version, config, clock }
 }
@@ -1528,7 +1528,7 @@ use blast_core::{bps, blast_domain::{AdapterAdmin, CancelAdmin, FeeAdmin, Listin
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},
     constants,
-    events,
+    events::{MemeDecimalsSet, QuoteSet},
     launch_config::{
         Self,
         CreationFeeKey,
@@ -1548,7 +1548,7 @@ use blast_partners::{
     partner_list::{PartnerAdded, PartnerRemoved}
 };
 
-use std::{bcs, type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
+use std::{bcs, string::String, type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 
 use sui::{clock::{Self, Clock}, event, test_scenario::{Self, Scenario}};
 

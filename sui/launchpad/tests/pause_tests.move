@@ -179,10 +179,10 @@ fun with_zero_upgrade_notice_proposal(self: ReleaseFixture): ReleaseFixture {
 
 fun unpause(self: &mut ReleaseFixture, bits: u8) {
     self.launch_config.unpause(
-        &self.runtime_config,
+        &mut self.version,
         &blast_acl::witness_for_testing<UnpauseAdmin<BLAST_FUN>>(),
         &self.package_admin,
-        &mut self.version,
+        &self.runtime_config,
         bits,
     );
 }

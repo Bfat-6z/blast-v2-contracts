@@ -355,7 +355,7 @@ public fun mock_adapter(
     config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
     registry: &mut VaultRegistry,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -372,7 +372,7 @@ fun mock_adapter_with(
     config: &LaunchConfig,
     currency: &mut Currency<ATOMIC_MIGRATION_TESTS>,
     registry: &mut VaultRegistry,
-    vault_version: &VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     liquidity: u128,
     clock: &Clock,
@@ -545,7 +545,7 @@ fun vault_created_bytes(
     bytes.append(bcs::to_bytes(&position_id));
     bytes.append(bcs::to_bytes(&1u128));
     bytes.append(bcs::to_bytes(&launch_id));
-    bytes.append(bcs::to_bytes(&type_name::with_original_ids<blast_fun::blast_fun::PackageWitness>()));
+    bytes.append(bcs::to_bytes(&type_name::with_original_ids<PackageWitness>()));
     bytes.append(bcs::to_bytes(&owner_split()));
     bytes.append(bcs::to_bytes(&bps::new(protocol_bps)));
     bytes.append(bcs::to_bytes(&bps::new(protocol_bps)));
@@ -577,7 +577,7 @@ const EUnexpectedSuccess: vector<u8> = b"The guarded operation unexpectedly retu
 
 // === Imports ===
 
-use blast_admin::{blast_acl, package_version::{PackageVersion, PackageVersion as VaultVersion}};
+use blast_admin::{blast_acl, package_version::PackageVersion};
 
 use blast_core::{
     blast_domain::BuybackAdmin,
@@ -589,7 +589,7 @@ use blast_core::{
 };
 
 use blast_fun::{
-    blast_fun::BLAST_FUN,
+    blast_fun::{BLAST_FUN, PackageWitness},
     launch::{Self, Launch},
     launch_config::LaunchConfig
 };

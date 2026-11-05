@@ -637,4 +637,3 @@ use fun config_schedule_creator_claim_signer as ConfigFixture.schedule_creator_c
 use fun config_schedule_creator_claim_signer_delay as ConfigFixture.schedule_creator_claim_signer_delay;
 
 use fun config_set_protocol_fee_share as ConfigFixture.set_protocol_fee_share_for_testing;
-

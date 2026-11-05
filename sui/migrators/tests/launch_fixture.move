@@ -19,7 +19,7 @@ public struct LaunchFixture {
     runtime: RuntimeConfig,
     launch_registry: LaunchRegistry,
     registry: VaultRegistry,
-    vault_version: VaultVersion<BLAST_VAULT_PACKAGE>,
+    vault_version: PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: Treasury,
     partner: Partner,
     clock: Clock,
@@ -42,7 +42,7 @@ public fun start<Quote, Venue: drop>(): LaunchFixture {
         migrators_version: migrators_version::new_for_testing(ctx),
         runtime: runtime_config::new_zero_fee_share_for_testing(ctx),
         launch_registry: launch::registry_for_testing(ctx),
-        registry: blast_vault_package::registry_for_testing<Venue, blast_fun::blast_fun::PackageWitness>(ctx),
+        registry: blast_vault_package::registry_for_testing<Venue, PackageWitness>(ctx),
         vault_version: blast_vault_package::version_for_testing(ctx),
         treasury: blast_treasury::new_for_testing(TREASURY, ctx),
         partner: blast_partners::new_for_testing(PARTNER_RECIPIENT, PARTNER_SHARE_BPS, ctx),
@@ -225,7 +225,7 @@ public fun migration_inputs(
     &PackageVersion<BLAST_FUN>,
     &LaunchConfig,
     &mut VaultRegistry,
-    &VaultVersion<BLAST_VAULT_PACKAGE>,
+    &PackageVersion<BLAST_VAULT_PACKAGE>,
     &Treasury,
     &Clock,
     &mut TxContext,
@@ -245,7 +245,7 @@ public fun migration_inputs(
 /// transaction context.
 public fun collection_inputs(
     self: &mut LaunchFixture,
-): (&VaultVersion<BLAST_VAULT_PACKAGE>, &Treasury, &mut TxContext) {
+): (&PackageVersion<BLAST_VAULT_PACKAGE>, &Treasury, &mut TxContext) {
     (&self.vault_version, &self.treasury, self.scenario.ctx())
 }
 
@@ -253,7 +253,7 @@ public fun collection_inputs(
 /// treasury, the partner, and the transaction context.
 public fun partner_payment_inputs(
     self: &mut LaunchFixture,
-): (&VaultVersion<BLAST_VAULT_PACKAGE>, &Treasury, &Partner, &mut TxContext) {
+): (&PackageVersion<BLAST_VAULT_PACKAGE>, &Treasury, &Partner, &mut TxContext) {
     (&self.vault_version, &self.treasury, &self.partner, self.scenario.ctx())
 }
 
@@ -276,7 +276,7 @@ public fun migrators_version_mut(self: &mut LaunchFixture): &mut MigratorsVersio
 
 public fun config(self: &LaunchFixture): &LaunchConfig { &self.config }
 
-public fun vault_version(self: &LaunchFixture): &VaultVersion<BLAST_VAULT_PACKAGE> {
+public fun vault_version(self: &LaunchFixture): &PackageVersion<BLAST_VAULT_PACKAGE> {
     &self.vault_version
 }
 
@@ -354,7 +354,7 @@ const TARGET: u64 = 25_000_000;
 
 // === Imports ===
 
-use blast_admin::{blast_acl, package_version::{PackageVersion, PackageVersion as VaultVersion}};
+use blast_admin::{blast_acl, package_version::PackageVersion};
 
 use blast_core::{
     blast_domain::{AdapterAdmin, FeeAdmin, ListingAdmin},
@@ -366,7 +366,7 @@ use blast_core::{
 
 use blast_fun::{
     allocation,
-    blast_fun::{Self as package_version, BLAST_FUN},
+    blast_fun::{Self as package_version, BLAST_FUN, PackageWitness},
     creator_authority::{Self, CurveFeeCap},
     launch::{Self, Launch, LaunchRegistry},
     launch_config::{Self, LaunchConfig},

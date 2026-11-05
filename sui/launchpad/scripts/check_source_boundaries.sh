@@ -191,12 +191,13 @@ done
 duplicate_import_roots="$({
   for file in "${move_files[@]}"; do
     awk '
-      /^use fun / { next }
-      /^use / {
+      /^use fun / { previous = $0; next }
+      /^use / && previous != "#[test_only]" {
         root = $2;
         sub(/::.*/, "", root);
         count[root] += 1;
       }
+      { previous = $0 }
       END {
         for (root in count) {
           if (count[root] > 1) print FILENAME ":" root;
@@ -208,7 +209,7 @@ duplicate_import_roots="$({
 
 if [[ -n "$duplicate_import_roots" ]]; then
   printf '%s\n' "$duplicate_import_roots"
-  echo 'Imports from one root address must use one nested declaration per module.' >&2
+  echo 'Imports from one root address must use one nested declaration per module; a #[test_only] import stands alone.' >&2
   failures=$((failures + 1))
 fi
 
@@ -423,7 +424,7 @@ if [[ "$(for file in "${source_files[@]}"; do
         '$1 == "FN" && $6 == 0 && index($10, "clear_pause_bits(") > 0 { print module ":" $2 }'
     done | LC_ALL=C sort | tr '\n' ' ')" != 'launch_config:unpause ' ]] \
   || [[ "$(move_production_function_contract unpause <<<"$(move_facts sources/launch_config.move)")" \
-    != 'public:0:0:fun unpause( self: &LaunchConfig, runtime_config: &RuntimeConfig, unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_FUN>>, package_admin: &PackageAdmin<BLAST_FUN>, package_version: &mut PackageVersion<BLAST_FUN>, bits: u8, )' ]] \
+    != 'public:0:0:fun unpause( self: &LaunchConfig, package_version: &mut PackageVersion<BLAST_FUN>, unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_FUN>>, package_admin: &PackageAdmin<BLAST_FUN>, runtime_config: &RuntimeConfig, bits: u8, )' ]] \
   || [[ "$(move_production_body unpause <<<"$(move_facts sources/launch_config.move)")" \
     != 'package_version.assert_current(constants::generation!()); assert!( self.is_guarded() && runtime_config.is_guarded(), blast_fun::errors::unguarded_notice!(), ); package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);' ]] \
   || rg -n '\bpackage_admin::pause\(|\bset_pause_bits\(' sources --glob '*.move'; then
@@ -711,7 +712,7 @@ launch_config_production="$(sed '/^\/\/ === Test-Only Functions ===/,$d' sources
 if [[ ! -f sources/launch_config.move ]] \
   || [[ "$(move_production_function_contract schedule_protocol_allocation <<<"$launch_config_facts")" != 'public:0:0:fun schedule_protocol_allocation( self: &mut LaunchConfig, package_version: &PackageVersion<BLAST_FUN>, _: &AdminWitness<TreasuryAdmin>,'* ]] \
   || [[ "$(move_production_type LaunchConfig <<<"$launch_config_facts")" \
-    != 'struct LaunchConfig has key { id: UID, meme_decimals: VecSet<u8>, quotes: Table<TypeName, bool>, trade_fees: Delayed<TradeFeesKey, TradeFees>, venues: DelayedSet<VenueKey, TypeName>, protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>, protocol_lp_fees: Delayed<ProtocolLpFeesKey, ProtocolLpFees>, creation_fee: Delayed<CreationFeeKey, u64>, partners: PartnerList, }' ]] \
+    != 'struct LaunchConfig has key { id: UID, meme_decimals: VecSet<u8>, quotes: VecSet<TypeName>, trade_fees: Delayed<TradeFeesKey, TradeFees>, venues: DelayedSet<VenueKey, TypeName>, protocol_allocation: Delayed<ProtocolAllocationKey, ProtocolAllocation>, protocol_lp_fees: Delayed<ProtocolLpFeesKey, ProtocolLpFees>, creation_fee: Delayed<CreationFeeKey, u64>, partners: PartnerList, }' ]] \
   || [[ "$(move_production_type ProtocolLpFees <<<"$launch_config_facts")" \
     != 'struct ProtocolLpFees has copy, drop, store { meme_bps: Bps, quote_bps: Bps, }' ]] \
   || [[ "$(move_production_function_contract new_protocol_lp_fees <<<"$launch_config_facts")" \
@@ -788,8 +789,8 @@ if [[ "$(move_production_body max_recipients <<<"$constants_facts")" != '16' ]] 
     <<<"$(move_production_body schedule_venue <<<"$launch_config_facts")" \
   || rg -q '\b(MigrationWitness|migration_witness(es)?|MigrationWitnessKey)\b' <<<"$launch_config_source" \
   || ! rg -Fq 'origin != @0x1 && origin != @0x2' sources/launch_config.move \
-  || ! rg -Fq 'self.quotes.contains(type_name::with_original_ids<Quote>())' sources/launch_config.move \
-  || ! rg -Fq 'quotes: table::new(ctx)' sources/launch_config.move \
+  || ! rg -Fq 'self.quotes.contains(&type_name::with_original_ids<Quote>())' sources/launch_config.move \
+  || ! rg -Fq 'quotes: vec_set::empty()' sources/launch_config.move \
   || ! rg -Fq 'assert!(virtual_quote > 0, blast_fun::errors::invalid_virtual_quote!());' sources/launch.move \
   || rg -n '\bvirtual_quote' sources/launch_config.move \
   || ! rg -Fq 'self.meme_decimals.contains(&decimals)' sources/launch_config.move \
@@ -899,15 +900,15 @@ launch_source="$(move_normalized_source <<<"$launch_facts")"
 # apportionment: Blast has an explicit route, each asset sums to 10,000, and Blast's part is the
 # one rounded up. The apportionment itself is pinned by blast_core's gate.
 if [[ ! -f sources/allocation.move ]] \
-  || [[ "$(move_production_type Recipient <<<"$allocation_facts")" != 'struct Recipient has copy, drop, store { payee: payout::Recipient, meme_bps: Bps, quote_bps: Bps, }' ]] \
+  || [[ "$(move_production_type RecipientShare <<<"$allocation_facts")" != 'struct RecipientShare has copy, drop, store { recipient: Recipient, meme_bps: Bps, quote_bps: Bps, }' ]] \
   || [[ "$(move_production_type ProtocolAllocation <<<"$allocation_facts")" != 'struct ProtocolAllocation has copy, drop, store { meme_bps: Bps, quote_bps: Bps, }' ]] \
-  || [[ "$(move_production_type AllocationPlan <<<"$allocation_facts")" != 'struct AllocationPlan has copy, drop, store { curve_meme_bps: Bps, lp_meme_bps: Bps, lp_quote_bps: Bps, protocol_meme_bps: Bps, protocol_quote_bps: Bps, recipients: vector<Recipient>, }' ]] \
+  || [[ "$(move_production_type AllocationPlan <<<"$allocation_facts")" != 'struct AllocationPlan has copy, drop, store { curve_meme_bps: Bps, lp_meme_bps: Bps, lp_quote_bps: Bps, protocol_meme_bps: Bps, protocol_quote_bps: Bps, recipients: vector<RecipientShare>, }' ]] \
   || [[ "$(move_production_body plan <<<"$allocation_facts")" != 'assert!( curve_meme_bps.value() > 0 && lp_meme_bps.value() > 0 && lp_quote_bps.value() > 0, blast_fun::errors::invalid_shares!(), ); AllocationPlan { curve_meme_bps, lp_meme_bps, lp_quote_bps, protocol_meme_bps: bps::new(0), protocol_quote_bps: bps::new(0), recipients, }' ]] \
   || ! rg -Fq 'self.protocol_meme_bps = protocol.meme_bps; self.protocol_quote_bps = protocol.quote_bps;' <<<"$allocation_source" \
   || [[ "$(move_production_body apportion_meme <<<"$allocation_facts")" \
-    != 'let mut bps = vector[self.curve_meme_bps, self.lp_meme_bps, self.protocol_meme_bps]; bps.append(self.recipients.map_ref!(|recipient| recipient.meme_bps)); let amounts = bps::apportion(bps, supply, option::some(2)); let recipients = vector::tabulate!(amounts.length() - 3, |i| amounts[i + 3]); (amounts[0], amounts[1], amounts[2], recipients)' ]] \
+    != 'let mut bps = vector[self.curve_meme_bps, self.lp_meme_bps, self.protocol_meme_bps]; bps.append(self.recipients.map_ref!(|share| share.meme_bps)); let amounts = bps::apportion(bps, supply, option::some(2)); let recipients = vector::tabulate!(amounts.length() - 3, |i| amounts[i + 3]); (amounts[0], amounts[1], amounts[2], recipients)' ]] \
   || [[ "$(move_production_body apportion_quote <<<"$allocation_facts")" \
-    != 'let mut bps = vector[self.lp_quote_bps, self.protocol_quote_bps]; bps.append(self.recipients.map_ref!(|recipient| recipient.quote_bps)); let amounts = bps::apportion(bps, reserve, option::some(1)); let recipients = vector::tabulate!(amounts.length() - 2, |i| amounts[i + 2]); (amounts[0], amounts[1], recipients)' ]] \
+    != 'let mut bps = vector[self.lp_quote_bps, self.protocol_quote_bps]; bps.append(self.recipients.map_ref!(|share| share.quote_bps)); let amounts = bps::apportion(bps, reserve, option::some(1)); let recipients = vector::tabulate!(amounts.length() - 2, |i| amounts[i + 2]); (amounts[0], amounts[1], recipients)' ]] \
   || [[ "$(count_occurrences 'bps::apportion\(' <<<"$allocation_source")" != 2 ]] \
   || [[ "$(count_occurrences '\) == blast_core::constants::basis_points_denominator!\(\)' <<<"$allocation_source")" != 2 ]] \
   || rg -q '\b(UID|Balance|Coin|TxContext|TreasuryCap|transfer::|object::|dynamic_field|events::)\b' <<<"$allocation_source"; then

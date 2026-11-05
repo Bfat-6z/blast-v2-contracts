@@ -88,7 +88,7 @@ constructors in the same PTB:
 
 - `blast_core::bps::Bps`: a rate from 0 to 10,000 basis points, built by `blast_core::bps::new`
   (aborts above 10,000).
-- `allocation::Recipient` (`allocation::recipient`, wrapping a `blast_core::payout::Recipient`
+- `allocation::RecipientShare` (`allocation::recipient_share`, wrapping a `blast_core::payout::Recipient`
   from `blast_core::payout::recipient`, paid outright or under `blast_core::payout::VestingTerms`)
   and `allocation::AllocationPlan` (`allocation::plan`): the migration split of the supply and the
   final Quote.
@@ -244,9 +244,9 @@ initializer, and the launch are values returned by earlier commands of the same 
 5. Build the allocation plan: one `blast_core::bps::new` per share; per project recipient, one
    `blast_core::payout::recipient` (a non-zero address and `Option<VestingTerms>`: `None` pays
    outright, `Some` from `blast_core::payout::vesting_terms` locks the allocation in a linear
-   schedule starting at migration) and one `allocation::recipient` (that payee, Meme share, Quote
-   share); a `MakeMoveVec` of type
-   `allocation::Recipient` (may be empty); then `allocation::plan` with the curve Meme share, pool
+   schedule starting at migration) and one `allocation::recipient_share` (that recipient, Meme share,
+   Quote share); a `MakeMoveVec` of type
+   `allocation::RecipientShare` (may be empty); then `allocation::plan` with the curve Meme share, pool
    Meme share, pool Quote share, and the vector. Pass it to `launch::set_allocation_plan`. Required.
 6. Build the LP-fee split. For each route, build a destination with
    `blast_core::fee_split::address_destination` (an address),
@@ -430,8 +430,7 @@ Each setter takes the object it changes, `PackageVersion`, and the role's `Admin
 schedules abort with code 20 from the Blast admin delayed module of their type (`delayed` for a
 setting, `delayed_set` for a venue or signer admission) when nothing would change; "Delayed
 administration" lists their events. The allow/remove toggles for Quotes and decimals instead abort
-inside the Sui collection (`sui::dynamic_field` or `sui::vec_set`) when the entry already has the
-requested state.
+inside `sui::vec_set` when the entry already has the requested state.
 
 - `launch_config::set_quote_allowed` (ListingAdmin, type argument `Quote`), with `allowed: bool`:
   admits or removes a Quote for new launches; existing launches keep trading. Emits
@@ -557,7 +556,7 @@ and the vault's owner proofs follow the new curve-fee cap. Applying emits
 A `PauseAdmin<BLAST_FUN>` calls `blast_admin::package_admin::pause` to set bits on `PackageVersion`
 at once; it emits `blast_admin::blast_admin_events::Paused<BLAST_FUN>`. Only
 `UnpauseAdmin<BLAST_FUN>` clears bits, with `launch_config::unpause`, which takes `LaunchConfig`,
-`RuntimeConfig`, the witness, `PackageAdmin<BLAST_FUN>`, and `PackageVersion` (mutable). It checks
+`PackageVersion` (mutable), the witness, `PackageAdmin<BLAST_FUN>`, and `RuntimeConfig`. It checks
 the current generation, then aborts with `blast_fun::errors::EUnguardedNotice` unless every
 launchpad notice is guarded: the claim-signer set, the trade-fee share, trade fees, the venue set,
 the migration allocation, the LP-fee share, and the creation fee each have a nonzero applied notice,
@@ -754,8 +753,8 @@ keeps it in `VenueConfig` (see the venues guide).
 
 A `delayed::Delayed` stores `owner`, `key`, the applied `value`, the applied `delay_ms`, and an
 optional `pending` proposal with the proposed `value`, next `delay_ms`, and `ready_at_ms`. Read the
-applied `value` for live economics. `LaunchConfig` holds `meme_decimals`, `quotes` (a `Table` keyed
-by the Quote `TypeName` with original IDs), `venues`, and the delayed `trade_fees`,
+applied `value` for live economics. `LaunchConfig` holds `meme_decimals`, `quotes` (a `VecSet` of the
+Quote `TypeName`s with original IDs), `venues`, and the delayed `trade_fees`,
 `protocol_allocation`, `protocol_lp_fees` (`meme_bps`, `quote_bps`), and `creation_fee` (MIST).
 `venues` is a `delayed_set::DelayedSet`: `members` holds the admitted venue type names, `delay_ms`
 the applied admission notice, and `admissions` each pending type's `delay_ms` and `ready_at_ms`.

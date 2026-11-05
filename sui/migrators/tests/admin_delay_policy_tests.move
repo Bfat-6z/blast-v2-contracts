@@ -14,8 +14,8 @@ const PUBLICATION_UPGRADE_NOTICE_MS: u64 = 172_800_000;
 
 public struct AdminDelayFixture {
     scenario: Scenario,
-    admin: package_admin::PackageAdmin,
-    version: marker::PackageVersion,
+    admin: PackageAdmin,
+    version: PackageVersion,
     clock: Clock,
 }
 
@@ -166,7 +166,7 @@ fun start(): AdminDelayFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
     marker::init_for_testing(scenario.ctx());
     scenario.next_tx(PUBLISHER);
-    let publication = scenario.take_from_sender<marker::Publication>();
+    let publication = scenario.take_from_sender<Publication>();
     let cap = sui::package::test_publish(@blast_fun_migrators.to_id(), scenario.ctx());
     package_admin::wrap(publication, cap, scenario.ctx());
     scenario.next_tx(PUBLISHER);
@@ -199,12 +199,17 @@ fun upgrade_delay_changes(): u64 {
 
 // === Imports ===
 
-use blast_admin::{blast_acl, delayed_action::{ActionApplied, ActionScheduled}};
-use blast_fun_migrators::{
-    blast_fun_migrators::{Self as marker, BLAST_FUN_MIGRATORS},
-    package_admin::{Self, UpgradeAction, UpgradeKey},
+use blast_admin::{
+    blast_acl,
+    delayed_action::{ActionApplied, ActionScheduled},
+    package_admin::{CancelAdmin, UpgradeAdmin}
 };
 
-use blast_admin::package_admin::{CancelAdmin, UpgradeAdmin};
+use blast_fun_migrators::{
+    blast_fun_migrators::{Self as marker, BLAST_FUN_MIGRATORS, PackageVersion, Publication},
+    package_admin::{Self, PackageAdmin, UpgradeAction, UpgradeKey},
+};
+
 use std::unit_test::{assert_eq, destroy};
+
 use sui::{clock::Clock, test_scenario::{Self, Scenario}};

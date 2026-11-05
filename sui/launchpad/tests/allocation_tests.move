@@ -106,8 +106,8 @@ fun random_plans_follow_largest_remainder_with_blast_rounded_up() {
 
 // === Test Helpers ===
 
-fun recipient(destination: address, meme_bps: u64, quote_bps: u64): Recipient {
-    allocation::recipient(
+fun recipient_share(destination: address, meme_bps: u64, quote_bps: u64): RecipientShare {
+    allocation::recipient_share(
         blast_core::payout::recipient(destination, option::none()),
         bps::new(meme_bps),
         bps::new(quote_bps),
@@ -119,7 +119,7 @@ fun recipient(destination: address, meme_bps: u64, quote_bps: u64): Recipient {
 fun shaped(meme: vector<u64>, quote: vector<u64>): AllocationPlan {
     let recipients = vector::tabulate!(
         meme.length() - 3,
-        |i| recipient(address::from_u256((i + 2) as u256), meme[i + 3], quote[i + 2]),
+        |i| recipient_share(address::from_u256((i + 2) as u256), meme[i + 3], quote[i + 2]),
     );
 
     allocation::plan(bps::new(meme[0]), bps::new(meme[1]), bps::new(quote[0]), recipients)
@@ -202,7 +202,7 @@ fun assert_largest_remainder(
 
 use blast_core::bps;
 
-use blast_fun::{allocation::{Self, AllocationPlan, Recipient}, constants};
+use blast_fun::{allocation::{Self, AllocationPlan, RecipientShare}, constants};
 
 use std::unit_test::assert_eq;
 
