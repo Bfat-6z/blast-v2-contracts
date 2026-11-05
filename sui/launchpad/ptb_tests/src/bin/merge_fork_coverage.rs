@@ -32,7 +32,7 @@ fn main() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("usage: merge-fork-coverage TRACE_DIR MOVE_PACKAGE_DIR"))?;
     let marker = match package.file_name().and_then(|name| name.to_str()) {
         Some("presale") => "blast_presale",
-        Some("migrators") => "blast_fun_migrators",
+        Some("migrators") => "blast_migrators",
         _ => bail!("expected the presale or migrators package directory"),
     };
     let test_modules = read_files(

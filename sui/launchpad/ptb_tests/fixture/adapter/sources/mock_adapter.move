@@ -5,7 +5,8 @@
 ///
 /// `prepare` and `migrate` are the only entry points the harness calls. The venue owns the private
 /// witness: `prepare` issues the ticket a SUI-quoted launch redeems, and `migrate` redeems the
-/// launch's hand-off into a mock vault and can fail after the launch has migrated.
+/// `Migration` the launch's own `migrate` returned in the same PTB into a mock vault and can fail
+/// after the launch has migrated.
 module ptb_adapter::mock_adapter;
 
 // === Public Types ===
@@ -29,18 +30,10 @@ public fun prepare<Meme>(): VenueTicket<Meme, SUI> {
     migration::issue_ticket(Venue())
 }
 
-/// Redeems the launch's hand-off in one call and returns nothing. `fail` aborts after the launch
-/// migrated.
-public fun migrate<Meme>(
-    launch: &mut Launch<Meme, SUI>,
-    version: &PackageVersion<BLAST_FUN>,
-    config: &LaunchConfig,
-    currency: &mut Currency<Meme>,
-    fail: bool,
-    clock: &Clock,
-    ctx: &mut TxContext,
-) {
-    let (meme, quote, _) = launch.migrate(version, config, currency, clock, ctx).redeem(Venue());
+/// Redeems the `Migration` the launch's own `migrate` returned earlier in the transaction into a
+/// mock vault, as a venue's `migrate` does, and returns nothing. `fail` aborts after the redeem.
+public fun migrate<Meme>(migration: Migration<Meme, SUI>, fail: bool, ctx: &mut TxContext) {
+    let (meme, quote, _) = migration.redeem(Venue());
     transfer::share_object(MockVault { id: object::new(ctx), meme, quote });
     assert!(!fail, EAdapterFailure);
 }
@@ -51,10 +44,6 @@ const EAdapterFailure: u64 = 0;
 
 // === Imports ===
 
-use blast_admin::package_version::PackageVersion;
+use blast_core::migration::{Self, Migration, VenueTicket};
 
-use blast_core::migration::{Self, VenueTicket};
-
-use blast_fun::{blast_fun::BLAST_FUN, launch::Launch, launch_config::LaunchConfig};
-
-use sui::{balance::Balance, clock::Clock, coin_registry::Currency, sui::SUI};
+use sui::{balance::Balance, sui::SUI};

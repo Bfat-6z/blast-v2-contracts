@@ -91,9 +91,11 @@ const ALREADY_CLAIMED: u64 = 25;
 const RESERVE_SETTLED: u64 = 30;
 const OVER_RESERVE: u64 = 31;
 const CLAIMS_STILL_OPEN: u64 = 32;
-/// `blast_fun_migrators::cetus` codes.
+/// `blast_migrators::errors` codes.
 const INVALID_COIN_ORDER: u64 = 0;
+const POSITION_POOL_MISMATCH: u64 = 1;
 const WRONG_COIN_PAIR: u64 = 2;
+const INVALID_TIER: u64 = 3;
 
 /// The `blast_core::blast_domain` roles this world's one `AdminCap` holds, for the launchpad and
 /// the vault alike.
@@ -430,7 +432,7 @@ fn migrators() -> &'static UnlinkedPackage {
         let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("venue_fork");
         build_unlinked(
             &sui_dir().join("migrators"),
-            &["blast_admin", "blast_partners", "blast_fun_vesting", "blast_core", "blast_fun", "blast_vault"],
+            &["blast_admin", "blast_partners", "blast_fun_vesting", "blast_core", "blast_vault"],
             &work,
         )
             .expect("build the migrators")
@@ -570,7 +572,6 @@ impl World {
             stack.partners,
             stack.vesting,
             core,
-            blast,
             vault,
         ];
         dependencies.extend(venue_dependencies(&h)?);
@@ -580,14 +581,13 @@ impl World {
                 ("blast_partners", stack.partners),
                 ("blast_fun_vesting", stack.vesting),
                 ("blast_core", core),
-                ("blast_fun", blast),
                 ("blast_vault", vault),
             ],
             dependencies,
         )?;
         let (migrators, migrators_publication) = h.publish(linked)?;
         let venue_config = one(&h, &migrators_publication, "venue_config", "VenueConfig");
-        let migrators_version = h.wrap_migrators(migrators, &migrators_publication)?;
+        let migrators_version = h.wrap_migrators(admin, migrators, &migrators_publication)?;
         // Both admissions name the case's one venue witness: the vault registry lists it, beside
         // the launchpad's package witness as the issuer of the launch's vault terms, while the
         // vault package is paused, and the launch config admits it.
@@ -789,9 +789,9 @@ impl World {
             .collect()
     }
 
-    /// Migrators events of `name`, from its own `blast_events`.
+    /// Migrators events of `name`, from its own `events` module.
     fn events<T: DeserializeOwned>(&self, outcome: &Outcome, name: &str) -> Vec<T> {
-        self.package_events(outcome, self.migrators, "blast_events", name)
+        self.package_events(outcome, self.migrators, "events", name)
     }
 
     /// Vault events of `name`, from `blast_vault_events`.
@@ -887,6 +887,7 @@ impl World {
         let version = self.shared(&mut b, self.version, false)?;
         let config = self.shared(&mut b, self.config, false)?;
         let venue_config = self.shared(&mut b, self.venue_config, true)?;
+        let currency = self.shared(&mut b, ticket.currency, true)?;
         let tick_spacing = b.pure(tier.0)?;
         let venue_ticket = if self.case.is_cetus() {
             let cetus_config = self.shared(&mut b, self.venue("cetus_global_config"), false)?;
@@ -907,7 +908,7 @@ impl World {
                 "bluefin",
                 "prepare",
                 pair.clone(),
-                vec![migrators_version, venue_config, treasury_cap, tick_spacing, fee_rate],
+                vec![migrators_version, venue_config, treasury_cap, currency, tick_spacing, fee_rate],
             )
         };
         if mint_between {
@@ -931,7 +932,6 @@ impl World {
         call(&mut b, self.blast, "launch", "set_allocation_plan", pair.clone(), vec![initializer, version, plan]);
         let split = split.arg(&mut b, self.core)?;
         call(&mut b, self.blast, "launch", "set_lp_fee_split", pair.clone(), vec![initializer, version, split]);
-        let currency = self.shared(&mut b, ticket.currency, true)?;
         let creation_fee = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "zero", vec![sui()], vec![]);
         let registry = self.shared(&mut b, self.launch_registry, true)?;
         let launch = call(&mut b, self.blast, "launch", "finalize", pair.clone(), vec![
@@ -999,7 +999,7 @@ impl World {
                 (BLUEFIN_TICK_SPACING, 20_001),
             ] {
                 let pt = self.create_launch_pt(&ticket, split, tier, false)?;
-                let expected = Expected::Abort { package: self.migrators, module: "bluefin", code: 1 };
+                let expected = Expected::Abort { package: self.migrators, module: "bluefin", code: INVALID_TIER };
                 self.h.assert_rolled_back(pt, expected, &watched, &owners)?;
             }
             self.report(
@@ -1130,7 +1130,8 @@ impl World {
         Ok(())
     }
 
-    /// The migration call with `types` as its type arguments; Bluefin pays `creation_fee` SUI, or
+    /// The two-call migration: `launch::migrate` returns the launch's `Migration`, and the venue's
+    /// `migrate` with `types` as its type arguments redeems it. Bluefin pays `creation_fee` SUI, or
     /// its live fee when none.
     fn migrate_command(
         &self,
@@ -1149,6 +1150,14 @@ impl World {
         let vault_version = self.vault_version(b)?;
         let treasury = self.shared(b, self.treasury, false)?;
         let clock = self.clock(b)?;
+        let migration = call(
+            b,
+            self.blast,
+            "launch",
+            "migrate",
+            self.pair(launch),
+            vec![launch_arg, version, config, currency, clock],
+        );
         if self.case.is_cetus() {
             let cetus_config = self.shared(b, self.venue("cetus_global_config"), false)?;
             let pools = self.shared(b, self.venue("cetus_pools"), true)?;
@@ -1160,11 +1169,8 @@ impl World {
                 "migrate",
                 types,
                 vec![
-                    launch_arg,
+                    migration,
                     migrators_version,
-                    version,
-                    config,
-                    currency,
                     venue_config,
                     cetus_config,
                     pools,
@@ -1189,13 +1195,11 @@ impl World {
                 "migrate",
                 types,
                 vec![
-                    launch_arg,
+                    migration,
                     migrators_version,
-                    version,
-                    config,
+                    venue_config,
                     currency,
                     quote_currency,
-                    venue_config,
                     bluefin_config,
                     registry,
                     vault_version,
@@ -2090,7 +2094,7 @@ impl World {
         let other = other[0];
 
         let module = self.case.module();
-        let code = if self.case.is_cetus() { 1 } else { 0 };
+        let code = POSITION_POOL_MISMATCH;
         let expected = Expected::Abort { package: self.migrators, module, code };
         let pt = self.collect_pt(launch, m, other, None)?;
         let watched = [m.vault, other, launch.currency];
@@ -2543,10 +2547,9 @@ struct ProtocolFeesAccrued {
     quote_amount: u64,
 }
 
+/// Mirrors `blast_migrators::events::CetusPoolReserved<Meme, Quote>`; the pair is its type.
 #[derive(Deserialize)]
 struct CetusPoolReserved {
-    _meme: String,
-    _quote: String,
     pool_creation_cap_id: ObjectID,
     tick_spacing: u32,
 }

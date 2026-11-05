@@ -67,17 +67,17 @@ NATIVE_TESTS = {
     ),
     ('blast_presale::errors', 'EInvalidCoinOrder'): (
         'presale_venue_fork.rs', 'migration_failures_commit_nothing',
-        'Expected::Abort { package: self.presale, module: "cetus", code: INVALID_COIN_ORDER }',
+        'Expected::Abort { package: self.venues, module: "cetus", code: invalid_coin_order }',
         'const INVALID_COIN_ORDER: u64 = 49;', 49,
     ),
     ('blast_migrators::errors', 'EPositionPoolMismatch'): (
         'venue_fork.rs', 'other_pool_is_refused',
         'Expected::Abort { package: self.migrators, module, code }',
-        'let code = if self.case.is_cetus() { 1 } else { 0 };', 1,
+        'const POSITION_POOL_MISMATCH: u64 = 1;', 1,
     ),
     ('blast_presale::errors', 'EPositionPoolMismatch'): (
         'presale_venue_fork.rs', 'other_pool_is_refused',
-        'Expected::Abort { package: self.presale, module: self.route.module(), code }',
+        'Expected::Abort { package: self.venues, module: self.route.module(), code }',
         'const POSITION_POOL_MISMATCH: u64 = 50;', 50,
     ),
 }
