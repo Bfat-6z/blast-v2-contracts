@@ -214,14 +214,14 @@ impl UnlinkedPackage {
 }
 
 /// Compile simulator packages with an explicit nonzero genesis recipient, restoring the sources.
-/// The launchpad and `blast_core` both declare `blast_treasury`, and a build rejects one named
-/// address with two values, so the root and both of those manifests are rewritten together.
+/// `blast_core` declares `blast_treasury`, and a build rejects one named address with two values,
+/// so the root manifest and core's are rewritten together (presale still declares it too).
 /// Callers hold BUILD_LOCK until compilation completes.
 struct GenesisFixture { originals: Vec<(PathBuf, String)> }
 impl GenesisFixture {
     fn configure(package: &Path) -> Result<Self> {
         let mut manifests = vec![package.join("Move.toml")];
-        for declaring in ["core", "launchpad"] {
+        for declaring in ["core"] {
             let manifest = sui_dir().join(declaring).join("Move.toml");
             if !manifests.iter().any(|path| same_file(path, &manifest)) {
                 manifests.push(manifest);
@@ -251,8 +251,8 @@ fn same_file(left: &Path, right: &Path) -> bool {
     matches!((left.canonicalize(), right.canonicalize()), (Ok(left), Ok(right)) if left == right)
 }
 
-/// Appends `package_admin::unpause`, which clears `bits` only while every notice of the package is
-/// guarded. `policies` are the two shared policies it reads (see `Harness::unpause`).
+/// Appends the presale's `package_admin::unpause`, which clears `bits` only while every notice of
+/// the package is guarded. `policies` are the two shared policies it reads (see `Harness::unpause`).
 #[allow(clippy::too_many_arguments)]
 pub fn append_unpause(
     h: &Harness,
@@ -270,6 +270,46 @@ pub fn append_unpause(
     let second = b.obj(h.shared(policies[1], false))?;
     let bits = b.pure(bits)?;
     call(b, package, "package_admin", "unpause", vec![], vec![custody, version, witness, first, second, bits]);
+    Ok(())
+}
+
+/// `<blast>::blast_fun::BLAST_FUN`, the launchpad's marker in `blast_admin`'s generic types.
+pub fn launchpad_marker(blast: ObjectID) -> Result<sui_types::TypeTag> {
+    Ok(sui_types::parse_sui_type_tag(&format!("{blast}::blast_fun::BLAST_FUN"))?)
+}
+
+/// The role type a launchpad call takes: `UpgradeAdmin`, `PauseAdmin`, `UnpauseAdmin` and
+/// `PackageCancelAdmin` (the upgrade-action cancel role) are `blast_admin`'s generic package roles
+/// over `BLAST_FUN`; every other role is `blast_core::blast_domain`'s.
+pub fn launchpad_role(admin: ObjectID, core: ObjectID, blast: ObjectID, role: &str) -> Result<sui_types::TypeTag> {
+    let tag = match role {
+        "UpgradeAdmin" | "PauseAdmin" | "UnpauseAdmin" => format!("{admin}::package_admin::{role}<{blast}::blast_fun::BLAST_FUN>"),
+        "PackageCancelAdmin" => format!("{admin}::package_admin::CancelAdmin<{blast}::blast_fun::BLAST_FUN>"),
+        _ => format!("{core}::blast_domain::{role}"),
+    };
+    Ok(sui_types::parse_sui_type_tag(&tag)?)
+}
+
+/// Appends `launch_config::unpause`, which clears `bits` only while every launchpad notice and the
+/// package's upgrade notice are guarded.
+#[allow(clippy::too_many_arguments)]
+pub fn append_launchpad_unpause(
+    h: &Harness,
+    b: &mut ProgrammableTransactionBuilder,
+    blast: ObjectID,
+    custody: ObjectID,
+    version: ObjectID,
+    witness: Argument,
+    runtime: ObjectID,
+    config: ObjectID,
+    bits: u8,
+) -> Result<()> {
+    let config = b.obj(h.shared(config, false))?;
+    let runtime = b.obj(h.shared(runtime, false))?;
+    let custody = b.obj(h.shared(custody, false))?;
+    let version = b.obj(h.shared(version, true))?;
+    let bits = b.pure(bits)?;
+    call(b, blast, "launch_config", "unpause", vec![], vec![config, runtime, witness, custody, version, bits]);
     Ok(())
 }
 
@@ -370,12 +410,13 @@ pub struct DelayedSet<E> {
     pub pending_delay: Option<Notice>,
 }
 
-/// A `RuntimeConfig` in BCS field order: claim signers, protocol fee share and treasury.
-pub type RuntimeConfigContents = (ObjectID, DelayedSet<Vec<u8>>, Delayed<u64>, Delayed<SuiAddress>);
+/// A `RuntimeConfig` in BCS field order: claim signers and protocol fee share.
+pub type RuntimeConfigContents = (ObjectID, DelayedSet<Vec<u8>>, Delayed<u64>);
 
 /// A `LaunchConfig` in BCS field order: meme decimals, the quote `Table` (id, size), trade fees
 /// (quote, meme), admitted venues, protocol allocation (meme, quote), Blast's LP-fee share of new
-/// vaults (meme, quote) and creation fee.
+/// vaults (meme, quote), creation fee, and the accepted partners' `PartnerList` (owner and its
+/// `Table` (id, size)).
 pub type LaunchConfigContents = (
     ObjectID,
     Vec<u8>,
@@ -385,6 +426,7 @@ pub type LaunchConfigContents = (
     Delayed<(u64, u64)>,
     Delayed<(u64, u64)>,
     Delayed<u64>,
+    (ObjectID, (ObjectID, u64)),
 );
 
 /// A `blast_vault::blast_vault_package::VaultRegistry` in BCS field order: its id and the
@@ -602,20 +644,12 @@ impl Outcome {
             .collect()
     }
 
-    /// Payload bytes of Blast events whose payload type is `module::name`. Blast wraps every
-    /// payload in `blast_events::Event<T>`, whose BCS encoding is the payload's.
+    /// Payload bytes of the events whose type is `module::name`, whatever its type arguments. Blast
+    /// packages emit their payload structs directly, with no envelope.
     pub fn events_of(&self, module: &str, name: &str) -> Vec<&[u8]> {
         self.events
             .iter()
-            .filter(|event| {
-                event.type_.module.as_str() == "blast_events"
-                    && event.type_.name.as_str() == "Event"
-                    && matches!(
-                        event.type_.type_params.as_slice(),
-                        [sui_types::TypeTag::Struct(payload)]
-                            if payload.module.as_str() == module && payload.name.as_str() == name
-                    )
-            })
+            .filter(|event| event.type_.module.as_str() == module && event.type_.name.as_str() == name)
             .map(|event| event.contents.as_slice())
             .collect()
     }
@@ -649,34 +683,15 @@ impl Outcome {
             .collect()
     }
 
-    /// Payload type names of every Blast event, in native order. Each must be a `package` payload
-    /// inside `package`'s `blast_events::Event<T>` envelope, so a bare or foreign event fails. The
-    /// only exception is a lifecycle event of a `blast_admin` delayed module keyed by a `package`
-    /// type, which is bare by design and skipped here; read it with `delayed_events`.
-    pub fn wrapped_payloads(&self, package: ObjectID) -> Vec<String> {
+    /// Type names of the events `package` emitted itself, in native order. Lifecycle events of
+    /// `blast_admin`'s delayed modules and its pause and version events carry a `package` type
+    /// argument but are emitted by `blast_admin`, so they are not listed; read them with
+    /// `delayed_events` or `events_of`.
+    pub fn payload_names(&self, package: ObjectID) -> Vec<String> {
         self.events
             .iter()
-            .filter(|event| {
-                !(is_delayed_module(event.type_.module.as_str())
-                    && matches!(
-                        event.type_.type_params.first(),
-                        Some(sui_types::TypeTag::Struct(key)) if ObjectID::from(key.address) == package
-                    ))
-            })
-            .map(|event| {
-                let envelope = &event.type_;
-                assert!(
-                    ObjectID::from(envelope.address) == package
-                        && envelope.module.as_str() == "blast_events"
-                        && envelope.name.as_str() == "Event",
-                    "event {envelope} is not in the launchpad envelope"
-                );
-                let [sui_types::TypeTag::Struct(payload)] = envelope.type_params.as_slice() else {
-                    panic!("envelope {envelope} does not carry exactly one payload");
-                };
-                assert_eq!(ObjectID::from(payload.address), package, "foreign payload {payload}");
-                payload.name.to_string()
-            })
+            .filter(|event| ObjectID::from(event.type_.address) == package)
+            .map(|event| event.type_.name.to_string())
             .collect()
     }
 
@@ -874,33 +889,36 @@ impl Harness {
         Ok((published[0], outcome))
     }
 
-    /// Configures initial admission and seals custody; operations remain paused until release.
-    /// `venue` is the one venue witness type admitted; `core` is the `blast_core` package whose
-    /// `Bps` the launchpad's settings take.
+    /// Seals the launchpad's publication in `blast_admin`'s generic custody and configures initial
+    /// admission; operations remain paused until release (see `unpause_launchpad`). `venue` is the
+    /// one venue witness type admitted; `core` is the `blast_core` package whose `Bps` the
+    /// launchpad's settings take and whose `blast_domain` roles they require.
     #[allow(clippy::too_many_arguments)]
     pub fn wrap_launchpad(&mut self, package: ObjectID, publication: &Outcome, admin: ObjectID, admin_publication: &Outcome,
         core: ObjectID, quote: sui_types::TypeTag, venue: sui_types::TypeTag,
     ) -> Result<(ObjectID, ObjectID)> {
-        assert!(publication.created(self, "blast_fun", "PackageVersion").is_empty());
+        assert!(publication.created(self, "package_version", "PackageVersion").is_empty());
         let config_id = publication.created(self, "launch_config", "LaunchConfig")[0];
         let runtime_id = publication.created(self, "runtime_config", "RuntimeConfig")[0];
-        let bootstrap = publication.created(self, "blast_fun", "Publication");
+        let bootstrap = publication.created(self, "package_version", "Publication");
         let cap = publication.created(self, "package", "UpgradeCap");
         assert_eq!(bootstrap.len(), 1);
         assert_eq!(cap.len(), 1);
-        let (bootstrap_id, publisher, generation): (ObjectID, (ObjectID, String, String), u64) =
-            bcs::from_bytes(&self.contents(bootstrap[0]))?;
+        let (bootstrap_id, publisher, valid_pause_bits, unpause_witness, generation):
+            (ObjectID, (ObjectID, String, String), u8, String, u64) = bcs::from_bytes(&self.contents(bootstrap[0]))?;
+        assert_eq!(valid_pause_bits, 7, "the launchpad defines Create, Trading and Migrate");
+        assert!(unpause_witness.ends_with("::blast_fun::PackageWitness"), "{unpause_witness}");
         let cap_contents = self.contents(cap[0]);
         let mut builder = ProgrammableTransactionBuilder::new();
         let bootstrap_arg = builder.obj(self.owned(bootstrap[0]))?;
         let cap_arg = builder.obj(self.owned(cap[0]))?;
-        call(&mut builder, package, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
+        call(&mut builder, admin, "package_admin", "wrap", vec![launchpad_marker(package)?], vec![bootstrap_arg, cap_arg]);
         let outcome = self.execute(builder.finish())?;
         outcome.assert_success();
         assert_eq!(outcome.effects.deleted().iter().map(|object| object.0).collect::<Vec<_>>(), vec![bootstrap_id]);
         // The simulator retains wrapped objects in its cache; transaction effects establish custody.
         assert_eq!(outcome.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>(), cap);
-        let version = outcome.created(self, "blast_fun", "PackageVersion");
+        let version = outcome.created(self, "package_version", "PackageVersion");
         assert_eq!(version.len(), 1);
         let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
         assert_eq!(package_admin.len(), 1);
@@ -913,20 +931,21 @@ impl Harness {
         assert_eq!(sealed_publisher, publisher);
         assert_eq!(sealed_caps.len(), 1);
         assert_eq!(bcs::to_bytes(&sealed_caps[0])?, cap_contents);
-        let (version_id, paused, active_generation): (ObjectID, u8, u64) =
+        let (version_id, valid, paused, witness, active_generation): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode fresh PackageVersion")?;
-        assert_eq!((version_id, paused, active_generation), (version[0], 7, generation));
-        let (_, signers, _, treasury): RuntimeConfigContents =
+        assert_eq!((version_id, valid, paused, witness, active_generation),
+            (version[0], 7, 7, unpause_witness, generation));
+        let (_, signers, _): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode fresh RuntimeConfig")?;
         assert!(signers.members.is_empty() && signers.admissions.is_empty(), "publication admits no claim signer");
         assert_eq!(signers.delay_ms, 0, "publication starts the signer notice at zero");
-        let config_cap = self.configuration_admin(admin, admin_publication, package, "blast_fun_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "ClaimSignerAdmin"])?;
+        let config_cap = self.configuration_admin(admin, admin_publication, core, "blast_domain", &["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin", "ClaimSignerAdmin"])?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config = b.obj(self.shared(config_id, true))?;
         let version_arg = b.obj(self.shared(version[0], false))?;
         let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        let listing = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "ListingAdmin")?;
-        let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "AdapterAdmin")?;
+        let listing = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "ListingAdmin")?;
+        let adapter = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "AdapterAdmin")?;
         let allowed = b.pure(true)?;
         call(&mut b, package, "launch_config", "set_quote_allowed", vec![quote], vec![config, version_arg, listing, allowed]);
         // At the zero publication notice a venue's schedule and apply share one PTB.
@@ -938,19 +957,19 @@ impl Harness {
         self.execute(b.finish())?.assert_success();
         // Raise every remaining publication notice from zero to 48 hours, keeping each published
         // value, through ordinary ACL roles: at zero applied notice schedule and apply share a PTB.
-        // `package_admin::unpause` refuses while any notice is unguarded.
-        let (_, _, _, trade_fees, _, allocation, lp_fees, creation_fee): LaunchConfigContents =
+        // `launch_config::unpause` refuses while any notice is unguarded.
+        let (_, _, _, trade_fees, _, allocation, lp_fees, creation_fee, _): LaunchConfigContents =
             bcs::from_bytes(&self.contents(config_id)).context("decode LaunchConfig")?;
-        let (_, _, fee_share, _): RuntimeConfigContents =
+        let (_, _, fee_share): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode RuntimeConfig")?;
         let mut b = ProgrammableTransactionBuilder::new();
         let config_arg = b.obj(self.shared(config_id, true))?;
         let runtime = b.obj(self.shared(runtime_id, true))?;
         let version_arg = b.obj(self.shared(version[0], false))?;
         let clock = b.obj(self.shared(sui_types::SUI_CLOCK_OBJECT_ID, false))?;
-        let fee = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "FeeAdmin")?;
-        let treasury_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "TreasuryAdmin")?;
-        let signer_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, package, "blast_fun_domain", "ClaimSignerAdmin")?;
+        let fee = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "FeeAdmin")?;
+        let treasury_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "TreasuryAdmin")?;
+        let signer_role = self.configuration_witness(&mut b, admin, admin_publication, config_cap, core, "blast_domain", "ClaimSignerAdmin")?;
         let bps = |b: &mut ProgrammableTransactionBuilder, value: u64| -> Result<Argument> {
             let value = b.pure(value)?;
             Ok(call(b, core, "bps", "new", vec![], vec![value]))
@@ -964,7 +983,6 @@ impl Harness {
         let share = bps(&mut b, fee_share.value)?;
         let creation_fee = b.pure(creation_fee.value)?;
         let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
-        let destination = b.pure(treasury.value)?;
         call(&mut b, package, "launch_config", "schedule_trade_fees", vec![], vec![config_arg, version_arg, fee, quote_fee, meme_fee, delay, clock]);
         call(&mut b, package, "launch_config", "apply_trade_fees", vec![], vec![config_arg, version_arg, clock]);
         call(&mut b, package, "launch_config", "schedule_protocol_allocation", vec![], vec![config_arg, version_arg, treasury_role, meme_allocation, quote_allocation, delay, clock]);
@@ -975,19 +993,18 @@ impl Harness {
         call(&mut b, package, "launch_config", "apply_creation_fee", vec![], vec![config_arg, version_arg, clock]);
         call(&mut b, package, "runtime_config", "schedule_protocol_fee_share", vec![], vec![runtime, version_arg, fee, share, delay, clock]);
         call(&mut b, package, "runtime_config", "apply_protocol_fee_share", vec![], vec![runtime, version_arg, clock]);
-        call(&mut b, package, "runtime_config", "schedule_treasury", vec![], vec![runtime, version_arg, treasury_role, destination, delay, clock]);
-        call(&mut b, package, "runtime_config", "apply_treasury", vec![], vec![runtime, version_arg, clock]);
         call(&mut b, package, "runtime_config", "schedule_creator_claim_signer_delay", vec![], vec![runtime, version_arg, signer_role, delay, clock]);
         call(&mut b, package, "runtime_config", "apply_creator_claim_signer_delay", vec![], vec![runtime, version_arg, clock]);
         self.execute(b.finish())?.assert_success();
-        let (_, _, _, trade_fees, venues, allocation, lp_fees, creation_fee): LaunchConfigContents =
+        let (_, _, _, trade_fees, venues, allocation, lp_fees, creation_fee, (partners_owner, _)): LaunchConfigContents =
             bcs::from_bytes(&self.contents(config_id)).context("decode configured LaunchConfig")?;
-        let (_, signers, fee_share, treasury): RuntimeConfigContents =
+        let (_, signers, fee_share): RuntimeConfigContents =
             bcs::from_bytes(&self.contents(runtime_id)).context("decode configured RuntimeConfig")?;
+        ensure!(partners_owner == config_id, "the launch config owns its partner list");
         let applied = [trade_fees.delay_ms, allocation.delay_ms, lp_fees.delay_ms, creation_fee.delay_ms,
-            fee_share.delay_ms, treasury.delay_ms];
+            fee_share.delay_ms];
         let pending = [trade_fees.pending.is_some(), allocation.pending.is_some(), lp_fees.pending.is_some(),
-            creation_fee.pending.is_some(), fee_share.pending.is_some(), treasury.pending.is_some()];
+            creation_fee.pending.is_some(), fee_share.pending.is_some()];
         ensure!(applied.iter().all(|delay| *delay == PUBLICATION_UPGRADE_NOTICE_MS) && !pending.contains(&true),
             "every launchpad setting waits the 48-hour notice with nothing pending");
         ensure!(venues.members.len() == 1, "the launch config admits the one venue");
@@ -996,6 +1013,24 @@ impl Harness {
             ensure!(set == (PUBLICATION_UPGRADE_NOTICE_MS, 0, false), "every launchpad set waits 48 hours with nothing pending");
         }
         Ok((version[0], package_admin[0]))
+    }
+
+    /// Releases `bits` of the launchpad through the real ACL: grants a fresh `AdminCap` the
+    /// generic `UnpauseAdmin<BLAST_FUN>` and calls `launch_config::unpause`, which needs every
+    /// launchpad notice guarded, without advancing the Clock.
+    #[allow(clippy::too_many_arguments)]
+    pub fn unpause_launchpad(&mut self, blast: ObjectID, admin: ObjectID, publication: &Outcome,
+        version: ObjectID, custody: ObjectID, runtime: ObjectID, config: ObjectID, bits: u8,
+    ) -> Result<()> {
+        let role = launchpad_role(admin, ObjectID::ZERO, blast, "UnpauseAdmin")?;
+        let cap = self.grant_roles(admin, publication, std::slice::from_ref(&role))?;
+        let clock_before = self.contents(sui_types::SUI_CLOCK_OBJECT_ID);
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.sign_in_as(&mut b, admin, publication, cap, role)?;
+        append_launchpad_unpause(self, &mut b, blast, custody, version, witness, runtime, config, bits)?;
+        self.execute(b.finish())?.assert_success();
+        assert_eq!(self.contents(sui_types::SUI_CLOCK_OBJECT_ID), clock_before);
+        Ok(())
     }
 
     /// Creates a real ACL administrator for initial zero-delay configuration.
@@ -1158,10 +1193,9 @@ impl Harness {
     }
 
     /// Uses the real ACL and immediate UnpauseAdmin path without advancing the Clock. `custody` is
-    /// the package's `PackageAdmin`; `policies` are the two shared policies its
-    /// `package_admin::unpause` requires guarded: `RuntimeConfig` and `LaunchConfig` for the
-    /// launchpad (`blast_fun_domain`), `FeePolicy` and `CreationPolicy` for the presale
-    /// (`blast_presale_domain`).
+    /// the presale's `PackageAdmin`; `policies` are the two shared policies its
+    /// `package_admin::unpause` requires guarded, `FeePolicy` and `CreationPolicy`
+    /// (`blast_presale_domain`). The launchpad releases through `unpause_launchpad`.
     #[allow(clippy::too_many_arguments)]
     pub fn unpause(&mut self, package: ObjectID, domain: &str, admin: ObjectID,
         publication: &Outcome, version: ObjectID, custody: ObjectID, policies: [ObjectID; 2], bits: u8,

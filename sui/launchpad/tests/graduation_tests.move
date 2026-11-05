@@ -164,7 +164,11 @@ fun zero_recipient_destination_is_rejected() { recipient(@0x0, 0, 0); }
 // === Test Helpers ===
 
 fun recipient(destination: address, meme_bps: u64, quote_bps: u64): Recipient {
-    allocation::recipient(blast_core::payout::recipient(destination, option::none()), bps::new(meme_bps), bps::new(quote_bps))
+    allocation::recipient(
+        blast_core::payout::recipient(destination, option::none()),
+        bps::new(meme_bps),
+        bps::new(quote_bps),
+    )
 }
 
 /// Builds a plan from Meme shares `[curve, lp, blast, ...]` and Quote shares `[lp, blast, ...]`;

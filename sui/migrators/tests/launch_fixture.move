@@ -42,7 +42,7 @@ public fun start<Quote, Venue: drop>(): LaunchFixture {
         migrators_version: migrators_version::new_for_testing(ctx),
         runtime: runtime_config::new_zero_fee_share_for_testing(ctx),
         launch_registry: launch::registry_for_testing(ctx),
-        registry: blast_vault_package::registry_for_testing<Venue, launch::PackageWitness>(ctx),
+        registry: blast_vault_package::registry_for_testing<Venue, blast_fun::blast_fun::PackageWitness>(ctx),
         vault_version: blast_vault_package::version_for_testing(ctx),
         treasury: blast_treasury::new_for_testing(TREASURY, ctx),
         partner: blast_partners::new_for_testing(PARTNER_RECIPIENT, PARTNER_SHARE_BPS, ctx),

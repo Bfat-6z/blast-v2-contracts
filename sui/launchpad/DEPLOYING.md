@@ -117,7 +117,7 @@ Require all of the following and retain the readbacks:
 - Reading the new `PackageVersion` confirms shared ownership and the compiled
   current operational generation, initially `1`, pause mask `7` (Create,
   Trading and Migrate), and the pinned unpause witness
-  `<original-package-id>::blast_fun::UnpauseWitness`. An aborted wrap leaves the
+  `<original-package-id>::blast_fun::PackageWitness`. An aborted wrap leaves the
   Publication and cap unchanged and creates neither shared output.
 - Publication-owned policies start at zero notice. Upgrade custody starts at
   48 hours. Verify that neither has a pending proposal. This setup state is not

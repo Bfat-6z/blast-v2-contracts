@@ -66,21 +66,26 @@ assert 'treasury' not in functions('launchpad', 'runtime_config') and 'schedule_
 for name in ('package_admin', 'blast_fun_domain', 'fees', 'blast_events'):
     assert not list((ROOT / 'sui/launchpad/sources').rglob(f'{name}.move')), name
 marker = (ROOT / 'sui/launchpad/sources/blast_fun.move').read_text()
-require(marker, 'public struct BLAST_FUN() has drop;', 'public struct UnpauseWitness() has drop;',
-        'package_version::new_publication<_, UnpauseWitness>(otw, constants::valid_pause_bits!(), ctx)')
+require(marker, 'public struct BLAST_FUN() has drop;', 'public struct PackageWitness() has drop;',
+        'package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)')
 marker_fs = functions('launchpad', 'blast_fun')
-assert set(marker_fs) == {'init', 'clear_pause_bits'}, marker_fs
-assert {name for name, (_, body) in marker_fs.items() if 'UnpauseWitness()' in body} == {'clear_pause_bits'}
-require(marker_fs['clear_pause_bits'][1], 'package_admin.clear_pause_bits(unpause_admin, UnpauseWitness(), package_version, bits)')
+assert set(marker_fs) == {'init', 'package_witness'}, marker_fs
+assert marker_fs['package_witness'][1] == 'PackageWitness()', marker_fs['package_witness']
+# The package witness is constructed only by its module; no launchpad function stores it, takes it,
+# or returns it except the package-only constructor.
+for path in (ROOT / 'sui/launchpad/sources').rglob('*.move'):
+    for name, (signature, _) in functions('launchpad', str(path.relative_to(ROOT / 'sui/launchpad/sources').with_suffix(''))).items():
+        assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_fun', 'package_witness'), (path, name)
 # Only the launchpad's unpause clears bits, after checking every launchpad notice.
 callers = [(path, name) for path in (ROOT / 'sui/launchpad/sources').rglob('*.move')
            for name, (_, body) in functions('launchpad', str(path.relative_to(ROOT / 'sui/launchpad/sources').with_suffix(''))).items()
-           if 'clear_pause_bits(' in body and path.stem != 'blast_fun']
+           if 'clear_pause_bits(' in body]
 assert [(path.stem, name) for path, name in callers] == [('launch_config', 'unpause')], callers
 signature, body = functions('launchpad', 'launch_config')['unpause']
 require(signature, '&AdminWitness<UnpauseAdmin<BLAST_FUN>>', '&PackageAdmin<BLAST_FUN>', '&mut PackageVersion<BLAST_FUN>')
 assert body.startswith(f'package_version.assert_current{LAUNCHPAD_CURRENT}'), body
 assert body.index('self.is_guarded() && runtime_config.is_guarded()') < body.index('clear_pause_bits('), body
+require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')
 governed('presale', 'fee_policy', {'destination': 'TreasuryAdmin', 'fees': 'FeeAdmin'})
 for package, upgrade_role, cancel_role in (
     ('presale', 'UpgradeAdmin', 'CancelAdmin'),

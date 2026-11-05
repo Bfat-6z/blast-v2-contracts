@@ -22,10 +22,6 @@ public struct LaunchRegistry has key {
 /// Derives the one launch of `Meme` from the registry.
 public struct LaunchKey<phantom Meme>() has copy, drop, store;
 
-/// The launchpad's package witness: it seals each launch's migration, vault terms, and owner
-/// proofs, and only this module constructs it.
-public struct PackageWitness() has drop;
-
 public enum Lifecycle has copy, drop, store {
     OpeningRound,
     Live,
@@ -274,7 +270,7 @@ public fun finalize<Meme, Quote>(
     let creation_fee_amount = creation_fee.value();
     let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(treasury_cap, currency, atomic_supply);
     let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>());
-    let mut protocol_fees = protocol_fees::new(PackageWitness(), id.to_inner(), partner_id);
+    let mut protocol_fees = protocol_fees::new(package_witness(), id.to_inner(), partner_id);
     protocol_fees.accrue_sui(creation_fee);
     let curve_fee_cap_reassignment = delayed_action::new(
         CurveFeeCapReassignment(),
@@ -383,7 +379,10 @@ public fun claim_creator_caps<Meme, Quote>(
     self.curve_fee_cap_id = option::some(object::id(&curve_fee_cap));
     self.blast_metadata_cap_id = option::some(object::id(&blast_metadata_cap));
 
-    events::creator_caps_claimed<Meme, Quote>(object::id(&curve_fee_cap), object::id(&blast_metadata_cap));
+    events::creator_caps_claimed<Meme, Quote>(
+        object::id(&curve_fee_cap),
+        object::id(&blast_metadata_cap),
+    );
 
     (curve_fee_cap, blast_metadata_cap)
 }
@@ -533,7 +532,11 @@ public fun apply_metadata_cap_reassignment<Meme, Quote>(
     self.blast_metadata_cap_id = option::some(blast_metadata_cap_id);
     transfer::public_transfer(blast_metadata_cap, recipient);
 
-    events::metadata_cap_reassigned<Meme, Quote>(self.id.to_inner(), blast_metadata_cap_id, recipient);
+    events::metadata_cap_reassigned<Meme, Quote>(
+        self.id.to_inner(),
+        blast_metadata_cap_id,
+        recipient,
+    );
 }
 
 public fun set_name<Meme, Quote>(
@@ -817,8 +820,9 @@ public fun claim_protocol_fees_with_partner<Meme, Quote>(
 
 /// Pays every project recipient, outright or into its vesting schedule starting now, accrues
 /// Blast's one-time Meme and Quote fee in the launch ledger, burns the curve's unsold Meme and
-/// pending sell-burn (or sends them to `@0x0` when the supply is fixed), and returns the hand-off only the stored venue can redeem: the pool's share and the
-/// vault's terms, with Blast's applied LP-fee share and the migration residuals paid to Blast.
+/// pending sell-burn (or sends them to `@0x0` when the supply is fixed), and returns the hand-off
+/// only the stored venue can redeem: the pool's share and the vault's terms, with Blast's applied
+/// LP-fee share and the migration residuals paid to Blast.
 /// Anyone may call it; an unredeemed hand-off aborts the transaction.
 public fun migrate<Meme, Quote>(
     self: &mut Launch<Meme, Quote>,
@@ -897,7 +901,7 @@ public fun migrate<Meme, Quote>(
     );
 
     let terms = migration::vault_terms(
-        PackageWitness(),
+        package_witness(),
         self.id.to_inner(),
         self.lp_fee_split,
         protocol_meme_bps,
@@ -906,7 +910,7 @@ public fun migrate<Meme, Quote>(
         migration::residuals_to_protocol(),
     );
 
-    migration::new(PackageWitness(), meme, quote, self.venue, terms)
+    migration::new(package_witness(), meme, quote, self.venue, terms)
 }
 
 /// Proves to the launch's vault that the caller holds the curve-fee cap this launch honors.
@@ -918,7 +922,7 @@ public fun prove_owner<Meme, Quote>(
     package_version.assert_current(constants::generation!());
     self.assert_curve_fee_cap(curve_fee_cap);
 
-    owner_proof::new(PackageWitness(), self.id.to_inner())
+    owner_proof::new(package_witness(), self.id.to_inner())
 }
 
 // === Private Functions ===
@@ -1267,7 +1271,7 @@ use blast_core::{
 
 use blast_fun::{
     allocation::AllocationPlan,
-    blast_fun::BLAST_FUN,
+    blast_fun::{BLAST_FUN, package_witness},
     constants,
     creator_authority::{Self, BlastMetadataCap, CreatorRecipient, CurveFeeCap},
     curve,
@@ -1299,4 +1303,4 @@ use fun dynamic_field::exists as UID.has_dynamic_field;
 
 use fun dynamic_field::remove as UID.remove_dynamic_field;
 
-use fun blast_core::payout::pay as Balance.pay;
+use fun payout::pay as Balance.pay;

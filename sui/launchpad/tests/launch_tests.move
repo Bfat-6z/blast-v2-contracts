@@ -3811,8 +3811,16 @@ fun migration_vests_a_vesting_recipients_allocation() {
             bps::new(LP_MEME_BPS),
             bps::new(9_000),
             vector[
-                allocation::recipient(blast_core::payout::recipient(CREATOR, option::none()), bps::new(0), bps::new(750)),
-                allocation::recipient(blast_core::payout::recipient(ALICE, vesting), bps::new(250), bps::new(0)),
+                allocation::recipient(
+                    blast_core::payout::recipient(CREATOR, option::none()),
+                    bps::new(0),
+                    bps::new(750),
+                ),
+                allocation::recipient(
+                    blast_core::payout::recipient(ALICE, vesting),
+                    bps::new(250),
+                    bps::new(0),
+                ),
             ],
         );
         let launch = f.new_launch_with(MIGRATION_QUOTE_TARGET, plan);
@@ -3856,8 +3864,16 @@ fun migration_apportions_by_largest_remainder_and_conserves_both_assets() {
             bps::new(2_333),
             bps::new(7_777),
             vector[
-                allocation::recipient(blast_core::payout::recipient(ALICE, option::none()), bps::new(333), bps::new(1_111)),
-                allocation::recipient(blast_core::payout::recipient(BOB, option::none()), bps::new(583), bps::new(862)),
+                allocation::recipient(
+                    blast_core::payout::recipient(ALICE, option::none()),
+                    bps::new(333),
+                    bps::new(1_111),
+                ),
+                allocation::recipient(
+                    blast_core::payout::recipient(BOB, option::none()),
+                    bps::new(583),
+                    bps::new(862),
+                ),
             ],
         );
         let launch = f.new_launch_with(25_000_007, plan);
@@ -4132,7 +4148,7 @@ fun migration_hands_the_stored_venue_the_pool_share_and_the_vault_terms() {
         assert_eq!(meme.value(), EXPECTED_POOL_MEME);
         assert_eq!(quote.value(), MIGRATION_QUOTE_TARGET - EXPECTED_PROTOCOL_QUOTE);
         assert_eq!(terms.origin(), object::id(&launch));
-        assert_eq!(terms.package_witness(), type_name::with_original_ids<launch::PackageWitness>());
+        assert_eq!(terms.package_witness(), type_name::with_original_ids<PackageWitness>());
         assert_eq!(terms.fee_split(), default_fee_split());
         assert_eq!(protocol_meme_bps.value(), 1_200);
         assert_eq!(protocol_quote_bps.value(), 900);
@@ -4460,8 +4476,16 @@ fun external_plan(): AllocationPlan {
         bps::new(LP_MEME_BPS),
         bps::new(9_000),
         vector[
-            allocation::recipient(blast_core::payout::recipient(CREATOR, option::none()), bps::new(0), bps::new(750)),
-            allocation::recipient(blast_core::payout::recipient(ALICE, option::none()), bps::new(250), bps::new(0)),
+            allocation::recipient(
+                blast_core::payout::recipient(CREATOR, option::none()),
+                bps::new(0),
+                bps::new(750),
+            ),
+            allocation::recipient(
+                blast_core::payout::recipient(ALICE, option::none()),
+                bps::new(250),
+                bps::new(0),
+            ),
         ],
     )
 }
@@ -4472,7 +4496,11 @@ fun recipients_plan(count: u64): AllocationPlan {
         bps::new(CURVE_MEME_BPS - count),
         bps::new(LP_MEME_BPS),
         bps::new(LP_QUOTE_BPS - count),
-        vector::tabulate!(count, |_| allocation::recipient(blast_core::payout::recipient(CREATOR, option::none()), bps::new(1), bps::new(1))),
+        vector::tabulate!(count, |_| allocation::recipient(
+            blast_core::payout::recipient(CREATOR, option::none()),
+            bps::new(1),
+            bps::new(1),
+        )),
     )
 }
 
@@ -5004,7 +5032,7 @@ fun protocol_fees_paid_bytes(
     partner_id: Option<ID>,
     amounts: vector<u64>,
 ): vector<u8> {
-    let mut expected = bcs::to_bytes(&type_name::with_original_ids<launch::PackageWitness>());
+    let mut expected = bcs::to_bytes(&type_name::with_original_ids<PackageWitness>());
     expected.append(bcs::to_bytes(&launch_id));
     expected.append(bcs::to_bytes(&treasury));
     3u64.do!(|i| expected.append(bcs::to_bytes(&amounts[i])));
@@ -5134,7 +5162,7 @@ use blast_fun::{
     },
     launch_config,
     launch_ticket::{Self, LaunchTicket},
-    blast_fun::{Self as package_version, BLAST_FUN},
+    blast_fun::{Self as package_version, BLAST_FUN, PackageWitness},
     runtime_config,
 };
 

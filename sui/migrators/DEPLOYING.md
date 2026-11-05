@@ -65,7 +65,7 @@ The venue witnesses are `<migrators>::cetus::Venue` and
    release ([launchpad DEPLOYING](../launchpad/DEPLOYING.md)).
 2. **Vault.** With the core `blast_domain::AdapterAdmin`, schedule
    `blast_vault_package::schedule_witness<Witness>` on the `VaultRegistry` for
-   each venue witness and for the launchpad's `blast_fun::launch::PackageWitness`
+   each venue witness and for the launchpad's `blast_fun::blast_fun::PackageWitness`
    (the issuer of every launch's vault terms), and apply each with
    `blast_vault_package::apply_witness`; without them, migration aborts in
    `blast_vault::vault::new`. Removing a venue or the launchpad from the list

@@ -356,7 +356,7 @@ After migration the launch's vault serves its owner through an owner proof:
 
 1. `launch::prove_owner` with the shared launch (immutable), `PackageVersion`, and the live
    `&CurveFeeCap<Meme>`. It returns a `blast_core::owner_proof::OwnerProof` naming this launch and
-   the launchpad's `launch::PackageWitness`.
+   the launchpad's `blast_fun::blast_fun::PackageWitness`.
 2. In the same PTB, pass the proof by value to one vault owner call:
    `blast_vault::vault::claim_owner_balances` (returns the owner route's LP fees as two coins; consume
    both), `blast_vault::vault::schedule_fee_split`, or `blast_vault::vault::cancel_fee_split`.
@@ -376,7 +376,7 @@ decimals never change.
 
 Blast's fees on a launch (its trade-fee share, the creation fee, and the one-time migration
 allocation) wait in the launch's `blast_core::protocol_fees::Ledger`, created at finalization under
-the launch's `launch::PackageWitness` and bound to its partner, until anyone pays them out:
+the launch's `blast_fun::blast_fun::PackageWitness` and bound to its partner, until anyone pays them out:
 
 - Launch without a partner: `launch::claim_protocol_fees` with the launch, `PackageVersion`, and the
   shared `blast_core::blast_treasury::Treasury`. Sends every Blast balance (Meme, Quote, SUI) to
@@ -416,7 +416,7 @@ the transaction fail. `launch::migrate`:
 5. Disposes of the curve's unsold Meme plus `pending_burn`: burned through the Coin Registry when
    the supply is burn-only, otherwise sent to `@0x0`.
 6. Sets `Migrated` and emits `blast_fun::events::Migrated`.
-7. Seals the vault's terms (`blast_core::migration::vault_terms`) under `launch::PackageWitness`:
+7. Seals the vault's terms (`blast_core::migration::vault_terms`) under `blast_fun::blast_fun::PackageWitness`:
    this launch's ID, its LP-fee split, Blast's LP-fee share applied in `LaunchConfig` now, the
    launch's partner, and migration residuals to Blast. It returns a `Migration` holding the pool's
    Meme and Quote and those terms, redeemable only by the launch's venue.
@@ -788,7 +788,7 @@ carry the transaction sender; take it from the transaction.
 | `blast_fun::events::CurveFeeCapReassigned`, `blast_fun::events::MetadataCapReassigned` | anyone applying a ready reassignment | `launch_id`, new cap ID, `recipient` |
 | `blast_fun::events::MemeMetadataUpdated` | metadata setters | `launch_id`, current `name`, `description`, `icon_url` |
 | `blast_fun::events::CreatorFeesClaimed` | creator fee claim | `launch_id`, `meme_amount`, `quote_amount` |
-| `blast_core::blast_core_events::ProtocolFeesPaid` | Blast launch-fee claims | `package_witness` (`launch::PackageWitness`), `origin` (the launch ID), `treasury` and its Meme, Quote, SUI amounts; `partner_id` and its amounts (0 without a partner) |
+| `blast_core::blast_core_events::ProtocolFeesPaid` | Blast launch-fee claims | `package_witness` (`blast_fun::blast_fun::PackageWitness`), `origin` (the launch ID), `treasury` and its Meme, Quote, SUI amounts; `partner_id` and its amounts (0 without a partner) |
 | `blast_fun::events::MigrationAllocationPaid` | migration | one per recipient: `destination`, `meme_amount`, `quote_amount` |
 | `blast_fun::events::ProtocolFeesAccrued` | migration | Blast's one-time Meme and Quote allocation |
 | `blast_fun::events::Migrated` | migration | `meme_amount`, `quote_amount` handed to the venue for the pool, `disposed_meme`, `total_supply_after` |

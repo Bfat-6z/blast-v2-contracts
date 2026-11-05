@@ -398,7 +398,7 @@ public fun unpause(
         blast_fun::errors::unguarded_notice!(),
     );
 
-    blast_fun::blast_fun::clear_pause_bits(unpause_admin, package_admin, package_version, bits);
+    package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);
 }
 
 // === Package Functions ===
@@ -664,7 +664,7 @@ use blast_core::{
 
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},
-    blast_fun::BLAST_FUN,
+    blast_fun::{BLAST_FUN, package_witness},
     constants,
     events,
     runtime_config::RuntimeConfig

@@ -46,7 +46,7 @@ sealed witnesses; only their own module constructs them. A venue's witness issue
 redeems its launches' migrations, keys its position inside the vault, and authorizes its fee
 collections. Blast admits each witness type twice: in `LaunchConfig` (so launches may start on it)
 and in the vault's `VaultRegistry` (so it may create vaults), which must also list the launchpad's
-`blast_fun::launch::PackageWitness` as the issuer of every launch's vault terms.
+`blast_fun::blast_fun::PackageWitness` as the issuer of every launch's vault terms.
 
 #### Who may call what
 

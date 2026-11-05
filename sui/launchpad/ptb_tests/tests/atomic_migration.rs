@@ -11,8 +11,8 @@
 //! reaches the launch ledger or the creator's recipient, and launch A stays migratable through the
 //! whole failure matrix before completing in one successful PTB. The hand-off `launch::migrate`
 //! returns and the owner proof `launch::prove_owner` returns have no abilities: a PTB that leaves
-//! either unconsumed fails with `UnusedValueWithoutDrop` and commits nothing. Every event travels
-//! in the launchpad envelope.
+//! either unconsumed fails with `UnusedValueWithoutDrop` and commits nothing. Every launchpad event
+//! is emitted directly, generic in the launch's coin types.
 //!
 //! A launch with an opening round shows the launch-owned bidder record the first bid creates, that
 //! nothing trades or pays out before settlement, that every failing round call commits nothing,
@@ -34,9 +34,10 @@ use std::{collections::BTreeSet, time::Duration};
 use anyhow::Result;
 use blast_launchpad_ptb_tests::{
     ActionApplied, ActionScheduled, Change, CompiledPackage, Destination, Expected, FeeSplit, Harness, Outcome,
-    RuntimeConfigContents, SetApplied, SetChange, SetScheduled, append_unpause, build, call, publish_stack,
+    GenericPackageVersionContents, RuntimeConfigContents, SetApplied, SetChange, SetScheduled,
+    append_launchpad_unpause, build, call, launchpad_role, publish_stack,
 };
-use move_binary_format::{CompiledModule, file_format::SignatureToken};
+use move_binary_format::{CompiledModule, file_format::Bytecode};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sui_types::{
@@ -60,14 +61,15 @@ const OPENING_ROUND_MS: u64 = 60_000;
 const BID: u64 = 1_000_000;
 
 /// `blast_fun::errors` codes.
-const INVALID_LAUNCH_LIFECYCLE: u64 = 14;
-const OPENING_ROUND_ENDED: u64 = 17;
-const OPENING_ROUND_NOT_ENDED: u64 = 18;
-const INVALID_CREATOR_RECIPIENT: u64 = 22;
-const ZERO_OPENING_ROUND_BID: u64 = 31;
-const INVALID_PAUSE_BITS: u64 = 35;
-const PAUSE_UNCHANGED: u64 = 36;
-const PAUSED: u64 = 37;
+const INVALID_LAUNCH_LIFECYCLE: u64 = 12;
+const OPENING_ROUND_ENDED: u64 = 15;
+const OPENING_ROUND_NOT_ENDED: u64 = 16;
+const INVALID_CREATOR_RECIPIENT: u64 = 20;
+const ZERO_OPENING_ROUND_BID: u64 = 29;
+/// `blast_admin::errors` codes, raised by `blast_admin::package_version`.
+const INVALID_PAUSE_BITS: u64 = 23;
+const PAUSE_UNCHANGED: u64 = 24;
+const PAUSED: u64 = 25;
 /// `blast_core::errors::invalid_fee_split`.
 const INVALID_FEE_SPLIT: u64 = 4;
 /// The most routes one `blast_core` fee split holds.
@@ -130,16 +132,16 @@ const ADMIN_DELAY_MS: u64 = 172_800_000;
 fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()> {
     let mut w = world("admin-security")?;
     w.change_role("CancelAdmin", true)?;
-    let destination: SuiAddress = address(&[0xCA, 0xFE]).into();
-    w.h.execute(w.schedule_treasury(destination)?)?.assert_success();
+    let share = 6_000;
+    w.h.execute(w.schedule_fee_share(share)?)?.assert_success();
     w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS - 1));
     let watched = [w.runtime, w.config, w.acl, w.admin_cap];
-    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_protocol_fee_share", w.runtime)?,
         Expected::Abort { package: w.admin, module: "delayed", code: 17 }, &watched, &[w.h.sender])?;
     w.h.sim.advance_clock(Duration::from_millis(1));
 
-    // Apply a ready treasury, emit its event, then fail a different not-ready action.
-    // The failed PTB must preserve the original treasury AND the still-pending proposal.
+    // Apply a ready fee share, emit its event, then fail a different not-ready action.
+    // The failed PTB must preserve the original share AND the still-pending proposal.
     let mut b = ProgrammableTransactionBuilder::new();
     let fee_admin = w.sign_in(&mut b, "FeeAdmin")?;
     let config = b.obj(w.h.shared(w.config, true))?;
@@ -154,31 +156,31 @@ fn administration_notice_cancellation_revocation_and_ptb_rollback() -> Result<()
     let config = b.obj(w.h.shared(w.config, true))?;
     let version = b.obj(w.h.shared(w.version, false))?;
     let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut b, w.blast, "runtime_config", "apply_treasury", vec![], vec![runtime, version, clock]);
+    call(&mut b, w.blast, "runtime_config", "apply_protocol_fee_share", vec![], vec![runtime, version, clock]);
     call(&mut b, w.blast, "launch_config", "apply_creation_fee", vec![], vec![config, version, clock]);
     w.h.assert_rolled_back(b.finish(), Expected::Abort { package: w.admin, module: "delayed", code: 17 }, &watched, &[w.h.sender])?;
 
-    w.change_role("TreasuryAdmin", false)?;
-    w.h.assert_rolled_back(w.schedule_treasury(address(&[0xAB]).into())?,
+    w.change_role("FeeAdmin", false)?;
+    w.h.assert_rolled_back(w.schedule_fee_share(7_000)?,
         Expected::Abort { package: w.admin, module: "blast_acl", code: 5 }, &watched, &[w.h.sender])?;
     // Revocation intentionally does not cancel a proposal. Apply requires no cap or role.
-    w.h.execute(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?)?.assert_success();
-    assert_eq!(w.applied_treasury()?, destination);
-    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+    w.h.execute(w.apply_setting("runtime_config", "apply_protocol_fee_share", w.runtime)?)?.assert_success();
+    assert_eq!(w.applied_fee_share()?, share);
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_protocol_fee_share", w.runtime)?,
         Expected::Abort { package: w.admin, module: "delayed", code: 18 }, &watched, &[w.h.sender])?;
 
-    w.change_role("TreasuryAdmin", true)?;
-    w.h.execute(w.schedule_treasury(address(&[0xAB]).into())?)?.assert_success();
+    w.change_role("FeeAdmin", true)?;
+    w.h.execute(w.schedule_fee_share(7_000)?)?.assert_success();
     w.h.sim.advance_clock(Duration::from_millis(ADMIN_DELAY_MS));
     let mut b = ProgrammableTransactionBuilder::new();
     let cancel = w.sign_in(&mut b, "CancelAdmin")?;
     let runtime = b.obj(w.h.shared(w.runtime, true))?;
     let version = b.obj(w.h.shared(w.version, false))?;
-    call(&mut b, w.blast, "runtime_config", "cancel_treasury", vec![], vec![runtime, version, cancel]);
+    call(&mut b, w.blast, "runtime_config", "cancel_protocol_fee_share", vec![], vec![runtime, version, cancel]);
     w.h.execute(b.finish())?.assert_success();
-    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_treasury", w.runtime)?,
+    w.h.assert_rolled_back(w.apply_setting("runtime_config", "apply_protocol_fee_share", w.runtime)?,
         Expected::Abort { package: w.admin, module: "delayed", code: 18 }, &watched, &[w.h.sender])?;
-    assert_eq!(w.applied_treasury()?, destination);
+    assert_eq!(w.applied_fee_share()?, share);
     Ok(())
 }
 
@@ -237,7 +239,7 @@ fn venue_admission_order_preserves_policy_and_pending_deadlines() -> Result<()> 
         let applied = w.h.execute(apply)?;
         applied.assert_success();
         // The primitive records the notice change and each admission, in application order.
-        assert!(applied.wrapped_payloads(w.blast).is_empty());
+        assert!(applied.payload_names(w.blast).is_empty());
         let changes: Vec<SetApplied<String>> =
             applied.delayed("SetApplied", "launch_config", "VenueKey")?;
         let admitted: Vec<_> = adapters.iter().rev()
@@ -300,7 +302,7 @@ fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Resu
     let ticket = w.publish_ticket()?;
     w.set_pause(true, 7)?;
     let watched = [round.launch, ready.launch, ready.currency, ticket.ticket, ticket.treasury_cap, ticket.currency, w.version];
-    let abort = || Expected::Abort { package: w.blast, module: "blast_fun", code: PAUSED };
+    let abort = || Expected::Abort { package: w.admin, module: "package_version", code: PAUSED };
     w.h.assert_rolled_back(w.create_launch(&ticket, &FeeSplit::single(DESTINATION.into()), NO_OPENING_ROUND)?, abort(), &watched, &[w.h.sender])?;
     w.h.assert_rolled_back(w.join(&round, BID)?, abort(), &watched, &[w.h.sender])?;
     w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, abort(), &watched, &[w.h.sender])?;
@@ -309,15 +311,17 @@ fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Resu
     w.set_pause(false, 2)?;
     w.h.execute(w.settle(&round)?)?.assert_success();
     // Releasing trading must not release migration or creation.
-    w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, Expected::Abort { package: w.blast, module: "blast_fun", code: PAUSED }, &watched, &[w.h.sender])?;
+    w.h.assert_rolled_back(w.migrate(&ready, &ready, false)?, Expected::Abort { package: w.admin, module: "package_version", code: PAUSED }, &watched, &[w.h.sender])?;
     w.set_pause(true, 2)?;
     let delivered = w.h.execute(w.deliver(&round, w.h.sender)?)?;
     delivered.assert_success();
-    assert!(delivered.wrapped_payloads(w.blast).iter().any(|name| name == "OpeningRoundDelivered"));
+    assert!(delivered.payload_names(w.blast).iter().any(|name| name == "OpeningRoundDelivered"));
     Ok(())
 }
 
 /// Every reachable pause state against every u8 input, through unmodified production bytecode.
+/// Pausing is `blast_admin`'s and reads no consumer generation; unpausing is the launchpad's
+/// `launch_config::unpause`, which rejects a stale generation first.
 #[test]
 fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> Result<()> {
     let mut w = world("pause-mask-matrix")?;
@@ -346,15 +350,15 @@ fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> R
                         before.difference(&requested).copied().collect()
                     };
                     let pt = w.pause_command(pausing, bits)?;
-                    let rejected = if generation != 1 {
+                    let rejected = if generation != 1 && !pausing {
                         stale += 1;
                         Some(Expected::Abort { package: w.admin, module: "operational_version", code: 9 })
                     } else if !(1..=7).contains(&bits) {
                         invalid += 1;
-                        Some(Expected::Abort { package: w.blast, module: "blast_fun", code: INVALID_PAUSE_BITS })
+                        Some(Expected::Abort { package: w.admin, module: "package_version", code: INVALID_PAUSE_BITS })
                     } else if after == before {
                         unchanged += 1;
-                        Some(Expected::Abort { package: w.blast, module: "blast_fun", code: PAUSE_UNCHANGED })
+                        Some(Expected::Abort { package: w.admin, module: "package_version", code: PAUSE_UNCHANGED })
                     } else {
                         None
                     };
@@ -366,11 +370,14 @@ fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> R
                         outcome.assert_success();
                         let name = if pausing { "Paused" } else { "Unpaused" };
                         let next: u8 = after.iter().sum();
-                        assert_eq!(outcome.wrapped_payloads(w.blast), [name]);
-                        assert_eq!(outcome.events_of("events", name), [vec![bits, next].as_slice()]);
+                        assert_eq!(outcome.events.len(), 1);
+                        assert_eq!(outcome.events_of("blast_admin_events", name),
+                            [bcs::to_bytes(&(w.version, bits, next))?.as_slice()]);
                         assert_eq!(w.pause_state()?, (w.version, next, generation));
                         assert_eq!(w.h.snapshot(&watched[1..], &[w.h.sender]), untouched);
+                        w.set_pause_generation_for_fixture(1)?;
                         w.replace_pause_mask(mask as u8)?;
+                        w.set_pause_generation_for_fixture(generation)?;
                         successes += 1;
                     }
                     assert_eq!(w.pause_state()?, (w.version, mask as u8, generation),
@@ -379,7 +386,7 @@ fn pause_exhaustively_checks_masks_events_rollback_and_version_precedence() -> R
             }
         }
     }
-    assert_eq!((successes, invalid, unchanged, stale), (74, 3984, 38, 4096));
+    assert_eq!((successes, invalid, unchanged, stale), (111, 5976, 57, 2048));
     Ok(())
 }
 
@@ -426,12 +433,12 @@ fn pause_roles_revocation_and_failed_sequences_preserve_state_and_events() -> Re
         }
         // Earlier successful commands emitted events, but the later failure commits none.
         w.h.assert_rolled_back(b.finish(),
-            Expected::Abort { package: w.blast, module: "blast_fun", code }, &watched, &[w.h.sender])?;
+            Expected::Abort { package: w.admin, module: "package_version", code }, &watched, &[w.h.sender])?;
         assert_eq!(w.pause_state()?, (w.version, 0, 1));
     }
 
     // Interleaved successful commands preserve native event order and replay to the final mask.
-    let steps = [(true, 1, 1), (true, 3, 3), (false, 5, 2),
+    let steps: [(bool, u8, u8); 6] = [(true, 1, 1), (true, 3, 3), (false, 5, 2),
         (true, 4, 6), (false, 2, 4), (false, 5, 0)];
     let mut b = ProgrammableTransactionBuilder::new();
     for &(pausing, bits, _) in &steps {
@@ -440,9 +447,10 @@ fn pause_roles_revocation_and_failed_sequences_preserve_state_and_events() -> Re
     let outcome = w.h.execute(b.finish())?;
     outcome.assert_success();
     let names: Vec<_> = steps.iter().map(|(pausing, _, _)| if *pausing { "Paused" } else { "Unpaused" }).collect();
-    assert_eq!(outcome.wrapped_payloads(w.blast), names);
+    assert_eq!(outcome.events.iter().map(|event| event.type_.name.to_string()).collect::<Vec<_>>(), names);
+    assert!(outcome.events.iter().all(|event| event.type_.module.as_str() == "blast_admin_events"));
     for (event, &(_, bits, next)) in outcome.events.iter().zip(&steps) {
-        assert_eq!(event.contents, [bits, next]);
+        assert_eq!(event.contents, bcs::to_bytes(&(w.version, bits, next))?);
     }
     assert_eq!(w.pause_state()?, (w.version, 0, 1));
 
@@ -486,7 +494,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
         w.append_cap_recipient(&mut b, &launch, cap, "CreatorAdmin", recipient)?;
         let scheduled = w.h.execute(b.finish())?;
         scheduled.assert_success();
-        assert!(scheduled.wrapped_payloads(w.blast).is_empty());
+        assert!(scheduled.payload_names(w.blast).is_empty());
         let proposals: Vec<ActionScheduled<SuiAddress>> = scheduled.delayed("ActionScheduled", "launch", key)?;
         assert_eq!(proposals, [ActionScheduled {
             owner: launch.launch,
@@ -531,7 +539,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
             vec![launch.meme.clone(), sui()], vec![launch_arg, version, clock]);
         let applied = w.h.execute(b.finish())?;
         applied.assert_success();
-        assert_eq!(applied.wrapped_payloads(w.blast), [reassigned_name]);
+        assert_eq!(applied.payload_names(w.blast), [reassigned_name]);
         let changes: Vec<ActionApplied<SuiAddress>> = applied.delayed("ActionApplied", "launch", key)?;
         assert_eq!(changes, [ActionApplied {
             owner: launch.launch,
@@ -555,26 +563,39 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let mut w = world("mixed-generation-creation")?;
     let ticket = w.publish_ticket()?;
     let original = w.blast;
+    // `constants::generation!()` expands to the literal each `package_version::assert_current` call
+    // loads just before it, so the next generation's bytecode loads 2 there instead of 1.
     let mut code = w.launchpad_code.clone();
+    let mut changed = 0;
     for bytes in &mut code.modules {
         let mut module = CompiledModule::deserialize_with_defaults(bytes)?;
-        if module.self_id().name().as_str() == "blast_fun" {
-            let mut changed = 0;
-            for constant in &mut module.constant_pool {
-                if constant.type_ == SignatureToken::U64 {
-                    let value: u64 = bcs::from_bytes(&constant.data)?;
-                    if value == 1 || value == 2 {
-                        constant.data = bcs::to_bytes(&(value + 1))?;
-                        changed += 1;
+        let assert_current: Vec<_> = module.function_instantiations.iter().enumerate()
+            .filter(|(_, instantiation)| {
+                let handle = &module.function_handles[instantiation.handle.0 as usize];
+                module.identifiers[handle.name.0 as usize].as_str() == "assert_current"
+            })
+            .map(|(index, _)| index as u16)
+            .collect();
+        let mut module_changed = 0;
+        for definition in &mut module.function_defs {
+            let Some(code) = definition.code.as_mut() else { continue };
+            for at in 1..code.code.len() {
+                if let Bytecode::CallGeneric(index) = code.code[at] {
+                    if assert_current.contains(&index.0) && code.code[at - 1] == Bytecode::LdU64(1) {
+                        code.code[at - 1] = Bytecode::LdU64(2);
+                        module_changed += 1;
                     }
                 }
             }
-            assert_eq!(changed, 2, "advance only the compiled current and next generations");
+        }
+        if module_changed > 0 {
+            changed += module_changed;
             bytes.clear();
             module.serialize_with_version(module.version, bytes)?;
         }
     }
-    let role = parse_sui_type_tag(&format!("{original}::blast_fun_domain::UpgradeAdmin"))?;
+    assert!(changed > 0, "advance every compiled generation check");
+    let role = launchpad_role(w.admin, w.core, original, "UpgradeAdmin")?;
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, true))?;
     let root = b.obj(w.h.owned(w.root))?;
@@ -589,10 +610,10 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let cap = schedule.obj(w.h.owned(w.admin_cap))?;
     let witness = call(&mut schedule, w.admin, "blast_acl", "sign_in", vec![role.clone()], vec![acl, cap]);
     let custody_arg = schedule.obj(w.h.shared(custody, true))?;
-    let version = schedule.obj(w.h.shared(w.version, false))?;
     let proposed = schedule.pure(digest.to_vec())?;
     let clock = schedule.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-    call(&mut schedule, original, "package_admin", "schedule_upgrade", vec![], vec![custody_arg, version, witness, proposed, clock]);
+    let marker = w.marker()?;
+    call(&mut schedule, w.admin, "package_admin", "schedule_upgrade", vec![marker.clone()], vec![custody_arg, witness, proposed, clock]);
     let schedule = schedule.finish();
     let (_, scheduled_at_ms): (ObjectID, u64) = bcs::from_bytes(&w.h.contents(SUI_CLOCK_OBJECT_ID))?;
     let scheduled = w.h.execute(schedule.clone())?;
@@ -602,7 +623,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     enum UpgradeAction { Upgrade(Vec<u8>), #[allow(dead_code)] MakeImmutable }
     let admin = w.admin;
     let upgrade_event = |name: &str| parse_sui_type_tag(&format!(
-        "{admin}::delayed_action::{name}<{original}::package_admin::UpgradeKey, {original}::package_admin::UpgradeAction>",
+        "{admin}::delayed_action::{name}<{admin}::package_admin::UpgradeKey<{original}::blast_fun::BLAST_FUN>, {admin}::package_admin::UpgradeAction>",
     ));
     let proposal = ActionScheduled {
         owner: custody,
@@ -616,12 +637,11 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     assert_eq!(scheduled.delayed::<ActionScheduled<UpgradeAction>>("ActionScheduled", "package_admin", "UpgradeKey")?,
         [proposal.clone()]);
 
-    w.change_role("CancelAdmin", true)?;
+    w.change_role("PackageCancelAdmin", true)?;
     let mut cancel = ProgrammableTransactionBuilder::new();
-    let witness = w.sign_in(&mut cancel, "CancelAdmin")?;
+    let witness = w.sign_in(&mut cancel, "PackageCancelAdmin")?;
     let custody_arg = cancel.obj(w.h.shared(custody, true))?;
-    let version = cancel.obj(w.h.shared(w.version, false))?;
-    call(&mut cancel, original, "package_admin", "cancel_upgrade_action", vec![], vec![custody_arg, version, witness]);
+    call(&mut cancel, w.admin, "package_admin", "cancel_upgrade_action", vec![marker.clone()], vec![custody_arg, witness]);
     let cancelled = w.h.execute(cancel.finish())?;
     cancelled.assert_success();
     assert_eq!(cancelled.events.len(), 1);
@@ -638,9 +658,9 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let version = b.obj(w.h.shared(w.version, true))?;
     let digest = b.pure(digest.to_vec())?;
     let clock = b.obj(w.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-    let upgrade_ticket = call(&mut b, original, "package_admin", "authorize_upgrade", vec![], vec![custody_arg, version, witness, digest, clock]);
+    let upgrade_ticket = call(&mut b, w.admin, "package_admin", "authorize_upgrade", vec![marker.clone()], vec![custody_arg, witness, digest, clock]);
     let receipt = b.upgrade(original, upgrade_ticket, code.dependencies, code.modules);
-    call(&mut b, original, "package_admin", "commit_upgrade_and_advance", vec![], vec![custody_arg, version, witness, receipt]);
+    call(&mut b, w.admin, "package_admin", "commit_upgrade_and_advance", vec![marker], vec![custody_arg, witness, version, receipt]);
     let upgrade = b.finish();
     w.h.assert_rolled_back(
         upgrade.clone(),
@@ -662,7 +682,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     upgraded.assert_success();
     w.blast = upgraded.effects.created().into_iter()
         .map(|(reference, _)| reference.0).find(|id| w.h.object(*id).is_package()).unwrap();
-    let (_, _, generation): (ObjectID, u8, u64) = bcs::from_bytes(&w.h.contents(w.version))?;
+    let (_, _, generation) = w.pause_state()?;
     assert_eq!(generation, 2);
 
     // A fresh adapter links to the active dependency while preserving core type origins.
@@ -674,7 +694,7 @@ fn mixed_generation_creation_rejects_each_stale_step_after_native_upgrade() -> R
     let mut b = ProgrammableTransactionBuilder::new();
     let acl = b.obj(w.h.shared(w.acl, false))?;
     let cap = b.obj(w.h.owned(w.admin_cap))?;
-    let role = parse_sui_type_tag(&format!("{original}::blast_fun_domain::AdapterAdmin"))?;
+    let role = launchpad_role(w.admin, w.core, original, "AdapterAdmin")?;
     let witness = call(&mut b, w.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]);
     let config = b.obj(w.h.shared(w.config, true))?;
     let version = b.obj(w.h.shared(w.version, false))?;
@@ -764,7 +784,7 @@ fn failed_migration_ptbs_commit_nothing_and_one_ptb_completes_atomically() -> Re
     let outcome = w.h.execute(pt)?;
     outcome.assert_success();
     assert_eq!(
-        outcome.wrapped_payloads(w.blast),
+        outcome.payload_names(w.blast),
         ["MigrationAllocationPaid", "ProtocolFeesAccrued", "Migrated"]
     );
     assert_eq!(w.launch_lifecycle(&a)?, LaunchLifecycle::Migrated);
@@ -882,7 +902,7 @@ fn maximum_fee_split_fits_protocol_limits_at_creation_and_migration() -> Result<
         ),
         (BLAST_BPS, BLAST_BPS),
     );
-    assert_eq!(launch_created.allocation_plan.recipients, [(DESTINATION.into(), 500, 500)]);
+    assert_eq!(launch_created.allocation_plan.recipients, [((DESTINATION.into(), None), 500, 500)]);
     records.push(w.record(&a, "create_launch", "4 parts + 16 address routes", &created));
 
     // The launch carries the split unchanged to migration, which neither reads nor pays it.
@@ -890,7 +910,7 @@ fn maximum_fee_split_fits_protocol_limits_at_creation_and_migration() -> Result<
     let migrated = w.h.execute(w.migrate(&a, &a, false)?)?;
     migrated.assert_success();
     assert_eq!(
-        migrated.wrapped_payloads(w.blast),
+        migrated.payload_names(w.blast),
         ["MigrationAllocationPaid", "ProtocolFeesAccrued", "Migrated"]
     );
     records.push(w.record(&a, "migrate", "4 parts + 16 address routes", &migrated));
@@ -914,7 +934,7 @@ fn opening_round_keeps_one_record_per_bidder_and_nothing_trades_before_settlemen
     // The first bid creates the bidder's launch-owned record; a later bid only raises it.
     let first = w.h.execute(w.join(&launch, BID)?)?;
     first.assert_success();
-    assert_eq!(first.wrapped_payloads(w.blast), ["OpeningRoundJoined"]);
+    assert_eq!(first.payload_names(w.blast), ["OpeningRoundJoined"]);
     let records = first.created(&w.h, "dynamic_field", "Field");
     assert_eq!(records.len(), 1, "the first bid creates one bidder record");
     let record = records[0];
@@ -945,7 +965,7 @@ fn opening_round_keeps_one_record_per_bidder_and_nothing_trades_before_settlemen
     w.h.assert_rolled_back(pt, abort(OPENING_ROUND_ENDED), &watched, &owners)?;
     let settled = w.h.execute(w.settle(&launch)?)?;
     settled.assert_success();
-    assert_eq!(settled.wrapped_payloads(w.blast), ["Bought", "OpeningRoundSettled"]);
+    assert_eq!(settled.payload_names(w.blast), ["Bought", "OpeningRoundSettled"]);
     let bought: Bought = bcs::from_bytes(settled.events_of("events", "Bought")[0])?;
     let round: OpeningRoundSettled = bcs::from_bytes(settled.events_of("events", "OpeningRoundSettled")[0])?;
     assert_eq!((bought.quote_in, bought.quote_refund), (2 * BID, 0));
@@ -956,12 +976,12 @@ fn opening_round_keeps_one_record_per_bidder_and_nothing_trades_before_settlemen
     // curve trades.
     let delivered = w.h.execute(w.deliver(&launch, bidder)?)?;
     delivered.assert_success();
-    assert_eq!(delivered.wrapped_payloads(w.blast), ["OpeningRoundDelivered"]);
+    assert_eq!(delivered.payload_names(w.blast), ["OpeningRoundDelivered"]);
     assert!(delivered.effects.deleted().iter().any(|(object, _, _)| *object == record));
     assert_eq!(delivered.coins_created_for(&w.h, bidder), w.coins(&launch, round.meme, 0));
     let open = w.h.execute(w.buy(&launch, BID, 1)?)?;
     open.assert_success();
-    assert_eq!(open.wrapped_payloads(w.blast), ["Bought"]);
+    assert_eq!(open.payload_names(w.blast), ["Bought"]);
 
     // Capacity evidence: net storage charged by each step. Only the first bid leaves a new object
     // behind, and delivery refunds it.
@@ -1025,7 +1045,6 @@ struct OpeningRoundBid {
 struct LaunchCreated {
     _launch_id: ObjectID,
     _ticket_id: ObjectID,
-    _quote: String,
     venue: String,
     lp_fee_split: FeeSplit,
     _virtual_quote: u64,
@@ -1038,7 +1057,8 @@ struct LaunchCreated {
     _partner_id: Option<ObjectID>,
 }
 
-/// Mirrors `blast_fun::allocation::AllocationPlan`; each recipient is (destination, Meme, Quote).
+/// Mirrors `blast_fun::allocation::AllocationPlan`; each recipient is ((destination, vesting
+/// terms), Meme, Quote).
 #[derive(Deserialize)]
 struct AllocationPlan {
     _curve_meme_bps: u64,
@@ -1046,7 +1066,7 @@ struct AllocationPlan {
     _lp_quote_bps: u64,
     protocol_meme_bps: u64,
     protocol_quote_bps: u64,
-    recipients: Vec<(SuiAddress, u64, u64)>,
+    recipients: Vec<((SuiAddress, Option<(u64, u64, u64)>), u64, u64)>,
 }
 
 /// Mirrors `blast_fun::events::Migrated` field order for BCS decoding.
@@ -1152,7 +1172,7 @@ fn world(work: &str) -> Result<World> {
     let (adapter, _) = h.publish(adapter_code.clone())?;
     let (version, custody) = h.wrap_launchpad(blast, published, admin, admin_published, core, sui(), parse_sui_type_tag(&format!("{adapter}::mock_adapter::Venue"))?)?;
     let project = build(&fixture.join("project"), &stack.linked(), &work)?;
-    h.unpause(blast, "blast_fun_domain", admin, admin_published, version, custody, [runtime, config], 7)?;
+    h.unpause_launchpad(blast, admin, admin_published, version, custody, runtime, config, 7)?;
     let launchpad_code = stack.launchpad_code.clone();
     let mut w = World { h, core, blast, adapter, version, runtime, config, launch_registry, launchpad_origin: blast, project, launchpad_code, adapter_code, admin, acl, root, admin_cap: ObjectID::ZERO, custody };
 
@@ -1160,7 +1180,7 @@ fn world(work: &str) -> Result<World> {
     // setters below take; the cap then signs in once per role.
     let mut roles = Vec::new();
     for role in ["ListingAdmin", "AdapterAdmin", "FeeAdmin", "TreasuryAdmin"] {
-        roles.push(parse_sui_type_tag(&format!("{blast}::blast_fun_domain::{role}"))?);
+        roles.push(launchpad_role(admin, core, blast, role)?);
     }
     let mut builder = ProgrammableTransactionBuilder::new();
     let acl_arg = builder.obj(w.h.shared(acl, true))?;
@@ -1221,7 +1241,7 @@ impl World {
     fn sign_in(&self, b: &mut ProgrammableTransactionBuilder, role: &str) -> Result<Argument> {
         let acl = b.obj(self.h.shared(self.acl, false))?;
         let cap = b.obj(self.h.owned(self.admin_cap))?;
-        let role = parse_sui_type_tag(&format!("{}::blast_fun_domain::{role}", self.blast))?;
+        let role = launchpad_role(self.admin, self.core, self.launchpad_origin, role)?;
         Ok(call(b, self.admin, "blast_acl", "sign_in", vec![role], vec![acl, cap]))
     }
 
@@ -1230,21 +1250,22 @@ impl World {
         let acl = b.obj(self.h.shared(self.acl, true))?;
         let root = b.obj(self.h.owned(self.root))?;
         let cap = b.pure(self.admin_cap)?;
-        let role = parse_sui_type_tag(&format!("{}::blast_fun_domain::{role}", self.blast))?;
+        let role = launchpad_role(self.admin, self.core, self.launchpad_origin, role)?;
         call(&mut b, self.admin, "blast_acl", if grant { "grant_role" } else { "revoke_role" }, vec![role], vec![acl, root, cap]);
         self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
         Ok(())
     }
 
-    fn schedule_treasury(&self, destination: SuiAddress) -> Result<ProgrammableTransaction> {
+    /// Schedules Blast's trade-fee share at `share` basis points under the FeeAdmin role.
+    fn schedule_fee_share(&self, share: u64) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
-        let witness = self.sign_in(&mut b, "TreasuryAdmin")?;
+        let witness = self.sign_in(&mut b, "FeeAdmin")?;
         let config = b.obj(self.h.shared(self.runtime, true))?;
         let version = b.obj(self.h.shared(self.version, false))?;
-        let destination = b.pure(destination)?;
+        let share = self.bps(&mut b, share)?;
         let clock = b.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
         let next_delay = b.pure(172_800_000u64)?;
-        call(&mut b, self.blast, "runtime_config", "schedule_treasury", vec![], vec![config, version, witness, destination, next_delay, clock]);
+        call(&mut b, self.blast, "runtime_config", "schedule_protocol_fee_share", vec![], vec![config, version, witness, share, next_delay, clock]);
         Ok(b.finish())
     }
 
@@ -1275,10 +1296,10 @@ impl World {
         Ok(b.finish())
     }
 
-    fn applied_treasury(&self) -> Result<SuiAddress> {
-        let (_, _, _, treasury): RuntimeConfigContents = bcs::from_bytes(&self.h.contents(self.runtime))?;
-        assert_eq!(treasury.owner, self.runtime);
-        Ok(treasury.value)
+    fn applied_fee_share(&self) -> Result<u64> {
+        let (_, _, fee_share): RuntimeConfigContents = bcs::from_bytes(&self.h.contents(self.runtime))?;
+        assert_eq!(fee_share.owner, self.runtime);
+        Ok(fee_share.value)
     }
 
     fn set_pause(&mut self, pause: bool, bits: u8) -> Result<()> {
@@ -1292,19 +1313,27 @@ impl World {
         Ok(b.finish())
     }
 
+    /// Appends `blast_admin::package_admin::pause` or the launchpad's `launch_config::unpause`
+    /// under `role`'s witness.
     fn append_pause(&self, b: &mut ProgrammableTransactionBuilder, pause: bool, bits: u8, role: &str) -> Result<()> {
         let witness = self.sign_in(b, role)?;
         if !pause {
-            return append_unpause(&self.h, b, self.blast, self.custody, self.version, witness, [self.runtime, self.config], bits);
+            return append_launchpad_unpause(&self.h, b, self.blast, self.custody, self.version, witness, self.runtime, self.config, bits);
         }
         let version = b.obj(self.h.shared(self.version, true))?;
         let bits = b.pure(bits)?;
-        call(b, self.blast, "blast_fun", "pause", vec![], vec![version, witness, bits]);
+        call(b, self.admin, "package_admin", "pause", vec![self.marker()?], vec![version, witness, bits]);
         Ok(())
     }
 
+    fn marker(&self) -> Result<TypeTag> {
+        blast_launchpad_ptb_tests::launchpad_marker(self.launchpad_origin)
+    }
+
+    /// The version's id, paused bits and generation.
     fn pause_state(&self) -> Result<(ObjectID, u8, u64)> {
-        Ok(bcs::from_bytes(&self.h.contents(self.version))?)
+        let (id, _, paused, _, generation): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
+        Ok((id, paused, generation))
     }
 
     fn replace_pause_mask(&mut self, mask: u8) -> Result<()> {
@@ -1320,10 +1349,10 @@ impl World {
 
     /// Only seed the stored generation; masks are always reached through real public calls.
     fn set_pause_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
-        let (id, paused, _) = self.pause_state()?;
+        let (id, valid, paused, witness, _): GenericPackageVersionContents = bcs::from_bytes(&self.h.contents(self.version))?;
         let mut object = self.h.object(self.version);
         object.data.try_as_move_mut().expect("PackageVersion")
-            .set_contents_unsafe(bcs::to_bytes(&(id, paused, generation))?);
+            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, generation))?);
         self.h.insert(object);
         Ok(())
     }
@@ -1405,7 +1434,7 @@ impl World {
     /// into its shared form.
     fn publish_ticket(&mut self) -> Result<Ticket> {
         let (project_id, published) = self.h.publish(self.project.clone())?;
-        assert_eq!(published.wrapped_payloads(self.blast), ["LaunchTicketCreated"]);
+        assert_eq!(published.payload_names(self.blast), ["LaunchTicketCreated"]);
         let ticket = published.created(&self.h, "launch_ticket", "LaunchTicket")[0];
         let treasury_cap = published.created(&self.h, "coin", "TreasuryCap");
         assert_eq!(treasury_cap.len(), 1, "the publisher receives the coin's TreasuryCap");
@@ -1434,7 +1463,7 @@ impl World {
         created.assert_success();
         assert!(created.consumed(ticket.treasury_cap), "finalize consumes the TreasuryCap");
         assert_eq!(
-            created.wrapped_payloads(self.blast),
+            created.payload_names(self.blast),
             ["LaunchCreated", "LaunchShared"],
         );
         let launch = created.created(&self.h, "launch", "Launch");
@@ -1463,7 +1492,7 @@ impl World {
         let pt = self.buy(launch, BUY, 1)?;
         let bought = self.h.execute(pt)?;
         bought.assert_success();
-        assert_eq!(bought.wrapped_payloads(self.blast), ["Bought"]);
+        assert_eq!(bought.payload_names(self.blast), ["Bought"]);
         assert_eq!(self.launch_lifecycle(launch)?, LaunchLifecycle::MigrationReady);
 
         Ok(())
@@ -1576,12 +1605,14 @@ impl World {
         let config = builder.obj(self.h.shared(self.config, false))?;
         let currency = builder.obj(self.h.shared(currency_owner.currency, true))?;
         let fail = builder.pure(fail)?;
+        let clock = builder.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
         call(&mut builder, self.adapter, "mock_adapter", "migrate", vec![launch.meme.clone()], vec![
             launch_arg,
             version,
             config,
             currency,
             fail,
+            clock,
         ]);
 
         Ok(builder.finish())
@@ -1593,12 +1624,14 @@ impl World {
         let version = builder.obj(self.h.shared(self.version, false))?;
         let config = builder.obj(self.h.shared(self.config, false))?;
         let currency = builder.obj(self.h.shared(launch.currency, true))?;
+        let clock = builder.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
 
         Ok(call(builder, self.blast, "launch", "migrate", vec![launch.meme.clone(), sui()], vec![
             launch_arg,
             version,
             config,
             currency,
+            clock,
         ]))
     }
 
@@ -1644,8 +1677,11 @@ impl World {
     /// explicit protocol allocation.
     fn plan_arg(&self, builder: &mut ProgrammableTransactionBuilder) -> Result<Argument> {
         let destination = builder.pure(SuiAddress::from(DESTINATION))?;
+        let vesting_terms = parse_sui_type_tag(&format!("{}::payout::VestingTerms", self.core))?;
+        let outright = call(builder, sui_types::MOVE_STDLIB_PACKAGE_ID, "option", "none", vec![vesting_terms], vec![]);
+        let payee = call(builder, self.core, "payout", "recipient", vec![], vec![destination, outright]);
         let share = self.bps(builder, 500)?;
-        let recipient = call(builder, self.blast, "allocation", "recipient", vec![], vec![destination, share, share]);
+        let recipient = call(builder, self.blast, "allocation", "recipient", vec![], vec![payee, share, share]);
         let recipient_type = parse_sui_type_tag(&format!("{}::allocation::Recipient", self.blast))?;
         let recipients = builder.command(Command::make_move_vec(Some(recipient_type), vec![recipient]));
         let curve_meme = self.bps(builder, 7_000)?;

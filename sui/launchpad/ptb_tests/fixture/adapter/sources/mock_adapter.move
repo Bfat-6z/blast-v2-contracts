@@ -33,13 +33,14 @@ public fun prepare<Meme>(): VenueTicket<Meme, SUI> {
 /// migrated.
 public fun migrate<Meme>(
     launch: &mut Launch<Meme, SUI>,
-    version: &PackageVersion,
+    version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     currency: &mut Currency<Meme>,
     fail: bool,
+    clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let (meme, quote, _) = launch.migrate(version, config, currency, ctx).redeem(Venue());
+    let (meme, quote, _) = launch.migrate(version, config, currency, clock, ctx).redeem(Venue());
     transfer::share_object(MockVault { id: object::new(ctx), meme, quote });
     assert!(!fail, EAdapterFailure);
 }
@@ -50,8 +51,10 @@ const EAdapterFailure: u64 = 0;
 
 // === Imports ===
 
+use blast_admin::package_version::PackageVersion;
+
 use blast_core::migration::{Self, VenueTicket};
 
-use blast_fun::{blast_fun::PackageVersion, launch::Launch, launch_config::LaunchConfig};
+use blast_fun::{blast_fun::BLAST_FUN, launch::Launch, launch_config::LaunchConfig};
 
-use sui::{balance::Balance, coin_registry::Currency, sui::SUI};
+use sui::{balance::Balance, clock::Clock, coin_registry::Currency, sui::SUI};

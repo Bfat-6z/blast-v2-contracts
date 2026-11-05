@@ -16,7 +16,10 @@ public(package) fun quote_set<Quote>(allowed: bool) {
     sui::event::emit(QuoteSet<Quote> { allowed });
 }
 
-public(package) fun creator_caps_claimed<Meme, Quote>(curve_fee_cap_id: ID, blast_metadata_cap_id: ID) {
+public(package) fun creator_caps_claimed<Meme, Quote>(
+    curve_fee_cap_id: ID,
+    blast_metadata_cap_id: ID,
+) {
     sui::event::emit(CreatorCapsClaimed<Meme, Quote> {
         curve_fee_cap_id,
         blast_metadata_cap_id,
@@ -26,7 +29,7 @@ public(package) fun creator_caps_claimed<Meme, Quote>(curve_fee_cap_id: ID, blas
 public(package) fun curve_fee_cap_reassigned<Meme, Quote>(
     launch_id: ID,
     curve_fee_cap_id: ID,
-    recipient: address
+    recipient: address,
 ) {
     sui::event::emit(CurveFeeCapReassigned<Meme, Quote> { launch_id, curve_fee_cap_id, recipient });
 }
@@ -34,9 +37,13 @@ public(package) fun curve_fee_cap_reassigned<Meme, Quote>(
 public(package) fun metadata_cap_reassigned<Meme, Quote>(
     launch_id: ID,
     blast_metadata_cap_id: ID,
-    recipient: address
+    recipient: address,
 ) {
-    sui::event::emit(MetadataCapReassigned<Meme, Quote> { launch_id, blast_metadata_cap_id, recipient });
+    sui::event::emit(MetadataCapReassigned<Meme, Quote> {
+        launch_id,
+        blast_metadata_cap_id,
+        recipient,
+    });
 }
 
 public(package) fun meme_metadata_updated<Meme, Quote>(
@@ -110,7 +117,12 @@ public(package) fun opening_round_settled<Meme, Quote>(
     meme_amount: u64,
     quote_amount: u64,
 ) {
-    sui::event::emit(OpeningRoundSettled<Meme, Quote> { launch_id, bids, meme_amount, quote_amount });
+    sui::event::emit(OpeningRoundSettled<Meme, Quote> {
+        launch_id,
+        bids,
+        meme_amount,
+        quote_amount,
+    });
 }
 
 public(package) fun opening_round_delivered<Meme, Quote>(
@@ -120,7 +132,13 @@ public(package) fun opening_round_delivered<Meme, Quote>(
     meme_amount: u64,
     quote_amount: u64,
 ) {
-    sui::event::emit(OpeningRoundDelivered<Meme, Quote> { launch_id, bidder, bid, meme_amount, quote_amount });
+    sui::event::emit(OpeningRoundDelivered<Meme, Quote> {
+        launch_id,
+        bidder,
+        bid,
+        meme_amount,
+        quote_amount,
+    });
 }
 
 public(package) fun bought<Meme, Quote>(
@@ -183,7 +201,12 @@ public(package) fun migration_allocation_paid<Meme, Quote>(
     meme_amount: u64,
     quote_amount: u64,
 ) {
-    sui::event::emit(MigrationAllocationPaid<Meme, Quote> { launch_id, destination, meme_amount, quote_amount });
+    sui::event::emit(MigrationAllocationPaid<Meme, Quote> {
+        launch_id,
+        destination,
+        meme_amount,
+        quote_amount,
+    });
 }
 
 public(package) fun migrated<Meme, Quote>(
@@ -202,7 +225,11 @@ public(package) fun migrated<Meme, Quote>(
     });
 }
 
-public(package) fun creator_fees_claimed<Meme, Quote>(launch_id: ID, meme_amount: u64, quote_amount: u64) {
+public(package) fun creator_fees_claimed<Meme, Quote>(
+    launch_id: ID,
+    meme_amount: u64,
+    quote_amount: u64,
+) {
     sui::event::emit(CreatorFeesClaimed<Meme, Quote> { launch_id, meme_amount, quote_amount });
 }
 

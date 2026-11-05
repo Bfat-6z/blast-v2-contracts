@@ -10,9 +10,9 @@ ACL and the generic `package_version::PackageVersion<BLAST_FUN>` and
 `UpgradeAdmin`, `PauseAdmin`, `UnpauseAdmin` and `CancelAdmin` roles; product
 roles are `blast_core::blast_domain`'s
 ([ADR 0097](../../docs/decisions/0097-one-singleton-acl-with-typed-roles.md)).
-This package's marker module only pins the unpause witness, and
-`launch_config::unpause` releases pause bits once every launchpad notice is
-guarded. Blast's fees go to `blast_core::blast_treasury::Treasury` through the
+This package's marker module owns `PackageWitness`, the one witness it pins at
+publication and passes to every sealed call, and `launch_config::unpause`
+releases pause bits once every launchpad notice is guarded. Blast's fees go to `blast_core::blast_treasury::Treasury` through the
 core protocol-fee ledger each launch holds.
 
 A governed upgrade is one transaction: authorize the digest, run the native

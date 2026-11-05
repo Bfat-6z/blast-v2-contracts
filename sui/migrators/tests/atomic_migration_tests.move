@@ -545,7 +545,7 @@ fun vault_created_bytes(
     bytes.append(bcs::to_bytes(&position_id));
     bytes.append(bcs::to_bytes(&1u128));
     bytes.append(bcs::to_bytes(&launch_id));
-    bytes.append(bcs::to_bytes(&type_name::with_original_ids<launch::PackageWitness>()));
+    bytes.append(bcs::to_bytes(&type_name::with_original_ids<blast_fun::blast_fun::PackageWitness>()));
     bytes.append(bcs::to_bytes(&owner_split()));
     bytes.append(bcs::to_bytes(&bps::new(protocol_bps)));
     bytes.append(bcs::to_bytes(&bps::new(protocol_bps)));

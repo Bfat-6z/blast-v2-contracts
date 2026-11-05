@@ -303,25 +303,25 @@ fi
 
 blast_facts="$(move_facts sources/blast_fun.move)"
 
-# The OTW hands the deployer one owned generic Publication; blast_admin::package_admin::wrap seals
-# the native capabilities and shares PackageVersion<BLAST_FUN>, fully paused. This package keeps no
-# publication, version, pause, or custody state of its own, and its marker module only pins and
-# constructs the unpause witness.
+# The OTW hands the deployer one owned generic Publication pinning the package witness;
+# blast_admin::package_admin::wrap seals the native capabilities and shares
+# PackageVersion<BLAST_FUN>, fully paused. This package keeps no publication, version, pause, or
+# custody state of its own; its marker module owns the package witness and its one package-only
+# constructor.
 if [[ ! -f sources/blast_fun.move ]] \
   || [[ -e sources/package_admin.move || -e sources/blast_fun_domain.move ]] \
   || [[ "$(move_production_type BLAST_FUN <<<"$blast_facts")" != 'struct BLAST_FUN() has drop;' ]] \
-  || [[ "$(move_production_type UnpauseWitness <<<"$blast_facts")" != 'struct UnpauseWitness() has drop;' ]] \
-  || [[ "$(awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' <<<"$blast_facts" | LC_ALL=C sort | tr '\n' ' ')" != 'BLAST_FUN UnpauseWitness ' ]] \
-  || [[ "$(move_production_functions <<<"$blast_facts")" != 'clear_pause_bits:package:0 init:private:0 ' ]] \
+  || [[ "$(move_production_type PackageWitness <<<"$blast_facts")" != 'struct PackageWitness() has drop;' ]] \
+  || [[ "$(awk -F'\t' '$1 == "TYPE" && $5 == 0 { print $2 }' <<<"$blast_facts" | LC_ALL=C sort | tr '\n' ' ')" != 'BLAST_FUN PackageWitness ' ]] \
+  || [[ "$(move_production_functions <<<"$blast_facts")" != 'init:private:0 package_witness:package:0 ' ]] \
   || [[ "$(move_production_body init <<<"$blast_facts")" \
-    != 'package_version::new_publication<_, UnpauseWitness>(otw, constants::valid_pause_bits!(), ctx).keep(ctx);' ]] \
-  || [[ "$(move_production_function_contract clear_pause_bits <<<"$blast_facts")" \
-    != 'package:0:0:fun clear_pause_bits( unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_FUN>>, package_admin: &PackageAdmin<BLAST_FUN>, package_version: &mut PackageVersion<BLAST_FUN>, bits: u8, )' ]] \
-  || [[ "$(move_production_body clear_pause_bits <<<"$blast_facts")" \
-    != 'package_admin.clear_pause_bits(unpause_admin, UnpauseWitness(), package_version, bits);' ]] \
-  || rg -n '\b(OperationalVersion|operational_version|upgrade_custody|UpgradeCustody|Publication \{)\b' sources --glob '*.move' \
+    != 'package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx).keep(ctx);' ]] \
+  || [[ "$(move_production_function_contract package_witness <<<"$blast_facts")" \
+    != 'package:0:0:fun package_witness(): PackageWitness' ]] \
+  || [[ "$(move_production_body package_witness <<<"$blast_facts")" != 'PackageWitness()' ]] \
+  || rg -n '\b(OperationalVersion|operational_version|upgrade_custody|UpgradeCustody|UnpauseWitness|Publication \{)\b' sources --glob '*.move' \
   || rg -n '^public struct (Publication|PackageVersion|PackageAdmin)\b' sources --glob '*.move'; then
-  echo 'blast_fun.move must pin and alone construct the unpause witness over the generic publication, version, and administration.' >&2
+  echo 'blast_fun.move must own the package witness and its one package-only constructor over the generic publication, version, and administration.' >&2
   failures=$((failures + 1))
 fi
 
@@ -353,7 +353,7 @@ launchpad_role_pattern="$(IFS='|'; echo "${launchpad_roles[*]}")"
 # Product roles resolve to blast_core::blast_domain and the package role to blast_admin's generic
 # one, so a same-named local or foreign role fails here.
 role_import_violations="$(for file in "${source_files[@]}"; do
-  role_source="$(move_facts "$file" | move_normalized_source)"
+  role_source="$(sed '/^\/\/ === Test-Only Functions ===/,/^\/\/ === Imports ===/d' "$file" | tr '\n' ' ')"
   if rg -q 'AdminWitness<(CreatorAdmin|TreasuryAdmin|FeeAdmin|ListingAdmin|AdapterAdmin|ClaimSignerAdmin|CancelAdmin)>' <<<"$role_source" \
     && ! rg -q 'use blast_core::\{[^;]*\bblast_domain::' <<<"$role_source"; then
     echo "  ${file}: product roles must come from blast_core::blast_domain"
@@ -400,7 +400,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'blast_fun:clear_pause_bits:UnpauseAdmin<BLAST_FUN> launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_protocol_lp_fees:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:cancel_venue:CancelAdmin launch_config:cancel_venue_delay:CancelAdmin launch_config:remove_partner:FeeAdmin launch_config:remove_venue:AdapterAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_protocol_lp_fees:FeeAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:schedule_venue:AdapterAdmin launch_config:schedule_venue_delay:AdapterAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin launch_config:unpause:UnpauseAdmin<BLAST_FUN> runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin ' ]]; then
+  'launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_protocol_lp_fees:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:cancel_venue:CancelAdmin launch_config:cancel_venue_delay:CancelAdmin launch_config:remove_partner:FeeAdmin launch_config:remove_venue:AdapterAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_protocol_lp_fees:FeeAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:schedule_venue:AdapterAdmin launch_config:schedule_venue_delay:AdapterAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin launch_config:unpause:UnpauseAdmin<BLAST_FUN> runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))
@@ -416,14 +416,16 @@ if rg -U -n 'fun init\([^)]*\) \{[^}]*events::' sources --glob '*.move' \
   failures=$((failures + 1))
 fi
 
-# Unpausing is the release gate: only launch_config::unpause clears pause bits, through the marker
-# module's witness, after the version check and the guarded-notice check over both configurations.
-if [[ "$(rg -l '\bclear_pause_bits\(' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" \
-    != 'sources/blast_fun.move sources/launch_config.move ' ]] \
+# Unpausing is the release gate: only launch_config::unpause clears pause bits, with the package
+# witness, after the version check and the guarded-notice check over both configurations.
+if [[ "$(for file in "${source_files[@]}"; do
+      move_facts "$file" | awk -F'\t' -v module="$(basename "$file" .move)" \
+        '$1 == "FN" && $6 == 0 && index($10, "clear_pause_bits(") > 0 { print module ":" $2 }'
+    done | LC_ALL=C sort | tr '\n' ' ')" != 'launch_config:unpause ' ]] \
   || [[ "$(move_production_function_contract unpause <<<"$(move_facts sources/launch_config.move)")" \
     != 'public:0:0:fun unpause( self: &LaunchConfig, runtime_config: &RuntimeConfig, unpause_admin: &AdminWitness<UnpauseAdmin<BLAST_FUN>>, package_admin: &PackageAdmin<BLAST_FUN>, package_version: &mut PackageVersion<BLAST_FUN>, bits: u8, )' ]] \
   || [[ "$(move_production_body unpause <<<"$(move_facts sources/launch_config.move)")" \
-    != 'package_version.assert_current(constants::generation!()); assert!( self.is_guarded() && runtime_config.is_guarded(), blast_fun::errors::unguarded_notice!(), ); blast_fun::blast_fun::clear_pause_bits(unpause_admin, package_admin, package_version, bits);' ]] \
+    != 'package_version.assert_current(constants::generation!()); assert!( self.is_guarded() && runtime_config.is_guarded(), blast_fun::errors::unguarded_notice!(), ); package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);' ]] \
   || rg -n '\bpackage_admin::pause\(|\bset_pause_bits\(' sources --glob '*.move'; then
   echo 'Only launch_config::unpause may clear pause bits, after every notice is guarded; pausing is blast_admin::package_admin::pause.' >&2
   failures=$((failures + 1))
@@ -658,7 +660,7 @@ if [[ -e sources/fees.move ]] \
     != 'accrue_trade_fees claim_creator_fees ' ]] \
   || [[ "$(awk -F'\t' '$1 == "FN" && $6 == 0 && $10 ~ /self\s*\.protocol_fees\s*\./ { print $2 }' <<<"$launch_fee_facts" | LC_ALL=C sort | tr '\n' ' ')" \
     != 'accrue_trade_fees claim_protocol_fees claim_protocol_fees_with_partner migrate ' ]] \
-  || [[ "$(count_occurrences 'protocol_fees::new\(PackageWitness\(\), id\.to_inner\(\), partner_id\)' <<<"$(move_production_body finalize <<<"$launch_fee_facts")")" != 1 ]]; then
+  || [[ "$(count_occurrences 'protocol_fees::new\(package_witness\(\), id\.to_inner\(\), partner_id\)' <<<"$(move_production_body finalize <<<"$launch_fee_facts")")" != 1 ]]; then
   echo "Blast's launch fees must sit in the core Ledger sealed by PackageWitness and the creator's in its own balances, each reached only by its accrual, claim, and migration." >&2
   failures=$((failures + 1))
 fi
@@ -970,7 +972,7 @@ if [[ ! -f sources/launch.move ]] \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
   || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, metadata_cap_reassignment, curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
-  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let mut protocol_fees = protocol_fees::new(PackageWitness(), id.to_inner(), partner_id); protocol_fees.accrue_sui(creation_fee); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
+  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let mut protocol_fees = protocol_fees::new(package_witness(), id.to_inner(), partner_id); protocol_fees.accrue_sui(creation_fee); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
   || [[ "$launch_finalize_body" != *'protocol_fees, creator_meme_fees: balance::zero(), creator_quote_fees: balance::zero(),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \
@@ -1020,7 +1022,7 @@ for authority_spec in \
   'self.partner_id = |set_partner ' \
   'self.assert_curve_fee_cap(|claim_creator_fees prove_owner ' \
   'owner_proof::new(|prove_owner ' \
-  'PackageWitness()|finalize migrate prove_owner ' \
+  'package_witness()|finalize migrate prove_owner ' \
   'self.assert_metadata_update(|set_description set_icon_url set_name ' \
   '&self.metadata_cap|set_description set_icon_url set_name ' \
   'transfer::public_transfer(|apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment migrate ' \
@@ -1038,24 +1040,25 @@ for authority_spec in \
 done
 # The owner proof is the curve-fee cap's only reach outside the launch: `prove_owner` checks the
 # version, then the live cap through the private `assert_curve_fee_cap`, before it seals a proof
-# for this launch under the package witness. The witness is a drop-only struct that no function
-# returns or takes, constructed only inside `finalize` (to seal the launch's fee ledger), `migrate`,
-# and `prove_owner`, so no other package can seal this launchpad's ledger, terms, hand-offs, or proofs.
+# for this launch under the package witness. The witness is the marker module's drop-only struct,
+# which no launch function returns or takes; launch.move obtains it only inside `finalize` (to seal
+# the launch's fee ledger), `migrate`, and `prove_owner`, and launch_config only inside `unpause`,
+# so no other package can seal this launchpad's ledger, terms, hand-offs, proofs, or pause release.
 if [[ "$(move_production_function_contract prove_owner <<<"$launch_facts")" \
     != 'public:0:0:fun prove_owner<Meme, Quote>( self: &Launch<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, curve_fee_cap: &CurveFeeCap<Meme>, ): OwnerProof' ]] \
   || [[ "$(move_production_body prove_owner <<<"$launch_facts")" \
-    != 'package_version.assert_current(constants::generation!()); self.assert_curve_fee_cap(curve_fee_cap); owner_proof::new(PackageWitness(), self.id.to_inner())' ]] \
+    != 'package_version.assert_current(constants::generation!()); self.assert_curve_fee_cap(curve_fee_cap); owner_proof::new(package_witness(), self.id.to_inner())' ]] \
   || [[ "$(move_production_function_contract assert_curve_fee_cap <<<"$launch_facts")" \
     != 'private:0:0:fun assert_curve_fee_cap<Meme, Quote>( self: &Launch<Meme, Quote>, curve_fee_cap: &CurveFeeCap<Meme>, )' ]] \
   || [[ "$(move_production_body assert_curve_fee_cap <<<"$launch_facts")" \
     != 'assert!( self.curve_fee_cap_id.contains(&object::id(curve_fee_cap)), blast_fun::errors::creator_cap_not_live!(), );' ]] \
-  || [[ "$(move_production_type PackageWitness <<<"$launch_facts")" != 'struct PackageWitness() has drop;' ]] \
-  || [[ "$(count_occurrences '\bPackageWitness\b' <<<"$launch_source")" != 5 ]] \
-  || [[ "$(count_occurrences '\bPackageWitness\(\)' <<<"$launch_source")" != 5 ]] \
+  || [[ -n "$(move_production_type PackageWitness <<<"$launch_facts")" ]] \
+  || [[ "$(count_occurrences '\bpackage_witness\(\)' <<<"$launch_source")" != 4 ]] \
   || [[ -n "$(awk -F'\t' '$1 == "FN" && $9 ~ /PackageWitness/ { print $2 }' <<<"$launch_facts")" ]] \
-  || [[ "$(rg -l '\bPackageWitness\b' sources --glob '*.move' | tr '\n' ' ')" != 'sources/launch.move ' ]] \
+  || [[ "$(rg -l '\bPackageWitness\b' sources --glob '*.move' | tr '\n' ' ')" != 'sources/blast_fun.move ' ]] \
+  || [[ "$(rg -l '\bpackage_witness\(\)' sources --glob '*.move' | LC_ALL=C sort | tr '\n' ' ')" != 'sources/blast_fun.move sources/launch.move sources/launch_config.move ' ]] \
   || [[ "$(rg -l '\bowner_proof::' sources --glob '*.move' | tr '\n' ' ')" != 'sources/launch.move ' ]]; then
-  launch_authority_violations+='  the owner proof must check the version and the live curve-fee cap, and the drop-only PackageWitness must be constructed only by finalize, migrate, and prove_owner'$'\n'
+  launch_authority_violations+='  the owner proof must check the version and the live curve-fee cap, and the package witness must be obtained only by finalize, migrate, prove_owner, and unpause'$'\n'
 fi
 # Each creator-cap reassignment stores the primitive's one-shot action slot, whose action is the
 # recipient; only the ready action reaches the reassignment that records new authority.
@@ -1087,7 +1090,7 @@ if [[ "$(move_production_signature claim_protocol_fees <<<"$launch_facts")" \
     != 'package_version.assert_current(constants::generation!());self.protocol_fees.pay(treasury,ctx);' ]] \
   || [[ "$(move_production_body claim_protocol_fees_with_partner <<<"$launch_facts" | move_semantic_shape)" \
     != 'package_version.assert_current(constants::generation!());self.protocol_fees.pay_with_partner(treasury,partner,ctx);' ]] \
-  || ! rg -Fxq 'use fun blast_core::payout::pay as Balance.pay;' sources/launch.move \
+  || ! rg -Fxq 'use fun payout::pay as Balance.pay;' sources/launch.move \
   || [[ -n "$(move_production_function_contract pay <<<"$launch_facts")$(move_production_function_contract pay_treasury <<<"$launch_facts")" ]]; then
   launch_authority_violations+='  a protocol fee claim must pay the sealed core Ledger to the core Treasury with no caller-chosen payee, and launch payouts must use blast_core::payout'$'\n'
 fi
@@ -1412,9 +1415,9 @@ if [[ "$(launch_functions_containing 'self.lifecycle = Lifecycle::Migrated;')" !
     'self.meme_reserve.withdraw_all()' \
     'self.lifecycle = Lifecycle::Migrated;' \
     'events::migrated<Meme,Quote>(' \
-    'let terms = migration::vault_terms(PackageWitness(),self.id.to_inner(),self.lp_fee_split,protocol_meme_bps,protocol_quote_bps,self.partner_id,migration::residuals_to_protocol());' \
+    'let terms = migration::vault_terms(package_witness(),self.id.to_inner(),self.lp_fee_split,protocol_meme_bps,protocol_quote_bps,self.partner_id,migration::residuals_to_protocol());' \
     <<<"$launch_migrate_shape" \
-  || [[ "$launch_migrate_shape" != *';migration::new(PackageWitness(),meme,quote,self.venue,terms)' ]] \
+  || [[ "$launch_migrate_shape" != *';migration::new(package_witness(),meme,quote,self.venue,terms)' ]] \
   || [[ "$(count_occurrences 'migration::(new|vault_terms|residuals_to_protocol)\(' <<<"$launch_source")" != 3 ]] \
   || rg -q '\bresiduals_to_owner\b|\bmigration::(redeem|issue_ticket)\b|\bVaultTerms\b' <<<"$launch_source" \
   || [[ "$(rg -l '\bmigration::' sources --glob '*.move' | tr '\n' ' ')" != 'sources/launch.move ' ]]; then

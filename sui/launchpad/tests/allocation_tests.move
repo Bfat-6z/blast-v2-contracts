@@ -107,7 +107,11 @@ fun random_plans_follow_largest_remainder_with_blast_rounded_up() {
 // === Test Helpers ===
 
 fun recipient(destination: address, meme_bps: u64, quote_bps: u64): Recipient {
-    allocation::recipient(blast_core::payout::recipient(destination, option::none()), bps::new(meme_bps), bps::new(quote_bps))
+    allocation::recipient(
+        blast_core::payout::recipient(destination, option::none()),
+        bps::new(meme_bps),
+        bps::new(quote_bps),
+    )
 }
 
 /// Builds a plan from Meme shares `[curve, lp, blast, ...]` and Quote shares `[lp, blast, ...]`;
