@@ -15,9 +15,14 @@ def functions(source):
         body = source.index("{", match.end())
         yield match[1], source[match.start():body], source[body + 1:source.index("\n}", body)]
 
+def module_path(module):
+    paths = list(SOURCES.rglob(module + ".move"))
+    assert len(paths) == 1, (module, paths)
+    return paths[0]
+
 for module, names in GUARDED.items():
     found = {}
-    for name, signature, body in functions((SOURCES / (module + ".move")).read_text()):
+    for name, signature, body in functions(module_path(module).read_text()):
         if not signature.startswith("public fun "):
             continue
         found[name] = (signature, body)
@@ -31,12 +36,12 @@ for module, names in GUARDED.items():
 
 # The package defines no administration of its own: version, pause, upgrades and custody are
 # blast_admin's generic objects, typed by the presale's one-time witness.
-for path in SOURCES.glob("*.move"):
+for path in SOURCES.rglob("*.move"):
     production = path.read_text().split("// === Test-Only Functions ===")[0]
     for forbidden in ("public struct Publication", "public struct PackageVersion", "public struct PackageAdmin",
                       "operational_version", "upgrade_custody", "UpgradeCap"):
         assert forbidden not in production, (path.name, forbidden)
-assert not (SOURCES / "package_admin.move").exists()
+assert not list(SOURCES.rglob("package_admin.move"))
 otw = (SOURCES / "blast_presale_package.move").read_text().split("// === Test-Only Functions ===")[0]
 assert "public struct BLAST_PRESALE_PACKAGE() has drop;" in otw
 assert "public struct PackageWitness() has drop;" in otw
@@ -46,10 +51,10 @@ assert ".keep(ctx)" in init and "share_object" not in init
 assert set(name for name, _, _ in functions(otw)) == {"init", "package_witness"}
 assert "public(package) fun package_witness(): PackageWitness {" in otw
 # Only the presale's unpause clears bits, after checking every presale delay.
-callers = [(path.stem, name) for path in SOURCES.glob("*.move")
+callers = [(path.stem, name) for path in SOURCES.rglob("*.move")
            for name, _, body in functions(path.read_text()) if "clear_pause_bits(" in body]
 assert callers == [("creation_policy", "unpause")], callers
-unpause = dict((name, body) for name, _, body in functions((SOURCES / "creation_policy.move").read_text()))["unpause"]
+unpause = dict((name, body) for name, _, body in functions(module_path("creation_policy").read_text()))["unpause"]
 assert unpause.index("self.is_guarded() && fee_policy.is_guarded()") < unpause.index("clear_pause_bits(")
 assert "package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);" in unpause
 print("Presale activation and version boundaries: OK")

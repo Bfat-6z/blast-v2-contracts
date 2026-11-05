@@ -137,10 +137,12 @@ for environment, address in entries:
 PY
 fi
 
-# The delayed family lives under sources/delayed/; every other module sits directly in sources/.
+# Resolve the reviewed modules within their responsibility groups.
 module_file() {
   case "$1" in
     delayed|delayed_action|delayed_set|delayed_map) printf '%s\n' "$package_dir/sources/delayed/$1.move" ;;
+    package_admin|package_version) printf '%s\n' "$package_dir/sources/package/$1.move" ;;
+    blast_admin_events|errors) printf '%s\n' "$package_dir/sources/lib/$1.move" ;;
     *) printf '%s\n' "$package_dir/sources/$1.move" ;;
   esac
 }
@@ -151,8 +153,8 @@ for module in $required_modules; do
   [[ -f "$(module_file "$module")" ]] \
     || fail "Missing required blast_admin module: $module.move"
 done
-if find "$package_dir/sources" -name '*.move' | grep -vE "^$package_dir/sources/([a-z_]+|delayed/delayed(_action|_set|_map)?)\.move$"; then
-  fail "blast_admin sources must sit directly in sources/, or in sources/delayed/ for the delayed family."
+if find "$package_dir/sources" -name '*.move' | grep -vE "^$package_dir/sources/(blast_acl|package/package_(admin|version)|lib/(blast_admin_events|errors)|delayed/delayed(_action|_set|_map)?)\.move$"; then
+  fail "blast_admin sources must use the reviewed ACL, package, delayed, and lib locations."
 fi
 # Immutable once published: exactly these nine modules, so no second version, PackageAdmin or
 # delayed type can be added without boundary review.
@@ -197,10 +199,10 @@ if grep -rniE '\b(fee|migration|creator|pool|venue)\b' "$package_dir/sources"; t
   fail "Consumer product policy must not enter blast_admin production source."
 fi
 if grep -rn 'sui::event::emit' "$package_dir/sources" \
-  | grep -vE "$package_dir/sources/(blast_admin_events|delayed/delayed(_action|_set|_map)?)\.move"; then
+  | grep -vE "$package_dir/sources/(lib/blast_admin_events|delayed/delayed(_action|_set|_map)?)\.move"; then
   fail "Only blast_admin_events.move and the delayed modules may emit shared administration events."
 fi
-package_admin_file="$package_dir/sources/package_admin.move"
+package_admin_file="$package_dir/sources/package/package_admin.move"
 if grep -rnE 'public(\(package\))?[[:space:]]+(entry[[:space:]]+)?fun[[:space:]]+[^ (]*(release|borrow|take|extract|transfer)[^ (]*' \
   "$package_admin_file"; then
   fail "PackageAdmin must expose no capability release or borrow path."
@@ -311,7 +313,7 @@ for delayed_module in delayed delayed_action delayed_set delayed_map; do
     || fail "$delayed_module must expose its owner and key readers."
 done
 
-package_version_file="$package_dir/sources/package_version.move"
+package_version_file="$package_dir/sources/package/package_version.move"
 actual_package_version_public="$(externally_callable_function_names "$package_version_file" | sort)"
 expected_package_version_public="$(printf '%s\n' \
   assert_current \

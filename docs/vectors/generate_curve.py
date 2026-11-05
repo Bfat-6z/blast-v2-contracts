@@ -355,7 +355,7 @@ curve = {
         {
             "name": "sell_back_invariant",
             "statement": "For any gross meme input not exceeding the user's net meme received from reachable buys, quote_out_gross <= real_quote.",
-            "status": "backed by sui/launchpad/tests/curve_tests.move at fixed seed 314159 over 256 reachable buy-then-sell scenarios cycling through no fees, quote-only, meme-only, and both",
+            "status": "backed by sui/launchpad/tests/math/curve_tests.move at fixed seed 314159 over 256 reachable buy-then-sell scenarios cycling through no fees, quote-only, meme-only, and both",
             "evidence": "Every scenario sells the complete purchased Meme amount and one generated partial amount. The test commits its generator, fee modes, parameters, seed, operation count, an algebraically equivalent pre-call check, and an assert_eq trace that prints the operation index plus all generated/state inputs on failure.",
         },
         {

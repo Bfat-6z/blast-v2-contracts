@@ -21,9 +21,9 @@ if rg -n '\b(UpgradeCap|Publisher|OperationalVersion|UpgradeCustody|package::cla
 fi
 [[ "$(rg -l '^fun init\(' sources | tr '\n' ' ')" == "sources/blast_treasury.move " ]] \
   || fail "only blast_treasury may initialize state"
-rg -q 'public struct Migration<phantom Meme, phantom Quote> \{' sources/migration.move \
-  && rg -q 'public struct VenueTicket<phantom Meme, phantom Quote> \{' sources/migration.move \
-  && rg -q 'public struct OwnerProof \{' sources/owner_proof.move \
+rg -q 'public struct Migration<phantom Meme, phantom Quote> \{' sources/migration/migration.move \
+  && rg -q 'public struct VenueTicket<phantom Meme, phantom Quote> \{' sources/migration/migration.move \
+  && rg -q 'public struct OwnerProof \{' sources/migration/owner_proof.move \
   || fail "hand-off, venue ticket, and owner proof must have no abilities"
 # Readers never consume a hand-off: each is unpacked only in its one consuming call. The treasury
 # is never unpacked, since every ledger pays through it.
@@ -34,8 +34,8 @@ done
 if rg -n 'let Treasury \{' sources; then
   fail "the treasury must never be destroyed"
 fi
-rg -q "let redeeming_venue = type_name::with_original_ids<Venue>\(\);" sources/migration.move \
-  && rg -q "assert!\(self.venue == redeeming_venue, blast_core::errors::wrong_venue!\(\)\);" sources/migration.move \
+rg -q "let redeeming_venue = type_name::with_original_ids<Venue>\(\);" sources/migration/migration.move \
+  && rg -q "assert!\(self.venue == redeeming_venue, blast_core::errors::wrong_venue!\(\)\);" sources/migration/migration.move \
   || fail "redeem must check the stored venue's original witness type"
 
 echo "blast_core source boundaries hold."
