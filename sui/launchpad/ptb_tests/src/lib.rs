@@ -1344,12 +1344,12 @@ impl VaultStack {
         Ok(())
     }
 
-    /// The ID `vault::new` claims for the vault of terms sealed by `issuer` for `origin`:
-    /// `VaultKey { issuer, origin }` under the registry. The key's BCS is the issuer `TypeName`'s
+    /// The ID `vault::new` claims for the vault of terms sealed by `package_witness` for `origin`:
+    /// `VaultKey { package_witness, origin }` under the registry. The key's BCS is that `TypeName`'s
     /// string (original package IDs, no `0x`) followed by the 32-byte origin.
-    pub fn vault_id(&self, issuer: &sui_types::TypeTag, origin: ObjectID) -> Result<ObjectID> {
+    pub fn vault_id(&self, package_witness: &sui_types::TypeTag, origin: ObjectID) -> Result<ObjectID> {
         let key = sui_types::parse_sui_type_tag(&format!("{}::vault::VaultKey", self.package))?;
-        derived_id(self.registry, &key, &bcs::to_bytes(&(issuer.to_canonical_string(false), origin))?)
+        derived_id(self.registry, &key, &bcs::to_bytes(&(package_witness.to_canonical_string(false), origin))?)
     }
 }
 

@@ -141,7 +141,7 @@ the `UpgradeCap`; no later upgrade or repair is possible.
 ### Reading state
 
 - Find a sale's vault without an indexer: its object ID is derived from the shared
-  `blast_vault_package::VaultRegistry` and the key `blast_vault::vault::VaultKey { issuer, origin }`,
+  `blast_vault_package::VaultRegistry` and the key `blast_vault::vault::VaultKey { package_witness, origin }`,
   whose BCS is the sealing package witness's type name as a length-prefixed `String` (ULEB128
   length, then the ASCII name, with the original package ID written without `0x`) followed by the
   sale's 32-byte ID: `0x2::dynamic_field::hash_type_and_key(registry_id,
