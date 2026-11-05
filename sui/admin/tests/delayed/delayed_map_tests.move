@@ -26,7 +26,7 @@ fun an_entry_waits_the_applied_notice_and_reads_stay_applied_until_apply() {
         .map_scheduled_fields();
     assert_eq!(owner, owner());
     assert_eq!(change.changed_entry(), option::some(@0xA));
-    assert_eq!(change.changed_value(), option::some(7));
+    assert_eq!(change.changed_value(), option::some(option::some(7)));
     assert_eq!(delay_ms, NOTICE_MS);
     assert_eq!(ready_at_ms, 5 + NOTICE_MS);
 
@@ -37,7 +37,7 @@ fun an_entry_waits_the_applied_notice_and_reads_stay_applied_until_apply() {
     assert!(map.pending(&@0xA).is_none());
     let (_, _, applied_change, applied_delay_ms) = collect<MapApplied<Overrides, address, u64>>()
         .map_applied_fields();
-    assert_eq!(applied_change.changed_value(), option::some(7));
+    assert_eq!(applied_change.changed_value(), option::some(option::some(7)));
     assert_eq!(applied_delay_ms, NOTICE_MS);
 
     clear(&mut map, @0xA, &mut clock);
@@ -55,9 +55,13 @@ fun clearing_is_a_delayed_change_that_removes_the_entry() {
     map.apply_delay(&clock);
 
     assert_eq!(map.schedule(@0xA, option::none(), &clock), 100);
+    let (_, _, change, _, _) = collect<MapScheduled<Overrides, address, u64>>().map_scheduled_fields();
+    assert_eq!(change.changed_entry(), option::some(@0xA));
+    assert_eq!(change.changed_value(), option::some(option::none()));
     assert_eq!(map.value(&@0xA), option::some(7));
     clock.set_for_testing(100);
     map.apply(@0xA, &clock);
+    assert!(map.value(&@0xA).is_none());
 
     assert!(map.value(&@0xA).is_none());
     destroy(map);
@@ -116,7 +120,7 @@ fun a_replaced_entry_change_is_cancelled_first_and_restarts_the_notice() {
 
     let (_, _, change, delay_ms, ready_at_ms) = collect<MapCancelled<Overrides, address, u64>>()
         .map_cancelled_fields();
-    assert_eq!(change.changed_value(), option::some(1));
+    assert_eq!(change.changed_value(), option::some(option::some(1)));
     assert_eq!(delay_ms, 100);
     assert_eq!(ready_at_ms, 100);
 
@@ -151,6 +155,7 @@ fun an_applied_notice_change_records_the_new_notice() {
 
     let (_, _, change, delay_ms) = collect<MapApplied<Overrides, address, u64>>().map_applied_fields();
     assert!(change.changed_entry().is_none());
+    assert!(change.changed_value().is_none());
     assert_eq!(delay_ms, 20);
     assert_eq!(map.delay_ms(), 20);
     destroy(map);

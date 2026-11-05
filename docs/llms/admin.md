@@ -345,7 +345,9 @@ and `ready_at_ms`); `delayed_map::EntryProposal` exposes
 `delayed_map::entry_proposal_value` (none clears) and
 `delayed_map::entry_proposal_notice`; `delayed_action::action`,
 `delayed_set::member`, `delayed_map::changed_entry` and
-`delayed_map::changed_value` read a change.
+`delayed_map::changed_value` read a change, each none for a notice change.
+`delayed_map::changed_value` returns `Option<Option<V>>`: `some(some(v))` sets
+the entry to `v` and `some(none)` clears it.
 
 The launchpad's account-claim signer keys are a `DelayedSet`: ClaimSignerAdmin's admissions wait
 the set's notice, so a compromised ClaimSignerAdmin cannot sign claims without warning, and its

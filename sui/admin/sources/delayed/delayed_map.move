@@ -322,12 +322,13 @@ public fun changed_entry<E: copy + drop + store, V: copy + drop + store>(
     }
 }
 
-/// The value an entry change proposes (none clears), or none for a notice change.
+/// The value an entry change proposes, whose inner none clears the entry, or none for a notice
+/// change.
 public fun changed_value<E: copy + drop + store, V: copy + drop + store>(
     self: &MapChange<E, V>,
-): Option<V> {
+): Option<Option<V>> {
     match (self) {
-        MapChange::Entry { entry: _, value } => *value,
+        MapChange::Entry { entry: _, value } => option::some(*value),
         MapChange::Delay => option::none(),
     }
 }
