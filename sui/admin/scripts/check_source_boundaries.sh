@@ -277,14 +277,14 @@ expect_delayed_surface() {
   expected="$(printf '%s\n' "$@" | sort)"
   [[ "$actual" == "$expected" ]] || fail "The production $module surface changed without boundary review."
 }
-# Delayed values have no destructor and no notice getters: their owners hold them for life and
-# off-chain readers read object fields.
-expect_delayed_surface delayed apply assert_ready cancel delay_ms is_guarded new pending proposal_value \
-  schedule schedule_delay schedule_value value
-expect_delayed_surface delayed_action action apply_delay cancel is_guarded new pending schedule schedule_delay \
-  take_action
+# Delayed values expose no notice getters: off-chain readers read object fields. Each keeps its
+# destructor so the objects embedding it stay deletable.
+expect_delayed_surface delayed apply assert_ready cancel delay_ms destroy is_guarded new pending \
+  proposal_value schedule schedule_delay schedule_value value
+expect_delayed_surface delayed_action action apply_delay cancel destroy is_guarded new pending schedule \
+  schedule_delay take_action
 expect_delayed_surface delayed_set admission_ready_at_ms apply_add apply_delay cancel_add cancel_delay \
-  contains delay_ms is_guarded members new pending_count remove schedule_add schedule_delay
+  contains delay_ms destroy is_guarded members new pending_count remove schedule_add schedule_delay
 
 package_version_file="$package_dir/sources/package_version.move"
 actual_package_version_public="$(externally_callable_function_names "$package_version_file" | sort)"
@@ -300,10 +300,10 @@ grep -Fqx 'public struct PackageVersion<phantom PackageMarker: drop> has key {' 
   || fail "PackageVersion must be a key-only shared object typed by its package marker."
 grep -Fqx 'public struct Publication<phantom PackageMarker: drop> has key {' "$package_version_file" \
   || fail "Publication must be key-only so only its own module can deliver it."
-[[ "$(grep -Fxc '    unpause_witness: TypeName,' "$package_version_file")" -eq 2 ]] \
-  || fail "Publication and PackageVersion must pin the package's exact unpause witness type."
-grep -Fq 'type_name::with_defining_ids<UnpauseWitness>() == self.unpause_witness' "$package_version_file" \
-  || fail "Clearing pause bits must require the exact pinned unpause witness type."
+[[ "$(grep -Fxc '    package_witness: TypeName,' "$package_version_file")" -eq 2 ]] \
+  || fail "Publication and PackageVersion must pin the package's exact package witness type."
+[[ "$(grep -Fc 'type_name::with_defining_ids<PackageWitness>() == self.package_witness' "$package_version_file")" -eq 2 ]] \
+  || fail "Clearing pause bits and borrowing the Publisher must each require the exact package witness."
 grep -Fq 'sui::package::claim(otw, ctx)' "$package_version_file" \
   || fail "A publication must be claimable only with the consumer package's one-time witness."
 if production_lines "$package_version_file" | grep -Eq 'fun[[:space:]]+(activate|set_generation|set_version)'; then
@@ -323,6 +323,7 @@ expected_package_admin_public="$(printf '%s\n' \
   commit_upgrade_and_advance \
   make_immutable \
   pause \
+  publisher \
   schedule_make_immutable \
   schedule_upgrade \
   schedule_upgrade_delay \
@@ -332,8 +333,12 @@ expected_package_admin_public="$(printf '%s\n' \
   || fail "The production package-administration surface changed without boundary review."
 grep -Fqx 'public struct PackageAdmin<phantom PackageMarker: drop> has key {' "$package_admin_file" \
   || fail "PackageAdmin must be a key-only shared object typed by its package marker."
-grep -Fq 'package_version.assert_unpause_witness<_, UnpauseWitness>();' "$package_admin_file" \
-  || fail "clear_pause_bits must check the pinned unpause witness."
+grep -Fq 'package_version.assert_unpause_witness<_, PackageWitness>();' "$package_admin_file" \
+  || fail "clear_pause_bits must check the pinned package witness."
+grep -Fq 'package_version.assert_publisher_witness<_, PackageWitness>();' "$package_admin_file" \
+  || fail "publisher must check the pinned package witness."
+[[ "$(function_declarations "$package_admin_file" | grep -cE '\)[[:space:]]*:[[:space:]]*&Publisher[[:space:]]*\{')" -eq 2 ]] \
+  || fail "Only publisher (and its test-only twin) may return the Publisher, by immutable reference."
 for role in UpgradeAdmin PauseAdmin UnpauseAdmin CancelAdmin; do
   grep -Fqx "public struct $role<phantom PackageMarker>()" "$package_admin_file" \
     || fail "$role must be an ability-free role typed by its package marker."

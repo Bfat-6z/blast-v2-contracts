@@ -227,13 +227,17 @@ commit = generic['commit_upgrade_and_advance']
 require(commit[0], '&AdminWitness<UpgradeAdmin<PackageMarker>>', 'package_version: &mut PackageVersion<PackageMarker>')
 assert commit[1].index('upgrade_cap.commit(receipt);') < commit[1].index('package_version.advance();')
 require(generic['pause'][0], '&AdminWitness<PauseAdmin<PackageMarker>>')
-require(generic['clear_pause_bits'][0], '&AdminWitness<UnpauseAdmin<PackageMarker>>', '_: UnpauseWitness')
+require(generic['clear_pause_bits'][0], '&AdminWitness<UnpauseAdmin<PackageMarker>>', '_: PackageWitness')
+# Only the package itself, holding its pinned package witness, borrows its Publisher, by reference.
+require(generic['publisher'][0], 'self: &PackageAdmin<PackageMarker>', '_: PackageWitness',
+        'package_version: &PackageVersion<PackageMarker>', '): &Publisher')
+assert generic['publisher'][1].startswith('package_version.assert_publisher_witness<_, PackageWitness>();')
 clear = generic['clear_pause_bits'][1]
 assert clear.index('assert_unpause_witness') < clear.index('self.upgrade.is_guarded()') < clear.index('package_version.clear_pause_bits(bits)')
 require(generic['wrap'][0], 'publication: Publication<PackageMarker>', 'upgrade_cap: UpgradeCap')
 require(generic['new'][1], 'delayed_action::new(UpgradeKey<PackageMarker>(), &id, INITIAL_UPGRADE_DELAY_MS)')
 assert {name for name, (_, body) in generic.items() if 'PackageAdmin {' in body} == {'new'}
-assert not any(re.search(r'\):\s*&?(?:mut )?(Publisher|UpgradeCap)', signature) for signature, _ in generic.values())
+assert not any(re.search(r'\):\s*(?:&mut\s+)?(Publisher|UpgradeCap)|\):\s*&\s*UpgradeCap', signature) for signature, _ in generic.values())
 assert not any(word in generic_source for word in ('only_additive_upgrades', 'only_dep_upgrades', 'restrict_to'))
 
 acl = (ROOT / 'sui/admin/sources/blast_acl.move').read_text()

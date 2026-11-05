@@ -18,8 +18,8 @@
 /// Every change, a shorter notice included, waits the notice applied when it was scheduled.
 /// A notice can start at zero, so a schedule and its apply in one transaction then act as a
 /// setter; there is no other mutation path. No notice exceeds `MAX_DELAY_MS`, so a notice
-/// can always be changed again. Readers need no Clock. A delayed value has no destructor: every
-/// owner holds it for the owner's lifetime.
+/// can always be changed again. Readers need no Clock. A delayed value is destroyed only with
+/// nothing pending, so every proposal ends in an event.
 module blast_admin::delayed;
 
 // === Public Types ===
@@ -161,6 +161,15 @@ public fun cancel<K: copy + drop + store, T: copy + drop + store>(self: &mut Del
     self.cancel_replaced();
 }
 
+/// Deletes a setting with no proposal and records its end; cancel a proposal first.
+public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>) {
+    assert!(self.pending.is_none(), blast_admin::errors::proposal_pending!());
+
+    let Delayed { owner, key, value: _, delay_ms: _, pending: _ } = self;
+
+    sui::event::emit(DelayedDestroyed<K, T> { owner, key });
+}
+
 /// The proposed value, or the proposed change for an action slot.
 public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T { self.value }
 
@@ -255,6 +264,13 @@ public fun delayed_applied_fields<K: copy + drop + store, T: copy + drop + store
     (self.owner, self.key, self.previous_value, self.value, self.delay_ms)
 }
 
+#[test_only]
+public fun delayed_destroyed_fields<K: copy + drop + store, T: copy + drop + store>(
+    self: &DelayedDestroyed<K, T>,
+): (ID, K) {
+    (self.owner, self.key)
+}
+
 // === Events ===
 
 /// A setting was created with its first applied value and notice.
@@ -290,6 +306,12 @@ public struct DelayedApplied<K: copy + drop + store, T: copy + drop + store> has
     previous_value: T,
     value: T,
     delay_ms: u64,
+}
+
+/// A setting was deleted with nothing pending.
+public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
 }
 
 // === Constants ===

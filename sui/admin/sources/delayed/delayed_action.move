@@ -101,6 +101,15 @@ public fun cancel<K: copy + drop + store, A: copy + drop + store>(self: &mut Del
     self.cancel_replaced();
 }
 
+/// Deletes an action slot with no proposal and records its end; cancel a proposal first.
+public fun destroy<K: copy + drop + store, A: copy + drop + store>(self: DelayedAction<K, A>) {
+    assert!(self.pending.is_none(), blast_admin::errors::proposal_pending!());
+
+    let DelayedAction { owner, key, delay_ms: _, pending: _ } = self;
+
+    sui::event::emit(ActionDestroyed<K, A> { owner, key });
+}
+
 /// The proposed action, or none for a notice change.
 public fun action<A: copy + drop + store>(self: &Change<A>): Option<A> {
     match (self) {
@@ -201,6 +210,13 @@ public fun action_applied_fields<K: copy + drop + store, A: copy + drop + store>
     (self.owner, self.key, self.change, self.delay_ms)
 }
 
+#[test_only]
+public fun action_destroyed_fields<K: copy + drop + store, A: copy + drop + store>(
+    self: &ActionDestroyed<K, A>,
+): (ID, K) {
+    (self.owner, self.key)
+}
+
 // === Events ===
 
 /// An action slot was created with its first applied notice.
@@ -235,6 +251,12 @@ public struct ActionApplied<K: copy + drop + store, A: copy + drop + store> has 
     key: K,
     change: Change<A>,
     delay_ms: u64,
+}
+
+/// An action slot was deleted with nothing pending.
+public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
 }
 
 // === Imports ===

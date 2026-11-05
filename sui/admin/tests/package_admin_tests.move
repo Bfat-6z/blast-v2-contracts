@@ -133,8 +133,8 @@ fun another_sender_cannot_take_the_publication() {
 fun a_publication_requires_the_packages_one_time_witness() {
     let mut ctx = tx_context::dummy();
 
-    let publication = package_version::new_publication<UnpauseWitness, OTHER_PACKAGE_MARKER>(
-        package_marker::unpause_witness(),
+    let publication = package_version::new_publication<PackageWitness, OTHER_PACKAGE_MARKER>(
+        package_marker::package_witness(),
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -158,7 +158,7 @@ fun a_publication_rejects_an_unpause_witness_from_another_package() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidPackageWitness, location = blast_admin::package_version)]
-fun a_publication_rejects_a_primitive_unpause_witness() {
+fun a_publication_rejects_a_primitive_package_witness() {
     let mut ctx = tx_context::dummy();
 
     let publication = package_version::new_publication<PACKAGE_MARKER, u8>(
@@ -172,7 +172,7 @@ fun a_publication_rejects_a_primitive_unpause_witness() {
 
 #[test]
 #[expected_failure(abort_code = errors::EInvalidPackageWitness, location = blast_admin::package_version)]
-fun a_publication_rejects_its_own_marker_as_the_unpause_witness() {
+fun a_publication_rejects_its_own_marker_as_the_package_witness() {
     let mut ctx = tx_context::dummy();
 
     let publication = package_version::new_publication<PACKAGE_MARKER, PACKAGE_MARKER>(
@@ -664,7 +664,7 @@ fun pausing_rejects_a_bit_the_package_does_not_define() {
 #[expected_failure(abort_code = errors::EInvalidPauseBits, location = blast_admin::package_version)]
 fun a_package_that_defines_no_bits_cannot_pause() {
     let mut ctx = tx_context::dummy();
-    let mut package_version = package_version::new_for_testing<PACKAGE_MARKER, UnpauseWitness>(
+    let mut package_version = package_version::new_for_testing<PACKAGE_MARKER, PackageWitness>(
         0,
         &mut ctx,
     );
@@ -692,7 +692,7 @@ fun clearing_releases_only_the_requested_bits() {
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), VALID_PAUSE_BITS);
 
-    fixture.clear(package_marker::unpause_witness(), 2);
+    fixture.clear(package_marker::package_witness(), 2);
     let unpaused = blast_admin_events::collect_one<blast_admin_events::Unpaused<PACKAGE_MARKER>>(0);
 
     let (package_version_id, bits, mask) = unpaused.unpaused_fields();
@@ -762,7 +762,7 @@ fun clearing_rejects_a_pending_zero_upgrade_notice() {
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
 
-    fixture.clear(package_marker::unpause_witness(), 1);
+    fixture.clear(package_marker::package_witness(), 1);
 
     owned.end();
 }
@@ -777,7 +777,7 @@ fun clearing_rejects_an_applied_zero_upgrade_notice() {
     fixture.clock.set_for_testing(NOTICE_MS);
     fixture.package_admin.apply_upgrade_delay(&fixture.clock);
 
-    fixture.clear(package_marker::unpause_witness(), 1);
+    fixture.clear(package_marker::package_witness(), 1);
 
     owned.end();
 }
@@ -789,7 +789,7 @@ fun the_upgrade_notice_is_checked_before_the_bits() {
     let fixture = &mut owned;
     fixture.package_admin.schedule_upgrade_delay(&upgrade_admin(), 0, &fixture.clock);
 
-    fixture.clear(package_marker::unpause_witness(), 0);
+    fixture.clear(package_marker::package_witness(), 0);
 
     owned.end();
 }
@@ -801,7 +801,7 @@ fun clearing_rejects_bits_that_are_not_set() {
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
 
-    fixture.clear(package_marker::unpause_witness(), 2);
+    fixture.clear(package_marker::package_witness(), 2);
 
     owned.end();
 }
@@ -813,7 +813,62 @@ fun clearing_rejects_a_bit_the_package_does_not_define() {
     let fixture = &mut owned;
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 1);
 
-    fixture.clear(package_marker::unpause_witness(), 9);
+    fixture.clear(package_marker::package_witness(), 9);
+
+    owned.end();
+}
+
+#[test]
+/// The package witness borrows the Publisher its one-time witness claimed, which can create a
+/// Display for the package's own types.
+fun the_package_witness_borrows_the_packages_publisher() {
+    let mut fixture = start_published();
+    let publication = fixture.take_publication();
+    let claimed_publisher_id = object::id(publication.publisher_for_testing());
+    let upgrade_cap = package::test_publish(PACKAGE_ID.to_id(), fixture.scenario.ctx());
+    package_admin::wrap(publication, upgrade_cap, fixture.scenario.ctx());
+
+    fixture.scenario.next_tx(PUBLISHER);
+    let package_admin = fixture.scenario.take_shared<PackageAdmin<PACKAGE_MARKER>>();
+    let package_version = fixture.scenario.take_shared<PackageVersion<PACKAGE_MARKER>>();
+    let publisher = package_admin.publisher(package_marker::package_witness(), &package_version);
+
+    assert_eq!(object::id(publisher), claimed_publisher_id);
+    assert!(publisher.from_package<PACKAGE_MARKER>());
+    let receipt_display = display::new<package_marker::Receipt>(publisher, fixture.scenario.ctx());
+
+    destroy(receipt_display);
+    test_scenario::return_shared(package_admin);
+    test_scenario::return_shared(package_version);
+    fixture.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+fun the_publisher_rejects_a_witness_from_another_package() {
+    let owned = start();
+
+    owned.package_admin.publisher(foreign_package_marker::witness(), &owned.package_version);
+
+    owned.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+fun the_publisher_rejects_another_droppable_type_from_the_same_package() {
+    let owned = start();
+
+    owned.package_admin.publisher(other_package_marker::marker(), &owned.package_version);
+
+    owned.end();
+}
+
+#[test]
+#[expected_failure(abort_code = errors::EWrongPublisherWitness, location = blast_admin::package_version)]
+fun the_publisher_rejects_a_primitive_witness() {
+    let owned = start();
+
+    owned.package_admin.publisher(7u8, &owned.package_version);
 
     owned.end();
 }
@@ -869,7 +924,7 @@ fun start_published(): WrapFixture {
 
 fun start_published_with(valid_pause_bits: u8): WrapFixture {
     let mut scenario = test_scenario::begin(PUBLISHER);
-    package_version::new_publication<PACKAGE_MARKER, UnpauseWitness>(
+    package_version::new_publication<PACKAGE_MARKER, PackageWitness>(
         package_marker::marker(),
         valid_pause_bits,
         scenario.ctx(),
@@ -891,7 +946,7 @@ fun start(): AdminFixture {
         package::test_publish(PACKAGE_ID.to_id(), &mut ctx),
         &mut ctx,
     );
-    let package_version = package_version::new_for_testing<PACKAGE_MARKER, UnpauseWitness>(
+    let package_version = package_version::new_for_testing<PACKAGE_MARKER, PackageWitness>(
         VALID_PAUSE_BITS,
         &mut ctx,
     );
@@ -953,7 +1008,7 @@ fun other_package_digest(): vector<u8> {
 
 use 0xa::{
     other_package_marker::{Self, OTHER_PACKAGE_MARKER},
-    package_marker::{Self, PACKAGE_MARKER, UnpauseWitness}
+    package_marker::{Self, PACKAGE_MARKER, PackageWitness}
 };
 
 use 0xf::foreign_package_marker::{Self, ForeignWitness};
@@ -970,6 +1025,7 @@ use std::{type_name, unit_test::{assert_eq, destroy}};
 
 use sui::{
     clock::{Self, Clock},
+    display,
     package::{Self, UpgradeTicket},
     test_scenario::{Self, Scenario}
 };

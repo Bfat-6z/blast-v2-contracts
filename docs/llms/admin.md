@@ -12,7 +12,7 @@ package administration that every upgradeable Blast package uses: a shared
 `PackageVersion<M>` that rejects calls into outdated bytecode and holds the
 package's pause bits, and a shared `PackageAdmin<M>` that seals the package's
 `Publisher` and `UpgradeCap` so upgrades happen only through role-gated,
-48-hour-notice calls. No package can build a second version or custody object:
+48-hour-notice calls and only the package itself can borrow its `Publisher`. No package can build a second version or custody object:
 both are created only by `blast_admin::package_admin::wrap` from the package's
 own publication. Blast publishes `blast_admin` immutable (its `UpgradeCap` is
 destroyed in the publish transaction), so none of these rules can change.
@@ -27,7 +27,7 @@ destroyed in the publish transaction), so none of these rules can change.
 | `blast_acl::AdminWitness<Role>` | transaction-local value, `drop` only | the PTB that signed in | the one role `Role` in every consumer call that takes `&AdminWitness<Role>` |
 | `package_version::Publication<M>` | owned, `key` only | the publisher, from the package's `init` until wrap | nothing but the one wrap of package `M` |
 | `package_version::PackageVersion<M>` | shared, `key` only, created at wrap | nobody | the generation and pause bits package `M`'s operations check |
-| `blast_admin::package_admin::PackageAdmin<M>` | shared, `key` only, created at wrap | nobody | package `M`'s sealed `Publisher` and `UpgradeCap` and its delayed upgrade decisions |
+| `blast_admin::package_admin::PackageAdmin<M>` | shared, `key` only, created at wrap | nobody | package `M`'s sealed `Publisher` (borrowed only by `M` itself) and `UpgradeCap`, and its delayed upgrade decisions |
 
 `M` is the package's one-time witness type (its marker), for example the vault's
 `blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE`.
@@ -130,10 +130,11 @@ what each transaction leaves on chain.
 
 1. The package's `init` calls `package_version::new_publication` with its
    one-time witness by value, the bits it defines (`valid_pause_bits`; zero
-   defines none) and a second type argument, the package's unpause witness: a
+   defines none) and a second type argument, the package's package witness: a
    struct of that package, other than its marker, whose value only the package's
-   own `unpause` constructs. The publication stores that exact type (with
-   defining IDs) and aborts with code 23 for a primitive, the marker itself, or a
+   own code constructs and never returns or stores. It is the one type that
+   clears the package's pause bits and borrows its `Publisher`. The publication stores that exact type (with
+   defining IDs) and aborts with code 24 for a primitive, the marker itself, or a
    type from another package. It then claims the package's `Publisher`, which the
    framework allows only with a genuine one-time witness, and
    `package_version::keep` transfers the `Publication<M>` to the publisher.
@@ -155,7 +156,7 @@ what each transaction leaves on chain.
    digest that is not 32 bytes.
 2. After the notice, in one PTB: sign in again;
    `blast_admin::package_admin::authorize_upgrade` with the same digest and
-   `Clock` consumes the ready action (code 21 when it is not the upgrade of that
+   `Clock` consumes the ready action (code 22 when it is not the upgrade of that
    digest) and returns an `UpgradeTicket` under the cap's current policy (emits
    `UpgradeAuthorized`); the native `Upgrade` command returns an
    `UpgradeReceipt`; `blast_admin::package_admin::commit_upgrade_and_advance`
@@ -188,18 +189,29 @@ discards whatever is pending, even when ready.
 2. Clearing goes through the package's own `unpause`, which checks the package's
    own configuration notices, then calls
    `blast_admin::package_admin::clear_pause_bits` with the `PackageAdmin<M>`, the
-   `UnpauseAdmin<M>` witness, a value of the unpause witness type pinned at
+   `UnpauseAdmin<M>` witness, a value of the package witness type pinned at
    publication, the `PackageVersion<M>`, and the bits. Any other type aborts with
-   code 24, including every other droppable type the package defines or returns,
+   code 25, including every other droppable type the package defines or returns,
    so an `UnpauseAdmin<M>` cannot skip the package's own checks by calling
-   `blast_admin` directly. It then aborts with code 22 while any upgrade notice
+   `blast_admin` directly. It then aborts with code 23 while any upgrade notice
    still to come could be zero, and emits `blast_admin_events::Unpaused`.
 
-Pause and unpause requests must name nonzero bits the package defines (code 18)
-and must change at least one bit (code 19); the witness and notice checks come
-first. `package_version::assert_not_paused` aborts with code 20 while an
+Pause and unpause requests must name nonzero bits the package defines (code 19)
+and must change at least one bit (code 20); the witness and notice checks come
+first. `package_version::assert_not_paused` aborts with code 21 while an
 operation's bit is set; it is a mask check only, so a bit the package never
 defined never aborts.
+
+#### Borrow the package's Publisher (the package's own code)
+
+`blast_admin::package_admin::publisher` takes the shared `PackageAdmin<M>`, a value
+of `M`'s package witness and the shared `PackageVersion<M>`, and returns
+`&Publisher`: the one `M`'s one-time witness claimed at publication. Only `M`'s
+own modules can construct that witness, so only package `M` can borrow its
+Publisher, for example to create a `sui::display::Display` or a transfer policy
+for its own types inside one of its functions. Any other type aborts with code
+26. The reference cannot move, mutate or burn the Publisher, and nothing else
+lends it.
 
 ### Operational generation
 
@@ -231,7 +243,10 @@ the owner object's `&UID`, which only the code creating or holding that object
 has, so no package can attribute a value or its events to another package's
 object. Blast keys are structs without public constructors, so only their module
 can produce events under them. Partition delayed events by `owner`, then by `K`.
-A delayed value has no destructor: its owner holds it for the owner's lifetime.
+`delayed::destroy`, `delayed_action::destroy` and `delayed_set::destroy` delete a
+value whose owner is being deleted; each aborts with code 17 while anything is
+pending, so every proposal ends in an event, and emits its module's `Destroyed`
+event. Destroying a set also ends its remaining members.
 
 Rules shared by all three:
 
@@ -273,7 +288,7 @@ the applied notice and the proposal.
 `DelayedAction`: `delayed_action::schedule` proposes an action under the applied
 notice; `delayed_action::schedule_delay` proposes only a notice change.
 `delayed_action::take_action` returns a ready action to its owner and aborts with
-code 17 when the proposal is a notice change; `delayed_action::apply_delay` does
+code 18 when the proposal is a notice change; `delayed_action::apply_delay` does
 the reverse. `delayed_action::Change` is `Action(A)` or `Delay`;
 `delayed_action::action` returns the action or none, and `delayed_action::pending`
 the proposal.
@@ -348,13 +363,16 @@ key `K` and the value, action or member type, and carry `owner` and `key`.
 | `delayed::DelayedCreated` | `delayed::new` | initial value and notice |
 | `delayed::DelayedScheduled` / `delayed::DelayedCancelled` | schedule, replace, cancel | proposed value, next notice, `ready_at_ms` |
 | `delayed::DelayedApplied` | `delayed::apply` | previous and new value, applied notice |
+| `delayed::DelayedDestroyed` | `delayed::destroy` | the setting ends |
 | `delayed_action::ActionCreated` | `delayed_action::new` | initial notice |
 | `delayed_action::ActionScheduled` / `delayed_action::ActionCancelled` | action or notice proposals | `change`, notice in force once applied, `ready_at_ms` |
 | `delayed_action::ActionApplied` | `delayed_action::take_action`, `delayed_action::apply_delay` | `change` and the notice now applied |
+| `delayed_action::ActionDestroyed` | `delayed_action::destroy` | the action slot ends |
 | `delayed_set::SetCreated` | `delayed_set::new` | initial notice |
 | `delayed_set::SetScheduled` / `delayed_set::SetCancelled` | admission or notice proposals; a removal cancels a pending admission | `change`, the notice an admission waits or the proposed notice, `ready_at_ms` |
 | `delayed_set::SetApplied` | `delayed_set::apply_add`, `delayed_set::apply_delay` | `change` and the notice it waited or now applied |
 | `delayed_set::MemberRemoved` | `delayed_set::remove` | member removed at once |
+| `delayed_set::SetDestroyed` | `delayed_set::destroy` | the set and its members end |
 
 Every upgrade event names the package's `original_package_id`, except
 `UpgradeAuthorized`, which names the `current_package_id` the digest upgrades
@@ -390,14 +408,16 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 14 | `ENoPending` | the type's module | applying or cancelling when nothing is pending |
 | 15 | `EInvalidDelay` | `delayed` | a notice above 30 days, or a deadline or next notice that would overflow a Unix millisecond timestamp; choose a notice of at most 30 days |
 | 16 | `EUnchanged` | the type's module | the proposal changes nothing, the member is already admitted, or `remove` names an unknown member |
-| 17 | `EWrongChange` | `delayed_action` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
-| 18 | `EInvalidPauseBits` | `package_version` | pause or unpause names zero bits or a bit the package does not define |
-| 19 | `EPauseUnchanged` | `package_version` | pausing only bits already set, or clearing only bits already clear |
-| 20 | `EPaused` | `package_version` | the operation's pause bit is set; wait for Blast to unpause it |
-| 21 | `EWrongUpgradeAction` | `blast_admin::package_admin` | the ready action is not the upgrade of this digest (authorize) or not immutability (make immutable) |
-| 22 | `EUnguardedUpgradeNotice` | `blast_admin::package_admin` | clearing pause bits while the upgrade notice is zero or a pending change would make it zero |
-| 23 | `EInvalidPackageWitness` | `package_version` | the unpause witness type given to `new_publication` is a primitive, the package's marker, or from another package |
-| 24 | `EWrongUnpauseWitness` | `package_version` | `clear_pause_bits` received a value of a type other than the unpause witness pinned at publication |
+| 17 | `EProposalPending` | the type's module | destroying a delayed value, action slot or set while a proposal is pending; cancel it first |
+| 18 | `EWrongChange` | `delayed_action` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
+| 19 | `EInvalidPauseBits` | `package_version` | pause or unpause names zero bits or a bit the package does not define |
+| 20 | `EPauseUnchanged` | `package_version` | pausing only bits already set, or clearing only bits already clear |
+| 21 | `EPaused` | `package_version` | the operation's pause bit is set; wait for Blast to unpause it |
+| 22 | `EWrongUpgradeAction` | `blast_admin::package_admin` | the ready action is not the upgrade of this digest (authorize) or not immutability (make immutable) |
+| 23 | `EUnguardedUpgradeNotice` | `blast_admin::package_admin` | clearing pause bits while the upgrade notice is zero or a pending change would make it zero |
+| 24 | `EInvalidPackageWitness` | `package_version` | the package witness type given to `new_publication` is a primitive, the package's marker, or from another package |
+| 25 | `EWrongUnpauseWitness` | `package_version` | `clear_pause_bits` received a value of a type other than the package witness pinned at publication |
+| 26 | `EWrongPublisherWitness` | `package_version` | `blast_admin::package_admin::publisher` received a value of a type other than the package witness pinned at publication |
 
 A marker that is not a one-time witness aborts in the framework's
 `sui::package::claim` inside `package_version::new_publication`.
@@ -415,8 +435,9 @@ built against an old package ID after an upgrade.
   compare the full type name, including the package address and type arguments.
 - After any upgrade of a package, PTBs pinned to its old package ID abort with
   code 9.
-- The sealed `Publisher` is never lent out, so no package on this administration
-  can create Display or transfer policies with it.
+- Only the package's own code can borrow its `Publisher`: its package witness
+  is never handed out, so an integrator cannot create Display or transfer
+  policies for a Blast package's types.
 
 ### Q&A
 

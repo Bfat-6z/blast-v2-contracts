@@ -9,10 +9,11 @@
 /// The consumer's initializer turns its one-time witness into an owned `Publication`, which
 /// `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused at
 /// generation one. The consumer compiles its own generation constant and checks it with
-/// `assert_current`; it also chooses which pause bits exist and pins the one witness type its
-/// own unpause passes when clearing them. Setting and clearing bits and advancing the generation
-/// are sealed here and reached only through `package_admin`'s role-gated calls, so no package can
-/// build a second version or move a generation by any other path.
+/// `assert_current`; it also chooses which pause bits exist and pins its package witness, the one
+/// type whose value its own code passes to clear pause bits or to borrow its Publisher. Setting
+/// and clearing bits and advancing the generation are sealed here and reached only through
+/// `package_admin`'s role-gated calls, so no package can build a second version or move a
+/// generation by any other path.
 module blast_admin::package_version;
 
 // === Constants ===
@@ -26,7 +27,7 @@ public struct Publication<phantom PackageMarker: drop> has key {
     id: UID,
     publisher: Publisher,
     valid_pause_bits: u8,
-    unpause_witness: TypeName,
+    package_witness: TypeName,
 }
 
 /// The package's shared operational generation and pause bits.
@@ -35,9 +36,9 @@ public struct PackageVersion<phantom PackageMarker: drop> has key {
     /// The bits this package defines; every pause or unpause request must fall within them.
     valid_pause_bits: u8,
     paused: u8,
-    /// The exact type, with defining IDs, whose value the package's own unpause passes to
-    /// `package_admin::clear_pause_bits`.
-    unpause_witness: TypeName,
+    /// The package witness: the exact type, with defining IDs, whose value only the package's own
+    /// code passes to `package_admin::clear_pause_bits` and `package_admin::publisher`.
+    package_witness: TypeName,
     /// The only generation whose compiled bytecode passes `assert_current`.
     generation: u64,
 }
@@ -47,24 +48,25 @@ public struct PackageVersion<phantom PackageMarker: drop> has key {
 /// Claims the Publisher from the package's one-time witness, so a publication can only come into
 /// existence inside that package's initializer; the framework rejects any other witness.
 /// `valid_pause_bits` fixes the bits the package defines, and zero defines none.
-/// `UnpauseWitness` pins the one type that can clear them: a struct the package defines, other
-/// than its marker, that it constructs only inside its own unpause and never returns or stores.
-public fun new_publication<PackageMarker: drop, UnpauseWitness: drop>(
+/// `PackageWitness` pins the package witness, the one type that clears those bits and borrows the
+/// Publisher: a struct the package defines, other than its marker, that only the package's own
+/// code constructs and that it never returns or stores.
+public fun new_publication<PackageMarker: drop, PackageWitness: drop>(
     otw: PackageMarker,
     valid_pause_bits: u8,
     ctx: &mut TxContext,
 ): Publication<PackageMarker> {
-    let unpause_witness = type_name::with_defining_ids<UnpauseWitness>();
+    let package_witness = type_name::with_defining_ids<PackageWitness>();
     assert!(
-        !unpause_witness.is_primitive()
-            && type_name::original_id<UnpauseWitness>() == type_name::original_id<PackageMarker>()
-            && unpause_witness != type_name::with_defining_ids<PackageMarker>(),
+        !package_witness.is_primitive()
+            && type_name::original_id<PackageWitness>() == type_name::original_id<PackageMarker>()
+            && package_witness != type_name::with_defining_ids<PackageMarker>(),
         blast_admin::errors::invalid_package_witness!(),
     );
 
     let publisher = sui::package::claim(otw, ctx);
 
-    Publication { id: object::new(ctx), publisher, valid_pause_bits, unpause_witness }
+    Publication { id: object::new(ctx), publisher, valid_pause_bits, package_witness }
 }
 
 /// Transfers the publication to the transaction sender, who later wraps it with the
@@ -98,14 +100,14 @@ public(package) fun into_version<PackageMarker: drop>(
     self: Publication<PackageMarker>,
     ctx: &mut TxContext,
 ): (Publisher, PackageVersion<PackageMarker>) {
-    let Publication { id, publisher, valid_pause_bits, unpause_witness } = self;
+    let Publication { id, publisher, valid_pause_bits, package_witness } = self;
     id.delete();
 
     let version = PackageVersion {
         id: object::new(ctx),
         valid_pause_bits,
         paused: valid_pause_bits,
-        unpause_witness,
+        package_witness,
         generation: INITIAL_GENERATION,
     };
 
@@ -117,13 +119,23 @@ public(package) fun share<PackageMarker: drop>(self: PackageVersion<PackageMarke
     transfer::share_object(self);
 }
 
-/// Rejects any witness other than the exact type the package pinned at publication.
-public(package) fun assert_unpause_witness<PackageMarker: drop, UnpauseWitness: drop>(
+/// Rejects clearing pause bits with any witness other than the package witness.
+public(package) fun assert_unpause_witness<PackageMarker: drop, PackageWitness: drop>(
     self: &PackageVersion<PackageMarker>,
 ) {
     assert!(
-        type_name::with_defining_ids<UnpauseWitness>() == self.unpause_witness,
+        type_name::with_defining_ids<PackageWitness>() == self.package_witness,
         blast_admin::errors::wrong_unpause_witness!(),
+    );
+}
+
+/// Rejects borrowing the Publisher with any witness other than the package witness.
+public(package) fun assert_publisher_witness<PackageMarker: drop, PackageWitness: drop>(
+    self: &PackageVersion<PackageMarker>,
+) {
+    assert!(
+        type_name::with_defining_ids<PackageWitness>() == self.package_witness,
+        blast_admin::errors::wrong_publisher_witness!(),
     );
 }
 
@@ -180,7 +192,7 @@ fun assert_valid_pause_bits<PackageMarker: drop>(self: &PackageVersion<PackageMa
 
 #[test_only]
 /// Creates an unshared, unpaused version for consumer tests that need no publication flow.
-public fun new_for_testing<PackageMarker: drop, UnpauseWitness: drop>(
+public fun new_for_testing<PackageMarker: drop, PackageWitness: drop>(
     valid_pause_bits: u8,
     ctx: &mut TxContext,
 ): PackageVersion<PackageMarker> {
@@ -188,7 +200,7 @@ public fun new_for_testing<PackageMarker: drop, UnpauseWitness: drop>(
         id: object::new(ctx),
         valid_pause_bits,
         paused: 0,
-        unpause_witness: type_name::with_defining_ids<UnpauseWitness>(),
+        package_witness: type_name::with_defining_ids<PackageWitness>(),
         generation: INITIAL_GENERATION,
     }
 }

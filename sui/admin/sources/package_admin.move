@@ -6,9 +6,10 @@
 /// One package's sealed Publisher and UpgradeCap, its delayed upgrade decisions, and the
 /// role-gated pause controls of its `PackageVersion`, typed by the package's one-time witness.
 ///
-/// The native capabilities never leave the shared `PackageAdmin`: nothing returns or lends the
-/// Publisher or the UpgradeCap, and the cap acts only through a scheduled upgrade or the one
-/// terminal `make_immutable`. Each role is generic over the package marker, so the ACL stores
+/// The native capabilities never leave the shared `PackageAdmin`: only the package itself, with
+/// its package witness, borrows the Publisher by immutable reference, nothing lends the
+/// UpgradeCap, and the cap acts only through a scheduled upgrade or the one terminal
+/// `make_immutable`. Each role is generic over the package marker, so the ACL stores
 /// `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator
 /// never reaches another's custody. This package is immutable: no consumer bytecode generation
 /// gates these calls, and a consumer whose new bytecode compiles the wrong generation can still
@@ -243,20 +244,33 @@ public fun pause<PackageMarker: drop>(
 }
 
 /// Clears the requested pause bits for the package's own unpause, which first checks its own
-/// configuration notices and then passes a value of the exact witness type the package pinned
-/// at publication. Aborts while any upgrade notice still to come could be zero. Only the
-/// package's unpause constructs that type, so a role alone cannot skip its checks.
-public fun clear_pause_bits<PackageMarker: drop, UnpauseWitness: drop>(
+/// configuration notices and then passes a value of its package witness, the type pinned at
+/// publication. Aborts while any upgrade notice still to come could be zero. Only the package's
+/// own code constructs that type, so a role alone cannot skip its checks.
+public fun clear_pause_bits<PackageMarker: drop, PackageWitness: drop>(
     self: &PackageAdmin<PackageMarker>,
     _: &AdminWitness<UnpauseAdmin<PackageMarker>>,
-    _: UnpauseWitness,
+    _: PackageWitness,
     package_version: &mut PackageVersion<PackageMarker>,
     bits: u8,
 ) {
-    package_version.assert_unpause_witness<_, UnpauseWitness>();
+    package_version.assert_unpause_witness<_, PackageWitness>();
     assert!(self.upgrade.is_guarded(), blast_admin::errors::unguarded_upgrade_notice!());
 
     package_version.clear_pause_bits(bits);
+}
+
+/// Borrows the sealed Publisher for package `PackageMarker` itself, which passes a value of its
+/// package witness, the type pinned at publication, to create Display or transfer policies for
+/// its own types. The reference cannot move, mutate or burn the Publisher.
+public fun publisher<PackageMarker: drop, PackageWitness: drop>(
+    self: &PackageAdmin<PackageMarker>,
+    _: PackageWitness,
+    package_version: &PackageVersion<PackageMarker>,
+): &Publisher {
+    package_version.assert_publisher_witness<_, PackageWitness>();
+
+    &self.publisher
 }
 
 // === Private Functions ===

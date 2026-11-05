@@ -26,14 +26,16 @@ fun shared_error_codes_are_stable() {
     assert_eq!(errors::no_pending!(), 14);
     assert_eq!(errors::invalid_delay!(), 15);
     assert_eq!(errors::unchanged!(), 16);
-    assert_eq!(errors::wrong_change!(), 17);
-    assert_eq!(errors::invalid_pause_bits!(), 18);
-    assert_eq!(errors::pause_unchanged!(), 19);
-    assert_eq!(errors::paused!(), 20);
-    assert_eq!(errors::wrong_upgrade_action!(), 21);
-    assert_eq!(errors::unguarded_upgrade_notice!(), 22);
-    assert_eq!(errors::invalid_package_witness!(), 23);
-    assert_eq!(errors::wrong_unpause_witness!(), 24);
+    assert_eq!(errors::proposal_pending!(), 17);
+    assert_eq!(errors::wrong_change!(), 18);
+    assert_eq!(errors::invalid_pause_bits!(), 19);
+    assert_eq!(errors::pause_unchanged!(), 20);
+    assert_eq!(errors::paused!(), 21);
+    assert_eq!(errors::wrong_upgrade_action!(), 22);
+    assert_eq!(errors::unguarded_upgrade_notice!(), 23);
+    assert_eq!(errors::invalid_package_witness!(), 24);
+    assert_eq!(errors::wrong_unpause_witness!(), 25);
+    assert_eq!(errors::wrong_publisher_witness!(), 26);
 }
 
 // === Imports ===

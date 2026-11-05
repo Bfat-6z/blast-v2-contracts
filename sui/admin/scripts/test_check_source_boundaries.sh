@@ -164,9 +164,8 @@ case_dir="$(new_case readds_delayed_map)"
 printf 'module blast_admin::delayed_map;\n' > "$case_dir/sources/delayed/delayed_map.move"
 expect_rejected "$case_dir"
 
-case_dir="$(new_case delayed_destructor)"
-printf '\npublic fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed<K, T>) { abort 0 }\n' \
-  >> "$case_dir/sources/delayed/delayed.move"
+case_dir="$(new_case delayed_without_destructor)"
+edit 's/^public fun destroy</fun destroy</' "$case_dir/sources/delayed/delayed_set.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case adds_acl_entry_path)"
@@ -261,12 +260,26 @@ edit 's/^public struct UnpauseAdmin<phantom PackageMarker>()$/public struct Unpa
 expect_rejected "$case_dir"
 
 case_dir="$(new_case unpinned_unpause_witness)"
-edit '/^    unpause_witness: TypeName,$/d' "$case_dir/sources/package_version.move"
+edit '/^    package_witness: TypeName,$/d' "$case_dir/sources/package_version.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case unchecked_unpause_witness)"
-edit '/package_version.assert_unpause_witness<_, UnpauseWitness>();/d' \
+edit '/package_version.assert_unpause_witness<_, PackageWitness>();/d' \
   "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case unchecked_publisher_witness)"
+edit '/package_version.assert_publisher_witness<_, PackageWitness>();/d' \
+  "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case mutable_publisher)"
+edit 's/^): &Publisher {$/): \&mut Publisher {/' "$case_dir/sources/package_admin.move"
+expect_rejected "$case_dir"
+
+case_dir="$(new_case second_publisher_path)"
+printf '\nfun rogue<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): &Publisher { &self.publisher }\n' \
+  >> "$case_dir/sources/package_admin.move"
 expect_rejected "$case_dir"
 
 printf 'blast_admin boundary checker self-tests passed\n'

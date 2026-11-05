@@ -38,7 +38,7 @@ fun an_admission_waits_the_applied_notice_and_removal_is_immediate() {
     assert_eq!(member, @0xA);
     assert_eq!(set.delay_ms(), NOTICE_MS);
 
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -60,7 +60,7 @@ fun zero_notice_admissions_apply_in_one_transaction_before_the_notice_is_raised(
     assert_eq!(set.schedule_add(@0xC, &clock), 3 + NOTICE_MS);
 
     set.cancel_add(@0xC);
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -82,7 +82,7 @@ fun admissions_keep_their_deadlines_across_notice_changes() {
     assert_eq!(set.schedule_add(@0xC, &clock), 1_100);
 
     set.cancel_add(@0xC);
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -100,7 +100,7 @@ fun removal_discards_a_pending_admission_without_changing_the_notice() {
     assert!(set.admission_ready_at_ms(&@0xA).is_none());
     assert_eq!(set.delay_ms(), 100);
 
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -117,7 +117,7 @@ fun rescheduling_a_pending_member_restarts_its_notice() {
     assert_eq!(cancelled_ready_at_ms, 100);
 
     set.cancel_add(@0xA);
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -145,7 +145,7 @@ fun pending_count_counts_only_pending_admissions() {
     assert_eq!(set.pending_count(), 0);
 
     set.cancel_delay();
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -197,6 +197,18 @@ fun applying_an_unscheduled_admission_rejects() {
 }
 
 #[test]
+#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed_set)]
+fun a_set_with_a_pending_admission_cannot_be_destroyed() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(10);
+    set.schedule_add(@0xA, &clock);
+
+    set.destroy();
+
+    abort
+}
+
+#[test]
 fun a_replaced_notice_change_is_cancelled_first() {
     let clock = clock_at(0);
     let mut set = new_witness_set(10);
@@ -211,7 +223,7 @@ fun a_replaced_notice_change_is_cancelled_first() {
     assert_eq!(set.pending_delay_ms_for_testing().destroy_some(), 30);
 
     set.cancel_delay();
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -231,7 +243,7 @@ fun a_cancelled_admission_reports_the_notice_it_was_scheduled_with() {
     assert_eq!(delay_ms, 10);
     assert_eq!(ready_at_ms, 10);
 
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -256,11 +268,38 @@ fun cancelling_a_missing_notice_change_rejects() {
 }
 
 #[test]
+#[expected_failure(abort_code = errors::EProposalPending, location = blast_admin::delayed_set)]
+fun a_set_with_a_pending_notice_change_cannot_be_destroyed() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(10);
+    set.schedule_delay(20, &clock);
+
+    set.destroy();
+
+    abort
+}
+
+#[test]
+fun destruction_records_the_end_of_the_set_and_its_members() {
+    let clock = clock_at(0);
+    let mut set = new_witness_set(0);
+    set.schedule_add(@0xA, &clock);
+    set.apply_add(@0xA, &clock);
+
+    set.destroy();
+
+    let (set_owner, _) = collect<SetDestroyed<Witnesses, address>>().set_destroyed_fields();
+    assert_eq!(set_owner, owner());
+
+    clock.destroy_for_testing();
+}
+
+#[test]
 #[expected_failure(abort_code = errors::EInvalidDelay, location = blast_admin::delayed)]
 fun creation_rejects_a_notice_above_the_ceiling() {
     let set = new_witness_set(delayed::max_delay_ms() + 1);
 
-    destroy(set);
+    set.destroy();
 
     abort
 }
@@ -294,7 +333,7 @@ fun a_set_is_guarded_only_with_a_nonzero_notice_and_nothing_pending() {
     assert!(!set.is_guarded());
 
     set.cancel_delay();
-    destroy(set);
+    set.destroy();
     clock.destroy_for_testing();
 }
 
@@ -303,7 +342,7 @@ fun a_set_accepts_the_ceiling_notice() {
     let set = new_witness_set(delayed::max_delay_ms());
 
     assert_eq!(set.delay_ms(), delayed::max_delay_ms());
-    destroy(set);
+    set.destroy();
 }
 
 // === Test Helpers ===
@@ -348,10 +387,11 @@ use blast_admin::{
         MemberRemoved,
         SetApplied,
         SetCancelled,
+        SetDestroyed,
     },
     errors,
 };
 
-use std::unit_test::{assert_eq, destroy};
+use std::unit_test::assert_eq;
 
 use sui::clock::{Self, Clock};

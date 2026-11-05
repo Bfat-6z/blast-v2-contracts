@@ -215,6 +215,19 @@ public fun cancel_delay<K: copy + drop + store, E: copy + drop + store>(self: &m
     self.cancel_delay_if_pending();
 }
 
+/// Deletes a set with no pending admission or notice change and records its end, which
+/// also ends every remaining membership.
+public fun destroy<K: copy + drop + store, E: copy + drop + store>(self: DelayedSet<K, E>) {
+    assert!(
+        self.admissions.is_empty() && self.pending_delay.is_none(),
+        blast_admin::errors::proposal_pending!(),
+    );
+
+    let DelayedSet { owner, key, members: _, delay_ms: _, admissions: _, pending_delay: _ } = self;
+
+    sui::event::emit(SetDestroyed<K, E> { owner, key });
+}
+
 // === Private Functions ===
 
 fun cancel_admission_if_pending<K: copy + drop + store, E: copy + drop + store>(
@@ -294,6 +307,13 @@ public fun set_applied_fields<K: copy + drop + store, E: copy + drop + store>(
 }
 
 #[test_only]
+public fun set_destroyed_fields<K: copy + drop + store, E: copy + drop + store>(
+    self: &SetDestroyed<K, E>,
+): (ID, K) {
+    (self.owner, self.key)
+}
+
+#[test_only]
 public fun member_removed_fields<K: copy + drop + store, E: copy + drop + store>(
     self: &MemberRemoved<K, E>,
 ): (ID, K, E) {
@@ -342,6 +362,12 @@ public struct MemberRemoved<K: copy + drop + store, E: copy + drop + store> has 
     owner: ID,
     key: K,
     member: E,
+}
+
+/// A set was deleted with nothing pending; its remaining members leave with it.
+public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + store> has copy, drop {
+    owner: ID,
+    key: K,
 }
 
 // === Imports ===
