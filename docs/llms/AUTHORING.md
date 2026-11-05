@@ -28,10 +28,9 @@ honestly when something is not supported.
   the claim rather than guess. Describe the current source, not history.
 - **Exact names.** Name every call, type, and event exactly as in source, in
   backticks. Write `module::member` (for example `presale_vault::collect_fees`).
-  When the module name is one of `blast_events`, `bluefin`, `bps`, `cetus`,
-  `constants`, `errors`, `events`, `holder_rewards`, `package_admin`, `vault`,
-  or `venue_config` (each exists in more than one package), write
-  `package::module::member` (for example `blast_migrators::cetus::migrate`). The
+  When the module name is one of `blast_events`, `constants`, `errors`,
+  `events`, `package_admin`, or `vault` (each exists in more than one package),
+  write `package::module::member` (for example `blast_vault::vault::new`). The
   generator fails on any name it cannot resolve.
 - **Who may call.** Mark every call as one of: *anyone* (permissionless), *cap
   holder* (name the capability object), or *Blast admin* (name the role or cap).

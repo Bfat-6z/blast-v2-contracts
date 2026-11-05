@@ -8,7 +8,7 @@ product guide below assumes it.
 
 | Product | What users do | Packages |
 | --- | --- | --- |
-| Presale | commit Quote to a capped or overflow sale, claim tokens or refunds, earn LP fees and holder rewards after migration | `blast_presale`; the shared venues `blast_migrators`; one-off partner venues such as `blast_aftermath_dao_presale` |
+| Presale | commit Quote to a capped or overflow sale, claim tokens or refunds, earn LP fees and holder rewards after migration | `blast_presale`; the shared venues `blast_migrators`; one-off partner venues such as `blast_aftermath_dao_presale`; `blast_vault` (LP vault, holder rewards) |
 | Launchpad | launch a coin on a bonding curve, trade it, graduate it into a DEX pool | `blast_fun` (curve, lifecycle, fees), a generated coin package per launch, `blast_migrators` (Cetus and Bluefin venues for both products: venue start, migration, LP fees), `blast_vault` (LP vault, holder rewards) |
 | Partner codes | earn a share of Blast's fee on the flow an app brings | `blast_partners` |
 | Boosts | hold a leveraged long or short coin backed by Aftermath perpetuals | `blast_boosts_core`, `blast_boosts_products`, `blast_boosts_aftermath` |
@@ -19,23 +19,27 @@ Each package and what it depends on:
 
 ```text
 blast_migrators              -> blast_core, blast_vault, blast_admin, Cetus, Bluefin
-blast_fun                    -> blast_partners, blast_admin
+blast_aftermath_dao_presale  -> blast_core, Aftermath AMM
+blast_fun                    -> blast_core, blast_partners, blast_admin
+blast_presale                -> blast_core, blast_partners, blast_admin
+blast_vault                  -> blast_core, blast_partners, blast_admin
+blast_core                   -> blast_partners, blast_admin, blast_fun_vesting
 blast_partners               -> blast_admin
-blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
-blast_aftermath_dao_presale  -> blast_presale, Aftermath AMM
 blast_boosts_aftermath       -> blast_boosts_core, blast_partners, blast_admin, Aftermath perpetuals
 blast_boosts_core            -> blast_admin
 blast_sui                    -> blast_admin, Sui system
 blast_admin                  -> Sui framework only
 ```
 
-The launchpad imports no DEX. A migrator package depends on the launchpad and
-composes with it inside one PTB. Presale uses typed roles from the shared
-`blast_admin` ACL. Both products hand migrated liquidity to a venue, which locks
-it in a `blast_vault::vault::Vault`.
+No product imports a venue or the vault, and no venue imports a product. They
+compose inside one PTB through `blast_core` values: a venue's `prepare` returns
+the `VenueTicket` the product's creation call redeems, and at migration the
+product's `migrate` returns the `Migration` that the next command passes to the
+stored venue's `migrate`, which locks the liquidity in a
+`blast_vault::vault::Vault`.
 Use the presale guide for presale calls.
 
-`blast_fun_vesting` (used by `blast_presale`) lives in this repository at
+`blast_fun_vesting` (used by `blast_core` for vesting payouts) lives in this repository at
 `sui/vesting` and is immutable on mainnet. The standalone
 OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
@@ -100,9 +104,9 @@ Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
-| Immutable | `blast_admin`, `blast_partners`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
+| Immutable | `blast_admin`, `blast_partners`, `blast_core`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
-| Version-gated | `blast_presale`, `blast_fun`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<Marker>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events
@@ -122,18 +126,18 @@ Upgrade rules depend on the package lineage.
 A failed call returns a Move abort naming the module and function that aborted
 and a `u64` code. Blast uses two styles:
 
-- **Named errors** (`#[error]` constants): `blast_partners` and
-  `blast_aftermath_dao_presale`. Sui's RPC and SDKs
+- **Named errors** (`#[error]` constants): `blast_aftermath_dao_presale`. Sui's RPC and SDKs
   decode these into the constant's name and message; the reference lists each
   module's constants with their messages.
-- **Numeric codes**: `blast_fun`, `blast_presale`, `blast_sui`, `blast_boosts_core`,
-  `blast_boosts_aftermath`, and `blast_admin` abort with small integers. Look the
+- **Numeric codes**: `blast_admin`, `blast_partners`, `blast_core`, `blast_vault`,
+  `blast_fun`, `blast_presale`, `blast_migrators`, `blast_sui`, `blast_boosts_core`,
+  and `blast_boosts_aftermath` abort with small integers. Look the
   number up in that package's abort-code table in the reference.
 
 The abort names the module where it happened, which may be a package called
-underneath the one you called: a migrator call can abort inside `blast_fun` or
-`blast_admin`, and an abort in a Cetus, Bluefin, or Aftermath module comes from
-the venue. Simulate a transaction before signing to see its abort without
+underneath the one you called: a migrator call can abort inside `blast_core`,
+`blast_vault` or `blast_admin`, and an abort in a Cetus, Bluefin, or Aftermath
+module comes from the venue. Simulate a transaction before signing to see its abort without
 spending gas.
 
 ### Network

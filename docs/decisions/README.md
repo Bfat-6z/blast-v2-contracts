@@ -447,7 +447,7 @@ test passes, and none is asserted as a cited fact in the records.
 | [0128](0128-reserve-aware-rebalance-increases.md) | Reserve-aware rebalance increases | **accepted** |
 | [0130](0130-protected-permissionless-shutdown.md) | Protected permissionless shutdown of a size-locked Boost | **accepted** |
 | [0134](0134-delayed-administration-pause-and-table-acl.md) | Delayed administration, pause, and a Table-backed ACL | proposed; amended by 0137 |
-| [0137](0137-shared-launch-stack-core-vault-and-venues.md) | Shared launch stack: core, vault, and venues | proposed |
+| [0137](0137-shared-launch-stack-core-vault-and-venues.md) | Shared launch stack: core, vault, and venues | proposed; amended 2026-11-05: seven packages, one `blast_migrators` venue package (Cetus and Bluefin) in place of `blast_venues`, the Aftermath DAO vendor as a plain venue, two-call migration, standalone vaults cut, one package witness and one package administration, no repair or policy narrowing, vault immutable after audit |
 
 ## Consolidated utility packages
 

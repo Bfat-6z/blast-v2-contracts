@@ -75,8 +75,7 @@ treasury is never deleted: every ledger pays through it.
   and stores the venue.
 - `migration::VaultTerms` are a vault's terms: the sale, the package witness that sealed them, the fee
   split, Blast's LP-fee shares, the partner, and whether residuals go to Blast or the owner. Only
-  `migration::vault_terms`, under the issuing package's witness, builds them; a standalone vault's issuer
-  builds its own the same way. It aborts when either of Blast's LP-fee shares exceeds 3,000 basis
+  `migration::vault_terms`, under the issuing package's witness, builds them. It aborts when either of Blast's LP-fee shares exceeds 3,000 basis
   points, so every sealed term is within the cap.
 - At migration the product creates a `migration::Migration` with `migration::new`, sealed by its own witness, holding the
   pool's Meme and Quote and terms the same package witness sealed. Only the stored venue can consume it,
