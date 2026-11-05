@@ -4,9 +4,10 @@
 
 The Blast launchpad (package `blast_fun`) launches a new coin on a bonding curve. A creator
 publishes a small generated coin package, which mints exactly one billion whole tokens into a
-`launch_ticket::LaunchTicket` and hands the creator the coin's `TreasuryCap` beside it. In one
-transaction the creator prepares the coin on a venue (Cetus or Bluefin), which returns a sealed
-ticket for that venue, and turns the ticket and the cap into a `launch::Launch<Meme, Quote>`. The
+`launch_ticket::LaunchTicket` and hands the creator the coin's `TreasuryCap` beside it, sealed so
+that only the launchpad can open it. In one transaction the creator prepares the coin on a venue
+(Cetus or Bluefin), which returns a sealed ticket for that venue, and turns the ticket and the
+sealed cap into a `launch::Launch<Meme, Quote>`. The
 creator chooses the curve's starting price, the Quote amount at which the curve closes (the
 graduation target), how the supply and the final Quote are split at migration, and how the future
 pool's LP fees are split. Anyone then buys and sells `Meme` against `Quote` on a constant-product
@@ -51,11 +52,14 @@ Aborts).
   published and sent to the publisher. It holds the whole supply as a `Balance<Meme>`, the
   `MetadataCap<Meme>`, the creator recipient, the decimals, the supply mode (`burnable`), and the
   sell-burn rate. No call releases its contents except `launch::finalize`.
-- `TreasuryCap<Meme>` (`key, store`): created by the same publish and sent to the publisher beside
-  the ticket. The launcher passes it by reference to the venue's prepare call (Cetus mints the coin's
-  pool-creation capability from it) and by value to `launch::new`. `launch::finalize` hands it to
-  the Coin Registry, which makes the supply burn-only or fixed, so no one can mint Meme afterwards.
-  The ticket and the cap can be transferred before launch; whoever launches needs both.
+- `blast_core::sealed_treasury_cap::SealedTreasuryCap<Meme>` (`key, store`): the coin's
+  `TreasuryCap<Meme>`, created by the same publish and sent to the publisher beside the ticket under
+  the launchpad's seal, so the holder cannot mint. The launcher passes it by reference to the
+  venue's prepare call (Cetus borrows the cap with the launchpad's admission of the venue, from
+  `launch_config::venue_admission`, to mint the coin's pool-creation capability) and by value to
+  `launch::new`, the only call that opens the seal. `launch::finalize` then hands the cap to the
+  Coin Registry, which makes the supply burn-only or fixed, so no one can mint Meme afterwards. The
+  ticket and the sealed cap can be transferred before launch; whoever launches needs both.
 - `creator_authority::CurveFeeCap<Meme>` (`key, store`): authority over the launch's creator trade
   fees, and over the launch's LP vault through `launch::prove_owner`. The launch honors only the cap
   ID it records in `curve_fee_cap_id`.
@@ -164,12 +168,12 @@ every policy notice is guarded (see Emergency pause).
 Creating a launch takes three transactions, because each step needs an object the previous one
 creates. `Clock` is the shared object at `0x6`.
 
-#### Flow 1: publish the generated coin package (anyone; the publisher receives the ticket and the cap)
+#### Flow 1: publish the generated coin package (anyone; the publisher receives the ticket and the sealed cap)
 
 The coin is a one-module package built from the `launch_ticket_template` template. Its only code is
 an initializer that runs at publish: it builds the creator recipient, calls `launch_ticket::new`
-with the package's one-time witness, and transfers both the ticket and the `TreasuryCap<Meme>` to
-the publisher. It exposes no public functions. Patch these constants in the compiled template:
+with the package's one-time witness, and transfers both the ticket and the sealed `TreasuryCap<Meme>`
+to the publisher. It exposes no public functions. Patch these constants in the compiled template:
 
 | Constant | Meaning | Checked |
 | --- | --- | --- |
@@ -194,12 +198,10 @@ Publishing:
 1. Creates the currency through the Coin Registry one-time-witness path and mints
    `1_000_000_000 * 10^decimals` atomic units into the ticket (aborts on `u64` overflow, so decimals
    above 10 fail).
-2. Sends `LaunchTicket<Meme>` and `TreasuryCap<Meme>` to the publisher and the unregistered
-   `Currency<Meme>` to the Coin Registry address `0xc`.
+2. Sends `LaunchTicket<Meme>` and `SealedTreasuryCap<Meme>` to the publisher and the unregistered
+   `Currency<Meme>` to the Coin Registry address `0xc`. No raw `TreasuryCap<Meme>` exists outside
+   the seal, so nothing can be minted or burned before the launch.
 3. Emits `blast_fun::events::LaunchTicketCreated`.
-
-Do not mint or burn with the `TreasuryCap`: `launch::finalize` checks that the cap's total supply
-and the ticket's balance are both exactly the minted supply.
 
 #### Flow 2: register the currency (anyone)
 
@@ -207,37 +209,43 @@ Call `0x2::coin_registry::finalize_registration<Meme>` with the shared `CoinRegi
 and the pending `Currency<Meme>` as a `Receiving` argument. It re-creates the currency as a shared
 object at a derived address. Use that shared `Currency<Meme>` in every later step.
 
-#### Flow 3: prepare, create, configure, and share the launch (holder of the ticket and the cap, one PTB)
+#### Flow 3: prepare, create, configure, and share the launch (holder of the ticket and the sealed cap, one PTB)
 
 Type arguments are `<Meme, Quote>` on every call below. Each initializer setter, `launch::finalize`,
 and `launch::share` takes the launchpad `PackageVersion` (shared, immutable) right after the
-initializer or launch. The ticket and the `TreasuryCap` are owned objects; the venue ticket, the
-initializer, and the launch are values returned by earlier commands of the same PTB.
+initializer or launch. The ticket and the sealed `TreasuryCap` are owned objects; the admission, the
+venue ticket, the initializer, and the launch are values returned by earlier commands of the same
+PTB.
 
-1. Prepare the coin on the chosen venue (holder of the `TreasuryCap`). Both calls return a
+1. Prepare the coin on the chosen venue (holder of the sealed `TreasuryCap`). Both calls return a
    `blast_core::migration::VenueTicket<Meme, Quote>` sealed by the venue's witness, for exactly this
    Meme and Quote:
-   - Cetus: `blast_migrators::cetus::prepare` with the migrators'
+   - Cetus: first `launch_config::venue_admission` with the venue witness
+     `blast_migrators::cetus::Venue` as its type argument and `LaunchConfig` (shared, immutable),
+     which returns the launchpad's `blast_core::sealed_treasury_cap::VenueAdmission` of Cetus
+     (aborts with `blast_fun::errors::EVenueNotAllowed` while Cetus is not admitted). Then
+     `blast_migrators::cetus::prepare` with the migrators'
      `PackageVersion<BLAST_MIGRATORS>` (shared), the migrators'
      `blast_migrators::venue_config::VenueConfig` (shared, mutable), Cetus's `GlobalConfig`
-     (shared) and `Pools` (shared, mutable), the `TreasuryCap<Meme>` (owned, by mutable reference),
-     and `tick_spacing: u32`. It mints the Meme type's single Cetus `PoolCreationCap` from the
-     treasury cap, registers the pair at that tick spacing, keeps the cap and the tick spacing in
-     `VenueConfig`, and emits `blast_migrators::events::CetusPoolReserved`. It aborts when
-     Cetus does not register the spacing or refuses the pair at it.
+     (shared) and `Pools` (shared, mutable), the `SealedTreasuryCap<Meme>` (owned, by mutable
+     reference), the admission, and `tick_spacing: u32`. It borrows the treasury cap from its seal
+     with the admission, mints the Meme type's single Cetus `PoolCreationCap` from it, registers
+     the pair at that tick spacing, keeps the cap and the tick spacing in `VenueConfig`, and emits
+     `blast_migrators::events::CetusPoolReserved`. It aborts when Cetus does not register the
+     spacing or refuses the pair at it.
    - Bluefin: `blast_migrators::bluefin::prepare` with the migrators' `PackageVersion`,
-     `VenueConfig` (mutable), the `TreasuryCap<Meme>` (owned, by immutable reference), the
+     `VenueConfig` (mutable), the `SealedTreasuryCap<Meme>` (owned, by immutable reference), the
      `Currency<Meme>`, `tick_spacing: u32` (1 to 400), and `fee_rate: u64` (1 to 20,000, Bluefin's
      units). It records the tier in `VenueConfig`; out-of-range values abort with
      `blast_migrators::errors::EInvalidTier`, and a Meme symbol over 32 bytes with
      `blast_migrators::errors::ESymbolTooLong`.
 
    The venue keeps the pool tier; it can never change afterwards.
-2. `launch::new` with the `LaunchTicket<Meme>` (owned, by value), the same `TreasuryCap<Meme>` (owned,
-   now by value), `PackageVersion`, `LaunchConfig` (shared, immutable), and the `VenueTicket` from
-   step 1. It checks that Create is not paused and that Meme and Quote differ, redeems the venue
+2. `launch::new` with the `LaunchTicket<Meme>` (owned, by value), the same `SealedTreasuryCap<Meme>`
+   (owned, now by value), `PackageVersion`, `LaunchConfig` (shared, immutable), and the `VenueTicket`
+   from step 1. It checks that Create is not paused and that Meme and Quote differ, redeems the venue
    ticket, checks that `LaunchConfig` admits the Quote, the venue, and the Meme decimals, snapshots
-   the trade fees, and returns a `LaunchInitializer<Meme, Quote>`. The launch stores the venue: only
+   the trade fees, opens the seal, and returns a `LaunchInitializer<Meme, Quote>`. The launch stores the venue: only
    that venue can migrate it.
 3. `launch::set_virtual_quote` with the initializer (mutable) and a `u64`: the virtual Quote reserve,
    in Quote atomic units. Required, non-zero. It sets the opening price.
@@ -822,12 +830,13 @@ fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partner
 | publish | 7 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 20 `blast_fun::errors::EInvalidCreatorRecipient`, 21 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
 | prepare | `blast_migrators::errors::EInvalidTier`, `blast_migrators::errors::ESymbolTooLong`; Cetus aborts in its own modules | a tier within Bluefin's bounds and a Meme symbol of at most 32 bytes; a tick spacing Cetus registers and a pair it accepts |
 | start | 9 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
-| start | 27 `blast_fun::errors::EQuoteNotAllowed`, 2 `blast_fun::errors::EVenueNotAllowed`, 1 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, venue, and decimals |
+| start | 27 `blast_fun::errors::EQuoteNotAllowed`, 2 `blast_fun::errors::EVenueNotAllowed`, 1 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, venue, and decimals; `launch_config::venue_admission` raises 2 for an unadmitted venue |
+| prepare, start | 10 `blast_core::errors::EWrongPackageWitness`, 14 `blast_core::errors::EVenueNotAdmitted` (`blast_core::sealed_treasury_cap`) | borrow the sealed cap only with the launchpad's admission of the preparing venue; open it only through `launch::new` |
 | building values | 0 `blast_core::errors::EInvalidBps` (`blast_core::bps`); 3 `blast_core::errors::EInvalidRoute`, 4 `blast_core::errors::EInvalidFeeSplit` (`blast_core::fee_split`); 12 `blast_core::errors::EInvalidRecipient` (`blast_core::payout`); 2 `blast_core::errors::EInvalidVestingTerms` (`blast_core::payout`); 5 `blast_fun::errors::EInvalidShares` (`allocation`) | rates at most 10,000; positive route shares and non-zero addresses; at most 20 distinct routes summing to 10,000; positive vesting periods; curve Meme and pool Meme/Quote positive |
 | finalize | `std::option` `EOPTION_NOT_SET` | set the virtual Quote, target, plan, and LP-fee split |
 | finalize | 30 `blast_fun::errors::EInvalidCreationFee`, 28 `blast_fun::errors::EInvalidVirtualQuote`, 10 `blast_fun::errors::EInvalidOpeningRound`, 11 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; target big enough that the pool's Quote share is at least 1 |
 | finalize | 5 `blast_fun::errors::EInvalidShares`, 6 `blast_fun::errors::ERecipientCapacityReached` (`allocation`) | plan plus Blast's allocation must sum to 10,000 per asset; at most 16 recipients |
-| finalize | 8 `blast_fun::errors::EInvalidInitialMemeSupply`, 7 (`launch_ticket`) | an untouched supply (nothing minted or burned with the `TreasuryCap`); sell-burn at most 5,000 |
+| finalize | 8 `blast_fun::errors::EInvalidInitialMemeSupply`, 7 (`launch_ticket`) | an untouched supply (an admitted venue minted or burned nothing through the sealed `TreasuryCap`); sell-burn at most 5,000 |
 | set partner | 4 `blast_partners::errors::EPartnerNotAccepted` (`blast_partners::partner_list`) | name a partner `LaunchConfig` accepts now |
 | buy, sell | 12 `blast_fun::errors::EInvalidLaunchLifecycle` (`launch`) | trade only while `Live`; sell only after share |
 | buy | 14 `blast_fun::errors::EZeroTradeOutput`, 13 `blast_fun::errors::ESlippageExceeded` (`launch`) | larger input; lower `min_meme_out` or re-quote |
@@ -856,9 +865,10 @@ live admin cap or lacks the role.
 
 - Preparing the venue in a separate transaction. The `VenueTicket` cannot be stored or dropped, so
   the venue's prepare, `launch::new`, `launch::finalize`, and `launch::share` all run in one PTB.
-- Passing the `TreasuryCap` by value to the venue. Cetus takes it by mutable reference and Bluefin by
-  immutable reference; only `launch::new` takes it by value, afterwards.
-- Minting or burning with the `TreasuryCap` before launch: finalization aborts.
+- Passing the sealed `TreasuryCap` by value to the venue. Cetus takes it by mutable reference and
+  Bluefin by immutable reference; only `launch::new` takes it by value, afterwards.
+- Preparing on Cetus without the launchpad's admission of the venue from
+  `launch_config::venue_admission` in the same PTB: the borrow aborts.
 - Building the plan to sum to 10,000 on its own. Blast's allocation is added at finalization, so read
   `LaunchConfig.protocol_allocation` and leave exactly that room in each asset.
 - Passing the pre-registration `Currency<Meme>`. Finalization needs the shared one that
@@ -893,10 +903,11 @@ live admin cap or lacks the role.
 `(virtual_quote + real_quote_reserve) / meme_reserve` Quote atoms per Meme atom; adjust for both
 decimals and multiply by one billion tokens for fully diluted value.
 
-**What is the call order to create a launch?** Publish the coin package (ticket and `TreasuryCap`
-arrive), register the currency, then one PTB: the venue's prepare (returns the `VenueTicket`),
-`launch::new` with the ticket, the cap, and the venue ticket, the setters, `launch::finalize`, an
-optional creator buy or bid, and `launch::share`.
+**What is the call order to create a launch?** Publish the coin package (ticket and sealed
+`TreasuryCap` arrive), register the currency, then one PTB: for Cetus `launch_config::venue_admission`
+(returns the `VenueAdmission`), the venue's prepare (returns the `VenueTicket`), `launch::new` with
+the ticket, the sealed cap, and the venue ticket, the setters, `launch::finalize`, an optional
+creator buy or bid, and `launch::share`.
 
 **What happens when a buy overshoots the graduation target?** The launch uses only the gross Quote
 needed to bring the real reserve to the target and returns the rest as the second coin of

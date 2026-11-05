@@ -107,10 +107,11 @@ fun init(ctx: &mut TxContext) {
 // === Public Functions ===
 
 /// Starts a launch whose liquidity migrates to the venue that issued `venue_ticket` after
-/// preparing the coin with `treasury_cap`. The Quote, the venue, and the decimals must be admitted.
+/// preparing the coin through `sealed_treasury_cap`, which only the launchpad opens. The Quote,
+/// the venue, and the decimals must be admitted.
 public fun new<Meme, Quote>(
     ticket: LaunchTicket<Meme>,
-    treasury_cap: TreasuryCap<Meme>,
+    sealed_treasury_cap: SealedTreasuryCap<Meme>,
     package_version: &PackageVersion<BLAST_FUN>,
     config: &LaunchConfig,
     venue_ticket: VenueTicket<Meme, Quote>,
@@ -127,7 +128,7 @@ public fun new<Meme, Quote>(
 
     LaunchInitializer {
         ticket,
-        treasury_cap,
+        treasury_cap: sealed_treasury_cap.into_treasury_cap(package_witness()),
         venue,
         quote_fee_bps,
         meme_fee_bps,
@@ -1267,6 +1268,7 @@ use blast_core::{
     bps::Bps,
     fee_split::FeeSplit,
     migration::{Self, Migration, VenueTicket},
+    sealed_treasury_cap::SealedTreasuryCap,
     owner_proof::{Self, OwnerProof},
     payout,
     protocol_fees::{Self, Ledger}

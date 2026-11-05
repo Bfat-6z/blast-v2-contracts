@@ -102,23 +102,26 @@ settle_body="$(sed -n '/^public fun settle</,/^}/p' <<<"$presale_production")"
   || fail "Only settle, closing a sale early, may shorten its window."
 
 # 5. The hand-off (ADR 0137): the package witness, pinned at publication, is constructed only by
-#    `blast_presale_package::package_witness`, which only `finalize` (the fee ledger), `migrate`,
-#    `prove_owner`, and `creation_policy::unpause` call, sealing the sale's own terms with its owner's residuals and its
-#    snapshotted LP-fee rates. The sale never reaches a vault or a venue; the venue the stored
-#    witness names redeems the hand-off.
+#    `blast_presale_package::package_witness`, which only `new` (opening the sale token's sealed
+#    cap, ADR 0138), `finalize` (the fee ledger), `migrate`, `prove_owner`, `sale_token::new` (sealing
+#    the cap), `creation_policy::unpause`, and `creation_policy::venue_admission` call, sealing the
+#    sale's own terms with its owner's residuals and its snapshotted LP-fee rates. The sale never
+#    reaches a vault or a venue; the venue the stored witness names redeems the hand-off.
 migrate_body="$(sed -n '/^public fun migrate</,/^}/p' <<<"$presale_production")"
 prove_owner_body="$(sed -n '/^public fun prove_owner</,/^}/p' <<<"$presale_production")"
 finalize_body="$(sed -n '/^public fun finalize</,/^}/p' <<<"$presale_production")"
 otw_production="$(production "$sources/blast_presale_package.move")"
 rg -q '^public struct PackageWitness\(\) has drop;$' <<<"$otw_production" \
   && [ "$(rg -c 'PackageWitness\(\)' <<<"$otw_production")" == 2 ] \
-  && [ "$(for file in "${source_files[@]}"; do production "$file" | rg -c 'package_witness\(\)' || true; done | paste -sd+ | bc)" == 6 ] \
-  && [ "$(production "$sources/config/creation_policy.move" | rg -c 'package_witness\(\)')" == 1 ] \
-  && [ "$(rg -c 'blast_presale_package::package_witness\(\)' <<<"$presale_production")" == 4 ] \
+  && [ "$(for file in "${source_files[@]}"; do production "$file" | rg -c 'package_witness\(\)' || true; done | paste -sd+ | bc)" == 9 ] \
+  && [ "$(production "$sources/config/creation_policy.move" | rg -c 'package_witness\(\)')" == 2 ] \
+  && [ "$(production "$sources/sale_token.move" | rg -c 'package_witness\(\)')" == 1 ] \
+  && [ "$(rg -c 'blast_presale_package::package_witness\(\)' <<<"$presale_production")" == 5 ] \
+  && [ "$(rg -c 'package_witness\(\)' <<<"$(sed -n '/^public fun new</,/^}/p' <<<"$presale_production")")" == 1 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$migrate_body")" == 2 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$prove_owner_body")" == 1 ] \
   && [ "$(rg -c 'package_witness\(\)' <<<"$finalize_body")" == 1 ] \
-  || fail "Only finalize, migrate, prove_owner and unpause may take the presale's package witness."
+  || fail "Only new, finalize, migrate, prove_owner, sale_token::new, unpause and venue_admission may take the presale's package witness."
 for term in 'self.id.to_inner(),' 'self.fee_split,' 'self.protocol_fees.lp_fee_meme_bps(),' \
   'self.protocol_fees.lp_fee_quote_bps(),' 'self.partner_id,' 'migration::residuals_to_owner(),'; do
   rg -Fq "$term" <<<"$migrate_body" || fail "migrate must seal ${term%,} into its vault terms."

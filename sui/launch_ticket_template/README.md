@@ -14,8 +14,9 @@ launchpad's original package ID, and renames this template's `meme` module and
 The package exposes no public functions. Its initializer passes the witness and
 the reviewed constants to `blast_fun::launch_ticket::new`, which mints the
 one-billion-token supply, finalizes the native metadata, and returns a key/store
-ticket, holding the supply and the treasury and metadata capabilities, that the
-initializer transfers to the publisher. The native `Currency` is delivered to
+ticket, holding the supply and the metadata capability, beside the treasury
+capability sealed under the launchpad (`blast_core::sealed_treasury_cap`); the
+initializer transfers both to the publisher, who can never mint through the seal. The native `Currency` is delivered to
 the Coin Registry address; anyone may complete its registration with
 `coin_registry::finalize_registration`. The publisher starts the launch by
 passing the ticket to one admitted migration adapter's `new`, which takes the

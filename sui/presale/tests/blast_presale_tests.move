@@ -1741,12 +1741,41 @@ fun an_unadmitted_venue_precedes_the_pair_and_supply_checks() {
 fun treasury_cap_must_start_with_zero_supply() {
     let mut ctx = tx_context::dummy();
     let (mut treasury_cap, currency) = new_currency(&mut ctx);
-    let existing_supply = treasury_cap.mint(1, &mut ctx);
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
+    let admission = creation_policy.venue_admission<TEST_VENUE>();
+    let existing_supply = treasury_cap.treasury_cap_mut(admission, TEST_VENUE()).mint(1, &mut ctx);
 
     create_sale_with_treasury<QUOTE>(treasury_cap, currency, valid_sale_terms(), &mut ctx);
 
     existing_supply.burn_for_testing();
+    destroy(creation_policy);
     destroy(ctx);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_presale::errors::EVenueNotAllowed,
+    location = blast_presale::creation_policy,
+)]
+fun the_policy_admits_no_venue_outside_its_allowlist() {
+    let mut ctx = tx_context::dummy();
+    let creation_policy = creation_policy::allowing_for_testing<QUOTE, TEST_VENUE>(&mut ctx);
+
+    destroy(creation_policy.venue_admission<OTHER_VENUE>());
+    destroy(creation_policy);
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_core::errors::EWrongPackageWitness,
+    location = blast_core::sealed_treasury_cap,
+)]
+fun the_creator_cannot_open_the_sealed_cap_with_a_venue_witness() {
+    let mut ctx = tx_context::dummy();
+    let (treasury_cap, currency) = new_currency(&mut ctx);
+
+    destroy(treasury_cap.into_treasury_cap(TEST_VENUE()));
+    destroy(currency);
 }
 
 #[test]
@@ -4007,7 +4036,7 @@ fun start_configured(
         terms.participant_vesting = participant_vesting;
 
         let (treasury_cap, mut currency) = new_currency(scenario.ctx());
-        let treasury_cap_id = object::id(&treasury_cap);
+        let treasury_cap_id = treasury_cap.treasury_cap_id();
         let (mut presale, cap) = new_presale<QUOTE>(
             treasury_cap,
             &mut currency,
@@ -4372,7 +4401,7 @@ fun hard_cap_at(start_delay_ms: u64, closes_when_filled: bool): HardCapTerms {
 /// A sale started for the fixture's venue with nothing set.
 fun bare_initializer(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
-    treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
+    treasury_cap: SealedTreasuryCap<BLAST_PRESALE_TESTS>,
     creation_policy: &CreationPolicy,
     fee_policy: &FeePolicy,
 ): PresaleInitializer<BLAST_PRESALE_TESTS, QUOTE> {
@@ -4396,7 +4425,8 @@ fun start_unadmitted<Quote, ListedQuote>(paused: bool, minted: bool) {
     let creation_policy = creation_policy::allowing_for_testing<ListedQuote, OTHER_VENUE>(&mut ctx);
     if (paused) pause(&mut version, constants::create_pause_bit!());
     if (minted) {
-        treasury_cap.mint(1, &mut ctx).burn_for_testing();
+        let admission = creation_policy.venue_admission<OTHER_VENUE>();
+        treasury_cap.treasury_cap_mut(admission, OTHER_VENUE()).mint(1, &mut ctx).burn_for_testing();
     };
 
     destroy(
@@ -4419,7 +4449,7 @@ fun single_wallet_eligibility(): EligibilityPolicy {
 
 /// Finalizes `new_initializer`'s sale.
 fun new_presale<Quote>(
-    treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
+    treasury_cap: SealedTreasuryCap<BLAST_PRESALE_TESTS>,
     currency: &mut Currency<BLAST_PRESALE_TESTS>,
     terms: SaleTerms,
     creation_policy: &CreationPolicy,
@@ -4445,7 +4475,7 @@ fun new_presale<Quote>(
 /// Starts a sale with the fixture's venue and sets every one of `terms`.
 fun new_initializer<Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
-    treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
+    treasury_cap: SealedTreasuryCap<BLAST_PRESALE_TESTS>,
     terms: SaleTerms,
     creation_policy: &CreationPolicy,
     fee_policy: &FeePolicy,
@@ -4538,7 +4568,7 @@ fun finalize_valid_sale(
 
 /// Creates a sale raising `Quote` under `terms` from `treasury_cap`, then discards it.
 fun create_sale_with_treasury<Quote>(
-    treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
+    treasury_cap: SealedTreasuryCap<BLAST_PRESALE_TESTS>,
     mut currency: Currency<BLAST_PRESALE_TESTS>,
     terms: SaleTerms,
     ctx: &mut TxContext,
@@ -4579,14 +4609,22 @@ fun create_with_windows(commitment_duration_ms: u64, liquidity_window_duration_m
 
 fun new_currency(
     ctx: &mut TxContext,
-): (TreasuryCap<BLAST_PRESALE_TESTS>, Currency<BLAST_PRESALE_TESTS>) {
+): (SealedTreasuryCap<BLAST_PRESALE_TESTS>, Currency<BLAST_PRESALE_TESTS>) {
     new_currency_with_symbol(b"SALE", ctx)
+}
+
+/// Seals `treasury_cap` under the presale's witness, as `sale_token::new` does at publication.
+fun seal(
+    treasury_cap: TreasuryCap<BLAST_PRESALE_TESTS>,
+    ctx: &mut TxContext,
+): SealedTreasuryCap<BLAST_PRESALE_TESTS> {
+    sealed_treasury_cap::new(blast_presale::blast_presale_package::package_witness(), treasury_cap, ctx)
 }
 
 fun new_regulated_currency(
     allow_global_pause: bool,
     ctx: &mut TxContext,
-): (TreasuryCap<BLAST_PRESALE_TESTS>, Currency<BLAST_PRESALE_TESTS>) {
+): (SealedTreasuryCap<BLAST_PRESALE_TESTS>, Currency<BLAST_PRESALE_TESTS>) {
     let (mut initializer, treasury_cap) = coin_registry::new_currency_with_otw(
         test_utils::create_one_time_witness<BLAST_PRESALE_TESTS>(),
         9,
@@ -4599,7 +4637,7 @@ fun new_regulated_currency(
     let deny_cap = initializer.make_regulated(allow_global_pause, ctx);
     destroy(deny_cap);
 
-    (treasury_cap, coin_registry::unwrap_for_testing(initializer))
+    (seal(treasury_cap, ctx), coin_registry::unwrap_for_testing(initializer))
 }
 
 // Legacy constructors are required to reproduce a deny cap hidden behind Unknown status.
@@ -4607,7 +4645,7 @@ fun new_regulated_currency(
 fun legacy_regulated_currency(
     migrate_status: bool,
     ctx: &mut TxContext,
-): (TreasuryCap<BLAST_PRESALE_TESTS>, Currency<BLAST_PRESALE_TESTS>) {
+): (SealedTreasuryCap<BLAST_PRESALE_TESTS>, Currency<BLAST_PRESALE_TESTS>) {
     let (treasury_cap, deny_cap, metadata) = coin::create_regulated_currency_v2(
         test_utils::create_one_time_witness<BLAST_PRESALE_TESTS>(),
         9,
@@ -4629,13 +4667,13 @@ fun legacy_regulated_currency(
     destroy(metadata);
     destroy(registry);
 
-    (treasury_cap, currency)
+    (seal(treasury_cap, ctx), currency)
 }
 
 fun new_currency_with_symbol(
     symbol: vector<u8>,
     ctx: &mut TxContext,
-): (TreasuryCap<BLAST_PRESALE_TESTS>, Currency<BLAST_PRESALE_TESTS>) {
+): (SealedTreasuryCap<BLAST_PRESALE_TESTS>, Currency<BLAST_PRESALE_TESTS>) {
     let (initializer, treasury_cap) = coin_registry::new_currency_with_otw(
         test_utils::create_one_time_witness<BLAST_PRESALE_TESTS>(),
         9,
@@ -4646,7 +4684,7 @@ fun new_currency_with_symbol(
         ctx,
     );
 
-    (treasury_cap, coin_registry::unwrap_for_testing(initializer))
+    (seal(treasury_cap, ctx), coin_registry::unwrap_for_testing(initializer))
 }
 
 /// The standard LP-fee split: the creator and a fee partner by address, then holder rewards.
@@ -5286,7 +5324,8 @@ use blast_core::{
     bps,
     fee_split::{Self, FeeSplit},
     migration::{Self, VaultTerms, VenueTicket},
-    payout::{Self, Recipient, VestingTerms}
+    payout::{Self, Recipient, VestingTerms},
+    sealed_treasury_cap::{Self, SealedTreasuryCap}
 };
 
 use blast_fun_vesting::blast_fun_linear_vesting::{Vesting, VestingCreated};

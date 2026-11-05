@@ -72,8 +72,8 @@ until the call that must consume each one has run.
 | Runtime config | the creator-claim backend keys and the live bonding-curve trade protocol fee share | admin delegation, creator recipient or issuance, cold launch policy, accrued balances, total trade-fee rates, the treasury (`blast_core`), or claim authority |
 | Launch config | a table of admitted Quote types (the creator picks each launch's virtual Quote reserve), mutable generated-Meme decimal admission, Quote/Meme trade-fee rates, a future-launch migration-fee allocation that defaults to zero, Blast's delayed LP-fee share each new vault takes at migration, and the delayed venue allowlist that gates which venue's ticket may start a launch | live launch repricing, per-launch project allocation choices, quote currency-registry objects, DEX costs or dependencies, user balances, derived valuations, or hot trade configuration |
 | Registry/config | global limits, other fee ceilings, emergency state | user balances or curve math |
-| Launch ticket | one-time-witness currency creation, exact supply mint, and pre-launch supply and metadata custody; the `TreasuryCap` travels beside it | venue binding, decimal policy, trades, metadata updates, or migration |
-| Launch initializer | no-ability construction by `launch::new` from the ticket, the `TreasuryCap`, and a redeemed venue ticket; creator setters for target, plan, LP-fee split, and opening round; `finalize` checks every invariant | persistence beyond its transaction or any post-migration behavior |
+| Launch ticket | one-time-witness currency creation, exact supply mint, and pre-launch supply and metadata custody; the `TreasuryCap` travels beside it under the launchpad's seal (`blast_core::sealed_treasury_cap`) | venue binding, decimal policy, trades, metadata updates, or migration |
+| Launch initializer | no-ability construction by `launch::new` from the ticket, the sealed `TreasuryCap` it alone opens, and a redeemed venue ticket; creator setters for target, plan, LP-fee split, and opening round; `finalize` checks every invariant | persistence beyond its transaction or any post-migration behavior |
 | Launch | key-only top-level shared asset identity, lifecycle, reserves, the partner-aware protocol fee ledger, transition guards, and the creator's immutable post-migration settings (venue, LP-fee split) | owned transfer, nesting, venue-specific migration code, or any post-migration update |
 | Basis-points unit (`blast_core`) | universal 0–10,000 rate validation, explicit up/down application, and exact apportionment | domain ceilings, combined-rate policy, authority, storage ownership, or events |
 | Curve math | pure quote and reserve transition formulas | authority, storage, transfers |
@@ -84,7 +84,7 @@ until the call that must consume each one has run.
 | Holder rewards (`blast_vault`) | Merkle rounds funded from a vault's holder-reward balance, an optional Quote gas reserve reimbursed once to the treasury within its cap, proof claims before a deadline and permissionless deadline recovery | holder accounting, which stays off-chain |
 | Migration hand-off (`blast_core`) | the venue ticket for one Meme and Quote pair, the one-time `Migration` only the stored venue redeems, the vault terms, and the owner proof | DEX-specific object/storage details or custody |
 | Venue | prepare a coin at a venue-valid tier, redeem a migration, create the pool and the vault, collect the position's fees into the vault, add auto-LP, and buy back | changing product economics |
-| Standalone presale | require a zero-supply meme TreasuryCap; derive and escrow BPS allocations; lock Quote commitments; settle one proportional fill; permissionlessly hand the configured venue a sealed migration; prove the cap holder's ownership to its vault; pay the Blast partner named at creation its cut of Blast's raise fee | launchpad curves or state, LP custody or fee splits, fixed-supply policy, giving a partner a cut of Blast's token fee, or post-creation sale-economics changes |
+| Standalone presale | create the sale token's currency from its one-time witness with the `TreasuryCap` sealed under the presale (`sale_token`), and require that zero-supply seal at `new`; derive and escrow BPS allocations; lock Quote commitments; settle one proportional fill; permissionlessly hand the configured venue a sealed migration; prove the cap holder's ownership to its vault; pay the Blast partner named at creation its cut of Blast's raise fee | launchpad curves or state, LP custody or fee splits, fixed-supply policy, giving a partner a cut of Blast's token fee, or post-creation sale-economics changes |
 
 Modules may begin together in the single chain project. These are dependency
 directions, not a demand for seven packages.
@@ -188,14 +188,19 @@ package's initializer passes its witness to the sole launchpad constructor,
 which computes exactly one billion whole tokens in `u64` arithmetic that aborts
 on overflow, creates the currency at the requested decimals, mints that supply,
 and finalizes metadata; the initializer transfers the persistable launch ticket
-and the coin's `TreasuryCap` to the publisher. The ticket holds the complete
+and the coin's `TreasuryCap`, sealed under the launchpad's package witness in a
+`blast_core::sealed_treasury_cap::SealedTreasuryCap`, to the publisher. The ticket holds the complete
 `Balance<Meme>`, `MetadataCap<Meme>`, the decimals, the owner-selected `Fixed`
 or `BurnOnly` mode, and the creator-selected fixed sell-burn rate capped at 50%.
-In one PTB the launcher prepares the coin on a venue, whose `prepare` validates
-the creator's pool tier, uses the borrowed `TreasuryCap` before any Meme can
-leave the ticket (the Cetus venue reserves pool creation with it), and returns a
-sealed venue ticket. `launch::new` redeems it and takes the launch ticket and the
-`TreasuryCap` by value, returning a `LaunchInitializer` with no abilities. The
+In one PTB the launcher takes the launchpad's admission of the venue from
+`LaunchConfig` and prepares the coin on that venue, whose `prepare` validates
+the creator's pool tier, borrows the sealed `TreasuryCap` with the admission
+before any Meme can leave the ticket (the Cetus venue reserves pool creation
+with it), and returns a sealed venue ticket. Only the launchpad's witness opens
+the seal, so no one mints Meme before the launch
+([ADR 0138](decisions/0138-sealed-treasury-caps-and-venue-admissions.md)).
+`launch::new` redeems the venue ticket, takes the launch ticket and the sealed
+`TreasuryCap` by value and opens it, returning a `LaunchInitializer` with no abilities. The
 creator sets the graduation target, allocation plan, LP-fee split, and optional
 opening round, and `finalize` checks them all. Because a generated package's
 initializer cannot read launch policy, starting checks the decimals, the Quote,
@@ -221,11 +226,17 @@ The ticket records its decimals and sell-burn policy; launch intake recomputes
 the canonical supply. Terminal migration reads the authoritative supply mode
 from Coin Registry.
 
-A coin that will not launch comes from the separate `coin_template` package,
-which has no Blast dependency: its initializer delivers the creator-chosen
-supply, `TreasuryCap` or supply mode, and `MetadataCap` straight to the
-creator's recipients, and it can never produce a `LaunchTicket`
-([ADR 0108](decisions/0108-standalone-coin-template.md)).
+A sale token comes from the `presale_coin_template` package, whose initializer
+passes its witness to `blast_presale::sale_token::new`: the presale creates the
+currency and seals the `TreasuryCap` under its own witness, so the creator
+holds it only sealed until `blast_presale::new` opens it, after the same
+admission-gated venue preparation
+([ADR 0138](decisions/0138-sealed-treasury-caps-and-venue-admissions.md)).
+A coin that will not launch or sell on Blast comes from the separate
+`coin_template` package, which has no Blast dependency: its initializer delivers
+the creator-chosen supply, `TreasuryCap` or supply mode, and `MetadataCap`
+straight to the creator's recipients, and it can never produce a `LaunchTicket`
+or a sealed cap ([ADR 0108](decisions/0108-standalone-coin-template.md)).
 
 ## Lifecycle
 

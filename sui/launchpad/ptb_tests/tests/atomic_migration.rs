@@ -2,7 +2,7 @@
 //! the opening round.
 //!
 //! Every launch is opened by one PTB composed from public calls: the mock venue's `prepare` issues
-//! the venue ticket, `launch::new` takes it with the launch ticket and the coin's `TreasuryCap`, the
+//! the venue ticket, `launch::new` takes it with the launch ticket and the coin's sealed `TreasuryCap`, the
 //! launchpad setters configure the initializer, and `finalize` and `share` consume it, so the
 //! ability-less venue ticket and initializer cross commands of one transaction.
 //!
@@ -95,12 +95,12 @@ struct Launch {
     currency: ObjectID,
 }
 
-/// A generated coin before its launch: the ticket and `TreasuryCap` the sender holds, and its
+/// A generated coin before its launch: the ticket and sealed `TreasuryCap` the sender holds, and its
 /// shared Currency.
 struct Ticket {
     meme: TypeTag,
     ticket: ObjectID,
-    treasury_cap: ObjectID,
+    sealed_treasury_cap: ObjectID,
     currency: ObjectID,
 }
 
@@ -303,7 +303,7 @@ fn pause_rolls_back_creation_trading_and_migration_but_allows_delivery() -> Resu
     w.buy_to_migration(&ready)?;
     let ticket = w.publish_ticket()?;
     w.set_pause(true, 7)?;
-    let watched = [round.launch, ready.launch, ready.currency, ticket.ticket, ticket.treasury_cap, ticket.currency, w.version];
+    let watched = [round.launch, ready.launch, ready.currency, ticket.ticket, ticket.sealed_treasury_cap, ticket.currency, w.version];
     let abort = || Expected::Abort { package: w.admin, module: "package_version", code: PAUSED };
     w.h.assert_rolled_back(w.create_launch(&ticket, &FeeSplit::single(DESTINATION.into()), NO_OPENING_ROUND)?, abort(), &watched, &[w.h.sender])?;
     w.h.assert_rolled_back(w.join(&round, BID)?, abort(), &watched, &[w.h.sender])?;
@@ -718,7 +718,7 @@ fn mixed_version_creation_rejects_each_stale_step_after_native_upgrade() -> Resu
         // This pinned runtime rejects conflicting linkage before entering Move. Unit tests
         // separately pin the version-first abort for each creation function.
         println!("mixed-version step: {name}");
-        w.h.assert_rolled_back(mixed, Expected::Error("InvalidLinkage"), &[ticket.ticket, ticket.treasury_cap, ticket.currency, w.version, w.config], &[w.h.sender])?;
+        w.h.assert_rolled_back(mixed, Expected::Error("InvalidLinkage"), &[ticket.ticket, ticket.sealed_treasury_cap, ticket.currency, w.version, w.config], &[w.h.sender])?;
     }
     w.h.execute(current)?.assert_success();
     Ok(())
@@ -877,7 +877,7 @@ fn empty_and_twenty_one_route_fee_splits_abort_before_the_launch_exists() -> Res
     let ticket = w.publish_ticket()?;
     for fee_split in &rejected {
         let pt = w.create_launch(&ticket, fee_split, NO_OPENING_ROUND)?;
-        w.h.assert_rolled_back(pt, abort(), &[ticket.ticket, ticket.treasury_cap, ticket.currency], &owners)?;
+        w.h.assert_rolled_back(pt, abort(), &[ticket.ticket, ticket.sealed_treasury_cap, ticket.currency], &owners)?;
     }
     let (_, created) = w.open_split_launch(ticket, &maximum)?;
     assert_eq!(w.launch_created(&created)?.lp_fee_split, maximum);
@@ -1380,7 +1380,7 @@ impl World {
     }
 
     /// One PTB that has the mock venue prepare `ticket`'s coin, starts its launch with the venue
-    /// ticket and the coin's `TreasuryCap`, sets the graduation target, the allocation plan,
+    /// ticket and the coin's sealed `TreasuryCap`, sets the graduation target, the allocation plan,
     /// `fee_split`, and any opening round, then finalizes and shares it.
     fn create_launch(
         &self,
@@ -1392,14 +1392,14 @@ impl World {
         let fee_split = fee_split.arg(&mut builder, self.core)?;
         let plan = self.plan_arg(&mut builder)?;
         let launch_ticket = builder.obj(self.h.owned(ticket.ticket))?;
-        let treasury_cap = builder.obj(self.h.owned(ticket.treasury_cap))?;
+        let sealed_treasury_cap = builder.obj(self.h.owned(ticket.sealed_treasury_cap))?;
         let version = builder.obj(self.h.shared(self.version, false))?;
         let config = builder.obj(self.h.shared(self.config, false))?;
         let venue_ticket = call(&mut builder, self.adapter, "mock_adapter", "prepare", vec![ticket.meme.clone()], vec![]);
         let pair = vec![ticket.meme.clone(), sui()];
         let initializer = call(&mut builder, self.blast, "launch", "new", pair.clone(), vec![
             launch_ticket,
-            treasury_cap,
+            sealed_treasury_cap,
             version,
             config,
             venue_ticket,
@@ -1434,15 +1434,16 @@ impl World {
     }
 
     /// Publishes one generated project, which runs its OTW init: the ticket and the coin's
-    /// `TreasuryCap` go to the publisher and the Currency to the registry, which must finalize it
+    /// sealed `TreasuryCap` go to the publisher and the Currency to the registry, which must finalize it
     /// into its shared form.
     fn publish_ticket(&mut self) -> Result<Ticket> {
         let (project_id, published) = self.h.publish(self.project.clone())?;
         assert_eq!(published.payload_names(self.blast), ["LaunchTicketCreated"]);
         let ticket = published.created(&self.h, "launch_ticket", "LaunchTicket")[0];
-        let treasury_cap = published.created(&self.h, "coin", "TreasuryCap");
-        assert_eq!(treasury_cap.len(), 1, "the publisher receives the coin's TreasuryCap");
-        assert_eq!(self.h.object(treasury_cap[0]).owner().get_address_owner_address()?, self.h.sender);
+        let sealed_treasury_cap = published.created(&self.h, "sealed_treasury_cap", "SealedTreasuryCap");
+        assert_eq!(sealed_treasury_cap.len(), 1, "the publisher receives the coin's sealed TreasuryCap");
+        assert_eq!(self.h.object(sealed_treasury_cap[0]).owner().get_address_owner_address()?, self.h.sender);
+        assert!(published.created(&self.h, "coin", "TreasuryCap").is_empty(), "no raw TreasuryCap leaves the publication");
         let pending_currency = published.created(&self.h, "coin_registry", "Currency")[0];
         let meme = parse_sui_type_tag(&format!("{project_id}::token::TOKEN"))?;
 
@@ -1458,14 +1459,14 @@ impl World {
         finalized.assert_success();
         let currency = finalized.created(&self.h, "coin_registry", "Currency")[0];
 
-        Ok(Ticket { meme, ticket, treasury_cap: treasury_cap[0], currency })
+        Ok(Ticket { meme, ticket, sealed_treasury_cap: sealed_treasury_cap[0], currency })
     }
 
-    /// The launch a successful creation shared. Finalization consumes the coin's `TreasuryCap`,
-    /// fixing the supply.
+    /// The launch a successful creation shared. `launch::new` opens the coin's sealed `TreasuryCap`
+    /// and finalization consumes the cap, fixing the supply.
     fn created_launch(&self, created: &Outcome, ticket: Ticket) -> Launch {
         created.assert_success();
-        assert!(created.consumed(ticket.treasury_cap), "finalize consumes the TreasuryCap");
+        assert!(created.consumed(ticket.sealed_treasury_cap), "launch::new opens the seal");
         assert_eq!(
             created.payload_names(self.blast),
             ["LaunchCreated", "LaunchShared"],

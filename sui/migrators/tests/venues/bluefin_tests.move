@@ -21,7 +21,7 @@ public struct PrepareFixture {
     scenario: Scenario,
     migrators_version: PackageVersion<BLAST_MIGRATORS>,
     venue_config: VenueConfig,
-    treasury_cap: TreasuryCap<BLUEFIN_TESTS>,
+    treasury_cap: SealedTreasuryCap<BLUEFIN_TESTS>,
     currency: Currency<BLUEFIN_TESTS>,
 }
 
@@ -312,6 +312,8 @@ fun start(symbol: vector<u8>): PrepareFixture {
         scenario.ctx(),
     );
     let currency = coin_registry::unwrap_for_testing(initializer);
+    // Sealed as a product seals it at the coin's publication.
+    let treasury_cap = sealed_treasury_cap::new(migration::test_issuer(), treasury_cap, scenario.ctx());
     let migrators_version = migrators_package::version_for_testing(scenario.ctx());
 
     scenario.next_tx(CREATOR);
@@ -489,7 +491,11 @@ const U64_MAX: u64 = 18_446_744_073_709_551_615;
 
 use blast_admin::{blast_acl, delayed_set::SetApplied, package_version::PackageVersion};
 
-use blast_core::{blast_domain::VenueAdmin, migration::VenueTicket};
+use blast_core::{
+    blast_domain::VenueAdmin,
+    migration::{Self, VenueTicket},
+    sealed_treasury_cap::{Self, SealedTreasuryCap}
+};
 
 use blast_migrators::{
     blast_migrators::{Self as migrators_package, BLAST_MIGRATORS},
@@ -504,7 +510,6 @@ use std::{type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 
 use sui::{
     clock,
-    coin::TreasuryCap,
     coin_registry::{Self, Currency},
     event,
     test_scenario::{Self, Scenario},

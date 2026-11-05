@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
-/// Presale-token stand-in. The harness publishes this package once per presale, so every sale
-/// has its own one-time-witness currency and zero-supply `TreasuryCap`.
+/// Sale-token stand-in. The harness publishes this package once per presale, so every sale has
+/// its own one-time-witness currency, with its `TreasuryCap` sealed under the presale from birth.
 module ptb_presale_token::token;
 
 // === Public Types ===
@@ -11,9 +11,10 @@ public struct TOKEN has drop {}
 
 // === Private Initialization ===
 
-/// Registers the currency with an unknown supply and hands its capabilities to the publisher.
+/// Registers the currency through the presale, which seals its cap, and hands the sealed cap and
+/// the metadata cap to the publisher.
 fun init(otw: TOKEN, ctx: &mut TxContext) {
-    let (initializer, treasury_cap) = coin_registry::new_currency_with_otw(
+    let (initializer, sealed_treasury_cap) = sale_token::new(
         otw,
         9,
         b"PTB".to_string(),
@@ -22,12 +23,11 @@ fun init(otw: TOKEN, ctx: &mut TxContext) {
         b"".to_string(),
         ctx,
     );
-    let metadata_cap = initializer.finalize(ctx);
 
-    transfer::public_transfer(treasury_cap, ctx.sender());
-    transfer::public_transfer(metadata_cap, ctx.sender());
+    transfer::public_transfer(sealed_treasury_cap, ctx.sender());
+    transfer::public_transfer(initializer.finalize(ctx), ctx.sender());
 }
 
 // === Imports ===
 
-use sui::coin_registry;
+use blast_presale::sale_token;

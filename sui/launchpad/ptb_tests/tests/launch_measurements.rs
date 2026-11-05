@@ -130,12 +130,12 @@ impl Shape {
     }
 }
 
-/// A generated currency whose ticket and `TreasuryCap` the sender holds.
+/// A generated currency whose ticket and sealed `TreasuryCap` the sender holds.
 struct Ticket {
     decimals: u8,
     meme: TypeTag,
     ticket: ObjectID,
-    treasury_cap: ObjectID,
+    sealed_treasury_cap: ObjectID,
     currency: ObjectID,
 }
 
@@ -304,7 +304,7 @@ impl World {
         // `blast_fun::errors::recipient_capacity_reached`.
         let rejected = Expected::Abort { package: self.blast, module: "allocation", code: 6 };
         let sender = self.h.sender;
-        self.h.assert_rolled_back(pt, rejected, &[ticket.ticket, ticket.treasury_cap, ticket.currency], &[sender])?;
+        self.h.assert_rolled_back(pt, rejected, &[ticket.ticket, ticket.sealed_treasury_cap, ticket.currency], &[sender])?;
         let outcome = self.last_outcome()?;
         self.record("seventeen_recipients_rejected", decimals, Some(over), &outcome);
 
@@ -349,7 +349,7 @@ impl World {
         published.assert_success();
         let project = published.effects.published_packages()[0];
         let ticket = published.created(&self.h, "launch_ticket", "LaunchTicket")[0];
-        let treasury_cap = published.created(&self.h, "coin", "TreasuryCap")[0];
+        let sealed_treasury_cap = published.created(&self.h, "sealed_treasury_cap", "SealedTreasuryCap")[0];
         let pending = published.created(&self.h, "coin_registry", "Currency")[0];
         let meme = parse_sui_type_tag(&format!("{project}::meme::MEME"))?;
         if let Some(name) = record {
@@ -371,7 +371,7 @@ impl World {
         finalized.assert_success();
         let currency = finalized.created(&self.h, "coin_registry", "Currency")[0];
 
-        Ok(Ticket { decimals, meme, ticket, treasury_cap, currency })
+        Ok(Ticket { decimals, meme, ticket, sealed_treasury_cap, currency })
     }
 
     /// The last transaction the sender executed, read back from the simulator; used for one that
@@ -465,7 +465,7 @@ impl World {
     }
 
     /// Composes one launch from the public calls: plan and fee split, the venue's `prepare`, the
-    /// launch's start with the coin's `TreasuryCap`, the settings, finalization, the creator's
+    /// launch's start with the coin's sealed `TreasuryCap`, the settings, finalization, the creator's
     /// optional purchase before sharing (a curve buy delivered to the beneficiary, or a bid), and
     /// terminal share.
     fn open(&self, ticket: &Ticket, shape: Shape) -> Result<ProgrammableTransaction> {
@@ -473,7 +473,7 @@ impl World {
         let plan = self.plan(&mut builder, shape.plan_recipients)?;
         let fee_split = fee_split(shape.fee_recipients).arg(&mut builder, self.core)?;
         let ticket_arg = builder.obj(self.h.owned(ticket.ticket))?;
-        let treasury_cap = builder.obj(self.h.owned(ticket.treasury_cap))?;
+        let sealed_treasury_cap = builder.obj(self.h.owned(ticket.sealed_treasury_cap))?;
         let version = builder.obj(self.h.shared(self.version, false))?;
         let config = builder.obj(self.h.shared(self.config, false))?;
         let venue_ticket =
@@ -485,7 +485,7 @@ impl World {
             "launch",
             "new",
             pair.clone(),
-            vec![ticket_arg, treasury_cap, version, config, venue_ticket],
+            vec![ticket_arg, sealed_treasury_cap, version, config, venue_ticket],
         );
         let virtual_quote = builder.pure(5_000_000u64)?;
         call(&mut builder, self.blast, "launch", "set_virtual_quote", pair.clone(), vec![initializer, version, virtual_quote]);

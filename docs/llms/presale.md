@@ -207,13 +207,18 @@ supply, and returns the pending `Presale`, which `share` publishes. Neither the 
 initializer has abilities: `new` is the only way to consume the ticket and `finalize` the only way
 to consume the initializer, so the PTB must do both.
 
-The venue is fixed for good at creation. Who may call: *anyone* who owns a zero-supply
-`TreasuryCap<SaleToken>` and the matching shared Coin Registry `Currency<SaleToken>`, for a Quote
-type and venue the `CreationPolicy` allows. The sale currency must have confirmed `Unregulated`
-status; regulated coins and legacy currencies with `Unknown` status are rejected, including legacy
-coins whose deny cap has not been registered. Create the sale coin through Coin Registry without
-enabling regulation. Every setter and `finalize` take the initializer value from that PTB, so only
-its creator can call them.
+The venue is fixed for good at creation. Who may call: *anyone* who owns the sale token's
+`blast_core::sealed_treasury_cap::SealedTreasuryCap<SaleToken>` and the matching shared Coin
+Registry `Currency<SaleToken>`, for a Quote type and venue the `CreationPolicy` allows. The sealed
+cap comes only from publishing the sale token through `sale_token::new`: the generated package
+built from the `presale_coin_template` template passes its one-time witness, the presale creates
+the currency, seals the fresh `TreasuryCap` under its own witness, and returns the registry
+initializer for the package to finalize (its `MetadataCap` goes to the template's recipient, or is
+deleted). The publisher receives the sealed cap, which only `blast_presale::blast_presale::new`
+opens, so no one mints before the sale. A coin created any other way cannot start a sale. The sale
+currency must have confirmed `Unregulated` status, which a sale token has once its registration is
+finalized. Every setter and `finalize` take the initializer value from that PTB, so only its
+creator can call them.
 
 Value constructors (*anyone*, pure):
 
@@ -240,19 +245,24 @@ Value constructors (*anyone*, pure):
 
 Steps, type arguments `<Meme, Quote>` throughout:
 
-1. Prepare the coin on the venue (*cap holder*: the `TreasuryCap<Meme>` holder): the venue's
-   `prepare`, for example `blast_migrators::cetus::prepare` or `blast_migrators::bluefin::prepare`,
-   with the `TreasuryCap` by reference, records the pool terms (tick spacing, fee rate, and for
-   Cetus the coin's pool-creation capability) under the venue's own key and returns a
-   `blast_core::migration::VenueTicket<Meme, Quote>` sealed by the venue's witness. The pool terms
-   belong to the venue, not the sale: the `Presale` and `PresaleCreated` carry none. The migrators
-   guide lists each venue's arguments, bounds and events.
-2. `blast_presale::blast_presale::new(treasury_cap, package_version, venue_ticket,
-   creation_policy, fee_policy)` takes the `TreasuryCap` by value and the ticket from step 1. In
-   order it checks the package version and the create pause bit, redeems the ticket, checks that
-   the `CreationPolicy` allows Quote and then the ticket's venue, that the sale coin differs from
-   Quote, and that the treasury cap has minted nothing; snapshots Blast's current rates from the
-   `FeePolicy`; and returns the `PresaleInitializer`.
+1. Prepare the coin on the venue (*cap holder*: the `SealedTreasuryCap<Meme>` holder): for Cetus,
+   first `creation_policy::venue_admission` with the venue witness `blast_migrators::cetus::Venue`
+   as its type argument and the shared `CreationPolicy`, which returns the presale's
+   `blast_core::sealed_treasury_cap::VenueAdmission` of that venue (aborts with
+   `blast_presale::errors::EVenueNotAllowed` while the venue is not admitted). Then the venue's
+   `prepare`, for example `blast_migrators::cetus::prepare` (with the sealed cap by mutable
+   reference and the admission) or `blast_migrators::bluefin::prepare` (with the sealed cap by
+   immutable reference), records the pool terms (tick spacing, fee rate, and for Cetus the coin's
+   pool-creation capability, minted from the cap borrowed through the seal) under the venue's own
+   key and returns a `blast_core::migration::VenueTicket<Meme, Quote>` sealed by the venue's
+   witness. The pool terms belong to the venue, not the sale: the `Presale` and `PresaleCreated`
+   carry none. The migrators guide lists each venue's arguments, bounds and events.
+2. `blast_presale::blast_presale::new(sealed_treasury_cap, package_version, venue_ticket,
+   creation_policy, fee_policy)` takes the `SealedTreasuryCap` by value and the ticket from step 1.
+   In order it checks the package version and the create pause bit, redeems the ticket, checks that
+   the `CreationPolicy` allows Quote and then the ticket's venue, and that the sale coin differs
+   from Quote, opens the seal, and checks that the treasury cap has minted nothing; snapshots
+   Blast's current rates from the `FeePolicy`; and returns the `PresaleInitializer`.
 3. Required setters, each taking the initializer by mutable reference and the `PackageVersion`:
    - `blast_presale::blast_presale::set_supply(initializer, package_version, token_supply, burnable)`.
    - `blast_presale::blast_presale::set_token_allocations(initializer, package_version,
@@ -895,7 +905,11 @@ maps each code to its name. Common ones by flow:
   presale package); `blast_admin::errors::EPaused` from `blast_admin::package_version` while the
   call's pause bit is set.
 - Start (`new`): `blast_presale::errors::EQuoteNotAllowed` / `blast_presale::errors::EVenueNotAllowed`
-  (ask Blast to list it); `blast_presale::errors::EInvalidAssetPair` (sale coin equals Quote);
+  (ask Blast to list it; `creation_policy::venue_admission` raises the latter too);
+  `blast_presale::errors::EInvalidAssetPair` (sale coin equals Quote);
+  `blast_core::errors::EWrongPackageWitness` from `blast_core::sealed_treasury_cap` (a cap another
+  product sealed, or a borrow with another product's admission);
+  `blast_core::errors::EVenueNotAdmitted` (an admission for another venue);
   `blast_presale::errors::EInitialSupplyNotZero`.
 - Value constructors: `blast_core::errors::EInvalidBps`; `blast_core::errors::EInvalidVestingTerms`
   and `blast_core::errors::EInvalidRecipient` (`0x0`) from `blast_core::payout`;
@@ -956,8 +970,9 @@ maps each code to its name. Common ones by flow:
 - Prepare, `new`, set, `finalize`, and `share` in one PTB. The `VenueTicket` and the
   `PresaleInitializer` must be consumed and the `Presale` cannot be transferred, so a PTB that
   skips a step fails. The partner can be named only on the initializer.
-- Passing the `TreasuryCap` by value to the venue's `prepare`: it takes the cap by reference;
-  `new` takes it by value afterwards.
+- Passing the sealed `TreasuryCap` by value to the venue's `prepare`: it takes the sealed cap by
+  reference; `new` takes it by value afterwards. For Cetus, take the presale's admission of the
+  venue from `creation_policy::venue_admission` in the same PTB first.
 - An early close needs a hard cap with `closes_when_filled`. A sale without a hard cap always
   runs to `end_ms`, even when it reached its raise on day one.
 - Every commit returns a coin. Transfer it back to the sender, even when it is zero.
@@ -1026,7 +1041,7 @@ Objects:
   published LP coin `Lp`.
 
 Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`, who also
-holds the sale token's `TreasuryCap`), one PTB:
+holds the sale token's sealed `TreasuryCap`), one PTB:
 
 1. Beforehand, in its own transaction, publish a fresh Aftermath LP coin `Lp` (one per sale); its
    publication yields the `CreatePoolCapV2` that the `AdminCap` holder passes in.
@@ -1039,8 +1054,8 @@ holds the sale token's `TreasuryCap`), one PTB:
    A primitive, standard-library, or framework `PackageWitness` aborts with
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EInvalidPackageWitness` (code 2). Its pool's weights
    and fees are the module's constants, so it records no tier.
-3. `blast_presale::blast_presale::new` with the `TreasuryCap` and the ticket, as for any sale. The
-   `CreationPolicy` must admit the vendor's `Venue`.
+3. `blast_presale::blast_presale::new` with the sealed `TreasuryCap` and the ticket, as for any
+   sale. The `CreationPolicy` must admit the vendor's `Venue`.
 4. The `blast_presale::blast_presale` setters as for any sale, including the optional
    `blast_presale::blast_presale::set_partner`. The sale's LP-fee split never applies, because no
    vault exists.
@@ -1106,10 +1121,12 @@ started the sale, at any time until the sale is cancelled. From the LP deadline 
 liquidity_window_ms`, at least 7 days) anyone may call `blast_presale::blast_presale::cancel_unlaunched` instead,
 which makes every commitment fully refundable.
 
-**What is the PTB to start a sale on Cetus?** `blast_migrators::cetus::prepare` with the
-`TreasuryCap` by mutable reference (returns the `VenueTicket`), `blast_presale::blast_presale::new`
-with the `TreasuryCap` by value and the ticket, the setters, `blast_presale::blast_presale::finalize`,
-`blast_presale::blast_presale::share`, and a transfer of the `PresaleCap`, in that order.
+**What is the PTB to start a sale on Cetus?** `creation_policy::venue_admission` for
+`blast_migrators::cetus::Venue` (returns the `VenueAdmission`), `blast_migrators::cetus::prepare`
+with the sealed `TreasuryCap` by mutable reference and that admission (returns the `VenueTicket`),
+`blast_presale::blast_presale::new` with the sealed `TreasuryCap` by value and the ticket, the
+setters, `blast_presale::blast_presale::finalize`, `blast_presale::blast_presale::share`, and a
+transfer of the `PresaleCap`, in that order.
 
 **What does Blast charge?** A snapshot, taken at creation, of a raise rate, a token rate, and two
 LP-fee rates. The raise and token fees are paid at migration to the core `Treasury` (or held for a

@@ -48,7 +48,7 @@ const EWrongVenue: u64 = 8;
 const EWrongOwner: u64 = 9;
 
 #[test_only]
-/// The vault terms must be sealed by the package witness creating the migration.
+/// The package witness must be the one that sealed the vault terms or the treasury cap.
 const EWrongPackageWitness: u64 = 10;
 
 #[test_only]
@@ -62,6 +62,10 @@ const EInvalidRecipient: u64 = 12;
 #[test_only]
 /// A ledger must hold no fees to be destroyed.
 const ELedgerNotEmpty: u64 = 13;
+
+#[test_only]
+/// A venue borrows a sealed treasury cap only with the sealing product's admission of that venue.
+const EVenueNotAdmitted: u64 = 14;
 
 macro public(package) fun invalid_bps(): u64 { 0 }
 
@@ -90,3 +94,5 @@ macro public(package) fun invalid_lp_fee_bps(): u64 { 11 }
 macro public(package) fun invalid_recipient(): u64 { 12 }
 
 macro public(package) fun ledger_not_empty(): u64 { 13 }
+
+macro public(package) fun venue_not_admitted(): u64 { 14 }

@@ -61,15 +61,15 @@ A package's manifest binds the IDs of the packages it depends on, so each waits
 for those: `blast_partners` needs `blast_admin`; `blast_core` needs both;
 `blast_vault`, `blast_fun` and `blast_presale` need `blast_core`;
 `blast_migrators` needs `blast_vault`; `launch_ticket_template` needs `blast_fun`;
-the vendor `blast_aftermath_dao_presale` needs `blast_core` only. The chosen
-sequence:
+`presale_coin_template` needs `blast_presale`; the vendor
+`blast_aftermath_dao_presale` needs `blast_core` only. The chosen sequence:
 
 1. `blast_admin`
 2. `blast_partners`
 3. `blast_core`
 4. `blast_vault`, `blast_fun` and `blast_presale`, in any order
 5. `blast_migrators`
-6. `launch_ticket_template` and the vendor
+6. `launch_ticket_template`, `presale_coin_template` and the vendor
 
 Each upgradeable package's deployer receives an owned `Publication<OTW>`
 pinning the package's `PackageWitness`. In a follow-up transaction,

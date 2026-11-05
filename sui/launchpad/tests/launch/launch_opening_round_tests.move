@@ -863,7 +863,7 @@ fun plan(): AllocationPlan {
 
 fun new_ticket(
     self: &mut OpeningRoundFixture,
-): (LaunchTicket<LAUNCH_OPENING_ROUND_TESTS>, TreasuryCap<LAUNCH_OPENING_ROUND_TESTS>) {
+): (LaunchTicket<LAUNCH_OPENING_ROUND_TESTS>, SealedTreasuryCap<LAUNCH_OPENING_ROUND_TESTS>) {
     launch_ticket::new(
         test_utils::create_one_time_witness<LAUNCH_OPENING_ROUND_TESTS>(),
         9,
@@ -883,7 +883,7 @@ fun new_ticket(
 fun intake(
     self: &mut OpeningRoundFixture,
     ticket: LaunchTicket<LAUNCH_OPENING_ROUND_TESTS>,
-    treasury_cap: TreasuryCap<LAUNCH_OPENING_ROUND_TESTS>,
+    sealed_treasury_cap: SealedTreasuryCap<LAUNCH_OPENING_ROUND_TESTS>,
     plan: AllocationPlan,
     opening_round_duration_ms: u64,
     virtual_quote: u64,
@@ -895,7 +895,7 @@ fun intake(
         .take_from_address<Currency<LAUNCH_OPENING_ROUND_TESTS>>(COIN_REGISTRY);
     let mut initializer = launch::new(
         ticket,
-        treasury_cap,
+        sealed_treasury_cap,
         &self.package_version,
         &self.config,
         migration::issue_ticket<_, TEST_QUOTE, _>(TestVenue()),
@@ -1099,7 +1099,13 @@ fun clear_bits(self: &mut OpeningRoundFixture, bits: u8) {
 
 use blast_admin::{blast_acl, package_admin::PauseAdmin, package_version::PackageVersion};
 
-use blast_core::{bps, fee_split, migration, blast_domain::{VenueAdmin, FeeAdmin, ListingAdmin}};
+use blast_core::{
+    bps,
+    fee_split,
+    migration,
+    blast_domain::{VenueAdmin, FeeAdmin, ListingAdmin},
+    sealed_treasury_cap::SealedTreasuryCap
+};
 
 use blast_fun::{
     allocation::{Self, AllocationPlan},
@@ -1117,7 +1123,7 @@ use std::{bcs, unit_test::{assert_eq, destroy}};
 
 use sui::{
     clock::{Self, Clock},
-    coin::{Self, Coin, TreasuryCap},
+    coin::{Self, Coin},
     coin_registry::Currency,
     event,
     test_scenario::{Self, Scenario},

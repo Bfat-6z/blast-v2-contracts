@@ -273,6 +273,33 @@ sale has one vault. `migration::origin`, `migration::package_witness`, `migratio
 returns. `owner_proof::package_witness` and `owner_proof::origin` read
 a proof.
 
+### Sealed treasury caps and venue admissions
+
+A product keeps a generated coin's `TreasuryCap` out of every hand but its own from the coin's
+publication until the sale starts, so no one mints before the sale. The seal is
+`sealed_treasury_cap::SealedTreasuryCap<Coin>` (`key, store`, wallet-held and transferable): the
+product's own currency-creation call (`launch_ticket::new` for a launch, `blast_presale::sale_token::new` for a sale token)
+wraps the fresh cap with `sealed_treasury_cap::new` under its package witness, and the publisher
+receives the sealed cap. Only that product's witness opens it, through
+`sealed_treasury_cap::into_treasury_cap`, which the product's `new` calls; a caller with another
+witness aborts with `blast_core::errors::EWrongPackageWitness` (code 10).
+
+A venue that must touch the cap while preparing the coin (Cetus mints its pool-creation capability
+from it) borrows it with `sealed_treasury_cap::treasury_cap_mut`, presenting its own witness and
+a `sealed_treasury_cap::VenueAdmission`: the product's droppable proof that it admits that venue,
+issued under its package witness by `sealed_treasury_cap::venue_admission` after the product
+checked its own venue allowlist (`launch_config::venue_admission` and
+`creation_policy::venue_admission`, both *anyone*, abort with the product's venue-not-allowed
+error). The borrow aborts with `blast_core::errors::EWrongPackageWitness` (code 10) when the admission
+comes from a product other than the one that sealed the cap, and with
+`blast_core::errors::EVenueNotAdmitted` (code 14) when the admission names another venue. A reference
+result never leaves Move code, so only the venue's own call reaches the cap.
+
+Readers: `sealed_treasury_cap::package_witness`, `sealed_treasury_cap::treasury_cap_id`, and
+`sealed_treasury_cap::total_supply` read a sealed cap; `sealed_treasury_cap::admission_package_witness`
+(called as `admission.package_witness()`) and `sealed_treasury_cap::admission_venue` (`admission.venue()`)
+read an admission.
+
 ### Pool seed price
 
 `migration::sqrt_price_x64` derives the price a concentrated-liquidity venue (Cetus or Bluefin)
@@ -323,10 +350,11 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 7 | `EPartnerMismatch` | Blast's fees pay with exactly the partner the sale named, or with none. |
 | 8 | `EWrongVenue` | Only the venue the sale stored can redeem its migration. |
 | 9 | `EWrongOwner` | The owner proof must name the vault's package witness and sale. |
-| 10 | `EWrongPackageWitness` | The vault terms must be sealed by the package witness creating the migration. |
+| 10 | `EWrongPackageWitness` | The package witness must be the one that sealed the vault terms or the treasury cap. |
 | 11 | `EInvalidLpFeeBps` | Blast's LP-fee share of each asset must be at most 3,000 basis points. |
 | 12 | `EInvalidRecipient` | A payout recipient must be a nonzero address. |
 | 13 | `ELedgerNotEmpty` | A ledger must hold no fees to be destroyed. |
+| 14 | `EVenueNotAdmitted` | A venue borrows a sealed treasury cap only with the sealing product's admission of that venue. |
 
 ### `blast_core::blast_core_events`
 
@@ -963,6 +991,80 @@ public fun origin<Meme, Quote>(self: &Ledger<Meme, Quote>): ID
 
 /// The partner the ledger pays with, fixed at creation, if any.
 public fun partner_id<Meme, Quote>(self: &Ledger<Meme, Quote>): Option<ID>
+```
+
+### `blast_core::sealed_treasury_cap`
+
+A coin's `TreasuryCap` sealed by the product that created the currency, from publication until that product's `new` opens it.  The seal closes the window in which a coin's creator could mint before a sale starts: between publication and the venue's preparation of the coin, which borrows the cap to reserve the pair's pool creation, the holder of a sealed cap can only hand it to a venue the sealing product admits. The product checks its own venue allowlist and issues a `VenueAdmission` under its package witness; the venue presents the admission with its own witness to borrow the cap. Only the sealing product's witness opens the seal, so the raw cap never reaches a creator's transaction, and a venue reaches it only through code the product admitted.  Every witness is identified by `type_name::with_original_ids`, as in `migration`.
+
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration/sealed_treasury_cap.move
+
+#### Types
+
+```move
+/// A coin's `TreasuryCap` under the seal of one product's package witness. Wallet-held like the
+/// cap it replaces, and transferable; whoever starts the sale needs it.
+public struct SealedTreasuryCap<phantom Coin> has key, store {
+    id: UID,
+    /// The original type of the package witness that sealed the cap: its admissions borrow the
+    /// cap and only its witness opens the seal.
+    package_witness: TypeName,
+    treasury_cap: TreasuryCap<Coin>,
+}
+
+/// A product's proof, issued under its package witness after checking its own allowlist, that it
+/// admits the venue `venue`. Droppable and ephemeral: a venue presents it to borrow a cap the same
+/// product sealed, within the transaction that obtained it.
+public struct VenueAdmission has drop {
+    package_witness: TypeName,
+    venue: TypeName,
+}
+```
+
+#### Functions
+
+```move
+/// Seals `treasury_cap` under `PackageWitness`, the package witness of the product that will open
+/// it.
+public fun new<Coin, PackageWitness: drop>(
+    _: PackageWitness,
+    treasury_cap: TreasuryCap<Coin>,
+    ctx: &mut TxContext,
+): SealedTreasuryCap<Coin>
+
+/// A product's admission of the venue `Venue`, issued under its `PackageWitness`. The product
+/// checks its own venue allowlist first; the admission carries no check of its own.
+public fun venue_admission<Venue: drop, PackageWitness: drop>(_: PackageWitness): VenueAdmission
+
+/// Borrows the sealed cap for the venue `Venue`, which must hold `admission` from the product
+/// that sealed it. A reference result stays inside Move code, so only the venue's own call reaches
+/// the cap.
+public fun treasury_cap_mut<Coin, Venue: drop>(
+    self: &mut SealedTreasuryCap<Coin>,
+    admission: VenueAdmission,
+    _: Venue,
+): &mut TreasuryCap<Coin>
+
+/// Opens the seal under the package witness that made it, releasing the cap to the product.
+public fun into_treasury_cap<Coin, PackageWitness: drop>(
+    self: SealedTreasuryCap<Coin>,
+    _: PackageWitness,
+): TreasuryCap<Coin>
+
+/// The original type of the package witness that sealed the cap.
+public fun package_witness<Coin>(self: &SealedTreasuryCap<Coin>): TypeName
+
+/// The ID of the sealed `TreasuryCap`, which the product records when it opens the seal.
+public fun treasury_cap_id<Coin>(self: &SealedTreasuryCap<Coin>): ID
+
+/// The sealed cap's total supply.
+public fun total_supply<Coin>(self: &SealedTreasuryCap<Coin>): u64
+
+/// The original type of the package witness that issued the admission.
+public fun admission_package_witness(self: &VenueAdmission): TypeName
+
+/// The original type of the admitted venue witness.
+public fun admission_venue(self: &VenueAdmission): TypeName
 ```
 
 ## API reference: `blast_partners` (Partner codes)

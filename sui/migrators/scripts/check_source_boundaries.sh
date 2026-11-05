@@ -156,13 +156,13 @@ bluefin:public:fun buyback_and_burn<Meme, Quote>( self: &mut Vault<Meme, Quote>,
 bluefin:public:fun collect_fees<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
 bluefin:public:fun compound_auto_lp<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, )
 bluefin:public:fun migrate<Meme, Quote>( migration: Migration<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &VenueConfig, currency: &Currency<Meme>, quote_currency: &Currency<Quote>, bluefin_config: &mut GlobalConfig, registry: &mut VaultRegistry, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, creation_fee: Coin<SUI>, clock: &Clock, ctx: &mut TxContext, )
-bluefin:public:fun prepare<Meme, Quote>( migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &mut VenueConfig, _: &TreasuryCap<Meme>, currency: &Currency<Meme>, tick_spacing: u32, fee_rate: u64, ): VenueTicket<Meme, Quote>
+bluefin:public:fun prepare<Meme, Quote>( migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &mut VenueConfig, _: &SealedTreasuryCap<Meme>, currency: &Currency<Meme>, tick_spacing: u32, fee_rate: u64, ): VenueTicket<Meme, Quote>
 bluefin:public:fun settle_and_apply_fee_split<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun buyback_and_burn<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, pool: &mut Pool<CoinA, CoinB>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun collect_fees<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, ctx: &mut TxContext, )
 cetus:public:fun compound_auto_lp<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, cetus_config: &GlobalConfig, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun migrate<Meme, Quote, CoinA, CoinB>( migration: Migration<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, burn_manager: &mut BurnManager, registry: &mut VaultRegistry, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, clock: &Clock, ctx: &mut TxContext, )
-cetus:public:fun prepare<Meme, Quote>( migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &mut VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, treasury_cap: &mut TreasuryCap<Meme>, tick_spacing: u32, ctx: &mut TxContext, ): VenueTicket<Meme, Quote>
+cetus:public:fun prepare<Meme, Quote>( migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &mut VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, sealed_treasury_cap: &mut SealedTreasuryCap<Meme>, admission: VenueAdmission, tick_spacing: u32, ctx: &mut TxContext, ): VenueTicket<Meme, Quote>
 cetus:public:fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
 constants:package:fun auto_lp_margin(): u256
 constants:package:fun bluefin_max_fee_rate(): u64
@@ -608,7 +608,7 @@ cetus_body() {
     awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name && $6 == 0 { print $10 }' <<<"$cetus_facts" \
         | tr -d '[:space:]' | sed 's/,)/)/g'
 }
-[[ "$(cetus_body prepare)" == 'migrators_version.assert_current(constants::version!());let_=config::get_fee_rate(tick_spacing,cetus_config);letpool_creation_cap=factory::mint_pool_creation_cap(cetus_config,pools,treasury_cap,ctx);factory::register_permission_pair<Meme,Quote>(cetus_config,pools,tick_spacing,&pool_creation_cap,ctx);letpool_creation_cap_id=object::id(&pool_creation_cap);venue_config.add_object(CreationCapKey<Meme>(),pool_creation_cap);venue_config.add_value(PoolTierKey<Meme>(),tick_spacing);events::cetus_pool_reserved<Meme,Quote>(pool_creation_cap_id,tick_spacing);migration::issue_ticket(Venue())' ]] \
+[[ "$(cetus_body prepare)" == 'migrators_version.assert_current(constants::version!());let_=config::get_fee_rate(tick_spacing,cetus_config);letpool_creation_cap=factory::mint_pool_creation_cap(cetus_config,pools,sealed_treasury_cap.treasury_cap_mut(admission,Venue()),ctx);factory::register_permission_pair<Meme,Quote>(cetus_config,pools,tick_spacing,&pool_creation_cap,ctx);letpool_creation_cap_id=object::id(&pool_creation_cap);venue_config.add_object(CreationCapKey<Meme>(),pool_creation_cap);venue_config.add_value(PoolTierKey<Meme>(),tick_spacing);events::cetus_pool_reserved<Meme,Quote>(pool_creation_cap_id,tick_spacing);migration::issue_ticket(Venue())' ]] \
     && [[ "$(cetus_body pool_creation_cap)" == 'venue_config.object(CreationCapKey<Meme>())' ]] || \
     fail "cetus::prepare must check Cetus registers the tick spacing, then mint the cap once, register the pair with it, store the cap and the tick spacing, record the reservation, and issue the ticket"
 pair_proof='letmeme_is_a=is_meme_coin_a<Meme,Quote,CoinA,CoinB>();'
@@ -736,14 +736,16 @@ fi
 if rg -q 'create_pool_v3[[:space:]]*[<(]|unregister_permission_pair|policy_mut' "$CETUS_SOURCE"; then
     fail "Cetus must neither create an unreserved pool nor release a reservation"
 fi
-# The capability is minted once, from the treasury capability `cetus::prepare` borrows mutably;
-# Bluefin only reads its caller's capability, and no other module names one.
+# The capability is minted once, from the treasury capability `cetus::prepare` borrows through the
+# product's seal with that product's admission (ADR 0138); Bluefin only reads its caller's sealed
+# capability, no function takes a raw `TreasuryCap`, and no other module names one.
 [[ "$(rg -c 'factory::mint_pool_creation_cap\(' "$CETUS_SOURCE" || true)" -eq 1 ]] \
+    && [[ "$(rg -c 'sealed_treasury_cap\.treasury_cap_mut\(admission, Venue\(\)\)' "$CETUS_SOURCE" || true)" -eq 1 ]] \
     && [[ "$(for source in "${source_files[@]}"; do
         move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
-            '$1 == "FN" && $6 == 0 && index($9, "TreasuryCap<") > 0 { print module ":" $2 ":" ($9 ~ /&mut TreasuryCap</ ? "mut" : "ref") }'
+            '$1 == "FN" && $6 == 0 && index($9, "TreasuryCap<") > 0 { print module ":" $2 ":" ($9 ~ /&mut SealedTreasuryCap</ ? "mut" : ($9 ~ /&SealedTreasuryCap</ ? "ref" : "raw")) }'
     done | LC_ALL=C sort | tr '\n' ' ')" == 'bluefin:prepare:ref cetus:prepare:mut ' ]] || \
-    fail "the Cetus capability must be minted once from the treasury capability cetus::prepare borrows, and only the two preparations may take one"
+    fail "the Cetus capability must be minted once from the sealed treasury capability cetus::prepare borrows with the product's admission, and only the two preparations may take a sealed one"
 
 # === Package-wide custody rules ===
 
