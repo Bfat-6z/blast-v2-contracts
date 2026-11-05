@@ -52,6 +52,19 @@ public fun recipient(destination: address, vesting_terms: Option<VestingTerms>):
 /// The address the recipient's payouts go to, or vest for.
 public fun destination(self: &Recipient): address { self.destination }
 
+/// The terms the recipient's payouts vest under, or none when they are paid outright. Called as
+/// `recipient.vesting_terms()`.
+public fun recipient_vesting_terms(self: &Recipient): Option<VestingTerms> { self.vesting_terms }
+
+/// The delay from a payout to its first available step, in milliseconds.
+public fun cliff_delay_ms(self: &VestingTerms): u64 { self.cliff_delay_ms }
+
+/// The length of each equal step, in milliseconds.
+public fun period_duration_ms(self: &VestingTerms): u64 { self.period_duration_ms }
+
+/// The number of equal steps.
+public fun periods(self: &VestingTerms): u64 { self.periods }
+
 /// Pays `amount` of `balance` to `recipient`: outright, or locked in an irrevocable linear
 /// schedule starting now when it vests, returning the schedule's ID. A zero amount sends and
 /// locks nothing.
@@ -106,6 +119,8 @@ public fun pay_all<Asset>(mut balance: Balance<Asset>, destination: address, ctx
 }
 
 // === Imports ===
+
+public use fun recipient_vesting_terms as Recipient.vesting_terms;
 
 use blast_core::constants;
 

@@ -25,7 +25,9 @@ values between product and venue calls.
   `payout::pay_or_vest` pays an amount to a recipient as a coin or, when it vests, locks the amount
   in an irrevocable, shared `blast_fun_linear_vesting::Vesting` schedule that starts at the payout
   and returns its ID. A zero amount sends and locks nothing. Each product keeps its own recipient
-  lists and shares.
+  lists and shares. `payout::destination` and `payout::recipient_vesting_terms` (called as
+  `recipient.vesting_terms()`) read a recipient; `payout::cliff_delay_ms`,
+  `payout::period_duration_ms`, and `payout::periods` read its terms.
 
 ### Fee splits
 
@@ -44,14 +46,19 @@ creation to the partner its sale named, or to none. `protocol_fees::pay` pays ev
 treasury and aborts when a partner is bound; `protocol_fees::pay_with_partner` first pays that
 partner its cut of each asset through `blast_partners::blast_partners::pay`, then the treasury the
 rest. Both emit `blast_core_events::ProtocolFeesPaid`; an empty ledger sends and emits nothing. Products expose these payouts as calls anyone
-may make.
+may make. `protocol_fees::balances`, `protocol_fees::package_witness`, `protocol_fees::origin`, and
+`protocol_fees::partner_id` read a ledger. `protocol_fees::destroy` deletes one that holds nothing
+and aborts while any fee is held, so its owner pays it out first.
 
 `blast_treasury::Treasury` is a shared singleton holding the address Blast's fees go to. A Blast
 admin with `blast_domain::TreasuryAdmin` schedules a new address with
 `blast_treasury::schedule_destination`; anyone applies it with `blast_treasury::apply_destination`
 once its notice has passed (48 hours from publication); a Blast admin with
 `blast_domain::CancelAdmin` cancels it with `blast_treasury::cancel_destination`. Read the current
-address with `blast_treasury::destination`.
+address with `blast_treasury::destination`, the notice the next change waits with
+`blast_treasury::delay_ms`, and a scheduled change, as a `delayed::Proposal<address>`, with
+`blast_treasury::pending_destination`. The treasury is never deleted: every ledger pays through
+it.
 
 ### Migration hand-off and owner proof
 
@@ -74,6 +81,16 @@ address with `blast_treasury::destination`.
   the vault's package witness and sale.
 
 None of these values can be dropped, copied, or stored, so the PTB that creates one must consume it.
+
+Readers never consume them. `migration::ticket_venue` (called as `ticket.venue()`) reads a ticket's
+venue. `migration::venue`, `migration::balances` (the Meme and Quote amounts), and
+`migration::terms` read a migration; only `migration::redeem` releases its balances, and a copy of
+its terms authorizes nothing, since an admitted venue never takes terms from its caller and each
+sale has one vault. `migration::origin`, `migration::package_witness`, `migration::fee_split`,
+`migration::protocol_bps`, `migration::partner_id`, `migration::residuals`, and
+`migration::has_protocol_residuals` read terms; `migration::is_protocol` and `migration::is_owner`
+read a `migration::ResidualPolicy`. `owner_proof::package_witness` and `owner_proof::origin` read
+a proof.
 
 ### Pool seed price
 

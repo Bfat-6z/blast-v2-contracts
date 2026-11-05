@@ -42,7 +42,8 @@ value is always `value`; a proposal changes nothing until it is applied, even af
 `blast_partners` exposes no call that changes them.
 
 Who may call: *anyone* may call `new_cap`, `destroy_cap` (on a cap they hold),
-`pay`, `apply_share`, `apply_cap`, and `delay_ms`; the *cap holder* (the applied
+`pay`, `apply_share`, `apply_cap`, `delay_ms`, and the readers under Reading
+state; the *cap holder* (the applied
 `PartnerCap`) may call `set_recipient`; a *Blast admin* with the `PartnerAdmin`
 role (through `blast_acl::sign_in`) may call `register`, `schedule_share`,
 `schedule_cap`, `cancel_share`, and `cancel_cap`.
@@ -76,9 +77,10 @@ needs no `Clock`; there is no initial waiting period. From then on:
    or `blast_partners::blast_partners::apply_cap`, the partner included. Nothing
    changes merely because time passes.
 
-There is no delete: a partner exists forever. To switch it off, Blast proposes
-and then applies a zero share; products that name it keep working and simply pay
-it nothing.
+There is no delete: a partner exists forever, because launches, presales, and
+vaults bind its ID for good and pay Blast's held fees only with it. To switch it
+off, Blast proposes and then applies a zero share; products that name it keep
+working and simply pay it nothing.
 
 **Product acceptance.** Each product accepts a partner in its own shared config,
 as a dynamic field keyed by `PartnerKey(partner_id)` whose `u64` value is the
@@ -111,7 +113,17 @@ change it.
   plus `delay_ms()`; it aborts unless the partner is accepted now with no
   removal pending.
 - `blast_partners::partner_list::assert_accepted` aborts unless the list
-  accepts the partner now.
+  accepts the partner now; `blast_partners::partner_list::is_accepted` returns
+  the same answer as a `bool`.
+- `blast_partners::partner_list::contains` says whether the list has an entry
+  for a partner (accepted, removal pending, or removed);
+  `blast_partners::partner_list::acceptance_ends_at_ms` returns that entry's end
+  time and aborts in `sui::dynamic_field` without one;
+  `blast_partners::partner_list::length` counts entries, removed ones included;
+  `blast_partners::partner_list::owner` returns the embedding object's ID.
+- `blast_partners::partner_list::destroy` deletes the list with every entry and
+  emits `PartnerListDestroyed`. It ends every acceptance at once, without the
+  notice, so a product destroys it only with the object that embeds it.
 
 ### Flows
 
@@ -222,16 +234,21 @@ Rules common to every product:
 
 ### Reading state
 
-`blast_partners` has no getters for a partner's fields; read the shared
-`Partner` object's content over RPC (`recipient`, `share_bps`, `cap_id`), or
-replay the events below. The only on-chain read is
-`blast_partners::blast_partners::delay_ms`.
+Move callers read a partner with `blast_partners::blast_partners::recipient`,
+`blast_partners::blast_partners::share_bps` (applied),
+`blast_partners::blast_partners::pending_share_bps`,
+`blast_partners::blast_partners::cap_id` (applied), and
+`blast_partners::blast_partners::pending_cap_id`; each pending reader returns an
+`Option<delayed::Proposal<T>>`. Off chain, read the shared `Partner` object's
+content over RPC, or replay the events below.
 
 - Applied share: `share_bps.value`.
 - Pending share: `share_bps.pending`, with its `value` and `ready_at_ms`;
   readiness does not clear it.
 - Which cap controls the recipient: `cap_id.value`; its proposal is
   `cap_id.pending`.
+- Whether a product's `PartnerList` accepts a partner now:
+  `blast_partners::partner_list::is_accepted`.
 - Whether a product accepts a partner: read the product config's dynamic field
   `PartnerKey(partner_id)`; accepted while it exists and `now < value`.
 - Which partner a launch, sale, or vault names: its `partner_id: Option<ID>`
@@ -262,6 +279,9 @@ Every event is emitted directly (no envelope).
   `blast_partners::partner_list::remove`. Fields: `owner`, `partner_id`,
   `acceptance_ends_at_ms` (exclusive). Replaying both per `owner` gives that
   list's accepted partners.
+- `blast_partners::partner_list::PartnerListDestroyed`: emitted by
+  `blast_partners::partner_list::destroy`. Field: `owner`. From then on the
+  owner's list accepts no partner.
 - `blast_partners::blast_partners::PartnerPaid<T>`: emitted by
   `blast_partners::blast_partners::pay` when it sends a positive amount. Fields:
   `partner_id`, `amount` (atomic units of `T`). The product records the trade in

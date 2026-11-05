@@ -84,9 +84,45 @@ fun registration_share_and_cap_are_live_immediately() {
     fixture.next_tx!(ADMIN, |fixture| {
         let partner = fixture.take_partner();
         assert_eq!(object::id(&partner), id);
-        let (_, share, live_cap) = partner.terms_for_testing();
-        assert_eq!(share, 2_500);
-        assert_eq!(live_cap, object::id(&cap));
+        assert_eq!(partner.share_bps(), 2_500);
+        assert_eq!(partner.cap_id(), object::id(&cap));
+        fixture.return_partner(partner);
+    });
+
+    cap.destroy_cap();
+    fixture.end();
+}
+
+#[test]
+/// The readers return the applied recipient, share, and cap, and each proposal until it is
+/// applied or cancelled; a proposal changes no applied value.
+fun readers_return_applied_terms_and_pending_proposals() {
+    let mut fixture = start();
+    let cap = fixture.register(RECIPIENT, 2_500);
+
+    fixture.next_tx!(ADMIN, |fixture| {
+        let mut partner = fixture.take_partner();
+        assert_eq!(partner.recipient(), RECIPIENT);
+        assert!(partner.pending_share_bps().is_none());
+        assert!(partner.pending_cap_id().is_none());
+
+        fixture.schedule_share(&mut partner, 1_000);
+        let next_cap = fixture.reissue_cap(&mut partner);
+
+        assert_eq!(partner.pending_share_bps().destroy_some().value(), 1_000);
+        assert_eq!(partner.pending_cap_id().destroy_some().value(), object::id(&next_cap));
+        assert_eq!(partner.share_bps(), 2_500);
+        assert_eq!(partner.cap_id(), object::id(&cap));
+
+        fixture.advance(delay());
+        partner.apply_share(&fixture.clock);
+        partner.cancel_cap(&partner_admin());
+
+        assert!(partner.pending_share_bps().is_none());
+        assert!(partner.pending_cap_id().is_none());
+        assert_eq!(partner.share_bps(), 1_000);
+        assert_eq!(partner.cap_id(), object::id(&cap));
+        next_cap.destroy_cap();
         fixture.return_partner(partner);
     });
 
@@ -158,11 +194,11 @@ fun a_scheduled_share_waits_for_explicit_application_after_the_notice() {
         assert_eq!(owner, object::id(&partner));
         assert_eq!(vector[proposed, proposed_delay_ms, ready_at_ms], vector[1_000, delay(), scheduled_at + delay()]);
         fixture.set_time(scheduled_at + delay() - 1);
-        assert_eq!(fixture.share_in_force(&partner), 2_500);
+        assert_eq!(partner.share_bps(), 2_500);
         fixture.set_time(scheduled_at + delay());
-        assert_eq!(fixture.share_in_force(&partner), 2_500);
+        assert_eq!(partner.share_bps(), 2_500);
         partner.apply_share(&fixture.clock);
-        assert_eq!(fixture.share_in_force(&partner), 1_000);
+        assert_eq!(partner.share_bps(), 1_000);
         let applied = event::events_by_type<DelayedApplied<ShareKey, u64>>();
         assert_eq!(applied.length(), 1);
         let (owner, _, previous, value, applied_delay_ms) = applied[0].delayed_applied_fields();
@@ -197,10 +233,10 @@ fun a_new_schedule_replaces_a_pending_one_and_restarts_the_notice() {
         let (_, _, _, _, ready_at_ms) = last_share_scheduled().delayed_scheduled_fields();
         assert_eq!(ready_at_ms, rescheduled_at + delay());
         fixture.set_time(rescheduled_at + delay() - 1);
-        assert_eq!(fixture.share_in_force(&partner), 2_500);
+        assert_eq!(partner.share_bps(), 2_500);
         fixture.set_time(rescheduled_at + delay());
         partner.apply_share(&fixture.clock);
-        assert_eq!(fixture.share_in_force(&partner), 5_000);
+        assert_eq!(partner.share_bps(), 5_000);
         fixture.return_partner(partner);
     });
 
@@ -244,7 +280,7 @@ fun cancelling_a_pending_cut_preserves_the_applied_share() {
         assert_eq!(owner, object::id(&partner));
         assert_eq!(discarded, 0);
         fixture.advance(10 * delay());
-        assert_eq!(fixture.share_in_force(&partner), 2_500);
+        assert_eq!(partner.share_bps(), 2_500);
         fixture.return_partner(partner);
     });
 
@@ -263,7 +299,7 @@ fun ready_share_cancellation_and_a_later_proposal_keep_the_full_notice() {
         fixture.schedule_share(&mut partner, 1_000);
         fixture.advance(2 * delay());
         partner.cancel_share(&partner_admin());
-        assert_eq!(fixture.share_in_force(&partner), 2_500);
+        assert_eq!(partner.share_bps(), 2_500);
         fixture.schedule_share(&mut partner, 3_000);
         let (_, _, _, proposed_delay_ms, ready_at_ms) = last_share_scheduled().delayed_scheduled_fields();
         assert_eq!(vector[proposed_delay_ms, ready_at_ms], vector[delay(), fixture.now() + delay()]);
@@ -288,7 +324,7 @@ fun anyone_applies_a_ready_share_and_the_notice_stays_fixed() {
     fixture.next_tx!(PARTNER, |fixture| {
         let mut partner = fixture.take_partner();
         partner.apply_share(&fixture.clock);
-        assert_eq!(fixture.share_in_force(&partner), 5_000);
+        assert_eq!(partner.share_bps(), 5_000);
         fixture.return_partner(partner);
     });
     fixture.next_tx!(ADMIN, |fixture| {
@@ -471,8 +507,7 @@ fun a_reissued_cap_goes_live_only_when_applied_after_the_notice() {
         fixture.set_time(reissued_at + delay() - 1);
         fixture.set_recipient(&mut partner, &old_cap, NEW_RECIPIENT);
         fixture.set_time(reissued_at + delay());
-        let (_, _, still_live) = partner.terms_for_testing();
-        assert_eq!(still_live, object::id(&old_cap));
+        assert_eq!(partner.cap_id(), object::id(&old_cap));
         partner.apply_cap(&fixture.clock);
         let applied = event::events_by_type<DelayedApplied<CapKey, ID>>();
         assert_eq!(applied.length(), 1);
@@ -480,9 +515,8 @@ fun a_reissued_cap_goes_live_only_when_applied_after_the_notice() {
         assert_eq!(vector[previous, value], vector[object::id(&old_cap), object::id(&new_cap)]);
         assert_eq!(applied_delay_ms, delay());
         fixture.set_recipient(&mut partner, &new_cap, RECIPIENT);
-        let (recipient, _, live_cap) = partner.terms_for_testing();
-        assert_eq!(recipient, RECIPIENT);
-        assert_eq!(live_cap, object::id(&new_cap));
+        assert_eq!(partner.recipient(), RECIPIENT);
+        assert_eq!(partner.cap_id(), object::id(&new_cap));
         new_cap.destroy_cap();
         fixture.return_partner(partner);
     });
@@ -618,8 +652,7 @@ fun cancelling_a_ready_move_preserves_the_live_cap() {
         assert_eq!(cancelled.length(), 1);
         let (_, _, discarded, _, _) = cancelled[0].delayed_cancelled_fields();
         assert_eq!(discarded, object::id(&moved_to));
-        let (_, _, live_cap) = partner.terms_for_testing();
-        assert_eq!(live_cap, object::id(&cap));
+        assert_eq!(partner.cap_id(), object::id(&cap));
         fixture.set_recipient(&mut partner, &cap, NEW_RECIPIENT);
         moved_to.destroy_cap();
         fixture.return_partner(partner);
@@ -641,13 +674,11 @@ fun share_and_cap_proposals_apply_independently() {
         let new_cap = fixture.reissue_cap(&mut partner);
         fixture.advance(delay());
         partner.apply_share(&fixture.clock);
-        let (_, share, live_cap) = partner.terms_for_testing();
-        assert_eq!(share, 1_000);
-        assert_eq!(live_cap, object::id(&old_cap));
+        assert_eq!(partner.share_bps(), 1_000);
+        assert_eq!(partner.cap_id(), object::id(&old_cap));
         partner.apply_cap(&fixture.clock);
-        let (_, share, live_cap) = partner.terms_for_testing();
-        assert_eq!(share, 1_000);
-        assert_eq!(live_cap, object::id(&new_cap));
+        assert_eq!(partner.share_bps(), 1_000);
+        assert_eq!(partner.cap_id(), object::id(&new_cap));
         new_cap.destroy_cap();
         fixture.return_partner(partner);
     });
@@ -763,10 +794,8 @@ fun a_partner_without_a_live_cap_is_moved_to_a_new_one() {
         never_minted.apply_cap(&fixture.clock);
         fixture.set_recipient(&mut destroyed, &new_cap, NEW_RECIPIENT);
         fixture.set_recipient(&mut never_minted, &new_cap, NEW_RECIPIENT);
-        let (destroyed_recipient, _, destroyed_cap) = destroyed.terms_for_testing();
-        let (never_minted_recipient, _, never_minted_cap) = never_minted.terms_for_testing();
-        assert_eq!(vector[destroyed_recipient, never_minted_recipient], vector[NEW_RECIPIENT, NEW_RECIPIENT]);
-        assert_eq!(vector[destroyed_cap, never_minted_cap], vector[object::id(&new_cap), object::id(&new_cap)]);
+        assert_eq!(vector[destroyed.recipient(), never_minted.recipient()], vector[NEW_RECIPIENT, NEW_RECIPIENT]);
+        assert_eq!(vector[destroyed.cap_id(), never_minted.cap_id()], vector[object::id(&new_cap), object::id(&new_cap)]);
         fee.destroy_for_testing();
         new_cap.destroy_cap();
         fixture.return_partner(destroyed);
@@ -800,10 +829,8 @@ fun one_cap_manages_every_partner_of_a_company() {
         let mut other = fixture.take_partner_by_id(other_id);
         fixture.set_recipient(&mut boosts, &cap, NEW_RECIPIENT);
         fixture.set_recipient(&mut other, &cap, NEW_RECIPIENT);
-        let (boosts_recipient, boosts_share, _) = boosts.terms_for_testing();
-        let (other_recipient, other_share, _) = other.terms_for_testing();
-        assert_eq!(vector[boosts_recipient, other_recipient], vector[NEW_RECIPIENT, NEW_RECIPIENT]);
-        assert_eq!(vector[boosts_share, other_share], vector[5_000, 800]);
+        assert_eq!(vector[boosts.recipient(), other.recipient()], vector[NEW_RECIPIENT, NEW_RECIPIENT]);
+        assert_eq!(vector[boosts.share_bps(), other.share_bps()], vector[5_000, 800]);
         fixture.return_partner(boosts);
         fixture.return_partner(other);
     });
@@ -821,8 +848,7 @@ fun a_cap_minted_by_anyone_controls_nothing_until_a_partner_is_registered_under_
     fixture.next_tx!(PARTNER, |fixture| {
         let own_cap = partners::new_cap(fixture.ctx!());
         let partner = fixture.take_partner();
-        let (_, _, live_cap) = partner.terms_for_testing();
-        assert!(live_cap != object::id(&own_cap));
+        assert!(partner.cap_id() != object::id(&own_cap));
         fixture.return_partner(partner);
         own_cap.destroy_cap();
     });
@@ -850,8 +876,7 @@ fun the_live_cap_sets_the_recipient_at_once() {
         let (partner_id, recipient) = fixture.last_update().partner_updated_fields();
         assert_eq!(partner_id, object::id(&partner));
         assert_eq!(recipient, NEW_RECIPIENT);
-        let (recipient, _, _) = partner.terms_for_testing();
-        assert_eq!(recipient, NEW_RECIPIENT);
+        assert_eq!(partner.recipient(), NEW_RECIPIENT);
         fixture.return_partner(partner);
     });
 
@@ -1143,11 +1168,6 @@ fun schedule_cap(self: &Fixture, partner: &mut Partner, cap_id: ID) {
 
 fun set_recipient(_self: &Fixture, partner: &mut Partner, cap: &PartnerCap, recipient: address) {
     partner.set_recipient(cap, recipient);
-}
-
-fun share_in_force(_self: &Fixture, partner: &Partner): u64 {
-    let (_, share, _) = partner.terms_for_testing();
-    share
 }
 
 fun last_update(_self: &Fixture): PartnerUpdated {

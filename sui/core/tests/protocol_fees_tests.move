@@ -195,6 +195,72 @@ fun a_ledger_rejects_one_type_for_both_assets() {
     ledger.destroy_for_testing();
 }
 
+#[test]
+fun a_ledger_reads_its_witness_origin_and_partner() {
+    let partner_id = object::id_from_address(PARTNER);
+    let bound = new_ledger(option::some(partner_id));
+    let unbound = new_ledger(option::none());
+
+    assert_eq!(bound.package_witness(), type_name::with_original_ids<LedgerPackageWitness>());
+    assert_eq!(bound.origin(), sale_id());
+    assert_eq!(bound.partner_id(), option::some(partner_id));
+    assert!(unbound.partner_id().is_none());
+
+    bound.destroy();
+    unbound.destroy();
+}
+
+#[test]
+fun a_paid_out_ledger_can_be_destroyed() {
+    let mut scenario = test_scenario::begin(@0x1);
+    let treasury = blast_treasury::new_for_testing(TREASURY, scenario.ctx());
+    let mut ledger = new_ledger(option::none());
+    ledger.accrue(balance::create_for_testing(10), balance::create_for_testing(20));
+    ledger.accrue_sui(balance::create_for_testing(30));
+    ledger.pay(&treasury, scenario.ctx());
+
+    ledger.destroy();
+
+    destroy(treasury);
+    scenario.end();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_core::errors::ELedgerNotEmpty,
+    location = blast_core::protocol_fees,
+)]
+fun a_ledger_holding_meme_cannot_be_destroyed() {
+    let mut ledger = new_ledger(option::none());
+    ledger.accrue(balance::create_for_testing(1), balance::zero());
+
+    ledger.destroy();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_core::errors::ELedgerNotEmpty,
+    location = blast_core::protocol_fees,
+)]
+fun a_ledger_holding_quote_cannot_be_destroyed() {
+    let mut ledger = new_ledger(option::none());
+    ledger.accrue(balance::zero(), balance::create_for_testing(1));
+
+    ledger.destroy();
+}
+
+#[test]
+#[expected_failure(
+    abort_code = blast_core::errors::ELedgerNotEmpty,
+    location = blast_core::protocol_fees,
+)]
+fun a_ledger_holding_sui_cannot_be_destroyed() {
+    let mut ledger = new_ledger(option::none());
+    ledger.accrue_sui(balance::create_for_testing(1));
+
+    ledger.destroy();
+}
+
 // === Test Helpers ===
 
 fun assert_balances(ledger: &Ledger<MEME, QUOTE>, meme: u64, quote: u64, sui: u64) {

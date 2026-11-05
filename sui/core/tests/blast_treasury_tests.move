@@ -31,6 +31,25 @@ fun a_new_destination_waits_the_applied_notice_and_anyone_applies_it() {
 }
 
 #[test]
+fun the_treasury_reads_its_notice_and_pending_destination() {
+    let ctx = &mut tx_context::dummy();
+    let clock = clock::create_for_testing(ctx);
+    let mut treasury = blast_treasury::new_for_testing(GENESIS, ctx);
+    assert_eq!(treasury.delay_ms(), NOTICE_MS);
+    assert!(treasury.pending_destination().is_none());
+
+    treasury.schedule_destination(&treasury_admin(), NEXT, NOTICE_MS, &clock);
+    assert_eq!(treasury.pending_destination().destroy_some().value(), NEXT);
+
+    treasury.cancel_destination(&blast_acl::witness_for_testing<CancelAdmin>());
+    assert!(treasury.pending_destination().is_none());
+    assert_eq!(treasury.destination(), GENESIS);
+
+    destroy(treasury);
+    destroy(clock);
+}
+
+#[test]
 #[expected_failure(abort_code = blast_admin::errors::ENotReady, location = blast_admin::delayed)]
 fun a_destination_cannot_apply_before_its_notice() {
     let ctx = &mut tx_context::dummy();

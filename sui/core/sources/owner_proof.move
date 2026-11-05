@@ -34,6 +34,12 @@ public fun assert_terms(self: OwnerProof, terms: &VaultTerms) {
     );
 }
 
+/// The original type of the package witness that issued the proof.
+public fun package_witness(self: &OwnerProof): TypeName { self.package_witness }
+
+/// The sale whose creator authority the proof attests.
+public fun origin(self: &OwnerProof): ID { self.origin }
+
 // === Imports ===
 
 use blast_core::migration::VaultTerms;

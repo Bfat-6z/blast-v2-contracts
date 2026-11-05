@@ -23,8 +23,9 @@ fun error_registry_is_stable() {
         errors::wrong_package_witness!(),
         errors::invalid_lp_fee_bps!(),
         errors::invalid_recipient!(),
+        errors::ledger_not_empty!(),
     ];
-    assert_eq!(codes.length(), 13);
+    assert_eq!(codes.length(), 14);
     codes.length().do!(|i| assert_eq!(codes[i], i));
 }
 

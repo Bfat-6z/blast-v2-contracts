@@ -28,6 +28,42 @@ fun a_ticket_names_its_venue() {
 }
 
 #[test]
+/// Reading a ticket's venue leaves `redeem_ticket` its one consuming path.
+fun a_ticket_reads_its_venue_before_redemption() {
+    let ticket = migration::issue_ticket<MEME, QUOTE, _>(VenueWitness());
+
+    assert_eq!(ticket.venue(), type_name::with_original_ids<VenueWitness>());
+    assert_eq!(ticket.redeem_ticket(), type_name::with_original_ids<VenueWitness>());
+}
+
+#[test]
+/// A migration's readers return its venue, amounts, and terms; only `redeem` releases the
+/// balances.
+fun a_migration_reads_its_venue_amounts_and_terms_before_redemption() {
+    let migration = new_migration(type_name::with_original_ids<VenueWitness>());
+
+    assert_eq!(migration.venue(), type_name::with_original_ids<VenueWitness>());
+    let (meme_amount, quote_amount) = migration.balances();
+    assert_eq!(vector[meme_amount, quote_amount], vector[100, 200]);
+    assert_eq!(*migration.terms(), sale_terms());
+
+    let (meme, quote, terms) = migration.redeem(VenueWitness());
+    assert_eq!(terms, sale_terms());
+    destroy(meme);
+    destroy(quote);
+}
+
+#[test]
+fun terms_read_their_residual_policy() {
+    let to_protocol = sale_terms().residuals();
+    let to_owner = migration::residuals_to_owner();
+
+    assert_eq!(to_protocol, migration::residuals_to_protocol());
+    assert!(to_protocol.is_protocol() && !to_protocol.is_owner());
+    assert!(to_owner.is_owner() && !to_owner.is_protocol());
+}
+
+#[test]
 fun the_stored_venue_redeems_the_balances_and_terms() {
     let migration = new_migration(type_name::with_original_ids<VenueWitness>());
     let (meme, quote, terms) = migration.redeem(VenueWitness());
@@ -88,6 +124,15 @@ fun standalone_terms_verify_owner_proofs_from_their_issuer() {
     assert!(!terms.has_protocol_residuals());
 
     owner_proof::new(OtherPackageWitness(), sale_id()).assert_terms(&terms);
+}
+
+#[test]
+fun an_owner_proof_reads_its_package_witness_and_sale() {
+    let proof = owner_proof::new(TestPackageWitness(), sale_id());
+
+    assert_eq!(proof.package_witness(), type_name::with_original_ids<TestPackageWitness>());
+    assert_eq!(proof.origin(), sale_id());
+    proof.assert_terms(&sale_terms());
 }
 
 #[test]
