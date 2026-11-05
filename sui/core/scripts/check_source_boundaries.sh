@@ -13,7 +13,7 @@ dependencies="$(sed -n '/^\[dependencies\]/,/^\[/p' Move.toml | grep -E '^[A-Za-
 [[ "$dependencies" == "blast_admin blast_fun_vesting blast_partners " ]] \
   || fail "dependencies must be exactly blast_admin, blast_fun_vesting, blast_partners (found: $dependencies)"
 
-if rg -n '\b(blast_fun|blast_presale|blast_fun_migrators|blast_vault|blast_venues|cetus_clmm|bluefin_spot|amm|dao_fee_amm)::' sources tests; then
+if rg -n '\b(blast_fun|blast_presale|blast_migrators|blast_vault|blast_venues|cetus_clmm|bluefin_spot|amm|dao_fee_amm)::' sources tests; then
   fail "core must not import a product, the vault, or a venue"
 fi
 if rg -n '\b(UpgradeCap|Publisher|OperationalVersion|UpgradeCustody|package::claim)\b' sources; then

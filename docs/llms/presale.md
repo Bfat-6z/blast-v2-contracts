@@ -1168,75 +1168,77 @@ refunds, LP deadline, the seed-price check) applies unchanged.
 
 #### `blast_aftermath_dao_presale`
 
-A one-off, immutable package for one partner. Its sales migrate into a new 50/50 Aftermath
+A one-off, immutable package for one partner: a plain venue over `blast_core` that imports no
+product, so a presale upgrade never strands it. Its sales migrate into a new 50/50 Aftermath
 weighted pool wrapped in Aftermath's DAO-fee pool, which charges 2% (200 BPS) on every swap,
-deposit, and withdrawal and sends it straight to the partner treasury compiled into the module.
-It creates no vault.
+deposit, and withdrawal and sends it straight to the partner treasury compiled into the module. It
+creates no vault.
 
 Objects:
 
 - `blast_aftermath_dao_presale::blast_aftermath_dao_presale::Venue`: the sealed venue witness. It
-  issues the ticket `new` redeems and redeems that sale's migration hand-off.
-- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`: the vendor's own admin, sent to the publisher. Its one
-  power is creating sales, through `new` and `finalize`. It is not Blast's `blast_acl::AdminCap`.
-- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreation<Lp>`: shared; binds one sale to the Aftermath
-  `CreatePoolCapV2` of a freshly published LP coin `Lp`.
+  issues the ticket `prepare` returns and redeems that sale's migration hand-off.
+- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`: the vendor's own admin, sent
+  to the publisher. Its one power is preparing sale tokens through `prepare`. It is not Blast's
+  `blast_acl::AdminCap`.
+- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreation<Lp, SaleToken>`: shared;
+  reserves one sale token's pool creation with the Aftermath `CreatePoolCapV2` of a freshly
+  published LP coin `Lp`.
 
-Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`), one PTB:
+Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`, who also
+holds the sale token's `TreasuryCap`), one PTB:
 
 1. Beforehand, in its own transaction, publish a fresh Aftermath LP coin `Lp` (one per sale); its
    publication yields the `CreatePoolCapV2` that the `AdminCap` holder passes in.
-2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::new<SaleToken, Quote>(admin_cap,
-   package_version, treasury_cap, creation_policy, fee_policy)` issues the venue's ticket, calls
-   `blast_presale::blast_presale::new`, and returns the `PresaleInitializer`. Its pool's weights
-   and fees are the module's constants, so it records no tier. The `CreationPolicy` must admit its
-   `Venue`.
-3. The `blast_presale::blast_presale` setters as for any sale (no LP-fee split needed), including
-   the optional `blast_presale::blast_presale::set_partner`.
-4. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::finalize<Lp, SaleToken,
-   Quote>(admin_cap, package_version, initializer, currency, create_pool_cap)` first checks
-   `blast_presale::blast_presale::venue` against its own `Venue`
-   (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongVenue`, code 3), sets a core
-   fee split of one address route paying its treasury 10,000 BPS (replacing any split set
-   earlier), runs `blast_presale::blast_presale::finalize`, sends the `PresaleCap` to the treasury,
-   shares the `PoolCreation<Lp>`, emits
+2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken, Quote,
+   Issuer>(admin_cap, create_pool_cap)`, with the presale's package witness
+   `blast_presale::blast_presale::PackageWitness` as `Issuer`, shares the
+   `PoolCreation<Lp, SaleToken>` bound to that issuer, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
-   (`presale_id`, `pool_creation_id`), and returns the unshared `Presale`. A vendor sale finalized
-   with `blast_presale::blast_presale::finalize` directly has no `PoolCreation`, so it can never
-   migrate and refunds after its LP deadline.
-5. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, the only
-   point where they may rise (up to the applied policy), which needs
-   Blast's presale `FeeAdmin` signed in within the same transaction; then
-   `blast_presale::blast_presale::share(presale, package_version, commitment_starts_at_ms, clock)`.
+   (`pool_creation_id`, `issuer`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
+   A primitive, standard-library, or framework `Issuer` aborts with
+   `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EInvalidIssuer` (code 2). Its pool's weights
+   and fees are the module's constants, so it records no tier.
+3. `blast_presale::blast_presale::new` with the `TreasuryCap` and the ticket, as for any sale. The
+   `CreationPolicy` must admit the vendor's `Venue`.
+4. The `blast_presale::blast_presale` setters as for any sale, including the optional
+   `blast_presale::blast_presale::set_partner`. The sale's LP-fee split never applies, because no
+   vault exists.
+5. `blast_presale::blast_presale::finalize`, the optional
+   `blast_presale::blast_presale::set_protocol_fees(...)` (which needs Blast's presale `FeeAdmin`
+   signed in within the same transaction), then `blast_presale::blast_presale::share`.
 
-Migrate (*anyone*, while `Funded`):
+Migrate (*anyone*, while `Funded`), one PTB:
 
 1. `blast_presale::blast_presale::settle` if needed.
-2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::migrate<Lp, SaleToken, Quote>(presale,
-   package_version, pool_creation, fee_policy, pool_registry, dao_fee_version, clock)`.
-   `pool_creation` is the sale's shared `PoolCreation<Lp>`, passed by value and deleted;
-   `pool_registry` is Aftermath's shared `PoolRegistry` (mutable); `dao_fee_version` is the DAO-fee
-   package's shared `Version`. Type arguments are always `<Lp, SaleToken, Quote>`; the module sorts
-   the coins into Aftermath's order itself.
-3. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
+2. `blast_presale::blast_presale::migrate`, which returns the sale's `Migration<SaleToken, Quote>`.
+3. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::migrate<Lp, SaleToken,
+   Quote>(migration, pool_creation, pool_registry, dao_fee_version)`. `migration` is the
+   result of step 2; `pool_creation` is the sale token's shared `PoolCreation<Lp, SaleToken>`, passed
+   by value and deleted; `pool_registry` is Aftermath's shared `PoolRegistry` (mutable);
+   `dao_fee_version` is the DAO-fee package's shared `Version`.
+   Type arguments are always `<Lp, SaleToken, Quote>`; the module sorts the coins into Aftermath's
+   order itself.
+4. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
 
-The call checks the binding (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongPresale`),
-runs `blast_presale::blast_presale::migrate` and redeems the hand-off with its `Venue`, dropping the
-vault terms (no vault exists for its pools), creates the pool from all LP tokens and Quote (50/50
-weights, flatness 0, a 0.01% swap-in fee that compounds into the LP, no other pool fees, name
-"Blast Presale Pool"), checks it holds every unit
-(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EPoolMismatch`), wraps it in a DAO-fee
-pool at 200 BPS paying the treasury
-(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EDaoFeePoolMismatch`), shares the
-DAO-fee pool (the object traders use), sends its `OwnerCap` to the treasury, and sends the whole LP
-coin to `0x0`, where nobody can ever use it. Emits
-`blast_aftermath_dao_presale::blast_aftermath_dao_presale::Migrated` with the pool, DAO-fee pool,
-owner cap, and LP coin IDs and the LP amount.
+The call redeems the hand-off with its `Venue` (`blast_core::errors::EWrongVenue` for a hand-off
+sealed for any other venue), refuses terms another package sealed
+(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongIssuer`, code 3), keeping only
+the sale's ID from the vault terms (no vault exists for
+its pools), creates the pool from all LP tokens and Quote (50/50 weights, flatness 0, a 0.01%
+swap-in fee that compounds into the LP, no other pool fees, name "Blast Presale Pool"), checks it
+holds every unit (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EPoolMismatch`, code
+0), wraps it in a DAO-fee pool at 200 BPS paying the treasury
+(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EDaoFeePoolMismatch`, code 1), shares
+the DAO-fee pool (the object traders use), sends its `OwnerCap` to the treasury, and
+sends the whole LP coin to `0x0`, where nobody can ever use it. Emits
+`blast_aftermath_dao_presale::blast_aftermath_dao_presale::Migrated` with the sale ID, the pool,
+DAO-fee pool, owner cap, and LP coin IDs and the LP amount.
 
 With the `OwnerCap` the treasury can change its pool's DAO fee or recipient directly through
-Aftermath. The `PresaleCap` can only be destroyed after a cancellation. If the `CreatePoolCapV2`
-belongs to a different LP coin than `Lp`, or Aftermath retires the versions this package links
-to, migration aborts and the sale becomes refundable at its LP deadline.
+Aftermath. If the `CreatePoolCapV2` belongs to a different LP coin than `Lp`, or Aftermath retires the
+versions this package links to, migration aborts and the sale becomes refundable at its LP
+deadline.
 
 ### Q&A
 

@@ -217,18 +217,20 @@ initializer, and the launch are values returned by earlier commands of the same 
 1. Prepare the coin on the chosen venue (holder of the `TreasuryCap`). Both calls return a
    `blast_core::migration::VenueTicket<Meme, Quote>` sealed by the venue's witness, for exactly this
    Meme and Quote:
-   - Cetus: `blast_fun_migrators::cetus::prepare` with the migrators'
-     `blast_fun_migrators::blast_fun_migrators::PackageVersion` (shared), the migrators'
-     `blast_fun_migrators::venue_config::VenueConfig` (shared, mutable), Cetus's `GlobalConfig`
+   - Cetus: `blast_migrators::cetus::prepare` with the migrators'
+     `PackageVersion<BLAST_MIGRATORS>` (shared), the migrators'
+     `blast_migrators::venue_config::VenueConfig` (shared, mutable), Cetus's `GlobalConfig`
      (shared) and `Pools` (shared, mutable), the `TreasuryCap<Meme>` (owned, by mutable reference),
      and `tick_spacing: u32`. It mints the Meme type's single Cetus `PoolCreationCap` from the
      treasury cap, registers the pair at that tick spacing, keeps the cap and the tick spacing in
-     `VenueConfig`, and emits `blast_fun_migrators::blast_events::CetusPoolReserved`. It aborts when
+     `VenueConfig`, and emits `blast_migrators::events::CetusPoolReserved`. It aborts when
      Cetus does not register the spacing or refuses the pair at it.
-   - Bluefin: `blast_fun_migrators::bluefin::prepare` with the migrators' `PackageVersion`,
-     `VenueConfig` (mutable), the `TreasuryCap<Meme>` (owned, by immutable reference), `tick_spacing:
-     u32` (1 to 400), and `fee_rate: u64` (1 to 20,000, Bluefin's units). It records the tier in
-     `VenueConfig`; out-of-range values abort with `blast_fun_migrators::bluefin::EInvalidTier`.
+   - Bluefin: `blast_migrators::bluefin::prepare` with the migrators' `PackageVersion`,
+     `VenueConfig` (mutable), the `TreasuryCap<Meme>` (owned, by immutable reference), the
+     `Currency<Meme>`, `tick_spacing: u32` (1 to 400), and `fee_rate: u64` (1 to 20,000, Bluefin's
+     units). It records the tier in `VenueConfig`; out-of-range values abort with
+     `blast_migrators::errors::EInvalidTier`, and a Meme symbol over 32 bytes with
+     `blast_migrators::errors::ESymbolTooLong`.
 
    The venue keeps the pool tier; it can never change afterwards.
 2. `launch::new` with the `LaunchTicket<Meme>` (owned, by value), the same `TreasuryCap<Meme>` (owned,
@@ -394,13 +396,13 @@ migration are paid by the vault, not here.
 
 #### Migration, launchpad side (anyone, through the launch's venue)
 
-Anyone migrates a `MigrationReady` launch by calling its venue's migrate,
-`blast_fun_migrators::cetus::migrate` or `blast_fun_migrators::bluefin::migrate` (arguments in the
-venues guide). That one call runs the whole hand-off: it calls `launch::migrate` with the launch,
-`PackageVersion`, `LaunchConfig`, and `Currency<Meme>`, then redeems the returned `Migration` with
-its own witness and builds the pool and the vault. `launch::migrate` is public, but its `Migration`
-has no abilities and only the stored venue's witness can redeem it, so calling it on its own makes
-the transaction fail. `launch::migrate`:
+Anyone migrates a `MigrationReady` launch with two calls in one PTB: `launch::migrate` with the
+launch, `PackageVersion`, `LaunchConfig`, and `Currency<Meme>`, which returns the launch's
+`Migration`, then its venue's migrate, `blast_migrators::cetus::migrate` or
+`blast_migrators::bluefin::migrate`, with that `Migration` first (arguments in the venues guide),
+which redeems it with its own witness and builds the pool and the vault. The `Migration` has no
+abilities and only the stored venue's witness can redeem it, so a PTB that does not pass it to that
+venue fails. `launch::migrate`:
 
 1. Checks the current generation, that Migrate is not paused, and that the launch is
    `MigrationReady`.
@@ -438,7 +440,7 @@ inside `sui::vec_set` when the entry already has the requested state.
 - `launch_config::set_meme_decimals_allowed` (ListingAdmin), with `decimals: u8` and `allowed`.
   Emits `blast_fun::events::MemeDecimalsSet`.
 - `launch_config::schedule_venue` (AdapterAdmin, type argument the venue's witness, for example
-  `blast_fun_migrators::cetus::Venue`), with `Clock`: schedules admission after the applied venue
+  `blast_migrators::cetus::Venue`), with `Clock`: schedules admission after the applied venue
   notice; rejects primitive types and types defined at `0x1` or `0x2`. Anyone applies it with
   `launch_config::apply_venue` once ready; CancelAdmin discards it with
   `launch_config::cancel_venue`, even when ready. `launch_config::remove_venue` (AdapterAdmin)
@@ -744,7 +746,7 @@ keeps it in `VenueConfig` (see the venues guide).
 | Progress to graduation | `real_quote_reserve / graduation_target` |
 | Quote still needed | `ceil((graduation_target - real_quote_reserve) * 10,000 / (10,000 - quote_fee_bps))` gross |
 | Tradeable? | buy: `lifecycle` is `Live`; sell: also `public_start_ms` is set |
-| Which venue migrates it? | `venue`: `blast_fun_migrators::cetus::Venue` or `blast_fun_migrators::bluefin::Venue` |
+| Which venue migrates it? | `venue`: `blast_migrators::cetus::Venue` or `blast_migrators::bluefin::Venue` |
 | Opening round end | `public_start_ms + opening_round_ms` |
 | One bidder's pending bid | dynamic field `launch::OpeningRoundBidKey(address)` on the launch (a `u64`); absent once delivered |
 | Unclaimed creator / Blast launch fees | `fee_ledger` balances |
@@ -796,7 +798,7 @@ Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSe
 and the partner list's `blast_partners::partner_list::PartnerAdded` and
 `blast_partners::partner_list::PartnerRemoved`. From other packages: the
 pause and version events of `blast_admin::blast_admin_events`, the delayed modules' events (see "Delayed administration"), the Cetus venue's
-`blast_fun_migrators::blast_events::CetusPoolReserved` at creation, the vault's
+`blast_migrators::events::CetusPoolReserved` at creation, the vault's
 `blast_vault_events::VaultCreated` at migration, and `blast_partners::blast_partners::PartnerPaid`
 for each partner payout.
 
@@ -815,7 +817,7 @@ fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partner
 | package administration | 26 `EWrongUpgradeAction`, 13 `EInvalidPackageDigest` from `blast_admin::package_admin` | execute the exact scheduled action; use a 32-byte digest |
 | delayed administration | 17 `ENotReady`, 18 `ENoPending`, 19 `EInvalidDelay`, 20 `EUnchanged`, 22 `EWrongChange` from Blast admin's delayed modules | wait for `ready_at_ms`; schedule before applying or cancelling; choose a notice of at most 30 days; change the value or notice; apply with the call matching the pending change |
 | publish | 7 `blast_fun::errors::EInvalidSellBurnBps` (`launch_ticket`); 20 `blast_fun::errors::EInvalidCreatorRecipient`, 21 `blast_fun::errors::EInvalidAccountCommitment` (`creator_authority`); `EInvalidSymbol` in `sui::coin_registry`; arithmetic overflow | sell-burn at most 5,000; a non-zero address or a 32-byte commitment; an ASCII-printable symbol; decimals at most 10 |
-| prepare | `blast_fun_migrators::bluefin::EInvalidTier`; Cetus aborts in its own modules | a tier within Bluefin's bounds; a tick spacing Cetus registers and a pair it accepts |
+| prepare | `blast_migrators::errors::EInvalidTier`, `blast_migrators::errors::ESymbolTooLong`; Cetus aborts in its own modules | a tier within Bluefin's bounds and a Meme symbol of at most 32 bytes; a tick spacing Cetus registers and a pair it accepts |
 | start | 9 `blast_fun::errors::EInvalidMemeQuotePair` (`launch`) | Quote must differ from Meme |
 | start | 27 `blast_fun::errors::EQuoteNotAllowed`, 2 `blast_fun::errors::EVenueNotAllowed`, 1 `blast_fun::errors::EDecimalsNotAllowed` (`launch_config`) | use an admitted Quote, venue, and decimals |
 | building values | 0 `blast_core::errors::EInvalidBps` (`blast_core::bps`); 3 `blast_core::errors::EInvalidRoute`, 4 `blast_core::errors::EInvalidFeeSplit` (`blast_core::fee_split`); 12 `blast_core::errors::EInvalidRecipient` (`blast_core::payout`); 2 `blast_core::errors::EInvalidVestingTerms` (`blast_core::payout`); 5 `blast_fun::errors::EInvalidShares` (`allocation`) | rates at most 10,000; positive route shares and non-zero addresses; at most 20 distinct routes summing to 10,000; positive vesting periods; curve Meme and pool Meme/Quote positive |
@@ -898,8 +900,9 @@ needed to bring the real reserve to the target and returns the rest as the secon
 `launch::buy`. The launch becomes `MigrationReady` and all buys and sells stop.
 
 **Who migrates the launch, and when?** Anyone, as soon as it is `MigrationReady`, through the venue
-the launch stores (`blast_fun_migrators::cetus::migrate` or `blast_fun_migrators::bluefin::migrate`).
-The `Migration` that `launch::migrate` returns can be redeemed only by that venue.
+the launch stores: `launch::migrate`, then `blast_migrators::cetus::migrate` or
+`blast_migrators::bluefin::migrate` with the returned `Migration` in the same PTB, which only that
+venue can redeem.
 
 **What happens to unsold tokens and the sell burn?** Both are disposed of at migration: burned when
 the supply is burn-only, or sent to `@0x0` when it is fixed. `blast_fun::events::Migrated` reports

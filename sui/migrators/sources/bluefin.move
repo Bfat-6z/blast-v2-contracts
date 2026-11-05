@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the venue's abort location.
+#[allow(lint(abort_without_constant))]
 /// Bluefin coin preparation, migration into `blast_vault` custody, fee collection with auto-LP,
-/// settled fee-split updates, and buybacks over custodied concentrated-liquidity principal.
+/// settled fee-split updates, and buybacks over custodied concentrated-liquidity principal, for
+/// launches and presales alike.
 ///
 /// Bluefin pools are keyed by their exact type-parameter order, so this module
 /// always creates and expects `Pool<Meme, Quote>` with Meme as coin A.
-module blast_fun_migrators::bluefin;
+module blast_migrators::bluefin;
 
 // === Public Types ===
 
 /// The Bluefin venue's sealed witness: it issues tickets, redeems migrations, and keys the position
-/// in the vault, so a launch and the vault registry admit this one type.
+/// in the vault, so each product's venue list and the vault registry admit this one type.
 public struct Venue() has drop;
 
 /// A prepared coin's Bluefin pool tier.
@@ -25,50 +28,55 @@ public struct PoolTierKey<phantom Meme>() has copy, drop, store;
 
 // === Public Functions ===
 
-/// Prepares `Meme` for a Bluefin launch in `Quote` at the creator's tier, recording the tier, and
-/// returns the ticket `launch::new` redeems. `treasury_cap` proves the caller controls the coin,
-/// so no one else can record its tier first.
+/// Prepares `Meme` for a Bluefin sale in `Quote` at the creator's tier, recording the tier, and
+/// returns the ticket the product's `new` redeems. `treasury_cap` proves the caller controls the
+/// coin, so no one else can record its tier first.
 ///
-/// Bluefin checks the tier only when migration creates the pool, and a launch cannot change its
-/// tier, so the same bounds apply here first.
+/// Bluefin checks the tier only when migration creates the pool, and a sale cannot change its
+/// tier, so the same bounds apply here first. The pool and its position store the Meme symbol, so
+/// it is bounded here too.
 public fun prepare<Meme, Quote>(
-    migrators_version: &MigratorsVersion,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     venue_config: &mut VenueConfig,
     _: &TreasuryCap<Meme>,
+    currency: &Currency<Meme>,
     tick_spacing: u32,
     fee_rate: u64,
 ): VenueTicket<Meme, Quote> {
-    migrators_version.assert_current();
+    migrators_version.assert_current(constants::generation!());
     assert!(
         tick_spacing > 0 && tick_spacing <= constants::bluefin_max_tick_spacing!() && fee_rate > 0
             && fee_rate <= constants::bluefin_max_fee_rate!(),
-        EInvalidTier,
+        blast_migrators::errors::invalid_tier!(),
+    );
+    assert!(
+        currency.symbol().length() <= constants::max_meme_symbol_length!(),
+        blast_migrators::errors::symbol_too_long!(),
     );
 
     venue_config.add_value(PoolTierKey<Meme>(), PoolTier { tick_spacing, fee_rate });
 
-    blast_events::bluefin_pool_tier_recorded<Meme, Quote>(tick_spacing, fee_rate);
+    events::bluefin_pool_tier_recorded<Meme, Quote>(tick_spacing, fee_rate);
 
     migration::issue_ticket(Venue())
 }
 
-/// Migrates a MigrationReady launch into a new full-range pool at the recorded tier and a
-/// `blast_vault` vault.
+/// Migrates a sale into a new full-range pool at the recorded tier and a `blast_vault` vault:
+/// `migration` is the hand-off the launch's or presale's own `migrate` returned earlier in the
+/// transaction.
 ///
-/// Redeems the launch's hand-off. The opening price derives from the handed-off balances, which
+/// Redeems the hand-off. The opening price derives from the handed-off balances, which
 /// seed the position on the side `is_meme_seed_side` chooses. `creation_fee` is paid whole, and
 /// Bluefin aborts unless it is exactly the configured SUI fee. The position and the venue
 /// residuals go to the vault, which has no withdrawal path. The caller receives no object; Bluefin
 /// records it as the new pool's manager, a role limited to the pool's reward emissions and to
 /// handing the role on (ADR 0088).
 public fun migrate<Meme, Quote>(
-    launch: &mut Launch<Meme, Quote>,
-    migrators_version: &MigratorsVersion,
-    package_version: &PackageVersion<BLAST_FUN>,
-    config: &LaunchConfig,
-    currency: &mut Currency<Meme>,
-    quote_currency: &Currency<Quote>,
+    migration: Migration<Meme, Quote>,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     venue_config: &VenueConfig,
+    currency: &Currency<Meme>,
+    quote_currency: &Currency<Quote>,
     bluefin_config: &mut GlobalConfig,
     registry: &mut VaultRegistry,
     vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
@@ -77,13 +85,11 @@ public fun migrate<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current();
+    migrators_version.assert_current(constants::generation!());
+    let (meme, quote, terms) = migration.redeem(Venue());
 
     let PoolTier { tick_spacing, fee_rate } = *venue_config.value(PoolTierKey<Meme>());
     let (lower_tick, upper_tick) = bluefin_config.full_range_tick_range(tick_spacing);
-    let (meme, quote, terms) = launch
-        .migrate(package_version, config, currency, clock, ctx)
-        .redeem(Venue());
 
     let mut pool = pool::create_pool_and_get_object<Meme, Quote, SUI>(
         clock,
@@ -100,7 +106,7 @@ public fun migrate<Meme, Quote>(
         quote_currency.icon_url().into_bytes(),
         tick_spacing,
         fee_rate,
-        migration_math::sqrt_price_x64(meme.value(), quote.value(), true),
+        migration::sqrt_price_x64(meme.value(), quote.value(), true),
         creation_fee.into_balance(),
         ctx,
     );
@@ -132,7 +138,7 @@ public fun migrate<Meme, Quote>(
 /// auto-LP share back to the position. Anyone may call it.
 public fun collect_fees<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    migrators_version: &MigratorsVersion,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
@@ -141,7 +147,7 @@ public fun collect_fees<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current();
+    migrators_version.assert_current(constants::generation!());
 
     self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
 }
@@ -149,7 +155,7 @@ public fun collect_fees<Meme, Quote>(
 /// Anyone may settle accrued fees under the current split, then apply the stored ready proposal.
 public fun settle_and_apply_fee_split<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    migrators_version: &MigratorsVersion,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
@@ -158,7 +164,7 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current();
+    migrators_version.assert_current(constants::generation!());
     self.assert_fee_split_ready(clock);
 
     self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
@@ -172,7 +178,7 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
 /// the pool's price within a transaction. Quote the pool does not take stays for the next buyback.
 public fun buyback_and_burn<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
-    migrators_version: &MigratorsVersion,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     admin_witness: &AdminWitness<BuybackAdmin>,
     currency: &mut Currency<Meme>,
@@ -183,8 +189,8 @@ public fun buyback_and_burn<Meme, Quote>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current();
-    assert!(self.pool_id() == object::id(pool), EPositionPoolMismatch);
+    migrators_version.assert_current(constants::generation!());
+    assert!(self.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
 
     let (quote, receipt) = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);
     let (meme, quote) = pool::swap(
@@ -275,13 +281,9 @@ fun is_meme_seed_side<Meme, Quote>(
         prefer_meme,
     );
 
-    migration_math::seed_fixed_side(
-        prefer_meme,
-        meme_amount,
-        quote_amount,
-        needed_meme,
-        needed_quote,
-    )
+    let preference_fits = needed_meme <= meme_amount && needed_quote <= quote_amount;
+
+    if (preference_fits) prefer_meme else !prefer_meme
 }
 
 /// Collects the position's fees, splits them through the vault, and adds the auto-LP share back.
@@ -309,7 +311,7 @@ fun collect_position_fees<Meme, Quote>(
     clock: &Clock,
 ): (Balance<Meme>, Balance<Quote>) {
     let position = self.position_mut<_, _, _, Position>(&Venue(), vault_version);
-    assert!(position.pool_id() == object::id(pool), EPositionPoolMismatch);
+    assert!(position.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
 
     let (_, _, meme_fee, quote_fee) = pool::collect_fee(clock, bluefin_config, pool, position);
 
@@ -360,7 +362,7 @@ fun fixed_side<Meme, Quote>(
     let sqrt_lower = ticks.get_tick_from_manager(position.lower_tick()).sqrt_price();
     let sqrt_upper = ticks.get_tick_from_manager(position.upper_tick()).sqrt_price();
 
-    migration_math::auto_lp_fixed_side(
+    auto_lp_fixed_side(
         sqrt_lower,
         pool.current_sqrt_price(),
         sqrt_upper,
@@ -369,13 +371,63 @@ fun fixed_side<Meme, Quote>(
     )
 }
 
-// === Errors ===
+/// Chooses the side a fixed-amount liquidity add fixes so the venue never needs more of the other
+/// asset than is available, from the pool's and the position's bound sqrt prices (Q64.64).
+///
+/// Returns `(fix_a, amount)`; a zero amount means nothing can be added now (an empty side, a price
+/// outside the range, or too little for positive liquidity), and the balances wait for later.
+fun auto_lp_fixed_side(
+    sqrt_lower: u128,
+    sqrt_price: u128,
+    sqrt_upper: u128,
+    amount_a: u64,
+    amount_b: u64,
+): (bool, u64) {
+    if (sqrt_price <= sqrt_lower || sqrt_price >= sqrt_upper) return (true, 0);
 
-#[error(code = 0)]
-const EPositionPoolMismatch: vector<u8> = b"Custodied position must belong to the supplied pool.";
+    let (lower, price, upper) = (sqrt_lower as u256, sqrt_price as u256, sqrt_upper as u256);
+    if (can_fix_a(lower, price, upper, amount_a, amount_b)) return (true, amount_a);
+    if (can_fix_b(lower, price, upper, amount_a, amount_b)) return (false, amount_b);
 
-#[error(code = 1)]
-const EInvalidTier: vector<u8> = b"Bluefin tier needs a tick spacing in 1..=400 and a fee rate in 1..=20,000.";
+    (true, 0)
+}
+
+/// Whether fixing all of `amount_a` gives positive liquidity whose B need, plus the margin,
+/// `amount_b` covers: L = a * P * U / (U - P), then B = ceil(L * (P - lower)).
+fun can_fix_a(lower: u256, price: u256, upper: u256, amount_a: u64, amount_b: u64): bool {
+    let one = 1u256 << constants::q64_shift!();
+    let liquidity = (amount_a as u256) * (price * upper / one) / (upper - price);
+    if (liquidity == 0 || liquidity >= (1u256 << constants::q128_shift!())) return false;
+
+    let needed_b = (liquidity * (price - lower)).div_ceil(one);
+    needed_b + constants::auto_lp_margin!() <= (amount_b as u256)
+}
+
+/// Whether fixing all of `amount_b` gives positive liquidity whose A need, plus the margin,
+/// `amount_a` covers: L = b / (P - lower), then A = ceil(L / P) - floor(L / U).
+fun can_fix_b(lower: u256, price: u256, upper: u256, amount_a: u64, amount_b: u64): bool {
+    let liquidity = ((amount_b as u256) << constants::q64_shift!()) / (price - lower);
+    if (liquidity == 0) return false;
+
+    let needed_a =
+        (liquidity << constants::q64_shift!()).div_ceil(price)
+            - (liquidity << constants::q64_shift!()) / upper;
+    needed_a + constants::auto_lp_margin!() <= (amount_a as u256)
+}
+
+// === Test-Only Functions ===
+
+#[test_only]
+/// Runs the auto-LP side selection on explicit sqrt prices and balances.
+public fun auto_lp_fixed_side_for_testing(
+    sqrt_lower: u128,
+    sqrt_price: u128,
+    sqrt_upper: u128,
+    amount_a: u64,
+    amount_b: u64,
+): (bool, u64) {
+    auto_lp_fixed_side(sqrt_lower, sqrt_price, sqrt_upper, amount_a, amount_b)
+}
 
 // === Imports ===
 
@@ -384,16 +436,13 @@ use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};
 use blast_core::{
     blast_domain::BuybackAdmin,
     blast_treasury::Treasury,
-    migration::{Self, VenueTicket}
+    migration::{Self, Migration, VenueTicket}
 };
 
-use blast_fun::{blast_fun::BLAST_FUN, launch::Launch, launch_config::LaunchConfig};
-
-use blast_fun_migrators::{
-    blast_events,
-    blast_fun_migrators::PackageVersion as MigratorsVersion,
+use blast_migrators::{
+    blast_migrators::BLAST_MIGRATORS,
     constants,
-    migration_math,
+    events,
     venue_config::VenueConfig
 };
 

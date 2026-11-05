@@ -1,34 +1,38 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
+// Package error macros preserve the venue's abort location.
+#[allow(lint(abort_without_constant))]
 /// Cetus coin preparation, pool-creation reservation, migration into `blast_vault` custody, and
-/// collection.
+/// collection, for launches and presales alike.
 ///
 /// Anyone holding Meme can create a Cetus pool, and Cetus allows one pool per pair and tick
 /// spacing, so a buyer could pre-create the migration pool at a price of their choosing.
 /// Preparing the coin therefore mints the Meme type's single Cetus `PoolCreationCap` from its
-/// treasury capability, before any Meme can leave the launch ticket, registers the pair at the
-/// creator's tick spacing, and returns a `VenueTicket` for that pair the launch redeems; afterwards only that capability or Cetus's pool-manager role can create
-/// the pair's pool there. Trusting that role is a venue-operator assumption: a pool it creates
-/// first makes the pair's migration abort, and only a migrators upgrade could recover the launch.
+/// treasury capability, before any Meme can leave the sale's custody, registers the pair at the
+/// creator's tick spacing, and returns a `VenueTicket` for that pair the sale redeems; afterwards
+/// only that capability or Cetus's pool-manager role can create the pair's pool there. Trusting
+/// that role is a venue-operator assumption: a pool it creates first makes the pair's migration
+/// abort, and only a migrators upgrade could recover the sale.
 /// The capability stays in `VenueConfig` under a key only this module constructs, with no
 /// extraction or unregistration path.
 ///
-/// Migration redeems the launch's hand-off and burns the full-range position through Cetus LP
-/// Burn, so Cetus itself records the launch liquidity as permanently locked; the `blast_vault`
-/// vault keeps the `CetusLPBurnProof`, which can only collect fees. A burned position cannot receive liquidity, so auto-LP adds to a second full-range
-/// position the vault opens on first use and keeps with no removal path.
+/// Migration redeems the `Migration` the sale's own `migrate` returned earlier in the transaction
+/// and burns the full-range position through Cetus LP Burn, so Cetus itself records the sale's
+/// liquidity as permanently locked; the `blast_vault` vault keeps the `CetusLPBurnProof`, which can
+/// only collect fees. A burned position cannot receive liquidity, so auto-LP adds to a second
+/// full-range position the vault opens on first use and keeps with no removal path.
 ///
 /// Cetus orders a pool's coin types by type name. Each route after `prepare` takes the pool's coin
-/// types as `CoinA` and `CoinB` beside the launch's `Meme` and `Quote`, proves they are the same
+/// types as `CoinA` and `CoinB` beside the sale's `Meme` and `Quote`, proves they are the same
 /// pair, and retypes balances between the two orders through a checked dynamic-field round trip
 /// (ADR 0100).
-module blast_fun_migrators::cetus;
+module blast_migrators::cetus;
 
 // === Public Types ===
 
 /// The Cetus venue's sealed witness: it issues tickets, redeems migrations, and keys the position
-/// in the vault, so a launch and the vault registry admit this one type.
+/// in the vault, so each product's venue list and the vault registry admit this one type.
 public struct Venue() has drop;
 
 /// Sealed `VenueConfig` object-field name for the Meme type's Cetus `PoolCreationCap`.
@@ -45,15 +49,15 @@ public struct CastKey() has copy, drop, store;
 
 // === Public Functions ===
 
-/// Prepares `Meme` for a Cetus launch in `Quote` at the creator's `tick_spacing`, reserving Cetus
-/// pool creation for the pair, and returns the ticket `launch::new` redeems.
+/// Prepares `Meme` for a Cetus sale in `Quote` at the creator's `tick_spacing`, reserving Cetus
+/// pool creation for the pair, and returns the ticket the product's `new` redeems.
 ///
 /// The Meme type's single `PoolCreationCap` is minted from `treasury_cap` before any Meme can
-/// leave the launch ticket, the pair is registered at `tick_spacing`, and the spacing is recorded.
+/// leave the sale's custody, the pair is registered at `tick_spacing`, and the spacing is recorded.
 /// Aborts, leaving Cetus unchanged, when Cetus does not register the spacing or refuses the pair
 /// at it, so the creator can choose another tier or venue instead.
 public fun prepare<Meme, Quote>(
-    migrators_version: &MigratorsVersion,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     venue_config: &mut VenueConfig,
     cetus_config: &GlobalConfig,
     pools: &mut Pools,
@@ -61,7 +65,7 @@ public fun prepare<Meme, Quote>(
     tick_spacing: u32,
     ctx: &mut TxContext,
 ): VenueTicket<Meme, Quote> {
-    migrators_version.assert_current();
+    migrators_version.assert_current(constants::generation!());
     // Aborts unless Cetus registers the spacing.
     let _ = config::get_fee_rate(tick_spacing, cetus_config);
 
@@ -82,26 +86,24 @@ public fun prepare<Meme, Quote>(
     venue_config.add_object(CreationCapKey<Meme>(), pool_creation_cap);
     venue_config.add_value(PoolTierKey<Meme>(), tick_spacing);
 
-    blast_events::cetus_pool_reserved<Meme, Quote>(pool_creation_cap_id, tick_spacing);
+    events::cetus_pool_reserved<Meme, Quote>(pool_creation_cap_id, tick_spacing);
 
     migration::issue_ticket(Venue())
 }
 
-/// Migrates a MigrationReady launch into a `blast_vault` vault. `CoinA` and `CoinB` name the
-/// launch's Meme and Quote in Cetus's canonical coin order.
+/// Migrates a sale into a Cetus pool and a `blast_vault` vault: `migration` is the hand-off the
+/// launch's or presale's own `migrate` returned earlier in the transaction. `CoinA` and `CoinB`
+/// name the sale's Meme and Quote in Cetus's canonical coin order.
 ///
-/// Redeems the launch's hand-off, creates the pair's pool with the reserved capability at the
-/// recorded tick spacing, priced from the handed-off balances, seeds full-range liquidity with
-/// exactly those balances on the side `is_coin_a_seed_side` chooses, burns the position, and
-/// creates the vault from the launch's terms with the burn proof and Cetus's residual. Any Cetus
-/// refusal, including a tier Cetus no longer registers, aborts the whole migration and leaves the
-/// launch MigrationReady.
+/// Redeems the hand-off, creates the pair's pool with the reserved capability at the recorded
+/// tick spacing, priced from the handed-off balances, seeds full-range liquidity with exactly
+/// those balances on the side `is_coin_a_seed_side` chooses, burns the position, and creates the
+/// vault from the sale's terms with the burn proof and Cetus's residual. Any Cetus refusal,
+/// including a tier Cetus no longer registers, aborts the whole transaction, the product's
+/// `migrate` with it, so the sale stays ready to migrate.
 public fun migrate<Meme, Quote, CoinA, CoinB>(
-    launch: &mut Launch<Meme, Quote>,
-    migrators_version: &MigratorsVersion,
-    package_version: &PackageVersion<BLAST_FUN>,
-    config: &LaunchConfig,
-    currency: &mut Currency<Meme>,
+    migration: Migration<Meme, Quote>,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     venue_config: &VenueConfig,
     cetus_config: &GlobalConfig,
     pools: &mut Pools,
@@ -112,19 +114,20 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current();
-    assert!(factory::is_right_order<CoinA, CoinB>(), EInvalidCoinOrder);
+    migrators_version.assert_current(constants::generation!());
+    assert!(
+        factory::is_right_order<CoinA, CoinB>(),
+        blast_migrators::errors::invalid_coin_order!(),
+    );
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
+    let (meme, quote, terms) = migration.redeem(Venue());
 
     let tick_spacing = *venue_config.value(PoolTierKey<Meme>());
     let (tick_lower, tick_upper) = pool_creator::full_range_tick_range(tick_spacing);
-    let (meme, quote, terms) = launch
-        .migrate(package_version, config, currency, clock, ctx)
-        .redeem(Venue());
 
     let meme_amount = meme.value();
     let quote_amount = quote.value();
-    let sqrt_price = migration_math::sqrt_price_x64(meme_amount, quote_amount, meme_is_a);
+    let sqrt_price = migration::sqrt_price_x64(meme_amount, quote_amount, meme_is_a);
     let fix_a = is_coin_a_seed_side(
         tick_lower,
         tick_upper,
@@ -178,7 +181,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
 /// pool's coin order.
 public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
-    migrators_version: &MigratorsVersion,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
@@ -188,7 +191,7 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current();
+    migrators_version.assert_current(constants::generation!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
 
     self.settle_fees(
@@ -208,7 +211,7 @@ public fun collect_fees<Meme, Quote, CoinA, CoinB>(
 /// and `CoinB` are the pool's coin order.
 public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
-    migrators_version: &MigratorsVersion,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     treasury: &Treasury,
     currency: &mut Currency<Meme>,
@@ -218,7 +221,7 @@ public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current();
+    migrators_version.assert_current(constants::generation!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
     self.assert_fee_split_ready(clock);
 
@@ -244,7 +247,7 @@ public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
 /// `CoinA` and `CoinB` are the pool's coin order.
 public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
     self: &mut Vault<Meme, Quote>,
-    migrators_version: &MigratorsVersion,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     admin_witness: &AdminWitness<BuybackAdmin>,
     currency: &mut Currency<Meme>,
@@ -255,9 +258,9 @@ public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    migrators_version.assert_current();
+    migrators_version.assert_current(constants::generation!());
     let meme_is_a = is_meme_coin_a<Meme, Quote, CoinA, CoinB>();
-    assert!(self.pool_id() == object::id(pool), EPositionPoolMismatch);
+    assert!(self.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
 
     let (quote, receipt) = self.take_buyback_quote(&Venue(), admin_witness, vault_version, quote_in);
     let (meme, quote) = pool.swap_quote_for_meme(cetus_config, quote, meme_is_a, clock, ctx);
@@ -298,7 +301,9 @@ fun is_coin_a_seed_side(
         prefer_a,
     );
 
-    migration_math::seed_fixed_side(prefer_a, amount_a, amount_b, needed_a, needed_b)
+    let preference_fits = needed_a <= amount_a && needed_b <= amount_b;
+
+    if (preference_fits) prefer_a else !prefer_a
 }
 
 /// Collects the position's fees, splits them through the vault, and adds the auto-LP share back.
@@ -337,7 +342,7 @@ fun collect_position_fees<Meme, Quote, CoinA, CoinB>(
     meme_is_a: bool,
     ctx: &mut TxContext,
 ): (Balance<Meme>, Balance<Quote>) {
-    assert!(self.pool_id() == object::id(pool), EPositionPoolMismatch);
+    assert!(self.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
 
     let (fee_a, fee_b) = lp_burn::collect_fee(
         burn_manager,
@@ -509,11 +514,14 @@ fun swap<A, B>(
     (a, b)
 }
 
-/// Whether Meme is `CoinA`, after proving `(CoinA, CoinB)` is exactly the launch's Meme and Quote.
+/// Whether Meme is `CoinA`, after proving `(CoinA, CoinB)` is exactly the sale's Meme and Quote.
 fun is_meme_coin_a<Meme, Quote, CoinA, CoinB>(): bool {
     let (meme, quote) = (type_name::with_original_ids<Meme>(), type_name::with_original_ids<Quote>());
     let (a, b) = (type_name::with_original_ids<CoinA>(), type_name::with_original_ids<CoinB>());
-    assert!((meme == a && quote == b) || (meme == b && quote == a), EWrongCoinPair);
+    assert!(
+        (meme == a && quote == b) || (meme == b && quote == a),
+        blast_migrators::errors::wrong_coin_pair!(),
+    );
 
     meme == a
 }
@@ -549,7 +557,7 @@ fun cast<From: store, To: store>(scratch: &mut UID, value: From): To {
 // === Test-Only Functions ===
 
 #[test_only]
-/// Runs the pair proof: whether Meme is `CoinA`, aborting unless the pair is the launch's.
+/// Runs the pair proof: whether Meme is `CoinA`, aborting unless the pair is the sale's.
 public fun is_meme_coin_a_for_testing<Meme, Quote, CoinA, CoinB>(): bool {
     is_meme_coin_a<Meme, Quote, CoinA, CoinB>()
 }
@@ -565,17 +573,6 @@ public fun reorder_for_testing<X: store, Y: store, First: store, Second: store>(
     reorder(x, y, meme_is_a, ctx)
 }
 
-// === Errors ===
-
-#[error(code = 0)]
-const EInvalidCoinOrder: vector<u8> = b"CoinA and CoinB must follow the Cetus coin order.";
-
-#[error(code = 1)]
-const EPositionPoolMismatch: vector<u8> = b"Pool must be the vault's own pool.";
-
-#[error(code = 2)]
-const EWrongCoinPair: vector<u8> = b"CoinA and CoinB must be exactly the launch's Meme and Quote.";
-
 // === Imports ===
 
 use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};
@@ -583,16 +580,13 @@ use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};
 use blast_core::{
     blast_domain::BuybackAdmin,
     blast_treasury::Treasury,
-    migration::{Self, VenueTicket}
+    migration::{Self, Migration, VenueTicket}
 };
 
-use blast_fun::{blast_fun::BLAST_FUN, launch::Launch, launch_config::LaunchConfig};
-
-use blast_fun_migrators::{
-    blast_events,
-    blast_fun_migrators::PackageVersion as MigratorsVersion,
+use blast_migrators::{
+    blast_migrators::BLAST_MIGRATORS,
     constants,
-    migration_math,
+    events,
     venue_config::VenueConfig
 };
 

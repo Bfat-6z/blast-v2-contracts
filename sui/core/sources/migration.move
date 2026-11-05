@@ -8,8 +8,7 @@
 /// Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a
 /// `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At
 /// migration the product creates a `Migration` sealed by its own witness, carrying the pool's
-/// balances and the new vault's terms, and only the stored venue's witness can redeem it. A
-/// standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither
+/// balances and the new vault's terms, and only the stored venue's witness can redeem it. Neither
 /// the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the
 /// migration whole or aborts.
 ///
@@ -31,9 +30,9 @@ public enum ResidualPolicy has copy, drop, store {
     Owner,
 }
 
-/// Everything a new vault snapshots from the sale or standalone issuer that sealed its terms.
-/// Sealed terms authorize a vault, so products and venues must not return them by value: a venue
-/// takes them only from `redeem` or seals its own.
+/// Everything a new vault snapshots from the sale that sealed its terms. Sealed terms authorize a
+/// vault, so products and venues must not return them by value: a venue takes them only from
+/// `redeem`.
 public struct VaultTerms has copy, drop, store {
     /// The launch or presale the vault belongs to; owner proofs name it.
     origin: ID,
@@ -87,8 +86,7 @@ public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName 
 /// `redeem_ticket` stays the ticket's one consuming path.
 public fun ticket_venue<Meme, Quote>(self: &VenueTicket<Meme, Quote>): TypeName { self.venue }
 
-/// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
-/// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
+/// A vault's terms, sealed under the `PackageWitness` of the sale's product that owns `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
 /// most `constants::max_lp_fee_bps!()`, 3,000 basis points, so a vault trusts sealed terms.
 public fun vault_terms<PackageWitness: drop>(
     _: PackageWitness,

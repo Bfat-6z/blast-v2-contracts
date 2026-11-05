@@ -26,7 +26,7 @@ for package in ['core', 'launchpad', 'presale', 'migrators']:
     if package == 'launchpad':
         s = s.replace('blast_fun = "0x0"', 'blast_fun = "0xc"')
     if package == 'migrators':
-        s = s.replace('blast_fun_migrators = "0x0"', 'blast_fun_migrators = "0xd"')
+        s = s.replace('blast_migrators = "0x0"', 'blast_migrators = "0xd"')
     if package == 'presale':
         s = s.replace('blast_presale = "0x0"', 'blast_presale = "0xb"')
     p.write_text(s)

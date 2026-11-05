@@ -2,32 +2,20 @@
 // Copyright (c) 2026 Jose Manuel Vasconcelos Cerqueira
 
 #[test_only]
+/// The vendor venue over `blast_core`: publication, the ticket and pool creation `prepare`
+/// reserves, the hand-off only this venue redeems, and the migration postconditions. The
+/// Aftermath interfaces are `abort 0` link stubs, so a migration that reaches pool creation aborts
+/// there; the deployment runbook proves the live pool path by dev-inspect.
 module blast_aftermath_dao_presale::blast_aftermath_dao_presale_tests;
-
-// === Constants ===
-
-/// The package's compiled treasury, which receives every sale's PresaleCap and every pool's DAO
-/// fees and owner cap.
-const TREASURY: address = @0x37cf46b499f740e653644bd2f7a8ed97f248e8b3c69d5d12c97d7845a54c0cd8;
-const PUBLISHER: address = @0xB1A57;
-const KEEPER: address = @0x4EE9;
-const PARTNER_RECIPIENT: address = @0x9A27;
-
-const TOKEN_SUPPLY: u64 = 1_000_000_000;
-const RAISE_TARGET: u64 = 1_000_000;
-const COMMITMENT_DURATION_MS: u64 = 100;
-const LIQUIDITY_WINDOW_DURATION_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 
 // === Test-Only Types ===
 
-public struct BLAST_AFTERMATH_DAO_PRESALE_TESTS() has drop;
+public struct SALE() has drop;
 
 public struct QUOTE() has drop;
 
-/// The fresh Aftermath LP coin a sale's pool creation is reserved for.
+/// The fresh Aftermath LP coin a sale token's pool creation is reserved for.
 public struct LP() has drop;
-
-public struct OTHER_VENUE() has drop;
 
 public struct A() has drop;
 
@@ -38,279 +26,126 @@ public struct AB() has drop;
 #[test]
 /// Publication sends the only AdminCap to the publisher.
 fun publication_sends_the_admin_cap_to_the_publisher() {
-    let mut scenario = test_scenario::begin(PUBLISHER);
-    migrator::init_for_testing(scenario.ctx());
+    let mut scenario = publish();
 
-    scenario.next_tx(PUBLISHER);
     assert!(test_scenario::has_most_recent_for_address<AdminCap>(PUBLISHER));
-    assert!(!test_scenario::has_most_recent_for_address<AdminCap>(TREASURY));
+    scenario.next_tx(KEEPER);
+    assert!(!test_scenario::has_most_recent_for_address<AdminCap>(KEEPER));
     scenario.end();
 }
 
 #[test]
-/// A sale created here names this venue, pays its whole LP-fee split to the treasury, and sends
-/// the treasury its PresaleCap.
-fun finalize_creates_a_sale_for_the_treasury() {
+/// `prepare` issues this venue's ticket for the pair and shares one pool creation for the sale
+/// token and LP coin, bound to the issuer and recorded in one event.
+fun prepare_issues_this_venues_ticket_and_shares_the_pool_creation() {
     let mut scenario = publish();
-    let creation_policy = allowing<Venue>(scenario.ctx());
 
-    create_sale(&mut scenario, creation_policy);
+    let venue = scenario.prepare().redeem_ticket();
 
-    let (venue, fee_split) = last_event<
-        PresaleCreated<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
-    >().created_migration_fields();
     assert_eq!(venue, type_name::with_original_ids<Venue>());
-    assert_eq!(fee_split, split_to(TREASURY));
-
+    let reserved = event::events_by_type<PoolCreationReserved<LP, SALE, QUOTE>>();
     scenario.next_tx(KEEPER);
-    assert!(test_scenario::has_most_recent_for_address<PresaleCap>(TREASURY));
-    scenario.end();
-}
-
-#[test]
-/// `finalize` shares one pool creation for the LP coin, bound to the sale it created.
-fun finalize_binds_a_shared_pool_creation_to_its_sale() {
-    let mut scenario = publish();
-    let creation_policy = allowing<Venue>(scenario.ctx());
-
-    let (presale_id, pool_creation_id) = create_sale(&mut scenario, creation_policy);
-
-    scenario.next_tx(KEEPER);
-    let pool_creation = scenario.take_shared_by_id<PoolCreation<LP>>(pool_creation_id);
-    assert_eq!(pool_creation.pool_creation_presale_id_for_testing(), presale_id);
+    let pool_creation = scenario.take_shared<PoolCreation<LP, SALE>>();
+    assert_eq!(
+        reserved,
+        vector[
+            migrator::pool_creation_reserved_for_testing(
+                object::id(&pool_creation),
+                type_name::with_original_ids<TestIssuer>(),
+            ),
+        ],
+    );
     test_scenario::return_shared(pool_creation);
     scenario.end();
 }
 
 #[test]
-/// The AdminCap holder may name a Blast partner on the sale `new` starts, before finalizing it.
-fun a_vendor_sale_can_name_a_partner_before_it_is_finalized() {
-    let mut scenario = publish();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let partner = partners::new_for_testing(PARTNER_RECIPIENT, 4_000, scenario.ctx());
-    let mut creation_policy = allowing<Venue>(scenario.ctx());
-    creation_policy.add_partner(&package_version, &fee_admin(), &partner);
-    let clock = clock::create_for_testing(scenario.ctx());
-
-    let admin_cap = scenario.take_from_sender<AdminCap>();
-    let (mut initializer, currency) = scenario.start_sale(&admin_cap, &creation_policy);
-    initializer.set_partner(&package_version, &creation_policy, &partner, &clock);
-    let (sale, _) = scenario.finalize_sale(&admin_cap, initializer, currency);
-    sale.share(&package_version, 0, &clock);
-
-    let opened = last_event<PresaleOpened<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>>();
-    assert_eq!(opened.opened_partner_id(), option::some(object::id(&partner)));
-    scenario.return_to_sender(admin_cap);
-    destroy(partner);
-    destroy(clock);
-    destroy(creation_policy);
-    scenario.end();
-
-    std::unit_test::destroy(package_version);
-}
-
-#[test]
-/// In the transaction that creates a sale, Blast's presale `FeeAdmin` can replace that sale's Blast rates
-/// before sharing it, without touching any other sale.
-fun a_vendor_sale_can_change_its_blast_rates_before_its_share() {
-    let mut scenario = publish();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<Venue>(scenario.ctx());
-    let clock = clock::create_for_testing(scenario.ctx());
-
-    let (mut sale, _) = new_sale(&mut scenario, &creation_policy);
-    let mut ceiling = blast_presale::fee_policy::new_zero_fees_for_testing(scenario.ctx());
-    ceiling.set_fees_for_testing(
-        &package_version,
-        &fee_admin(),
-        bps::new(1_000),
-        bps::new(100),
-        bps::new(0),
-        bps::new(0),
-        scenario.ctx()
-    );
-    sale.set_protocol_fees(
-        &package_version,
-        &fee_admin(),
-        &ceiling,
-        bps::new(1_000),
-        bps::new(100),
-        bps::new(0),
-        bps::new(0),
-        &clock,
-    );
-
-    ceiling.destroy_for_testing();
-    let (presale_id, rates, protocol_quote, protocol_tokens, token_allocation) = last_event<
-        ProtocolFeesChanged<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
-    >().protocol_fees_changed_fields();
-    assert_eq!(presale_id, object::id(&sale));
-    assert_eq!(rates, vector[1_000, 100, 0, 0]);
-    // 1,000,000 * 1,000 / 10,000 = 100,000 Quote out of the LP's, and 1,000,000,000 * 100 / 10,000
-    // = 10,000,000 tokens out of the buyers' 500,000,000.
-    assert_eq!(
-        vector[protocol_quote, protocol_tokens, token_allocation],
-        vector[100_000, 10_000_000, 490_000_000],
-    );
-
-    sale.share(&package_version, 0, &clock);
-    destroy(clock);
-    destroy(creation_policy);
-    scenario.end();
-
-    std::unit_test::destroy(package_version);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = migrator::EWrongPresale,
-    location = blast_aftermath_dao_presale::blast_aftermath_dao_presale,
-)]
-/// A sale's migration cannot consume the pool creation reserved for another sale.
-fun migrate_rejects_another_sales_pool_creation() {
-    let mut scenario = publish();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<Venue>(scenario.ctx());
-    let (_, first_pool_creation_id) = create_sale(&mut scenario, creation_policy);
-    scenario.next_tx(PUBLISHER);
-    let creation_policy = allowing<Venue>(scenario.ctx());
-    let (second_presale_id, _) = create_sale(&mut scenario, creation_policy);
-
-    scenario.next_tx(KEEPER);
-    let mut sale = scenario.take_shared_by_id<Presale<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>>(
-        second_presale_id,
-    );
-    let pool_creation = scenario.take_shared_by_id<PoolCreation<LP>>(first_pool_creation_id);
-    let fee_policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
-    let mut pool_registry = pool_registry::new_for_testing(scenario.ctx());
-    let dao_fee_version = version::new_for_testing(scenario.ctx());
-    let clock = clock::create_for_testing(scenario.ctx());
-
-    sale.migrate(
-        &package_version,
-        pool_creation,
-        &fee_policy,
-        &mut pool_registry,
-        &dao_fee_version,
-        &clock,
-        scenario.ctx(),
-    );
-    std::unit_test::destroy(package_version);
-    abort
-}
-
-#[test]
 #[expected_failure(abort_code = 0, location = amm::pool_factory)]
-/// A funded sale's migration consumes its pool creation and redeems the sale's hand-off under this
-/// package's venue, reaching Aftermath's pool creation, where the link stub aborts.
+/// A sale's migration consumes its pool creation and redeems the hand-off under this venue,
+/// reaching Aftermath's pool creation, where the link stub aborts.
 fun migrate_redeems_the_hand_off_before_pool_creation() {
     let mut scenario = publish();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<Venue>(scenario.ctx());
-    let (presale_id, pool_creation_id) = create_sale(&mut scenario, creation_policy);
-    let mut clock = clock::create_for_testing(scenario.ctx());
+    scenario.prepare().redeem_ticket();
 
     scenario.next_tx(KEEPER);
-    let mut sale = scenario.take_shared_by_id<Presale<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>>(
-        presale_id,
-    );
-    sale
-        .commit_open(
-            &package_version,
-            sui::coin::mint_for_testing<QUOTE>(RAISE_TARGET, scenario.ctx()),
-            &clock,
-            scenario.ctx(),
-        )
-        .destroy_zero();
-    clock.set_for_testing(COMMITMENT_DURATION_MS);
-    sale.settle(&package_version, &clock);
-    let pool_creation = scenario.take_shared_by_id<PoolCreation<LP>>(pool_creation_id);
-    let fee_policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
-    let mut pool_registry = pool_registry::new_for_testing(scenario.ctx());
-    let dao_fee_version = version::new_for_testing(scenario.ctx());
+    scenario.migrate(type_name::with_original_ids<Venue>());
 
-    sale.migrate(
-        &package_version,
-        pool_creation,
-        &fee_policy,
-        &mut pool_registry,
-        &dao_fee_version,
-        &clock,
-        scenario.ctx(),
-    );
-    abort
-}
-
-#[test]
-/// The vendor's `finalize` pays the whole LP-fee split to the treasury, whatever split was set.
-fun finalize_overrides_any_lp_fee_split() {
-    let mut scenario = publish();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<Venue>(scenario.ctx());
-
-    let admin_cap = scenario.take_from_sender<AdminCap>();
-    let (mut initializer, currency) = scenario.start_sale(&admin_cap, &creation_policy);
-    initializer.set_fee_split(&package_version, split_to(KEEPER));
-    let (sale, _) = scenario.finalize_sale(&admin_cap, initializer, currency);
-
-    let (_, fee_split) = last_event<
-        PresaleCreated<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
-    >().created_migration_fields();
-    assert_eq!(fee_split, split_to(TREASURY));
-    scenario.return_to_sender(admin_cap);
-    destroy(sale);
-    destroy(creation_policy);
-    scenario.end();
-
-    std::unit_test::destroy(package_version);
-}
-
-#[test]
-#[expected_failure(
-    abort_code = migrator::EWrongVenue,
-    location = blast_aftermath_dao_presale::blast_aftermath_dao_presale,
-)]
-/// The vendor finalizes only sales its own `new` started: another venue's sale could never
-/// consume the pool creation.
-fun finalize_rejects_another_venues_sale() {
-    let mut scenario = publish();
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let creation_policy = allowing<OTHER_VENUE>(scenario.ctx());
-    let fee_policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
-    let admin_cap = scenario.take_from_sender<AdminCap>();
-    let (treasury_cap, mut currency) = new_currency(&mut scenario);
-    let initializer = presale::new<_, QUOTE>(
-        treasury_cap,
-        &package_version,
-        migration::issue_ticket(OTHER_VENUE()),
-        &creation_policy,
-        &fee_policy,
-    );
-    let mut registry = presale::registry_for_testing(scenario.ctx());
-
-    let _sale = admin_cap.finalize<LP, _, _>(
-        &package_version,
-        initializer,
-        &mut registry,
-        &mut currency,
-        amm_pool::create_pool_cap_for_testing(scenario.ctx()),
-        scenario.ctx(),
-    );
-    std::unit_test::destroy(package_version);
     abort
 }
 
 #[test]
 #[expected_failure(
-    abort_code = blast_presale::errors::EVenueNotAllowed,
-    location = blast_presale::creation_policy,
+    abort_code = blast_core::errors::EWrongVenue,
+    location = blast_core::migration,
 )]
-/// Blast must admit this package's venue before its tickets can start a sale.
-fun new_needs_blast_to_admit_the_venue() {
+/// A hand-off sealed for another venue never reaches Aftermath.
+fun migrate_refuses_a_hand_off_for_another_venue() {
     let mut scenario = publish();
-    let creation_policy = allowing<OTHER_VENUE>(scenario.ctx());
+    scenario.prepare().redeem_ticket();
 
-    create_sale(&mut scenario, creation_policy);
+    scenario.next_tx(KEEPER);
+    scenario.migrate(type_name::with_original_ids<QUOTE>());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EWrongIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+/// A hand-off for this venue whose terms another package sealed cannot consume the pool creation
+/// the AdminCap bound to the presale's issuer, so it can never set the sale's pool price.
+fun migrate_refuses_terms_another_issuer_sealed() {
+    let mut scenario = publish();
+    scenario.prepare_for<A>().redeem_ticket();
+
+    scenario.next_tx(KEEPER);
+    scenario.migrate(type_name::with_original_ids<Venue>());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = blast_core::errors::EWrongVenue, location = blast_core::migration)]
+/// The venue check precedes the issuer check.
+fun migrate_checks_the_venue_before_the_issuer() {
+    let mut scenario = publish();
+    scenario.prepare_for<A>().redeem_ticket();
+
+    scenario.next_tx(KEEPER);
+    scenario.migrate(type_name::with_original_ids<QUOTE>());
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+/// Anyone can construct a primitive, so it cannot be the issuer.
+fun prepare_rejects_a_primitive_issuer() {
+    let mut scenario = publish();
+
+    scenario.prepare_for<u64>().redeem_ticket();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+/// Anyone can construct a framework type such as `SUI`'s witness, so it cannot be the issuer.
+fun prepare_rejects_a_framework_issuer() {
+    let mut scenario = publish();
+
+    scenario.prepare_for<SUI>().redeem_ticket();
+
+    abort
+}
+
+#[test]
+#[expected_failure(abort_code = migrator::EInvalidIssuer, location = blast_aftermath_dao_presale::blast_aftermath_dao_presale)]
+/// Standard-library types are refused like framework types.
+fun prepare_rejects_a_standard_library_issuer() {
+    let mut scenario = publish();
+
+    scenario.prepare_for<String>().redeem_ticket();
+
     abort
 }
 
@@ -319,8 +154,8 @@ fun new_needs_blast_to_admit_the_venue() {
 fun coin_order_is_the_byte_order_of_type_names() {
     // The standard library's 0x1 sorts before the framework's 0x2, whatever address this
     // package builds at: under `--build-env mainnet` it is the published address, not 0x0.
-    assert!(sorts_before_for_testing<std::ascii::String, SUI>());
-    assert!(!sorts_before_for_testing<SUI, std::ascii::String>());
+    assert!(sorts_before_for_testing<String, SUI>());
+    assert!(!sorts_before_for_testing<SUI, String>());
     assert!(sorts_before_for_testing<A, AB>());
     assert!(!sorts_before_for_testing<AB, A>());
     assert!(sorts_before_for_testing<AB, QUOTE>());
@@ -380,162 +215,68 @@ fun publish(): Scenario {
     scenario
 }
 
-/// A creation policy that allows `QUOTE` and `AdmittedVenue`.
-fun allowing<AdmittedVenue>(ctx: &mut TxContext): CreationPolicy {
-    creation_policy::allowing_for_testing<QUOTE, AdmittedVenue>(ctx)
+/// The publisher's AdminCap prepares `SALE` in `QUOTE` with a pool creation reserved for `LP` and
+/// the test issuer every hand-off here is sealed by.
+fun prepare(scenario: &mut Scenario): VenueTicket<SALE, QUOTE> {
+    scenario.prepare_for<TestIssuer>()
 }
 
-/// The whole LP-fee split to `recipient`'s address.
-fun split_to(recipient: address): FeeSplit {
-    fee_split::new(vector[
-        fee_split::route(fee_split::address_destination(recipient), bps::new(10_000)),
-    ])
-}
-
-/// The publisher's AdminCap creates and shares a sale whose pool creation is reserved for `LP`,
-/// returning the presale and pool-creation IDs.
-fun create_sale(scenario: &mut Scenario, creation_policy: CreationPolicy): (ID, ID) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let (result_0, result_1) = {
-        let clock = clock::create_for_testing(scenario.ctx());
-        let (sale, pool_creation_id) = new_sale(scenario, &creation_policy);
-        let presale_id = object::id(&sale);
-
-        sale.share(&package_version, 0, &clock);
-        destroy(clock);
-        destroy(creation_policy);
-
-        (presale_id, pool_creation_id)
-    };
-    std::unit_test::destroy(package_version);
-    (result_0, result_1)
-}
-
-/// The publisher's AdminCap creates a sale whose pool creation is reserved for `LP`, returning
-/// the unshared sale and its pool-creation ID.
-fun new_sale(
-    scenario: &mut Scenario,
-    creation_policy: &CreationPolicy,
-): (Presale<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>, ID) {
+/// The publisher's AdminCap prepares `SALE` in `QUOTE` with a pool creation reserved for `LP` and
+/// bound to `Issuer`.
+fun prepare_for<Issuer>(scenario: &mut Scenario): VenueTicket<SALE, QUOTE> {
     let admin_cap = scenario.take_from_sender<AdminCap>();
-    let (initializer, currency) = scenario.start_sale(&admin_cap, creation_policy);
-    let (sale, pool_creation_id) = scenario.finalize_sale(&admin_cap, initializer, currency);
+    let create_pool_cap = amm_pool::create_pool_cap_for_testing(scenario.ctx());
+
+    let ticket = migrator::prepare<LP, SALE, QUOTE, Issuer>(&admin_cap, create_pool_cap, scenario.ctx());
 
     scenario.return_to_sender(admin_cap);
-    (sale, pool_creation_id)
+    ticket
 }
 
-/// The publisher's AdminCap starts a single-wallet sale and sets everything but its LP-fee split,
-/// returning it with the sale token's currency.
-fun start_sale(
-    scenario: &mut Scenario,
-    admin_cap: &AdminCap,
-    creation_policy: &CreationPolicy,
-): (
-    PresaleInitializer<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
-    Currency<BLAST_AFTERMATH_DAO_PRESALE_TESTS>,
-) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let (result_0, result_1) = {
-        let fee_policy = fee_policy::new_zero_fees_for_testing(scenario.ctx());
-        let (treasury_cap, currency) = new_currency(scenario);
+/// Migrates the prepared sale with a test issuer's hand-off sealed for `venue`.
+fun migrate(scenario: &mut Scenario, venue: TypeName) {
+    let pool_creation = scenario.take_shared<PoolCreation<LP, SALE>>();
+    let terms = migration::vault_terms(
+        migration::test_issuer(),
+        @0x5A1E.to_id(),
+        fee_split::new(vector[
+            fee_split::route(fee_split::owner_destination(), bps::new(10_000)),
+        ]),
+        bps::new(0),
+        bps::new(0),
+        option::none(),
+        migration::residuals_to_owner(),
+    );
+    let hand_off = migration::new(
+        migration::test_issuer(),
+        balance::create_for_testing<SALE>(1_000),
+        balance::create_for_testing<QUOTE>(2_000),
+        venue,
+        terms,
+    );
+    let mut pool_registry = pool_registry::new_for_testing(scenario.ctx());
+    let dao_fee_version = version::new_for_testing(scenario.ctx());
 
-        let mut initializer = migrator::new<_, QUOTE>(
-            admin_cap,
-            &package_version,
-            treasury_cap,
-            creation_policy,
-            &fee_policy,
-        );
-        initializer.set_supply(&package_version, TOKEN_SUPPLY, false);
-        initializer.set_token_allocations(
-            &package_version,
-            bps::new(5_000),
-            bps::new(5_000),
-            vector[],
-        );
-        initializer.set_raise(&package_version, RAISE_TARGET, vector[]);
-        initializer.set_windows(&package_version, COMMITMENT_DURATION_MS, LIQUIDITY_WINDOW_DURATION_MS);
-        initializer.set_eligibility(
-            &package_version,
-            presale::open_eligibility(RAISE_TARGET, 1, RAISE_TARGET),
-        );
-
-        destroy(fee_policy);
-
-        (initializer, currency)
-    };
-    std::unit_test::destroy(package_version);
-    (result_0, result_1)
-}
-
-/// A fresh sale token's zero-supply treasury cap and currency.
-fun new_currency(
-    scenario: &mut Scenario,
-): (TreasuryCap<BLAST_AFTERMATH_DAO_PRESALE_TESTS>, Currency<BLAST_AFTERMATH_DAO_PRESALE_TESTS>) {
-    let (currency_initializer, treasury_cap) = coin_registry::new_currency_with_otw(
-        test_utils::create_one_time_witness<BLAST_AFTERMATH_DAO_PRESALE_TESTS>(),
-        9,
-        b"SALE".to_string(),
-        b"Sale Token".to_string(),
-        b"Presale test token".to_string(),
-        b"".to_string(),
+    migrator::migrate(
+        hand_off,
+        pool_creation,
+        &mut pool_registry,
+        &dao_fee_version,
         scenario.ctx(),
     );
 
-    (treasury_cap, coin_registry::unwrap_for_testing(currency_initializer))
+    destroy(pool_registry);
+    destroy(dao_fee_version);
 }
 
-/// The publisher's AdminCap finalizes `initializer` with a pool creation reserved for `LP`,
-/// returning the unshared sale and its pool-creation ID.
-fun finalize_sale(
-    scenario: &mut Scenario,
-    admin_cap: &AdminCap,
-    initializer: PresaleInitializer<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
-    mut currency: Currency<BLAST_AFTERMATH_DAO_PRESALE_TESTS>,
-): (Presale<BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>, ID) {
-    let package_version = blast_presale::blast_presale_package::new_for_testing(scenario.ctx());
-    let mut registry = presale::registry_for_testing(scenario.ctx());
-    let (result_0, result_1) = {
-        let create_pool_cap = amm_pool::create_pool_cap_for_testing(scenario.ctx());
+// === Constants ===
 
-        let sale = admin_cap.finalize<LP, _, _>(
-            &package_version,
-            initializer,
-            &mut registry,
-            &mut currency,
-            create_pool_cap,
-            scenario.ctx(),
-        );
-
-        let (presale_id, pool_creation_id) = last_event<
-            PoolCreationReserved<LP, BLAST_AFTERMATH_DAO_PRESALE_TESTS, QUOTE>,
-        >().pool_creation_reserved_fields();
-        assert_eq!(presale_id, object::id(&sale));
-
-        destroy(currency);
-
-        (sale, pool_creation_id)
-    };
-    std::unit_test::destroy(package_version);
-    destroy(registry);
-    (result_0, result_1)
-}
-
-fun last_event<Event: copy + drop>(): Event {
-    let mut events = event::events_by_type<Event>();
-    events.pop_back()
-}
-
-fun fee_admin(): AdminWitness<FeeAdmin> {
-    blast_acl::witness_for_testing()
-}
+const PUBLISHER: address = @0xB1A57;
+const KEEPER: address = @0x4EE9;
 
 // === Imports ===
 
 use amm::{pool as amm_pool, pool_registry};
-
-use blast_admin::blast_acl::{Self, AdminWitness};
 
 use blast_aftermath_dao_presale::blast_aftermath_dao_presale::{
     Self as migrator,
@@ -546,33 +287,14 @@ use blast_aftermath_dao_presale::blast_aftermath_dao_presale::{
     sorts_before_for_testing,
 };
 
-use blast_core::{bps, fee_split::{Self, FeeSplit}, migration};
-
-use blast_partners::blast_partners as partners;
-
-use blast_presale::{
-    blast_presale::{
-        Self as presale,
-        Presale,
-        PresaleCap,
-        PresaleCreated,
-        PresaleInitializer,
-        PresaleOpened,
-        ProtocolFeesChanged,
-    },
-    blast_presale_domain::FeeAdmin,
-    creation_policy::{Self, CreationPolicy},
-    fee_policy
-};
+use blast_core::{bps, fee_split, migration::{Self, TestIssuer, VenueTicket}};
 
 use dao_fee_amm::version;
 
-use std::{type_name, unit_test::{assert_eq, destroy}};
+use std::{ascii::String, type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 
-use sui::{clock, coin::TreasuryCap, coin_registry::{Self, Currency}, event, sui::SUI, test_scenario::{Self, Scenario}, test_utils};
+use sui::{balance, event, sui::SUI, test_scenario::{Self, Scenario}};
 
-use fun finalize_sale as Scenario.finalize_sale;
-
-use fun start_sale as Scenario.start_sale;
-
-use fun migrator::migrate as Presale.migrate;
+use fun migrate as Scenario.migrate;
+use fun prepare as Scenario.prepare;
+use fun prepare_for as Scenario.prepare_for;

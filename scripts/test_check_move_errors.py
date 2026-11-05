@@ -129,7 +129,7 @@ fn migration_failures_commit_nothing() {
                                 (source.replace('self.h.assert_rolled_back', '// self.h.assert_rolled_back'), False),
                                 ('/*' + source + '*/', False)):
                 path.write_text(text)
-                self.assertEqual(native_oracle(root, 'blast_fun_migrators::cetus', error), valid)
+                self.assertEqual(native_oracle(root, 'blast_migrators::errors', error), valid)
 
     def test_rust_mask_preserves_function_after_char_literals_and_continued_strings(self):
         source = '''let quote = '"'; let lifetime: &'static str = "test";

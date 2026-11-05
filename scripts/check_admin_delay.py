@@ -91,10 +91,7 @@ assert body.startswith(f'package_version.assert_current{LAUNCHPAD_CURRENT}'), bo
 assert body.index('self.is_guarded() && runtime_config.is_guarded()') < body.index('clear_pause_bits('), body
 require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')
 governed('presale', 'fee_policy', {'destination': 'TreasuryAdmin', 'fees': 'FeeAdmin'})
-for package, upgrade_role, cancel_role in (
-    ('presale', 'UpgradeAdmin', 'CancelAdmin'),
-    ('migrators', 'UpgradeAdmin<BLAST_FUN_MIGRATORS>', 'CancelAdmin<BLAST_FUN_MIGRATORS>'),
-):
+for package, upgrade_role, cancel_role in (('presale', 'UpgradeAdmin', 'CancelAdmin'),):
     fs = functions(package, 'package_admin')
     source = (ROOT / 'sui' / package / 'sources' / 'package_admin.move').read_text()
     require(source, 'upgrade: DelayedAction<UpgradeKey, UpgradeAction>,', 'public struct UpgradeKey() has copy, drop, store;')
@@ -194,7 +191,7 @@ assert 'MAX_ADMINS' not in acl and 'Timelocked' not in acl
 print('ADR 0134 administration boundaries: OK')
 
 # Publication proves unique native custody intake; it never authorizes policy changes.
-for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_package'), ('migrators', 'blast_fun_migrators')]:
+for package, marker in [('launchpad', 'blast_fun'), ('presale', 'blast_presale_package')]:
     marker_fs = functions(package, marker)
     source = (ROOT / 'sui' / package / 'sources' / f'{marker}.move').read_text()
     assert 'admin_delay' not in source
@@ -369,13 +366,31 @@ require(signer['cancel_creator_claim_signer_delay'][1], 'self.creator_claim_sign
 for name in ('apply_creator_claim_signer', 'apply_creator_claim_signer_delay'):
     assert 'AdminWitness' not in signer[name][0], name
 assert 'set_creator_claim_signer' not in signer
-for package, upgrade_role in (('presale', 'UpgradeAdmin'), ('migrators', 'UpgradeAdmin<BLAST_FUN_MIGRATORS>')):
+for package, upgrade_role in (('presale', 'UpgradeAdmin'),):
     fs = functions(package, 'package_admin')
     require(fs['schedule_upgrade_delay'][0], f'&AdminWitness<{upgrade_role}>', 'delay_ms: u64')
     require(fs['schedule_upgrade_delay'][1], 'self.upgrade.schedule_delay(delay_ms, clock)')
     require(fs['apply_upgrade_delay'][1], 'self.upgrade.apply_delay(clock)')
     assert 'AdminWitness' not in fs['apply_upgrade_delay'][0]
     require(fs['wrap'][1], 'delayed_action::new(UpgradeKey(), &id, INITIAL_UPGRADE_DELAY_MS)')
+# The migrators adopt blast_admin's generic administration: the publication defines no pause bits
+# and pins a package witness nothing constructs, no local custody or generation copy exists, and
+# every public venue route checks this package's compiled generation before anything else.
+migrators_sources = ROOT / 'sui/migrators/sources'
+assert not (migrators_sources / 'package_admin.move').exists()
+marker_fs = functions('migrators', 'blast_migrators')
+assert set(marker_fs) == {'init'}, set(marker_fs)
+assert marker_fs['init'][1] == 'package_version::new_publication<_, PackageWitness>(otw, 0, ctx).keep(ctx);', marker_fs['init'][1]
+for path in migrators_sources.rglob('*.move'):
+    production = path.read_text().split('// === Test-Only Functions ===')[0]
+    assert not re.search(r'\b(OperationalVersion|UpgradeCustody|DelayedAction|operational_version|upgrade_custody)\b', production), path
+    assert 'PackageWitness()' not in production.replace('public struct PackageWitness() has drop;', ''), path
+for venue in ('bluefin', 'cetus'):
+    routes = [row for row in facts('migrators', venue) if row[0] == 'FN' and row[2] == 'public' and row[5] == '0']
+    assert len(routes) == 5, venue
+    for row in routes:
+        require(row[8], 'migrators_version: &PackageVersion<BLAST_MIGRATORS>')
+        assert row[9].startswith('migrators_version.assert_current(constants::generation!());'), (venue, row[1])
 print('Per-operation notices, no bypass, delayed signer admission, and publication custody: OK')
 
 # Partner share and cap wait one fixed seven-day notice: PartnerAdmin proposes or cancels, anyone

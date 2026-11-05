@@ -162,7 +162,7 @@ pub fn meme_is_cetus_a(meme: &TypeTag, quote: &TypeTag) -> bool {
     cetus_name(meme) > cetus_name(quote)
 }
 
-/// floor(sqrt(coin_b / coin_a) * 2^64) of the handed-off atoms, as `migration_math` derives it:
+/// floor(sqrt(coin_b / coin_a) * 2^64) of the handed-off atoms, as `blast_core::migration::sqrt_price_x64` derives it:
 /// the largest root whose square is at most `(numerator << 128) / denominator`.
 pub fn expected_sqrt_price(meme: u64, quote: u64, meme_is_a: bool) -> u128 {
     let (numerator, denominator) = if meme_is_a { (quote, meme) } else { (meme, quote) };

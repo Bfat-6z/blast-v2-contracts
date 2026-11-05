@@ -1597,23 +1597,24 @@ impl World {
         Ok(lifecycle)
     }
 
-    /// The adapter entry point with `launch`'s launch and `currency_owner`'s currency.
+    /// The two-call migration: `launch::migrate` with `launch`'s launch and `currency_owner`'s
+    /// currency returns the `Migration`, and the adapter's `migrate` redeems it.
     fn migrate(&self, launch: &Launch, currency_owner: &Launch, fail: bool) -> Result<ProgrammableTransaction> {
         let mut builder = ProgrammableTransactionBuilder::new();
         let launch_arg = builder.obj(self.h.shared(launch.launch, true))?;
         let version = builder.obj(self.h.shared(self.version, false))?;
         let config = builder.obj(self.h.shared(self.config, false))?;
         let currency = builder.obj(self.h.shared(currency_owner.currency, true))?;
-        let fail = builder.pure(fail)?;
         let clock = builder.obj(self.h.shared(SUI_CLOCK_OBJECT_ID, false))?;
-        call(&mut builder, self.adapter, "mock_adapter", "migrate", vec![launch.meme.clone()], vec![
+        let migration = call(&mut builder, self.blast, "launch", "migrate", vec![launch.meme.clone(), sui()], vec![
             launch_arg,
             version,
             config,
             currency,
-            fail,
             clock,
         ]);
+        let fail = builder.pure(fail)?;
+        call(&mut builder, self.adapter, "mock_adapter", "migrate", vec![launch.meme.clone()], vec![migration, fail]);
 
         Ok(builder.finish())
     }

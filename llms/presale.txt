@@ -21,7 +21,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
 | `blast_presale` | Presale | not yet published | — | — |
-| `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | live; source has changed since | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` | `0x2fe674f6c42f49b7647be760a10f89f843396b9294af8fab5bfbc929fb7aab01` |
+| `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | not yet published | — | — |
 | `blast_core` | Shared core | not yet published | — | — |
 | `blast_vault` | LP vault | not yet published | — | — |
 | `blast_partners` | Partner codes | not yet published | — | — |
@@ -37,8 +37,8 @@ product guide below assumes it.
 
 | Product | What users do | Packages |
 | --- | --- | --- |
-| Presale | commit Quote to a capped or overflow sale, claim tokens or refunds, earn LP fees and holder rewards after migration | `blast_presale`; one-off partner migrators such as `blast_aftermath_dao_presale` |
-| Launchpad | launch a coin on a bonding curve, trade it, graduate it into a DEX pool | `blast_fun` (curve, lifecycle, fees), a generated coin package per launch, `blast_fun_migrators` (venue start, migration, LP vault, LP fees, holder rewards) |
+| Presale | commit Quote to a capped or overflow sale, claim tokens or refunds, earn LP fees and holder rewards after migration | `blast_presale`; the shared venues `blast_migrators`; one-off partner venues such as `blast_aftermath_dao_presale` |
+| Launchpad | launch a coin on a bonding curve, trade it, graduate it into a DEX pool | `blast_fun` (curve, lifecycle, fees), a generated coin package per launch, `blast_migrators` (Cetus and Bluefin venues for both products: venue start, migration, LP fees), `blast_vault` (LP vault, holder rewards) |
 | Partner codes | earn a share of Blast's fee on the flow an app brings | `blast_partners` |
 | Boosts | hold a leveraged long or short coin backed by Aftermath perpetuals | `blast_boosts_core`, `blast_boosts_products`, `blast_boosts_aftermath` |
 | blastSUI | stake SUI with one validator through funSUI and blastSUI | `blast_sui` |
@@ -47,7 +47,7 @@ product guide below assumes it.
 Each package and what it depends on:
 
 ```text
-blast_fun_migrators          -> blast_fun, blast_admin, Cetus, Bluefin
+blast_migrators              -> blast_core, blast_vault, blast_admin, Cetus, Bluefin
 blast_fun                    -> blast_partners, blast_admin
 blast_partners               -> blast_admin
 blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
@@ -131,7 +131,7 @@ Upgrade rules depend on the package lineage.
 | --- | --- | --- |
 | Immutable | `blast_admin`, `blast_partners`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
-| Version-gated | `blast_presale`, `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events
@@ -151,8 +151,8 @@ Upgrade rules depend on the package lineage.
 A failed call returns a Move abort naming the module and function that aborted
 and a `u64` code. Blast uses two styles:
 
-- **Named errors** (`#[error]` constants): `blast_partners`,
-  `blast_fun_migrators`, and `blast_aftermath_dao_presale`. Sui's RPC and SDKs
+- **Named errors** (`#[error]` constants): `blast_partners` and
+  `blast_aftermath_dao_presale`. Sui's RPC and SDKs
   decode these into the constant's name and message; the reference lists each
   module's constants with their messages.
 - **Numeric codes**: `blast_fun`, `blast_presale`, `blast_sui`, `blast_boosts_core`,
@@ -173,7 +173,7 @@ run) before signing it.
 
 ## Presale
 
-> **Deployment status:** `blast_presale` is not yet published on mainnet; its interface may change before publication. `blast_aftermath_dao_presale` is live on mainnet, published from an earlier revision; the source described here has changed since, so confirm signatures against the live package.
+> **Deployment status:** `blast_presale` and `blast_aftermath_dao_presale` are not yet published on mainnet; their interface may change before publication.
 
 ### What it is
 
@@ -1343,75 +1343,77 @@ refunds, LP deadline, the seed-price check) applies unchanged.
 
 #### `blast_aftermath_dao_presale`
 
-A one-off, immutable package for one partner. Its sales migrate into a new 50/50 Aftermath
+A one-off, immutable package for one partner: a plain venue over `blast_core` that imports no
+product, so a presale upgrade never strands it. Its sales migrate into a new 50/50 Aftermath
 weighted pool wrapped in Aftermath's DAO-fee pool, which charges 2% (200 BPS) on every swap,
-deposit, and withdrawal and sends it straight to the partner treasury compiled into the module.
-It creates no vault.
+deposit, and withdrawal and sends it straight to the partner treasury compiled into the module. It
+creates no vault.
 
 Objects:
 
 - `blast_aftermath_dao_presale::blast_aftermath_dao_presale::Venue`: the sealed venue witness. It
-  issues the ticket `new` redeems and redeems that sale's migration hand-off.
-- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`: the vendor's own admin, sent to the publisher. Its one
-  power is creating sales, through `new` and `finalize`. It is not Blast's `blast_acl::AdminCap`.
-- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreation<Lp>`: shared; binds one sale to the Aftermath
-  `CreatePoolCapV2` of a freshly published LP coin `Lp`.
+  issues the ticket `prepare` returns and redeems that sale's migration hand-off.
+- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`: the vendor's own admin, sent
+  to the publisher. Its one power is preparing sale tokens through `prepare`. It is not Blast's
+  `blast_acl::AdminCap`.
+- `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreation<Lp, SaleToken>`: shared;
+  reserves one sale token's pool creation with the Aftermath `CreatePoolCapV2` of a freshly
+  published LP coin `Lp`.
 
-Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`), one PTB:
+Create (*cap holder*, `blast_aftermath_dao_presale::blast_aftermath_dao_presale::AdminCap`, who also
+holds the sale token's `TreasuryCap`), one PTB:
 
 1. Beforehand, in its own transaction, publish a fresh Aftermath LP coin `Lp` (one per sale); its
    publication yields the `CreatePoolCapV2` that the `AdminCap` holder passes in.
-2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::new<SaleToken, Quote>(admin_cap,
-   package_version, treasury_cap, creation_policy, fee_policy)` issues the venue's ticket, calls
-   `blast_presale::blast_presale::new`, and returns the `PresaleInitializer`. Its pool's weights
-   and fees are the module's constants, so it records no tier. The `CreationPolicy` must admit its
-   `Venue`.
-3. The `blast_presale::blast_presale` setters as for any sale (no LP-fee split needed), including
-   the optional `blast_presale::blast_presale::set_partner`.
-4. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::finalize<Lp, SaleToken,
-   Quote>(admin_cap, package_version, initializer, currency, create_pool_cap)` first checks
-   `blast_presale::blast_presale::venue` against its own `Venue`
-   (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongVenue`, code 3), sets a core
-   fee split of one address route paying its treasury 10,000 BPS (replacing any split set
-   earlier), runs `blast_presale::blast_presale::finalize`, sends the `PresaleCap` to the treasury,
-   shares the `PoolCreation<Lp>`, emits
+2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken, Quote,
+   Issuer>(admin_cap, create_pool_cap)`, with the presale's package witness
+   `blast_presale::blast_presale::PackageWitness` as `Issuer`, shares the
+   `PoolCreation<Lp, SaleToken>` bound to that issuer, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
-   (`presale_id`, `pool_creation_id`), and returns the unshared `Presale`. A vendor sale finalized
-   with `blast_presale::blast_presale::finalize` directly has no `PoolCreation`, so it can never
-   migrate and refunds after its LP deadline.
-5. Optional `blast_presale::blast_presale::set_protocol_fees(...)` to change this sale's Blast rates, the only
-   point where they may rise (up to the applied policy), which needs
-   Blast's presale `FeeAdmin` signed in within the same transaction; then
-   `blast_presale::blast_presale::share(presale, package_version, commitment_starts_at_ms, clock)`.
+   (`pool_creation_id`, `issuer`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
+   A primitive, standard-library, or framework `Issuer` aborts with
+   `blast_aftermath_dao_presale::blast_aftermath_dao_presale::EInvalidIssuer` (code 2). Its pool's weights
+   and fees are the module's constants, so it records no tier.
+3. `blast_presale::blast_presale::new` with the `TreasuryCap` and the ticket, as for any sale. The
+   `CreationPolicy` must admit the vendor's `Venue`.
+4. The `blast_presale::blast_presale` setters as for any sale, including the optional
+   `blast_presale::blast_presale::set_partner`. The sale's LP-fee split never applies, because no
+   vault exists.
+5. `blast_presale::blast_presale::finalize`, the optional
+   `blast_presale::blast_presale::set_protocol_fees(...)` (which needs Blast's presale `FeeAdmin`
+   signed in within the same transaction), then `blast_presale::blast_presale::share`.
 
-Migrate (*anyone*, while `Funded`):
+Migrate (*anyone*, while `Funded`), one PTB:
 
 1. `blast_presale::blast_presale::settle` if needed.
-2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::migrate<Lp, SaleToken, Quote>(presale,
-   package_version, pool_creation, fee_policy, pool_registry, dao_fee_version, clock)`.
-   `pool_creation` is the sale's shared `PoolCreation<Lp>`, passed by value and deleted;
-   `pool_registry` is Aftermath's shared `PoolRegistry` (mutable); `dao_fee_version` is the DAO-fee
-   package's shared `Version`. Type arguments are always `<Lp, SaleToken, Quote>`; the module sorts
-   the coins into Aftermath's order itself.
-3. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
+2. `blast_presale::blast_presale::migrate`, which returns the sale's `Migration<SaleToken, Quote>`.
+3. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::migrate<Lp, SaleToken,
+   Quote>(migration, pool_creation, pool_registry, dao_fee_version)`. `migration` is the
+   result of step 2; `pool_creation` is the sale token's shared `PoolCreation<Lp, SaleToken>`, passed
+   by value and deleted; `pool_registry` is Aftermath's shared `PoolRegistry` (mutable);
+   `dao_fee_version` is the DAO-fee package's shared `Version`.
+   Type arguments are always `<Lp, SaleToken, Quote>`; the module sorts the coins into Aftermath's
+   order itself.
+4. On a partnered sale, `blast_presale::blast_presale::pay_protocol_fees_with_partner(...)`.
 
-The call checks the binding (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongPresale`),
-runs `blast_presale::blast_presale::migrate` and redeems the hand-off with its `Venue`, dropping the
-vault terms (no vault exists for its pools), creates the pool from all LP tokens and Quote (50/50
-weights, flatness 0, a 0.01% swap-in fee that compounds into the LP, no other pool fees, name
-"Blast Presale Pool"), checks it holds every unit
-(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EPoolMismatch`), wraps it in a DAO-fee
-pool at 200 BPS paying the treasury
-(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EDaoFeePoolMismatch`), shares the
-DAO-fee pool (the object traders use), sends its `OwnerCap` to the treasury, and sends the whole LP
-coin to `0x0`, where nobody can ever use it. Emits
-`blast_aftermath_dao_presale::blast_aftermath_dao_presale::Migrated` with the pool, DAO-fee pool,
-owner cap, and LP coin IDs and the LP amount.
+The call redeems the hand-off with its `Venue` (`blast_core::errors::EWrongVenue` for a hand-off
+sealed for any other venue), refuses terms another package sealed
+(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EWrongIssuer`, code 3), keeping only
+the sale's ID from the vault terms (no vault exists for
+its pools), creates the pool from all LP tokens and Quote (50/50 weights, flatness 0, a 0.01%
+swap-in fee that compounds into the LP, no other pool fees, name "Blast Presale Pool"), checks it
+holds every unit (`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EPoolMismatch`, code
+0), wraps it in a DAO-fee pool at 200 BPS paying the treasury
+(`blast_aftermath_dao_presale::blast_aftermath_dao_presale::EDaoFeePoolMismatch`, code 1), shares
+the DAO-fee pool (the object traders use), sends its `OwnerCap` to the treasury, and
+sends the whole LP coin to `0x0`, where nobody can ever use it. Emits
+`blast_aftermath_dao_presale::blast_aftermath_dao_presale::Migrated` with the sale ID, the pool,
+DAO-fee pool, owner cap, and LP coin IDs and the LP amount.
 
 With the `OwnerCap` the treasury can change its pool's DAO fee or recipient directly through
-Aftermath. The `PresaleCap` can only be destroyed after a cancellation. If the `CreatePoolCapV2`
-belongs to a different LP coin than `Lp`, or Aftermath retires the versions this package links
-to, migration aborts and the sale becomes refundable at its LP deadline.
+Aftermath. If the `CreatePoolCapV2` belongs to a different LP coin than `Lp`, or Aftermath retires the
+versions this package links to, migration aborts and the sale becomes refundable at its LP
+deadline.
 
 ### Q&A
 
@@ -3696,37 +3698,38 @@ public struct PoolTierReserved<phantom Meme, phantom Quote, phantom Venue> has c
 
 ## API reference: `blast_aftermath_dao_presale` (Aftermath DAO-pool presale migrator)
 
-Live on mainnet, published from an earlier revision. The source documented here has changed since; until it is republished, confirm signatures against the live package.
+Not yet published on mainnet. Its interface may change before publication.
 
 Events: payload structs are emitted directly, each under its own type.
 
 ### `blast_aftermath_dao_presale::blast_aftermath_dao_presale`
 
-A one-off `blast_presale` migrator built for a partner. The `AdminCap` creates each sale with the Aftermath pool-creation capability of its LP coin, which stays bound to that sale. Anyone may then migrate the funded sale into a 50/50 Aftermath weighted pool wrapped in Aftermath's DAO-fee pool, which pays a 2% fee on every swap, deposit, and withdrawal straight to the partner treasury. The treasury also receives each sale's `PresaleCap` and each DAO-fee pool's owner cap, with which it may change that pool's fee or recipient; the sale's LP is locked forever.
+A one-off presale venue built for a partner, over `blast_core` alone. The `AdminCap` prepares each sale token with the Aftermath pool-creation capability of its LP coin and receives the `VenueTicket` that `blast_presale::new` redeems, so the sale can migrate only here. Anyone may then migrate the funded sale: the PTB passes the `Migration` the presale's own `migrate` returned, and this module seeds a 50/50 Aftermath weighted pool wrapped in Aftermath's DAO-fee pool, which pays a 2% fee on every swap, deposit, and withdrawal straight to the partner treasury. The treasury also receives each DAO-fee pool's owner cap, with which it may change that pool's fee or recipient; the sale's LP is locked forever.  The package never imports a product, so a presale upgrade never strands it.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vendors/aftermath_dao_presale/sources/blast_aftermath_dao_presale.move
 
 #### Types
 
 ```move
-/// The package's sealed venue witness: it issues the ticket a sale redeems when `new` starts it and
+/// The package's sealed venue witness: it issues the ticket a sale redeems at creation and
 /// redeems that sale's migration hand-off. Only this module constructs it, so only `migrate` can
 /// release the sale's liquidity.
 public struct Venue() has drop;
 
 /// The package's only administrator, sent to the publisher at publication. Its one power is
-/// creating sales through `new` and `finalize`.
+/// preparing sale tokens through `prepare`.
 public struct AdminCap has key, store {
     id: UID,
 }
 
-/// Shared reservation of one sale's Aftermath pool creation: the `CreatePoolCapV2` of the fresh LP
-/// coin `Lp`, which only `migrate` of the sale `presale_id` can consume. A sale `new` started but
-/// finalized directly in `blast_presale` has none, so it can never migrate and refunds after its
-/// LP deadline.
-public struct PoolCreation<phantom Lp> has key {
+/// Shared reservation of one sale token's Aftermath pool creation: the `CreatePoolCapV2` of the
+/// fresh LP coin `Lp`, which only the migration of a `SaleToken` sale whose terms `issuer` sealed
+/// can consume.
+public struct PoolCreation<phantom Lp, phantom SaleToken> has key {
     id: UID,
-    presale_id: ID,
+    /// The original type of the product witness the `AdminCap` holder named at `prepare`; a
+    /// `Migration` whose terms another package sealed cannot consume this reservation.
+    issuer: TypeName,
     create_pool_cap: pool::CreatePoolCapV2,
 }
 ```
@@ -3734,46 +3737,31 @@ public struct PoolCreation<phantom Lp> has key {
 #### Functions
 
 ```move
-/// Starts a presale that migrates through this module, with a ticket for the pair this venue
-/// issues. Its pool's weights and fees are this module's constants, so the sale carries no pool
-/// terms. The sale is set like any other, then finalized only through this module's `finalize`,
-/// which reserves its pool creation. The `CreationPolicy` must admit `Venue`.
-public fun new<SaleToken, Quote>(
+/// Reserves `SaleToken`'s pool creation with `create_pool_cap`, minted by the fresh LP coin `Lp`,
+/// in a shared `PoolCreation` bound to `Issuer`, and returns the ticket for a sale of `SaleToken` in
+/// `Quote` that migrates here. `Issuer` is the presale's package witness
+/// (`blast_presale::blast_presale::PackageWitness`), passed as a type argument, so only a
+/// `Migration` the presale sealed can consume the reservation; with the presale's one sale per
+/// sale token, that binds the reservation to one sale. Framework and primitive types are rejected
+/// because anyone can construct them. The pool's weights and fees are this module's constants, so
+/// the sale carries no pool terms. The presale's `CreationPolicy` must admit `Venue`.
+public fun prepare<Lp, SaleToken, Quote, Issuer>(
     _: &AdminCap,
-    package_version: &blast_presale::blast_presale_package::PackageVersion,
-    treasury_cap: TreasuryCap<SaleToken>,
-    creation_policy: &blast_presale::creation_policy::CreationPolicy,
-    fee_policy: &blast_presale::fee_policy::FeePolicy,
-): blast_presale::blast_presale::PresaleInitializer<SaleToken, Quote>
-
-/// Finalizes a sale `new` started, sends its `PresaleCap` to the treasury, and shares a
-/// `PoolCreation` binding `create_pool_cap`, minted by the fresh LP coin `Lp`, to it. Every LP fee
-/// its pool pays reaches the treasury, so this sets the sale's LP-fee split to name the treasury as
-/// its only route. The initializer must be one `new` started: another venue's sale could never
-/// consume the pool creation.
-public fun finalize<Lp, SaleToken, Quote>(
-    _: &AdminCap,
-    package_version: &blast_presale::blast_presale_package::PackageVersion,
-    initializer: blast_presale::blast_presale::PresaleInitializer<SaleToken, Quote>,
-    registry: &mut blast_presale::blast_presale::PresaleRegistry,
-    currency: &mut Currency<SaleToken>,
     create_pool_cap: pool::CreatePoolCapV2,
     ctx: &mut TxContext,
-): blast_presale::blast_presale::Presale<SaleToken, Quote>
+): blast_core::migration::VenueTicket<SaleToken, Quote>
 
-/// Anyone may migrate a funded sale `finalize` created, consuming the `PoolCreation` bound to it: it
-/// redeems the sale's hand-off, seeds a 50/50 Aftermath pool with all of the sale's LP tokens and
-/// Quote, wraps it in a DAO-fee pool paying the treasury, shares that pool, sends its owner cap to
-/// the treasury, and locks the LP at `BURN_ADDRESS`. No vault is created, so the hand-off's vault
-/// terms are dropped.
+/// Anyone may migrate a funded sale prepared here: it redeems `migration`, the hand-off the
+/// presale's own `migrate` returned earlier in the transaction, checks that the issuer `prepare`
+/// pinned sealed its terms, consumes the sale token's `PoolCreation`, seeds a 50/50 Aftermath pool with all of the sale's tokens and Quote, wraps it in
+/// a DAO-fee pool paying the treasury, shares that pool, sends its owner cap to the treasury, and
+/// locks the LP at `BURN_ADDRESS`. No vault is created, so the
+/// hand-off's vault terms are dropped after naming the sale in the event.
 public fun migrate<Lp, SaleToken, Quote>(
-    sale: &mut blast_presale::blast_presale::Presale<SaleToken, Quote>,
-    package_version: &blast_presale::blast_presale_package::PackageVersion,
-    pool_creation: PoolCreation<Lp>,
-    fee_policy: &blast_presale::fee_policy::FeePolicy,
+    migration: blast_core::migration::Migration<SaleToken, Quote>,
+    pool_creation: PoolCreation<Lp, SaleToken>,
     pool_registry: &mut pool_registry::PoolRegistry,
     dao_fee_version: &version::Version,
-    clock: &Clock,
     ctx: &mut TxContext,
 )
 ```
@@ -3781,16 +3769,17 @@ public fun migrate<Lp, SaleToken, Quote>(
 #### Events
 
 ```move
-/// `finalize` reserved the sale `presale_id`'s Aftermath pool creation for the LP coin `Lp` in the
-/// shared `pool_creation_id`, which its migration consumes.
+/// `prepare` reserved the sale token `SaleToken`'s Aftermath pool creation for the LP coin `Lp` in
+/// the shared `pool_creation_id`, which only a migration whose terms `issuer` sealed consumes.
 public struct PoolCreationReserved<phantom Lp, phantom SaleToken, phantom Quote> has copy, drop {
-    presale_id: ID,
     pool_creation_id: ID,
+    issuer: TypeName,
 }
 
-/// A sale migrated into the Aftermath pool `pool_id`, which traders reach through the shared
-/// DAO-fee pool `dao_fee_pool_id`. The treasury holds that pool's owner cap `owner_cap_id`, and
-/// `BURN_ADDRESS` holds the LP coin `lp_coin_id`, which locks the sale's `lp` units forever.
+/// The sale `presale_id` migrated into the Aftermath pool `pool_id`, which traders reach through
+/// the shared DAO-fee pool `dao_fee_pool_id`. The treasury holds that pool's owner cap
+/// `owner_cap_id`, and `BURN_ADDRESS` holds the LP coin `lp_coin_id`, which locks the sale's `lp`
+/// units forever.
 public struct Migrated<phantom Lp, phantom SaleToken, phantom Quote> has copy, drop {
     presale_id: ID,
     pool_id: ID,
@@ -3807,19 +3796,18 @@ public struct Migrated<phantom Lp, phantom SaleToken, phantom Quote> has copy, d
 | --- | --- | --- |
 | `EPoolMismatch` | 0 | The Aftermath pool must hold every sale token and Quote unit the presale released. |
 | `EDaoFeePoolMismatch` | 1 | The DAO-fee pool must charge this package's fee and pay the treasury. |
-| `EWrongPresale` | 2 | The pool creation is bound to a different presale. |
-| `EWrongVenue` | 3 | Only a sale this package's `new` started can be finalized here. |
+| `EInvalidIssuer` | 2 | The issuer must not be a primitive or framework type. |
+| `EWrongIssuer` | 3 | The migration's terms must be sealed by the issuer the pool creation pinned. |
 
 #### Constants
 
-- `TREASURY: address = @0x37cf46b499f740e653644bd2f7a8ed97f248e8b3c69d5d12c97d7845a54c0cd8`: Receives every sale's `PresaleCap` and every pool's DAO fees and owner cap.
+- `TREASURY: address = @0x37cf46b499f740e653644bd2f7a8ed97f248e8b3c69d5d12c97d7845a54c0cd8`: The partner treasury: receives every pool's DAO fees and owner cap.
 - `BURN_ADDRESS: address = @0x0`: Owns every pool's LP coin. No one can sign for the zero address, so nothing it owns can ever be used in a transaction again.
 - `DAO_FEE_BPS: u16 = 200`: The DAO fee, 2%, that Aftermath sends to the treasury from every swap, deposit, and withdrawal until the owner cap changes it.
 - `HALF_WEIGHT: u64 = 500_000_000_000_000_000`: Each coin's weight: half of Aftermath's `1e18` fixed-point one.
 - `FLATNESS: u64 = 0`: Selects Aftermath's uncorrelated weighted-product curve.
 - `BASE_SWAP_FEE: u64 = 100_000_000_000_000`: Aftermath's minimum base swap-in fee, 0.01% in its `1e18` unit; it rejects zero. This part compounds into the locked LP.
 - `POOL_NAME: vector<u8> = b"Blast Presale Pool"`
-- `ALL_BPS: u64 = 10_000`: The whole LP-fee split, which the treasury's address route takes.
 
 ## API reference: `blast_core` (Shared core)
 
@@ -4141,7 +4129,7 @@ public fun verify(
 
 ### `blast_core::migration`
 
-The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.  The module also derives the price a concentrated-liquidity venue seeds the pool at, and whether both such venues can seed it, so a product can refuse a sale that could never migrate.
+The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.  The module also derives the price a concentrated-liquidity venue seeds the pool at, and whether both such venues can seed it, so a product can refuse a sale that could never migrate.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration.move
 
@@ -4156,9 +4144,9 @@ public enum ResidualPolicy has copy, drop, store {
     Owner,
 }
 
-/// Everything a new vault snapshots from the sale or standalone issuer that sealed its terms.
-/// Sealed terms authorize a vault, so products and venues must not return them by value: a venue
-/// takes them only from `redeem` or seals its own.
+/// Everything a new vault snapshots from the sale that sealed its terms. Sealed terms authorize a
+/// vault, so products and venues must not return them by value: a venue takes them only from
+/// `redeem`.
 public struct VaultTerms has copy, drop, store {
     /// The launch or presale the vault belongs to; owner proofs name it.
     origin: ID,
@@ -4208,8 +4196,7 @@ public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName
 /// `redeem_ticket` stays the ticket's one consuming path.
 public fun ticket_venue<Meme, Quote>(self: &VenueTicket<Meme, Quote>): TypeName
 
-/// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
-/// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
+/// A vault's terms, sealed under the `PackageWitness` of the sale's product that owns `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
 /// most `constants::max_lp_fee_bps!()`, 3,000 basis points, so a vault trusts sealed terms.
 public fun vault_terms<PackageWitness: drop>(
     _: PackageWitness,
@@ -4641,7 +4628,7 @@ public struct RoundClosed<phantom Meme, phantom Quote> has copy, drop {
 
 ### `blast_vault::blast_vault_package`
 
-The vault package's publication, its witness admission, and its unpause.  One list of admitted witness types decides who may create a vault: the venue whose witness calls `vault::new`, and the issuer whose witness sealed the vault's terms, must both be on it. Each witness is the one its module alone can construct. The launchpad and presale witnesses are issuers; a venue is a venue and, for the standalone vaults whose terms it seals itself, an issuer too. The list does not distinguish the two roles, so an admitted product witness would also pass the venue check; both are Blast-reviewed code, and products never call `vault::new`. Gating venues binds every position key to venue code Blast reviewed; gating issuers keeps a stranger's terms, with a Blast share and partner of its choosing, out of Blast vaults.  An admitted venue obtains `VaultTerms` only from `migration::redeem` or by sealing them itself under its own witness from Blast policy; it never accepts `VaultTerms` from its caller. Terms are `copy`, so a venue that took them as an argument would let anyone who obtained a sale's terms create a second vault claiming that sale.  An `AdapterAdmin` schedules an admission, anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an `AdapterAdmin` removes a witness at once. Removing a venue stops it creating vaults; removing an issuer stops every vault for its sales, so a migration sealed by it can no longer complete. Existing vaults keep working either way.  The admission notice starts at zero and admissions ignore the pause, so Blast lists the launchpad, presale, and venue witnesses and raises the notice while publication keeps the package paused; `unpause` refuses until that notice is guarded. The product and venue packages must therefore be published before the vault is unpaused.
+The vault package's publication, its witness admission, and its unpause.  One list of admitted witness types decides who may create a vault: the venue whose witness calls `vault::new`, and the issuer whose witness sealed the vault's terms, must both be on it. Each witness is the one its module alone can construct. The launchpad and presale witnesses are issuers and the venue witnesses are venues. The list does not distinguish the two roles, so an admitted product witness would also pass the venue check; both are Blast-reviewed code, and products never call `vault::new`. Gating venues binds every position key to venue code Blast reviewed; gating issuers keeps a stranger's terms, with a Blast share and partner of its choosing, out of Blast vaults.  An admitted venue obtains `VaultTerms` only from `migration::redeem`; it never accepts `VaultTerms` from its caller. Terms are `copy`, so a venue that took them as an argument would let anyone who obtained a sale's terms create a second vault claiming that sale.  An `AdapterAdmin` schedules an admission, anyone applies it once its notice has passed, a `CancelAdmin` cancels it, and an `AdapterAdmin` removes a witness at once. Removing a venue stops it creating vaults; removing an issuer stops every vault for its sales, so a migration sealed by it can no longer complete. Existing vaults keep working either way.  The admission notice starts at zero and admissions ignore the pause, so Blast lists the launchpad, presale, and venue witnesses and raises the notice while publication keeps the package paused; `unpause` refuses until that notice is guarded. The product and venue packages must therefore be published before the vault is unpaused.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/blast_vault_package.move
 
@@ -4651,8 +4638,9 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/va
 /// The package's one-time witness and the marker of its version, publication, and roles.
 public struct BLAST_VAULT_PACKAGE() has drop;
 
-/// The witness `unpause` passes to clear pause bits; only this module constructs it.
-public struct UnpauseWitness() has drop;
+/// The package witness `blast_admin` pins at publication: `unpause` passes it to clear pause bits.
+/// Only this module constructs it, and it is never stored or returned.
+public struct PackageWitness() has drop;
 
 /// Keys the admitted witnesses' delayed lifecycle.
 public struct WitnessesKey() has copy, drop, store;
@@ -4881,7 +4869,7 @@ public fun close_round<Meme, Quote>(
 
 ### `blast_vault::vault`
 
-The one LP vault every Blast sale migrates into: permanent custody of a venue position, and the split of every fee collection it earns.  An admitted venue builds the vault from the terms it redeemed from a sale's migration (or its own standalone terms), attaches the position under its sealed `Venue` key, and shares it. Every collection then pays Blast its per-vault share through the core protocol ledger, at once or held for the sale's partner, and divides the rest by the vault's fee split: address routes are paid at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with an `OwnerProof` from the sale's product; Blast acts through its roles; venue-only operations require the venue's witness, which only the venue module constructs.
+The one LP vault every Blast sale migrates into: permanent custody of a venue position, and the split of every fee collection it earns.  An admitted venue builds the vault from the terms it redeemed from a sale's migration, attaches the position under its sealed `Venue` key, and shares it. Every collection then pays Blast its per-vault share through the core protocol ledger, at once or held for the sale's partner, and divides the rest by the vault's fee split: address routes are paid at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with an `OwnerProof` from the sale's product; Blast acts through its roles; venue-only operations require the venue's witness, which only the venue module constructs.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/vault.move
 
@@ -4979,8 +4967,8 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 #### Functions
 
 ```move
-/// Builds a vault for `terms`, unshared so a venue can read its address before attaching the
-/// position (Aftermath pays its DAO fees to it). Aborts unless `Venue` and the terms' sealing
+/// Builds a vault for `terms`, unshared so the venue attaches its position and settles the
+/// migration residuals in `share_with_position` before anyone can reach it. Aborts unless `Venue` and the terms' sealing
 /// witness are admitted; Blast's share needs no check, since `migration::vault_terms` capped it
 /// when the terms were sealed. The vault's ID derives from the registry, the sealing witness, and
 /// the sale, so each sale has exactly one vault and a client computes its address from the sale

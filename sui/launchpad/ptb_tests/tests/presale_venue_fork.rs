@@ -8,6 +8,11 @@
 //! listed, and the presale's creation policy admits the same venue. No transaction reaches a
 //! network.
 //!
+//! The Cetus and Bluefin routes run through `blast_migrators`, the venues both products share:
+//! the presale's own `migrate` returns the sale's `Migration` and the venue's `migrate` redeems it
+//! in the same PTB. One more lifecycle test per route keeps the presale's own venue modules, which
+//! remain until they are deleted, on the same assertions.
+//!
 //! One lifecycle test per route runs through public PTBs: Cetus with Meme as coin A (SUI Quote),
 //! Cetus with Meme as coin B (USDC Quote), and Bluefin (SUI Quote). Each creation PTB runs the
 //! venue's `prepare` on the sale token's `TreasuryCap`, then `blast_presale::new` takes the cap and
@@ -40,8 +45,8 @@ use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use blast_launchpad_ptb_tests::{
-    CompiledPackage, Delayed, DelayedAction, DelayedApplied, Destination, Expected, FeeSplit, Harness, Outcome,
-    RoundTerms, UnlinkedPackage, VaultStack, append_unpause, build, build_unlinked, call,
+    CompiledPackage, Delayed, DelayedAction, DelayedApplied, Destination, Expected, FeeSplit,
+    GenericPackageVersionContents, Harness, Outcome, RoundTerms, UnlinkedPackage, VaultStack, append_unpause, build, build_unlinked, call,
     fork::{
         AFTERMATH_DAO_FEE, BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusCollectFee, CetusOpenPosition,
@@ -99,6 +104,10 @@ const INVALID_LIFECYCLE: u64 = 18;
 const INVALID_COIN_ORDER: u64 = 49;
 const POSITION_POOL_MISMATCH: u64 = 50;
 const WRONG_COIN_PAIR: u64 = 51;
+/// `blast_migrators::errors` registry codes, raised by its `cetus` and `bluefin` modules.
+const MIGRATORS_INVALID_COIN_ORDER: u64 = 0;
+const MIGRATORS_POSITION_POOL_MISMATCH: u64 = 1;
+const MIGRATORS_WRONG_COIN_PAIR: u64 = 2;
 /// `blast_vault::errors` codes.
 const WRONG_VENUE: u64 = 5;
 const NOTHING_TO_CLAIM: u64 = 6;
@@ -292,6 +301,21 @@ fn presale_cetus_meme_b_with_usdc_against_mainnet_bytecode() -> Result<()> {
 #[test]
 fn presale_bluefin_with_sui_against_mainnet_bytecode() -> Result<()> {
     run(Route::Bluefin)
+}
+
+#[test]
+fn presale_own_cetus_meme_a_venue_with_sui_against_mainnet_bytecode() -> Result<()> {
+    run_world(World::new_hosted(Route::CetusMemeA, Host::Presale, false)?)
+}
+
+#[test]
+fn presale_own_cetus_meme_b_venue_with_usdc_against_mainnet_bytecode() -> Result<()> {
+    run_world(World::new_hosted(Route::CetusMemeB, Host::Presale, false)?)
+}
+
+#[test]
+fn presale_own_bluefin_venue_with_sui_against_mainnet_bytecode() -> Result<()> {
+    run_world(World::new_hosted(Route::Bluefin, Host::Presale, false)?)
 }
 
 #[test]
@@ -594,6 +618,14 @@ impl Route {
     }
 }
 
+/// The package whose `cetus` or `bluefin` module the sale migrates through: the shared
+/// `blast_migrators`, or the presale's own venue copy. Aftermath is always the presale's own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Host {
+    Migrators,
+    Presale,
+}
+
 #[derive(Clone, Copy)]
 enum Side {
     QuoteIn,
@@ -681,6 +713,20 @@ fn presale() -> &'static UnlinkedPackage {
     })
 }
 
+/// `blast_migrators` compiles once per test binary; each world links it to its own packages.
+fn migrators() -> &'static UnlinkedPackage {
+    static MIGRATORS: OnceLock<UnlinkedPackage> = OnceLock::new();
+    MIGRATORS.get_or_init(|| {
+        let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("presale_venue_fork_migrators");
+        build_unlinked(
+            &sui_dir().join("migrators"),
+            &["blast_admin", "blast_partners", "blast_fun_vesting", "blast_core", "blast_vault"],
+            &work,
+        )
+        .expect("build the migrators")
+    })
+}
+
 // === World ===
 
 struct Sale {
@@ -707,6 +753,11 @@ struct World {
     checkpoint: u64,
     venue: BTreeMap<String, ObjectID>,
     presale: ObjectID,
+    /// The package hosting the route's venue module: `blast_migrators`, or the presale itself.
+    venues: ObjectID,
+    host: Host,
+    /// This route's venue package version: the migrators' own, or the presale's.
+    venue_version: ObjectID,
     core: ObjectID,
     vault_stack: VaultStack,
     treasury: ObjectID,
@@ -738,6 +789,12 @@ impl World {
     }
 
     fn new_with_quote(route: Route, custom_quote: bool) -> Result<Self> {
+        let host = if route == Route::Aftermath { Host::Presale } else { Host::Migrators };
+        Self::new_hosted(route, host, custom_quote)
+    }
+
+    fn new_hosted(route: Route, host: Host, custom_quote: bool) -> Result<Self> {
+        ensure!(route != Route::Aftermath || host == Host::Presale, "Aftermath is the presale's own venue");
         let work =
             blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join(format!("presale_fork_{route:?}"));
         let mut h = Harness::new()?;
@@ -768,8 +825,36 @@ impl World {
             dependencies,
         )?;
         let (presale, published) = h.publish(linked)?;
-        let venue_config = published.created(&h, "venue_config", "VenueConfig");
+        let mut venue_config = published.created(&h, "venue_config", "VenueConfig");
         ensure!(venue_config.len() == 1 && h.object(venue_config[0]).is_shared());
+        let (venues, migrators_version) = if host == Host::Migrators {
+            let mut dependencies = vec![
+                ObjectID::from_single_byte(1),
+                ObjectID::from_single_byte(2),
+                admin,
+                stack.partners,
+                stack.vesting,
+                core,
+                vault,
+            ];
+            dependencies.extend(venue_dependencies(&h)?);
+            let linked = migrators().link(
+                &[
+                    ("blast_admin", admin),
+                    ("blast_partners", stack.partners),
+                    ("blast_fun_vesting", stack.vesting),
+                    ("blast_core", core),
+                    ("blast_vault", vault),
+                ],
+                dependencies,
+            )?;
+            let (migrators, migrators_publication) = h.publish(linked)?;
+            venue_config = migrators_publication.created(&h, "venue_config", "VenueConfig");
+            ensure!(venue_config.len() == 1 && h.object(venue_config[0]).is_shared());
+            (migrators, Some(h.wrap_migrators(admin, migrators, &migrators_publication)?))
+        } else {
+            (presale, None)
+        };
         let fee_policy = published.created(&h, "fee_policy", "FeePolicy");
         ensure!(fee_policy.len() == 1 && h.object(fee_policy[0]).is_shared());
         let creation_policy = published.created(&h, "creation_policy", "CreationPolicy");
@@ -789,7 +874,7 @@ impl World {
         // Both admissions name the route's one venue witness: the vault registry lists it, beside
         // the presale's package witness as the issuer of the sale's vault terms, while the vault
         // package is paused, and the creation policy admits it.
-        let venue_type = tag(&format!("{presale}::{}::Venue", route.module()));
+        let venue_type = tag(&format!("{venues}::{}::Venue", route.module()));
         let issuer_type = tag(&format!("{presale}::blast_presale::PackageWitness"));
         let vault_stack = h.wrap_vault(admin, vault, &vault_publication)?;
         h.release_vault(admin, admin_published, core, &vault_stack, &[venue_type.clone(), issuer_type])?;
@@ -848,6 +933,9 @@ impl World {
             checkpoint,
             venue,
             presale,
+            venues,
+            host,
+            venue_version: migrators_version.unwrap_or(version),
             presale_registry,
             core,
             vault_stack,
@@ -936,6 +1024,21 @@ impl World {
         Ok(())
     }
 
+    /// Seeds the stored generation of the route's venue package: the migrators' generic
+    /// `PackageVersion`, or the presale's own.
+    fn set_venue_generation_for_fixture(&mut self, generation: u64) -> Result<()> {
+        if self.host == Host::Presale {
+            return self.set_pause_generation_for_fixture(generation);
+        }
+        let (id, valid, paused, witness, _): GenericPackageVersionContents =
+            bcs::from_bytes(&self.h.contents(self.venue_version))?;
+        let mut object = self.h.object(self.venue_version);
+        object.data.try_as_move_mut().context("migrators PackageVersion")?
+            .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, generation))?);
+        self.h.insert(object);
+        Ok(())
+    }
+
     fn report(&mut self, line: String) {
         let line = format!("{:?} {line}", self.route);
         println!("PRESALE_VENUE_FORK {line}");
@@ -1013,6 +1116,20 @@ impl World {
     }
 
     /// Presale events of `module::name`.
+    /// Events of `name` that `package`'s `module` emitted.
+    fn package_events<T: DeserializeOwned>(&self, outcome: &Outcome, package: ObjectID, module: &str, name: &str) -> Vec<T> {
+        outcome
+            .events
+            .iter()
+            .filter(|event| {
+                ObjectID::from(event.type_.address) == package
+                    && event.type_.module.as_str() == module
+                    && event.type_.name.as_str() == name
+            })
+            .map(|event| bcs::from_bytes(&event.contents).expect("event payload"))
+            .collect()
+    }
+
     fn events<T: DeserializeOwned>(&self, outcome: &Outcome, module: &str, name: &str) -> Vec<T> {
         outcome
             .events
@@ -1249,6 +1366,7 @@ impl World {
         let eligibility = call(&mut b, self.presale, "blast_presale", "open_eligibility", vec![], eligibility_args);
 
         let version = self.shared(&mut b, self.version, false)?;
+        let venue_version = self.shared(&mut b, self.venue_version, false)?;
         let cap = b.obj(self.h.owned(treasury_cap))?;
         let venue_config = self.shared(&mut b, self.venue_config, true)?;
         let currency = self.shared(&mut b, currency, true)?;
@@ -1256,20 +1374,20 @@ impl World {
         let (tick_spacing, fee_rate) = self.route.tier();
         let venue_ticket = if self.route.is_cetus() {
             let args = vec![
-                version,
+                venue_version,
                 venue_config,
                 self.shared(&mut b, self.venue("cetus_global_config"), false)?,
                 self.shared(&mut b, self.venue("cetus_pools"), true)?,
                 cap,
                 b.pure(tick_spacing)?,
             ];
-            call(&mut b, self.presale, "cetus", "prepare", pair.clone(), args)
+            call(&mut b, self.venues, "cetus", "prepare", pair.clone(), args)
         } else if let Some((lp, create_pool_cap)) = &aftermath_lp {
             let args = vec![version, venue_config, cap, b.obj(self.h.owned(*create_pool_cap))?, b.pure(fee_rate as u16)?];
             call(&mut b, self.presale, "aftermath", "prepare", vec![lp.clone(), meme.clone(), self.quote()], args)
         } else {
-            let args = vec![version, venue_config, cap, currency, b.pure(tick_spacing)?, b.pure(fee_rate)?];
-            call(&mut b, self.presale, "bluefin", "prepare", pair.clone(), args)
+            let args = vec![venue_version, venue_config, cap, currency, b.pure(tick_spacing)?, b.pure(fee_rate)?];
+            call(&mut b, self.venues, "bluefin", "prepare", pair.clone(), args)
         };
         let creation_policy = self.shared(&mut b, self.creation_policy, false)?;
         let fee_policy = self.shared(&mut b, self.fee_policy, false)?;
@@ -1330,11 +1448,25 @@ impl World {
         ensure!((state.protocol_quote, state.protocol_tokens) == (0, 0), "a zero-rate policy reserves Blast nothing");
         ensure!(state.venue.ends_with(&format!("::{}::Venue", self.route.module())), "the sale records its venue");
         ensure!(state.fee_split == initial_split(), "the sale records its vault's fee split");
-        let tiers: Vec<PoolTierReserved> = self.events(&created, "venue_config", "PoolTierReserved");
-        ensure!(
-            tiers.len() == 1 && (tiers[0].tick_spacing, tiers[0].pool_fee_rate) == self.route.tier(),
-            "the sale records its exact venue tier"
-        );
+        let tiers: Vec<(u32, u64)> = match (self.host, self.route.is_cetus()) {
+            (Host::Presale, _) => self
+                .events::<PoolTierReserved>(&created, "venue_config", "PoolTierReserved")
+                .into_iter()
+                .map(|tier| (tier.tick_spacing, tier.pool_fee_rate))
+                .collect(),
+            // Cetus fixes the fee rate of a registered tick spacing; the reservation names the spacing.
+            (Host::Migrators, true) => self
+                .package_events::<CetusPoolReserved>(&created, self.venues, "events", "CetusPoolReserved")
+                .into_iter()
+                .map(|reserved| (reserved.tick_spacing, CETUS_FEE_RATE))
+                .collect(),
+            (Host::Migrators, false) => self
+                .package_events::<BluefinPoolTierRecorded>(&created, self.venues, "events", "BluefinPoolTierRecorded")
+                .into_iter()
+                .map(|tier| (tier.tick_spacing, tier.fee_rate))
+                .collect(),
+        };
+        ensure!(tiers == vec![self.route.tier()], "the sale records its exact venue tier");
         ensure!(
             (state.sale_tokens, state.liquidity_tokens, state.recipient_tokens)
                 == (terms.sale_tokens(), terms.lp_tokens(), terms.recipient_tokens().iter().sum()),
@@ -1412,6 +1544,10 @@ impl World {
         let vault_version = self.shared(b, self.vault_stack.version, false)?;
         let treasury = self.shared(b, self.treasury, false)?;
         let clock = self.clock(b)?;
+        if self.host == Host::Migrators {
+            return self.two_call_migrate_command(b, sale, order, creation_fee,
+                [presale, version, fee_policy, venue_config, registry, vault_version, treasury, clock]);
+        }
         if self.route.is_cetus() {
             let (coin_a, coin_b) = order.unwrap_or_else(|| {
                 let pool_pair = self.pool_pair(&sale.meme);
@@ -1456,6 +1592,61 @@ impl World {
         Ok(())
     }
 
+    /// The two-call migration through `blast_migrators`: `blast_presale::migrate` returns the
+    /// sale's `Migration`, and the venue's `migrate` redeems it first.
+    #[allow(clippy::too_many_arguments)]
+    fn two_call_migrate_command(
+        &self,
+        b: &mut ProgrammableTransactionBuilder,
+        sale: &Sale,
+        order: Option<(TypeTag, TypeTag)>,
+        creation_fee: Option<u64>,
+        [presale, version, fee_policy, venue_config, registry, vault_version, treasury, clock]: [Argument; 8],
+    ) -> Result<()> {
+        let migration = call(b, self.presale, "blast_presale", "migrate", self.pair(sale), vec![presale, version, fee_policy, clock]);
+        let migrators_version = self.shared(b, self.venue_version, false)?;
+        if self.route.is_cetus() {
+            let (coin_a, coin_b) = order.unwrap_or_else(|| {
+                let pool_pair = self.pool_pair(&sale.meme);
+                (pool_pair[0].clone(), pool_pair[1].clone())
+            });
+            let args = vec![
+                migration,
+                migrators_version,
+                venue_config,
+                self.shared(b, self.venue("cetus_global_config"), false)?,
+                self.shared(b, self.venue("cetus_pools"), true)?,
+                self.shared(b, self.venue("cetus_burn_manager"), true)?,
+                registry,
+                vault_version,
+                treasury,
+                clock,
+            ];
+            call(b, self.venues, "cetus", "migrate", vec![sale.meme.clone(), self.quote(), coin_a, coin_b], args);
+        } else {
+            let fee = b.pure(creation_fee.map_or_else(|| self.bluefin_creation_fee(), Ok)?)?;
+            let Argument::Result(fee) = b.command(Command::SplitCoins(Argument::GasCoin, vec![fee])) else {
+                unreachable!()
+            };
+            let args = vec![
+                migration,
+                migrators_version,
+                venue_config,
+                self.shared(b, sale.currency, false)?,
+                self.shared(b, self.quote_currency, false)?,
+                self.shared(b, self.venue("bluefin_global_config"), true)?,
+                registry,
+                vault_version,
+                treasury,
+                Argument::NestedResult(fee, 0),
+                clock,
+            ];
+            call(b, self.venues, "bluefin", "migrate", self.pair(sale), args);
+        }
+
+        Ok(())
+    }
+
     /// Bluefin's live SUI pool-creation fee from the snapshot's fee table.
     fn bluefin_creation_fee(&self) -> Result<u64> {
         let (_, _, fee): (ObjectID, String, u64) =
@@ -1487,14 +1678,17 @@ impl World {
             let reversed = (pool_pair[1].clone(), pool_pair[0].clone());
             let mut b = ProgrammableTransactionBuilder::new();
             self.migrate_command(&mut b, sale, Some(reversed), None)?;
-            let expected = Expected::Abort { package: self.presale, module: "cetus", code: INVALID_COIN_ORDER };
+            let invalid_coin_order =
+                if self.host == Host::Presale { INVALID_COIN_ORDER } else { MIGRATORS_INVALID_COIN_ORDER };
+            let expected = Expected::Abort { package: self.venues, module: "cetus", code: invalid_coin_order };
             self.h.assert_rolled_back(b.finish(), expected, &watched, &owners)?;
 
             // (USDC, SUI) is in Cetus order and shares one coin with either route's pair.
             ensure!(meme_is_cetus_a(&tag(USDC), &sui()));
             let mut b = ProgrammableTransactionBuilder::new();
             self.migrate_command(&mut b, sale, Some((tag(USDC), sui())), None)?;
-            let expected = Expected::Abort { package: self.presale, module: "cetus", code: WRONG_COIN_PAIR };
+            let wrong_coin_pair = if self.host == Host::Presale { WRONG_COIN_PAIR } else { MIGRATORS_WRONG_COIN_PAIR };
+            let expected = Expected::Abort { package: self.venues, module: "cetus", code: wrong_coin_pair };
             self.h.assert_rolled_back(b.finish(), expected, &watched, &owners)?;
             self.report(
                 "cetus::migrate with the reversed coin order: EInvalidCoinOrder; with (USDC, SUI): EWrongCoinPair; both rolled back"
@@ -1562,7 +1756,7 @@ impl World {
             .find(|event| event.type_.name.as_str() == "VaultCreated")
             .and_then(|event| event.type_.type_params.get(2).cloned())
             .context("vault venue marker")?;
-        ensure!(venue_marker == self.presale_tag(self.route.module(), "Venue"), "venue marker {venue_marker}");
+        ensure!(venue_marker == tag(&format!("{}::{}::Venue", self.venues, self.route.module())), "venue marker {venue_marker}");
         let terms_sealed = &created.terms;
         ensure!(terms_sealed.package_witness.ends_with("::blast_presale::PackageWitness"), "{}", terms_sealed.package_witness);
         ensure!(
@@ -1811,7 +2005,7 @@ impl World {
         let mut b = ProgrammableTransactionBuilder::new();
         let mut args = vec![
             self.shared(&mut b, m.vault, true)?,
-            self.shared(&mut b, self.version, false)?,
+            self.shared(&mut b, self.venue_version, false)?,
             self.shared(&mut b, self.vault_stack.version, false)?,
             self.shared(&mut b, self.treasury, false)?,
             self.shared(&mut b, sale.currency, true)?,
@@ -1825,15 +2019,17 @@ impl World {
             ]);
             let mut types = self.pair(sale);
             types.extend(self.pool_pair(&sale.meme));
-            if apply { args.push(self.clock(&mut b)?); }
-            call(&mut b, self.presale, "cetus", function, types, args);
+            // The shared venues take the Clock on every collection; the presale's own copy on
+            // settled updates only.
+            if apply || self.host == Host::Migrators { args.push(self.clock(&mut b)?); }
+            call(&mut b, self.venues, "cetus", function, types, args);
         } else {
             args.extend([
                 self.shared(&mut b, self.venue("bluefin_global_config"), false)?,
                 self.shared(&mut b, pool, true)?,
                 self.clock(&mut b)?,
             ]);
-            call(&mut b, self.presale, "bluefin", function, self.pair(sale), args);
+            call(&mut b, self.venues, "bluefin", function, self.pair(sale), args);
         }
 
         Ok(b.finish())
@@ -1929,10 +2125,10 @@ impl World {
         ensure!(pending.pending.as_ref().is_some_and(|p| p.value == next_split() && p.delay_ms == VAULT_FEE_NOTICE_MS));
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
         let watched = [m.vault, m.pool, sale.currency];
-        self.set_pause_generation_for_fixture(2)?;
+        self.set_venue_generation_for_fixture(2)?;
         let stale = self.collect_route_pt(sale, m, m.pool, true)?;
         self.h.assert_rolled_back(stale, Expected::Abort {package: self.admin, module: "operational_version", code: 9}, &watched, &owners)?;
-        self.set_pause_generation_for_fixture(1)?;
+        self.set_venue_generation_for_fixture(1)?;
         let early = self.collect_route_pt(sale, m, m.pool, true)?;
         self.h.assert_rolled_back(early, Expected::Abort {package: self.admin, module: "delayed", code: 17}, &watched, &owners)?;
         self.h.sim.advance_clock(std::time::Duration::from_millis(old.delay_ms));
@@ -2028,8 +2224,8 @@ impl World {
         ensure!(other.len() == 1 && other[0] != m.pool && self.h.object(other[0]).is_shared());
         let other = other[0];
 
-        let code = POSITION_POOL_MISMATCH;
-        let expected = Expected::Abort { package: self.presale, module: self.route.module(), code };
+        let code = if self.host == Host::Presale { POSITION_POOL_MISMATCH } else { MIGRATORS_POSITION_POOL_MISMATCH };
+        let expected = Expected::Abort { package: self.venues, module: self.route.module(), code };
         let pt = self.collect_pt(sale, m, other)?;
         let owners = [self.h.sender, CREATOR.into(), FEE_B.into()];
         self.h.assert_rolled_back(pt, expected, &[m.vault, other, sale.currency], &owners)?;
@@ -2041,7 +2237,7 @@ impl World {
         self.h.execute(schedule)?.assert_success();
         self.h.sim.advance_clock(std::time::Duration::from_millis(VAULT_FEE_NOTICE_MS));
         let ready_wrong_pool = self.collect_route_pt(sale, m, other, true)?;
-        self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.presale, module: self.route.module(), code}, &[m.vault, other, sale.currency], &owners)?;
+        self.h.assert_rolled_back(ready_wrong_pool, Expected::Abort {package: self.venues, module: self.route.module(), code}, &[m.vault, other, sale.currency], &owners)?;
         let mut b = ProgrammableTransactionBuilder::new();
         let proof = self.prove_owner(&mut b, sale)?;
         let args = vec![self.shared(&mut b, m.vault, true)?, proof, self.shared(&mut b, self.vault_stack.version, false)?];
@@ -2381,6 +2577,20 @@ struct VaultState {
 struct PoolTierReserved {
     tick_spacing: u32,
     pool_fee_rate: u64,
+}
+
+/// Mirrors `blast_migrators::events::CetusPoolReserved<Meme, Quote>`; the pair is its type.
+#[derive(Deserialize)]
+struct CetusPoolReserved {
+    _pool_creation_cap_id: ObjectID,
+    tick_spacing: u32,
+}
+
+/// Mirrors `blast_migrators::events::BluefinPoolTierRecorded<Meme, Quote>`.
+#[derive(Deserialize)]
+struct BluefinPoolTierRecorded {
+    tick_spacing: u32,
+    fee_rate: u64,
 }
 
 #[derive(Deserialize)]

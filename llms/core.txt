@@ -34,8 +34,8 @@ product guide below assumes it.
 
 | Product | What users do | Packages |
 | --- | --- | --- |
-| Presale | commit Quote to a capped or overflow sale, claim tokens or refunds, earn LP fees and holder rewards after migration | `blast_presale`; one-off partner migrators such as `blast_aftermath_dao_presale` |
-| Launchpad | launch a coin on a bonding curve, trade it, graduate it into a DEX pool | `blast_fun` (curve, lifecycle, fees), a generated coin package per launch, `blast_fun_migrators` (venue start, migration, LP vault, LP fees, holder rewards) |
+| Presale | commit Quote to a capped or overflow sale, claim tokens or refunds, earn LP fees and holder rewards after migration | `blast_presale`; the shared venues `blast_migrators`; one-off partner venues such as `blast_aftermath_dao_presale` |
+| Launchpad | launch a coin on a bonding curve, trade it, graduate it into a DEX pool | `blast_fun` (curve, lifecycle, fees), a generated coin package per launch, `blast_migrators` (Cetus and Bluefin venues for both products: venue start, migration, LP fees), `blast_vault` (LP vault, holder rewards) |
 | Partner codes | earn a share of Blast's fee on the flow an app brings | `blast_partners` |
 | Boosts | hold a leveraged long or short coin backed by Aftermath perpetuals | `blast_boosts_core`, `blast_boosts_products`, `blast_boosts_aftermath` |
 | blastSUI | stake SUI with one validator through funSUI and blastSUI | `blast_sui` |
@@ -44,7 +44,7 @@ product guide below assumes it.
 Each package and what it depends on:
 
 ```text
-blast_fun_migrators          -> blast_fun, blast_admin, Cetus, Bluefin
+blast_migrators              -> blast_core, blast_vault, blast_admin, Cetus, Bluefin
 blast_fun                    -> blast_partners, blast_admin
 blast_partners               -> blast_admin
 blast_presale                -> blast_admin, blast_partners, blast_fun_vesting, Cetus, Bluefin, Aftermath
@@ -128,7 +128,7 @@ Upgrade rules depend on the package lineage.
 | --- | --- | --- |
 | Immutable | `blast_admin`, `blast_partners`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use an operational version object. |
-| Version-gated | `blast_presale`, `blast_fun`, `blast_fun_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
+| Version-gated | `blast_presale`, `blast_fun`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object. After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
 
 ### Events
@@ -148,8 +148,8 @@ Upgrade rules depend on the package lineage.
 A failed call returns a Move abort naming the module and function that aborted
 and a `u64` code. Blast uses two styles:
 
-- **Named errors** (`#[error]` constants): `blast_partners`,
-  `blast_fun_migrators`, and `blast_aftermath_dao_presale`. Sui's RPC and SDKs
+- **Named errors** (`#[error]` constants): `blast_partners` and
+  `blast_aftermath_dao_presale`. Sui's RPC and SDKs
   decode these into the constant's name and message; the reference lists each
   module's constants with their messages.
 - **Numeric codes**: `blast_fun`, `blast_presale`, `blast_sui`, `blast_boosts_core`,
@@ -617,7 +617,7 @@ public fun verify(
 
 ### `blast_core::migration`
 
-The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. A standalone vault's issuer seals its own `VaultTerms` the same way, without a hand-off. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.  The module also derives the price a concentrated-liquidity venue seeds the pool at, and whether both such venues can seed it, so a product can refuse a sale that could never migrate.
+The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.  The module also derives the price a concentrated-liquidity venue seeds the pool at, and whether both such venues can seed it, so a product can refuse a sale that could never migrate.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration.move
 
@@ -632,9 +632,9 @@ public enum ResidualPolicy has copy, drop, store {
     Owner,
 }
 
-/// Everything a new vault snapshots from the sale or standalone issuer that sealed its terms.
-/// Sealed terms authorize a vault, so products and venues must not return them by value: a venue
-/// takes them only from `redeem` or seals its own.
+/// Everything a new vault snapshots from the sale that sealed its terms. Sealed terms authorize a
+/// vault, so products and venues must not return them by value: a venue takes them only from
+/// `redeem`.
 public struct VaultTerms has copy, drop, store {
     /// The launch or presale the vault belongs to; owner proofs name it.
     origin: ID,
@@ -684,8 +684,7 @@ public fun redeem_ticket<Meme, Quote>(self: VenueTicket<Meme, Quote>): TypeName
 /// `redeem_ticket` stays the ticket's one consuming path.
 public fun ticket_venue<Meme, Quote>(self: &VenueTicket<Meme, Quote>): TypeName
 
-/// A vault's terms, sealed under the `PackageWitness` of the sale or standalone issuer that owns
-/// `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
+/// A vault's terms, sealed under the `PackageWitness` of the sale's product that owns `origin`; owner proofs for the vault must come from the same witness. Each Blast share is at
 /// most `constants::max_lp_fee_bps!()`, 3,000 basis points, so a vault trusts sealed terms.
 public fun vault_terms<PackageWitness: drop>(
     _: PackageWitness,

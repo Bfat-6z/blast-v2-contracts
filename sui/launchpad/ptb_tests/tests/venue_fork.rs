@@ -39,7 +39,7 @@ use anyhow::{Context, Result, bail, ensure};
 use blake2::{Blake2b, Digest, digest::consts::U32};
 use blast_launchpad_ptb_tests::{
     ActionScheduled, Change, CompiledPackage, Delayed, DelayedAction, DelayedApplied, Destination, Expected, FeeSplit,
-    Harness, Outcome, RoundTerms, UnlinkedPackage, VaultStack, build, build_unlinked, call,
+    GenericPackageVersionContents, Harness, Outcome, RoundTerms, UnlinkedPackage, VaultStack, build, build_unlinked, call,
     fork::{
         BLUEFIN, BLUEFIN_MAX_SQRT_PRICE, BLUEFIN_MIN_SQRT_PRICE, BluefinPoolCreated, BurnPosition, BurnProof,
         BurnRecord, CETUS, CETUS_MAX_SQRT_PRICE, CETUS_MIN_SQRT_PRICE, CetusAddLiquidity, CetusCollectFee,
@@ -84,6 +84,8 @@ const MIGRATED: u8 = 3;
 const INVALID_INITIAL_MEME_SUPPLY: u64 = 8;
 const INVALID_LAUNCH_LIFECYCLE: u64 = 12;
 const CREATOR_CAP_NOT_LIVE: u64 = 18;
+/// `blast_core::errors` code for a hand-off redeemed by another venue.
+const WRONG_VENUE: u64 = 8;
 /// `blast_vault::errors` codes.
 const BUYBACK_BELOW_MINIMUM: u64 = 8;
 const CLAIMS_CLOSED: u64 = 23;
@@ -91,9 +93,11 @@ const ALREADY_CLAIMED: u64 = 25;
 const RESERVE_SETTLED: u64 = 30;
 const OVER_RESERVE: u64 = 31;
 const CLAIMS_STILL_OPEN: u64 = 32;
-/// `blast_fun_migrators::cetus` codes.
+/// `blast_migrators::errors` codes.
 const INVALID_COIN_ORDER: u64 = 0;
+const POSITION_POOL_MISMATCH: u64 = 1;
 const WRONG_COIN_PAIR: u64 = 2;
+const INVALID_TIER: u64 = 3;
 
 /// The `blast_core::blast_domain` roles this world's one `AdminCap` holds, for the launchpad and
 /// the vault alike.
@@ -430,7 +434,7 @@ fn migrators() -> &'static UnlinkedPackage {
         let work = blast_launchpad_ptb_tests::test_work_dir().join(env!("CARGO_PKG_NAME")).join("venue_fork");
         build_unlinked(
             &sui_dir().join("migrators"),
-            &["blast_admin", "blast_partners", "blast_fun_vesting", "blast_core", "blast_fun", "blast_vault"],
+            &["blast_admin", "blast_partners", "blast_fun_vesting", "blast_core", "blast_vault"],
             &work,
         )
             .expect("build the migrators")
@@ -570,7 +574,6 @@ impl World {
             stack.partners,
             stack.vesting,
             core,
-            blast,
             vault,
         ];
         dependencies.extend(venue_dependencies(&h)?);
@@ -580,14 +583,13 @@ impl World {
                 ("blast_partners", stack.partners),
                 ("blast_fun_vesting", stack.vesting),
                 ("blast_core", core),
-                ("blast_fun", blast),
                 ("blast_vault", vault),
             ],
             dependencies,
         )?;
         let (migrators, migrators_publication) = h.publish(linked)?;
         let venue_config = one(&h, &migrators_publication, "venue_config", "VenueConfig");
-        let migrators_version = h.wrap_migrators(migrators, &migrators_publication)?;
+        let migrators_version = h.wrap_migrators(admin, migrators, &migrators_publication)?;
         // Both admissions name the case's one venue witness: the vault registry lists it, beside
         // the launchpad's package witness as the issuer of the launch's vault terms, while the
         // vault package is paused, and the launch config admits it.
@@ -789,9 +791,9 @@ impl World {
             .collect()
     }
 
-    /// Migrators events of `name`, from its own `blast_events`.
+    /// Migrators events of `name`, from its own `events` module.
     fn events<T: DeserializeOwned>(&self, outcome: &Outcome, name: &str) -> Vec<T> {
-        self.package_events(outcome, self.migrators, "blast_events", name)
+        self.package_events(outcome, self.migrators, "events", name)
     }
 
     /// Vault events of `name`, from `blast_vault_events`.
@@ -887,6 +889,7 @@ impl World {
         let version = self.shared(&mut b, self.version, false)?;
         let config = self.shared(&mut b, self.config, false)?;
         let venue_config = self.shared(&mut b, self.venue_config, true)?;
+        let currency = self.shared(&mut b, ticket.currency, true)?;
         let tick_spacing = b.pure(tier.0)?;
         let venue_ticket = if self.case.is_cetus() {
             let cetus_config = self.shared(&mut b, self.venue("cetus_global_config"), false)?;
@@ -907,7 +910,7 @@ impl World {
                 "bluefin",
                 "prepare",
                 pair.clone(),
-                vec![migrators_version, venue_config, treasury_cap, tick_spacing, fee_rate],
+                vec![migrators_version, venue_config, treasury_cap, currency, tick_spacing, fee_rate],
             )
         };
         if mint_between {
@@ -931,7 +934,6 @@ impl World {
         call(&mut b, self.blast, "launch", "set_allocation_plan", pair.clone(), vec![initializer, version, plan]);
         let split = split.arg(&mut b, self.core)?;
         call(&mut b, self.blast, "launch", "set_lp_fee_split", pair.clone(), vec![initializer, version, split]);
-        let currency = self.shared(&mut b, ticket.currency, true)?;
         let creation_fee = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "zero", vec![sui()], vec![]);
         let registry = self.shared(&mut b, self.launch_registry, true)?;
         let launch = call(&mut b, self.blast, "launch", "finalize", pair.clone(), vec![
@@ -999,7 +1001,7 @@ impl World {
                 (BLUEFIN_TICK_SPACING, 20_001),
             ] {
                 let pt = self.create_launch_pt(&ticket, split, tier, false)?;
-                let expected = Expected::Abort { package: self.migrators, module: "bluefin", code: 1 };
+                let expected = Expected::Abort { package: self.migrators, module: "bluefin", code: INVALID_TIER };
                 self.h.assert_rolled_back(pt, expected, &watched, &owners)?;
             }
             self.report(
@@ -1130,7 +1132,8 @@ impl World {
         Ok(())
     }
 
-    /// The migration call with `types` as its type arguments; Bluefin pays `creation_fee` SUI, or
+    /// The two-call migration: `launch::migrate` returns the launch's `Migration`, and the venue's
+    /// `migrate` with `types` as its type arguments redeems it. Bluefin pays `creation_fee` SUI, or
     /// its live fee when none.
     fn migrate_command(
         &self,
@@ -1149,6 +1152,14 @@ impl World {
         let vault_version = self.vault_version(b)?;
         let treasury = self.shared(b, self.treasury, false)?;
         let clock = self.clock(b)?;
+        let migration = call(
+            b,
+            self.blast,
+            "launch",
+            "migrate",
+            self.pair(launch),
+            vec![launch_arg, version, config, currency, clock],
+        );
         if self.case.is_cetus() {
             let cetus_config = self.shared(b, self.venue("cetus_global_config"), false)?;
             let pools = self.shared(b, self.venue("cetus_pools"), true)?;
@@ -1160,11 +1171,8 @@ impl World {
                 "migrate",
                 types,
                 vec![
-                    launch_arg,
+                    migration,
                     migrators_version,
-                    version,
-                    config,
-                    currency,
                     venue_config,
                     cetus_config,
                     pools,
@@ -1189,13 +1197,11 @@ impl World {
                 "migrate",
                 types,
                 vec![
-                    launch_arg,
+                    migration,
                     migrators_version,
-                    version,
-                    config,
+                    venue_config,
                     currency,
                     quote_currency,
-                    venue_config,
                     bluefin_config,
                     registry,
                     vault_version,
@@ -1206,6 +1212,37 @@ impl World {
             );
         }
 
+        Ok(())
+    }
+
+    /// `launch::migrate`, then the Cetus venue's `migrate` with that Migration, in Cetus's coin
+    /// order for the pair.
+    fn cetus_migrate_of_bluefin_hand_off(&self, b: &mut ProgrammableTransactionBuilder, launch: &Launch) -> Result<()> {
+        let launch_arg = self.shared(b, launch.launch, true)?;
+        let version = self.shared(b, self.version, false)?;
+        let config = self.shared(b, self.config, false)?;
+        let currency = self.shared(b, launch.currency, true)?;
+        let clock = self.clock(b)?;
+        let migration = call(b, self.blast, "launch", "migrate", self.pair(launch), vec![launch_arg, version, config, currency, clock]);
+        let mut types = self.pair(launch);
+        if meme_is_cetus_a(&launch.meme, &self.quote()) {
+            types.extend([launch.meme.clone(), self.quote()]);
+        } else {
+            types.extend([self.quote(), launch.meme.clone()]);
+        }
+        let args = vec![
+            migration,
+            self.shared(b, self.migrators_version, false)?,
+            self.shared(b, self.venue_config, false)?,
+            self.shared(b, self.venue("cetus_global_config"), false)?,
+            self.shared(b, self.venue("cetus_pools"), true)?,
+            self.shared(b, self.venue("cetus_burn_manager"), true)?,
+            self.shared(b, self.vault_stack.registry, true)?,
+            self.vault_version(b)?,
+            self.shared(b, self.treasury, false)?,
+            clock,
+        ];
+        call(b, self.migrators, "cetus", "migrate", types, args);
         Ok(())
     }
 
@@ -1242,6 +1279,16 @@ impl World {
             let expected = Expected::Abort { package: id(BLUEFIN), module: "pool", code: 1039 };
             self.h.assert_rolled_back(b.finish(), expected, &watched, &owners)?;
             self.report(format!("migrate paying {} MIST against the live {fee} MIST creation fee: Bluefin pool aborts 1039, rolled back", fee + 1));
+
+            // The Bluefin launch's hand-off into the Cetus venue: the redeem refuses it before
+            // the Cetus venue reads any tier or touches Cetus.
+            let mut b = ProgrammableTransactionBuilder::new();
+            self.cetus_migrate_of_bluefin_hand_off(&mut b, launch)?;
+            let expected = Expected::Abort { package: self.core, module: "migration", code: WRONG_VENUE };
+            let cetus_watched =
+                [watched.clone(), vec![self.venue("cetus_pools"), self.venue("cetus_burn_manager")]].concat();
+            self.h.assert_rolled_back(b.finish(), expected, &cetus_watched, &owners)?;
+            self.report("launch::migrate then cetus::migrate with the Bluefin launch's Migration: blast_core::migration wrong_venue, rolled back".into());
         } else {
             let mut reversed = self.pool_pair(launch);
             reversed.reverse();
@@ -1614,9 +1661,11 @@ impl World {
             ensure!(pending.pending.as_ref().is_some_and(|p| p.value == *split && p.delay_ms == VAULT_FEE_NOTICE_MS));
             // Seed only fixture generation bytes; the public wrapper must reject before readiness.
             let original = self.h.object(self.migrators_version);
+            let (id, valid, paused, witness, _): GenericPackageVersionContents =
+                bcs::from_bytes(&self.h.contents(self.migrators_version))?;
             let mut stale = original.clone();
             stale.data.try_as_move_mut().expect("PackageVersion")
-                .set_contents_unsafe(bcs::to_bytes(&(self.migrators_version, 2u64))?);
+                .set_contents_unsafe(bcs::to_bytes(&(id, valid, paused, witness, 2u64))?);
             self.h.insert(stale);
             let stale_apply = self.collect_pt(launch, m, m.pool, update)?;
             self.h.assert_rolled_back(stale_apply, Expected::Abort {package: self.admin, module: "operational_version", code: 9},
@@ -2090,7 +2139,7 @@ impl World {
         let other = other[0];
 
         let module = self.case.module();
-        let code = if self.case.is_cetus() { 1 } else { 0 };
+        let code = POSITION_POOL_MISMATCH;
         let expected = Expected::Abort { package: self.migrators, module, code };
         let pt = self.collect_pt(launch, m, other, None)?;
         let watched = [m.vault, other, launch.currency];
@@ -2543,10 +2592,9 @@ struct ProtocolFeesAccrued {
     quote_amount: u64,
 }
 
+/// Mirrors `blast_migrators::events::CetusPoolReserved<Meme, Quote>`; the pair is its type.
 #[derive(Deserialize)]
 struct CetusPoolReserved {
-    _meme: String,
-    _quote: String,
     pool_creation_cap_id: ObjectID,
     tick_spacing: u32,
 }

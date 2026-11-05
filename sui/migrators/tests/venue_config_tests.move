@@ -4,7 +4,7 @@
 #[test_only]
 /// Write-once venue entries keyed by the venue module that adds them: authority-bearing objects
 /// and plain records, such as a prepared coin's pool tier.
-module blast_fun_migrators::venue_config_tests;
+module blast_migrators::venue_config_tests;
 
 // === Test-Only Types ===
 
@@ -144,7 +144,7 @@ const PUBLISHER: address = @0xA11CE;
 
 // === Imports ===
 
-use blast_fun_migrators::venue_config::{Self, VenueConfig};
+use blast_migrators::venue_config::{Self, VenueConfig};
 
 use std::unit_test::assert_eq;
 

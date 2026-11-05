@@ -1113,7 +1113,7 @@ impl Harness {
         let (_, valid, paused, unpause_witness, generation): GenericPackageVersionContents =
             bcs::from_bytes(&self.contents(version[0])).context("decode the vault PackageVersion")?;
         ensure!((valid, paused, generation) == (1, 1, 1), "the vault version starts fully paused at generation 1");
-        ensure!(unpause_witness.ends_with("::blast_vault_package::UnpauseWitness"), "{unpause_witness}");
+        ensure!(unpause_witness.ends_with("::blast_vault_package::PackageWitness"), "{unpause_witness}");
         self.assert_publication_upgrade_notice(custody[0])?;
 
         Ok(VaultStack { package: vault, version: version[0], custody: custody[0], registry: registry[0] })
@@ -1172,23 +1172,33 @@ impl Harness {
         Ok(())
     }
 
-    /// Migrators shares no operational version until its one-time Publication enters custody.
-    pub fn wrap_migrators(&mut self, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
-        assert!(publication.created(self, "blast_fun_migrators", "PackageVersion").is_empty());
-        let bootstrap = publication.created(self, "blast_fun_migrators", "Publication")[0];
-        let cap = publication.created(self, "package", "UpgradeCap")[0];
+    /// Wraps the migrators' publication with its never-upgraded cap through `blast_admin`'s generic
+    /// custody. The package defines no pause bits, so its version is shared unpaused at generation
+    /// one with nothing to release.
+    pub fn wrap_migrators(&mut self, admin: ObjectID, package: ObjectID, publication: &Outcome) -> Result<ObjectID> {
+        ensure!(publication.created(self, "package_version", "PackageVersion").is_empty(), "no version before custody");
+        let bootstrap = publication.created(self, "package_version", "Publication");
+        let cap = publication.created(self, "package", "UpgradeCap");
+        ensure!(bootstrap.len() == 1 && cap.len() == 1, "one publication and one upgrade cap");
+        ensure!(self.object(bootstrap[0]).owner().get_address_owner_address()? == self.sender, "the publisher keeps the publication");
+        let marker = sui_types::parse_sui_type_tag(&format!("{package}::blast_migrators::BLAST_MIGRATORS"))?;
         let mut b = ProgrammableTransactionBuilder::new();
-        let bootstrap_arg = b.obj(self.owned(bootstrap))?;
-        let cap_arg = b.obj(self.owned(cap))?;
-        call(&mut b, package, "package_admin", "wrap", vec![], vec![bootstrap_arg, cap_arg]);
+        let bootstrap_arg = b.obj(self.owned(bootstrap[0]))?;
+        let cap_arg = b.obj(self.owned(cap[0]))?;
+        call(&mut b, admin, "package_admin", "wrap", vec![marker], vec![bootstrap_arg, cap_arg]);
         let outcome = self.execute(b.finish())?;
         outcome.assert_success();
-        assert!(outcome.effects.deleted().iter().any(|object| object.0 == bootstrap));
-        let version = outcome.created(self, "blast_fun_migrators", "PackageVersion");
-        assert_eq!(version.len(), 1);
-        let package_admin = outcome.created(self, "package_admin", "PackageAdmin");
-        assert_eq!(package_admin.len(), 1);
-        self.assert_publication_upgrade_notice(package_admin[0])?;
+        ensure!(outcome.effects.deleted().iter().any(|object| object.0 == bootstrap[0]), "wrap consumes the publication");
+        ensure!(outcome.effects.wrapped().iter().map(|object| object.0).collect::<Vec<_>>() == cap, "custody seals the cap");
+        let version = outcome.created(self, "package_version", "PackageVersion");
+        let custody = outcome.created(self, "package_admin", "PackageAdmin");
+        ensure!(version.len() == 1 && custody.len() == 1);
+        ensure!(self.object(version[0]).is_shared() && self.object(custody[0]).is_shared());
+        let (_, valid, paused, package_witness, generation): GenericPackageVersionContents =
+            bcs::from_bytes(&self.contents(version[0])).context("decode the migrators PackageVersion")?;
+        ensure!((valid, paused, generation) == (0, 0, 1), "the migrators version defines no pause bits at generation 1");
+        ensure!(package_witness.ends_with("::blast_migrators::PackageWitness"), "{package_witness}");
+        self.assert_publication_upgrade_notice(custody[0])?;
         Ok(version[0])
     }
 

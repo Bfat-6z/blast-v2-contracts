@@ -1,5 +1,5 @@
 [package]
-name = "blast_fun_migrators"
+name = "blast_migrators"
 edition = "2024"
 license = "BUSL-1.1"
 authors = ["Jose Cerqueira (jose@interestprotocol.com)"]
@@ -7,7 +7,6 @@ authors = ["Jose Cerqueira (jose@interestprotocol.com)"]
 [dependencies]
 blast_admin = { local = "../admin" }
 blast_core = { local = "../core" }
-blast_fun = { local = "../launchpad" }
 blast_vault = { local = "../vault" }
 BluefinSpot = { git = "https://github.com/fireflyprotocol/bluefin-spot-contract-interface.git", rev = "91ce930575b2aa3decab9b7e129b8002deba80c1" }
 CetusClmm = { local = "interfaces/cetus" }
@@ -17,4 +16,4 @@ IntegerMate = { git = "https://github.com/CetusProtocol/integer-mate.git", rev =
 IntegerLibrary = { git = "https://github.com/fireflyprotocol/integer-library.git", rev = "8a534bd1c0b334cd3937c27987f3147a06ba6a18", override = true }
 
 [addresses]
-blast_fun_migrators = "0x0"
+blast_migrators = "0x0"

@@ -8,14 +8,13 @@
 /// One list of admitted witness types decides who may create a vault: the venue whose witness
 /// calls `vault::new`, and the issuer whose witness sealed the vault's terms, must both be on it.
 /// Each witness is the one its module alone can construct. The launchpad and presale witnesses
-/// are issuers; a venue is a venue and, for the standalone vaults whose terms it seals itself, an
-/// issuer too. The list does not distinguish the two roles, so an admitted product witness would
+/// are issuers and the venue witnesses are venues. The list does not distinguish the two roles, so an admitted product witness would
 /// also pass the venue check; both are Blast-reviewed code, and products never call `vault::new`.
 /// Gating venues binds every position key to venue code Blast reviewed; gating issuers keeps a
 /// stranger's terms, with a Blast share and partner of its choosing, out of Blast vaults.
 ///
-/// An admitted venue obtains `VaultTerms` only from `migration::redeem` or by sealing them itself
-/// under its own witness from Blast policy; it never accepts `VaultTerms` from its caller. Terms
+/// An admitted venue obtains `VaultTerms` only from `migration::redeem`; it never accepts
+/// `VaultTerms` from its caller. Terms
 /// are `copy`, so a venue that took them as an argument would let anyone who obtained a sale's
 /// terms create a second vault claiming that sale.
 ///
@@ -35,8 +34,9 @@ module blast_vault::blast_vault_package;
 /// The package's one-time witness and the marker of its version, publication, and roles.
 public struct BLAST_VAULT_PACKAGE() has drop;
 
-/// The witness `unpause` passes to clear pause bits; only this module constructs it.
-public struct UnpauseWitness() has drop;
+/// The package witness `blast_admin` pins at publication: `unpause` passes it to clear pause bits.
+/// Only this module constructs it, and it is never stored or returned.
+public struct PackageWitness() has drop;
 
 /// Keys the admitted witnesses' delayed lifecycle.
 public struct WitnessesKey() has copy, drop, store;
@@ -50,7 +50,7 @@ public struct VaultRegistry has key {
 // === Private Initialization ===
 
 fun init(otw: BLAST_VAULT_PACKAGE, ctx: &mut TxContext) {
-    package_version::new_publication<_, UnpauseWitness>(otw, constants::valid_pause_bits!(), ctx)
+    package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)
         .keep(ctx);
     transfer::share_object(new_registry(ctx));
 }
@@ -154,7 +154,7 @@ public fun unpause(
 ) {
     assert!(self.witnesses.is_guarded(), blast_vault::errors::unguarded_notice!());
 
-    package_admin.clear_pause_bits(unpause_admin, UnpauseWitness(), package_version, bits);
+    package_admin.clear_pause_bits(unpause_admin, PackageWitness(), package_version, bits);
 }
 
 // === Package Functions ===
@@ -218,7 +218,7 @@ public fun empty_registry_for_testing(ctx: &mut TxContext): VaultRegistry {
 #[test_only]
 /// An unshared, unpaused version for tests.
 public fun version_for_testing(ctx: &mut TxContext): PackageVersion<BLAST_VAULT_PACKAGE> {
-    package_version::new_for_testing<_, UnpauseWitness>(constants::valid_pause_bits!(), ctx)
+    package_version::new_for_testing<_, PackageWitness>(constants::valid_pause_bits!(), ctx)
 }
 
 // === Imports ===
