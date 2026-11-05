@@ -346,7 +346,7 @@ fun a_set_accepts_the_ceiling_delay() {
 }
 
 #[test]
-fun readers_report_owner_key_and_a_pending_admissions_delay() {
+fun readers_report_owner_key_and_a_pending_admissions_deadline() {
     let clock = clock_at(10);
     let mut set = new_witness_set(DELAY_MS);
     set.schedule_add(@0xA, &clock);
