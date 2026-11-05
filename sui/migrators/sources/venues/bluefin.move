@@ -29,8 +29,9 @@ public struct PoolTierKey<phantom Meme>() has copy, drop, store;
 // === Public Functions ===
 
 /// Prepares `Meme` for a Bluefin sale in `Quote` at the creator's tier, recording the tier, and
-/// returns the ticket the product's `new` redeems. `treasury_cap` proves the caller controls the
-/// coin, so no one else can record its tier first.
+/// returns the ticket the product's `new` redeems. The coin's sealed `TreasuryCap` proves the
+/// caller controls the coin, so no one else can record its tier first; Bluefin reserves nothing,
+/// so the cap is never borrowed.
 ///
 /// Bluefin checks the tier only when migration creates the pool, and a sale cannot change its
 /// tier, so the same bounds apply here first. The pool and its position store the Meme symbol, so
@@ -38,7 +39,7 @@ public struct PoolTierKey<phantom Meme>() has copy, drop, store;
 public fun prepare<Meme, Quote>(
     migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     venue_config: &mut VenueConfig,
-    _: &TreasuryCap<Meme>,
+    _: &SealedTreasuryCap<Meme>,
     currency: &Currency<Meme>,
     tick_spacing: u32,
     fee_rate: u64,
@@ -475,7 +476,8 @@ use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};
 use blast_core::{
     blast_domain::BuybackAdmin,
     blast_treasury::Treasury,
-    migration::{Self, Migration, VenueTicket}
+    migration::{Self, Migration, VenueTicket},
+    sealed_treasury_cap::SealedTreasuryCap
 };
 
 use blast_migrators::{
@@ -497,7 +499,7 @@ use integer_mate::i32;
 use sui::{
     balance::{Self, Balance},
     clock::Clock,
-    coin::{Coin, TreasuryCap},
+    coin::Coin,
     coin_registry::Currency,
     sui::SUI
 };

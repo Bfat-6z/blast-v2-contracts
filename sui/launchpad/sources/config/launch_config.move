@@ -400,6 +400,18 @@ public fun unpause(
     package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);
 }
 
+/// The launchpad's admission of the venue `Venue`, with which that venue borrows a coin's sealed
+/// `TreasuryCap` to prepare it (`blast_core::sealed_treasury_cap`). Aborts unless the venue is
+/// admitted now.
+public fun venue_admission<Venue: drop>(self: &LaunchConfig): VenueAdmission {
+    assert!(
+        self.venues.contains(&type_name::with_original_ids<Venue>()),
+        blast_fun::errors::venue_not_allowed!(),
+    );
+
+    sealed_treasury_cap::venue_admission<Venue, _>(package_witness())
+}
+
 // === Package Functions ===
 
 /// Checks the Quote, the venue, and the decimals, and returns the trade fees.
@@ -660,7 +672,8 @@ use blast_admin::{
 use blast_core::{
     blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, ListingAdmin, TreasuryAdmin},
     blast_treasury::Treasury,
-    bps::{Self, Bps}
+    bps::{Self, Bps},
+    sealed_treasury_cap::{Self, VenueAdmission}
 };
 
 use blast_fun::{

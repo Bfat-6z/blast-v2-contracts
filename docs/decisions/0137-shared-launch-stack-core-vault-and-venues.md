@@ -94,7 +94,9 @@ its venue against its own delayed migrator allowlist, and stores it. The orderin
 the launchpad's coin template hands the creator the `TreasuryCap` beside the launch ticket, as a
 presale creator already holds it, because a programmable transaction cannot pass a reference one
 call returns into another; `launch::new` takes the cap by value, and the ticket's supply recheck at
-`destroy` still guarantees the exact supply.
+`destroy` still guarantees the exact supply. Amended by
+[0138](0138-sealed-treasury-caps-and-venue-admissions.md): the cap travels sealed under the
+product's witness, and a venue borrows it only with that product's admission.
 
 At migration the product runs its own checks and payouts, then returns a non-droppable `Migration`
 hand-off carrying the pool's Meme and Quote, the stored venue, and the new vault's terms, sealed by

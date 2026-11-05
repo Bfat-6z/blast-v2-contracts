@@ -83,25 +83,25 @@ venue package over `blast_core` that creates no vault.
   its first add and attaches to the vault.
 - **Cetus pool-creation reservation.** Any Meme holder could pre-create the
   Cetus pool for a pair and tick spacing, so `cetus::prepare` reserves creation
-  before any Meme leaves the sale's custody: it mints the Meme type's single
-  `factory::PoolCreationCap` from the coin's `TreasuryCap`, borrowed in the
-  sale's creation PTB, and registers the pair at the creator's tick spacing
-  (Cetus admitted only 200 at 1% for permissioned SUI and USDC pairs on
-  2026-09-22). The capability is a
-  dynamic object field of `VenueConfig`, so it keeps its ID; only `cetus`
-  constructs its key, and nothing extracts the capability or unregisters a pair.
-  Migration creates the pool with that capability at the recorded tick spacing
-  and never adopts an existing pool. Cetus's pool-manager role can also create a reserved
+  before any Meme exists outside the sale's custody: it mints the Meme type's
+  single `factory::PoolCreationCap` from the coin's `TreasuryCap`, which it
+  borrows from the product's `blast_core::sealed_treasury_cap` seal with that
+  product's admission of this venue in the sale's creation PTB, and registers
+  the pair at the creator's tick spacing (Cetus admitted only 200 at 1% for
+  permissioned SUI and USDC pairs on 2026-09-22). The capability is a dynamic
+  object field of `VenueConfig`, so it keeps its ID; only `cetus` constructs its
+  key, and nothing extracts the capability or unregisters a pair. Migration
+  creates the pool with that capability at the recorded tick spacing and never
+  adopts an existing pool. Cetus's pool-manager role can also create a reserved
   pair's pool without the capability. That is a trust assumption on the venue
   operator: such a pool makes the pair's migration abort, and recovering the
   sale would need a migrators upgrade.
-  The window before `prepare` is the coin's `TreasuryCap` holder's alone
-  (`venue_fork::cetus_pool_pre_creation_before_prepare`, 2026-11-05): Cetus
-  `pool_creator::create_pool_v3` refuses a seed range beside the initial price
-  (abort 5), so a stranger with no Meme cannot open the pool, while the holder
-  can mint Meme and open it; Cetus keeps one pool per pair and spacing
-  (`factory` abort 1); and removing that seed leaves the pool one atom of each
-  coin, so the sale's exact-supply check refuses the launch afterwards.
+  The seal closes the window before `prepare` (ADR 0138;
+  `venue_fork::cetus_pool_cannot_be_pre_created_before_prepare`, 2026-11-05):
+  Cetus `pool_creator::create_pool_v3` refuses a seed range beside the initial
+  price (abort 5), so a stranger with no Meme cannot open the pool, and the
+  creator holds the cap only sealed, so no Meme is minted before the product's
+  `new`; Cetus keeps one pool per pair and spacing (`factory` abort 1).
 - **Direct events, no wrapper.** `events.move` owns this package's raw payloads,
   typed by the pair's phantom `Meme` and `Quote` as in `blast_vault_events`, and
   is its only module that calls `sui::event::emit`; vault and fee events come

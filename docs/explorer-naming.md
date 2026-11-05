@@ -38,6 +38,7 @@ identified only through its package one-time witness (OTW); ADR 0085 records why
 | `blast_admin` | `blast_acl` shares the singleton ACL from `init`; no one-time witness | — | — |
 | `launch_ticket_template` | generated package one-time witness | `meme::MEME` | unchanged name; the generated package's one-time witness, renamed per launch by the SDK template |
 | `coin_template` | generated package one-time witness (ADR 0108) | — | `my_coin::MY_COIN`; renamed per coin by the SDK template |
+| `presale_coin_template` | generated package one-time witness (ADR 0138) | — | `presale_coin::PRESALE_COIN`; renamed per sale token by the SDK template |
 
 The Publisher object shows `module_name` of the claiming module. The launch
 stack's `blast_admin::package_admin::PackageAdmin<OTW>`,
@@ -72,6 +73,7 @@ is what an auditor reads on every package-administration object.
 | `blast_fun` | `launch_config::LaunchConfig` | unchanged | *residual* |
 | `blast_fun` | `runtime_config::RuntimeConfig` | unchanged | *residual* |
 | `blast_fun` | `launch_ticket::LaunchTicket<Meme>` | unchanged | *residual*, wallet-held |
+| `blast_core` | `sealed_treasury_cap::SealedTreasuryCap<Coin>` (ADR 0138) | — | *residual*, wallet-held beside the launch ticket or alone for a sale token; the `Coin` parameter names the generated coin |
 | `blast_fun` | `creator_authority::CurveFeeCap<Meme>` | unchanged | *residual*, wallet-held |
 | `blast_fun` | `creator_authority::CreatorMetadataCap<Meme>` | unchanged | struct |
 | `blast_fun` | `launch::LaunchRegistry` | new (ADR 0137); shared singleton from which each launch's ID derives | *residual* |

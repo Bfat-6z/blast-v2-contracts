@@ -240,11 +240,14 @@ public fun recipient_share(recipient: Recipient, bps: Bps): RecipientShare {
 /// issued `venue_ticket` for the pair, and snapshots Blast's rates. The venue keeps the pool terms,
 /// such as a CLMM tier, which it records while preparing the ticket.
 ///
+/// `sealed_treasury_cap` is the cap `sale_token::new` sealed at the coin's publication; only this
+/// call opens it, so the creator never mints, and a venue minted nothing while preparing.
+///
 /// A venue in this or any other package issues tickets sealed by its own witness, which only its
 /// defining module can construct. The `CreationPolicy` must admit that venue, so Blast decides
 /// which venues may open sales; the sale's migration hand-off is then redeemable only by it.
 public fun new<SaleToken, Quote>(
-    treasury_cap: TreasuryCap<SaleToken>,
+    sealed_treasury_cap: SealedTreasuryCap<SaleToken>,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     venue_ticket: VenueTicket<SaleToken, Quote>,
     creation_policy: &CreationPolicy,
@@ -260,6 +263,7 @@ public fun new<SaleToken, Quote>(
         type_name::with_original_ids<SaleToken>() != type_name::with_original_ids<Quote>(),
         blast_presale::errors::invalid_asset_pair!(),
     );
+    let treasury_cap = sealed_treasury_cap.into_treasury_cap(blast_presale_package::package_witness());
     // `Currency<SaleToken>` and `TreasuryCap<SaleToken>` are each unique per type, and making the
     // supply fixed or burn-only consumes the cap, so holding it proves the supply is still unknown.
     assert!(treasury_cap.total_supply() == 0, blast_presale::errors::initial_supply_not_zero!());
@@ -1897,7 +1901,8 @@ use blast_core::{
     migration::{Self, Migration, VenueTicket},
     owner_proof::{Self, OwnerProof},
     payout::{Self, Recipient, VestingTerms},
-    protocol_fees::{Self, Ledger}
+    protocol_fees::{Self, Ledger},
+    sealed_treasury_cap::SealedTreasuryCap
 };
 
 use blast_partners::blast_partners::Partner;

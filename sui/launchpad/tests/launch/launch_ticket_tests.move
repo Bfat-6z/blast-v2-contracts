@@ -163,6 +163,32 @@ fun account_ticket_is_composable_and_records_burn_only_selection() {
 }
 
 #[test]
+/// The cap leaves `new` sealed under the launchpad's witness, holding the minted supply.
+fun ticket_seals_the_cap_under_the_launchpad_witness() {
+    let mut fixture = start();
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let (ticket, sealed_treasury_cap) = f.new_ticket(
+            MEME_DECIMALS,
+            creator_authority::new_address(CREATOR),
+            false,
+            0,
+        );
+
+        assert_eq!(
+            sealed_treasury_cap.package_witness(),
+            type_name::with_original_ids<PackageWitness>(),
+        );
+        assert_eq!(sealed_treasury_cap.total_supply(), MEME_TOTAL_SUPPLY);
+
+        destroy(ticket);
+        destroy(sealed_treasury_cap);
+    });
+
+    fixture.end();
+}
+
+#[test]
 fun ticket_accepts_fifty_percent_sell_burn() {
     let mut fixture = start();
 
@@ -404,7 +430,7 @@ fun new_ticket(
     creator_recipient: CreatorRecipient,
     burnable: bool,
     sell_burn_bps: u64,
-): (LaunchTicket<LAUNCH_TICKET_TESTS>, TreasuryCap<LAUNCH_TICKET_TESTS>) {
+): (LaunchTicket<LAUNCH_TICKET_TESTS>, SealedTreasuryCap<LAUNCH_TICKET_TESTS>) {
     launch_ticket::new(
         test_utils::create_one_time_witness<LAUNCH_TICKET_TESTS>(),
         decimals,
@@ -423,8 +449,12 @@ fun take_ticket(self: &TicketFixture): LaunchTicket<LAUNCH_TICKET_TESTS> {
     self.scenario.take_from_sender()
 }
 
+/// The cap from the sealed cap the publisher holds, opened as `launch::new` opens it.
 fun take_treasury_cap(self: &TicketFixture): TreasuryCap<LAUNCH_TICKET_TESTS> {
-    self.scenario.take_from_sender()
+    self
+        .scenario
+        .take_from_sender<SealedTreasuryCap<LAUNCH_TICKET_TESTS>>()
+        .into_treasury_cap(package_witness())
 }
 
 /// The one-time-witness path delivers the currency to the Coin Registry address.
@@ -438,7 +468,10 @@ fun end(self: TicketFixture) {
 
 // === Imports ===
 
+use blast_core::sealed_treasury_cap::SealedTreasuryCap;
+
 use blast_fun::{
+    blast_fun::{PackageWitness, package_witness},
     creator_authority::{Self, CreatorRecipient},
     events::LaunchTicketCreated,
     launch_ticket::{Self, LaunchTicket},

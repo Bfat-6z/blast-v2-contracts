@@ -84,6 +84,9 @@ public struct OTHER_QUOTE() has drop;
 /// The venue every fixture launch migrates to.
 public struct TestVenue() has drop;
 
+/// A venue witness the fixture's config never admits.
+public struct UnadmittedVenue() has drop;
+
 /// A venue the fixture configuration never admits.
 public struct OtherVenue() has drop;
 
@@ -1521,6 +1524,33 @@ fun launch_rejects_supply_minted_with_the_treasury_cap_on_a_burn_only_ticket() {
     fixture.next_tx!(LAUNCHER, |f| {
         let ticket = f.new_ticket_with_mode(CREATOR, true);
         f.mint_extra_supply_and_finalize(ticket);
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_fun::errors::EVenueNotAllowed, location = blast_fun::launch_config)]
+fun config_admits_no_venue_outside_its_allowlist() {
+    let mut fixture = start();
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        destroy(f.config.venue_admission<UnadmittedVenue>());
+    });
+
+    fixture.end();
+}
+
+#[test, expected_failure(abort_code = blast_core::errors::EWrongPackageWitness, location = blast_core::sealed_treasury_cap)]
+fun creator_cannot_open_the_sealed_cap_with_a_venue_witness() {
+    let mut fixture = start();
+
+    fixture.next_tx!(LAUNCHER, |f| {
+        let ticket = f.new_ticket(CREATOR);
+        f.scenario.next_tx(LAUNCHER);
+        let sealed_treasury_cap = f.scenario.take_from_sender<SealedTreasuryCap<LAUNCH_TESTS>>();
+
+        destroy(sealed_treasury_cap.into_treasury_cap(TestVenue()));
+        destroy(ticket);
     });
 
     fixture.end();
@@ -4636,7 +4666,7 @@ fun launch_new_launch_with(
 }
 
 /// Starts construction with a ticket `venue` issues in the next transaction, once the Coin Registry
-/// holds the ticket's currency and the sender its `TreasuryCap`.
+/// holds the ticket's currency and the sender its sealed `TreasuryCap`.
 fun launch_start<Quote, Venue: drop>(
     self: &mut LaunchFixture,
     ticket: LaunchTicket<LAUNCH_TESTS>,
@@ -4644,11 +4674,11 @@ fun launch_start<Quote, Venue: drop>(
 ): LaunchInitializer<LAUNCH_TESTS, Quote> {
     let sender = self.scenario.sender();
     self.scenario.next_tx(sender);
-    let treasury_cap = self.scenario.take_from_sender<TreasuryCap<LAUNCH_TESTS>>();
+    let sealed_treasury_cap = self.scenario.take_from_sender<SealedTreasuryCap<LAUNCH_TESTS>>();
 
     launch::new(
         ticket,
-        treasury_cap,
+        sealed_treasury_cap,
         &self.package_version,
         &self.config,
         migration::issue_ticket<_, Quote, _>(venue),
@@ -4722,19 +4752,20 @@ fun launch_set_creation_fee(self: &mut LaunchFixture, creation_fee: u64) {
     self.config.set_creation_fee_for_testing(&self.package_version, &fee_admin(), creation_fee, self.ctx!());
 }
 
-/// Mints one extra atom with the coin's `TreasuryCap` between the ticket and the launch, as a
-/// preparing venue could, then finalizes.
+/// Mints one extra atom through the coin's sealed `TreasuryCap` between the ticket and the launch,
+/// as only an admitted preparing venue can, then finalizes.
 fun launch_mint_extra_supply_and_finalize(
     self: &mut LaunchFixture,
     ticket: LaunchTicket<LAUNCH_TESTS>,
 ) {
     let sender = self.scenario.sender();
     self.scenario.next_tx(sender);
-    let mut treasury_cap = self.scenario.take_from_sender<TreasuryCap<LAUNCH_TESTS>>();
-    destroy(treasury_cap.mint_balance(1));
+    let mut sealed_treasury_cap = self.scenario.take_from_sender<SealedTreasuryCap<LAUNCH_TESTS>>();
+    let admission = self.config.venue_admission<TestVenue>();
+    destroy(sealed_treasury_cap.treasury_cap_mut(admission, TestVenue()).mint_balance(1));
     let mut initializer = launch::new(
         ticket,
-        treasury_cap,
+        sealed_treasury_cap,
         &self.package_version,
         &self.config,
         migration::issue_ticket<_, TEST_QUOTE, _>(TestVenue()),
@@ -5188,7 +5219,8 @@ use blast_core::{
     blast_treasury::{Self, Treasury},
     bps,
     fee_split::{Self, FeeSplit},
-    migration::{Self, VaultTerms}
+    migration::{Self, VaultTerms},
+    sealed_treasury_cap::SealedTreasuryCap
 };
 
 use blast_fun::{
@@ -5234,7 +5266,7 @@ use std::{bcs, type_name, unit_test::{assert_eq, destroy}};
 use sui::{
     balance::{Self, Balance},
     clock::{Self, Clock},
-    coin::{Self, Coin, TreasuryCap},
+    coin::{Self, Coin},
     coin_registry::Currency,
     derived_object,
     event,

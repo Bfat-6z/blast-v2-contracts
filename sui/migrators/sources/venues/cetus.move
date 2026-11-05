@@ -9,8 +9,9 @@
 /// Anyone holding Meme can create a Cetus pool, and Cetus allows one pool per pair and tick
 /// spacing, so a buyer could pre-create the migration pool at a price of their choosing.
 /// Preparing the coin therefore mints the Meme type's single Cetus `PoolCreationCap` from its
-/// treasury capability, before any Meme can leave the sale's custody, registers the pair at the
-/// creator's tick spacing, and returns a `VenueTicket` for that pair the sale redeems; afterwards
+/// treasury capability, borrowed from the product's seal with that product's admission of this
+/// venue, before any Meme can leave the sale's custody, registers the pair at the creator's tick
+/// spacing, and returns a `VenueTicket` for that pair the sale redeems; afterwards
 /// only that capability or Cetus's pool-manager role can create the pair's pool there. Trusting
 /// that role is a venue-operator assumption: a pool it creates first makes the pair's migration
 /// abort, and only a migrators upgrade could recover the sale.
@@ -52,16 +53,18 @@ public struct CastKey() has copy, drop, store;
 /// Prepares `Meme` for a Cetus sale in `Quote` at the creator's `tick_spacing`, reserving Cetus
 /// pool creation for the pair, and returns the ticket the product's `new` redeems.
 ///
-/// The Meme type's single `PoolCreationCap` is minted from `treasury_cap` before any Meme can
-/// leave the sale's custody, the pair is registered at `tick_spacing`, and the spacing is recorded.
-/// Aborts, leaving Cetus unchanged, when Cetus does not register the spacing or refuses the pair
-/// at it, so the creator can choose another tier or venue instead.
+/// The Meme type's single `PoolCreationCap` is minted from the coin's sealed `TreasuryCap`, which
+/// this venue borrows with `admission`, the product's admission of this venue, before any Meme
+/// can leave the sale's custody; the pair is registered at `tick_spacing`, and the spacing is
+/// recorded. Aborts, leaving Cetus unchanged, when Cetus does not register the spacing or refuses
+/// the pair at it, so the creator can choose another tier or venue instead.
 public fun prepare<Meme, Quote>(
     migrators_version: &PackageVersion<BLAST_MIGRATORS>,
     venue_config: &mut VenueConfig,
     cetus_config: &GlobalConfig,
     pools: &mut Pools,
-    treasury_cap: &mut TreasuryCap<Meme>,
+    sealed_treasury_cap: &mut SealedTreasuryCap<Meme>,
+    admission: VenueAdmission,
     tick_spacing: u32,
     ctx: &mut TxContext,
 ): VenueTicket<Meme, Quote> {
@@ -72,7 +75,7 @@ public fun prepare<Meme, Quote>(
     let pool_creation_cap = factory::mint_pool_creation_cap(
         cetus_config,
         pools,
-        treasury_cap,
+        sealed_treasury_cap.treasury_cap_mut(admission, Venue()),
         ctx,
     );
     factory::register_permission_pair<Meme, Quote>(
@@ -619,7 +622,8 @@ use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};
 use blast_core::{
     blast_domain::BuybackAdmin,
     blast_treasury::Treasury,
-    migration::{Self, Migration, VenueTicket}
+    migration::{Self, Migration, VenueTicket},
+    sealed_treasury_cap::{SealedTreasuryCap, VenueAdmission}
 };
 
 use blast_migrators::{
@@ -652,7 +656,7 @@ use std::type_name;
 use sui::{
     balance::{Self, Balance},
     clock::Clock,
-    coin::{Coin, TreasuryCap},
+    coin::Coin,
     coin_registry::Currency,
     dynamic_field
 };

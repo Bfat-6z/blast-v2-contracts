@@ -29,9 +29,12 @@ call needs. The package imports no product and no product imports it.
 
 Calls also take objects from other packages:
 
-- The product: at creation the creator passes its owned `TreasuryCap<Meme>` to `prepare`; at
-  migration the venue takes the `blast_core::migration::Migration<Meme, Quote>` value the product's
-  `migrate` returned earlier in the PTB, and no product object.
+- The product: at creation the creator passes its owned
+  `blast_core::sealed_treasury_cap::SealedTreasuryCap<Meme>` to `prepare`, with, for Cetus, the
+  product's `blast_core::sealed_treasury_cap::VenueAdmission` of the venue from an earlier command
+  (`launch_config::venue_admission` or `creation_policy::venue_admission`); at migration the venue
+  takes the `blast_core::migration::Migration<Meme, Quote>` value the product's `migrate` returned
+  earlier in the PTB, and no product object.
 - Vault: `blast_vault_package::VaultRegistry` (migrate only), the vault package's
   `blast_admin::package_version::PackageVersion` (typed by `blast_vault_package::BLAST_VAULT_PACKAGE`),
   and the shared `blast_core::blast_treasury::Treasury` that Blast's LP fees go to.
@@ -56,7 +59,7 @@ vaults), which must also list each product's package witness, for launches
 
 | Call | Who |
 | --- | --- |
-| `blast_migrators::cetus::prepare`, `blast_migrators::bluefin::prepare` | holder of the coin's `TreasuryCap<Meme>` (the creator), in the sale's creation PTB |
+| `blast_migrators::cetus::prepare`, `blast_migrators::bluefin::prepare` | holder of the coin's sealed `TreasuryCap<Meme>` (the creator), in the sale's creation PTB |
 | `blast_migrators::cetus::migrate`, `blast_migrators::bluefin::migrate` | anyone, with the `Migration` the product's `migrate` returned in the same PTB |
 | `blast_migrators::cetus::collect_fees`, `blast_migrators::bluefin::collect_fees` | anyone |
 | `blast_migrators::cetus::settle_and_apply_fee_split`, `blast_migrators::bluefin::settle_and_apply_fee_split` | anyone, once the vault's proposed split is ready |
@@ -112,11 +115,13 @@ each package checks only its own version.
 
 `blast_migrators::cetus::prepare` (type arguments `<Meme, Quote>`) takes, in order: the migrators
 `PackageVersion`, `VenueConfig` (mutable), Cetus `GlobalConfig`, Cetus `Pools` (mutable), the
-`TreasuryCap<Meme>` (owned, by mutable reference), and `tick_spacing: u32`. It:
+`SealedTreasuryCap<Meme>` (owned, by mutable reference), the product's `VenueAdmission` of this
+venue (a value from an earlier command of the same PTB), and `tick_spacing: u32`. It:
 
 1. Checks that Cetus registers a fee rate for `tick_spacing` (Cetus aborts otherwise).
-2. Mints the Meme type's single Cetus `PoolCreationCap` from the treasury cap and registers the pair
-   at `tick_spacing`. Cetus aborts if it refuses the pair there.
+2. Borrows the treasury cap from its seal with the admission (core guide: a wrong product or a
+   wrong venue aborts there), mints the Meme type's single Cetus `PoolCreationCap` from it, and
+   registers the pair at `tick_spacing`. Cetus aborts if it refuses the pair there.
 3. Stores the cap under `blast_migrators::cetus::CreationCapKey` and the tick spacing under
    `blast_migrators::cetus::PoolTierKey` in `VenueConfig`, with no path to remove either, and
    emits `blast_migrators::events::CetusPoolReserved`.
@@ -130,8 +135,9 @@ rate is whatever Cetus registers for the tick spacing.
 #### Prepare a coin on Bluefin (creator, inside the sale's creation PTB)
 
 `blast_migrators::bluefin::prepare` (type arguments `<Meme, Quote>`) takes, in order: the migrators
-`PackageVersion`, `VenueConfig` (mutable), the `TreasuryCap<Meme>` (owned, by immutable reference,
-proving the caller controls the coin), the Meme's `Currency<Meme>` (read-only), `tick_spacing: u32`,
+`PackageVersion`, `VenueConfig` (mutable), the `SealedTreasuryCap<Meme>` (owned, by immutable
+reference, proving the caller controls the coin; Bluefin never borrows the cap), the Meme's
+`Currency<Meme>` (read-only), `tick_spacing: u32`,
 and `fee_rate: u64`. It aborts with `blast_migrators::errors::EInvalidTier` unless `tick_spacing` is
 in 1..=400 and `fee_rate` in 1..=20,000 (Bluefin's own pool-creation bounds, checked here because
 Bluefin checks them only at pool creation), then with `blast_migrators::errors::ESymbolTooLong`
@@ -141,8 +147,8 @@ emits `blast_migrators::events::BluefinPoolTierRecorded`, and returns a `VenueTi
 sealed by `blast_migrators::bluefin::Venue`. It needs no Bluefin objects.
 
 Either way, pass the ticket to the product's `new` in the same PTB (for a launch, `launch::new`,
-with the same `TreasuryCap` by value; launchpad guide, Flow 3). The ticket cannot be stored or
-dropped.
+with the same sealed `TreasuryCap` by value, which only the product opens; launchpad guide, Flow 3).
+The ticket cannot be stored or dropped.
 
 #### Migrate to Cetus (anyone)
 
@@ -404,8 +410,10 @@ the same transactions.
 - Calling `prepare` outside the creation PTB. The `VenueTicket` cannot be stored, so prepare and the
   product's creation calls (for a launch, `launch::new`, `launch::finalize`, and `launch::share`)
   share one PTB.
-- Passing the `TreasuryCap` by value to `prepare`. Cetus takes it by mutable reference and Bluefin
-  by immutable reference; the product's `new` takes it by value afterwards.
+- Passing the sealed `TreasuryCap` by value to `prepare`. Cetus takes it by mutable reference and
+  Bluefin by immutable reference; the product's `new` takes it by value afterwards.
+- Preparing on Cetus without the product's admission of the venue, or with another product's
+  admission: the borrow aborts in `blast_core::sealed_treasury_cap`.
 - Choosing a Cetus tick spacing Cetus does not register, a Bluefin tier outside its bounds, or a
   Meme symbol longer than 32 bytes on Bluefin: creation aborts, and the tier can never change after
   creation.
@@ -423,10 +431,11 @@ the same transactions.
 redeemed; the sale stores that venue's witness type. Only that venue's `migrate` can redeem its
 `Migration`.
 
-**What is the PTB to start a launch on Cetus?** `blast_migrators::cetus::prepare` with the
-`TreasuryCap` by mutable reference (returns the `VenueTicket`), `launch::new` with the ticket and
-the `TreasuryCap` by value, the launch setters, `launch::finalize`, and `launch::share`, in that
-order.
+**What is the PTB to start a launch on Cetus?** `launch_config::venue_admission` for
+`blast_migrators::cetus::Venue` (returns the `VenueAdmission`), `blast_migrators::cetus::prepare`
+with the sealed `TreasuryCap` by mutable reference and that admission (returns the `VenueTicket`),
+`launch::new` with the ticket and the sealed `TreasuryCap` by value, the launch setters,
+`launch::finalize`, and `launch::share`, in that order.
 
 **What is the PTB to migrate?** Two calls: the product's `migrate` (for a launch, `launch::migrate`),
 then the venue's `migrate` with the returned `Migration` as its first argument. They succeed or abort

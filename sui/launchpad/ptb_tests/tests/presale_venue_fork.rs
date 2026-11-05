@@ -716,6 +716,8 @@ struct World {
     /// The shared `blast_presale::PresaleRegistry` every presale ID derives from.
     presale_registry: ObjectID,
     token: CompiledPackage,
+    /// A plain coin with no Blast dependency: a custom Quote, or a venue test's own pool seed.
+    plain_token: CompiledPackage,
     quote_type: TypeTag,
     quote_currency: ObjectID,
     coins: u64,
@@ -774,9 +776,13 @@ impl World {
         let creation_policy = published.created(&h, "creation_policy", "CreationPolicy");
         ensure!(creation_policy.len() == 1 && h.object(creation_policy[0]).is_shared());
         let presale_registry = h.derived_registry(&published, "blast_presale", "PresaleRegistry")?;
-        let token = build(&blast_launchpad_ptb_tests::crate_dir().join("fixture/presale_token"), &[], &work)?;
+        let presale_source = sui_dir().join("presale");
+        let mut linked = stack.linked();
+        linked.push((presale_source.as_path(), presale));
+        let token = build(&blast_launchpad_ptb_tests::crate_dir().join("fixture/presale_token"), &linked, &work)?;
+        let plain_token = build(&blast_launchpad_ptb_tests::crate_dir().join("fixture/plain_token"), &[], &work)?;
         let (quote_type, quote_currency) = if custom_quote {
-            let (package, published) = h.publish(token.clone())?;
+            let (package, published) = h.publish(plain_token.clone())?;
             let quote = tag(&format!("{package}::token::TOKEN"));
             let pending = published.created(&h, "coin_registry", "Currency");
             ensure!(pending.len() == 1);
@@ -865,6 +871,7 @@ impl World {
             creation_policy: creation_policy[0],
             fee_policy: fee_policy[0],
             token,
+            plain_token,
             quote_type,
             quote_currency,
             coins: 0,
@@ -1178,20 +1185,38 @@ impl World {
             if self.route.is_cetus() && meme_is_cetus_a(&meme, &self.quote()) != self.route.meme_is_a() {
                 continue;
             }
-            let treasury_cap = published.created(&self.h, "coin", "TreasuryCap");
+            let sealed_treasury_cap = published.created(&self.h, "sealed_treasury_cap", "SealedTreasuryCap");
             let pending = published.created(&self.h, "coin_registry", "Currency");
-            ensure!(treasury_cap.len() == 1 && pending.len() == 1);
+            ensure!(sealed_treasury_cap.len() == 1 && pending.len() == 1);
+            ensure!(published.created(&self.h, "coin", "TreasuryCap").is_empty(), "no raw TreasuryCap leaves the publication");
             let currency = finalize_currency(&mut self.h, pending[0], &meme)?;
-            return Ok((treasury_cap[0], currency, meme));
+            return Ok((sealed_treasury_cap[0], currency, meme));
         }
         bail!("no published token had the route's Cetus coin order")
     }
 
-    /// One PTB: the venue's `prepare` on the token's `TreasuryCap`, `blast_presale::new` with the
-    /// cap and the venue ticket, the setters, `finalize`, and `share`.
+    /// Publishes the plain coin, whose raw `TreasuryCap` the publisher keeps, in the route's Cetus
+    /// coin order against the Quote, and returns the cap and the coin type.
+    fn publish_plain_token(&mut self) -> Result<(ObjectID, TypeTag)> {
+        for _ in 0..16 {
+            let (package, published) = self.h.publish(self.plain_token.clone())?;
+            let meme = tag(&format!("{package}::token::TOKEN"));
+            if self.route.is_cetus() && meme_is_cetus_a(&meme, &self.quote()) != self.route.meme_is_a() {
+                continue;
+            }
+            let treasury_cap = published.created(&self.h, "coin", "TreasuryCap");
+            ensure!(treasury_cap.len() == 1);
+            return Ok((treasury_cap[0], meme));
+        }
+        bail!("no published plain coin had the route's Cetus coin order")
+    }
+
+    /// One PTB: the presale's admission of the venue, the venue's `prepare` on the token's sealed
+    /// `TreasuryCap`, `blast_presale::new` with the sealed cap and the venue ticket, the setters,
+    /// `finalize`, and `share`.
     fn create_presale_pt(
         &self,
-        treasury_cap: ObjectID,
+        sealed_treasury_cap: ObjectID,
         currency: ObjectID,
         meme: &TypeTag,
         terms: &Terms,
@@ -1219,18 +1244,23 @@ impl World {
 
         let version = self.shared(&mut b, self.version, false)?;
         let venue_version = self.shared(&mut b, self.venue_version, false)?;
-        let cap = b.obj(self.h.owned(treasury_cap))?;
+        let cap = b.obj(self.h.owned(sealed_treasury_cap))?;
         let venue_config = self.shared(&mut b, self.venue_config, true)?;
         let currency = self.shared(&mut b, currency, true)?;
         let registry = self.shared(&mut b, self.presale_registry, true)?;
         let (tick_spacing, fee_rate) = self.route.tier();
         let venue_ticket = if self.route.is_cetus() {
+            let creation_policy = self.shared(&mut b, self.creation_policy, false)?;
+            let venue_witness = tag(&format!("{}::{}::Venue", self.venues, self.route.module()));
+            let admission =
+                call(&mut b, self.presale, "creation_policy", "venue_admission", vec![venue_witness], vec![creation_policy]);
             let args = vec![
                 venue_version,
                 venue_config,
                 self.shared(&mut b, self.venue("cetus_global_config"), false)?,
                 self.shared(&mut b, self.venue("cetus_pools"), true)?,
                 cap,
+                admission,
                 b.pure(tick_spacing)?,
             ];
             call(&mut b, self.venues, "cetus", "prepare", pair.clone(), args)
@@ -1284,8 +1314,8 @@ impl World {
     }
 
     fn open_partnered_sale(&mut self, terms: &Terms, partner: Option<ObjectID>) -> Result<Sale> {
-        let (treasury_cap, currency, meme) = self.publish_token()?;
-        let pt = self.create_presale_pt(treasury_cap, currency, &meme, terms, partner)?;
+        let (sealed_treasury_cap, currency, meme) = self.publish_token()?;
+        let pt = self.create_presale_pt(sealed_treasury_cap, currency, &meme, terms, partner)?;
         let created = self.h.execute(pt)?;
         self.fund_sale(created, meme, currency, terms)
     }
@@ -2085,7 +2115,7 @@ impl World {
     /// side aborts in the venue, and fixing the smaller side succeeds, at the same price and range
     /// the presale migration uses.
     fn larger_side_fix_aborts(&mut self, meme: u64, quote: u64) -> Result<()> {
-        let (treasury_cap, _, token) = self.publish_token()?;
+        let (treasury_cap, token) = self.publish_plain_token()?;
         let meme_is_a = self.route.meme_is_a();
         let larger_is_a = (meme > quote) == meme_is_a;
         let sqrt_price = expected_sqrt_price(meme, quote, meme_is_a);

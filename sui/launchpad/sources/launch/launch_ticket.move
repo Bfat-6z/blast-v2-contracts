@@ -9,7 +9,9 @@ module blast_fun::launch_ticket;
 // === Public Types ===
 
 /// A generated coin's whole supply and metadata authority until launch finalization fixes the
-/// supply. The coin's `TreasuryCap` travels beside it, so a venue can prepare the coin first.
+/// supply. The coin's `TreasuryCap` travels beside it under the launchpad's seal
+/// (`blast_core::sealed_treasury_cap`), so a venue the launchpad admits can prepare the coin
+/// first while no one else can mint.
 public struct LaunchTicket<phantom Meme> has key, store {
     id: UID,
     meme: Balance<Meme>,
@@ -23,8 +25,8 @@ public struct LaunchTicket<phantom Meme> has key, store {
 // === Public Functions ===
 
 /// Registers the currency with the generated package's one-time witness and mints one billion
-/// whole tokens into the ticket, returning the currency's `TreasuryCap` beside it. Only that
-/// package's initializer holds the witness.
+/// whole tokens into the ticket, returning the currency's `TreasuryCap` beside it under the
+/// launchpad's seal. Only that package's initializer holds the witness.
 public fun new<Meme: drop>(
     otw: Meme,
     decimals: u8,
@@ -36,7 +38,7 @@ public fun new<Meme: drop>(
     burnable: bool,
     sell_burn_bps: u64,
     ctx: &mut TxContext,
-): (LaunchTicket<Meme>, TreasuryCap<Meme>) {
+): (LaunchTicket<Meme>, SealedTreasuryCap<Meme>) {
     assert!(
         sell_burn_bps <= constants::max_sell_burn_bps!(),
         blast_fun::errors::invalid_sell_burn_bps!(),
@@ -70,7 +72,7 @@ public fun new<Meme: drop>(
         sell_burn_bps,
     );
 
-    (ticket, treasury_cap)
+    (ticket, sealed_treasury_cap::new(package_witness(), treasury_cap, ctx))
 }
 
 // === Package Functions ===
@@ -88,9 +90,10 @@ public(package) fun decimals<Meme>(self: &LaunchTicket<Meme>): u8 {
     self.decimals
 }
 
-/// Fixes the supply mode in the Coin Registry with `treasury_cap` and releases the ticket's
-/// contents. Venue preparation borrowed the cap, so the exact supply is checked again here, as is
-/// the sell-burn rate a ticket built against an older launchpad version followed.
+/// Fixes the supply mode in the Coin Registry with `treasury_cap`, opened from its seal by
+/// `launch::new`, and releases the ticket's contents. Venue preparation borrowed the cap, so the
+/// exact supply is checked again here, as is the sell-burn rate a ticket built against an older
+/// launchpad version followed.
 public(package) fun destroy<Meme>(
     self: LaunchTicket<Meme>,
     treasury_cap: TreasuryCap<Meme>,
@@ -144,9 +147,9 @@ public fun burn_meme_for_testing<Meme>(self: &mut LaunchTicket<Meme>, amount: u6
 
 // === Imports ===
 
-use blast_core::bps::{Self, Bps};
+use blast_core::{bps::{Self, Bps}, sealed_treasury_cap::{Self, SealedTreasuryCap}};
 
-use blast_fun::{constants, creator_authority::CreatorRecipient, events};
+use blast_fun::{blast_fun::package_witness, constants, creator_authority::CreatorRecipient, events};
 
 use std::string::String;
 

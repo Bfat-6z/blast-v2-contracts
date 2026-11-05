@@ -97,6 +97,33 @@ sale has one vault. `migration::origin`, `migration::package_witness`, `migratio
 returns. `owner_proof::package_witness` and `owner_proof::origin` read
 a proof.
 
+### Sealed treasury caps and venue admissions
+
+A product keeps a generated coin's `TreasuryCap` out of every hand but its own from the coin's
+publication until the sale starts, so no one mints before the sale. The seal is
+`sealed_treasury_cap::SealedTreasuryCap<Coin>` (`key, store`, wallet-held and transferable): the
+product's own currency-creation call (`launch_ticket::new` for a launch, `blast_presale::sale_token::new` for a sale token)
+wraps the fresh cap with `sealed_treasury_cap::new` under its package witness, and the publisher
+receives the sealed cap. Only that product's witness opens it, through
+`sealed_treasury_cap::into_treasury_cap`, which the product's `new` calls; a caller with another
+witness aborts with `blast_core::errors::EWrongPackageWitness` (code 10).
+
+A venue that must touch the cap while preparing the coin (Cetus mints its pool-creation capability
+from it) borrows it with `sealed_treasury_cap::treasury_cap_mut`, presenting its own witness and
+a `sealed_treasury_cap::VenueAdmission`: the product's droppable proof that it admits that venue,
+issued under its package witness by `sealed_treasury_cap::venue_admission` after the product
+checked its own venue allowlist (`launch_config::venue_admission` and
+`creation_policy::venue_admission`, both *anyone*, abort with the product's venue-not-allowed
+error). The borrow aborts with `blast_core::errors::EWrongPackageWitness` (code 10) when the admission
+comes from a product other than the one that sealed the cap, and with
+`blast_core::errors::EVenueNotAdmitted` (code 14) when the admission names another venue. A reference
+result never leaves Move code, so only the venue's own call reaches the cap.
+
+Readers: `sealed_treasury_cap::package_witness`, `sealed_treasury_cap::treasury_cap_id`, and
+`sealed_treasury_cap::total_supply` read a sealed cap; `sealed_treasury_cap::admission_package_witness`
+(called as `admission.package_witness()`) and `sealed_treasury_cap::admission_venue` (`admission.venue()`)
+read an admission.
+
 ### Pool seed price
 
 `migration::sqrt_price_x64` derives the price a concentrated-liquidity venue (Cetus or Bluefin)

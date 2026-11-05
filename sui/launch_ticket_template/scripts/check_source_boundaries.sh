@@ -7,10 +7,10 @@ cd "$(dirname "$0")/.."
 # Succeeds when the cap is bound before the ticket and cap are delivered, in that order.
 in_order_template() {
   local text="$1" before
-  before="${text%%'let (ticket, treasury_cap) = launch_ticket::new('*}"
+  before="${text%%'let (ticket, sealed_treasury_cap) = launch_ticket::new('*}"
   [[ "$before" != "$text" ]] || return 1
   text="${text#"$before"}"
-  before="${text%%'transfer::public_transfer(ticket, ctx.sender()); transfer::public_transfer(treasury_cap, ctx.sender()); }'*}"
+  before="${text%%'transfer::public_transfer(ticket, ctx.sender()); transfer::public_transfer(sealed_treasury_cap, ctx.sender()); }'*}"
   [[ "$before" != "$text" ]]
 }
 
@@ -59,15 +59,15 @@ if [[ -z "$normalized" || "$normalized" == MALFORMED ]] \
   exit 1
 fi
 
-# launch_ticket::new returns the TreasuryCap beside the ticket so the publisher can prepare a venue.
-# The template only binds it and delivers it to the publisher: no mint, burn, wrap, share, or
-# freeze, and no other mention.
-if [[ "$(rg -oF 'let (ticket, treasury_cap) = launch_ticket::new(' <<<"$normalized" | wc -l)" != 1 ]] \
-  || [[ "$(rg -oF 'transfer::public_transfer(treasury_cap, ctx.sender());' <<<"$normalized" | wc -l)" != 1 ]] \
-  || [[ "$(rg -o '\btreasury_cap\b' <<<"$normalized" | wc -l)" != 2 ]] \
+# launch_ticket::new returns the sealed TreasuryCap beside the ticket so the publisher can prepare
+# a venue. The template only binds it and delivers it to the publisher: no mint, burn, wrap, share,
+# or freeze, and no other mention.
+if [[ "$(rg -oF 'let (ticket, sealed_treasury_cap) = launch_ticket::new(' <<<"$normalized" | wc -l)" != 1 ]] \
+  || [[ "$(rg -oF 'transfer::public_transfer(sealed_treasury_cap, ctx.sender());' <<<"$normalized" | wc -l)" != 1 ]] \
+  || [[ "$(rg -o '\bsealed_treasury_cap\b' <<<"$normalized" | wc -l)" != 2 ]] \
   || [[ "$(rg -o 'transfer::[a-z_]+\(' <<<"$normalized" | sort | uniq -c | tr -s ' ')" != ' 2 transfer::public_transfer(' ]] \
   || ! in_order_template "$normalized"; then
-  echo 'The template must bind the TreasuryCap from launch_ticket::new and only transfer it, with the ticket, to the publisher.' >&2
+  echo 'The template must bind the sealed TreasuryCap from launch_ticket::new and only transfer it, with the ticket, to the publisher.' >&2
   exit 1
 fi
 

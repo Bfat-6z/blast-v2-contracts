@@ -196,6 +196,18 @@ public fun unpause(
     package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits);
 }
 
+/// The presale's admission of the venue `Venue`, with which that venue borrows a sale token's
+/// sealed `TreasuryCap` to prepare it (`blast_core::sealed_treasury_cap`). Aborts unless the
+/// venue is admitted now.
+public fun venue_admission<Venue: drop>(self: &CreationPolicy): VenueAdmission {
+    assert!(
+        self.venues.contains(&type_name::with_original_ids<Venue>()),
+        blast_presale::errors::venue_not_allowed!(),
+    );
+
+    sealed_treasury_cap::venue_admission<Venue, _>(package_witness())
+}
+
 // === Package Functions ===
 
 /// True when the venue allowlist's delay is guarded (see `unpause`).
@@ -313,7 +325,8 @@ use blast_admin::{
 
 use blast_core::{
     blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, ListingAdmin},
-    blast_treasury::Treasury
+    blast_treasury::Treasury,
+    sealed_treasury_cap::{Self, VenueAdmission}
 };
 
 use blast_partners::{blast_partners::Partner, partner_list::{Self, PartnerList}};
