@@ -1,9 +1,9 @@
 # Deploying the migrators
 
 Use this procedure for a new `blast_migrators` publication. It follows the
-custody rule of [ADR 0114](../../docs/decisions/0114-launchpad-custody-before-activation.md),
-amended by [ADR 0134](../../docs/decisions/0134-delayed-administration-pause-and-table-acl.md),
-and the shared launch stack of
+delayed administration of
+[ADR 0134](../../docs/decisions/0134-delayed-administration-pause-and-table-acl.md)
+and the shared launch stack and generic package custody of
 [ADR 0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md).
 Record the result in the format [`deployments/README.md`](../../deployments/README.md)
 requires.

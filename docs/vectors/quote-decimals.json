@@ -2,8 +2,7 @@
   "schema_version": 1,
   "description": "Migration price derivation across quote decimal combinations and both pair orientations. Demonstrates that the on-chain raw-ratio calculation needs no decimal correction, while the human display price needs both decimal values.",
   "source_decisions": [
-    "docs/decisions/0005-quote-asset-generalisation.md",
-    "docs/decisions/0010-migration-and-venue-adapters.md"
+    "docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md"
   ],
   "status": "proposed",
   "units": {

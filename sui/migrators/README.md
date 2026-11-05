@@ -80,7 +80,7 @@ the product's LP-fee policy, sealed into the `Migration`'s vault terms, is cappe
 at 30% per asset, and changes only per vault after the vault's fixed 48-hour notice.
 Because auto-LP adds at the current price, a caller can move the price around a
 collection and skim part of that call's auto-LP amount; frequent collection
-keeps each slice small (ADR 0089).
+keeps each slice small.
 
 ## Holder rewards
 

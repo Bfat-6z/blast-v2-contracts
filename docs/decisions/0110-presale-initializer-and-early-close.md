@@ -1,7 +1,7 @@
 # 0110: Presale initializer, sale-level hard cap, and early close
 
-- Status: proposed; amended by [0111](0111-venue-owned-presale-pool-tiers.md): `new` takes no
-  pool tier
+- Status: proposed; amended by [0137](0137-shared-launch-stack-core-vault-and-venues.md): `new` takes no pool tier; the
+  venue ticket carries it
 - Date: 2026-10-08
 - Amends: [0099](0099-standalone-overflow-presale.md), whose sales were created by one
   `new` call, hard-capped only inside the uncapped phase, and always ran their full window;
@@ -26,7 +26,7 @@ creation test.
 ## Decision
 
 **Initializer.** Creation follows the launchpad's `LaunchInitializer`
-([0089](0089-migrators-own-post-migration-and-start-launches.md)):
+(ADR 0089):
 
 1. A migrator's `new` reserves what its venue needs, then calls `blast_presale::new` with the
    treasury cap, its witness, the creation and fee policies, and its pool tier. That checks the

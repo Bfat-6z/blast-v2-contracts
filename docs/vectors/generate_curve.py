@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Regenerate curve.json and quote-decimals.json from the formulas that own them.
 
-Buys follow curve::cap_buy_quote_input then curve::quote_buy (ADRs 0021, 0039, 0043), sells follow
-curve::quote_sell (ADRs 0021, 0077), and the terminal disposition follows ADR 0039. The migration
-prices in quote-decimals.json (ADR 0005) start from the terminal state that the threshold-crossing
+Buys follow curve::cap_buy_quote_input then curve::quote_buy (ADRs 0021, 0092), sells follow
+curve::quote_sell (ADRs 0021, 0077), and the terminal disposition follows ADR 0088. The migration
+prices in quote-decimals.json (ADR 0137) start from the terminal state that the threshold-crossing
 buy reaches, so both files are written together.
 """
 from decimal import ROUND_HALF_EVEN, Decimal, localcontext
@@ -194,7 +194,7 @@ disposition = case(
         "meme_available_for_liquidity": terminal["meme_reserve_after"],
         "burn_moment_2_rule": "meme_available_for_liquidity minus meme actually deployed by the venue adapter is burned in one accounted step before the supply state is locked to BurnOnly",
     },
-    "Burn moment 2. The capped crossing leaves the real Quote reserve at exactly T, so the fee is ADR 0039's "
+    "Burn moment 2. The capped crossing leaves the real Quote reserve at exactly T, so the fee is "
     "ceil(T * F / 10000). The exact burned amount depends on how much meme the venue consumes at the "
     "derived price, so the rule is asserted rather than a fixed number.",
 )
@@ -212,11 +212,10 @@ curve = {
     "source_decisions": [
         "docs/decisions/0021-pure-constant-product-curve-quotes.md",
         "docs/decisions/0026-deferred-sell-burn.md",
-        "docs/decisions/0039-deterministic-quote-valuations.md",
         "docs/decisions/0041-launch-config-owned-trade-fees.md",
-        "docs/decisions/0043-versioned-launch-trading-and-atomic-migration.md",
-        "docs/decisions/0006-fees-and-launch-paths.md",
         "docs/decisions/0077-fixed-creator-selected-sell-burn.md",
+        "docs/decisions/0088-reusable-launch-accounting-and-atomic-migration.md",
+        "docs/decisions/0092-creator-picks-the-virtual-quote.md",
     ],
     "status": "proposed",
     "units": {
@@ -431,8 +430,7 @@ quote_decimals = {
     "schema_version": 1,
     "description": "Migration price derivation across quote decimal combinations and both pair orientations. Demonstrates that the on-chain raw-ratio calculation needs no decimal correction, while the human display price needs both decimal values.",
     "source_decisions": [
-        "docs/decisions/0005-quote-asset-generalisation.md",
-        "docs/decisions/0010-migration-and-venue-adapters.md",
+        "docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md",
     ],
     "status": "proposed",
     "units": {

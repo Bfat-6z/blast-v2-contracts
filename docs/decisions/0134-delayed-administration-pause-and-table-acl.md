@@ -13,15 +13,9 @@
   migrators LP-fee policy, and consumption-time validation of presale terms
 - Amended: 2026-11-04 — accepted trust boundaries from the pre-audit's informational findings
 - Amended: 2026-11-04 — compiled maximums for every admin-set fee
-- Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator immutability),
-  [0089](0089-migrators-own-post-migration-and-start-launches.md) (creator splits and holder-reward custody),
-  [0007](0007-acl-pause-and-versioning.md) (pause),
-  [0032](0032-admin-authorized-upgrade-cap-custody.md) and
-  [0034](0034-remove-premature-governance-cutover.md) (upgrades),
-  [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage),
-  [0114](0114-launchpad-custody-before-activation.md) and
-  [0117](0117-presale-versioning-and-activation.md) (one-time bootstrap and paused release),
-  [0097](0097-one-singleton-acl-with-typed-roles.md) (timelocked root transfer),
+- Amends: [0088](0088-reusable-launch-accounting-and-atomic-migration.md) (delayed migrator
+  immutability), [0097](0097-one-singleton-acl-with-typed-roles.md) (ACL storage and timelocked root
+  transfer), and
   [0058](0058-eventless-package-initialization.md) (eventless initialization)
 - Supersedes: the 2026-10-28 canonical stack, which holds no user assets
 

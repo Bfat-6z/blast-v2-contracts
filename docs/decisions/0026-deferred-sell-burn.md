@@ -2,8 +2,9 @@
 
 - Status: accepted
 - Date: 2026-08-24
-- Amends: [0003](0003-treasury-cap-lifetime-and-burn.md), [0004](0004-bonding-curve.md), [0023](0023-generated-coin-supply-and-metadata-custody.md)
-- Amended by: [0043](0043-versioned-launch-trading-and-atomic-migration.md), [0077](0077-fixed-creator-selected-sell-burn.md)
+- Amends: [0004](0004-bonding-curve.md) and
+  [0023](0023-generated-coin-supply-and-metadata-custody.md)
+- Amended by: [0077](0077-fixed-creator-selected-sell-burn.md)
 
 ## Sources
 

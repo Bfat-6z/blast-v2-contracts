@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-08-25
-- Amends: [0024](0024-generated-coin-launch-ticket.md), [0029](0029-composable-creator-identity.md), [0037](0037-remove-redundant-ticket-burn-mode.md)
+- Amends: [0024](0024-generated-coin-launch-ticket.md)
 
 ## Context
 

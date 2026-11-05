@@ -16,17 +16,16 @@ For unpublished lineages, change APIs and their callers together, remove
 obsolete paths, and renumber each error namespace sequentially from zero.
 Update exact-abort tests and source gates with the new codes.
 
-Preserve published lineages, their type origins, and their upgrade rules.
-The [October 28 mainnet deployment](deployments/sui/mainnet/2026-10-28-canonical-mvr-launch-stack.json)
-records immutable ACL and partners and compatible-upgrade custody for launchpad,
-migrators, and presale. ADR 0134 targets a fresh lineage for that stack.
-Keep its publication metadata separate from the October deployment records.
-The published immutable OTC and vesting packages retain their source, abort
-identities, and publication metadata. The immutable timelock package's source was
-removed once no package depended on it; its mainnet records remain in
-`deployments/` and its publication source under the archival tag in
-[utility integration](docs/utilities.md). External venue interfaces
-follow their upstream ABI.
+The launch stack is greenfield: its seven packages (ADR 0137) and the per-coin
+templates and vendors have no live publication, so nothing preserves an older
+launch lineage, its records, or backwards compatibility. Their publication
+metadata starts with the fresh stack's own records in `deployments/`.
+
+Still-published packages outside that stack keep their source, type origins,
+abort identities, upgrade rules, and publication metadata: the immutable OTC
+and vesting utilities ([utility integration](docs/utilities.md); `blast_core`
+depends on the published vesting package), and Boosts. External venue
+interfaces follow their upstream ABI.
 
 ## Module layout
 

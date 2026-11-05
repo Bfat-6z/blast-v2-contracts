@@ -3,7 +3,9 @@
 - Status: accepted
 - Date: 2026-08-23
 - Partially accepts: [0004](0004-bonding-curve.md)
-- Amended by: [0041](0041-launch-config-owned-trade-fees.md), [0077](0077-fixed-creator-selected-sell-burn.md), [0078](0078-explicit-curve-invariant-primitives.md), and [0079](0079-compact-launch-state-and-events.md)
+- Amended by: [0041](0041-launch-config-owned-trade-fees.md),
+  [0077](0077-fixed-creator-selected-sell-burn.md), and
+  [0079](0079-compact-launch-state-and-events.md)
 
 ## Sources
 

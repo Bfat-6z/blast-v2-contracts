@@ -42,9 +42,8 @@ venue allowlist, Quote allowlist, and partner list. The stack is seven packages:
 `blast_presale`, `blast_vault` and `blast_migrators` upgradeable (ADR 0137,
 amended 2026-11-05).
 
-The package boundaries are decided in
-[decisions/0001-sui-package-and-module-layout.md](decisions/0001-sui-package-and-module-layout.md):
-keep external dependencies and independently governed custody outside core.
+The package boundaries keep external dependencies and independently governed
+custody outside core.
 
 ### Dependency direction
 
@@ -102,7 +101,7 @@ A derivable value may still be recomputed inside a state-changing contract
 operation when it enforces a threshold, fee, slippage bound, or conservation
 rule. It is not stored or published merely because a UI wants to display it.
 Contract balances and completed events are authoritative; SDK results are
-previews. See [ADR 0039](decisions/0039-deterministic-quote-valuations.md).
+previews.
 
 ## Migration valuation disclosure
 
@@ -119,7 +118,6 @@ Memez's balance-derived V3 price, Raydium's effective-reserve continuity, and
 Pump and Hop graduation disclosures inform this comparison only. Blast cannot
 move virtual Quote into a DEX pool, so it must disclose the real-balance DEX
 valuation separately and must not present a USD comparison as a protocol rule.
-See [ADR 0054](decisions/0054-v3-dex-migrators-and-locked-lp-fees.md).
 
 ## Asset pair
 
@@ -135,14 +133,9 @@ configured trade-fee rates, and records the original `TypeName` of the witness o
 the venue whose ticket started it. Both registries are
 admission decisions; the snapshot does not add a quote `Currency` shared-object
 dependency or a DEX package dependency. See
-[ADR 0025](decisions/0025-quote-whitelist-and-migration-targets.md) and
-[ADR 0027](decisions/0027-graduation-economics-and-migration-witnesses.md) and
-[ADR 0039](decisions/0039-deterministic-quote-valuations.md), and
-[ADR 0041](decisions/0041-launch-config-owned-trade-fees.md); since
-[ADR 0092](decisions/0092-creator-picks-the-virtual-quote.md) the creator, not
-`LaunchConfig`, picks the virtual reserve.
-The unit and rounding boundary of
-[ADR 0044](decisions/0044-validated-basis-points-unit.md) are now the one
+[ADR 0041](decisions/0041-launch-config-owned-trade-fees.md) and
+[ADR 0092](decisions/0092-creator-picks-the-virtual-quote.md); the creator, not
+`LaunchConfig`, picks the virtual reserve. The one unit and rounding boundary is
 `blast_core::bps::Bps` (ADR 0137).
 
 ## One-time allocation and payouts
@@ -221,9 +214,7 @@ creator always keeps the curve-fee cap: after migration its holder proves
 ownership to the launch's vault with `launch::prove_owner`, to claim the owner's
 balances and change the split
 ([ADR 0137](decisions/0137-shared-launch-stack-core-vault-and-venues.md)).
-See [ADR 0035](decisions/0035-initializer-finalized-meme-supply.md),
-[ADR 0036](decisions/0036-fixed-nine-decimal-generated-memes.md), and
-[ADR 0047](decisions/0047-coin-registry-authoritative-supply-mode.md), and
+See [ADR 0047](decisions/0047-coin-registry-authoritative-supply-mode.md) and
 [ADR 0080](decisions/0080-provider-independent-creator-recipient.md), as amended
 by [ADR 0088](decisions/0088-reusable-launch-accounting-and-atomic-migration.md).
 The ticket records its decimals and sell-burn policy; launch intake recomputes
@@ -288,8 +279,7 @@ pool first (Cetus), the venue reserves creation when it prepares the coin,
 before the curve opens. No venue adopts a pool someone else created. A
 mismatch is an atomic abort that leaves the launch `MigrationReady` with every
 balance in place. The initial price is derived from the terminal atomic
-reserves and is never a configured constant. See
-[decisions/0010-migration-and-venue-adapters.md](decisions/0010-migration-and-venue-adapters.md).
+reserves and is never a configured constant (`blast_core::migration`, ADR 0137).
 
 ## Future chain parity
 
@@ -316,13 +306,11 @@ Upgradeability is a product/security decision, not a default convenience.
   it under the cap's compatible policy, which no path narrows (ADR 0137); the
   native receipt then commits against the same cap and
   advances the version, and `make_immutable` is the deliberate end of
-  upgrades. A future governance design retires the routine-admin package path
-  through the mandatory shared-object version gate after installing replacement
-  authorization (ADR 0034); no pre-planted cutover flag exists.
+  upgrades. No pre-planted governance cutover flag exists.
   The launchpad's OTW retains its Publisher and initial version in an owned
   `Publication`. Only validated capability wrapping consumes it and creates the
   shared `PackageVersion` required by launch creation and routine configuration setters
-  ([ADR 0114](decisions/0114-launchpad-custody-before-activation.md)).
+  (ADR 0137).
   The only upgrade finalizer commits the native receipt and advances the
   package version to the exact next compiled version in the same call;
   there is no separate activation step.
@@ -347,12 +335,10 @@ Upgradeability is a product/security decision, not a default convenience.
   UpgradeAdmin role: a future governance replacement must revoke that role or
   explicitly account for it. Version cutover alone does not retire this authority.
 
-The Sui custody and interim authority decision is accepted in
-[ADR 0032](decisions/0032-admin-authorized-upgrade-cap-custody.md). Replacement
-governance, delay, recovery, and remaining shared-state cutover coverage require
-approval before the first public deployment.
+Replacement governance and recovery require approval before the first public
+deployment of the fresh stack.
 
-Presale uses launchpad-style custody-before-activation (ADR 0117): an owned
+Presale uses the same custody-before-activation (ADR 0137): an owned
 Publication precedes the shared PackageVersion. Its separate provenance module
 `blast_presale_package` avoids policy/economics module cycles. SDK callers pass
 the same version to each operational mutation; upgrade commit advances it

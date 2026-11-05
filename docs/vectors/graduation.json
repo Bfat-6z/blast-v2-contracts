@@ -2,7 +2,6 @@
   "schema_version": 4,
   "description": "Canonical Blast V2 one-time Meme and terminal-Quote allocation tables, protected-first exact apportionment, and the amounts paid to each destination when migration completes.",
   "source_decisions": [
-    "docs/decisions/0039-deterministic-quote-valuations.md",
     "docs/decisions/0088-reusable-launch-accounting-and-atomic-migration.md"
   ],
   "units": {

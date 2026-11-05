@@ -202,7 +202,6 @@ assertEqual(
   "source_decisions",
   vectors.source_decisions.join(","),
   [
-    "docs/decisions/0039-deterministic-quote-valuations.md",
     "docs/decisions/0088-reusable-launch-accounting-and-atomic-migration.md",
   ].join(","),
 );

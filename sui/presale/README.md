@@ -132,12 +132,12 @@ enabling each operation's intended notice, then `creation_policy::unpause`. No p
 can exist under an unsealed cap or before unpause.
 
 The accepted design is [ADR 0099](../../docs/decisions/0099-standalone-overflow-presale.md);
-Blast's fees are proposed in [ADR 0101](../../docs/decisions/0101-presale-protocol-fees.md)
-and its presale partners in [ADR 0106](../../docs/decisions/0106-presale-partners.md);
+Blast's fees follow the shared rate model of
+[ADR 0137](../../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md)
+and its presale partners [ADR 0106](../../docs/decisions/0106-presale-partners.md);
 creation through the initializer, the sale-level hard cap, and early close are proposed in
 [ADR 0110](../../docs/decisions/0110-presale-initializer-and-early-close.md); activation
-follows [ADR 0117](../../docs/decisions/0117-presale-versioning-and-activation.md) on the
-generic administration of ADR 0137. This source requires fresh publication.
+follows the generic administration of ADR 0137. This source requires fresh publication.
 
 The migrated sale's exact `PresaleCap` holder schedules or cancels a new split on the
 vault with an owner proof from `prove_owner` (`blast_vault::vault::schedule_fee_split` /

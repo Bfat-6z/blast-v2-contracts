@@ -2,9 +2,7 @@
 
 - Status: accepted
 - Date: 2026-09-30
-- Amends: [0059](0059-production-launchpad-abi-and-sdk-parity.md) (the frozen
-  `production-launchpad-v1` ABI baseline) and
-  [0091](0091-fee-split-buyback-and-burn.md) (one buyback entry per coin order)
+- Amends: [0091](0091-fee-split-buyback-and-burn.md) (one buyback entry per coin order)
 
 ## Context
 

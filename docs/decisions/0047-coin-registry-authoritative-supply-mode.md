@@ -3,11 +3,7 @@
 - Status: accepted; supply-mode timing amended by [0088](0088-reusable-launch-accounting-and-atomic-migration.md);
   `Migrated.native_supply_burned` removed by [0090](0090-minimal-launchpad-surface.md)
 - Date: 2026-08-29
-- Amends: [0024](0024-generated-coin-launch-ticket.md),
-  [0035](0035-initializer-finalized-meme-supply.md),
-  [0037](0037-remove-redundant-ticket-burn-mode.md),
-  [0040](0040-normalized-launch-state-intake.md), and
-  [0043](0043-versioned-launch-trading-and-atomic-migration.md)
+- Amends: [0024](0024-generated-coin-launch-ticket.md)
 - Amended by: [0079](0079-compact-launch-state-and-events.md)
 
 > ADR 0079 keeps `sell_burn_bps` on the ticket and launch object but no longer

@@ -1,20 +1,17 @@
 # 0028: Hot/cold runtime configuration consolidation
 
-> Storage-type update (2026-08-28): [ADR 0044](0044-validated-basis-points-unit.md)
-> wraps `protocol_fee_share_bps` in `Bps`; the public setter and event fields
-> remain raw `u64` values.
-> Setter-input update (2026-09-15): [ADR 0081](0081-separate-lp-fee-share-policy.md)
-> makes the setter take `Bps`; event fields remain raw `u64` values.
-> Version ownership update (2026-08-29):
-> [ADR 0049](0049-audit-hardened-package-version-and-launch-intake.md) keeps
-> `RuntimeConfig` limited to its two live settings and adds a separate shared
-> `PackageVersion` singleton to avoid an ACL dependency cycle.
+> Current layout: `protocol_fee_share_bps` is stored as a `blast_core::bps::Bps`
+> ([0137](0137-shared-launch-stack-core-vault-and-venues.md)); event fields remain raw `u64` values. `RuntimeConfig` holds only
+> its two live settings; the package version is the generic
+> `blast_admin::package_version::PackageVersion`, and the ACL is the shared
+> `blast_admin` ACL ([0097](0097-one-singleton-acl-with-typed-roles.md)), not a
+> launchpad `ProtocolAuthority`.
 
 - Status: accepted
 - Date: 2026-08-24
-- Amends: [0001](0001-sui-package-and-module-layout.md), [0011](0011-event-schema-and-replay.md), [0015](0015-protocol-authority-and-x-signer-state.md), [0017](0017-coin-type-domain-for-x-creator-claims.md), [0018](0018-authority-module-separation.md), [0022](0022-dual-asset-fee-ledger-and-claims.md)
-- Amended by: [0030](0030-singleton-event-identity.md), [0041](0041-launch-config-owned-trade-fees.md), [0049](0049-audit-hardened-package-version-and-launch-intake.md), [0058](0058-eventless-package-initialization.md), [0062](0062-table-backed-quote-registry.md), [0081](0081-separate-lp-fee-share-policy.md)
-- Preserves: [0027](0027-graduation-economics-and-migration-witnesses.md)
+- Amends: [0022](0022-dual-asset-fee-ledger-and-claims.md)
+- Amended by: [0041](0041-launch-config-owned-trade-fees.md) and
+  [0058](0058-eventless-package-initialization.md)
 
 ## Sources
 
@@ -101,7 +98,7 @@ so the administrative compromise scope is unchanged.
 
 `LaunchConfig` keeps its Table-backed quote registry, independently bounded Quote
 and Meme trade-fee rates, graduation defaults
-(extended to a triple by [ADR 0033](0033-meme-liquidity-provision.md)),
+(extended to a triple by ADR 0033),
 migration witness set, six public mutations, and one package-only launch
 snapshot. It does
 not absorb the X signer or live trade-fee share. Every trade therefore reads a

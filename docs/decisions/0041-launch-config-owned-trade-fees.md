@@ -1,23 +1,15 @@
 # 0041: LaunchConfig-owned trade fees
 
-> Storage-type update (2026-08-28): [ADR 0044](0044-validated-basis-points-unit.md)
-> wraps both stored rates in `Bps`; the setter inputs, launch snapshot values,
-> and event fields remain raw `u64` values.
-> Setter-input update (2026-09-15): [ADR 0081](0081-separate-lp-fee-share-policy.md)
-> makes both setters take `Bps`; snapshot values and event fields stay as before.
+> Current layout: both stored rates are `blast_core::bps::Bps` values
+> ([0137](0137-shared-launch-stack-core-vault-and-venues.md)), changed through delayed proposals
+> ([0134](0134-delayed-administration-pause-and-table-acl.md)); snapshot values and
+> event fields remain raw `u64` values.
 
 - Status: accepted
 - Date: 2026-08-28
-- Amends: [0001](0001-sui-package-and-module-layout.md),
-  [0004](0004-bonding-curve.md),
-  [0006](0006-fees-and-launch-paths.md),
-  [0007](0007-acl-pause-and-versioning.md),
-  [0011](0011-event-schema-and-replay.md),
-  [0012](0012-flywheel-features.md),
-  [0021](0021-pure-constant-product-curve-quotes.md),
-  [0022](0022-dual-asset-fee-ledger-and-claims.md),
-  [0028](0028-hot-cold-runtime-configuration.md), and
-  [0040](0040-normalized-launch-state-intake.md)
+- Amends: [0004](0004-bonding-curve.md), [0021](0021-pure-constant-product-curve-quotes.md),
+  [0022](0022-dual-asset-fee-ledger-and-claims.md), and
+  [0028](0028-hot-cold-runtime-configuration.md)
 
 ## Sources
 

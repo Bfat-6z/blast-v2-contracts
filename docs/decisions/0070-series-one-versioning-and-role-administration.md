@@ -12,7 +12,7 @@
 > adapter package.
 
 Series1 will own long-lived shared Vault state. The old-bytecode posture already
-accepted in [ADR 0045](0045-single-package-version.md) requires each future
+accepted in ADR 0045 requires each future
 shared-state mutation to use one package-wide operational-version gate.
 Series1 also needs a small authority model before Vault issuance, risk-module
 rotation, adapter rotation, and shutdown administration can be added without

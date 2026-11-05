@@ -2,7 +2,7 @@
 
 Implementation update (2026-09-05): the user superseded this proposal's immutable
 custody posture with an owner-held UpgradeCap and launchpad-admin version/pause
-controls. See [ADR 0075](../decisions/0075-independent-holder-fee-distributor.md)
+controls. See ADR 0075
 for the accepted implementation, including pause of existing payouts.
 
 Research and proposed architecture, 2026-09-05. This is a recommendation for

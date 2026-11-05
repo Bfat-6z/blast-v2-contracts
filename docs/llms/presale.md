@@ -38,7 +38,7 @@ and sharing `blast_admin::package_version::PackageVersion<BLAST_PRESALE_PACKAGE>
 the presale's own policies start with zero notice. Ordinary ACL-authorized operations then
 configure them before release.
 
-See ADR 0117 and ADR 0137. In this guide `SaleToken` is the sale coin; venues call it `Meme`.
+See ADR 0137. In this guide `SaleToken` is the sale coin; venues call it `Meme`.
 `BLAST_PRESALE_PACKAGE` is `blast_presale::blast_presale_package::BLAST_PRESALE_PACKAGE`, the
 package's one-time witness and the type argument of its version, administration and package roles.
 

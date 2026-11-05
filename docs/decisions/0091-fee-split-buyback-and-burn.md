@@ -5,7 +5,6 @@
 - Date: 2026-09-24
 - Amended in place: 2026-10-27 — each buyback spends an administrator-chosen
   `quote_in` of the burn Quote instead of all of it
-- Amends: [0089](0089-migrators-own-post-migration-and-start-launches.md)
 
 ## Context
 

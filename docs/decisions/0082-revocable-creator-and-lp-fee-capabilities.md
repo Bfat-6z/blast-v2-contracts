@@ -1,14 +1,11 @@
 # 0082: Revocable curve-fee, metadata, and LP-fee capabilities
 
 - Status: accepted; LP-fee authority superseded by [0088](0088-reusable-launch-accounting-and-atomic-migration.md);
-  the curve-fee lock to a custodian removed by [0089](0089-migrators-own-post-migration-and-start-launches.md),
-  so the creator always keeps a reassignable curve-fee cap
+  the curve-fee lock to a custodian was later removed, so the creator always keeps a reassignable
+  curve-fee cap
 - Date: 2026-09-15
 - Amends: [0023](0023-generated-coin-supply-and-metadata-custody.md),
-  [0054](0054-v3-dex-migrators-and-locked-lp-fees.md),
-  [0075](0075-independent-holder-fee-distributor.md),
-  [0076](0076-native-v2-and-auto-lp.md), and
-  [0080](0080-provider-independent-creator-recipient.md)
+  [0076](0076-native-v2-and-auto-lp.md), and [0080](0080-provider-independent-creator-recipient.md)
 
 ## Context
 

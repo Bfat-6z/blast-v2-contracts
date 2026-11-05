@@ -11,8 +11,6 @@
   gain no partner variants
 - Amended by: [0106](0106-presale-partners.md): a presale may name one partner at
   creation, which earns its share of Blast's raise share once the sale migrates
-- Amended by: [0107](0107-partner-cut-of-lp-fees.md): a launch's or a sale's partner also
-  earns its cut of Blast's LP fees on the vault it migrates into
 - Amended 2026-11-03 (with [0134](0134-delayed-administration-pause-and-table-acl.md)): share
   and cap changes move from the util `Timelocked` to keyed `blast_admin::delayed::Delayed`
   values with a fixed seven-day notice, explicit permissionless application and PartnerAdmin
@@ -69,7 +67,7 @@ an integrator fee that went negative; DeepBook spot lets a referrer raise its
 rate after users bind to it; Level Finance lost about $1.1M to referral tiers
 lifted with flash-loaned volume; partner programs that write a shared partner
 object on every trade serialize that partner's flow. The launchpad's earlier
-referral proposal ([0009](0009-referrals-and-revshare.md)) rejected per-trade
+referral proposal (ADR 0009) rejected per-trade
 payouts because the referrer was any address the caller passed; a code Blast
 issues answers that.
 
@@ -102,7 +100,7 @@ the packages that enforce it. It has its own `blast_admin` domain,
 registering, scheduling shares and moving partners between caps: a registration
 pays only on flow that names the new deal, share changes and cap moves wait the
 delay, and the root can revoke the role at once, so splitting them per action
-([0094](0094-one-role-per-administrator-action.md)) would protect nothing more.
+(ADR 0094) would protect nothing more.
 
 **Partners and caps.** A `Partner` is one deal: a shared object with a
 `recipient`, a `share_bps` of Blast's fee (at most 8,000, delayed) and the ID
