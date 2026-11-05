@@ -1210,7 +1210,7 @@ holds the sale token's `TreasuryCap`), one PTB:
    publication yields the `CreatePoolCapV2` that the `AdminCap` holder passes in.
 2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken, Quote,
    Issuer>(admin_cap, create_pool_cap)`, with the presale's package witness
-   `blast_presale::blast_presale::PackageWitness` as `Issuer`, shares the
+   `blast_presale::blast_presale_package::PackageWitness` as `Issuer`, shares the
    `PoolCreation<Lp, SaleToken>` bound to that issuer, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
    (`pool_creation_id`, `issuer`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
@@ -12157,11 +12157,11 @@ public struct Vault<phantom Meme, phantom Quote> has key {
 
 ```move
 /// Builds a vault for `terms`, unshared so the venue attaches its position and settles the
-/// migration residuals in `share_with_position` before anyone can reach it. Aborts unless `Venue` and the terms' sealing
-/// witness are admitted; Blast's share needs no check, since `migration::vault_terms` capped it
-/// when the terms were sealed. The vault's ID derives from the registry, the sealing witness, and
-/// the sale, so each sale has exactly one vault and a client computes its address from the sale
-/// alone. The vault has `key` without `store`, so it cannot
+/// migration residuals in `share_with_position` before anyone can reach it. Aborts unless `Venue`
+/// and the terms' sealing witness are admitted; Blast's share needs no check, since
+/// `migration::vault_terms` capped it when the terms were sealed. The vault's ID derives from the
+/// registry, the sealing witness, and the sale, so each sale has exactly one vault and a client
+/// computes its address from the sale alone. The vault has `key` without `store`, so it cannot
 /// leave this transaction except through `share_with_position`.
 public fun new<Meme, Quote, Venue>(
     registry: &mut blast_vault_package::VaultRegistry,
@@ -12216,15 +12216,6 @@ public fun auto_lp_position_mut<Meme, Quote, Venue, Position: key + store>(
     _: &Venue,
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
 ): &mut Position
-
-/// Receives one coin sent to the vault's address, such as Aftermath's DAO fees, for the venue that
-/// holds the position.
-public fun receive_coin<Meme, Quote, Venue, Asset>(
-    self: &mut Vault<Meme, Quote>,
-    _: &Venue,
-    package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
-    coin: transfer::Receiving<Coin<Asset>>,
-): Balance<Asset>
 
 /// Splits one collection of the position's fees: Blast's share of each asset, rounded up, into the
 /// protocol ledger, paid to the treasury at once unless the sale named a partner; then the rest by
@@ -13623,7 +13614,7 @@ public struct PoolCreation<phantom Lp, phantom SaleToken> has key {
 /// Reserves `SaleToken`'s pool creation with `create_pool_cap`, minted by the fresh LP coin `Lp`,
 /// in a shared `PoolCreation` bound to `Issuer`, and returns the ticket for a sale of `SaleToken` in
 /// `Quote` that migrates here. `Issuer` is the presale's package witness
-/// (`blast_presale::blast_presale::PackageWitness`), passed as a type argument, so only a
+/// (`blast_presale::blast_presale_package::PackageWitness`), passed as a type argument, so only a
 /// `Migration` the presale sealed can consume the reservation; with the presale's one sale per
 /// sale token, that binds the reservation to one sale. Framework and primitive types are rejected
 /// because anyone can construct them. The pool's weights and fees are this module's constants, so

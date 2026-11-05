@@ -26,6 +26,10 @@
 //! with the `PresaleCap` and applied after the vault's notice; collection against another pool of
 //! the same type is refused, and the owner claims the migration residuals with an owner proof.
 //!
+//! A partnered Bluefin sale under nonzero Blast rates shows the fee ledger's two paths as PTB
+//! commands: the migration holds Blast's raise and token fees, and
+//! `pay_protocol_fees_with_partner` pays the partner its cut of each and the treasury the rest.
+//!
 //! The fix-side tests seed each route with a raise and LP allocation of about 2^62 atoms whose
 //! larger side, if fixed, makes the venue demand one atom more of the smaller side than the
 //! hand-off holds. Against the same venue bytecode, a direct pool creation fixing the larger side
@@ -112,6 +116,7 @@ const RECIPIENT_A: ObjectID = address(&[0xA1]);
 const RECIPIENT_B: ObjectID = address(&[0xB2]);
 const CREATOR: ObjectID = address(&[0xC0]);
 const FEE_B: ObjectID = address(&[0xFB]);
+const PARTNER: ObjectID = address(&[0x9A]);
 
 const fn address(suffix: &[u8]) -> ObjectID {
     let mut bytes = [0u8; 32];
@@ -324,6 +329,84 @@ fn presale_bluefin_quote_larger_seed_fixes_quote() -> Result<()> {
     Ok(())
 }
 
+/// A partnered sale under nonzero Blast rates: migration holds Blast's raise and token fees in the
+/// sale's ledger, and `pay_protocol_fees_with_partner` then pays the partner its cut of each and
+/// the treasury the rest, every amount checked against the coins sent.
+#[test]
+fn presale_bluefin_partnered_sale_pays_blast_and_its_partner_from_the_ledger() -> Result<()> {
+    const RAISE_BPS: u64 = 300;
+    const TOKEN_BPS: u64 = 100;
+    const PARTNER_CUT_BPS: u64 = 4_000;
+    let mut w = World::new(Route::Bluefin)?;
+    w.set_protocol_rates(RAISE_BPS, TOKEN_BPS)?;
+    let partner = w.register_partner(PARTNER, PARTNER_CUT_BPS)?;
+    let terms = Terms::with_protocol_rates(Route::Bluefin, RAISE_BPS, TOKEN_BPS);
+    let sale = w.open_partnered_sale(&terms, Some(partner))?;
+    let (tokens, quote) = (terms.protocol_tokens(), terms.protocol_quote());
+    ensure!(tokens > 0 && quote > 0, "Blast reserves a share of both");
+
+    let mut b = ProgrammableTransactionBuilder::new();
+    w.migrate_command(&mut b, &sale, None, None)?;
+    let migrated = w.h.execute(b.finish())?;
+    migrated.assert_success();
+    let paid: Vec<ProtocolFeesPaid> = w.package_events(&migrated, w.core, "blast_core_events", "ProtocolFeesPaid");
+    ensure!(paid.is_empty(), "a partnered migration holds Blast's fees");
+    let held = w.sale_state(&sale)?.fee_ledger;
+    ensure!((held.meme, held.quote, held.sui) == (tokens, quote, 0), "the ledger holds {held:?}");
+    let releases: Vec<PresaleMigrated> = w.events(&migrated, "events", "PresaleMigrated");
+    ensure!(releases.len() == 1 && releases[0].liquidity_quote == terms.raise - quote, "the LP keeps the rest of the raise");
+
+    let mut b = ProgrammableTransactionBuilder::new();
+    let args = vec![
+        w.shared(&mut b, sale.presale, true)?,
+        w.shared(&mut b, w.version, false)?,
+        w.shared(&mut b, w.treasury, false)?,
+        w.shared(&mut b, partner, false)?,
+    ];
+    call(&mut b, w.presale, "blast_presale", "pay_protocol_fees_with_partner", w.pair(&sale), args);
+    let outcome = w.h.execute(b.finish())?;
+    outcome.assert_success();
+    // `blast_partners::pay`: the cut of each asset, rounded down.
+    let cut = |amount: u64| (amount as u128 * PARTNER_CUT_BPS as u128 / 10_000) as u64;
+    let (partner_tokens, partner_quote) = (cut(tokens), cut(quote));
+    let paid: Vec<ProtocolFeesPaid> = w.package_events(&outcome, w.core, "blast_core_events", "ProtocolFeesPaid");
+    ensure!(paid.len() == 1, "one ProtocolFeesPaid");
+    let treasury: SuiAddress = id(blast_launchpad_ptb_tests::TEST_GENESIS_RECIPIENT).into();
+    ensure!(
+        paid[0] == ProtocolFeesPaid {
+            package_witness: paid[0].package_witness.clone(),
+            origin: sale.presale,
+            treasury,
+            meme_amount: tokens - partner_tokens,
+            quote_amount: quote - partner_quote,
+            sui_amount: 0,
+            partner_id: Some(partner),
+            partner_meme_amount: partner_tokens,
+            partner_quote_amount: partner_quote,
+            partner_sui_amount: 0,
+        },
+        "{:?}",
+        paid[0]
+    );
+    ensure!(paid[0].package_witness.ends_with("::blast_presale_package::PackageWitness"), "{}", paid[0].package_witness);
+    let partner_paid: Vec<(ObjectID, u64)> = outcome
+        .events
+        .iter()
+        .filter(|event| ObjectID::from(event.type_.address) == w.partners && event.type_.name.as_str() == "PartnerPaid")
+        .map(|event| bcs::from_bytes(&event.contents).expect("PartnerPaid"))
+        .collect();
+    ensure!(partner_paid == vec![(partner, partner_tokens), (partner, partner_quote)], "{partner_paid:?}");
+    ensure!(outcome.coins_created_for(&w.h, PARTNER.into()) == w.coins(&sale.meme, partner_tokens, partner_quote));
+    ensure!(outcome.coins_created_for(&w.h, treasury) == w.coins(&sale.meme, tokens - partner_tokens, quote - partner_quote));
+    let after = w.sale_state(&sale)?.fee_ledger;
+    ensure!((after.meme, after.quote, after.sui) == (0, 0, 0), "the ledger is drained");
+    w.report(format!(
+        "partnered Bluefin sale at {RAISE_BPS}/{TOKEN_BPS} BPS: ledger held ({tokens}, {quote}); partner paid ({partner_tokens}, {partner_quote}), treasury the rest"
+    ));
+    w.print_report();
+    Ok(())
+}
+
 /// The whole lifecycle of one presale on `route`.
 fn run(route: Route) -> Result<()> {
     run_world(World::new(route)?)
@@ -473,6 +556,9 @@ struct Terms {
     supply: u64,
     sale_bps: u64,
     lp_bps: u64,
+    /// Blast's rates the fee policy charges, of the supply and of the raise.
+    protocol_token_bps: u64,
+    protocol_raise_bps: u64,
     recipients: Vec<(ObjectID, u64)>,
     raise: u64,
     wallet_cap: u64,
@@ -489,6 +575,8 @@ impl Terms {
             supply: SUPPLY,
             sale_bps: SALE_BPS,
             lp_bps: LP_BPS,
+            protocol_token_bps: 0,
+            protocol_raise_bps: 0,
             recipients: vec![(RECIPIENT_A, 1_500), (RECIPIENT_B, 500)],
             raise: 25 * unit,
             wallet_cap: 40 * unit,
@@ -507,6 +595,8 @@ impl Terms {
             supply: 2 * lp,
             sale_bps: 5_000,
             lp_bps: 5_000,
+            protocol_token_bps: 0,
+            protocol_raise_bps: 0,
             recipients: vec![],
             raise,
             wallet_cap: raise,
@@ -516,10 +606,31 @@ impl Terms {
         }
     }
 
+    /// The standard sale under Blast rates of `protocol_raise_bps` and `protocol_token_bps`, the
+    /// second recipient giving up Blast's token share.
+    fn with_protocol_rates(route: Route, protocol_raise_bps: u64, protocol_token_bps: u64) -> Self {
+        let mut terms = Terms::standard(route);
+        terms.protocol_raise_bps = protocol_raise_bps;
+        terms.protocol_token_bps = protocol_token_bps;
+        terms.recipients[1].1 -= protocol_token_bps;
+        terms
+    }
+
+    /// The supply apportioned as creation does: buyers, the LP, Blast, then each recipient.
     fn allocations(&self) -> Vec<u64> {
-        let mut weights = vec![self.sale_bps, self.lp_bps];
+        let mut weights = vec![self.sale_bps, self.lp_bps, self.protocol_token_bps];
         weights.extend(self.recipients.iter().map(|(_, bps)| *bps));
         apportion(&weights, self.supply)
+    }
+
+    /// Blast's share of the supply.
+    fn protocol_tokens(&self) -> u64 {
+        self.allocations()[2]
+    }
+
+    /// Blast's share of the raise, apportioned with the LP's (no raise recipients).
+    fn protocol_quote(&self) -> u64 {
+        apportion(&[self.protocol_raise_bps, 10_000 - self.protocol_raise_bps], self.raise)[0]
     }
 
     fn sale_tokens(&self) -> u64 {
@@ -531,7 +642,7 @@ impl Terms {
     }
 
     fn recipient_tokens(&self) -> Vec<u64> {
-        self.allocations()[2..].to_vec()
+        self.allocations()[3..].to_vec()
     }
 }
 
@@ -590,6 +701,7 @@ struct World {
     /// The migrators' own package version.
     venue_version: ObjectID,
     core: ObjectID,
+    partners: ObjectID,
     vault_stack: VaultStack,
     treasury: ObjectID,
     version: ObjectID,
@@ -740,6 +852,7 @@ impl World {
             venue_version,
             presale_registry,
             core,
+            partners: stack.partners,
             vault_stack,
             treasury: stack.treasury,
             version,
@@ -777,6 +890,66 @@ impl World {
         call(&mut b, self.admin, "blast_acl", if grant { "grant_role" } else { "revoke_role" }, vec![role], vec![acl, root, cap]);
         self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
         Ok(())
+    }
+
+    /// Schedules Blast's raise and token rates under the 48-hour notice, waits it out, and applies
+    /// them; LP-fee rates stay zero.
+    fn set_protocol_rates(&mut self, raise_bps: u64, token_bps: u64) -> Result<()> {
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.sign_in(&mut b, "FeeAdmin")?;
+        let fees = self.shared(&mut b, self.fee_policy, true)?;
+        let version = self.shared(&mut b, self.version, false)?;
+        let raise = self.bps(&mut b, raise_bps)?;
+        let token = self.bps(&mut b, token_bps)?;
+        let zero = self.bps(&mut b, 0)?;
+        let delay = b.pure(PUBLICATION_UPGRADE_NOTICE_MS)?;
+        let clock = self.clock(&mut b)?;
+        call(&mut b, self.presale, "fee_policy", "schedule_fees", vec![], vec![fees, version, witness, raise, token, zero, zero, delay, clock]);
+        self.h.execute(b.finish())?.assert_success();
+        self.h.sim.advance_clock(Duration::from_millis(PUBLICATION_UPGRADE_NOTICE_MS));
+        let mut b = ProgrammableTransactionBuilder::new();
+        let fees = self.shared(&mut b, self.fee_policy, true)?;
+        let version = self.shared(&mut b, self.version, false)?;
+        let clock = self.clock(&mut b)?;
+        call(&mut b, self.presale, "fee_policy", "apply_fees", vec![], vec![fees, version, clock]);
+        self.h.execute(b.finish())?.assert_success();
+        Ok(())
+    }
+
+    /// Registers a Blast partner paid at `recipient` with `share_bps` of Blast's fees, through a
+    /// `PartnerAdmin` granted to the world's administrator, and lets new presales name it.
+    fn register_partner(&mut self, recipient: ObjectID, share_bps: u64) -> Result<ObjectID> {
+        let role = tag(&format!("{}::blast_partners::PartnerAdmin", self.partners));
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl = b.obj(self.h.shared(self.acl, true))?;
+        let root = b.obj(self.h.owned(self.root))?;
+        let cap = b.pure(self.admin_cap)?;
+        call(&mut b, self.admin, "blast_acl", "grant_role", vec![role.clone()], vec![acl, root, cap]);
+        self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
+        let mut b = ProgrammableTransactionBuilder::new();
+        let acl = b.obj(self.h.shared(self.acl, false))?;
+        let admin_cap = b.obj(self.h.owned(self.admin_cap))?;
+        let witness = call(&mut b, self.admin, "blast_acl", "sign_in", vec![role], vec![acl, admin_cap]);
+        let partner_cap = call(&mut b, self.partners, "blast_partners", "new_cap", vec![], vec![]);
+        let cap_type = tag(&format!("{}::blast_partners::PartnerCap", self.partners));
+        let cap_id = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "object", "id", vec![cap_type], vec![partner_cap]);
+        let recipient = b.pure(SuiAddress::from(recipient))?;
+        let share = b.pure(share_bps)?;
+        call(&mut b, self.partners, "blast_partners", "register", vec![], vec![witness, cap_id, recipient, share]);
+        b.transfer_arg(self.h.sender, partner_cap);
+        let registered = self.h.execute(b.finish())?;
+        registered.assert_success();
+        let partner = registered.created(&self.h, "blast_partners", "Partner");
+        ensure!(partner.len() == 1 && self.h.object(partner[0]).is_shared());
+
+        let mut b = ProgrammableTransactionBuilder::new();
+        let witness = self.sign_in(&mut b, "FeeAdmin")?;
+        let policy = self.shared(&mut b, self.creation_policy, true)?;
+        let version = self.shared(&mut b, self.version, false)?;
+        let partner_arg = self.shared(&mut b, partner[0], false)?;
+        call(&mut b, self.presale, "creation_policy", "add_partner", vec![], vec![policy, version, witness, partner_arg]);
+        self.h.execute(b.finish())?.assert_success();
+        Ok(partner[0])
     }
 
     fn set_pause(&mut self, pause: bool, bits: u8) -> Result<()> {
@@ -1022,6 +1195,7 @@ impl World {
         currency: ObjectID,
         meme: &TypeTag,
         terms: &Terms,
+        partner: Option<ObjectID>,
     ) -> Result<ProgrammableTransaction> {
         let mut b = ProgrammableTransactionBuilder::new();
         let pair = vec![meme.clone(), self.quote()];
@@ -1086,6 +1260,11 @@ impl World {
         ] {
             call(&mut b, self.presale, "blast_presale", function, pair.clone(), arguments);
         }
+        if let Some(partner) = partner {
+            let partner = self.shared(&mut b, partner, false)?;
+            let clock = self.clock(&mut b)?;
+            call(&mut b, self.presale, "blast_presale", "set_partner", pair.clone(), vec![init, version, creation_policy, partner, clock]);
+        }
         let Argument::Result(created) =
             call(&mut b, self.presale, "blast_presale", "finalize", pair.clone(), vec![init, version, registry, currency])
         else {
@@ -1101,8 +1280,12 @@ impl World {
 
     /// Creates and shares the presale, commits past the raise, and settles it after the window.
     fn open_sale(&mut self, terms: &Terms) -> Result<Sale> {
+        self.open_partnered_sale(terms, None)
+    }
+
+    fn open_partnered_sale(&mut self, terms: &Terms, partner: Option<ObjectID>) -> Result<Sale> {
         let (treasury_cap, currency, meme) = self.publish_token()?;
-        let pt = self.create_presale_pt(treasury_cap, currency, &meme, terms)?;
+        let pt = self.create_presale_pt(treasury_cap, currency, &meme, terms, partner)?;
         let created = self.h.execute(pt)?;
         self.fund_sale(created, meme, currency, terms)
     }
@@ -1120,7 +1303,10 @@ impl World {
 
         let state = self.sale_state(&sale)?;
         ensure!(state.lifecycle == Lifecycle::Open && state.presale_cap_id == sale.cap);
-        ensure!((state.protocol_quote, state.protocol_tokens) == (0, 0), "a zero-rate policy reserves Blast nothing");
+        ensure!(
+            (state.protocol_quote, state.protocol_tokens) == (terms.protocol_quote(), terms.protocol_tokens()),
+            "the sale reserves Blast its snapshotted shares"
+        );
         ensure!(state.venue.ends_with(&format!("::{}::Venue", self.route.module())), "the sale records its venue");
         ensure!(state.fee_split == initial_split(), "the sale records its vault's fee split");
         let tiers: Vec<(u32, u64)> = match self.route.is_cetus() {
@@ -2268,6 +2454,21 @@ impl FeesCollected {
             self.gross_meme, self.gross_quote, self.protocol_meme, self.protocol_quote, self.route_meme, self.route_quote,
         )
     }
+}
+
+/// Mirrors `blast_core::blast_core_events::ProtocolFeesPaid<Meme, Quote>`.
+#[derive(Debug, Deserialize, PartialEq)]
+struct ProtocolFeesPaid {
+    package_witness: String,
+    origin: ObjectID,
+    treasury: SuiAddress,
+    meme_amount: u64,
+    quote_amount: u64,
+    sui_amount: u64,
+    partner_id: Option<ObjectID>,
+    partner_meme_amount: u64,
+    partner_quote_amount: u64,
+    partner_sui_amount: u64,
 }
 
 #[derive(Deserialize)]

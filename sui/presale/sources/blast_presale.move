@@ -1502,11 +1502,8 @@ fun add_within_cap(self: Commitment, quote: u64, wallet_cap: u64, uncapped: bool
     );
 
     let wallet_commitment = self
-
         .quote
-
         .checked_add(quote)
-
         .destroy_or!(abort blast_presale::errors::wallet_cap_exceeded!());
     assert!(
         uncapped || wallet_commitment <= wallet_cap,

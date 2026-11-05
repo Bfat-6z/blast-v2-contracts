@@ -32,7 +32,7 @@ only here.
 
 The sale binding has two parts. The `AdminCap` holder pins the issuer at
 `prepare` by passing the presale's package witness,
-`blast_presale::blast_presale::PackageWitness`, as the `Issuer` type
+`blast_presale::blast_presale_package::PackageWitness`, as the `Issuer` type
 argument (no presale import is needed; primitive, standard-library and
 framework types are refused). `migrate` refuses a `Migration` whose terms any
 other package sealed, so a hostile package that seals its own hand-off for this

@@ -1029,7 +1029,7 @@ holds the sale token's `TreasuryCap`), one PTB:
    publication yields the `CreatePoolCapV2` that the `AdminCap` holder passes in.
 2. `blast_aftermath_dao_presale::blast_aftermath_dao_presale::prepare<Lp, SaleToken, Quote,
    Issuer>(admin_cap, create_pool_cap)`, with the presale's package witness
-   `blast_presale::blast_presale::PackageWitness` as `Issuer`, shares the
+   `blast_presale::blast_presale_package::PackageWitness` as `Issuer`, shares the
    `PoolCreation<Lp, SaleToken>` bound to that issuer, emits
    `blast_aftermath_dao_presale::blast_aftermath_dao_presale::PoolCreationReserved`
    (`pool_creation_id`, `issuer`), and returns the venue's `VenueTicket<SaleToken, Quote>`.
