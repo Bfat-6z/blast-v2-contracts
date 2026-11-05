@@ -92,7 +92,7 @@ fun transfer_accepts_at_the_exact_deadline_and_old_root_can_then_be_destroyed() 
     fixture.scenario.next_tx(NEW_ROOT);
     fixture.accept_transfer();
 
-    let transferred = events::collect_one<events::SuperAdminTransferred>(0);
+    let transferred = events::collect_one<SuperAdminTransferred>(0);
     let (emitted_previous_id, new_root_id, emitted_recipient) =
         transferred.super_admin_transferred_fields();
     assert_eq!(emitted_previous_id, previous_root_id);
@@ -103,7 +103,7 @@ fun transfer_accepts_at_the_exact_deadline_and_old_root_can_then_be_destroyed() 
     assert_eq!(new_root.super_admin_cap_id_for_testing(), new_root_id);
     assert_eq!(fixture.acl.super_admin_cap_id(), new_root_id);
     fixture.acl.destroy_retired_super_admin_cap(fixture.root.extract());
-    let destroyed = events::collect_one<events::SuperAdminCapDestroyed>(0);
+    let destroyed = events::collect_one<SuperAdminCapDestroyed>(0);
     assert_eq!(destroyed.super_admin_cap_destroyed_fields(), previous_root_id);
     fixture.root.fill(new_root);
 
@@ -271,7 +271,7 @@ fun cancel_transfer(self: &mut Fixture) {
 
 use blast_admin::{
     blast_acl::{Self, ACL, SuperAdminCap, SuperAdminTransfer},
-    blast_admin_events as events,
+    blast_admin_events::{Self as events, SuperAdminCapDestroyed, SuperAdminTransferred},
     delayed_action::{ActionCancelled, ActionCreated, ActionScheduled},
     errors,
 };

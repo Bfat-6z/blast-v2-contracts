@@ -68,7 +68,7 @@ fun wrapping_shares_custody_and_a_fully_paused_version_and_consumes_the_publicat
 
     package_admin::wrap(publication, upgrade_cap, fixture.scenario.ctx());
     let created = blast_admin_events::collect_one<
-        blast_admin_events::UpgradeCustodyCreated<PACKAGE_MARKER>,
+        UpgradeCustodyCreated<PACKAGE_MARKER>,
     >(0);
 
     fixture.scenario.next_tx(PUBLISHER);
@@ -273,17 +273,17 @@ fun a_compatible_upgrade_commits_and_advances_one_generation_together() {
     let ticket = fixture.authorize(package_digest());
     assert_eq!(ticket.ticket_policy(), package::compatible_policy());
     let authorized = blast_admin_events::collect_one<
-        blast_admin_events::UpgradeAuthorized<PACKAGE_MARKER>,
+        UpgradeAuthorized<PACKAGE_MARKER>,
     >(0);
     fixture
         .package_admin
         .commit_upgrade_and_advance(&upgrade_admin(), &mut fixture.package_version, ticket.test_upgrade());
     let advanced = blast_admin_events::collect_one<
-        blast_admin_events::OperationalVersionAdvanced<PACKAGE_MARKER>,
+        OperationalVersionAdvanced<PACKAGE_MARKER>,
     >(0);
 
     let committed = blast_admin_events::collect_one<
-        blast_admin_events::UpgradeCommitted<PACKAGE_MARKER>,
+        UpgradeCommitted<PACKAGE_MARKER>,
     >(0);
 
     let (
@@ -467,7 +467,7 @@ fun package_admin_can_permanently_destroy_native_upgrade_authority() {
 
     fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
     let destroyed = blast_admin_events::collect_one<
-        blast_admin_events::UpgradeCapDestroyed<PACKAGE_MARKER>,
+        UpgradeCapDestroyed<PACKAGE_MARKER>,
     >(0);
 
     let (custodian_id, destroyed_cap_id, original_package_id, final_native_version, final_policy) =
@@ -614,7 +614,7 @@ fun pausing_sets_only_the_requested_bits_and_gates_those_operations() {
     let fixture = &mut owned;
 
     package_admin::pause(&mut fixture.package_version, &pause_admin(), 2);
-    let paused = blast_admin_events::collect_one<blast_admin_events::Paused<PACKAGE_MARKER>>(0);
+    let paused = blast_admin_events::collect_one<Paused<PACKAGE_MARKER>>(0);
 
     let (package_version_id, bits, mask) = paused.paused_fields();
     assert_eq!(package_version_id, object::id(&fixture.package_version));
@@ -693,7 +693,7 @@ fun clearing_releases_only_the_requested_bits() {
     package_admin::pause(&mut fixture.package_version, &pause_admin(), VALID_PAUSE_BITS);
 
     fixture.clear(package_marker::package_witness(), 2);
-    let unpaused = blast_admin_events::collect_one<blast_admin_events::Unpaused<PACKAGE_MARKER>>(0);
+    let unpaused = blast_admin_events::collect_one<Unpaused<PACKAGE_MARKER>>(0);
 
     let (package_version_id, bits, mask) = unpaused.unpaused_fields();
     assert_eq!(package_version_id, object::id(&fixture.package_version));
@@ -835,7 +835,7 @@ fun the_package_witness_borrows_the_packages_publisher() {
 
     assert_eq!(object::id(publisher), claimed_publisher_id);
     assert!(publisher.from_package<PACKAGE_MARKER>());
-    let receipt_display = display::new<package_marker::Receipt>(publisher, fixture.scenario.ctx());
+    let receipt_display = display::new<Receipt>(publisher, fixture.scenario.ctx());
 
     destroy(receipt_display);
     test_scenario::return_shared(package_admin);
@@ -928,7 +928,7 @@ fun administration_readers_follow_the_upgrade_lifecycle_to_immutability() {
 
     fixture.package_admin.make_immutable_for_testing(&upgrade_admin(), &mut fixture.ctx);
     let destroyed = blast_admin_events::collect_one<
-        blast_admin_events::UpgradeCapDestroyed<PACKAGE_MARKER>,
+        UpgradeCapDestroyed<PACKAGE_MARKER>,
     >(0);
     let (_, destroyed_cap_id, _, _, _) = destroyed.upgrade_cap_destroyed_fields();
     assert_eq!(destroyed_cap_id, upgrade_cap_id);
@@ -1127,14 +1127,23 @@ fun other_package_digest(): vector<u8> {
 
 use 0xa::{
     other_package_marker::{Self, OTHER_PACKAGE_MARKER},
-    package_marker::{Self, PACKAGE_MARKER, PackageWitness}
+    package_marker::{Self, PACKAGE_MARKER, PackageWitness, Receipt}
 };
 
 use 0xf::foreign_package_marker::{Self, ForeignWitness};
 
 use blast_admin::{
     blast_acl::{Self, AdminCap, AdminWitness},
-    blast_admin_events,
+    blast_admin_events::{
+        Self,
+        OperationalVersionAdvanced,
+        Paused,
+        Unpaused,
+        UpgradeAuthorized,
+        UpgradeCapDestroyed,
+        UpgradeCommitted,
+        UpgradeCustodyCreated,
+    },
     errors,
     package_admin::{Self, CancelAdmin, PackageAdmin, PauseAdmin, UnpauseAdmin, UpgradeAdmin},
     package_version::{Self, PackageVersion, Publication}
