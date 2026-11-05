@@ -21,6 +21,7 @@ UTILITY_SECTIONS = [
     "Test-Only Functions", "Events", "Errors", "Imports",
 ]
 ERROR_NAME = r"E[A-Z](?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]*"
+# Exempt from the qualified-type rule only; every other style check still applies.
 # blast_sui and boosts are out of the one-way stack scope and adopt the type
 # import rule with their own administration rework (#191, #205); scratch-sui is
 # parked, out of scope.

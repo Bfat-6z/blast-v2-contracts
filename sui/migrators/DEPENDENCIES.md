@@ -516,8 +516,10 @@ a migrator admin capability as an alternative.
 
 A vault upgrade forces a migrators relink in the same release window: the
 venues call version-gated `blast_vault` functions, so once the vault commits its
-upgrade, migration and fee collection abort until a dependency-only migrators
-upgrade bound to the new vault lands. Schedule both together and execute them
+upgrade, migration and fee collection abort until the relink lands: a
+compatible migrators upgrade that rebinds the vault address and bumps
+`constants::generation`, since every `commit_upgrade_and_advance` advances the
+stored generation. Schedule both together and execute them
 back to back. A product upgrade forces no relink, since the venues take the
 `Migration` from the PTB.
 

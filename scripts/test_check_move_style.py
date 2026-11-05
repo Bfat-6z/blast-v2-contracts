@@ -245,7 +245,7 @@ use fun blast_core::payout::pay_or_vest as Recipient.pay;
 public fun make(): payout::Recipient { abort }
 """
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             with patch("check_move_style.ROOT", root):
                 for package in ("sui/blast_sui", "sui/boosts/core", "scratch-sui/dex", "sui/launchpad"):
                     path = root / package / "sources" / "value.move"

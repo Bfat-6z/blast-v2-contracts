@@ -44,16 +44,19 @@ their intended nonzero addresses; each `init` aborts on `0x0`.
 
 ### Publish order
 
-Each step waits for the previous package IDs, which the next package's manifest
-binds:
+A package's manifest binds the IDs of the packages it depends on, so each waits
+for those: `blast_partners` needs `blast_admin`; `blast_core` needs both;
+`blast_vault`, `blast_fun` and `blast_presale` need `blast_core`;
+`blast_migrators` needs `blast_vault`; `launch_ticket_template` needs `blast_fun`;
+the vendor `blast_aftermath_dao_presale` needs `blast_core` only. The chosen
+sequence:
 
 1. `blast_admin`
 2. `blast_partners`
 3. `blast_core`
-4. `blast_vault`
-5. `blast_fun` and `blast_presale`, in either order
-6. `blast_migrators`
-7. `launch_ticket_template` and the vendor `blast_aftermath_dao_presale`
+4. `blast_vault`, `blast_fun` and `blast_presale`, in any order
+5. `blast_migrators`
+6. `launch_ticket_template` and the vendor
 
 Each upgradeable package's deployer receives an owned `Publication<Marker>`
 pinning the package's `PackageWitness`. In a follow-up transaction,
@@ -81,8 +84,8 @@ so Blast configures the stack before any release:
    notice: the vault's witness notice and each product configuration notice
    (48 hours for this rollout). Raising a notice does not rewrite older
    proposals. The vault's fee-split and Blast-share notices are compiled at
-   48 hours and have no setter; the upgrade notice and the treasury notice start
-   at their compiled values.
+   48 hours and have no setter. `blast_core`'s treasury notice and each
+   package's `PackageAdmin` upgrade notice start at 48 hours and need no raise.
 4. Unpause the vault (`blast_vault_package::unpause`), then the products
    (`launch_config::unpause`, `creation_policy::unpause`). Each refuses while
    one of its notices is unguarded.
@@ -98,9 +101,11 @@ reductions wait the old notice.
 
 - A vault upgrade forces a migrators relink in the same window. The venues call
   version-gated vault functions, so after `commit_upgrade_and_advance` on the
-  vault, migration and fee collection abort until a dependency-only
-  `blast_migrators` upgrade bound to the new vault lands. Prepare, review and
-  schedule both upgrades together and execute them back to back.
+  vault, migration and fee collection abort until the relink lands. The relink
+  is a normal migrators release: a compatible upgrade that rebinds the vault
+  address and bumps `constants::generation`. Prepare, review and schedule both
+  upgrades together, then execute the vault upgrade and the migrators upgrade
+  back to back.
 - A migrators (DEX bump), product or vendor release forces no other package to
   relink: products and venues meet only through the `Migration` passed in the
   PTB.
