@@ -230,7 +230,7 @@ impl GenesisFixture {
         let mut fixture = Self { originals: Vec::new() };
         for path in manifests {
             let original = std::fs::read_to_string(&path)?;
-            let rewritten = original.replace("blast_treasury = \"0x0\"", &format!("blast_treasury = \"{TEST_GENESIS_RECIPIENT}\""));
+            let rewritten = with_test_treasury(&original);
             if rewritten != original {
                 std::fs::write(&path, rewritten)?;
                 fixture.originals.push((path, original));
@@ -239,6 +239,16 @@ impl GenesisFixture {
         Ok(fixture)
     }
 }
+/// The manifest with `blast_treasury` set to `TEST_GENESIS_RECIPIENT`, whatever address it names.
+fn with_test_treasury(manifest: &str) -> String {
+    const KEY: &str = "blast_treasury = \"";
+    let Some(start) = manifest.find(KEY).map(|index| index + KEY.len()) else {
+        return manifest.to_owned();
+    };
+    let end = start + manifest[start..].find('"').expect("blast_treasury value is quoted");
+    format!("{}{TEST_GENESIS_RECIPIENT}{}", &manifest[..start], &manifest[end..])
+}
+
 impl Drop for GenesisFixture {
     fn drop(&mut self) {
         for (path, original) in &self.originals {

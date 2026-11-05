@@ -12,5 +12,5 @@ blast_fun_vesting = { local = "../vesting" }
 [addresses]
 blast_core = "0x0"
 
-# Must be set to the intended treasury before fresh publication.
-blast_treasury = "0x0"
+# Receives every Blast fee from publication; init aborts while this is 0x0.
+blast_treasury = "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"
