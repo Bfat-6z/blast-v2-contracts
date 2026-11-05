@@ -219,19 +219,19 @@ fun the_test_issuer_hands_off_to_the_test_venue() {
     );
     owner_proof::new(migration::test_issuer(), sale_id()).assert_terms(&terms);
     let ticket = migration::issue_ticket<MEME, QUOTE, _>(migration::test_venue());
-    assert_eq!(ticket.redeem_ticket(), type_name::with_original_ids<migration::TestVenue>());
+    assert_eq!(ticket.redeem_ticket(), type_name::with_original_ids<TestVenue>());
 
     let migration = migration::new(
         migration::test_issuer(),
         balance::create_for_testing<MEME>(7),
         balance::create_for_testing<QUOTE>(9),
-        type_name::with_original_ids<migration::TestVenue>(),
+        type_name::with_original_ids<TestVenue>(),
         terms,
     );
     let (meme, quote, redeemed) = migration.redeem(migration::test_venue());
 
     assert_eq!(vector[meme.value(), quote.value()], vector[7, 9]);
-    assert_eq!(redeemed.package_witness(), type_name::with_original_ids<migration::TestIssuer>());
+    assert_eq!(redeemed.package_witness(), type_name::with_original_ids<TestIssuer>());
     destroy(meme);
     destroy(quote);
 }
@@ -347,7 +347,7 @@ fun seedability_agrees_for_both_coin_orders() {
 
 fun sale_id(): ID { object::id_from_address(@0x5A1E) }
 
-fun owner_split(): fee_split::FeeSplit {
+fun owner_split(): FeeSplit {
     fee_split::new(vector[fee_split::route(fee_split::owner_destination(), bps::new(10_000))])
 }
 
@@ -363,7 +363,7 @@ fun sale_terms(): VaultTerms {
     )
 }
 
-fun new_migration(venue: type_name::TypeName): Migration<MEME, QUOTE> {
+fun new_migration(venue: TypeName): Migration<MEME, QUOTE> {
     migration::new(
         TestPackageWitness(),
         balance::create_for_testing<MEME>(100),
@@ -375,8 +375,14 @@ fun new_migration(venue: type_name::TypeName): Migration<MEME, QUOTE> {
 
 // === Imports ===
 
-use blast_core::{bps, constants, fee_split, migration::{Self, Migration, VaultTerms}, owner_proof};
+use blast_core::{
+    bps,
+    constants,
+    fee_split::{Self, FeeSplit},
+    migration::{Self, Migration, TestIssuer, TestVenue, VaultTerms},
+    owner_proof
+};
 
-use std::{type_name, unit_test::{assert_eq, destroy}};
+use std::{type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 
 use sui::balance;

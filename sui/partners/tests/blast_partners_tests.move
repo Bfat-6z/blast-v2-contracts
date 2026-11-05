@@ -1110,13 +1110,13 @@ macro fun ctx($self: &mut Fixture): &mut TxContext {
     fixture.scenario.ctx()
 }
 
-fun pay_fee(self: &mut Fixture, partner: &Partner, fee: &mut balance::Balance<SUI>): u64 {
+fun pay_fee(self: &mut Fixture, partner: &Partner, fee: &mut Balance<SUI>): u64 {
     partner.pay(fee, self.scenario.ctx())
 }
 
-fun take_payment(self: &Fixture): sui::coin::Coin<SUI> {
-    assert_eq!(test_scenario::ids_for_address<sui::coin::Coin<SUI>>(RECIPIENT).length(), 1);
-    assert_eq!(test_scenario::ids_for_address<sui::coin::Coin<SUI>>(ADMIN).length(), 0);
+fun take_payment(self: &Fixture): Coin<SUI> {
+    assert_eq!(test_scenario::ids_for_address<Coin<SUI>>(RECIPIENT).length(), 1);
+    assert_eq!(test_scenario::ids_for_address<Coin<SUI>>(ADMIN).length(), 0);
     self.scenario.take_from_address(RECIPIENT)
 }
 
@@ -1223,4 +1223,11 @@ use blast_partners::blast_partners::{
 
 use std::unit_test::{assert_eq, destroy};
 
-use sui::{balance, clock::{Self, Clock}, event, sui::SUI, test_scenario::{Self, Scenario}};
+use sui::{
+    balance::{Self, Balance},
+    clock::{Self, Clock},
+    coin::Coin,
+    event,
+    sui::SUI,
+    test_scenario::{Self, Scenario}
+};
