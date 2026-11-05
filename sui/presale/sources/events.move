@@ -10,8 +10,8 @@ module blast_presale::events;
 
 // === Package Functions ===
 
-public(package) fun quote_set<Quote>(allowed: bool) {
-    sui::event::emit(QuoteSet<Quote> { allowed });
+public(package) fun quote_allowed<Quote>(allowed: bool) {
+    sui::event::emit(QuoteAllowed<Quote> { allowed });
 }
 
 public(package) fun presale_opened<SaleToken, Quote>(
@@ -166,7 +166,7 @@ public(package) fun claimed<SaleToken, Quote>(
 // === Test-Only Functions ===
 
 #[test_only]
-public fun quote_set_allowed<Quote>(event: &QuoteSet<Quote>): bool {
+public fun quote_allowed_fields<Quote>(event: &QuoteAllowed<Quote>): bool {
     event.allowed
 }
 
@@ -316,7 +316,7 @@ public fun claimed_vesting_id<SaleToken, Quote>(event: &Claimed<SaleToken, Quote
 // === Events ===
 
 /// Presales created afterward may (`allowed`) or may not raise `Quote`.
-public struct QuoteSet<phantom Quote> has copy, drop {
+public struct QuoteAllowed<phantom Quote> has copy, drop {
     allowed: bool,
 }
 

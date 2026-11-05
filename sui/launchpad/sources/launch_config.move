@@ -156,7 +156,7 @@ public fun set_meme_decimals_allowed(
 
     if (allowed) self.meme_decimals.insert(decimals) else self.meme_decimals.remove(&decimals);
 
-    events::meme_decimals_set(decimals, allowed);
+    events::meme_decimals_allowed(decimals, allowed);
 }
 
 /// Admits or removes `Quote` for future launches; existing launches keep trading in it.
@@ -172,7 +172,7 @@ public fun set_quote_allowed<Quote>(
 
     if (allowed) self.quotes.insert(quote) else self.quotes.remove(&quote);
 
-    events::quote_set<Quote>(allowed);
+    events::quote_allowed<Quote>(allowed);
 }
 
 /// Sets the trade fees launches created afterward snapshot.

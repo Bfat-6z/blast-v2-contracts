@@ -50,7 +50,7 @@ public fun set_quote_allowed<Quote>(
 
     if (allowed) self.allowed_quotes.insert(quote) else self.allowed_quotes.remove(&quote);
 
-    events::quote_set<Quote>(allowed);
+    events::quote_allowed<Quote>(allowed);
 }
 
 /// Admits a venue's witness type after the applied admission delay. An admitted venue's tickets

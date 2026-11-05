@@ -8,12 +8,12 @@ module blast_fun::events;
 
 // === Package Functions ===
 
-public(package) fun meme_decimals_set(decimals: u8, allowed: bool) {
-    sui::event::emit(MemeDecimalsSet { decimals, allowed });
+public(package) fun meme_decimals_allowed(decimals: u8, allowed: bool) {
+    sui::event::emit(MemeDecimalsAllowed { decimals, allowed });
 }
 
-public(package) fun quote_set<Quote>(allowed: bool) {
-    sui::event::emit(QuoteSet<Quote> { allowed });
+public(package) fun quote_allowed<Quote>(allowed: bool) {
+    sui::event::emit(QuoteAllowed<Quote> { allowed });
 }
 
 public(package) fun creator_caps_claimed<Meme, Quote>(
@@ -243,14 +243,14 @@ public(package) fun protocol_fees_accrued<Meme, Quote>(
 
 // === Events ===
 
-public struct MemeDecimalsSet has copy, drop {
+public struct MemeDecimalsAllowed has copy, drop {
     decimals: u8,
     allowed: bool,
 }
 
 /// A Quote type was admitted to (`allowed = true`) or removed from (`allowed = false`) future
 /// launches. Existing launches keep trading in it.
-public struct QuoteSet<phantom Quote> has copy, drop {
+public struct QuoteAllowed<phantom Quote> has copy, drop {
     allowed: bool,
 }
 

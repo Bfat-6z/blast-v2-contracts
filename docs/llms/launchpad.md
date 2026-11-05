@@ -436,9 +436,9 @@ inside `sui::vec_set` when the entry already has the requested state.
 
 - `launch_config::set_quote_allowed` (ListingAdmin, type argument `Quote`), with `allowed: bool`:
   admits or removes a Quote for new launches; existing launches keep trading. Emits
-  `blast_fun::events::QuoteSet`.
+  `blast_fun::events::QuoteAllowed`.
 - `launch_config::set_meme_decimals_allowed` (ListingAdmin), with `decimals: u8` and `allowed`.
-  Emits `blast_fun::events::MemeDecimalsSet`.
+  Emits `blast_fun::events::MemeDecimalsAllowed`.
 - `launch_config::schedule_venue` (VenueAdmin, type argument the venue's witness, for example
   `blast_migrators::cetus::Venue`), with `Clock`: schedules admission after the applied venue
   notice; rejects primitive types and types defined at `0x1` or `0x2`. Anyone applies it with
@@ -772,7 +772,7 @@ A `Bps` is a positional struct wrapping one `u64`. Preview a trade exactly by de
 
 Launchpad events are emitted directly, with no envelope: the on-chain type is
 `<blast_fun original id>::events::Name<...>`. Every launch event is generic in the launch's coin
-types, `Name<Meme, Quote>` (`LaunchTicketCreated<Meme>` and `QuoteSet<Quote>` carry the one type
+types, `Name<Meme, Quote>` (`LaunchTicketCreated<Meme>` and `QuoteAllowed<Quote>` carry the one type
 they concern), so the type arguments name the coin and Quote. Filter by event type, not by the called
 module: `blast_fun::events::Migrated`, for example, is emitted inside a venue's call. Events do not
 carry the transaction sender; take it from the transaction.
@@ -796,7 +796,7 @@ carry the transaction sender; take it from the transaction.
 | `blast_fun::events::ProtocolFeesAccrued` | migration | Blast's one-time Meme and Quote allocation |
 | `blast_fun::events::Migrated` | migration | `meme_amount`, `quote_amount` handed to the venue for the pool, `disposed_meme`, `total_supply_after` |
 
-Config events: `blast_fun::events::QuoteSet`, `blast_fun::events::MemeDecimalsSet`,
+Config events: `blast_fun::events::QuoteAllowed`, `blast_fun::events::MemeDecimalsAllowed`,
 and the partner list's `blast_partners::partner_list::PartnerAdded` and
 `blast_partners::partner_list::PartnerRemoved`. From other packages: the
 pause and version events of `blast_admin::blast_admin_events`, the delayed modules' events (see "Delayed administration"), the Cetus venue's

@@ -59,7 +59,7 @@ fun the_admin_allows_a_quote_and_a_venue() {
     );
 
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
-    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), true);
+    assert_eq!(last_event<QuoteAllowed<QUOTE>>().quote_allowed_fields(), true);
     let (owner, _, admission, _) = last_event<
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
@@ -116,7 +116,7 @@ fun disallowing_a_quote_stops_later_creations() {
 
     policy.set_quote_allowed<QUOTE>(&package_version, &listing_admin(), false);
 
-    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), false);
+    assert_eq!(last_event<QuoteAllowed<QUOTE>>().quote_allowed_fields(), false);
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
     std::unit_test::destroy(package_version);
     abort
@@ -534,7 +534,7 @@ fun stale_version_cannot_allow_quotes() {
     );
 
     policy.assert_allowed<QUOTE>(type_name::with_original_ids<VENUE>());
-    assert_eq!(last_event<QuoteSet<QUOTE>>().quote_set_allowed(), true);
+    assert_eq!(last_event<QuoteAllowed<QUOTE>>().quote_allowed_fields(), true);
     let (owner, _, admission, _) = last_event<
         SetApplied<VenueKey, TypeName>,
     >().set_applied_fields();
@@ -653,7 +653,7 @@ use blast_partners::{
     partner_list::{PartnerAdded, PartnerRemoved}
 };
 
-use blast_presale::{creation_policy::{Self, CreationPolicy, VenueKey}, events::QuoteSet};
+use blast_presale::{creation_policy::{Self, CreationPolicy, VenueKey}, events::QuoteAllowed};
 
 use std::{type_name::{Self, TypeName}, unit_test::{assert_eq, destroy}};
 

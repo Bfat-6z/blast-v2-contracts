@@ -383,10 +383,10 @@ fun admin_removes_and_readds_decimal_precision_for_future_tickets() {
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, false);
 
         assert_eq!(f.config.allowed_meme_decimals_count_for_testing(), 1);
-        assert_eq!(bcs::to_bytes(&collect_one<MemeDecimalsSet>()), vector[6, 0]);
+        assert_eq!(bcs::to_bytes(&collect_one<MemeDecimalsAllowed>()), vector[6, 0]);
 
         f.config.set_meme_decimals_allowed(&f.package_version, &admin_witness, 6, true);
-        let set = collect<MemeDecimalsSet>();
+        let set = collect<MemeDecimalsAllowed>();
 
         assert_eq!(f.config.allowed_meme_decimals_count_for_testing(), 2);
         assert_eq!(set.length(), 2);
@@ -510,7 +510,7 @@ fun admin_allows_quote_for_launch_snapshot() {
         let (_, _) = f.config.snapshot_for_launch<TEST_QUOTE>(test_venue(), MEME_DECIMALS);
 
         assert_eq!(f.config.allowed_quote_count_for_testing(), 1);
-        assert_eq!(bcs::to_bytes(&collect_one<QuoteSet<TEST_QUOTE>>()), quote_set_bytes(true));
+        assert_eq!(bcs::to_bytes(&collect_one<QuoteAllowed<TEST_QUOTE>>()), quote_allowed_bytes(true));
     });
 
     fixture.end();
@@ -526,11 +526,11 @@ fun disallowing_a_quote_removes_it_from_future_launches() {
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, true);
         f.config.set_quote_allowed<TEST_QUOTE>(&f.package_version, &admin_witness, false);
 
-        let set = collect<QuoteSet<TEST_QUOTE>>();
+        let set = collect<QuoteAllowed<TEST_QUOTE>>();
 
         assert_eq!(f.config.allowed_quote_count_for_testing(), 0);
         assert_eq!(set.length(), 2);
-        assert_eq!(bcs::to_bytes(&set[1]), quote_set_bytes(false));
+        assert_eq!(bcs::to_bytes(&set[1]), quote_allowed_bytes(false));
     });
 
     fixture.end();
@@ -1313,8 +1313,8 @@ fun u64_bytes(value: u64): vector<u8> {
     bcs::to_bytes(&value)
 }
 
-/// Expected `QuoteSet` bytes for the test quote.
-fun quote_set_bytes(allowed: bool): vector<u8> {
+/// Expected `QuoteAllowed` bytes for the test quote.
+fun quote_allowed_bytes(allowed: bool): vector<u8> {
     bcs::to_bytes(&allowed)
 }
 
@@ -1528,7 +1528,7 @@ use blast_core::{bps, blast_domain::{VenueAdmin, CancelAdmin, FeeAdmin, ListingA
 use blast_fun::{
     allocation::{Self, ProtocolAllocation},
     constants,
-    events::{MemeDecimalsSet, QuoteSet},
+    events::{MemeDecimalsAllowed, QuoteAllowed},
     launch_config::{
         Self,
         CreationFeeKey,
