@@ -291,8 +291,8 @@ expect_delayed_surface() {
 # blast_admin is immutable and future packages may hold its types in other ways, so every delayed
 # type keeps a complete API: its destructor and read-only readers, pinned here.
 expect_delayed_surface delayed apply assert_ready cancel delay_ms destroy is_guarded is_ready key \
-  max_delay_ms new pending_delay_ms pending_delay_ready_at_ms owner pending proposal_delay_ms proposal_value \
-  ready_at_ms schedule schedule_delay schedule_value value
+  max_delay_ms new pending_delay_ms pending_delay_ready_at_ms owner pending proposal_delay_ms proposal_ready_at_ms \
+  proposal_value schedule schedule_delay schedule_value value
 expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy is_delay_ready \
   is_guarded is_ready key new owner pending pending_action pending_delay schedule schedule_delay \
   take_action

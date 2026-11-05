@@ -188,7 +188,9 @@ public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T { self.
 public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64 { self.delay_ms }
 
 /// The Unix millisecond time from which the proposal can apply.
-public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64 { self.ready_at_ms }
+public fun proposal_ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64 {
+    self.ready_at_ms
+}
 
 /// The delay waited, or the proposed next delay.
 public fun pending_delay_ms(self: &PendingDelay): u64 { self.delay_ms }
@@ -364,6 +366,7 @@ const MAX_DELAY_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 public use fun proposal_value as Proposal.value;
 public use fun proposal_delay_ms as Proposal.delay_ms;
+public use fun proposal_ready_at_ms as Proposal.ready_at_ms;
 public use fun pending_delay_ms as PendingDelay.delay_ms;
 public use fun pending_delay_ready_at_ms as PendingDelay.ready_at_ms;
 
