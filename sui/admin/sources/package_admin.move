@@ -38,7 +38,8 @@ public enum UpgradeAction has copy, drop, store {
 /// Keys the delayed lifecycle of one package's upgrade actions and their notice.
 public struct UpgradeKey<phantom PackageMarker: drop>() has copy, drop, store;
 
-/// Shared custody for one package's framework Publisher and UpgradeCap.
+/// Shared custody for one package's framework Publisher and UpgradeCap. It has no destructor:
+/// deleting it would release or strand the native capabilities it seals.
 public struct PackageAdmin<phantom PackageMarker: drop> has key {
     id: UID,
     publisher: Publisher,
@@ -273,6 +274,86 @@ public fun publisher<PackageMarker: drop, PackageWitness: drop>(
     &self.publisher
 }
 
+/// Borrows the sealed Publisher mutably for package `PackageMarker` itself, gated exactly like
+/// `publisher` (aborts with `EWrongPublisherWitness`), for framework calls that take
+/// `&mut Publisher` such as `sui::display_registry::new_with_publisher`. A Publisher has no
+/// `drop`, so a mutable reference cannot overwrite it, and the pinned framework has no call that
+/// moves a value out from behind one. If a later framework adds a generic swap, only the package
+/// holding its witness could use it, and the Publisher would then leave this custody.
+public fun publisher_mut<PackageMarker: drop, PackageWitness: drop>(
+    self: &mut PackageAdmin<PackageMarker>,
+    _: PackageWitness,
+    package_version: &PackageVersion<PackageMarker>,
+): &mut Publisher {
+    package_version.assert_publisher_witness<_, PackageWitness>();
+
+    &mut self.publisher
+}
+
+// Readers
+
+/// The applied upgrade notice, in milliseconds.
+public fun upgrade_delay_ms<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): u64 {
+    self.upgrade.delay_ms()
+}
+
+/// The pending upgrade action or notice change, if any.
+public fun pending_upgrade<PackageMarker: drop>(
+    self: &PackageAdmin<PackageMarker>,
+): Option<Proposal<Change<UpgradeAction>>> {
+    self.upgrade.pending()
+}
+
+/// True when every upgrade action still to come waits a nonzero notice.
+public fun is_upgrade_notice_guarded<PackageMarker: drop>(
+    self: &PackageAdmin<PackageMarker>,
+): bool {
+    self.upgrade.is_guarded()
+}
+
+/// Whether native upgrade authority remains; false once the package is immutable.
+public fun has_upgrade_cap<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): bool {
+    self.upgrade_cap.is_some()
+}
+
+/// The sealed UpgradeCap's ID, or none once the package is immutable.
+public fun upgrade_cap_id<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): Option<ID> {
+    self.upgrade_cap.map_ref!(|upgrade_cap| object::id(upgrade_cap))
+}
+
+/// The package ID the next upgrade starts from, or none once the package is immutable.
+public fun current_package_id<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): Option<ID> {
+    self.upgrade_cap.map_ref!(|upgrade_cap| upgrade_cap.package())
+}
+
+/// The native upgrade count plus one, or none once the package is immutable.
+public fun native_version<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): Option<u64> {
+    self.upgrade_cap.map_ref!(|upgrade_cap| upgrade_cap.version())
+}
+
+/// The native upgrade policy, or none once the package is immutable.
+public fun upgrade_policy<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): Option<u8> {
+    self.upgrade_cap.map_ref!(|upgrade_cap| upgrade_cap.policy())
+}
+
+/// The sealed Publisher's ID.
+public fun publisher_id<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): ID {
+    object::id(&self.publisher)
+}
+
+/// The digest an upgrade action approves, or none for immutability.
+public fun upgrade_digest(self: &UpgradeAction): Option<vector<u8>> {
+    match (self) {
+        UpgradeAction::Upgrade(digest) => option::some(*digest),
+        UpgradeAction::MakeImmutable => option::none(),
+    }
+}
+
+/// The notice every package's upgrade actions wait from wrap until changed, in milliseconds.
+public fun initial_upgrade_delay_ms(): u64 {
+    INITIAL_UPGRADE_DELAY_MS
+}
+
 // === Private Functions ===
 
 /// Seals an already checked cap beside its Publisher, under the initial notice. The Publisher
@@ -365,34 +446,10 @@ public fun id_for_testing<PackageMarker: drop>(self: &PackageAdmin<PackageMarker
 }
 
 #[test_only]
-public fun publisher_for_testing<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): &Publisher {
+public fun publisher_for_testing<PackageMarker: drop>(
+    self: &PackageAdmin<PackageMarker>,
+): &Publisher {
     &self.publisher
-}
-
-#[test_only]
-public fun has_upgrade_cap_for_testing<PackageMarker: drop>(
-    self: &PackageAdmin<PackageMarker>,
-): bool {
-    self.upgrade_cap.is_some()
-}
-
-#[test_only]
-public fun upgrade_cap_id_for_testing<PackageMarker: drop>(self: &PackageAdmin<PackageMarker>): ID {
-    object::id(self.upgrade_cap.borrow())
-}
-
-#[test_only]
-public fun native_version_for_testing<PackageMarker: drop>(
-    self: &PackageAdmin<PackageMarker>,
-): u64 {
-    self.upgrade_cap.borrow().version()
-}
-
-#[test_only]
-public fun current_package_id_for_testing<PackageMarker: drop>(
-    self: &PackageAdmin<PackageMarker>,
-): ID {
-    self.upgrade_cap.borrow().package()
 }
 
 // === Imports ===
@@ -400,7 +457,8 @@ public fun current_package_id_for_testing<PackageMarker: drop>(
 use blast_admin::{
     blast_acl::AdminWitness,
     blast_admin_events,
-    delayed_action::{Self, DelayedAction},
+    delayed::Proposal,
+    delayed_action::{Self, Change, DelayedAction},
     package_version::{PackageVersion, Publication}
 };
 

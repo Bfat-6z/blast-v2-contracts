@@ -22,7 +22,8 @@ const INITIAL_GENERATION: u64 = 1;
 
 // === Public Types ===
 
-/// Owned publication custody; it cannot supply the `PackageVersion` that operations require.
+/// Owned publication custody; it cannot supply the `PackageVersion` that operations require. It has
+/// no destructor: it holds the package's Publisher, whose one exit is `package_admin::wrap`.
 public struct Publication<phantom PackageMarker: drop> has key {
     id: UID,
     publisher: Publisher,
@@ -30,7 +31,8 @@ public struct Publication<phantom PackageMarker: drop> has key {
     package_witness: TypeName,
 }
 
-/// The package's shared operational generation and pause bits.
+/// The package's shared operational generation and pause bits. It has no destructor: every
+/// version-gated call of the package reads it.
 public struct PackageVersion<phantom PackageMarker: drop> has key {
     id: UID,
     /// The bits this package defines; every pause or unpause request must fall within them.
@@ -89,7 +91,48 @@ public fun assert_current<PackageMarker: drop>(
 /// Rejects an operation whose pause bit is set, before its lifecycle or economic checks. This is a
 /// mask check only: a bit the package never defined is never set, so it never aborts.
 public fun assert_not_paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>, bit: u8) {
-    assert!((self.paused & bit) == 0, blast_admin::errors::paused!());
+    assert!(!self.is_paused(bit), blast_admin::errors::paused!());
+}
+
+// Readers
+
+/// The active generation; only bytecode compiling it passes `assert_current`.
+public fun generation<PackageMarker: drop>(self: &PackageVersion<PackageMarker>): u64 {
+    self.generation
+}
+
+/// The pause bits the package defines.
+public fun valid_pause_bits<PackageMarker: drop>(self: &PackageVersion<PackageMarker>): u8 {
+    self.valid_pause_bits
+}
+
+/// The pause bits currently set.
+public fun paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>): u8 {
+    self.paused
+}
+
+/// True when any of `bits` is set.
+public fun is_paused<PackageMarker: drop>(self: &PackageVersion<PackageMarker>, bits: u8): bool {
+    (self.paused & bits) != 0
+}
+
+/// The package witness type, with defining IDs, pinned at publication.
+public fun package_witness<PackageMarker: drop>(self: &PackageVersion<PackageMarker>): TypeName {
+    self.package_witness
+}
+
+/// The pause bits the publication will define once wrapped.
+public fun publication_valid_pause_bits<PackageMarker: drop>(
+    self: &Publication<PackageMarker>,
+): u8 {
+    self.valid_pause_bits
+}
+
+/// The package witness type, with defining IDs, the publication pins.
+public fun publication_package_witness<PackageMarker: drop>(
+    self: &Publication<PackageMarker>,
+): TypeName {
+    self.package_witness
 }
 
 // === Package Functions ===
@@ -206,7 +249,9 @@ public fun new_for_testing<PackageMarker: drop, PackageWitness: drop>(
 }
 
 #[test_only]
-public fun publisher_for_testing<PackageMarker: drop>(self: &Publication<PackageMarker>): &Publisher {
+public fun publisher_for_testing<PackageMarker: drop>(
+    self: &Publication<PackageMarker>,
+): &Publisher {
     &self.publisher
 }
 
@@ -236,6 +281,9 @@ public fun valid_pause_bits_for_testing<PackageMarker: drop>(
 }
 
 // === Imports ===
+
+public use fun publication_valid_pause_bits as Publication.valid_pause_bits;
+public use fun publication_package_witness as Publication.package_witness;
 
 use blast_admin::blast_admin_events;
 

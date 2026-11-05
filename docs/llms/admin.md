@@ -35,7 +35,7 @@ destroyed in the publish transaction), so none of these rules can change.
 `ACL` fields: `super_admin_cap_id` (the one root cap that works), `admins` (a
 map from `AdminCap` ID to a set of role type names), and `super_admin_transfer`
 (a `delayed_action::DelayedAction<blast_acl::SuperAdminTransfer, address>` with a
-fixed seven-day notice; see "Delayed values, actions and sets").
+fixed seven-day notice; see "Delayed values, actions, sets and maps").
 
 Root powers are narrow: membership, roles, and its own delayed transfer. Root
 cannot sign in to any role and cannot call any consumer function. Every
@@ -83,7 +83,11 @@ paused) → unpaused by the package's own `unpause` → upgraded any number of
 times (each commit advances the generation by exactly one) → optionally
 immutable. The cap's upgrade policy is never narrowed: it stays compatible (0,
 the policy after a plain publish) until `blast_admin::package_admin::make_immutable`
-destroys it, the one terminal upgrade action.
+destroys it, the one terminal upgrade action. Narrowing is deliberately absent:
+under an additive or dependency-only policy a release cannot change existing
+modules, so it could not compile the next generation, and after
+`blast_admin::package_admin::commit_upgrade_and_advance` every version-gated call
+would abort forever.
 
 ### Flows
 
@@ -210,8 +214,14 @@ of `M`'s package witness and the shared `PackageVersion<M>`, and returns
 own modules can construct that witness, so only package `M` can borrow its
 Publisher, for example to create a `sui::display::Display` or a transfer policy
 for its own types inside one of its functions. Any other type aborts with code
-26. The reference cannot move, mutate or burn the Publisher, and nothing else
-lends it.
+26. `blast_admin::package_admin::publisher_mut` is the same call returning
+`&mut Publisher`, for framework calls that take one, such as
+`sui::display_registry::new_with_publisher`; it checks the same witness and
+aborts with the same code 26. A `Publisher` has no `drop`, so neither reference
+can overwrite or burn it, and the pinned framework has no call that moves a
+value out from behind a mutable reference. Should a later framework add a
+generic swap, only package `M` itself, the holder of its witness, could use it,
+and the Publisher would then leave this custody; no other caller can.
 
 ### Operational generation
 
@@ -225,83 +235,108 @@ ID), `original_package_id`, and the old and new generations. Integrators pass
 the version object as a shared, immutable input to every call that takes it and
 must call the latest package version.
 
-### Delayed values, actions and sets
+### Delayed values, actions, sets and maps
 
 The delayed modules are a timelock in the Compound/OpenZeppelin sense: schedule,
 wait the applied notice, then apply; cancellable until applied. Each module owns
-one type; consumers store three:
+one type; consumers store four:
 
 | Type | Holds | Used for |
 | --- | --- | --- |
 | `delayed::Delayed<K, T>` | an applied `value`, its applied `delay_ms`, at most one `delayed::Proposal<T>` | fees, shares, treasuries, destinations, fee splits |
 | `delayed_action::DelayedAction<K, A>` | an applied `delay_ms`, at most one `delayed::Proposal<delayed_action::Change<A>>` | one-shot actions: upgrades, immutability, creator-cap reassignment, holder-reward rounds, the root transfer |
-| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines (each a `delayed_set::Notice`), at most one proposed notice | witness and venue allowlists, the launchpad's account-claim signer keys |
+| `delayed_set::DelayedSet<K, E>` | admitted `members`, an applied `delay_ms`, pending admissions with fixed deadlines (each a `delayed::Notice`), at most one proposed notice | witness and venue allowlists, the launchpad's account-claim signer keys |
+| `delayed_map::DelayedMap<K, E, V>` | applied values by entry `E` in a `Table`, one applied `delay_ms`, at most one pending change per entry with a fixed deadline, at most one proposed notice | keyed values such as per-coin overrides |
 
 Every value carries an `owner` (the ID of the object that stores it) and a `key`
-of type `K`. `delayed::new`, `delayed_action::new` and `delayed_set::new` take
-the owner object's `&UID`, which only the code creating or holding that object
-has, so no package can attribute a value or its events to another package's
-object. Blast keys are structs without public constructors, so only their module
-can produce events under them. Partition delayed events by `owner`, then by `K`.
-`delayed::destroy`, `delayed_action::destroy` and `delayed_set::destroy` delete a
-value whose owner is being deleted; each aborts with code 17 while anything is
-pending, so every proposal ends in an event, and emits its module's `Destroyed`
-event. Destroying a set also ends its remaining members.
+of type `K`. `delayed::new`, `delayed_action::new`, `delayed_set::new` and
+`delayed_map::new` take the owner object's `&UID`, which only the code creating
+or holding that object has, so no package can attribute a value or its events to
+another package's object. Blast keys are structs without public constructors, so
+only their module can produce events under them. Partition delayed events by
+`owner`, then by `K`.
 
-Rules shared by all three:
+Rules shared by all four:
 
 - **Old notice governs.** Every proposal is ready at its scheduling time plus the
   notice applied then. A shorter notice, zero included, waits the applied one.
-  `delayed::proposal_value` (also `value` on a `delayed::Proposal`) returns the
-  proposed value; the proposal's notice and `ready_at_ms` are object fields.
 - **Explicit application.** Nothing changes until `delayed::apply`,
-  `delayed_action::take_action`, `delayed_set::apply_add`, or a notice
-  `apply_delay` consumes a ready proposal. Readiness alone changes no value.
-  Reads need no Clock.
+  `delayed_action::take_action`, `delayed_set::apply_add`, `delayed_map::apply`,
+  or a notice `apply_delay` consumes a ready proposal. Readiness alone changes no
+  value. Reads need no Clock, except the `is_ready` and `is_delay_ready`
+  predicates, which answer whether the matching apply would succeed now.
 - **Cancellation until applied.** `delayed::cancel`, `delayed_action::cancel`,
-  `delayed_set::cancel_add` and the notice cancels work even after readiness.
-  Scheduling over a pending proposal cancels it and restarts the full applied
-  notice.
+  `delayed_set::cancel_add`, `delayed_map::cancel` and the notice cancels work
+  even after readiness. Scheduling over a pending proposal cancels it and
+  restarts the full applied notice.
 - **Zero-notice bootstrap.** A notice can start at zero, so a schedule and its
   apply in one PTB act as a setter. Raising a notice from zero applies at once.
-  There is no other mutation path. `delayed::is_guarded`, `delayed_action::is_guarded`
-  and `delayed_set::is_guarded` report whether every change still to come waits a
-  nonzero notice (for a set, also that no admission is pending); each package's
-  `unpause` requires it of its policies.
-- **Ceiling.** No notice exceeds 2,592,000,000 ms (30 days): constructors and
-  every proposed next notice abort with code 15 above it, so any notice can
-  always be changed again.
+  There is no other mutation path. `delayed::is_guarded`, `delayed_action::is_guarded`,
+  `delayed_set::is_guarded` and `delayed_map::is_guarded` report whether every
+  change still to come waits a nonzero notice (for a set or map, also that no
+  admission or entry change is pending); each package's `unpause` requires it of
+  its policies.
+- **Ceiling.** No notice exceeds `delayed::max_delay_ms` (2,592,000,000 ms, 30
+  days): constructors and every proposed next notice abort with code 15 above it,
+  so any notice can always be changed again.
 - **No-op rejection.** A `Delayed` proposal that changes neither value nor notice,
-  a notice proposal equal to the applied notice, and admitting a current member
-  abort with code 16.
+  a notice proposal equal to the applied notice, admitting a current member, and
+  a map change to the entry's applied value abort with code 16.
 - **Overflow.** Scheduling and application abort with code 15 when a notice exceeds
   the ceiling, or a deadline or the next notice would not fit in a `u64` millisecond
   timestamp.
+- **Destruction.** `delayed::destroy`, `delayed_action::destroy`,
+  `delayed_set::destroy` and `delayed_map::destroy` delete a value whose owner is
+  being deleted. Each aborts with code 17 while anything is pending, so every
+  proposal ends in an event, and emits its module's `Destroyed` event.
+  Destroying a set or map also ends its remaining members or entries.
 
 `Delayed`: `delayed::schedule` proposes a value and the next notice together;
 `delayed::schedule_value` keeps the notice; `delayed::schedule_delay` keeps the
 value. `delayed::assert_ready` checks readiness without changing anything, so an
 owner can settle accrued economics under the applied value before `delayed::apply`.
-`delayed::value`, `delayed::delay_ms` and `delayed::pending` read the applied value,
-the applied notice and the proposal.
 
 `DelayedAction`: `delayed_action::schedule` proposes an action under the applied
 notice; `delayed_action::schedule_delay` proposes only a notice change.
 `delayed_action::take_action` returns a ready action to its owner and aborts with
 code 18 when the proposal is a notice change; `delayed_action::apply_delay` does
-the reverse. `delayed_action::Change` is `Action(A)` or `Delay`;
-`delayed_action::action` returns the action or none, and `delayed_action::pending`
-the proposal.
+the reverse. `delayed_action::Change` is `Action(A)` or `Delay`.
 
 `DelayedSet`: `delayed_set::schedule_add` snapshots a member's deadline from the
 applied notice; a later notice change never moves it. `delayed_set::apply_add`
 admits a ready member; `delayed_set::remove` removes a member and discards its
-pending admission at once. `delayed_set::contains` is the membership check,
-`delayed_set::members` returns the admitted members, `delayed_set::delay_ms` the
-applied notice, `delayed_set::admission_ready_at_ms` a pending member's deadline,
-and `delayed_set::pending_count` counts pending admissions (an owner capping its
-set adds it to the member count). `delayed_set::SetChange` is `Admission(E)` or
-`Delay`.
+pending admission at once (removal is never delayed). `delayed_set::SetChange` is
+`Admission(E)` or `Delay`.
+
+`DelayedMap`: `delayed_map::schedule` proposes setting an entry to a value, or
+clearing it with none, and snapshots its deadline from the applied notice; a
+later notice change never moves it. Clearing is a delayed change like any other.
+`delayed_map::apply` sets or clears a ready entry. `delayed_map::MapChange` is
+`Entry { entry, value }` or `Delay`.
+
+#### Delayed readers
+
+Every reader is read-only. The same name means the same concept on every type.
+
+| Concept | `Delayed` | `DelayedAction` | `DelayedSet` | `DelayedMap` |
+| --- | --- | --- | --- | --- |
+| owner object ID, key | `delayed::owner`, `delayed::key` | `delayed_action::owner`, `delayed_action::key` | `delayed_set::owner`, `delayed_set::key` | `delayed_map::owner`, `delayed_map::key` |
+| applied state | `delayed::value` | none | `delayed_set::contains`, `delayed_set::members`, `delayed_set::member_count` | `delayed_map::value`, `delayed_map::contains`, `delayed_map::entry_count` |
+| applied notice | `delayed::delay_ms` | `delayed_action::delay_ms` | `delayed_set::delay_ms` | `delayed_map::delay_ms` |
+| pending proposal | `delayed::pending` | `delayed_action::pending`, `delayed_action::pending_action` | `delayed_set::is_pending`, `delayed_set::admission_notice`, `delayed_set::admission_ready_at_ms`, `delayed_set::pending_count` | `delayed_map::is_pending`, `delayed_map::pending`, `delayed_map::entry_ready_at_ms`, `delayed_map::pending_count` |
+| ready now | `delayed::is_ready` | `delayed_action::is_ready` | `delayed_set::is_ready` (per member) | `delayed_map::is_ready` (per entry) |
+| pending notice change | in `delayed::pending` | `delayed_action::pending_delay`, `delayed_action::is_delay_ready` | `delayed_set::pending_delay`, `delayed_set::is_delay_ready` | `delayed_map::pending_delay`, `delayed_map::is_delay_ready` |
+| guarded | `delayed::is_guarded` | `delayed_action::is_guarded` | `delayed_set::is_guarded` | `delayed_map::is_guarded` |
+
+Value types: `delayed::Proposal` exposes `delayed::proposal_value`,
+`delayed::proposal_delay_ms` and `delayed::ready_at_ms` (also as `value`,
+`delay_ms` and `ready_at_ms` on the value); `delayed::Notice` exposes
+`delayed::notice_delay_ms` and `delayed::notice_ready_at_ms` (also as `delay_ms`
+and `ready_at_ms`); `delayed_map::EntryProposal` exposes
+`delayed_map::entry_proposal_value` (none clears) and
+`delayed_map::entry_proposal_notice`; `delayed_action::action`,
+`delayed_set::member`, `delayed_map::changed_entry` and
+`delayed_map::changed_value` read a change.
 
 The launchpad's account-claim signer keys are a `DelayedSet`: ClaimSignerAdmin's admissions wait
 the set's notice, so a compromised ClaimSignerAdmin cannot sign claims without warning, and its
@@ -321,29 +356,49 @@ revocations are immediate. ACL administrator and role grants remain immediate.
 
 ### Reading state
 
-`blast_admin` has no public getters on the `ACL`, the `PackageAdmin` or the
-`PackageVersion`; read the shared objects' content over RPC, or replay events.
+`blast_admin` is immutable and keeps a complete read-only API for every type it
+defines, so a future package can explain any state on chain; off-chain readers
+can also read object content over RPC, or replay events.
 
-- Active root: `ACL.super_admin_cap_id`. Any other `SuperAdminCap` is inert.
-- Who holds which role: `ACL.admins` maps each live `AdminCap` ID to its role
-  type names. Type-name strings use 64 lowercase hex characters for the address,
-  without `0x`.
-- Pending root transfer: `super_admin_transfer.pending` holds a proposal whose
-  `value` is `Action(nominee)` and whose `ready_at_ms` is when it becomes
-  acceptable; none when nothing is pending.
-- Upgrade authority: `PackageAdmin.upgrade_cap` holds the `UpgradeCap` (its
-  package, version and policy) or none once immutable; `PackageAdmin.upgrade`
-  holds the applied upgrade notice and any pending action.
-- Current generation and pause mask: `PackageVersion.generation` and
-  `PackageVersion.paused`; `valid_pause_bits` lists the bits the package defines.
+- ACL: `blast_acl::super_admin_cap_id` (the active root; any other
+  `SuperAdminCap` is inert), `blast_acl::is_admin`, `blast_acl::has_role`,
+  `blast_acl::admin_roles` (aborts with code 1 for an unknown cap),
+  `blast_acl::admin_count`, `blast_acl::super_admin_transfer` (the root transfer's
+  `DelayedAction`, whose `pending` holds `Action(nominee)` and its `ready_at_ms`),
+  and the fixed `blast_acl::max_roles_per_admin` and
+  `blast_acl::super_admin_transfer_delay_ms`. Role type-name strings use 64
+  lowercase hex characters for the address, without `0x`.
+- Package version: `package_version::generation`, `package_version::valid_pause_bits`,
+  `package_version::paused`, `package_version::is_paused` (any of the given bits
+  set) and `package_version::package_witness`; a `Publication` exposes
+  `package_version::publication_valid_pause_bits` and
+  `package_version::publication_package_witness`.
+- Package administration: `blast_admin::package_admin::upgrade_delay_ms`,
+  `blast_admin::package_admin::pending_upgrade` (read its action with
+  `delayed_action::action` and the digest with
+  `blast_admin::package_admin::upgrade_digest`, none for immutability),
+  `blast_admin::package_admin::is_upgrade_notice_guarded`,
+  `blast_admin::package_admin::has_upgrade_cap`,
+  `blast_admin::package_admin::upgrade_cap_id`,
+  `blast_admin::package_admin::current_package_id`,
+  `blast_admin::package_admin::native_version` and
+  `blast_admin::package_admin::upgrade_policy` (each none once immutable),
+  `blast_admin::package_admin::publisher_id`, and
+  `blast_admin::package_admin::initial_upgrade_delay_ms`.
+
+`ACL`, `PackageVersion` and `PackageAdmin` are shared for the life of the
+protocol and have no destructor; a `Publication` has none either, because its
+one exit, wrap, keeps the Publisher in custody. `AdminCap` and a retired
+`SuperAdminCap` have their destroy calls above.
 
 ### Events
 
 All `blast_admin` events are emitted directly (no envelope). ACL, version and
 custody events come from module `blast_admin_events` and carry no ACL ID because
 there is one ACL. Delayed lifecycle events come from the module that owns the
-type (`delayed`, `delayed_action` or `delayed_set`), are generic in the owner's
-key `K` and the value, action or member type, and carry `owner` and `key`.
+type (`delayed`, `delayed_action`, `delayed_set` or `delayed_map`), are generic in
+the owner's key `K` and the value, action, member or entry types, and carry
+`owner` and `key`. Each map event's `change` names its entry.
 
 | Event | Emitted by | Use |
 | --- | --- | --- |
@@ -373,6 +428,10 @@ key `K` and the value, action or member type, and carry `owner` and `key`.
 | `delayed_set::SetApplied` | `delayed_set::apply_add`, `delayed_set::apply_delay` | `change` and the notice it waited or now applied |
 | `delayed_set::MemberRemoved` | `delayed_set::remove` | member removed at once |
 | `delayed_set::SetDestroyed` | `delayed_set::destroy` | the set and its members end |
+| `delayed_map::MapCreated` | `delayed_map::new` | initial notice |
+| `delayed_map::MapScheduled` / `delayed_map::MapCancelled` | entry or notice proposals | `change` (entry and value, none to clear), the notice an entry change waits or the proposed notice, `ready_at_ms` |
+| `delayed_map::MapApplied` | `delayed_map::apply`, `delayed_map::apply_delay` | `change` and the notice it waited or now applied |
+| `delayed_map::MapDestroyed` | `delayed_map::destroy` | the map and its entries end |
 
 Every upgrade event names the package's `original_package_id`, except
 `UpgradeAuthorized`, which names the `current_package_id` the digest upgrades
@@ -404,11 +463,11 @@ and overflow checked through the shared deadline rules are located in `delayed`.
 | 10 | `EInvalidUpgradeCap` | `blast_admin::package_admin` | wrap received a cap for another package, an already upgraded cap, or one with an outstanding ticket |
 | 11 | `EInvalidPackageDigest` | `blast_admin::package_admin` | scheduling a digest that is not 32 bytes |
 | 12 | `EUpgradeCapUnavailable` | `blast_admin::package_admin` | the package was made immutable |
-| 13 | `ENotReady` | `delayed`; `delayed_set` for `delayed_set::apply_add` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
+| 13 | `ENotReady` | `delayed`; `delayed_set` for `delayed_set::apply_add`, `delayed_map` for `delayed_map::apply` | applying a proposal, or accepting a root transfer, before its `ready_at_ms` |
 | 14 | `ENoPending` | the type's module | applying or cancelling when nothing is pending |
-| 15 | `EInvalidDelay` | `delayed` | a notice above 30 days, or a deadline or next notice that would overflow a Unix millisecond timestamp; choose a notice of at most 30 days |
-| 16 | `EUnchanged` | the type's module | the proposal changes nothing, the member is already admitted, or `remove` names an unknown member |
-| 17 | `EProposalPending` | the type's module | destroying a delayed value, action slot or set while a proposal is pending; cancel it first |
+| 15 | `EInvalidDelay` | `delayed` | a notice above `delayed::max_delay_ms` (30 days), or a deadline or next notice that would overflow a Unix millisecond timestamp; choose a notice of at most 30 days |
+| 16 | `EUnchanged` | the type's module | the proposal changes nothing, the member is already admitted, `remove` names an unknown member, or a map change repeats the entry's applied value (clearing an absent entry included) |
+| 17 | `EProposalPending` | the type's module | destroying a delayed value, action slot, set or map while a proposal is pending; cancel it first |
 | 18 | `EWrongChange` | `delayed_action` | `take_action` on a notice change, or a notice `apply_delay` on an action; checked before readiness |
 | 19 | `EInvalidPauseBits` | `package_version` | pause or unpause names zero bits or a bit the package does not define |
 | 20 | `EPauseUnchanged` | `package_version` | pausing only bits already set, or clearing only bits already clear |

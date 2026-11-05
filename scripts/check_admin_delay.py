@@ -231,13 +231,18 @@ require(generic['clear_pause_bits'][0], '&AdminWitness<UnpauseAdmin<PackageMarke
 # Only the package itself, holding its pinned package witness, borrows its Publisher, by reference.
 require(generic['publisher'][0], 'self: &PackageAdmin<PackageMarker>', '_: PackageWitness',
         'package_version: &PackageVersion<PackageMarker>', '): &Publisher')
-assert generic['publisher'][1].startswith('package_version.assert_publisher_witness<_, PackageWitness>();')
+require(generic['publisher_mut'][0], 'self: &mut PackageAdmin<PackageMarker>', '_: PackageWitness',
+        'package_version: &PackageVersion<PackageMarker>', '): &mut Publisher')
+for name in ('publisher', 'publisher_mut'):
+    assert generic[name][1].startswith('package_version.assert_publisher_witness<_, PackageWitness>();'), name
 clear = generic['clear_pause_bits'][1]
 assert clear.index('assert_unpause_witness') < clear.index('self.upgrade.is_guarded()') < clear.index('package_version.clear_pause_bits(bits)')
 require(generic['wrap'][0], 'publication: Publication<PackageMarker>', 'upgrade_cap: UpgradeCap')
 require(generic['new'][1], 'delayed_action::new(UpgradeKey<PackageMarker>(), &id, INITIAL_UPGRADE_DELAY_MS)')
 assert {name for name, (_, body) in generic.items() if 'PackageAdmin {' in body} == {'new'}
-assert not any(re.search(r'\):\s*(?:&mut\s+)?(Publisher|UpgradeCap)|\):\s*&\s*UpgradeCap', signature) for signature, _ in generic.values())
+assert not any(re.search(r'\):\s*(Publisher|UpgradeCap|&\s*(mut\s+)?UpgradeCap)', signature) for signature, _ in generic.values())
+assert {name for name, (signature, _) in generic.items() if re.search(r'\):\s*&\s*mut\s+Publisher', signature)} == {'publisher_mut'}
+assert {name for name, (signature, _) in generic.items() if re.search(r'\):\s*&Publisher', signature)} == {'publisher'}
 assert not any(word in generic_source for word in ('only_additive_upgrades', 'only_dep_upgrades', 'restrict_to'))
 
 acl = (ROOT / 'sui/admin/sources/blast_acl.move').read_text()
@@ -287,7 +292,8 @@ require(primitive['ready_at_ms_after'][1], 'clock.timestamp_ms().checked_add(app
 require(primitive['assert_ready_at'][1], 'clock.timestamp_ms() >= ready_at_ms', 'clock.timestamp_ms().checked_add(next_delay_ms).is_some()')
 require(primitive['schedule'][1], 'ready_at_ms_after(self.delay_ms, delay_ms, clock)')
 require(functions('admin', 'delayed_set')['schedule_add'][1], 'delayed::ready_at_ms_after(self.delay_ms, 0, clock)')
-for module in ('delayed_action', 'delayed_set'):
+require(functions('admin', 'delayed_map')['schedule'][1], 'delayed::ready_at_ms_after(self.delay_ms, 0, clock)')
+for module in ('delayed_action', 'delayed_set', 'delayed_map'):
     assert not any(name.startswith(('set_', 'force', 'bypass')) for name in functions('admin', module)), module
 require(primitive['apply'][1], 'self.assert_ready(clock)', 'self.value = value;', 'self.delay_ms = delay_ms;')
 for name in ('schedule_value', 'schedule_delay'):

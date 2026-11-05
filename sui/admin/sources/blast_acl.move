@@ -20,7 +20,8 @@ const SUPER_ADMIN_TRANSFER_DELAY_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 
 // === Public Types ===
 
-/// The shared singleton that lists the active root and every live administrator's roles.
+/// The shared singleton that lists the active root and every live administrator's roles. It has
+/// no destructor: every consumer's sign-in reads it for the life of the protocol.
 public struct ACL has key {
     id: UID,
     super_admin_cap_id: ID,
@@ -215,6 +216,51 @@ public fun sign_in<Role>(self: &ACL, admin_cap: &AdminCap): AdminWitness<Role> {
     AdminWitness()
 }
 
+// Readers
+
+/// The ID of the one root cap that works; any other `SuperAdminCap` is inert.
+public fun super_admin_cap_id(self: &ACL): ID {
+    self.super_admin_cap_id
+}
+
+/// Whether `admin_cap_id` names a live administrator.
+public fun is_admin(self: &ACL, admin_cap_id: ID): bool {
+    self.admins.contains(admin_cap_id)
+}
+
+/// Whether the live administrator `admin_cap_id` holds `Role`; false for an unknown cap.
+public fun has_role<Role>(self: &ACL, admin_cap_id: ID): bool {
+    self.admins.contains(admin_cap_id)
+        && self.admins[admin_cap_id].contains(&type_name::with_defining_ids<Role>())
+}
+
+/// The role type names, with defining IDs, a live administrator holds.
+public fun admin_roles(self: &ACL, admin_cap_id: ID): vector<TypeName> {
+    assert!(self.admins.contains(admin_cap_id), blast_admin::errors::invalid_admin_cap!());
+
+    self.admins[admin_cap_id].into_keys()
+}
+
+/// How many live administrators exist.
+public fun admin_count(self: &ACL): u64 {
+    self.admins.length()
+}
+
+/// The root transfer's delayed slot: its fixed notice and any pending nominee.
+public fun super_admin_transfer(self: &ACL): &DelayedAction<SuperAdminTransfer, address> {
+    &self.super_admin_transfer
+}
+
+/// The most roles one administrator can hold.
+public fun max_roles_per_admin(): u64 {
+    MAX_ROLES_PER_ADMIN
+}
+
+/// The fixed wait before a nominated super admin may accept the root, in milliseconds.
+public fun super_admin_transfer_delay_ms(): u64 {
+    SUPER_ADMIN_TRANSFER_DELAY_MS
+}
+
 // === Private Functions ===
 
 fun new(ctx: &mut TxContext): (SuperAdminCap, ACL) {
@@ -261,16 +307,6 @@ public fun witness_for_testing<Role>(): AdminWitness<Role> {
 }
 
 #[test_only]
-public fun max_roles_per_admin_for_testing(): u64 {
-    MAX_ROLES_PER_ADMIN
-}
-
-#[test_only]
-public fun super_admin_transfer_delay_ms_for_testing(): u64 {
-    SUPER_ADMIN_TRANSFER_DELAY_MS
-}
-
-#[test_only]
 public fun super_admin_cap_id_for_testing(self: &SuperAdminCap): ID {
     self.id.to_inner()
 }
@@ -278,26 +314,6 @@ public fun super_admin_cap_id_for_testing(self: &SuperAdminCap): ID {
 #[test_only]
 public fun admin_cap_id_for_testing(self: &AdminCap): ID {
     self.id.to_inner()
-}
-
-#[test_only]
-public fun active_super_admin_cap_id_for_testing(self: &ACL): ID {
-    self.super_admin_cap_id
-}
-
-#[test_only]
-public fun admin_count_for_testing(self: &ACL): u64 {
-    self.admins.length()
-}
-
-#[test_only]
-public fun admin_roles_for_testing(self: &ACL, admin_cap_id: ID): vector<TypeName> {
-    self.admins[admin_cap_id].into_keys()
-}
-
-#[test_only]
-public fun super_admin_transfer_for_testing(self: &ACL): &DelayedAction<SuperAdminTransfer, address> {
-    &self.super_admin_transfer
 }
 
 // === Imports ===

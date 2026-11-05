@@ -40,6 +40,13 @@ public fun new<K: copy + drop + store, A: copy + drop + store>(
     DelayedAction { owner, key, delay_ms, pending: option::none() }
 }
 
+/// The applied notice in milliseconds.
+public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): u64 {
+    self.delay_ms
+}
+
 /// True when every action still to come waits a nonzero notice: the applied notice is nonzero
 /// and no proposal would set it to zero.
 public fun is_guarded<K: copy + drop + store, A: copy + drop + store>(
@@ -118,6 +125,54 @@ public fun action<A: copy + drop + store>(self: &Change<A>): Option<A> {
     }
 }
 
+/// The proposed action, or none when nothing or a notice change is pending.
+public fun pending_action<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<A> {
+    self.pending.and_ref!(|proposal| proposal.value().action())
+}
+
+/// The proposed next notice and when it becomes ready, or none when nothing or an action is
+/// pending.
+public fun pending_delay<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+): Option<Notice> {
+    self.pending.and_ref!(|proposal| {
+        if (proposal.value().action().is_some()) option::none()
+        else option::some(delayed::new_notice(proposal.proposal_delay_ms(), proposal.ready_at_ms()))
+    })
+}
+
+/// Whether the pending proposal, an action or a notice change, would apply now.
+public fun is_ready<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+    clock: &Clock,
+): bool {
+    self.pending.is_some_and!(|proposal| {
+        delayed::is_ready_at(proposal.ready_at_ms(), proposal.proposal_delay_ms(), clock)
+    })
+}
+
+/// Whether a pending notice change would apply now.
+public fun is_delay_ready<K: copy + drop + store, A: copy + drop + store>(
+    self: &DelayedAction<K, A>,
+    clock: &Clock,
+): bool {
+    self.pending_delay().is_some_and!(|notice| {
+        delayed::is_ready_at(notice.notice_ready_at_ms(), notice.notice_delay_ms(), clock)
+    })
+}
+
+/// The ID of the object that stores this action slot.
+public fun owner<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): ID {
+    self.owner
+}
+
+/// The owner-defined key of this action slot.
+public fun key<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): K {
+    self.key
+}
+
 // === Private Functions ===
 
 fun propose<K: copy + drop + store, A: copy + drop + store>(
@@ -146,16 +201,16 @@ fun take_ready<K: copy + drop + store, A: copy + drop + store>(
     let proposal = *self.pending.borrow();
     let change = proposal.value();
     assert!(change.action().is_some() == expects_action, blast_admin::errors::wrong_change!());
-    delayed::assert_ready_at(proposal.ready_at_ms(), proposal.proposal_delay_ms(), clock);
+    delayed::assert_ready_at(proposal.ready_at_ms(), proposal.delay_ms(), clock);
 
     self.pending = option::none();
-    self.delay_ms = proposal.proposal_delay_ms();
+    self.delay_ms = proposal.delay_ms();
 
     sui::event::emit(ActionApplied {
         owner: self.owner,
         key: self.key,
         change,
-        delay_ms: proposal.proposal_delay_ms(),
+        delay_ms: proposal.delay_ms(),
     });
 
     change
@@ -169,18 +224,12 @@ fun cancel_replaced<K: copy + drop + store, A: copy + drop + store>(self: &mut D
         owner: self.owner,
         key: self.key,
         change: proposal.value(),
-        delay_ms: proposal.proposal_delay_ms(),
+        delay_ms: proposal.delay_ms(),
         ready_at_ms: proposal.ready_at_ms(),
     });
 }
 
 // === Test-Only Functions ===
-
-#[test_only]
-/// The applied notice in milliseconds.
-public fun delay_ms<K: copy + drop + store, A: copy + drop + store>(self: &DelayedAction<K, A>): u64 {
-    self.delay_ms
-}
 
 #[test_only]
 public fun action_created_fields<K: copy + drop + store, A: copy + drop + store>(
@@ -261,6 +310,6 @@ public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + s
 
 // === Imports ===
 
-use blast_admin::delayed::{Self, Proposal};
+use blast_admin::delayed::{Self, Notice, Proposal};
 
 use sui::clock::Clock;

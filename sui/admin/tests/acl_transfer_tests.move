@@ -30,7 +30,7 @@ public struct Fixture {
 
 #[test]
 fun the_transfer_delay_is_seven_days() {
-    assert_eq!(blast_acl::super_admin_transfer_delay_ms_for_testing(), TRANSFER_DELAY_MS);
+    assert_eq!(blast_acl::super_admin_transfer_delay_ms(), TRANSFER_DELAY_MS);
 }
 
 #[test]
@@ -101,7 +101,7 @@ fun transfer_accepts_at_the_exact_deadline_and_old_root_can_then_be_destroyed() 
     fixture.scenario.next_tx(NEW_ROOT);
     let new_root = fixture.scenario.take_from_sender<SuperAdminCap>();
     assert_eq!(new_root.super_admin_cap_id_for_testing(), new_root_id);
-    assert_eq!(fixture.acl.active_super_admin_cap_id_for_testing(), new_root_id);
+    assert_eq!(fixture.acl.super_admin_cap_id(), new_root_id);
     fixture.acl.destroy_retired_super_admin_cap(fixture.root.extract());
     let destroyed = events::collect_one<events::SuperAdminCapDestroyed>(0);
     assert_eq!(destroyed.super_admin_cap_destroyed_fields(), previous_root_id);
@@ -122,7 +122,7 @@ fun replacement_cancels_the_previous_recipient_and_restarts_the_delay() {
     let (_, _, change, _, executable_at_ms) = cancelled.action_cancelled_fields();
     assert_eq!(change.action(), option::some(NEW_ROOT));
     assert_eq!(executable_at_ms, NOW_AT_MS + TRANSFER_DELAY_MS);
-    let pending = fixture.acl.super_admin_transfer_for_testing().pending().destroy_some();
+    let pending = fixture.acl.super_admin_transfer().pending().destroy_some();
     assert_eq!(pending.value().action(), option::some(OTHER));
     assert_eq!(pending.ready_at_ms(), NOW_AT_MS + 10 + TRANSFER_DELAY_MS);
 
@@ -152,7 +152,7 @@ fun current_root_can_cancel_a_pending_transfer() {
     let (_, _, change, _, executable_at_ms) = cancelled.action_cancelled_fields();
     assert_eq!(change.action(), option::some(NEW_ROOT));
     assert_eq!(executable_at_ms, NOW_AT_MS + TRANSFER_DELAY_MS);
-    assert!(fixture.acl.super_admin_transfer_for_testing().pending().is_none());
+    assert!(fixture.acl.super_admin_transfer().pending().is_none());
 
     destroy(fixture);
 }
@@ -185,7 +185,7 @@ fun renominating_the_pending_recipient_restarts_the_delay() {
     fixture.clock.set_for_testing(NOW_AT_MS + 10);
     fixture.begin_transfer(NEW_ROOT);
 
-    let pending = fixture.acl.super_admin_transfer_for_testing().pending().destroy_some();
+    let pending = fixture.acl.super_admin_transfer().pending().destroy_some();
     assert_eq!(pending.value().action(), option::some(NEW_ROOT));
     assert_eq!(pending.ready_at_ms(), NOW_AT_MS + 10 + TRANSFER_DELAY_MS);
 

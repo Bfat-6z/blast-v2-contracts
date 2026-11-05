@@ -6,7 +6,7 @@
 ///
 /// A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied notice, then
 /// apply; cancellable until applied. Settings live here; one-shot actions in
-/// `delayed_action` and allowlists in `delayed_set`.
+/// `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.
 ///
 /// Every value carries an owner-defined key `K` and the ID of the object that stores it.
 /// Constructors take that object's `&UID`, which only the code creating or holding the
@@ -17,9 +17,8 @@
 ///
 /// Every change, a shorter notice included, waits the notice applied when it was scheduled.
 /// A notice can start at zero, so a schedule and its apply in one transaction then act as a
-/// setter; there is no other mutation path. No notice exceeds `MAX_DELAY_MS`, so a notice
-/// can always be changed again. Readers need no Clock. A delayed value is destroyed only with
-/// nothing pending, so every proposal ends in an event.
+/// setter; there is no other mutation path. No notice exceeds `max_delay_ms`, so a notice
+/// can always be changed again. Readers need no Clock.
 module blast_admin::delayed;
 
 // === Public Types ===
@@ -40,6 +39,13 @@ public struct Proposal<T: copy + drop + store> has copy, drop, store {
     ready_at_ms: u64,
 }
 
+/// A notice period and the time it elapses: the notice an admission or entry change waits,
+/// or a proposed next notice. Either is ready from `ready_at_ms`.
+public struct Notice has copy, drop, store {
+    delay_ms: u64,
+    ready_at_ms: u64,
+}
+
 // === Public Functions ===
 
 /// A setting in force at once; every later change waits the applied notice.
@@ -55,6 +61,11 @@ public fun new<K: copy + drop + store, T: copy + drop + store>(
     sui::event::emit(DelayedCreated { owner, key, value, delay_ms });
 
     Delayed { owner, key, value, delay_ms, pending: option::none() }
+}
+
+/// The longest notice any delayed type accepts, in milliseconds.
+public fun max_delay_ms(): u64 {
+    MAX_DELAY_MS
 }
 
 /// The applied value.
@@ -173,17 +184,38 @@ public fun destroy<K: copy + drop + store, T: copy + drop + store>(self: Delayed
 /// The proposed value, or the proposed change for an action slot.
 public fun proposal_value<T: copy + drop + store>(self: &Proposal<T>): T { self.value }
 
-// === Package Functions ===
-
 /// The notice in force once the proposal applies.
-public(package) fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64 {
-    self.delay_ms
-}
+public fun proposal_delay_ms<T: copy + drop + store>(self: &Proposal<T>): u64 { self.delay_ms }
 
 /// The Unix millisecond time from which the proposal can apply.
-public(package) fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64 {
-    self.ready_at_ms
+public fun ready_at_ms<T: copy + drop + store>(self: &Proposal<T>): u64 { self.ready_at_ms }
+
+/// The notice waited, or the proposed next notice.
+public fun notice_delay_ms(self: &Notice): u64 { self.delay_ms }
+
+/// The Unix millisecond time from which the change can apply.
+public fun notice_ready_at_ms(self: &Notice): u64 { self.ready_at_ms }
+
+/// The ID of the object that stores this setting.
+public fun owner<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): ID {
+    self.owner
 }
+
+/// The owner-defined key of this setting.
+public fun key<K: copy + drop + store, T: copy + drop + store>(self: &Delayed<K, T>): K {
+    self.key
+}
+
+/// Whether `apply` would succeed now: a proposal is pending, its `ready_at_ms` has passed, and
+/// its notice still fits in a Unix millisecond timestamp.
+public fun is_ready<K: copy + drop + store, T: copy + drop + store>(
+    self: &Delayed<K, T>,
+    clock: &Clock,
+): bool {
+    self.pending.is_some_and!(|proposal| is_ready_at(proposal.ready_at_ms, proposal.delay_ms, clock))
+}
+
+// === Package Functions ===
 
 /// A proposal for another delayed module, built from an already checked deadline.
 public(package) fun new_proposal<T: copy + drop + store>(
@@ -194,6 +226,11 @@ public(package) fun new_proposal<T: copy + drop + store>(
     Proposal { value, delay_ms, ready_at_ms }
 }
 
+/// A notice for another delayed module, built from an already checked deadline.
+public(package) fun new_notice(delay_ms: u64, ready_at_ms: u64): Notice {
+    Notice { delay_ms, ready_at_ms }
+}
+
 /// Rejects a notice longer than `max_delay_ms`.
 public(package) fun assert_delay(delay_ms: u64) {
     assert!(delay_ms <= MAX_DELAY_MS, blast_admin::errors::invalid_delay!());
@@ -201,13 +238,23 @@ public(package) fun assert_delay(delay_ms: u64) {
 
 /// The deadline `applied_delay_ms` from now; checks that `next_delay_ms` is within the
 /// ceiling and stays representable.
-public(package) fun ready_at_ms_after(applied_delay_ms: u64, next_delay_ms: u64, clock: &Clock): u64 {
+public(package) fun ready_at_ms_after(
+    applied_delay_ms: u64,
+    next_delay_ms: u64,
+    clock: &Clock,
+): u64 {
     assert_delay(next_delay_ms);
     let ready_at_ms = clock.timestamp_ms().checked_add(applied_delay_ms)
         .destroy_or!(abort blast_admin::errors::invalid_delay!());
     assert!(ready_at_ms.checked_add(next_delay_ms).is_some(), blast_admin::errors::invalid_delay!());
 
     ready_at_ms
+}
+
+/// Whether a change ready from `ready_at_ms` with next notice `next_delay_ms` applies now; the
+/// predicate form of `assert_ready_at`.
+public(package) fun is_ready_at(ready_at_ms: u64, next_delay_ms: u64, clock: &Clock): bool {
+    clock.timestamp_ms() >= ready_at_ms && clock.timestamp_ms().checked_add(next_delay_ms).is_some()
 }
 
 /// Checks readiness and rechecks representability at the actual application time.
@@ -229,12 +276,6 @@ fun cancel_replaced<K: copy + drop + store, T: copy + drop + store>(self: &mut D
 }
 
 // === Test-Only Functions ===
-
-#[test_only]
-/// The longest notice any delayed type accepts, in milliseconds.
-public fun max_delay_ms(): u64 {
-    MAX_DELAY_MS
-}
 
 #[test_only]
 public fun delayed_created_fields<K: copy + drop + store, T: copy + drop + store>(
@@ -316,11 +357,14 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
 
 // === Constants ===
 
-/// The longest notice any delayed value, action or set accepts: 30 days.
+/// The longest notice any delayed value, action, set or map accepts: 30 days.
 const MAX_DELAY_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 // === Imports ===
 
 public use fun proposal_value as Proposal.value;
+public use fun proposal_delay_ms as Proposal.delay_ms;
+public use fun notice_delay_ms as Notice.delay_ms;
+public use fun notice_ready_at_ms as Notice.ready_at_ms;
 
 use sui::clock::Clock;

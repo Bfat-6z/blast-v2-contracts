@@ -140,25 +140,26 @@ fi
 # The delayed family lives under sources/delayed/; every other module sits directly in sources/.
 module_file() {
   case "$1" in
-    delayed|delayed_action|delayed_set) printf '%s\n' "$package_dir/sources/delayed/$1.move" ;;
+    delayed|delayed_action|delayed_set|delayed_map) printf '%s\n' "$package_dir/sources/delayed/$1.move" ;;
     *) printf '%s\n' "$package_dir/sources/$1.move" ;;
   esac
 }
 
-required_modules="blast_acl delayed delayed_action delayed_set package_version package_admin errors blast_admin_events"
+required_modules="blast_acl delayed delayed_action delayed_set delayed_map package_version package_admin errors \
+  blast_admin_events"
 for module in $required_modules; do
   [[ -f "$(module_file "$module")" ]] \
     || fail "Missing required blast_admin module: $module.move"
 done
-if find "$package_dir/sources" -name '*.move' | grep -vE "^$package_dir/sources/([a-z_]+|delayed/delayed(_action|_set)?)\.move$"; then
+if find "$package_dir/sources" -name '*.move' | grep -vE "^$package_dir/sources/([a-z_]+|delayed/delayed(_action|_set|_map)?)\.move$"; then
   fail "blast_admin sources must sit directly in sources/, or in sources/delayed/ for the delayed family."
 fi
-# Immutable once published: exactly these eight modules, so no second version, custody or
+# Immutable once published: exactly these nine modules, so no second version, custody or
 # delayed type can be added without boundary review.
 actual_modules="$(find "$package_dir/sources" -name '*.move' -exec basename {} .move \; | sort)"
 expected_modules="$(printf '%s\n' $required_modules | sort)"
 [[ "$actual_modules" == "$expected_modules" ]] \
-  || fail "blast_admin must contain exactly its eight reviewed modules."
+  || fail "blast_admin must contain exactly its nine reviewed modules."
 
 [[ -f "$publication_script" ]] \
   || fail "blast_admin must include its immutable publication builder."
@@ -196,7 +197,7 @@ if grep -rniE '\b(fee|migration|creator|pool|venue)\b' "$package_dir/sources"; t
   fail "Consumer product policy must not enter blast_admin production source."
 fi
 if grep -rn 'sui::event::emit' "$package_dir/sources" \
-  | grep -vE "$package_dir/sources/(blast_admin_events|delayed/delayed(_action|_set)?)\.move"; then
+  | grep -vE "$package_dir/sources/(blast_admin_events|delayed/delayed(_action|_set|_map)?)\.move"; then
   fail "Only blast_admin_events.move and the delayed modules may emit shared administration events."
 fi
 package_admin_file="$package_dir/sources/package_admin.move"
@@ -205,8 +206,10 @@ if grep -rnE 'public(\(package\))?[[:space:]]+(entry[[:space:]]+)?fun[[:space:]]
   fail "Package custody must expose no capability release or borrow path."
 fi
 if function_declarations "$package_admin_file" \
-  | grep -Eq '\)[[:space:]]*:[[:space:]]*[^{}]*(UpgradeCap|(^|[^&])Publisher)([^A-Za-z0-9_]|$)'; then
-  fail "Custody APIs may return the Publisher only by immutable reference and never an UpgradeCap."
+  | sed -nE 's/.*\)[[:space:]]*:[[:space:]]*([^{}]*)\{.*/\1/p' \
+  | sed -E 's/&(mut[[:space:]]+)?Publisher//g' \
+  | grep -Eq '(UpgradeCap|Publisher)([^A-Za-z0-9_]|$)'; then
+  fail "Custody APIs may return the Publisher only by reference and never an UpgradeCap."
 fi
 if grep -nE 'transfer::(public_)?transfer|burn_publisher' "$package_admin_file"; then
   fail "Sealed native capabilities must not leave PackageAdmin."
@@ -251,20 +254,28 @@ actual_acl_public="$({
 } | sort)"
 expected_acl_public="$(printf '%s\n' \
   accept_super_admin_transfer \
+  admin_count \
+  admin_roles \
   begin_super_admin_transfer \
   cancel_super_admin_transfer \
   destroy_admin_cap \
   destroy_retired_super_admin_cap \
   grant_admin \
   grant_role \
+  has_role \
+  is_admin \
+  max_roles_per_admin \
   revoke_admin \
   revoke_role \
   sign_in \
+  super_admin_cap_id \
+  super_admin_transfer \
+  super_admin_transfer_delay_ms \
   | sort)"
 [[ "$actual_acl_public" == "$expected_acl_public" ]] \
   || fail "The production ACL surface changed without boundary review."
 
-for delayed_module in delayed delayed_action delayed_set; do
+for delayed_module in delayed delayed_action delayed_set delayed_map; do
   if production_lines "$(module_file "$delayed_module")" \
     | grep -Eq 'fun[[:space:]]+(set|force|replace|bypass)[a-z_]*[[:space:]]*[<(]'; then
     fail "Delayed values must expose no immediate setter or bypass ($delayed_module)."
@@ -277,22 +288,43 @@ expect_delayed_surface() {
   expected="$(printf '%s\n' "$@" | sort)"
   [[ "$actual" == "$expected" ]] || fail "The production $module surface changed without boundary review."
 }
-# Delayed values expose no notice getters: off-chain readers read object fields. Each keeps its
-# destructor so the objects embedding it stay deletable.
-expect_delayed_surface delayed apply assert_ready cancel delay_ms destroy is_guarded new pending \
-  proposal_value schedule schedule_delay schedule_value value
-expect_delayed_surface delayed_action action apply_delay cancel destroy is_guarded new pending schedule \
-  schedule_delay take_action
-expect_delayed_surface delayed_set admission_ready_at_ms apply_add apply_delay cancel_add cancel_delay \
-  contains delay_ms destroy is_guarded members new pending_count remove schedule_add schedule_delay
+# blast_admin is immutable and future packages may hold its types in other ways, so every delayed
+# type keeps a complete API: its destructor and read-only readers, pinned here.
+expect_delayed_surface delayed apply assert_ready cancel delay_ms destroy is_guarded is_ready key \
+  max_delay_ms new notice_delay_ms notice_ready_at_ms owner pending proposal_delay_ms proposal_value \
+  ready_at_ms schedule schedule_delay schedule_value value
+expect_delayed_surface delayed_action action apply_delay cancel delay_ms destroy is_delay_ready \
+  is_guarded is_ready key new owner pending pending_action pending_delay schedule schedule_delay \
+  take_action
+expect_delayed_surface delayed_set admission_notice admission_ready_at_ms apply_add apply_delay \
+  cancel_add cancel_delay contains delay_ms destroy is_delay_ready is_guarded is_pending is_ready \
+  key member member_count members new owner pending_count pending_delay remove schedule_add \
+  schedule_delay
+expect_delayed_surface delayed_map apply apply_delay cancel cancel_delay changed_entry changed_value \
+  contains delay_ms destroy entry_count entry_proposal_notice entry_proposal_value entry_ready_at_ms \
+  is_delay_ready is_guarded is_pending is_ready key new owner pending pending_count pending_delay \
+  schedule schedule_delay value
+for delayed_module in delayed delayed_action delayed_set delayed_map; do
+  grep -Eq '^public fun destroy<' "$(module_file "$delayed_module")" \
+    || fail "$delayed_module must keep its destructor."
+  grep -Eq '^public fun (owner|key)<' "$(module_file "$delayed_module")" \
+    || fail "$delayed_module must expose its owner and key readers."
+done
 
 package_version_file="$package_dir/sources/package_version.move"
 actual_package_version_public="$(externally_callable_function_names "$package_version_file" | sort)"
 expected_package_version_public="$(printf '%s\n' \
   assert_current \
   assert_not_paused \
+  generation \
+  is_paused \
   keep \
   new_publication \
+  package_witness \
+  paused \
+  publication_package_witness \
+  publication_valid_pause_bits \
+  valid_pause_bits \
   | sort)"
 [[ "$actual_package_version_public" == "$expected_package_version_public" ]] \
   || fail "The production package-version surface changed without boundary review."
@@ -321,12 +353,24 @@ expected_package_admin_public="$(printf '%s\n' \
   cancel_upgrade_action \
   clear_pause_bits \
   commit_upgrade_and_advance \
+  current_package_id \
+  has_upgrade_cap \
+  initial_upgrade_delay_ms \
+  is_upgrade_notice_guarded \
   make_immutable \
+  native_version \
   pause \
+  pending_upgrade \
   publisher \
+  publisher_id \
+  publisher_mut \
   schedule_make_immutable \
   schedule_upgrade \
   schedule_upgrade_delay \
+  upgrade_cap_id \
+  upgrade_delay_ms \
+  upgrade_digest \
+  upgrade_policy \
   wrap \
   | sort)"
 [[ "$actual_package_admin_public" == "$expected_package_admin_public" ]] \
@@ -335,10 +379,12 @@ grep -Fqx 'public struct PackageAdmin<phantom PackageMarker: drop> has key {' "$
   || fail "PackageAdmin must be a key-only shared object typed by its package marker."
 grep -Fq 'package_version.assert_unpause_witness<_, PackageWitness>();' "$package_admin_file" \
   || fail "clear_pause_bits must check the pinned package witness."
-grep -Fq 'package_version.assert_publisher_witness<_, PackageWitness>();' "$package_admin_file" \
-  || fail "publisher must check the pinned package witness."
 [[ "$(function_declarations "$package_admin_file" | grep -cE '\)[[:space:]]*:[[:space:]]*&Publisher[[:space:]]*\{')" -eq 2 ]] \
-  || fail "Only publisher (and its test-only twin) may return the Publisher, by immutable reference."
+  || fail "Only publisher (and its test-only twin) may return the Publisher by immutable reference."
+[[ "$(function_declarations "$package_admin_file" | grep -cE '\)[[:space:]]*:[[:space:]]*&mut[[:space:]]+Publisher[[:space:]]*\{')" -eq 1 ]] \
+  || fail "Only publisher_mut may return the Publisher by mutable reference."
+[[ "$(grep -Fc 'package_version.assert_publisher_witness<_, PackageWitness>();' "$package_admin_file")" -eq 2 ]] \
+  || fail "publisher and publisher_mut must each check the pinned package witness."
 for role in UpgradeAdmin PauseAdmin UnpauseAdmin CancelAdmin; do
   grep -Fqx "public struct $role<phantom PackageMarker>()" "$package_admin_file" \
     || fail "$role must be an ability-free role typed by its package marker."
