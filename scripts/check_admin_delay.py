@@ -160,7 +160,7 @@ for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_po
 fs = functions('launchpad', 'launch')
 source = (ROOT / 'sui/launchpad/sources/launch.move').read_text()
 assert 'apply_cap_reassignment_delay' not in fs and '_delay_ms: u64,' not in source.split('public struct Launch<')[1].split('\n}')[0]
-for cap in ['curve_fee_cap', 'metadata_cap']:
+for cap in ['curve_fee_cap', 'creator_metadata_cap']:
     require(fs[f'schedule_{cap}_reassignment'][0], '&AdminWitness<CreatorAdmin>', 'clock: &Clock')
     assert 'delay_ms: u64' not in fs[f'schedule_{cap}_reassignment'][0], cap
     require(fs[f'schedule_{cap}_reassignment'][1], f'.schedule(recipient, clock)')
@@ -288,7 +288,7 @@ for package, otw_module in [('launchpad', 'blast_fun')]:
                 or package == 'launchpad' and path.stem == 'runtime_config'
                 and name == 'schedule_creator_claim_signer'
                 or package == 'launchpad' and path.stem == 'launch'
-                and name in ('schedule_curve_fee_cap_reassignment', 'schedule_metadata_cap_reassignment')
+                and name in ('schedule_curve_fee_cap_reassignment', 'schedule_creator_metadata_cap_reassignment')
             )
             if action_only:
                 assert 'delay_ms: u64' not in signature, (path, name)

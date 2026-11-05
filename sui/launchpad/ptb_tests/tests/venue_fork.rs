@@ -1948,14 +1948,14 @@ impl World {
         let version = self.shared(&mut b, self.version, false)?;
         let recipient = b.pure(SuiAddress::from(CAP_HOLDER))?;
         let clock = self.clock(&mut b)?;
-        for name in ["schedule_curve_fee_cap_reassignment", "schedule_metadata_cap_reassignment"] {
+        for name in ["schedule_curve_fee_cap_reassignment", "schedule_creator_metadata_cap_reassignment"] {
             call(&mut b, self.blast, "launch", name, self.pair(launch),
                 vec![launch_arg, version, signed_in, recipient, clock]);
         }
         let scheduled = self.h.execute(b.finish())?;
         scheduled.assert_success();
         ensure!(scheduled.payload_names(self.blast).is_empty());
-        for key in ["CurveFeeCapReassignment", "MetadataCapReassignment"] {
+        for key in ["CurveFeeCapReassignment", "CreatorMetadataCapReassignment"] {
             let proposals: Vec<ActionScheduled<SuiAddress>> = scheduled.delayed("ActionScheduled", "launch", key)?;
             ensure!(proposals.len() == 1);
             ensure!(proposals[0].owner == launch.launch && proposals[0].change == Change::Action(SuiAddress::from(CAP_HOLDER)));
@@ -1964,7 +1964,7 @@ impl World {
         let pair = self.pair(launch);
         blast_launchpad_ptb_tests::apply_admin_changes(&mut self.h, vec![
             (self.blast, "launch", "apply_curve_fee_cap_reassignment", pair.clone(), launch.launch, self.version),
-            (self.blast, "launch", "apply_metadata_cap_reassignment", pair, launch.launch, self.version),
+            (self.blast, "launch", "apply_creator_metadata_cap_reassignment", pair, launch.launch, self.version),
         ])?;
 
         let owners = [self.h.sender, LP_PROTOCOL.into(), RECIPIENT_C.into()];

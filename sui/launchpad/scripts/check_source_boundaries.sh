@@ -401,7 +401,7 @@ admin_roles="$(for file in "${source_files[@]}"; do
 done | LC_ALL=C sort | tr '\n' ' ')"
 
 if [[ "$admin_roles" != \
-  'launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:cancel_metadata_cap_reassignment:CancelAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch:schedule_metadata_cap_delay:CreatorAdmin launch:schedule_metadata_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_protocol_lp_fees:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:cancel_venue:CancelAdmin launch_config:cancel_venue_delay:CancelAdmin launch_config:remove_partner:FeeAdmin launch_config:remove_venue:VenueAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_protocol_lp_fees:FeeAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:schedule_venue:VenueAdmin launch_config:schedule_venue_delay:VenueAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin launch_config:unpause:UnpauseAdmin<BLAST_FUN> runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin ' ]]; then
+  'launch:cancel_creator_metadata_cap_reassignment:CancelAdmin launch:cancel_curve_fee_cap_reassignment:CancelAdmin launch:schedule_creator_metadata_cap_delay:CreatorAdmin launch:schedule_creator_metadata_cap_reassignment:CreatorAdmin launch:schedule_curve_fee_cap_delay:CreatorAdmin launch:schedule_curve_fee_cap_reassignment:CreatorAdmin launch_config:add_partner:FeeAdmin launch_config:cancel_creation_fee:CancelAdmin launch_config:cancel_protocol_allocation:CancelAdmin launch_config:cancel_protocol_lp_fees:CancelAdmin launch_config:cancel_trade_fees:CancelAdmin launch_config:cancel_venue:CancelAdmin launch_config:cancel_venue_delay:CancelAdmin launch_config:remove_partner:FeeAdmin launch_config:remove_venue:VenueAdmin launch_config:schedule_creation_fee:FeeAdmin launch_config:schedule_protocol_allocation:TreasuryAdmin launch_config:schedule_protocol_lp_fees:FeeAdmin launch_config:schedule_trade_fees:FeeAdmin launch_config:schedule_venue:VenueAdmin launch_config:schedule_venue_delay:VenueAdmin launch_config:set_meme_decimals_allowed:ListingAdmin launch_config:set_quote_allowed:ListingAdmin launch_config:unpause:UnpauseAdmin<BLAST_FUN> runtime_config:cancel_creator_claim_signer:CancelAdmin runtime_config:cancel_creator_claim_signer_delay:CancelAdmin runtime_config:cancel_protocol_fee_share:CancelAdmin runtime_config:revoke_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer:ClaimSignerAdmin runtime_config:schedule_creator_claim_signer_delay:ClaimSignerAdmin runtime_config:schedule_protocol_fee_share:FeeAdmin ' ]]; then
   printf '  %s\n' $admin_roles
   echo 'Every administrator action must take exactly its pinned role witness.' >&2
   failures=$((failures + 1))
@@ -972,8 +972,8 @@ if [[ ! -f sources/launch.move ]] \
     'Launch {' \
     'lp_fee_split: lp_fee_split.destroy_some(),' \
     <<<"$launch_finalize_body" \
-  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, metadata_cap_reassignment, curve_fee_cap_id: option::none(), blast_metadata_cap_id: option::none(), partner_id, };'* ]] \
-  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let mut protocol_fees = protocol_fees::new(package_witness(), id.to_inner(), partner_id); protocol_fees.accrue_sui(creation_fee); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let metadata_cap_reassignment = delayed_action::new( MetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
+  || [[ "$launch_finalize_body" != *'metadata_cap, creator: option::some(creator), curve_fee_cap_reassignment, creator_metadata_cap_reassignment, curve_fee_cap_id: option::none(), creator_metadata_cap_id: option::none(), partner_id, };'* ]] \
+  || [[ "$launch_finalize_body" != *'let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>()); let mut protocol_fees = protocol_fees::new(package_witness(), id.to_inner(), partner_id); protocol_fees.accrue_sui(creation_fee); let curve_fee_cap_reassignment = delayed_action::new( CurveFeeCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let creator_metadata_cap_reassignment = delayed_action::new( CreatorMetadataCapReassignment(), &id, DEFAULT_CAP_REASSIGNMENT_DELAY_MS, ); let launch = Launch { id,'* ]] \
   || [[ "$launch_finalize_body" != *'protocol_fees, creator_meme_fees: balance::zero(), creator_quote_fees: balance::zero(),'* ]] \
   || [[ "$(count_occurrences 'self\.metadata_cap\b' <<<"$launch_source")" \
     != "$(count_occurrences '&self\.metadata_cap\b' <<<"$launch_source")" ]] \
@@ -1013,9 +1013,9 @@ launch_authority_violations=''
 # MetadataCap, or transfer value outside the approved paths (ADR 0082).
 for authority_spec in \
   'self.curve_fee_cap_id = |apply_curve_fee_cap_reassignment claim_creator_caps ' \
-  'self.blast_metadata_cap_id = |apply_metadata_cap_reassignment claim_creator_caps ' \
+  'self.creator_metadata_cap_id = |apply_creator_metadata_cap_reassignment claim_creator_caps ' \
   'self.creator.extract()|claim_creator_caps ' \
-  'self.creator = |apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment ' \
+  'self.creator = |apply_creator_metadata_cap_reassignment apply_curve_fee_cap_reassignment ' \
   'self.creator_meme_fees.withdraw_all(|claim_creator_fees ' \
   'self.creator_quote_fees.withdraw_all(|claim_creator_fees ' \
   'self.protocol_fees.pay(|claim_protocol_fees ' \
@@ -1026,7 +1026,7 @@ for authority_spec in \
   'package_witness()|finalize migrate prove_owner ' \
   'self.assert_metadata_update(|set_description set_icon_url set_name ' \
   '&self.metadata_cap|set_description set_icon_url set_name ' \
-  'transfer::public_transfer(|apply_curve_fee_cap_reassignment apply_metadata_cap_reassignment migrate ' \
+  'transfer::public_transfer(|apply_creator_metadata_cap_reassignment apply_curve_fee_cap_reassignment migrate ' \
   '.opening_round_meme.pay(|deliver_opening_round ' \
   '.opening_round_quote.pay(|deliver_opening_round ' \
   'payout::pay_or_vest(&mut self.allocated_meme,|migrate ' \
@@ -1064,17 +1064,17 @@ fi
 # Each creator-cap reassignment stores the primitive's one-shot action slot, whose action is the
 # recipient; only the ready action reaches the reassignment that records new authority.
 if ! rg -Fq 'curve_fee_cap_reassignment: DelayedAction<CurveFeeCapReassignment, address>,' sources/launch.move \
-  || ! rg -Fq 'metadata_cap_reassignment: DelayedAction<MetadataCapReassignment, address>,' sources/launch.move \
+  || ! rg -Fq 'creator_metadata_cap_reassignment: DelayedAction<CreatorMetadataCapReassignment, address>,' sources/launch.move \
   || rg -n '\b(cap_delay_ms|pending_(curve_fee|metadata)_cap_recipient|apply_cap_reassignment_delay)\b' sources/launch.move \
   || [[ "$(launch_functions_containing 'self.curve_fee_cap_reassignment.take_action(clock)')" != 'apply_curve_fee_cap_reassignment ' ]] \
-  || [[ "$(launch_functions_containing 'self.metadata_cap_reassignment.take_action(clock)')" != 'apply_metadata_cap_reassignment ' ]]; then
+  || [[ "$(launch_functions_containing 'self.creator_metadata_cap_reassignment.take_action(clock)')" != 'apply_creator_metadata_cap_reassignment ' ]]; then
   launch_authority_violations+='  creator-cap reassignments must store the primitive action slot and take its ready recipient only on reassignment'$'\n'
 fi
 # The package-only cap constructors are reached only from the owning module and the launch that
 # records the resulting authority; only the launch claims from the ledger.
 if [[ "$(rg -l '\bnew_curve_fee_cap\b' sources | sort | tr '\n' ' ')" \
     != 'sources/creator_authority.move sources/launch.move ' ]] \
-  || [[ "$(rg -l '\bnew_metadata_cap\b' sources | sort | tr '\n' ' ')" \
+  || [[ "$(rg -l '\bnew_creator_metadata_cap\b' sources | sort | tr '\n' ' ')" \
     != 'sources/creator_authority.move sources/launch.move ' ]] \
   || [[ "$(rg -l '\.(protocol|creator_(meme|quote))_fees\.' sources | tr '\n' ' ')" != 'sources/launch.move ' ]]; then
   launch_authority_violations+='  creator capability constructors or ledger claims are reachable outside creator_authority.move and launch.move'$'\n'
@@ -1192,7 +1192,7 @@ done
 
 if [[ -n "$launch_authority_violations" ]]; then
   printf '%s' "$launch_authority_violations"
-  echo 'Launch creator authority must stay split per concern: only the recorded CurveFeeCap claims creator fees, only the recorded BlastMetadataCap edits metadata through the retained MetadataCap, and only a version-gated creator admin reassigns.' >&2
+  echo 'Launch creator authority must stay split per concern: only the recorded CurveFeeCap claims creator fees, only the recorded CreatorMetadataCap edits metadata through the retained MetadataCap, and only a version-gated creator admin reassigns.' >&2
   failures=$((failures + 1))
 fi
 
@@ -1296,7 +1296,7 @@ creator_authority_facts="$(move_facts sources/creator_authority.move)"
 # this module (ADR 0082). After migration the curve-fee cap proves ownership to the launch's
 # `blast_vault` vault through `launch::prove_owner`; LP-fee authority lives there (ADR 0137).
 creator_capability_violations=''
-for capability_spec in 'CurveFeeCap|new_curve_fee_cap' 'BlastMetadataCap|new_metadata_cap'; do
+for capability_spec in 'CurveFeeCap|new_curve_fee_cap' 'CreatorMetadataCap|new_creator_metadata_cap'; do
   IFS='|' read -r capability_type capability_constructor <<<"$capability_spec"
 
   if [[ "$(move_production_type "$capability_type" <<<"$creator_authority_facts")" \
@@ -1312,7 +1312,7 @@ done
 
 if [[ -n "$creator_capability_violations" ]]; then
   printf '%s' "$creator_capability_violations"
-  echo 'creator_authority.move must own CurveFeeCap<Meme> and BlastMetadataCap<Meme> construction.' >&2
+  echo 'creator_authority.move must own CurveFeeCap<Meme> and CreatorMetadataCap<Meme> construction.' >&2
   failures=$((failures + 1))
 fi
 
@@ -1337,15 +1337,15 @@ if rg -n '\b[a-z_]*claimed:[[:space:]]*bool|\bissue_creator_cap\b|\btransfer::' 
   || rg -q '\b(AdminWitness|blast_fun_domain|PackageVersion|package_version)\b' \
     <<<"$creator_authority_source" \
   || rg -v -Fx 'use blast_fun::constants;' sources/creator_authority.move | rg -q '^use blast_fun::' \
-  || [[ "$(move_production_function_contract claim_creator_caps <<<"$creator_authority_facts")" != 'package:0:0:fun claim_creator_caps<Meme>( recipient: CreatorRecipient, signer_public_keys: &vector<vector<u8>>, attestation: Option<vector<u8>>, clock: &Clock, ctx: &mut TxContext, ): (CurveFeeCap<Meme>, BlastMetadataCap<Meme>)' ]] \
+  || [[ "$(move_production_function_contract claim_creator_caps <<<"$creator_authority_facts")" != 'package:0:0:fun claim_creator_caps<Meme>( recipient: CreatorRecipient, signer_public_keys: &vector<vector<u8>>, attestation: Option<vector<u8>>, clock: &Clock, ctx: &mut TxContext, ): (CurveFeeCap<Meme>, CreatorMetadataCap<Meme>)' ]] \
   || [[ "$(move_production_function_contract new_curve_fee_cap <<<"$creator_authority_facts")" \
     != 'package:0:0:fun new_curve_fee_cap<Meme>(ctx: &mut TxContext): CurveFeeCap<Meme>' ]] \
-  || [[ "$(move_production_function_contract new_metadata_cap <<<"$creator_authority_facts")" \
-    != 'package:0:0:fun new_metadata_cap<Meme>(ctx: &mut TxContext): BlastMetadataCap<Meme>' ]] \
+  || [[ "$(move_production_function_contract new_creator_metadata_cap <<<"$creator_authority_facts")" \
+    != 'package:0:0:fun new_creator_metadata_cap<Meme>(ctx: &mut TxContext): CreatorMetadataCap<Meme>' ]] \
   || [[ "$(move_production_type CreatorClaimMessage <<<"$creator_authority_facts")" \
     != 'struct CreatorClaimMessage has drop { meme: TypeName, account_commitment: vector<u8>, claimant: address, expiry_ms: u64, }' ]] \
   || rg -q '\bed25519_signature_length\b' sources; then
-  echo 'Creator claims must return exactly one CurveFeeCap and one BlastMetadataCap, and creator_authority.move must import no Blast module but constants and carry no version or admin gate, native MetadataCap pass-through, flag, or transfer.' >&2
+  echo 'Creator claims must return exactly one CurveFeeCap and one CreatorMetadataCap, and creator_authority.move must import no Blast module but constants and carry no version or admin gate, native MetadataCap pass-through, flag, or transfer.' >&2
   failures=$((failures + 1))
 fi
 if rg -n 'schema_version|action_tag|nonce' sources/creator_authority.move; then
@@ -1359,7 +1359,7 @@ if rg -l '^public struct RuntimeConfig has key' sources \
   failures=$((failures + 1))
 fi
 
-if rg -l '^public struct (CurveFeeCap|BlastMetadataCap)\b' sources \
+if rg -l '^public struct (CurveFeeCap|CreatorMetadataCap)\b' sources \
   | rg -v '^sources/creator_authority\.move$' \
   || rg -n '\bCreatorCap\b|\bclaim_creator_cap\b|\bcreator_cap_claimed\b|\bCreatorCapClaimed\b' sources; then
   echo 'Creator capabilities are declared outside their owning module, or the irrevocable possession-only CreatorCap was reintroduced.' >&2
@@ -1443,8 +1443,8 @@ if ! events_follow_mutations sources/launch_ticket.move new 'LaunchTicket{' 'eve
     'ticket.destroy(' 'Launch{' 'events::launch_created<' \
   || ! events_follow_mutations sources/launch.move apply_curve_fee_cap_reassignment \
     'self.curve_fee_cap_id = option::some(' 'transfer::public_transfer(' 'events::curve_fee_cap_reassigned<Meme,Quote>(' \
-  || ! events_follow_mutations sources/launch.move apply_metadata_cap_reassignment \
-    'self.blast_metadata_cap_id = option::some(' 'transfer::public_transfer(' 'events::metadata_cap_reassigned<Meme,Quote>(' \
+  || ! events_follow_mutations sources/launch.move apply_creator_metadata_cap_reassignment \
+    'self.creator_metadata_cap_id = option::some(' 'transfer::public_transfer(' 'events::creator_metadata_cap_reassigned<Meme,Quote>(' \
   || ! events_follow_mutations sources/launch.move buy_from_curve \
     'self.real_quote_reserve.join(' \
     'self.meme_reserve.split(' \

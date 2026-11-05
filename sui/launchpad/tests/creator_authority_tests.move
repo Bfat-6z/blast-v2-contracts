@@ -86,7 +86,7 @@ fun account_claim_with_the_backend_signature_issues_both_caps() {
 
         assert!(object::id(&curve_fee_cap) != object::id(&metadata_cap));
         curve_fee_cap.destroy_curve_fee_cap();
-        metadata_cap.destroy_metadata_cap();
+        metadata_cap.destroy_creator_metadata_cap();
     });
 
     fixture.end();
@@ -374,7 +374,7 @@ fun claim_claim<Meme>(
     );
 
     curve_fee_cap.destroy_curve_fee_cap();
-    metadata_cap.destroy_metadata_cap();
+    metadata_cap.destroy_creator_metadata_cap();
 }
 
 /// Schedules `signer_public_key` and admits it once a synthetic clock has waited the delay,

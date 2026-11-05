@@ -59,12 +59,12 @@ Aborts).
 - `creator_authority::CurveFeeCap<Meme>` (`key, store`): authority over the launch's creator trade
   fees, and over the launch's LP vault through `launch::prove_owner`. The launch honors only the cap
   ID it records in `curve_fee_cap_id`.
-- `creator_authority::BlastMetadataCap<Meme>` (`key, store`): authority to change the coin's name,
+- `creator_authority::CreatorMetadataCap<Meme>` (`key, store`): authority to change the coin's name,
   description, and icon URL through the launch. The launch honors only the cap ID in
-  `blast_metadata_cap_id`.
+  `creator_metadata_cap_id`.
 - Both caps are issued once by `launch::claim_creator_caps` to the creator recipient, or reissued
   by a Blast creator admin. A holder may delete a cap with
-  `creator_authority::destroy_curve_fee_cap` or `creator_authority::destroy_metadata_cap`;
+  `creator_authority::destroy_curve_fee_cap` or `creator_authority::destroy_creator_metadata_cap`;
   deleting the live cap leaves fees unclaimable (or metadata frozen) until an admin reassigns it.
 
 The native `MetadataCap<Meme>` never leaves the launch.
@@ -125,7 +125,7 @@ reference. A role authorizes only the functions that name it. The package roles 
 | `blast_admin::package_admin::UpgradeAdmin<BLAST_FUN>` | `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::schedule_make_immutable`, `blast_admin::package_admin::schedule_upgrade_delay`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance`, `blast_admin::package_admin::make_immutable` |
 | `blast_admin::package_admin::CancelAdmin<BLAST_FUN>` | `blast_admin::package_admin::cancel_upgrade_action` |
 | `blast_core::blast_domain::CancelAdmin` | each launchpad `cancel_*` call below |
-| `blast_core::blast_domain::CreatorAdmin` | `launch::schedule_curve_fee_cap_reassignment`, `launch::schedule_metadata_cap_reassignment`, `launch::schedule_curve_fee_cap_delay`, `launch::schedule_metadata_cap_delay` |
+| `blast_core::blast_domain::CreatorAdmin` | `launch::schedule_curve_fee_cap_reassignment`, `launch::schedule_creator_metadata_cap_reassignment`, `launch::schedule_curve_fee_cap_delay`, `launch::schedule_creator_metadata_cap_delay` |
 | `blast_core::blast_domain::TreasuryAdmin` | `launch_config::schedule_protocol_allocation`; the treasury address itself with `blast_core::blast_treasury::schedule_destination` |
 | `blast_core::blast_domain::FeeAdmin` | `launch_config::schedule_trade_fees`, `launch_config::schedule_creation_fee`, `launch_config::schedule_protocol_lp_fees`, `launch_config::add_partner`, `launch_config::remove_partner`, `runtime_config::schedule_protocol_fee_share` |
 | `blast_core::blast_domain::ListingAdmin` | `launch_config::set_meme_decimals_allowed`, `launch_config::set_quote_allowed` |
@@ -329,7 +329,7 @@ take no deadline and no `Clock`: the minimum output is the only price protection
 
 `launch::claim_creator_caps` takes the shared launch, `PackageVersion`, `RuntimeConfig`, an
 `Option<vector<u8>>` attestation, and `Clock`. It returns a `CurveFeeCap<Meme>` and a
-`BlastMetadataCap<Meme>`; transfer both to the sender. It works once, in any state after share.
+`CreatorMetadataCap<Meme>`; transfer both to the sender. It works once, in any state after share.
 Emits `blast_fun::events::CreatorCapsClaimed`.
 
 - Address recipient: the sender must be that address; pass `None`.
@@ -366,10 +366,10 @@ After migration the launch's vault serves its owner through an owner proof:
 One proof authorizes one call; build a new one for each. A proof for another launch aborts in the
 vault. See the vault guide for the vault side.
 
-#### Update coin metadata (cap holder: `BlastMetadataCap<Meme>`)
+#### Update coin metadata (cap holder: `CreatorMetadataCap<Meme>`)
 
 `launch::set_name`, `launch::set_description`, and `launch::set_icon_url` each take the launch (by
-immutable reference), `PackageVersion`, `&BlastMetadataCap<Meme>`, the shared `Currency<Meme>`
+immutable reference), `PackageVersion`, `&CreatorMetadataCap<Meme>`, the shared `Currency<Meme>`
 (mutable), and the new `String`. The value must differ from the current one. Works in any state.
 Each emits `blast_fun::events::MemeMetadataUpdated` with all three current values. Symbol and
 decimals never change.
@@ -517,7 +517,7 @@ and signer admissions.
 | Blast's trade-fee share | `RuntimeConfig.protocol_fee_share_bps` | `runtime_config::ProtocolFeeShareKey` | `blast_core::bps::Bps` |
 | Upgrades and immutability | `PackageAdmin<BLAST_FUN>.upgrade` | `blast_admin::package_admin::UpgradeKey<BLAST_FUN>` | `blast_admin::package_admin::UpgradeAction` |
 | Curve-fee cap reassignment | `Launch.curve_fee_cap_reassignment` | `launch::CurveFeeCapReassignment` | `address` (the recipient) |
-| Metadata cap reassignment | `Launch.metadata_cap_reassignment` | `launch::MetadataCapReassignment` | `address` (the recipient) |
+| Metadata cap reassignment | `Launch.creator_metadata_cap_reassignment` | `launch::CreatorMetadataCapReassignment` | `address` (the recipient) |
 
 Venue admissions share one applied notice across venue types, changed by
 `launch_config::schedule_venue_delay` (VenueAdmin), `launch_config::apply_venue_delay` (anyone),
@@ -540,20 +540,20 @@ replacing any pending action; anyone applies it with `blast_admin::package_admin
 #### Creator cap reassignment
 
 Each launch starts both cap notices at 48 hours. CreatorAdmin schedules a replacement recipient with
-`launch::schedule_curve_fee_cap_reassignment` or `launch::schedule_metadata_cap_reassignment`, or
+`launch::schedule_curve_fee_cap_reassignment` or `launch::schedule_creator_metadata_cap_reassignment`, or
 only a new notice with `launch::schedule_curve_fee_cap_delay` or
-`launch::schedule_metadata_cap_delay`; each operation holds one pending proposal, so either kind
+`launch::schedule_creator_metadata_cap_delay`; each operation holds one pending proposal, so either kind
 replaces the other. After the notice anyone applies a reassignment with
-`launch::apply_curve_fee_cap_reassignment` or `launch::apply_metadata_cap_reassignment`, and a
-notice change with `launch::apply_curve_fee_cap_delay` or `launch::apply_metadata_cap_delay`;
+`launch::apply_curve_fee_cap_reassignment` or `launch::apply_creator_metadata_cap_reassignment`, and a
+notice change with `launch::apply_curve_fee_cap_delay` or `launch::apply_creator_metadata_cap_delay`;
 calling the other kind's apply aborts with code 18 from `delayed_action`. CancelAdmin cancels with
-`launch::cancel_curve_fee_cap_reassignment` or `launch::cancel_metadata_cap_reassignment`.
+`launch::cancel_curve_fee_cap_reassignment` or `launch::cancel_creator_metadata_cap_reassignment`.
 
 A reassignment mints a fresh cap, records it as the live one, sends it to the non-zero recipient, and
 cancels any unclaimed creator claim for both caps. The old cap stops working: unclaimed curve fees
 and the vault's owner proofs follow the new curve-fee cap. Applying emits
 `delayed_action::ActionApplied`, then `blast_fun::events::CurveFeeCapReassigned` or
-`blast_fun::events::MetadataCapReassigned`.
+`blast_fun::events::CreatorMetadataCapReassigned`.
 
 ### Emergency pause
 
@@ -738,7 +738,7 @@ awaiting delivery); `opening_round_meme`; `sell_burn_bps`; `virtual_quote`; `gra
 `allocated_meme`; `protocol_fees` (a `blast_core::protocol_fees::Ledger` holding Blast's Meme,
 Quote, and SUI; `blast_core::protocol_fees::balances` reads them); `creator_meme_fees` and
 `creator_quote_fees`; `creator` (`Some` until claimed or reassigned); `curve_fee_cap_reassignment`;
-`metadata_cap_reassignment`; `curve_fee_cap_id`; `blast_metadata_cap_id`; `partner_id`. The `Meme`
+`creator_metadata_cap_reassignment`; `curve_fee_cap_id`; `creator_metadata_cap_id`; `partner_id`. The `Meme`
 and `Quote` types are the object's type arguments. The pool tier is not on the launch: the venue
 keeps it in `VenueConfig` (see the venues guide).
 
@@ -752,7 +752,7 @@ keeps it in `VenueConfig` (see the venues guide).
 | Opening round end | `public_start_ms + opening_round_ms` |
 | One bidder's pending bid | dynamic field `launch::OpeningRoundBidKey(address)` on the launch (a `u64`); absent once delivered |
 | Unclaimed creator / Blast launch fees | `fee_ledger` balances |
-| Is this cap live? | its object ID equals `curve_fee_cap_id` or `blast_metadata_cap_id` |
+| Is this cap live? | its object ID equals `curve_fee_cap_id` or `creator_metadata_cap_id` |
 | Coin metadata, supply mode, total supply | the shared `Currency<Meme>` |
 
 A `delayed::Delayed` stores `owner`, `key`, the applied `value`, the applied `delay_ms`, and an
@@ -788,7 +788,7 @@ carry the transaction sender; take it from the transaction.
 | `blast_fun::events::Bought` | buy, settlement | `quote_in` (gross used), `meme_out_gross`, `meme_out_net`, `quote_refund`, the four fee parts, reserves after; graduated when `real_quote_reserve >= graduation_target`. A `Bought` before `LaunchShared` in the creation transaction is the creator's buy; the one beside `OpeningRoundSettled` is the pot's |
 | `blast_fun::events::Sold` | sell | `meme_in_gross`, `pending_burn` added, `quote_out_gross`, the four fee parts, reserves after |
 | `blast_fun::events::CreatorCapsClaimed` | creator claim | both cap IDs (no launch ID: one launch per Meme type) |
-| `blast_fun::events::CurveFeeCapReassigned`, `blast_fun::events::MetadataCapReassigned` | anyone applying a ready reassignment | `launch_id`, new cap ID, `recipient` |
+| `blast_fun::events::CurveFeeCapReassigned`, `blast_fun::events::CreatorMetadataCapReassigned` | anyone applying a ready reassignment | `launch_id`, new cap ID, `recipient` |
 | `blast_fun::events::MemeMetadataUpdated` | metadata setters | `launch_id`, current `name`, `description`, `icon_url` |
 | `blast_fun::events::CreatorFeesClaimed` | creator fee claim | `launch_id`, `meme_amount`, `quote_amount` |
 | `blast_core::blast_core_events::ProtocolFeesPaid` | Blast launch-fee claims | `package_witness` (`blast_fun::blast_fun::PackageWitness`), `origin` (the launch ID), `treasury` and its Meme, Quote, SUI amounts; `partner_id` and its amounts (0 without a partner) |

@@ -18,11 +18,11 @@ public(package) fun quote_set<Quote>(allowed: bool) {
 
 public(package) fun creator_caps_claimed<Meme, Quote>(
     curve_fee_cap_id: ID,
-    blast_metadata_cap_id: ID,
+    creator_metadata_cap_id: ID,
 ) {
     sui::event::emit(CreatorCapsClaimed<Meme, Quote> {
         curve_fee_cap_id,
-        blast_metadata_cap_id,
+        creator_metadata_cap_id,
     });
 }
 
@@ -34,14 +34,14 @@ public(package) fun curve_fee_cap_reassigned<Meme, Quote>(
     sui::event::emit(CurveFeeCapReassigned<Meme, Quote> { launch_id, curve_fee_cap_id, recipient });
 }
 
-public(package) fun metadata_cap_reassigned<Meme, Quote>(
+public(package) fun creator_metadata_cap_reassigned<Meme, Quote>(
     launch_id: ID,
-    blast_metadata_cap_id: ID,
+    creator_metadata_cap_id: ID,
     recipient: address,
 ) {
-    sui::event::emit(MetadataCapReassigned<Meme, Quote> {
+    sui::event::emit(CreatorMetadataCapReassigned<Meme, Quote> {
         launch_id,
-        blast_metadata_cap_id,
+        creator_metadata_cap_id,
         recipient,
     });
 }
@@ -256,7 +256,7 @@ public struct QuoteSet<phantom Quote> has copy, drop {
 
 public struct CreatorCapsClaimed<phantom Meme, phantom Quote> has copy, drop {
     curve_fee_cap_id: ID,
-    blast_metadata_cap_id: ID,
+    creator_metadata_cap_id: ID,
 }
 
 public struct CurveFeeCapReassigned<phantom Meme, phantom Quote> has copy, drop {
@@ -265,9 +265,9 @@ public struct CurveFeeCapReassigned<phantom Meme, phantom Quote> has copy, drop 
     recipient: address,
 }
 
-public struct MetadataCapReassigned<phantom Meme, phantom Quote> has copy, drop {
+public struct CreatorMetadataCapReassigned<phantom Meme, phantom Quote> has copy, drop {
     launch_id: ID,
-    blast_metadata_cap_id: ID,
+    creator_metadata_cap_id: ID,
     recipient: address,
 }
 

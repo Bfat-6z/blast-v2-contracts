@@ -214,7 +214,7 @@ address, and completing its registration is permissionless; intake needs it.
 The creator recipient may be a wallet address or an opaque Blast account
 commitment and may differ from the launcher. The native metadata cap never
 leaves `Launch`. The creator claim issues a `CurveFeeCap<Meme>` for curve fees
-and a `BlastMetadataCap<Meme>` for metadata updates through the launch; a
+and a `CreatorMetadataCap<Meme>` for metadata updates through the launch; a
 creator administrator can reassign each independently
 ([ADR 0082](decisions/0082-revocable-creator-and-lp-fee-capabilities.md)). The
 creator always keeps the curve-fee cap: after migration its holder proves

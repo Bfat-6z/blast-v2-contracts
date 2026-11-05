@@ -73,7 +73,7 @@ is what an auditor reads on every package-administration object.
 | `blast_fun` | `runtime_config::RuntimeConfig` | unchanged | *residual* |
 | `blast_fun` | `launch_ticket::LaunchTicket<Meme>` | unchanged | *residual*, wallet-held |
 | `blast_fun` | `creator_authority::CurveFeeCap<Meme>` | unchanged | *residual*, wallet-held |
-| `blast_fun` | `creator_authority::BlastMetadataCap<Meme>` | unchanged | struct |
+| `blast_fun` | `creator_authority::CreatorMetadataCap<Meme>` | unchanged | struct |
 | `blast_fun` | `launch::LaunchRegistry` | new (ADR 0137); shared singleton from which each launch's ID derives | *residual* |
 | `blast_fun` | `package_admin::PackageAdmin` | `blast_admin::package_admin::PackageAdmin<BLAST_FUN>` (ADR 0137) | OTW |
 | `blast_fun` | `package_version::PackageVersion` | `blast_admin::package_version::PackageVersion<BLAST_FUN>` (ADR 0137) | OTW |

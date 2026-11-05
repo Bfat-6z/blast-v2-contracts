@@ -474,7 +474,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
     let recipient = SuiAddress::from(DESTINATION);
     for (cap, cap_type, key, reassigned_name) in [
         ("curve_fee_cap", "CurveFeeCap", "CurveFeeCapReassignment", "CurveFeeCapReassigned"),
-        ("metadata_cap", "BlastMetadataCap", "MetadataCapReassignment", "MetadataCapReassigned"),
+        ("creator_metadata_cap", "CreatorMetadataCap", "CreatorMetadataCapReassignment", "CreatorMetadataCapReassigned"),
     ] {
         let launch = w.open_launch(NO_OPENING_ROUND)?;
         let watched = [launch.launch, launch.currency, w.version, w.acl, w.admin_cap, w.config];
@@ -504,7 +504,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
             ready_at_ms: scheduled_at_ms + ADMIN_DELAY_MS,
         }]);
         assert!(scheduled.created(&w.h, "creator_authority", "CurveFeeCap").is_empty());
-        assert!(scheduled.created(&w.h, "creator_authority", "BlastMetadataCap").is_empty());
+        assert!(scheduled.created(&w.h, "creator_authority", "CreatorMetadataCap").is_empty());
 
         // Invalid replacements cannot erase the already accepted recipient or its deadline.
         let mut b = ProgrammableTransactionBuilder::new();
@@ -552,7 +552,7 @@ fn cap_recipient_schedules_enforce_live_roles_and_roll_back_failed_replacements(
         assert_eq!(w.h.object(caps[0]).owner().get_address_owner_address()?, recipient);
         assert_eq!(applied.events_of("events", reassigned_name),
             [bcs::to_bytes(&(launch.launch, caps[0], recipient))?.as_slice()]);
-        let other_cap = if cap_type == "BlastMetadataCap" { "CurveFeeCap" } else { "BlastMetadataCap" };
+        let other_cap = if cap_type == "CreatorMetadataCap" { "CurveFeeCap" } else { "CreatorMetadataCap" };
         assert!(applied.created(&w.h, "creator_authority", other_cap).is_empty());
     }
     Ok(())

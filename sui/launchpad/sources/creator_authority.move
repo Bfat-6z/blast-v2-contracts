@@ -26,7 +26,7 @@ public struct CurveFeeCap<phantom Meme> has key, store {
 }
 
 /// Authority over one coin's metadata; the launch honors only the cap ID it records.
-public struct BlastMetadataCap<phantom Meme> has key, store {
+public struct CreatorMetadataCap<phantom Meme> has key, store {
     id: UID,
 }
 
@@ -65,8 +65,8 @@ public fun destroy_curve_fee_cap<Meme>(self: CurveFeeCap<Meme>) {
 
 /// Deletes a metadata cap. Deleting the live cap freezes the metadata until an administrator
 /// reassigns the cap.
-public fun destroy_metadata_cap<Meme>(self: BlastMetadataCap<Meme>) {
-    let BlastMetadataCap { id } = self;
+public fun destroy_creator_metadata_cap<Meme>(self: CreatorMetadataCap<Meme>) {
+    let CreatorMetadataCap { id } = self;
 
     id.delete();
 }
@@ -84,7 +84,7 @@ public(package) fun claim_creator_caps<Meme>(
     attestation: Option<vector<u8>>,
     clock: &Clock,
     ctx: &mut TxContext,
-): (CurveFeeCap<Meme>, BlastMetadataCap<Meme>) {
+): (CurveFeeCap<Meme>, CreatorMetadataCap<Meme>) {
     let claimant = ctx.sender();
 
     match (recipient) {
@@ -110,15 +110,15 @@ public(package) fun claim_creator_caps<Meme>(
         },
     };
 
-    (new_curve_fee_cap<Meme>(ctx), new_metadata_cap<Meme>(ctx))
+    (new_curve_fee_cap<Meme>(ctx), new_creator_metadata_cap<Meme>(ctx))
 }
 
 public(package) fun new_curve_fee_cap<Meme>(ctx: &mut TxContext): CurveFeeCap<Meme> {
     CurveFeeCap { id: object::new(ctx) }
 }
 
-public(package) fun new_metadata_cap<Meme>(ctx: &mut TxContext): BlastMetadataCap<Meme> {
-    BlastMetadataCap { id: object::new(ctx) }
+public(package) fun new_creator_metadata_cap<Meme>(ctx: &mut TxContext): CreatorMetadataCap<Meme> {
+    CreatorMetadataCap { id: object::new(ctx) }
 }
 
 // === Private Functions ===
