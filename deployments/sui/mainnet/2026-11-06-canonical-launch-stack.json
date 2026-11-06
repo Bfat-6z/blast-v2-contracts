@@ -1,0 +1,1152 @@
+{
+  "schemaVersion": 1,
+  "network": "sui:mainnet",
+  "chainId": "35834a8a",
+  "environment": "mainnet",
+  "timestampUtc": "2026-11-06T18:07:20.484437+00:00",
+  "repository": {
+    "url": "https://github.com/interest-protocol/blast-v2-contracts",
+    "commit": "86ee8cf9df8e9b2ec920f9564e2fda8afbf82106",
+    "dirty": false
+  },
+  "sourceCommit": "86ee8cf9df8e9b2ec920f9564e2fda8afbf82106",
+  "sourceDirtyAtPublication": false,
+  "toolchain": "sui 1.77.2-51d177ad7d65",
+  "deployer": "0x52ecee5e58e2f3a7461cc604f4efcc3b68031e4715456d821e3a2719b0593600",
+  "status": "success",
+  "policyException": "By explicit user instruction, admin, partners and core retain native compatible UpgradeCaps at the multisig pending final audit. They are not immutable. These raw capabilities do not enforce the four wrapped packages' upgrade notice.",
+  "superAdminRecipient": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+  "treasuryRecipient": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+  "adminCaps": [
+    {
+      "objectId": "0xb7ebc6850e7db57d57e9243c3b90dbc1f2f3ff68bc612b6dee177d41dc50c1fb",
+      "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+      "creationDigest": "86y8fsZ7j2VPCLMYD55wqNY62tsGuqGfuV1whK5yp4QM",
+      "roles": [
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_domain::ListingAdmin",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_domain::FeeAdmin",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_domain::TreasuryAdmin",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_domain::ClaimSignerAdmin",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd::package_admin::UnpauseAdmin<0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd::blast_vault_package::BLAST_VAULT_PACKAGE>",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd::package_admin::UnpauseAdmin<0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192::blast_fun::BLAST_FUN>",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd::package_admin::UnpauseAdmin<0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4::blast_presale_package::BLAST_PRESALE_PACKAGE>"
+      ],
+      "status": "live; held by multisig",
+      "roleAssignmentDigest": "7HHZeepG6z5MJDjcnJ517cjN7uAuLdqt5HCpQxmTQZw9",
+      "additionalRoleAssignmentDigest": "8Ti9tHdgi7P7acD6HCG9o1wnYDiPCW9JqKNdjHPEeqGF"
+    },
+    {
+      "objectId": "0x8add07d11645108fbb094429f6979a71a4a4eae7d7eb004dd92441f4f1c94a0d",
+      "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+      "creationDigest": "86y8fsZ7j2VPCLMYD55wqNY62tsGuqGfuV1whK5yp4QM",
+      "roles": [
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_domain::VenueAdmin"
+      ],
+      "status": "live; held by multisig",
+      "roleAssignmentDigest": "7HHZeepG6z5MJDjcnJ517cjN7uAuLdqt5HCpQxmTQZw9"
+    }
+  ],
+  "mvr": {
+    "status": "registered; all resolutions verified; AppCaps and PackageInfo at multisig",
+    "nameRegistrationDigest": "A6MMdvmDmTXzPxf4PZPNcuvoUNUeTbfFB2SFBziNV18N",
+    "packageAssignmentDigest": "7rzqbuV81mRiSYBenXK95cXVSVn3UmeWG5oB59DUNB5X",
+    "suinsReturnDigest": "H1T3f4CKXhMvVk528qJpkpJn1e5vS5Yd4Yke8oL15ecQ",
+    "suinsOwner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"
+  },
+  "releaseGatesRemaining": [
+    "final audit",
+    "complete live venue route release evidence",
+    "canonical SDK/backend/indexer and worker cutover readiness",
+    "explicit multisig unpause after release verification"
+  ],
+  "packages": {
+    "admin": {
+      "packageId": "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+      "version": 1,
+      "publicationDigest": "Ek986kysryZNcZ8ikFfPMaJSgfAkd7UN41yk7DkcAQ29",
+      "publicationStatus": "success",
+      "sourceVerification": {
+        "command": [
+          "/home/ubuntu/.local/bin/sui",
+          "client",
+          "--client.env",
+          "mainnet",
+          "verify-source",
+          "/home/ubuntu/.codex/worktrees/canonical-contracts-20261106/blast-v2-contracts/sui/admin",
+          "--build-env",
+          "mainnet",
+          "--toolchain",
+          "/home/ubuntu/.local/bin/sui"
+        ],
+        "status": "success"
+      },
+      "dependencies": [
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002"
+      ],
+      "packageInfoId": "0xd611312f2d61caedb3027ad8db9fc0f11a31dad5792b61ec68256c4040fd8177",
+      "genesisSharedObjects": [
+        {
+          "objectId": "0xec294e9b3ce0a0ffb123ab1a90dfedd2a368f20744e95c368726283c81e62f52",
+          "objectType": "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd::blast_acl::ACL",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "admins": {
+              "id": "0xd373cfece3ff22d649a92bcb8508bf967177ad023e86397373d8e195ba6a1936",
+              "size": "0"
+            },
+            "id": "0xec294e9b3ce0a0ffb123ab1a90dfedd2a368f20744e95c368726283c81e62f52",
+            "super_admin_cap_id": "0x7f0a3d293a9bb14cfbdc041b00f44ff118b7752710342c42d7f437d1072fc8fc",
+            "super_admin_transfer": {
+              "delay_ms": "604800000",
+              "key": {
+                "dummy_field": false
+              },
+              "parent": "0xec294e9b3ce0a0ffb123ab1a90dfedd2a368f20744e95c368726283c81e62f52",
+              "pending": null
+            }
+          }
+        }
+      ],
+      "upgradeCap": {
+        "objectId": "0x86c81e1f1836abe7bb033d52cfc300ce9cdd4a5811d024773f70182eb28fa9d8",
+        "owner": {
+          "AddressOwner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"
+        },
+        "nativeVersion": 1,
+        "policy": "compatible",
+        "custody": "raw at multisig",
+        "immutable": false
+      },
+      "sourceDigest": "sha256:25f5ad8290a3349f89a0b8909fe92323108cef4d41d94162f662630b7423fac9",
+      "aclId": "0xec294e9b3ce0a0ffb123ab1a90dfedd2a368f20744e95c368726283c81e62f52",
+      "superAdminCap": {
+        "objectId": "0x7f0a3d293a9bb14cfbdc041b00f44ff118b7752710342c42d7f437d1072fc8fc",
+        "owner": {
+          "AddressOwner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"
+        }
+      },
+      "mvr": {
+        "name": "@blastpackages/admin-v2",
+        "appCapId": "0x1e262ba5057501272fb4fb777f7c5056715f953acdd4f69f12cbb543ccb0cfa1",
+        "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+        "resolution": {
+          "package_id": "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd"
+        },
+        "status": "verified"
+      }
+    },
+    "partners": {
+      "packageId": "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54",
+      "version": 1,
+      "publicationDigest": "CrcoEd6KBzL1fcP1AV1nJvBLow1mPUX7WqH1SmcWFpU1",
+      "publicationStatus": "success",
+      "sourceVerification": {
+        "command": [
+          "/home/ubuntu/.local/bin/sui",
+          "client",
+          "--client.env",
+          "mainnet",
+          "verify-source",
+          "/home/ubuntu/.codex/worktrees/canonical-contracts-20261106/blast-v2-contracts/sui/partners",
+          "--build-env",
+          "mainnet",
+          "--toolchain",
+          "/home/ubuntu/.local/bin/sui"
+        ],
+        "status": "success"
+      },
+      "dependencies": [
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd"
+      ],
+      "packageInfoId": "0xcf593200eb55ffcd78b315923bc82a163e73271215d1b79ba450dc77a160692d",
+      "genesisSharedObjects": [],
+      "upgradeCap": {
+        "objectId": "0x10b30b77d3327e233df6fd6dca55da097099b16773fbbf6338b9978a1ceb695c",
+        "owner": {
+          "AddressOwner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"
+        },
+        "nativeVersion": 1,
+        "policy": "compatible",
+        "custody": "raw at multisig",
+        "immutable": false
+      },
+      "mvr": {
+        "name": "@blastpackages/partners-v2",
+        "appCapId": "0x034037a86261b1881beaad28c170215151ac2033359116496d41a888cae46811",
+        "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+        "resolution": {
+          "package_id": "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54"
+        },
+        "status": "verified"
+      }
+    },
+    "core": {
+      "packageId": "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+      "version": 1,
+      "publicationDigest": "DB1L4Uw83hm9bhZLMER8e2NSvUpHZQZzaPocxtnnF2eN",
+      "publicationStatus": "success",
+      "sourceVerification": {
+        "command": [
+          "/home/ubuntu/.local/bin/sui",
+          "client",
+          "--client.env",
+          "mainnet",
+          "verify-source",
+          "/home/ubuntu/.codex/worktrees/canonical-contracts-20261106/blast-v2-contracts/sui/core",
+          "--build-env",
+          "mainnet",
+          "--toolchain",
+          "/home/ubuntu/.local/bin/sui"
+        ],
+        "status": "success"
+      },
+      "dependencies": [
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+        "0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c",
+        "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54"
+      ],
+      "packageInfoId": "0x2a822e1c639341e111f70a02788dacd2d37e032d494f13c5976d768c3ca16a2b",
+      "genesisSharedObjects": [
+        {
+          "objectId": "0x11f54f5cabdf5f1add9b05d54229dee53a16f698e08016aae8a6068b9f281b7e",
+          "objectType": "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_treasury::Treasury",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "destination": {
+              "delay_ms": "172800000",
+              "key": {
+                "dummy_field": false
+              },
+              "parent": "0x11f54f5cabdf5f1add9b05d54229dee53a16f698e08016aae8a6068b9f281b7e",
+              "pending": null,
+              "value": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"
+            },
+            "id": "0x11f54f5cabdf5f1add9b05d54229dee53a16f698e08016aae8a6068b9f281b7e"
+          }
+        }
+      ],
+      "upgradeCap": {
+        "objectId": "0x4e5a5d4751bbbca171ee6539721490295f3e0555911b2e45d0e6dbd0470e2822",
+        "owner": {
+          "AddressOwner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"
+        },
+        "nativeVersion": 1,
+        "policy": "compatible",
+        "custody": "raw at multisig",
+        "immutable": false
+      },
+      "treasuryId": "0x11f54f5cabdf5f1add9b05d54229dee53a16f698e08016aae8a6068b9f281b7e",
+      "mvr": {
+        "name": "@blastpackages/core-v2",
+        "appCapId": "0x84660650bbe98a8dc8d5ca1b29a2c1aaa241a24e8e42f439239d457ced48f391",
+        "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+        "resolution": {
+          "package_id": "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc"
+        },
+        "status": "verified"
+      }
+    },
+    "vault": {
+      "packageId": "0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd",
+      "version": 1,
+      "publicationDigest": "362R9mM89oFkQKPqes1Y1Zm7yi5AiFxkAszw8cAQK3Aj",
+      "publicationStatus": "success",
+      "sourceVerification": {
+        "command": [
+          "/home/ubuntu/.local/bin/sui",
+          "client",
+          "--client.env",
+          "mainnet",
+          "verify-source",
+          "/home/ubuntu/.codex/worktrees/canonical-contracts-20261106/blast-v2-contracts/sui/vault",
+          "--build-env",
+          "mainnet",
+          "--toolchain",
+          "/home/ubuntu/.local/bin/sui"
+        ],
+        "status": "success"
+      },
+      "dependencies": [
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+        "0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c",
+        "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54"
+      ],
+      "packageInfoId": "0xbbdb00c688d737c36b123366fb3a9d5bf574e66d3acb4068465feb7245574953",
+      "genesisSharedObjects": [
+        {
+          "objectId": "0x5e97870db07ea12e1c9c5bafdf0a578c0e7df7867f5800eeeaa6cce87f770c73",
+          "objectType": "0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd::blast_vault_package::VaultRegistry",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "id": "0x5e97870db07ea12e1c9c5bafdf0a578c0e7df7867f5800eeeaa6cce87f770c73",
+            "witnesses": {
+              "admissions": {
+                "contents": []
+              },
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "members": {
+                "contents": []
+              },
+              "parent": "0x5e97870db07ea12e1c9c5bafdf0a578c0e7df7867f5800eeeaa6cce87f770c73",
+              "pending_delay": null
+            }
+          }
+        }
+      ],
+      "wrappingDigest": "5M9XWxgSJ1ppN3YXLUbFBzHmQmswxfTt5gaa1YwqRxFv",
+      "packageAdminId": "0xc8fe804fb63ad60f0755110bfa297dd3535ac1a983a2748f3626faed60ed7c90",
+      "packageVersionId": "0xb9856c7ab88ea4940201c6b429eb7fc42f67d62142286472e378527ee4890b16",
+      "pauseMask": 1,
+      "upgradeCap": {
+        "objectId": "0xd69bafcf63d9e78521b99a45f4503532feeb2ce149164f1b8a9719989cdcdcc2",
+        "nativeVersion": 1,
+        "policy": "compatible",
+        "custody": "sealed inside shared PackageAdmin",
+        "immutable": false,
+        "upgradeDelayMs": 172800000
+      },
+      "publisherId": "0x94f4d5a44f5e67b1d0fae16f1e53b39bb9b022a7f18bf770bb5806491fdf6534",
+      "publicationIdConsumed": "0x330e68a5be4e4557c8e6603578a0c44156e6a19f75bb9b277bf678b5f490b1da",
+      "mvr": {
+        "name": "@blastpackages/vault-v2",
+        "appCapId": "0x2c7752226432fded8031936fc99e123e7a3f703840a645f405099405fa923ab7",
+        "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+        "resolution": {
+          "package_id": "0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd"
+        },
+        "status": "verified"
+      }
+    },
+    "launchpad": {
+      "packageId": "0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192",
+      "version": 1,
+      "publicationDigest": "DwfkEATbTFxxKubdfbni44rV6XFKxfaNY6jhzfcBKb2C",
+      "publicationStatus": "success",
+      "sourceVerification": {
+        "command": [
+          "/home/ubuntu/.local/bin/sui",
+          "client",
+          "--client.env",
+          "mainnet",
+          "verify-source",
+          "/home/ubuntu/.codex/worktrees/canonical-contracts-20261106/blast-v2-contracts/sui/launchpad",
+          "--build-env",
+          "mainnet",
+          "--toolchain",
+          "/home/ubuntu/.local/bin/sui"
+        ],
+        "status": "success"
+      },
+      "dependencies": [
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+        "0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c",
+        "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54"
+      ],
+      "packageInfoId": "0x1b954b48b0d270f3b19ac9237b1cd115f1b5e17b96b59fed585f55776e7dac28",
+      "genesisSharedObjects": [
+        {
+          "objectId": "0x2313c26286ab4809593b4216135cff085ade5882f2e58b44621baf33bcd79e9c",
+          "objectType": "0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192::launch_config::LaunchConfig",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "creation_fee": {
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "parent": "0x2313c26286ab4809593b4216135cff085ade5882f2e58b44621baf33bcd79e9c",
+              "pending": null,
+              "value": "0"
+            },
+            "id": "0x2313c26286ab4809593b4216135cff085ade5882f2e58b44621baf33bcd79e9c",
+            "meme_decimals": {
+              "contents": "Bgk="
+            },
+            "partners": {
+              "acceptance_ends_at_ms": {
+                "id": "0x81efd192ee5288367c60aeaa17df1307c0011eebcaf0009078d2005caa406000",
+                "size": "0"
+              },
+              "parent": "0x2313c26286ab4809593b4216135cff085ade5882f2e58b44621baf33bcd79e9c"
+            },
+            "protocol_allocation": {
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "parent": "0x2313c26286ab4809593b4216135cff085ade5882f2e58b44621baf33bcd79e9c",
+              "pending": null,
+              "value": {
+                "meme_bps": {
+                  "pos0": "250"
+                },
+                "quote_bps": {
+                  "pos0": "150"
+                }
+              }
+            },
+            "protocol_lp_fees": {
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "parent": "0x2313c26286ab4809593b4216135cff085ade5882f2e58b44621baf33bcd79e9c",
+              "pending": null,
+              "value": {
+                "meme_bps": {
+                  "pos0": "1500"
+                },
+                "quote_bps": {
+                  "pos0": "1500"
+                }
+              }
+            },
+            "quotes": {
+              "contents": []
+            },
+            "trade_fees": {
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "parent": "0x2313c26286ab4809593b4216135cff085ade5882f2e58b44621baf33bcd79e9c",
+              "pending": null,
+              "value": {
+                "meme_fee_bps": {
+                  "pos0": "0"
+                },
+                "quote_fee_bps": {
+                  "pos0": "150"
+                }
+              }
+            },
+            "venues": {
+              "admissions": {
+                "contents": []
+              },
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "members": {
+                "contents": []
+              },
+              "parent": "0x2313c26286ab4809593b4216135cff085ade5882f2e58b44621baf33bcd79e9c",
+              "pending_delay": null
+            }
+          }
+        },
+        {
+          "objectId": "0xc0b25b6adc2186c116d5bfa6442194c6cdb09eecc6c6907e98c737662b2c97f1",
+          "objectType": "0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192::runtime_config::RuntimeConfig",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "creator_claim_signers": {
+              "admissions": {
+                "contents": []
+              },
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "members": {
+                "contents": []
+              },
+              "parent": "0xc0b25b6adc2186c116d5bfa6442194c6cdb09eecc6c6907e98c737662b2c97f1",
+              "pending_delay": null
+            },
+            "id": "0xc0b25b6adc2186c116d5bfa6442194c6cdb09eecc6c6907e98c737662b2c97f1",
+            "protocol_fee_share_bps": {
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "parent": "0xc0b25b6adc2186c116d5bfa6442194c6cdb09eecc6c6907e98c737662b2c97f1",
+              "pending": null,
+              "value": {
+                "pos0": "5000"
+              }
+            }
+          }
+        },
+        {
+          "objectId": "0xfd17081d0992842070b4d59ee8eae94a088959a8e6692f06aebe71f39ddf6cc1",
+          "objectType": "0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192::launch::LaunchRegistry",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "id": "0xfd17081d0992842070b4d59ee8eae94a088959a8e6692f06aebe71f39ddf6cc1"
+          }
+        }
+      ],
+      "wrappingDigest": "8Sj5nWyxYVsg3EM59oUSEXudL6iVZCqUPrSQsNgy3tSS",
+      "packageAdminId": "0xc67edfa7f9d00b5a672bad958bbc04973677216b99e3a498ce26791ef95990ff",
+      "packageVersionId": "0x25b905a97e1c4e66be7b332e0d4e4b37a423f7cfb1dbdbe6e088e561df7d0ee3",
+      "pauseMask": 7,
+      "upgradeCap": {
+        "objectId": "0xed2645e7e74cb573d6ab7f5d8b37e226f9f08a8b73d715ed07393df4bcfab5dd",
+        "nativeVersion": 1,
+        "policy": "compatible",
+        "custody": "sealed inside shared PackageAdmin",
+        "immutable": false,
+        "upgradeDelayMs": 172800000
+      },
+      "publisherId": "0xa20e7c97e9960093f2efec191bca7e385e65ba36b2014da483ac6a6d5333e368",
+      "publicationIdConsumed": "0x92ed14628087654a535ccd8f60375a5ab3d260576e172c050888b18a388976d2",
+      "mvr": {
+        "name": "@blastpackages/launchpad-v2",
+        "appCapId": "0x3bc6278b8d42c80ffffd0db2d44a1521d179687e1786f83caff581bb27aae132",
+        "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+        "resolution": {
+          "package_id": "0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192"
+        },
+        "status": "verified"
+      }
+    },
+    "presale": {
+      "packageId": "0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4",
+      "version": 1,
+      "publicationDigest": "3CpYQbvXwqJvVCWVZhWymwe5R3qpfxbFxe55EaH4ouPs",
+      "publicationStatus": "success",
+      "sourceVerification": {
+        "command": [
+          "/home/ubuntu/.local/bin/sui",
+          "client",
+          "--client.env",
+          "mainnet",
+          "verify-source",
+          "/home/ubuntu/.codex/worktrees/canonical-contracts-20261106/blast-v2-contracts/sui/presale",
+          "--build-env",
+          "mainnet",
+          "--toolchain",
+          "/home/ubuntu/.local/bin/sui"
+        ],
+        "status": "success"
+      },
+      "dependencies": [
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+        "0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c",
+        "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54"
+      ],
+      "packageInfoId": "0x096b328ae22cbc20be628b1dd70f9ffe113bfb283bf63ad1ee610bbd3a71cdfd",
+      "genesisSharedObjects": [
+        {
+          "objectId": "0x2e6a741d72a33f1fb97f734c450f4f8713e5f403959cab0e435d7e41b55c65bc",
+          "objectType": "0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4::blast_presale::PresaleRegistry",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "id": "0x2e6a741d72a33f1fb97f734c450f4f8713e5f403959cab0e435d7e41b55c65bc"
+          }
+        },
+        {
+          "objectId": "0x5e61581b1bb526dbe914e972d32c5253e8bff0ebec6acf3570ab228d7f6841af",
+          "objectType": "0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4::creation_policy::CreationPolicy",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "allowed_quotes": {
+              "contents": []
+            },
+            "id": "0x5e61581b1bb526dbe914e972d32c5253e8bff0ebec6acf3570ab228d7f6841af",
+            "partners": {
+              "acceptance_ends_at_ms": {
+                "id": "0xc856a859b4cc5d34c280574cf8dc486c32078025993b7ffb9ae1e2cc166ed3c1",
+                "size": "0"
+              },
+              "parent": "0x5e61581b1bb526dbe914e972d32c5253e8bff0ebec6acf3570ab228d7f6841af"
+            },
+            "venues": {
+              "admissions": {
+                "contents": []
+              },
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "members": {
+                "contents": []
+              },
+              "parent": "0x5e61581b1bb526dbe914e972d32c5253e8bff0ebec6acf3570ab228d7f6841af",
+              "pending_delay": null
+            }
+          }
+        },
+        {
+          "objectId": "0xada8e6835fb4aab775aedd76d4de7ecef87044d4403fb76028615396622f233b",
+          "objectType": "0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4::fee_policy::FeePolicy",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "fees": {
+              "delay_ms": "0",
+              "key": {
+                "dummy_field": false
+              },
+              "parent": "0xada8e6835fb4aab775aedd76d4de7ecef87044d4403fb76028615396622f233b",
+              "pending": null,
+              "value": {
+                "lp_fee_meme_bps": {
+                  "pos0": "1500"
+                },
+                "lp_fee_quote_bps": {
+                  "pos0": "1500"
+                },
+                "raise_bps": {
+                  "pos0": "200"
+                },
+                "token_bps": {
+                  "pos0": "100"
+                }
+              }
+            },
+            "id": "0xada8e6835fb4aab775aedd76d4de7ecef87044d4403fb76028615396622f233b"
+          }
+        }
+      ],
+      "wrappingDigest": "9aXjCRvKHxc1kWmAMc5EjqJ3YcPCaMkhpKisJyr6JEqc",
+      "packageAdminId": "0x315c0fe20ddde9c2f3b75385beb93c440b246c072bc98c28482690a10df56b15",
+      "packageVersionId": "0xd9523cb850fac1d2ac84a31dbc1335e412e1b778d409b091c5eefec3f6133ba7",
+      "pauseMask": 7,
+      "upgradeCap": {
+        "objectId": "0x1721c7f8a85c7fcae3aca4897ccd2adaadcd9834aaeeb8a71a2d43d0da0de740",
+        "nativeVersion": 1,
+        "policy": "compatible",
+        "custody": "sealed inside shared PackageAdmin",
+        "immutable": false,
+        "upgradeDelayMs": 172800000
+      },
+      "publisherId": "0xc4f1794c0d049370467e3989209bba715640bee8e2be4f64d213d3729869695b",
+      "publicationIdConsumed": "0x42bd0822ed06cb6b2a7ebc9551aa869902489a26eed1c0055b00cec82f6d8d59",
+      "mvr": {
+        "name": "@blastpackages/presale-v2",
+        "appCapId": "0xaadc8c0df358f0dc6d0e2990cb89d2dddc06d405c340e2af82aef3bfa40afccb",
+        "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+        "resolution": {
+          "package_id": "0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4"
+        },
+        "status": "verified"
+      }
+    },
+    "migrators": {
+      "packageId": "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4",
+      "version": 1,
+      "publicationDigest": "FK6c3KY1TkfXRkqG5sqmvMpzmf7Ha3UqZMo1Cis1SzVp",
+      "publicationStatus": "success",
+      "sourceVerification": {
+        "command": [
+          "/home/ubuntu/.local/bin/sui",
+          "client",
+          "--client.env",
+          "mainnet",
+          "verify-source",
+          "/home/ubuntu/.codex/worktrees/canonical-contracts-20261106/blast-v2-contracts/sui/migrators",
+          "--build-env",
+          "mainnet",
+          "--toolchain",
+          "/home/ubuntu/.local/bin/sui"
+        ],
+        "status": "success"
+      },
+      "dependencies": [
+        "0xd075338d105482f1527cbfd363d6413558f184dec36d9138a70261e87f486e9c",
+        "0x260693ec785a6e6c9d81d58c7d2ff72f1288ae0fa6a9725abe05a6478b11f084",
+        "0x48dcc51091e692a0c8a64930fc839fb5a8e58de3590c084a8322b9cd34754c36",
+        "0xc4aabc874f5060d3147d8f74c14e3a8a1f9f8d92edea138a51635395ed167cd9",
+        "0x06864a6f921804860930db6ddbe2e16acdf8504495ea7481637a1c8b9a8fe54b",
+        "0xab5e63352d0f05881bdfa1631cc0f7fc1669175a00d608828a924df481a9e4bd",
+        "0xdfaadf86be9af246900d1e3f3b996cf549e7948e662a9977bdd7646d8fa3a778",
+        "0x8569b7efebec65c73b9dc15c5ac2a9542870d286fa79a3feedffbaa94ed53002",
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+        "0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c",
+        "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54",
+        "0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd"
+      ],
+      "packageInfoId": "0xb2df31508fdea3a95d725eaf6df1f99a99a85045859758c83f0014d2674b48fa",
+      "genesisSharedObjects": [
+        {
+          "objectId": "0x7ee32ce175c6aec6bb0c30c1d72a8bea02ea50701a67780b53b6ba84d0dbbf64",
+          "objectType": "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4::venue_config::VenueConfig",
+          "owner": {
+            "Shared": {
+              "initial_shared_version": 1
+            }
+          },
+          "initialContent": {
+            "id": "0x7ee32ce175c6aec6bb0c30c1d72a8bea02ea50701a67780b53b6ba84d0dbbf64"
+          }
+        }
+      ],
+      "wrappingDigest": "8vvZUF6Z3VwgMMEWrKXQroyL4FnyHyDWNpTsypjYvBs7",
+      "packageAdminId": "0x87ce206a4cd4cd334337229368ca03a67f8d00a0d0b40d4c130ac8b0df32cedd",
+      "packageVersionId": "0x05057043d181d3c31f2e1990b6b7ac17c6814feb3069332b47eb8a6cd5d6b6b6",
+      "pauseMask": 0,
+      "upgradeCap": {
+        "objectId": "0xc1c9759f332523aaf632d27f7fc5f4399d94cdf8a6b7bc88419ab63f3195c067",
+        "nativeVersion": 1,
+        "policy": "compatible",
+        "custody": "sealed inside shared PackageAdmin",
+        "immutable": false,
+        "upgradeDelayMs": 172800000
+      },
+      "publisherId": "0x236c3c5fe80ca20e3cad3cc70ab72f69dc2f35f87447237716eaeb9a516559a5",
+      "publicationIdConsumed": "0x051e9b280ffdd32b36262fcb9d2e6cc95c55a2e874467fda8f55a4e295fb6b21",
+      "mvr": {
+        "name": "@blastpackages/migrators-v2",
+        "appCapId": "0xdd61f5cc2bbea973df3f49b86c1e21295d88a19a43fcb6d8e0d571887735167f",
+        "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+        "resolution": {
+          "package_id": "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4"
+        },
+        "status": "verified"
+      }
+    }
+  },
+  "admissions": {
+    "digest": "7HHZeepG6z5MJDjcnJ517cjN7uAuLdqt5HCpQxmTQZw9",
+    "status": "success; live state verified",
+    "coins": {
+      "WAL": "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL",
+      "SUI": "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+      "USDC": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+      "USDsui": "0x44f838219cf67b058f3b37907b655f226153c18e33dfcd0da559a844fea9b1c1::usdsui::USDSUI",
+      "DEEP": "0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270::deep::DEEP"
+    },
+    "venues": [
+      "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4::cetus::Venue",
+      "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4::bluefin::Venue"
+    ],
+    "vaultWitnesses": [
+      "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4::cetus::Venue",
+      "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4::bluefin::Venue",
+      "0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192::blast_fun::PackageWitness",
+      "0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4::blast_presale_package::PackageWitness"
+    ]
+  },
+  "bootstrapProposal": {
+    "digest": "8Ti9tHdgi7P7acD6HCG9o1wnYDiPCW9JqKNdjHPEeqGF",
+    "status": "confirmed successful on mainnet",
+    "noticeMs": 172800000,
+    "claimSignerPublicKeyHex": "01193590e85318a03ff4967934327406d9c619d8e241b49400308d2c7f2bcd1f",
+    "additionalRolesByCap": {
+      "0xb7ebc6850e7db57d57e9243c3b90dbc1f2f3ff68bc612b6dee177d41dc50c1fb": [
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_domain::FeeAdmin",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_domain::TreasuryAdmin",
+        "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc::blast_domain::ClaimSignerAdmin",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd::package_admin::UnpauseAdmin<0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd::blast_vault_package::BLAST_VAULT_PACKAGE>",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd::package_admin::UnpauseAdmin<0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192::blast_fun::BLAST_FUN>",
+        "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd::package_admin::UnpauseAdmin<0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4::blast_presale_package::BLAST_PRESALE_PACKAGE>"
+      ]
+    },
+    "unpauseChecks": "all three pass in simulation; no actual unpause included"
+  },
+  "bootstrapConfiguration": {
+    "digest": "8Ti9tHdgi7P7acD6HCG9o1wnYDiPCW9JqKNdjHPEeqGF",
+    "status": "live values verified; paused",
+    "noticeMs": 172800000,
+    "changedNoticeCount": 10,
+    "claimSignerPublicKeyHex": "01193590e85318a03ff4967934327406d9c619d8e241b49400308d2c7f2bcd1f",
+    "unpauseChecks": "all three passed in pre-signing simulation; not unpaused"
+  },
+  "recordKind": "canonical-launch-stack-deployment",
+  "deploymentStatus": "published; bootstrap configuration confirmed; vault and both products paused",
+  "postDeploymentVerification": {
+    "status": "passed",
+    "timestampUtc": "2026-11-06T19:14:42.986175+00:00",
+    "checkCount": 85,
+    "checks": [
+      {
+        "check": "setup transaction 86y8fsZ7j2VPCLMYD55wqNY62tsGuqGfuV1whK5yp4QM",
+        "passed": true
+      },
+      {
+        "check": "setup transaction 7HHZeepG6z5MJDjcnJ517cjN7uAuLdqt5HCpQxmTQZw9",
+        "passed": true
+      },
+      {
+        "check": "setup transaction 8Ti9tHdgi7P7acD6HCG9o1wnYDiPCW9JqKNdjHPEeqGF",
+        "passed": true
+      },
+      {
+        "check": "canonical root has no pending transfer",
+        "passed": true
+      },
+      {
+        "check": "root transfer delay remains seven days",
+        "passed": true
+      },
+      {
+        "check": "exactly two live AdminCaps",
+        "passed": true
+      },
+      {
+        "check": "SuperAdminCap at multisig",
+        "passed": true
+      },
+      {
+        "check": "no extra active admins",
+        "passed": true
+      },
+      {
+        "check": "AdminCap multisig custody 0xb7ebc6850e7db57d57e9243c3b90dbc1f2f3ff68bc612b6dee177d41dc50c1fb",
+        "passed": true
+      },
+      {
+        "check": "exact role assignments 0xb7ebc6850e7db57d57e9243c3b90dbc1f2f3ff68bc612b6dee177d41dc50c1fb",
+        "passed": true
+      },
+      {
+        "check": "AdminCap multisig custody 0x8add07d11645108fbb094429f6979a71a4a4eae7d7eb004dd92441f4f1c94a0d",
+        "passed": true
+      },
+      {
+        "check": "exact role assignments 0x8add07d11645108fbb094429f6979a71a4a4eae7d7eb004dd92441f4f1c94a0d",
+        "passed": true
+      },
+      {
+        "check": "admin shared singleton 0",
+        "passed": true
+      },
+      {
+        "check": "admin raw UpgradeCap at multisig",
+        "passed": true
+      },
+      {
+        "check": "admin version 1 compatible UpgradeCap",
+        "passed": true
+      },
+      {
+        "check": "admin MVR capabilities at multisig",
+        "passed": true
+      },
+      {
+        "check": "admin MVR resolution",
+        "passed": true
+      },
+      {
+        "check": "partners raw UpgradeCap at multisig",
+        "passed": true
+      },
+      {
+        "check": "partners version 1 compatible UpgradeCap",
+        "passed": true
+      },
+      {
+        "check": "partners MVR capabilities at multisig",
+        "passed": true
+      },
+      {
+        "check": "partners MVR resolution",
+        "passed": true
+      },
+      {
+        "check": "core shared singleton 0",
+        "passed": true
+      },
+      {
+        "check": "core raw UpgradeCap at multisig",
+        "passed": true
+      },
+      {
+        "check": "core version 1 compatible UpgradeCap",
+        "passed": true
+      },
+      {
+        "check": "core MVR capabilities at multisig",
+        "passed": true
+      },
+      {
+        "check": "core MVR resolution",
+        "passed": true
+      },
+      {
+        "check": "vault shared singleton 0",
+        "passed": true
+      },
+      {
+        "check": "vault sealed upgrade cap and Publisher",
+        "passed": true
+      },
+      {
+        "check": "vault compatible upgrade cap version 1",
+        "passed": true
+      },
+      {
+        "check": "vault upgrade delay 48 hours",
+        "passed": true
+      },
+      {
+        "check": "vault operational version and pause mask",
+        "passed": true
+      },
+      {
+        "check": "vault MVR capabilities at multisig",
+        "passed": true
+      },
+      {
+        "check": "vault MVR resolution",
+        "passed": true
+      },
+      {
+        "check": "launchpad shared singleton 0",
+        "passed": true
+      },
+      {
+        "check": "launchpad shared singleton 1",
+        "passed": true
+      },
+      {
+        "check": "launchpad shared singleton 2",
+        "passed": true
+      },
+      {
+        "check": "launchpad sealed upgrade cap and Publisher",
+        "passed": true
+      },
+      {
+        "check": "launchpad compatible upgrade cap version 1",
+        "passed": true
+      },
+      {
+        "check": "launchpad upgrade delay 48 hours",
+        "passed": true
+      },
+      {
+        "check": "launchpad operational version and pause mask",
+        "passed": true
+      },
+      {
+        "check": "launchpad MVR capabilities at multisig",
+        "passed": true
+      },
+      {
+        "check": "launchpad MVR resolution",
+        "passed": true
+      },
+      {
+        "check": "presale shared singleton 0",
+        "passed": true
+      },
+      {
+        "check": "presale shared singleton 1",
+        "passed": true
+      },
+      {
+        "check": "presale shared singleton 2",
+        "passed": true
+      },
+      {
+        "check": "presale sealed upgrade cap and Publisher",
+        "passed": true
+      },
+      {
+        "check": "presale compatible upgrade cap version 1",
+        "passed": true
+      },
+      {
+        "check": "presale upgrade delay 48 hours",
+        "passed": true
+      },
+      {
+        "check": "presale operational version and pause mask",
+        "passed": true
+      },
+      {
+        "check": "presale MVR capabilities at multisig",
+        "passed": true
+      },
+      {
+        "check": "presale MVR resolution",
+        "passed": true
+      },
+      {
+        "check": "migrators shared singleton 0",
+        "passed": true
+      },
+      {
+        "check": "migrators sealed upgrade cap and Publisher",
+        "passed": true
+      },
+      {
+        "check": "migrators compatible upgrade cap version 1",
+        "passed": true
+      },
+      {
+        "check": "migrators upgrade delay 48 hours",
+        "passed": true
+      },
+      {
+        "check": "migrators operational version and pause mask",
+        "passed": true
+      },
+      {
+        "check": "migrators MVR capabilities at multisig",
+        "passed": true
+      },
+      {
+        "check": "migrators MVR resolution",
+        "passed": true
+      },
+      {
+        "check": "launchpad five quote coins",
+        "passed": true
+      },
+      {
+        "check": "launchpad both venues",
+        "passed": true
+      },
+      {
+        "check": "presale five quote coins",
+        "passed": true
+      },
+      {
+        "check": "presale both venues",
+        "passed": true
+      },
+      {
+        "check": "vault has both venues and both issuers",
+        "passed": true
+      },
+      {
+        "check": "LaunchConfig.trade_fees 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "LaunchConfig.creation_fee 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "LaunchConfig.protocol_allocation 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "LaunchConfig.protocol_lp_fees 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "LaunchConfig.venues 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "RuntimeConfig.protocol_fee_share_bps 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "RuntimeConfig.creator_claim_signers 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "CreationPolicy.venues 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "FeePolicy.fees 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "VaultRegistry.witnesses 48 hours; no pending proposal",
+        "passed": true
+      },
+      {
+        "check": "ten bootstrap notices checked",
+        "passed": true
+      },
+      {
+        "check": "creation fee zero",
+        "passed": true
+      },
+      {
+        "check": "launchpad fees unchanged",
+        "passed": true
+      },
+      {
+        "check": "migration allocation unchanged",
+        "passed": true
+      },
+      {
+        "check": "launchpad LP fee share 15 percent each asset",
+        "passed": true
+      },
+      {
+        "check": "trade fee split 50 percent protocol",
+        "passed": true
+      },
+      {
+        "check": "presale fees unchanged",
+        "passed": true
+      },
+      {
+        "check": "launchpad decimals six and nine",
+        "passed": true
+      },
+      {
+        "check": "configured Render claim signer admitted",
+        "passed": true
+      },
+      {
+        "check": "treasury equals super-admin multisig",
+        "passed": true
+      },
+      {
+        "check": "treasury delay 48 hours",
+        "passed": true
+      },
+      {
+        "check": "blastpackages.sui owned by multisig",
+        "passed": true
+      }
+    ]
+  }
+}

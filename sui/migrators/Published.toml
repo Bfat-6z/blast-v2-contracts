@@ -1,0 +1,8 @@
+# Confirmed canonical mainnet publication, 2026-11-06.
+[published.mainnet]
+chain-id = "35834a8a"
+published-at = "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4"
+original-id = "0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4"
+version = 1
+toolchain-version = "1.77.2"
+build-config = { flavor = "sui", edition = "2024" }

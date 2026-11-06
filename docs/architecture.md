@@ -30,17 +30,24 @@ one-off partner venues under `sui/vendors` serve it without importing it. See
 [ADR 0106](decisions/0106-presale-partners.md).
 
 What both sale products share sits below them
-([ADR 0137](decisions/0137-shared-launch-stack-core-vault-and-venues.md)): the
-immutable `blast_core` holds the money vocabulary (basis points, payouts, the fee
+([ADR 0137](decisions/0137-shared-launch-stack-core-vault-and-venues.md)):
+`blast_core` holds the money vocabulary (basis points, payouts, the fee
 split, the protocol-fee ledger, the treasury, Merkle proofs) and the sealed
 values that carry a sale to its venue and prove ownership to its vault, and the
 upgradeable `blast_vault` holds every migrated sale's LP custody, fee split,
 Blast share, partner hold, and holder rewards. The upgradeable `blast_migrators`
 holds the Cetus and Bluefin venues for both products. Each product keeps its own
-venue allowlist, Quote allowlist, and partner list. The stack is seven packages:
+venue allowlist, Quote allowlist, and partner list. The seven-package posture
+recorded by ADR 0137 is
 `blast_admin`, `blast_partners` and `blast_core` immutable; `blast_fun`,
 `blast_presale`, `blast_vault` and `blast_migrators` upgradeable (ADR 0137,
 amended 2026-11-05).
+
+The canonical November deployment defers those terminal actions until final
+audit. Its raw admin, partners and core UpgradeCaps remain at the multisig;
+the four other caps are wrapped. See the [deployment record](../deployments/README.md)
+for current authority, the post-audit vault immutability plan and paused release
+gates.
 
 The package boundaries keep external dependencies and independently governed
 custody outside core.
@@ -74,7 +81,7 @@ until the call that must consume each one has run.
 | Package administration (`blast_admin`) | the generic `PackageVersion<OTW>` and `PackageAdmin<OTW>`: sealed `Publisher` and `UpgradeCap` custody, pause bits, exact-digest upgrades under the compatible policy with the version advanced in the same commit, and deliberate `make_immutable` | ACL membership storage, feature configuration, or state migration |
 | Protocol ACL | root rotation and revocable routine-admin membership | feature configuration, backend keys, creator recipients, or fees |
 | Runtime config | the creator-claim backend keys and the live bonding-curve trade protocol fee share | admin delegation, creator recipient or issuance, cold launch policy, accrued balances, total trade-fee rates, the treasury (`blast_core`), or claim authority |
-| Launch config | a table of admitted Quote types (the creator picks each launch's virtual Quote reserve), mutable generated-Meme decimal admission, Quote/Meme trade-fee rates, a future-launch migration-fee allocation that defaults to zero, Blast's delayed LP-fee share each new vault takes at migration, and the delayed venue allowlist that gates which venue's ticket may start a launch | live launch repricing, per-launch project allocation choices, quote currency-registry objects, DEX costs or dependencies, user balances, derived valuations, or hot trade configuration |
+| Launch config | a table of admitted Quote types (the creator picks each launch's virtual Quote reserve), mutable generated-Meme decimal admission, Quote/Meme trade-fee rates, a delayed future-launch migration-fee allocation, Blast's delayed LP-fee share each new vault takes at migration, and the delayed venue allowlist that gates which venue's ticket may start a launch | live launch repricing, per-launch project allocation choices, quote currency-registry objects, DEX costs or dependencies, user balances, derived valuations, or hot trade configuration |
 | Registry/config | global limits, other fee ceilings, emergency state | user balances or curve math |
 | Launch ticket | one-time-witness currency creation, exact supply mint, and pre-launch supply and metadata custody; the `TreasuryCap` travels beside it under the launchpad's seal (`blast_core::sealed_treasury_cap`) | venue binding, decimal policy, trades, metadata updates, or migration |
 | Launch initializer | no-ability construction by `launch::new` from the ticket, the sealed `TreasuryCap` it alone opens, and a redeemed venue ticket; creator setters for target, plan, LP-fee split, and opening round; `finalize` checks every invariant | persistence beyond its transaction or any post-migration behavior |
@@ -379,7 +386,8 @@ fee-split and Blast-share changes always wait a fixed 48 hours. The vault's venu
 admissions start at zero notice, so Blast admits its venues and raises that
 notice before unpausing the vault. Pausing, cancellation and
 upgrading never reset an applied notice. The backend creator-claim signer remains
-a separate immediate, revocable ACL setting (ADR 0134).
+a separate runtime setting: admission waits the configured signer notice,
+and revocation is immediate (ADR 0134).
 
 Boosts margin recovery separates the ability to open risk from the ability to
 reduce it ([ADR 0124](decisions/0124-margin-recovery-and-initial-headroom.md)).

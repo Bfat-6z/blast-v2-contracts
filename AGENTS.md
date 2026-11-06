@@ -16,10 +16,10 @@ For unpublished lineages, change APIs and their callers together, remove
 obsolete paths, and renumber each error namespace sequentially from zero.
 Update exact-abort tests and source gates with the new codes.
 
-The launch stack is greenfield: its seven packages (ADR 0137) and the per-coin
-templates and vendors have no live publication, so nothing preserves an older
-launch lineage, its records, or backwards compatibility. Their publication
-metadata starts with the fresh stack's own records in `deployments/`.
+Before launch-stack publication or upgrade, consult `deployments/README.md`
+for its live lineages, custody and audit deferrals. A publication binding names
+a live package even while its products remain paused. Unpublished per-coin
+templates and vendors remain greenfield.
 
 Still-published packages outside that stack keep their source, type origins,
 abort identities, upgrade rules, and publication metadata: the immutable OTC

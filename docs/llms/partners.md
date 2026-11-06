@@ -11,8 +11,9 @@ Blast's fee (0% to 80%) and a recipient address. A company holds one
 Users never pay for a partner: a partner is only ever paid out of Blast's own
 fee. Initial shares apply immediately. A later share or managing cap Blast
 proposes applies only when someone applies it, at least seven days after the
-proposal. The module never changes that notice and the package is published
-immutable, so no one can shorten it.
+proposal. The module never changes that notice. Canonical immutability is
+deferred until final audit; a native compatible UpgradeCap remains at the
+multisig without an enforced upgrade notice.
 
 ### Objects and authority
 
@@ -227,7 +228,7 @@ Rules common to every product:
 ### Time rules
 
 - Delay: `blast_partners::blast_partners::delay_ms()` returns 604,800,000 (seven
-  days). It is a compile-time constant of an immutable package.
+  days). It is a compile-time constant; current upgrade authority is recorded in the deployment record.
 - The initial share and managing cap apply at registration, without a Clock.
 - A proposed share or cap can be applied by the first transaction whose `Clock`
   reads `ready_at_ms` or later; it takes effect only when `apply_share` or
@@ -364,7 +365,7 @@ launch Meme, Quote, and SUI; presale Quote; LP fees in both pool assets.
 
 **Can Blast change my share without notice?** No. Every share or cap change
 waits seven days, visible on chain the moment it is proposed, and only then can
-anyone apply it. The notice is fixed in immutable code.
+anyone apply it. The notice is fixed in the published code.
 
 **Can I change my recipient myself?** Yes, with your `PartnerCap` through
 `blast_partners::blast_partners::set_recipient`; it applies at once.
