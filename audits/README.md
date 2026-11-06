@@ -7,7 +7,7 @@ This directory preserves four reports, each tied to its reviewed source:
 | [Asymptotic - October 2026](blast-launchpad-asymptotic-oct-2026.pdf) | `01d76596` | External audit of the earlier launchpad |
 | [Claude (Fable 5.1) - November 2026](blast-launch-stack-claude-nov-2026.pdf) | `4fe8d739` | AI security review of the shared launch stack; findings remediated in #217 |
 | [Astra using Trail of Bits skills - November 2026](blast-launch-stack-astra-nov-2026.pdf) | `d80f2834` | AI security review of the shared launch stack; one informational documentation finding corrected in the accompanying documentation changes |
-| [GiveRep / Eason Chen - November 2026 (draft)](blast-launch-stack-giverep-nov-2026.pdf) | `850d8227`, `8c04789d`, `b50d0c3b` | Launch-stack assessment and remediation review; original draft preserved, with later project dispositions below |
+| [GiveRep / Eason Chen - November 2026](blast-launch-stack-giverep-nov-2026.pdf) | `850d8227`, `8c04789d`, `b50d0c3b` | Final delivered launch-stack assessment and remediation review; original PDF preserved, with later project dispositions below |
 
 The Claude and Astra reports are AI-conducted reviews. The Astra review applies
 Trail of Bits' public skills; it was not performed or endorsed by Trail of Bits.
@@ -15,9 +15,9 @@ The seven packages of
 [ADR 0137](../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md),
 the templates and the vendors are a fresh lineage with external-audit and
 quiet-period release gates before vault immutability (#195). The GiveRep report
-is a draft for client review; its inclusion does not establish completion of
-those gates. The October Asymptotic report covers the earlier launchpad at the
-revisions listed below.
+is the final delivered assessment of its listed revisions; its inclusion alone
+does not establish completion of all release gates. The October Asymptotic
+report covers the earlier launchpad at the revisions listed below.
 
 Retain published reports when their reviewed code is superseded, and label their
 scope and reviewed revisions. Boosts' review record is
@@ -194,10 +194,13 @@ including the cover). Prepared by **GiveRep, Eason Chen**, issued **6 November
 preserved byte-for-byte under a descriptive repository filename; its original
 filename was `Blast_fun_Security_Assessment.pdf`.
 
-**Report status: Draft for client review.** The PDF is the original assessment
-record, not a final sign-off or a review of the later remediation commits below.
-The project follow-up is recorded separately so the draft's original open items
-and failing checks are not mistaken for the status of later source.
+**Report status: Final delivered assessment.** On 6 November 2026, Blast
+confirmed that GiveRep had identified this supplied document as final. The
+original PDF's cover still reads "Draft for client review"; the file is retained
+unchanged to preserve the delivered artifact. Final delivery does not extend
+the reviewed scope to the later remediation commits below. The project
+follow-up is recorded separately so the report's original open items and
+failing checks are not mistaken for the status of later source.
 
 ### Reviewed source and chronology
 
@@ -244,7 +247,7 @@ it does not independently attest operational key custody.
 
 ### Original findings and project follow-up
 
-The draft records **0 critical, 0 high, 0 medium, 5 low, and 15 informational**
+The report records **0 critical, 0 high, 0 medium, 5 low, and 15 informational**
 items. It establishes no confirmed Critical, High or Medium vulnerability.
 The Low count includes potential-authority, economic-exposure, trust and
 operational observations; it is not a count of five proven fund-theft exploits.
@@ -325,7 +328,7 @@ newly rerun results for adding this file. SDK integration of the changed
 compounding ABI is tracked separately in
 [SDK #104](https://github.com/interest-protocol/blast-v2-sdk/issues/104).
 
-Neither the draft nor this record establishes deployed-source parity, current
+Neither the report nor this record establishes deployed-source parity, current
 on-chain value at risk, or certification of a deployed system. Public audits of
 comparable liquid-staking and venue products cited in the PDF provide reference
 material, not assurance of Blast's implementation. The original assessment,
