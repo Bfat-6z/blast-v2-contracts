@@ -230,6 +230,9 @@ change this behavior while the vault or venue package remains upgradeable.
 
 ### Flows
 
+Vault construction and round closure reserve a trailing mutable `TxContext`. Sui supplies
+it for PTB calls; direct Move callers forward their context.
+
 #### Claim the owner's balances
 
 1. Call the sale product's owner-proof function to get an `OwnerProof` (cap holder: the sale's
@@ -975,6 +978,7 @@ public fun close_round<Meme, Quote>(
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
     vault: &mut vault::Vault<Meme, Quote>,
     clock: &Clock,
+    _: &mut TxContext,
 )
 ```
 
@@ -1094,6 +1098,7 @@ public fun new<Meme, Quote, Venue>(
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
     terms: blast_core::migration::VaultTerms,
     pool_id: ID,
+    _: &mut TxContext,
 ): Vault<Meme, Quote>
 
 /// Attaches `position`, holding `liquidity`, under the venue's sealed key with no removal path,

@@ -958,7 +958,7 @@ if [[ ! -f sources/launch/launch.move ]] \
   || [[ "$launch_finalize_body" != *'ticket.destroy(treasury_cap, currency, atomic_supply);'* ]] \
   || rg -q '\b(Witness|migration_witness|MigrationWitness|pool_tick_spacing|pool_fee_rate|pool_tier|treasury_cap_mut|invalid_migration_witness)\b' \
     <<<"$launch_source$(move_normalized_source <<<"$events_facts")" \
-  || [[ "$(move_production_function_contract finalize <<<"$launch_facts")" != 'public:0:0:fun finalize<Meme, Quote>( self: LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, registry: &mut LaunchRegistry, currency: &mut Currency<Meme>, config: &LaunchConfig, creation_fee: Coin<SUI>, ): Launch<Meme, Quote>' ]] \
+  || [[ "$(move_production_function_contract finalize <<<"$launch_facts")" != 'public:0:0:fun finalize<Meme, Quote>( self: LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, registry: &mut LaunchRegistry, currency: &mut Currency<Meme>, config: &LaunchConfig, creation_fee: Coin<SUI>, _: &mut TxContext, ): Launch<Meme, Quote>' ]] \
   || [[ "$(move_production_function_contract set_partner <<<"$launch_facts")" != 'public:0:0:fun set_partner<Meme, Quote>( self: &mut LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, partner: &Partner, clock: &Clock, )' ]] \
   || ! in_order 'config.assert_partner(' 'self.partner_id = option::some(partner_id);' \
     <<<"$(move_production_body set_partner <<<"$launch_facts")" \

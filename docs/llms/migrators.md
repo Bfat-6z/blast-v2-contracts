@@ -108,6 +108,9 @@ admin signs in with `blast_acl::sign_in` on the shared `blast_acl::ACL` to get t
 
 ### Flows
 
+Bluefin preparation reserves a trailing mutable `TxContext`, like Cetus preparation.
+Sui supplies it for PTB calls; direct Move callers forward their context.
+
 Every venue call takes the migrators `PackageVersion<BLAST_MIGRATORS>` (shared) and checks it
 before anything else. Calls that also mutate the vault take the vault package's version too, because
 each package checks only its own version.

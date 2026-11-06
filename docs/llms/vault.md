@@ -53,6 +53,9 @@ change this behavior while the vault or venue package remains upgradeable.
 
 ### Flows
 
+Vault construction and round closure reserve a trailing mutable `TxContext`. Sui supplies
+it for PTB calls; direct Move callers forward their context.
+
 #### Claim the owner's balances
 
 1. Call the sale product's owner-proof function to get an `OwnerProof` (cap holder: the sale's

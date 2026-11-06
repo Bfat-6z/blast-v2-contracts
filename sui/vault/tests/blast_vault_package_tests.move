@@ -50,6 +50,7 @@ fun products_and_venues_are_listed_at_launch_while_the_package_is_paused() {
         f.version(),
         terms,
         vault_fixture::pool_id(),
+        scenario.ctx(),
     );
     destroy(vault);
     destroy(treasury);
@@ -224,6 +225,7 @@ fun an_admitted_venue_creates_vaults_after_its_delay() {
         f.version(),
         terms,
         vault_fixture::pool_id(),
+        scenario.ctx(),
     );
     destroy(vault);
     destroy(registry);
@@ -279,6 +281,7 @@ fun a_removed_venue_cannot_create_vaults() {
             f.version(),
             terms,
             vault_fixture::pool_id(),
+            scenario.ctx(),
         ),
     );
 

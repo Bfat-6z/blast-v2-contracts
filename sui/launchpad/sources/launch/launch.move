@@ -225,6 +225,7 @@ public fun finalize<Meme, Quote>(
     currency: &mut Currency<Meme>,
     config: &LaunchConfig,
     creation_fee: Coin<SUI>,
+    _: &mut TxContext,
 ): Launch<Meme, Quote> {
     package_version.assert_current(constants::version!());
 
@@ -345,6 +346,7 @@ public fun share<Meme, Quote>(
     mut self: Launch<Meme, Quote>,
     package_version: &PackageVersion<BLAST_FUN>,
     clock: &Clock,
+    _: &mut TxContext,
 ) {
     package_version.assert_current(constants::version!());
 
@@ -630,6 +632,7 @@ public fun settle_opening_round<Meme, Quote>(
     package_version: &PackageVersion<BLAST_FUN>,
     runtime_config: &RuntimeConfig,
     clock: &Clock,
+    _: &mut TxContext,
 ) {
     package_version.assert_current(constants::version!());
 

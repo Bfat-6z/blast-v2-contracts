@@ -167,7 +167,7 @@ public fun migrate<Meme, Quote, CoinA, CoinB>(
     let pool_id = position.pool_id();
     let liquidity = position.liquidity();
     let burn_proof = lp_burn::burn_lp_v2(burn_manager, position, ctx);
-    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id)
+    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx)
         .share_with_position(
             &Venue(),
             treasury,

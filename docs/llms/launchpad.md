@@ -170,6 +170,9 @@ the supply; choose a seedable target, allocation and admitted coin precision.
 
 ### Flows
 
+Launch construction, sharing, and opening-round settlement reserve a trailing mutable
+`TxContext`. Sui supplies it for PTB calls; direct Move callers forward their context.
+
 Creating a launch takes three transactions, because each step needs an object the previous one
 creates. `Clock` is the shared object at `0x6`.
 

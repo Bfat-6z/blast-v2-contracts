@@ -157,6 +157,9 @@ change custody behavior while those packages remain upgradeable.
 
 ### Flows
 
+Sharing, settlement, and unlaunched cancellation reserve a trailing mutable `TxContext`.
+Sui supplies it for PTB calls; direct Move callers forward their context.
+
 #### Publication and initial configuration
 
 1. Publish the package. The deployer receives the unique

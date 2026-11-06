@@ -41,7 +41,7 @@ fun a_published_round_pays_each_leaf_once_and_returns_the_rest_at_close() {
     assert_eq!(vault_fixture::take_coin_value<QUOTE>(&scenario, ALICE), 10);
 
     f.clock_mut().increment_for_testing(CLAIM_WINDOW_MS);
-    round.close_round(f.version(), &mut vault, f.clock());
+    round.close_round(f.version(), &mut vault, f.clock(), scenario.ctx());
 
     let (unreserved_meme, unreserved_quote) = vault.rewards_balances();
     assert_eq!(vector[unreserved_meme, unreserved_quote], vector[900, 990]);
@@ -173,10 +173,10 @@ fun claims_close_at_the_deadline() {
 #[test]
 #[expected_failure(abort_code = blast_vault::errors::EClaimsStillOpen, location = blast_vault::holder_rewards)]
 fun a_round_cannot_close_before_its_deadline() {
-    let (scenario, mut f, mut vault, round, _) = two_leaf_round();
+    let (mut scenario, mut f, mut vault, round, _) = two_leaf_round();
     f.clock_mut().increment_for_testing(CLAIM_WINDOW_MS - 1);
 
-    round.close_round(f.version(), &mut vault, f.clock());
+    round.close_round(f.version(), &mut vault, f.clock(), scenario.ctx());
 
     abort_with_vault(scenario, f, vault)
 }
@@ -184,12 +184,12 @@ fun a_round_cannot_close_before_its_deadline() {
 #[test]
 #[expected_failure(abort_code = blast_vault::errors::EWrongVault, location = blast_vault::holder_rewards)]
 fun a_round_cannot_close_into_another_vault() {
-    let (scenario, mut f, vault, round, _) = two_leaf_round();
+    let (mut scenario, mut f, vault, round, _) = two_leaf_round();
     let terms = f.terms_sealed_by(vault_fixture::venue(), owner_split());
-    let mut other = f.new_vault(terms);
+    let mut other = f.new_vault(terms, scenario.ctx());
     f.clock_mut().increment_for_testing(CLAIM_WINDOW_MS);
 
-    round.close_round(f.version(), &mut other, f.clock());
+    round.close_round(f.version(), &mut other, f.clock(), scenario.ctx());
 
     destroy(other);
     abort_with_vault(scenario, f, vault)
@@ -218,10 +218,10 @@ fun settling_the_gas_reserve_pays_the_treasury_and_returns_the_rest_at_once() {
 
 #[test]
 fun an_unsettled_gas_reserve_returns_at_close() {
-    let (scenario, mut f, mut vault, round, _) = two_leaf_round();
+    let (mut scenario, mut f, mut vault, round, _) = two_leaf_round();
     f.clock_mut().increment_for_testing(CLAIM_WINDOW_MS);
 
-    round.close_round(f.version(), &mut vault, f.clock());
+    round.close_round(f.version(), &mut vault, f.clock(), scenario.ctx());
 
     let (unreserved_meme, unreserved_quote) = vault.rewards_balances();
     assert_eq!(vector[unreserved_meme, unreserved_quote], vector[1_000, 1_000]);
@@ -254,7 +254,7 @@ fun a_reimbursement_above_the_reserve_is_rejected() {
 fun the_gas_reserve_cannot_settle_into_another_vault() {
     let (mut scenario, mut f, vault, mut round, _) = two_leaf_round();
     let terms = f.terms_sealed_by(vault_fixture::venue(), owner_split());
-    let mut other = f.new_vault(terms);
+    let mut other = f.new_vault(terms, scenario.ctx());
 
     round.settle_gas_reserve(&rewards_admin(), f.version(), &mut other, 1, scenario.ctx());
 
@@ -620,11 +620,11 @@ fun the_admin_pause_stops_gas_settlement() {
 
 #[test]
 fun the_admin_pause_never_stops_closing_a_round() {
-    let (scenario, mut f, mut vault, round, _) = two_leaf_round();
+    let (mut scenario, mut f, mut vault, round, _) = two_leaf_round();
     package_admin::pause(f.version_mut(), &pause_admin(), constants::admin_pause_bit!());
     f.clock_mut().increment_for_testing(CLAIM_WINDOW_MS);
 
-    round.close_round(f.version(), &mut vault, f.clock());
+    round.close_round(f.version(), &mut vault, f.clock(), scenario.ctx());
 
     assert_eq!(vault.next_round(), 1);
     finish_vault(scenario, f, vault);

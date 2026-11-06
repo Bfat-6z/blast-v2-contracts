@@ -128,6 +128,7 @@ public fun new<Meme, Quote, Venue>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     terms: VaultTerms,
     pool_id: ID,
+    _: &mut TxContext,
 ): Vault<Meme, Quote> {
     package_version.assert_current(constants::version!());
     registry.assert_venue<Venue>();

@@ -62,6 +62,15 @@ Dependencies point inward only. Both products and the vault depend on `blast_cor
 on `blast_core` and `blast_vault`; vendor migrators depend on `blast_core` and `blast_presale`. No
 product imports the vault or a venue, and no venue imports a product.
 
+### Transaction context in upgradeable lifecycle APIs
+
+Reserve a trailing mutable `TxContext` in the upgradeable products' construction, sharing and
+settlement transitions, venue preparation, vault construction and reward-round closure, even
+when the implementation does not use it yet. Compatible upgrades cannot add an argument to an
+existing public function. Direct Move callers forward their context; Sui injects it into PTB
+calls. An unused context adds no authorization or PTB isolation. This decision applies to the
+unpublished launch stack; published Blast SUI and Boosts are outside its scope.
+
 ### One implementation per money concept
 
 - **Basis points and apportionment.** One `Bps` and one exact largest-remainder apportionment with an

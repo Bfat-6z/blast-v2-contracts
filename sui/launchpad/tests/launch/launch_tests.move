@@ -1440,7 +1440,7 @@ fun share_checks_the_version_before_already_shared_lifecycle() {
         let launch = f.open_launch(launch);
         f.package_version.set_version_for_testing(2);
 
-        launch.share(&f.package_version, &f.clock);
+        launch.share(&f.package_version, &f.clock, f.ctx!());
     });
 
     fixture.end();
@@ -3209,7 +3209,14 @@ fun finalize_rejects_a_creation_fee_other_than_the_configured_one() {
         let mut currency = f.take_currency();
         let creation_fee = coin::mint_for_testing<SUI>(CREATION_FEE - 1, f.ctx!());
 
-        destroy(initializer.finalize(&f.package_version, &mut f.registry, &mut currency, &f.config, creation_fee));
+        destroy(initializer.finalize(
+            &f.package_version,
+            &mut f.registry,
+            &mut currency,
+            &f.config,
+            creation_fee,
+            f.ctx!(),
+        ));
         destroy(currency);
     });
 
@@ -4712,6 +4719,7 @@ fun launch_finalize<Quote>(
         &mut currency,
         &self.config,
         creation_fee,
+        self.scenario.ctx(),
     );
     test_scenario::return_to_address(COIN_REGISTRY, currency);
 
@@ -4791,8 +4799,8 @@ fun launch_mint_extra_supply_and_finalize(
     destroy(self.finalize_launch(initializer));
 }
 
-fun share_launch(self: &LaunchFixture, launch: Launch<LAUNCH_TESTS, TEST_QUOTE>) {
-    launch.share(&self.package_version, &self.clock);
+fun share_launch(self: &mut LaunchFixture, launch: Launch<LAUNCH_TESTS, TEST_QUOTE>) {
+    launch.share(&self.package_version, &self.clock, self.scenario.ctx());
 }
 
 /// Shares the launch and takes it back in the next transaction from the same sender.

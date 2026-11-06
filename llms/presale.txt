@@ -337,6 +337,9 @@ change custody behavior while those packages remain upgradeable.
 
 ### Flows
 
+Sharing, settlement, and unlaunched cancellation reserve a trailing mutable `TxContext`.
+Sui supplies it for PTB calls; direct Move callers forward their context.
+
 #### Publication and initial configuration
 
 1. Publish the package. The deployer receives the unique
@@ -1451,6 +1454,9 @@ admin signs in with `blast_acl::sign_in` on the shared `blast_acl::ACL` to get t
 
 ### Flows
 
+Bluefin preparation reserves a trailing mutable `TxContext`, like Cetus preparation.
+Sui supplies it for PTB calls; direct Move callers forward their context.
+
 Every venue call takes the migrators `PackageVersion<BLAST_MIGRATORS>` (shared) and checks it
 before anything else. Calls that also mutate the vault take the vault package's version too, because
 each package checks only its own version.
@@ -1885,6 +1891,9 @@ The current code exposes no vault closure or position withdrawal. Upgrade author
 change this behavior while the vault or venue package remains upgradeable.
 
 ### Flows
+
+Vault construction and round closure reserve a trailing mutable `TxContext`. Sui supplies
+it for PTB calls; direct Move callers forward their context.
 
 #### Claim the owner's balances
 
@@ -3019,6 +3028,7 @@ public fun share<SaleToken, Quote>(
     package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     commitment_starts_at_ms: u64,
     clock: &Clock,
+    _: &mut TxContext,
 )
 
 /// Replaces this sale's snapshot of Blast's rates before its window starts, while nobody can have
@@ -3080,6 +3090,7 @@ public fun settle<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
+    _: &mut TxContext,
 )
 
 /// Cancels a funded presale still unmigrated at its LP deadline, preserving all
@@ -3088,6 +3099,7 @@ public fun cancel_unlaunched<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &blast_admin::package_version::PackageVersion<blast_presale_package::BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
+    _: &mut TxContext,
 )
 
 /// Delivers one participant's pro-rata tokens and overflow Quote after migration,
@@ -3626,6 +3638,7 @@ public fun prepare<Meme, Quote>(
     currency: &Currency<Meme>,
     tick_spacing: u32,
     fee_rate: u64,
+    _: &mut TxContext,
 ): blast_core::migration::VenueTicket<Meme, Quote>
 
 /// Migrates a sale into a new full-range pool at the recorded tier and a `blast_vault` vault:
@@ -5186,6 +5199,7 @@ public fun close_round<Meme, Quote>(
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
     vault: &mut vault::Vault<Meme, Quote>,
     clock: &Clock,
+    _: &mut TxContext,
 )
 ```
 
@@ -5305,6 +5319,7 @@ public fun new<Meme, Quote, Venue>(
     package_version: &blast_admin::package_version::PackageVersion<blast_vault_package::BLAST_VAULT_PACKAGE>,
     terms: blast_core::migration::VaultTerms,
     pool_id: ID,
+    _: &mut TxContext,
 ): Vault<Meme, Quote>
 
 /// Attaches `position`, holding `liquidity`, under the venue's sealed key with no removal path,

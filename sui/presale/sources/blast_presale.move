@@ -610,6 +610,7 @@ public fun share<SaleToken, Quote>(
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     commitment_starts_at_ms: u64,
     clock: &Clock,
+    _: &mut TxContext,
 ) {
     package_version.assert_current(constants::version!());
 
@@ -815,6 +816,7 @@ public fun settle<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
+    _: &mut TxContext,
 ) {
     package_version.assert_current(constants::version!());
 
@@ -852,6 +854,7 @@ public fun cancel_unlaunched<SaleToken, Quote>(
     self: &mut Presale<SaleToken, Quote>,
     package_version: &PackageVersion<BLAST_PRESALE_PACKAGE>,
     clock: &Clock,
+    _: &mut TxContext,
 ) {
     package_version.assert_current(constants::version!());
 

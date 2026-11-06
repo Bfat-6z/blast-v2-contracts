@@ -43,6 +43,7 @@ public fun prepare<Meme, Quote>(
     currency: &Currency<Meme>,
     tick_spacing: u32,
     fee_rate: u64,
+    _: &mut TxContext,
 ): VenueTicket<Meme, Quote> {
     migrators_version.assert_current(constants::version!());
     assert!(
@@ -122,7 +123,7 @@ public fun migrate<Meme, Quote>(
 
     let pool_id = position.pool_id();
     let liquidity = position.liquidity();
-    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id)
+    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx)
         .share_with_position(
             &Venue(),
             treasury,

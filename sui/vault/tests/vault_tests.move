@@ -37,7 +37,7 @@ fun creation_emits_one_event_in_its_own_transaction() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
-    let vault = f.new_vault(terms);
+    let vault = f.new_vault(terms, scenario.ctx());
     let position = vault_fixture::new_position(scenario.ctx());
     vault.share_with_position(
         &vault_fixture::venue(),
@@ -61,7 +61,7 @@ fun a_rogue_venue_cannot_share_a_fresh_vault() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
-    let vault = f.new_vault(terms);
+    let vault = f.new_vault(terms, scenario.ctx());
     let position = vault_fixture::new_position(scenario.ctx());
 
     vault.share_with_position(
@@ -92,6 +92,7 @@ fun another_admitted_venue_cannot_share_a_fresh_vault() {
         f.version(),
         terms,
         vault_fixture::pool_id(),
+        scenario.ctx(),
     );
     let position = vault_fixture::new_position(scenario.ctx());
 
@@ -164,7 +165,7 @@ fun the_wrong_venue_is_reported_before_zero_liquidity() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
-    let vault = f.new_vault(terms);
+    let vault = f.new_vault(terms, scenario.ctx());
     let position = vault_fixture::new_position(scenario.ctx());
 
     vault.share_with_position(
@@ -232,7 +233,7 @@ fun an_unadmitted_venue_cannot_create_a_vault() {
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
 
-    let vault = f.new_vault_through(&vault_fixture::other_venue(), terms);
+    let vault = f.new_vault_through(&vault_fixture::other_venue(), terms, scenario.ctx());
 
     destroy(vault);
     f.end();
@@ -245,7 +246,7 @@ fun terms_at_the_blast_share_maximum_create_a_vault() {
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 3_000, 3_000, false, false);
 
-    let vault = f.new_vault(terms);
+    let vault = f.new_vault(terms, scenario.ctx());
     let (meme_bps, quote_bps) = vault.protocol_bps_for_testing();
     assert!(meme_bps.value() == 3_000 && quote_bps.value() == 3_000);
 
@@ -264,7 +265,7 @@ fun terms_sealed_by_an_unadmitted_issuer_cannot_create_a_vault() {
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
 
-    destroy(f.new_vault(terms));
+    destroy(f.new_vault(terms, scenario.ctx()));
     f.end();
     scenario.end();
 }
@@ -275,7 +276,7 @@ fun an_admitted_venue_seals_its_own_standalone_terms() {
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_sealed_by(vault_fixture::venue(), owner_split());
 
-    destroy(f.new_vault(terms));
+    destroy(f.new_vault(terms, scenario.ctx()));
     f.end();
     scenario.end();
 }
@@ -301,6 +302,7 @@ fun a_removed_issuer_cannot_create_vaults_for_its_sales() {
             f.version(),
             terms,
             vault_fixture::pool_id(),
+            scenario.ctx(),
         ),
     );
     destroy(registry);
@@ -318,7 +320,7 @@ fun an_unadmitted_venue_is_reported_before_an_unadmitted_issuer() {
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_sealed_by(vault_fixture::stranger_issuer(), owner_split());
 
-    destroy(f.new_vault_through(&vault_fixture::other_venue(), terms));
+    destroy(f.new_vault_through(&vault_fixture::other_venue(), terms, scenario.ctx()));
     f.end();
     scenario.end();
 }
@@ -329,7 +331,7 @@ fun a_position_without_liquidity_is_rejected() {
     let mut scenario = vault_fixture::begin();
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
-    let vault = f.new_vault(terms);
+    let vault = f.new_vault(terms, scenario.ctx());
     let position = vault_fixture::new_position(scenario.ctx());
 
     vault.share_with_position(
@@ -354,7 +356,7 @@ fun a_vault_id_derives_from_the_registry_the_sealing_issuer_and_the_sale() {
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
 
-    let vault = f.new_vault(terms);
+    let vault = f.new_vault(terms, scenario.ctx());
 
     assert_eq!(object::id(&vault), f.derived_vault_id<SaleWitness>(f.sale_id()));
     destroy(vault);
@@ -369,7 +371,7 @@ fun the_fixture_vault_id_is_pinned() {
     let mut f = vault_fixture::start(&mut scenario);
     let terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
 
-    let vault = f.new_vault(terms);
+    let vault = f.new_vault(terms, scenario.ctx());
 
     assert_eq!(
         object::id(&vault),
@@ -387,9 +389,9 @@ fun a_second_vault_for_the_same_issuer_and_sale_is_rejected() {
     let mut f = vault_fixture::start(&mut scenario);
     let first_terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
     let second_terms = f.terms_for(owner_split(), 0, 0, false, false);
-    let first = f.new_vault(first_terms);
+    let first = f.new_vault(first_terms, scenario.ctx());
 
-    let second = f.new_vault(second_terms);
+    let second = f.new_vault(second_terms, scenario.ctx());
 
     destroy(first);
     destroy(second);
@@ -403,9 +405,9 @@ fun the_same_sale_under_another_issuer_gets_another_vault() {
     let mut f = vault_fixture::start(&mut scenario);
     let sale_terms = f.terms_for(owner_split(), 1_500, 1_500, false, false);
     let venue_terms = f.terms_sealed_by(vault_fixture::venue(), owner_split());
-    let sale_vault = f.new_vault(sale_terms);
+    let sale_vault = f.new_vault(sale_terms, scenario.ctx());
 
-    let venue_vault = f.new_vault(venue_terms);
+    let venue_vault = f.new_vault(venue_terms, scenario.ctx());
 
     assert_eq!(object::id(&venue_vault), f.derived_vault_id<TestVenue>(f.sale_id()));
     assert!(object::id(&venue_vault) != object::id(&sale_vault));
