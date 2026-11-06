@@ -88,7 +88,7 @@ on Boosts and 8% on another product.
   it somewhere safe.
 - Blast cannot change your share or your cap without seven days' notice, which
   anyone can read on chain. After the notice anyone, you included, applies the
-  change; Blast may cancel it instead. The notice is fixed in immutable code.
+  change; Blast may cancel it instead. The notice is fixed in the published code.
 - A deal pays only on the products that accept it: Boosts accepts a deal once
   Blast adds it there. If Blast removes it, it stays accepted, and paid, for
   seven more days.
@@ -127,9 +127,10 @@ on Boosts and 8% on another product.
   per deal, and `apply_cap` moves the deal once seven days have passed. A thief
   holding the old cap can redirect payouts until then, so tell integrators to stop
   naming those deals meanwhile.
-- **At launch,** publish `blast_partners` immutable (`blast_admin`, its only
-  Blast dependency, is published immutable first) and commit its `Published.toml`, so the
-  adapter's mainnet build links to it. Then publish the Boosts adapter fresh,
+- **At launch,** bind the canonical `blast_partners` and `blast_admin`
+  publication records. Their immutability is deferred until final audit; native
+  compatible UpgradeCaps remain at the multisig. Commit `Published.toml` so the
+  adapter's mainnet build links to the intended lineage. Then publish the Boosts adapter fresh,
   grant `PartnerAdmin` on the Blast ACL, and add each Boosts deal. Also set each
   vault's admin share: while it is zero, as it is at activation, Blast earns
   nothing and so partners earn nothing.
@@ -245,8 +246,8 @@ also rests on how each package is published:
    it pays back: the reserve fee and at least a fifth of Blast's fee are still
    charged.
 4. Nothing Blast schedules for a partner takes effect sooner than seven days
-   after it was last scheduled. For shares and caps no upgrade can change that,
-   since the partner packages are immutable; the Boosts removal notice holds as
+   after it was last scheduled under the published code. Canonical partner
+   immutability is deferred, so upgrades remain a trust assumption; the Boosts removal notice holds as
    long as the Boosts adapter, which is upgradeable, keeps it.
 5. Only the cap managing a deal can change its recipient; only Blast's partner
    administrator can register deals, schedule shares and move deals between caps;

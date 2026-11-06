@@ -1,5 +1,9 @@
 # Blast V2 contracts
 
+The canonical launch stack is published on Sui mainnet and remains paused.
+[Deployment records](deployments/README.md) own its IDs, custody and release
+gates; admin, partners, core and vault immutability awaits the final audit.
+
 Sui Move contracts for Blast V2. Each directory containing a `Move.toml` is an
 independently built package; the `sui/` directory itself is only a workspace.
 

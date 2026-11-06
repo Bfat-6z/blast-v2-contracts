@@ -10,8 +10,9 @@ The initial share and managing cap apply immediately at registration. Later
 changes Blast makes to a partner (its share and which cap manages it) are
 proposals held in `blast_admin::delayed` values with a fixed seven-day notice;
 anyone may apply one once ready, and Blast's partner administrator may cancel it.
-The module never changes the notice, and the package is published immutable with
-`scripts/publish_immutable.sh`, so nobody can shorten it. Payments read the
+The module never changes the notice. The canonical publication retains its
+native compatible UpgradeCap at the multisig until final audit; its intended
+immutability is deferred. See the [deployment record](../../deployments/README.md). Payments read the
 applied share and need no Clock. The cap holder's recipient changes apply at
 once.
 

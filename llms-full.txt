@@ -20,17 +20,17 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
-| `blast_presale` | Presale | not yet published | — | — |
-| `blast_fun` | Launchpad | not yet published | — | — |
-| `blast_migrators` | Cetus and Bluefin venues | not yet published | — | — |
-| `blast_partners` | Partner codes | not yet published | — | — |
+| `blast_presale` | Presale | live | `0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4` | `0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4` |
+| `blast_fun` | Launchpad | live | `0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192` | `0x9c2cef371c0e80648136f7ae65378ac9476e3fdb860538d00290e6e4f975b192` |
+| `blast_migrators` | Cetus and Bluefin venues | live | `0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4` | `0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4` |
+| `blast_partners` | Partner codes | live | `0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54` | `0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54` |
 | `blast_boosts_core` | Boosts core | live; source has changed since | `0xac10e88ff25bd98a841f60cfcdc4006b4ad3d3afb577b5024043798ff7f4cafe` | `0xac10e88ff25bd98a841f60cfcdc4006b4ad3d3afb577b5024043798ff7f4cafe` |
 | `blast_boosts_products` | Boost product tags | live; source has changed since | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` | `0xe9b3d42d4e4f6a97aaa43884b155c42abd8c2c62bba9a51e8847d7b05f3717ba` |
 | `blast_boosts_aftermath` | Boosts Aftermath adapter | not yet published | — | — |
 | `blast_sui` | blastSUI and funSUI | not yet published | — | — |
-| `blast_core` | Shared core | not yet published | — | — |
-| `blast_vault` | LP vault | not yet published | — | — |
-| `blast_admin` | Administration | not yet published | — | — |
+| `blast_core` | Shared core | live | `0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc` | `0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc` |
+| `blast_vault` | LP vault | live | `0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd` | `0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd` |
+| `blast_admin` | Administration | live | `0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd` | `0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd` |
 | `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | not yet published | — | — |
 
 ## Calling Blast contracts
@@ -139,7 +139,8 @@ Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
-| Immutable | `blast_admin`, `blast_partners`, `blast_core`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
+| Deferred immutability | `blast_admin`, `blast_partners`, `blast_core` | The canonical publication retains raw compatible UpgradeCaps at the multisig until final audit. These caps have no enforced upgrade notice. Consult the deployment record before assuming immutability. |
+| Immutable | `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use a version object. |
 | Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<OTW>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
@@ -183,7 +184,7 @@ run) before signing it.
 
 ## Presale
 
-> **Deployment status:** `blast_presale` and `blast_aftermath_dao_presale` are not yet published on mainnet; their interface may change before publication.
+> **Deployment status:** `blast_presale` is live on mainnet. `blast_aftermath_dao_presale` is not yet published on mainnet; its interface may change before publication.
 
 ### What it is
 
@@ -1349,7 +1350,7 @@ control; the Cetus migration burn is a separate venue mechanism, and its auto-LP
 
 ## Launchpad
 
-> **Deployment status:** `blast_fun` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_fun` is live on mainnet.
 
 ### What it is
 
@@ -2305,7 +2306,7 @@ never reaches its target stays `Live`, and holders exit by selling to the curve.
 
 ## Cetus and Bluefin venues
 
-> **Deployment status:** `blast_migrators` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_migrators` is live on mainnet.
 
 ### What it is
 
@@ -2798,7 +2799,7 @@ case.
 
 ## Partner codes
 
-> **Deployment status:** `blast_partners` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_partners` is live on mainnet.
 
 ### What it is
 
@@ -2811,8 +2812,9 @@ Blast's fee (0% to 80%) and a recipient address. A company holds one
 Users never pay for a partner: a partner is only ever paid out of Blast's own
 fee. Initial shares apply immediately. A later share or managing cap Blast
 proposes applies only when someone applies it, at least seven days after the
-proposal. The module never changes that notice and the package is published
-immutable, so no one can shorten it.
+proposal. The module never changes that notice. Canonical immutability is
+deferred until final audit; a native compatible UpgradeCap remains at the
+multisig without an enforced upgrade notice.
 
 ### Objects and authority
 
@@ -3027,7 +3029,7 @@ Rules common to every product:
 ### Time rules
 
 - Delay: `blast_partners::blast_partners::delay_ms()` returns 604,800,000 (seven
-  days). It is a compile-time constant of an immutable package.
+  days). It is a compile-time constant; current upgrade authority is recorded in the deployment record.
 - The initial share and managing cap apply at registration, without a Clock.
 - A proposed share or cap can be applied by the first transaction whose `Clock`
   reads `ready_at_ms` or later; it takes effect only when `apply_share` or
@@ -3164,7 +3166,7 @@ launch Meme, Quote, and SUI; presale Quote; LP fees in both pool assets.
 
 **Can Blast change my share without notice?** No. Every share or cap change
 waits seven days, visible on chain the moment it is proposed, and only then can
-anyone apply it. The notice is fixed in immutable code.
+anyone apply it. The notice is fixed in the published code.
 
 **Can I change my recipient myself?** Yes, with your `PartnerCap` through
 `blast_partners::blast_partners::set_recipient`; it applies at once.
@@ -4759,7 +4761,7 @@ and those shares keep their pro-rata part of the vault forever.
 
 ## Shared core
 
-> **Deployment status:** `blast_core` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_core` is live on mainnet.
 
 ### What it is
 
@@ -4922,7 +4924,7 @@ The abort names the module that raised it.
 
 ## Vault
 
-> **Deployment status:** `blast_vault` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_vault` is live on mainnet.
 
 ### What it is
 
@@ -5154,7 +5156,7 @@ notice and only for fees collected afterwards.
 
 ## Administration
 
-> **Deployment status:** `blast_admin` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_admin` is live on mainnet.
 
 ### What it is
 
@@ -5170,8 +5172,9 @@ package's pause bits, and a shared `PackageAdmin<OTW>` that seals the package's
 `Publisher` and `UpgradeCap` so upgrades happen only through role-gated,
 48-hour-notice calls and only the package itself can borrow its `Publisher`. No package can build a second version or PackageAdmin:
 both are created only by `blast_admin::package_admin::wrap` from the package's
-own publication. Blast publishes `blast_admin` immutable (its `UpgradeCap` is
-destroyed in the publish transaction), so none of these rules can change.
+own publication. The canonical deployment defers admin immutability until
+final audit; its native compatible UpgradeCap remains at the multisig with
+no on-chain upgrade notice. The intended immutable posture is not yet applied.
 
 ### Objects and authority
 
@@ -5329,8 +5332,7 @@ what each transaction leaves on chain.
 
 From the next transaction, calls into the previous bytecode abort with code 9
 and the new bytecode, which must compile the next version, is the only one
-that works. Because `blast_admin` is immutable, these administration calls check
-no consumer version: a package whose new bytecode compiled the wrong
+that works. These administration calls check no consumer version: a package whose new bytecode compiled the wrong
 version can still schedule and install a repair.
 
 `blast_admin::package_admin::schedule_make_immutable` and
@@ -5514,7 +5516,7 @@ revocations are immediate. ACL administrator and role grants remain immediate.
 
 ### Time rules
 
-- Root transfer delay: 604,800,000 ms (seven days), fixed in immutable code. The
+- Root transfer delay: 604,800,000 ms (seven days), fixed in the published code. The
   nominee may accept from the first transaction whose `Clock` reads
   `ready_at_ms` or later.
 - The root transfer is a `DelayedAction` with no notice-change path. Accepting
@@ -5526,8 +5528,7 @@ revocations are immediate. ACL administrator and role grants remain immediate.
 
 ### Reading state
 
-`blast_admin` is immutable and keeps a complete read-only API for every type it
-defines, so a future package can explain any state on chain; off-chain readers
+`blast_admin` keeps a complete read-only API for every type it defines; off-chain readers
 can also read object content over RPC, or replay events.
 
 - ACL: `blast_acl::super_admin_cap_id` (the active root; any other
@@ -5677,8 +5678,8 @@ built against an old package ID after an upgrade.
 root cannot act on any package directly.
 
 **Can Blast add a new kind of admin power later?** A new or upgraded consumer
-package can declare a new role type, and root can grant it. The ACL itself is
-immutable and cannot change how sign-in works.
+package can declare a new role type, and root can grant it. The canonical ACL package retains its native compatible UpgradeCap at the
+multisig until final audit; immutability is deferred.
 
 **How do I see every Blast administrator?** Read the shared `ACL` object: each
 key of `admins` is a live `AdminCap` ID and each value lists its roles. Replay
@@ -5698,7 +5699,10 @@ notice, 48 hours from wrap. A notice change itself waits the applied notice, and
 the package cannot be unpaused while any upgrade notice still to come could be zero.
 
 **Which Blast packages can still be upgraded?** Those whose `PackageAdmin`
-still holds an `UpgradeCap`. `blast_admin` and `blast_partners` are immutable.
+still holds an `UpgradeCap`, plus admin, partners and core whose native
+compatible UpgradeCaps remain at the multisig pending final audit. The latter
+three have no on-chain upgrade delay. The intended immutable set also includes
+vault, after its audit and quiet period.
 
 **What stops a stale package version from moving funds?** Every protected call
 checks the shared version against the version compiled into the bytecode,
@@ -5716,7 +5720,7 @@ advances it.
 
 ## API reference: `blast_presale` (Presale)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -6654,7 +6658,7 @@ public fun new<SaleToken: drop>(
 
 ## API reference: `blast_fun` (Launchpad)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -7859,7 +7863,7 @@ public fun revoke_creator_claim_signer(
 
 ## API reference: `blast_migrators` (Cetus and Bluefin venues)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -8231,7 +8235,7 @@ public struct VenueConfig has key {
 
 ## API reference: `blast_partners` (Partner codes)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -11258,7 +11262,7 @@ public fun sync(
 
 ## API reference: `blast_core` (Shared core)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -12000,7 +12004,7 @@ public fun admission_venue(self: &VenueAdmission): TypeName
 
 ## API reference: `blast_vault` (LP vault)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -12721,7 +12725,7 @@ public fun pool_id<Meme, Quote>(self: &Vault<Meme, Quote>): ID
 
 ## API reference: `blast_admin` (Administration)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 

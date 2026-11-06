@@ -20,8 +20,8 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
-| `blast_partners` | Partner codes | not yet published | — | — |
-| `blast_admin` | Administration | not yet published | — | — |
+| `blast_partners` | Partner codes | live | `0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54` | `0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54` |
+| `blast_admin` | Administration | live | `0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd` | `0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd` |
 
 ## Calling Blast contracts
 
@@ -129,7 +129,8 @@ Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
-| Immutable | `blast_admin`, `blast_partners`, `blast_core`, `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
+| Deferred immutability | `blast_admin`, `blast_partners`, `blast_core` | The canonical publication retains raw compatible UpgradeCaps at the multisig until final audit. These caps have no enforced upgrade notice. Consult the deployment record before assuming immutability. |
+| Immutable | `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use a version object. |
 | Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<OTW>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
@@ -173,7 +174,7 @@ run) before signing it.
 
 ## Partner codes
 
-> **Deployment status:** `blast_partners` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_partners` is live on mainnet.
 
 ### What it is
 
@@ -186,8 +187,9 @@ Blast's fee (0% to 80%) and a recipient address. A company holds one
 Users never pay for a partner: a partner is only ever paid out of Blast's own
 fee. Initial shares apply immediately. A later share or managing cap Blast
 proposes applies only when someone applies it, at least seven days after the
-proposal. The module never changes that notice and the package is published
-immutable, so no one can shorten it.
+proposal. The module never changes that notice. Canonical immutability is
+deferred until final audit; a native compatible UpgradeCap remains at the
+multisig without an enforced upgrade notice.
 
 ### Objects and authority
 
@@ -402,7 +404,7 @@ Rules common to every product:
 ### Time rules
 
 - Delay: `blast_partners::blast_partners::delay_ms()` returns 604,800,000 (seven
-  days). It is a compile-time constant of an immutable package.
+  days). It is a compile-time constant; current upgrade authority is recorded in the deployment record.
 - The initial share and managing cap apply at registration, without a Clock.
 - A proposed share or cap can be applied by the first transaction whose `Clock`
   reads `ready_at_ms` or later; it takes effect only when `apply_share` or
@@ -539,7 +541,7 @@ launch Meme, Quote, and SUI; presale Quote; LP fees in both pool assets.
 
 **Can Blast change my share without notice?** No. Every share or cap change
 waits seven days, visible on chain the moment it is proposed, and only then can
-anyone apply it. The notice is fixed in immutable code.
+anyone apply it. The notice is fixed in the published code.
 
 **Can I change my recipient myself?** Yes, with your `PartnerCap` through
 `blast_partners::blast_partners::set_recipient`; it applies at once.
@@ -567,7 +569,7 @@ where you like); Blast takes no cut of it.
 
 ## API reference: `blast_partners` (Partner codes)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -820,7 +822,7 @@ public struct PartnerListDestroyed has copy, drop {
 
 ## API reference: `blast_admin` (Administration)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 

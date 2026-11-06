@@ -14,7 +14,7 @@ Every record must contain at least:
   `PackageVersion` object IDs, and, for `blast_admin`, the singleton `ACL`
   and its `SuperAdminCap`; each `AdminCap` granted with its holder and roles;
 - constructor/init parameters and post-deploy verification results;
-- for `blast_admin`, which is published immutably, the `sourceDigest` printed by
+- for `blast_admin`, the `sourceDigest` printed by
   `sui/admin/scripts/source_digest.sh` at the published commit, beside the
   package's `packageId`; its boundary gate refuses a `Published.toml` entry that
   no record carries or whose recorded digest differs from the current source.
@@ -30,11 +30,25 @@ scripts.
 
 ## Records
 
-The launch stack is greenfield: none of its packages has a live publication, and
-the records of the retired launchpad, migrators, presale, timelock, admin and
-partners lineages and their rehearsals and end-to-end runs were deleted on
-2026-11-05 (they remain in Git history). The fresh stack receives its records
-and compiler publication bindings after its own publication.
+The canonical launch stack was published on 2026-11-06 and remains paused:
+[`2026-11-06-canonical-launch-stack.json`](sui/mainnet/2026-11-06-canonical-launch-stack.json).
+That record owns the package IDs, source verification, genesis objects and
+capability custody. Bootstrap administrators, quote coins, Cetus and Bluefin
+admissions, the creator claim signer and 48-hour configurable notices are
+confirmed. The record also identifies outstanding release gates; publication is not an
+unpause or a completed final audit.
+
+The owner explicitly deferred immutability until the final audit. The canonical
+admin, partners and core native UpgradeCaps are held by the recorded multisig;
+the other four packages' caps are sealed in shared PackageAdmins. Those three
+raw caps have no on-chain upgrade notice. Preserve all seven upgrade authorities
+until the owner authorizes the post-audit immutability step. The intended
+immutable packages are admin, partners, core and vault; vault additionally
+requires its quiet period. No immutability transaction is scheduled. The earlier partial
+publication from the same day was superseded before any MVR package assignment.
+
+Records for older retired launch lineages were deleted on 2026-11-05 and remain
+in Git history.
 
 The kept records are for still-published packages the fresh stack does not
 replace:
@@ -50,9 +64,10 @@ replace:
 Planned launch: **Monday, 9 November 2026**.
 
 The stack is the seven packages of ADR 0137 (amended 2026-11-05) plus the
-per-coin template and the vendor. `blast_admin`, `blast_partners` and
-`blast_core` publish immutable; `blast_vault`, `blast_fun`, `blast_presale` and
-`blast_migrators` publish compatible-upgradeable.
+per-coin template and the vendor. The ADR targets immutability for `blast_admin`,
+`blast_partners` and `blast_core`; the owner deferred that terminal action for
+the current publication until the final audit, as recorded above. `blast_vault`,
+`blast_fun`, `blast_presale` and `blast_migrators` publish compatible-upgradeable.
 
 Before publication, set `blast_acl_root` (admin) and `blast_treasury` (core) to
 their intended nonzero addresses; each `init` aborts on `0x0`.

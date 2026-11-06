@@ -14,8 +14,9 @@ package's pause bits, and a shared `PackageAdmin<OTW>` that seals the package's
 `Publisher` and `UpgradeCap` so upgrades happen only through role-gated,
 48-hour-notice calls and only the package itself can borrow its `Publisher`. No package can build a second version or PackageAdmin:
 both are created only by `blast_admin::package_admin::wrap` from the package's
-own publication. Blast publishes `blast_admin` immutable (its `UpgradeCap` is
-destroyed in the publish transaction), so none of these rules can change.
+own publication. The canonical deployment defers admin immutability until
+final audit; its native compatible UpgradeCap remains at the multisig with
+no on-chain upgrade notice. The intended immutable posture is not yet applied.
 
 ### Objects and authority
 
@@ -173,8 +174,7 @@ what each transaction leaves on chain.
 
 From the next transaction, calls into the previous bytecode abort with code 9
 and the new bytecode, which must compile the next version, is the only one
-that works. Because `blast_admin` is immutable, these administration calls check
-no consumer version: a package whose new bytecode compiled the wrong
+that works. These administration calls check no consumer version: a package whose new bytecode compiled the wrong
 version can still schedule and install a repair.
 
 `blast_admin::package_admin::schedule_make_immutable` and
@@ -358,7 +358,7 @@ revocations are immediate. ACL administrator and role grants remain immediate.
 
 ### Time rules
 
-- Root transfer delay: 604,800,000 ms (seven days), fixed in immutable code. The
+- Root transfer delay: 604,800,000 ms (seven days), fixed in the published code. The
   nominee may accept from the first transaction whose `Clock` reads
   `ready_at_ms` or later.
 - The root transfer is a `DelayedAction` with no notice-change path. Accepting
@@ -370,8 +370,7 @@ revocations are immediate. ACL administrator and role grants remain immediate.
 
 ### Reading state
 
-`blast_admin` is immutable and keeps a complete read-only API for every type it
-defines, so a future package can explain any state on chain; off-chain readers
+`blast_admin` keeps a complete read-only API for every type it defines; off-chain readers
 can also read object content over RPC, or replay events.
 
 - ACL: `blast_acl::super_admin_cap_id` (the active root; any other
@@ -521,8 +520,8 @@ built against an old package ID after an upgrade.
 root cannot act on any package directly.
 
 **Can Blast add a new kind of admin power later?** A new or upgraded consumer
-package can declare a new role type, and root can grant it. The ACL itself is
-immutable and cannot change how sign-in works.
+package can declare a new role type, and root can grant it. The canonical ACL package retains its native compatible UpgradeCap at the
+multisig until final audit; immutability is deferred.
 
 **How do I see every Blast administrator?** Read the shared `ACL` object: each
 key of `admins` is a live `AdminCap` ID and each value lists its roles. Replay
@@ -542,7 +541,10 @@ notice, 48 hours from wrap. A notice change itself waits the applied notice, and
 the package cannot be unpaused while any upgrade notice still to come could be zero.
 
 **Which Blast packages can still be upgraded?** Those whose `PackageAdmin`
-still holds an `UpgradeCap`. `blast_admin` and `blast_partners` are immutable.
+still holds an `UpgradeCap`, plus admin, partners and core whose native
+compatible UpgradeCaps remain at the multisig pending final audit. The latter
+three have no on-chain upgrade delay. The intended immutable set also includes
+vault, after its audit and quiet period.
 
 **What stops a stale package version from moving funds?** Every protected call
 checks the shared version against the version compiled into the bytecode,
