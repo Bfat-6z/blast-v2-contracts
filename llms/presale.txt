@@ -3564,7 +3564,7 @@ public struct PackageWitness() has drop;
 
 ### `blast_migrators::bluefin`
 
-Bluefin coin preparation, migration into `blast_vault` custody, fee collection with auto-LP, settled fee-split updates, and buybacks over custodied concentrated-liquidity principal, for launches and presales alike.  Bluefin pools are keyed by their exact type-parameter order, so this module always creates and expects `Pool<Meme, Quote>` with Meme as coin A.
+Bluefin coin preparation, migration into `blast_vault` custody, fee collection, separate auto-LP compounding, settled fee-split updates, and buybacks over custodied concentrated-liquidity principal, for launches and presales alike.  Bluefin pools are keyed by their exact type-parameter order, so this module always creates and expects `Pool<Meme, Quote>` with Meme as coin A.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/venues/bluefin.move
 
@@ -3630,8 +3630,8 @@ public fun migrate<Meme, Quote>(
     ctx: &mut TxContext,
 )
 
-/// Collects the custodied position's fees, splits them, burns the burn share's Meme, and adds the
-/// auto-LP share back to the position. Anyone may call it.
+/// Collects the custodied position's fees, splits them, and burns the burn share's Meme.
+/// The auto-LP share waits in the vault for `compound_auto_lp`. Anyone may call either operation.
 public fun collect_fees<Meme, Quote>(
     self: &mut blast_vault::vault::Vault<Meme, Quote>,
     migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,

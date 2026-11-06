@@ -132,10 +132,14 @@ when naming another object, such as an admitted cap or a pool, rather than attes
   separate.
 - A venue needs two admissions: each product's own venue allowlist, which lets new sales name it,
   and the vault's witness list, which also lists each product's package witness as an issuer.
-  Every migration checks both lists, so the vault lists the products and a venue before any
-  product admits it, and removing either from the vault's list strands the migrations of every
-  sale that depends on it until it is listed again; Blast reserves that removal for a venue or
-  issuer found unsafe.
+  Each product checks its venue list when creating a sale and issuing preparation admission
+  for a sealed-cap borrow. Removing a venue from a product's list prevents new sales but does
+  not change an existing sale's selected venue.
+  Migration redeems that sale's sealed hand-off, and vault construction checks the live vault
+  registry for both the venue and the issuing product. The vault therefore lists the products
+  and a venue before any product admits it. Removing either from the vault registry strands
+  migrations that need it until it is listed again; Blast reserves that removal for a venue or
+  issuer found unsafe. Product migration pause remains a separate control over existing sales.
 - Launches, presales and vaults have derived object IDs, so a client computes each from the coin
   type or the sale without an indexer: a launch from an id-only `LaunchRegistry` and
   `LaunchKey<Meme>`, a presale from `PresaleRegistry` and `PresaleKey<SaleToken>`, and a vault from

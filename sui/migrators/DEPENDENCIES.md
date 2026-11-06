@@ -51,9 +51,10 @@ venue package over `blast_core` that creates no vault.
   LP-fee policy. A
   venue's permissionless collection hands both collected balances to
   `blast_vault::vault::split_fees`, which pays Blast's share and the address
-  routes and credits the owner, auto-LP, holder-reward, and burn balances; the
-  venue then adds the auto-LP balances back with the venue's own add-liquidity
-  call. The owner schedules or cancels a split change on the vault with an owner
+  routes and credits the owner, auto-LP, holder-reward, and burn balances.
+  Auto-LP balances wait in the vault until anyone calls the venue's separate
+  `compound_auto_lp`; an add-liquidity refusal never blocks collection. The
+  owner schedules or cancels a split change on the vault with an owner
   proof from the sale's product; the notice is a fixed 48 hours. Ready
   application is permissionless: the venue checks readiness, runs the same
   settlement under the old split, then applies the stored split with
@@ -411,11 +412,15 @@ Each migration fixture must show:
 - the returned position belongs to the new pool, has positive liquidity, and
   enters the vault as its one sealed dynamic object field.
 
-Each collection fixture must show the position's liquidity grows only by the
-auto-LP addition, only the vault's own position on its own pool is
-collected, the collected balances are split in full by the vault's Blast share
-and its current fee split, and the auto-LP add fixes the side the other
-balance covers and leaves the rest in the vault.
+Each collection fixture must show that only the vault's own position on its
+own pool is collected, its liquidity is unchanged, and the collected balances
+are split in full by the vault's Blast share and its current fee split. The
+auto-LP share remains in vault custody.
+
+Each separate compounding fixture must call `compound_auto_lp` and show that
+liquidity grows only by the auto-LP addition, the add fixes the side the other
+balance covers, and unused balances remain in the vault. A refused add must
+leave previously completed collections intact.
 
 One venue-semantics row was already **proven against published mainnet
 bytecode on 2026-08-30** by disassembling the live module (fetched through the
@@ -432,7 +437,8 @@ disassemble`); the dev-inspect fixtures re-confirm it end to end:
 | --- | --- |
 | `prepare` | Records the creator's tick spacing for a coin in `Quote`, reserves the pair's Cetus pool creation, and returns the ticket; the product's `new` then aborts unless its venue list admits `cetus::Venue` and the Quote |
 | `migrate` | Permissionless; takes the product's `Migration` first; type arguments `<Meme, Quote, CoinA, CoinB>` with the pool's coins in Cetus order (ADR 0100); burns the position through the shared `BurnManager` |
-| `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and adds the auto-LP share back through `add_liquidity_fix_coin` / `repay_add_liquidity`, fixing the side `clmm_math::get_liquidity_by_amount` says the other balance covers |
+| `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and leaves the auto-LP share in the vault for `compound_auto_lp` |
+| `compound_auto_lp` | Permissionless; adds waiting auto-LP balances at the pool's current price and retains unused balances in the vault; creates the separate auto-LP position on Cetus's first add |
 | `settle_and_apply_fee_split` | Permissionless ready stored proposal; settles under the applied split, then activates the accepted split and notice |
 | `buyback_and_burn` | Under the core `BuybackAdmin` role (ADR 0091); swaps the administrator's `quote_in` of the vault's burn Quote for Meme in its own pool through `flash_swap` / `swap_pay_amount` / `repay_flash_swap` at the widest sqrt-price limit, then burns the Meme if it reaches the administrator's minimum |
 
@@ -463,8 +469,8 @@ Each Cetus fixture must show:
   collections reuse it; and
 - collection and the settled update collect only that position on its own pool
   (another pool aborts with `EPositionPoolMismatch`), leave its liquidity
-  unchanged except for the auto-LP addition, and split through the vault, the
-  update under the old split first.
+  unchanged, and split through the vault, the update under the old split first;
+  `compound_auto_lp` adds liquidity in a separate call.
 
 ### Bluefin revision-3 rows
 
@@ -472,7 +478,8 @@ Each Cetus fixture must show:
 | --- | --- |
 | `prepare` | Records the creator's tier for a coin in `Quote` and returns the ticket; aborts with `EInvalidTier` outside tick spacing 1–400 and fee rate 1–20,000 and with `ESymbolTooLong` above a 32-byte Meme symbol, and the product's `new` then aborts unless its venue list admits `bluefin::Venue` and the Quote |
 | `migrate` | Permissionless; takes the product's `Migration` first; creates `Pool<Meme, Quote>` with Meme as coin A |
-| `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and adds the auto-LP share back through `add_liquidity_with_fixed_amount`, fixing the side chosen from the pool's and the position's bound tick sqrt prices with a two-atom margin |
+| `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and leaves the auto-LP share in the vault for `compound_auto_lp` |
+| `compound_auto_lp` | Permissionless; adds waiting auto-LP balances at the pool's current price and retains unused balances in the vault; adds to the existing migration position |
 | `settle_and_apply_fee_split` | Permissionless ready stored proposal; settles under the applied split, then activates the accepted split and notice |
 | `buyback_and_burn` | Under the core `BuybackAdmin` role (ADR 0091); swaps the administrator's `quote_in` of the vault's burn Quote for Meme in its own pool through `swap` at the widest sqrt-price limit, then burns the Meme if it reaches the administrator's minimum |
 
@@ -501,8 +508,8 @@ Each Bluefin fixture must show:
   receives no object; and
 - collection and the settled update collect only that position on its own pool
   (another `Pool<Meme, Quote>` aborts with `EPositionPoolMismatch`), leave its
-  liquidity unchanged except for the auto-LP addition, and split through the
-  vault, the update under the old split first.
+  liquidity unchanged, and split through the vault, the update under the old
+  split first; `compound_auto_lp` adds liquidity in a separate call.
 
 ## Release gate
 

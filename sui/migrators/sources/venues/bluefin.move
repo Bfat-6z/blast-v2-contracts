@@ -3,9 +3,9 @@
 
 // Package error macros preserve the venue's abort location.
 #[allow(lint(abort_without_constant))]
-/// Bluefin coin preparation, migration into `blast_vault` custody, fee collection with auto-LP,
-/// settled fee-split updates, and buybacks over custodied concentrated-liquidity principal, for
-/// launches and presales alike.
+/// Bluefin coin preparation, migration into `blast_vault` custody, fee collection, separate
+/// auto-LP compounding, settled fee-split updates, and buybacks over custodied concentrated-liquidity
+/// principal, for launches and presales alike.
 ///
 /// Bluefin pools are keyed by their exact type-parameter order, so this module
 /// always creates and expects `Pool<Meme, Quote>` with Meme as coin A.
@@ -135,8 +135,8 @@ public fun migrate<Meme, Quote>(
     pool.share_pool_object();
 }
 
-/// Collects the custodied position's fees, splits them, burns the burn share's Meme, and adds the
-/// auto-LP share back to the position. Anyone may call it.
+/// Collects the custodied position's fees, splits them, and burns the burn share's Meme.
+/// The auto-LP share waits in the vault for `compound_auto_lp`. Anyone may call either operation.
 public fun collect_fees<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     migrators_version: &PackageVersion<BLAST_MIGRATORS>,
