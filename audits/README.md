@@ -7,7 +7,7 @@ This directory preserves five reports, each tied to its reviewed source:
 | [Asymptotic - October 2026](blast-launchpad-asymptotic-oct-2026.pdf) | `01d76596` | External audit of the earlier launchpad |
 | [Claude (Fable 5.1) - November 2026](blast-launch-stack-claude-nov-2026.pdf) | `4fe8d739` | AI security review of the shared launch stack; findings remediated in #217 |
 | [Astra using Trail of Bits skills - November 2026](blast-launch-stack-astra-nov-2026.pdf) | `d80f2834` | AI security review of the shared launch stack; one informational documentation finding corrected in the accompanying documentation changes |
-| [GiveRep / Eason Chen - November 2026](blast-launch-stack-giverep-nov-2026.pdf) | `850d8227`, `8c04789d`, `b50d0c3b` | Final delivered launch-stack assessment and remediation review; original PDF preserved, with later project dispositions below |
+| [GiveRep / Eason Chen - November 2026](blast-launch-stack-giverep-nov-2026.pdf) | `850d8227`, `8c04789d`, `b50d0c3b` | Final launch-stack assessment with targeted remediation review through `af0765da`; supplied final PDF preserved unchanged |
 | [Claude (Fable 5.1) using the Cloudflare security-audit skill - November 2026](blast-launch-stack-claude-cloudflare-nov-2026.pdf) | `d80f2834` | AI source-only security review of the shared launch stack's production Move code; no confirmed findings, one operational upgrade-sequencing lead with an owner-defined mitigation |
 
 The Claude and Astra reports are AI-conducted reviews. The Astra review applies
@@ -191,19 +191,16 @@ d5dcf22d239d2dc8a6ffafdf73cb3c9d35263910efa70f076a9c030c5fbea461
 
 ## GiveRep / Eason Chen — Blast.fun Security Assessment, November 2026
 
-[Download the complete report](blast-launch-stack-giverep-nov-2026.pdf) (12 pages,
-including the cover). Prepared by **GiveRep, Eason Chen**, issued **6 November
-2026**, for an assessment period of **3–5 November 2026**. The supplied file is
-preserved byte-for-byte under a descriptive repository filename; its original
-filename was `Blast_fun_Security_Assessment.pdf`.
+[Download the complete report](blast-launch-stack-giverep-nov-2026.pdf) (13 pages,
+including the cover). Prepared by **GiveRep Labs, Eason Chen**, issued **6 November
+2026**, for an assessment period of **3–5 November 2026**. The supplied final file,
+`Blast_fun_Security_Assessment_final.pdf`, is preserved byte-for-byte under the
+existing repository filename, replacing the earlier delivered PDF.
 
-**Report status: Final delivered assessment.** On 6 November 2026, Blast
-confirmed that GiveRep had identified this supplied document as final. The
-original PDF's cover still reads "Draft for client review"; the file is retained
-unchanged to preserve the delivered artifact. Final delivery does not extend
-the reviewed scope to the later remediation commits below. The project
-follow-up is recorded separately so the report's original open items and
-failing checks are not mistaken for the status of later source.
+**Report status: Final assessment with remediation review.** GiveRep reviewed
+fixes and affected callers through `af0765da`, including the venue-binding fix
+at `d80f2834`. This targeted follow-up is not a new full assessment of every
+package or a verification of deployed-source parity.
 
 ### Reviewed source and chronology
 
@@ -213,16 +210,16 @@ Repository: [interest-protocol/blast-v2-contracts](https://github.com/interest-p
 | --- | --- |
 | [`850d8227edce340a6d5d839d30efbd14b707dfc6`](https://github.com/interest-protocol/blast-v2-contracts/commit/850d8227edce340a6d5d839d30efbd14b707dfc6) | Earlier implementation used as the comparison baseline; source reviewed |
 | [`8c04789d3f9a8606944717841071a5fe8e4e10d1`](https://github.com/interest-protocol/blast-v2-contracts/commit/8c04789d3f9a8606944717841071a5fe8e4e10d1) | Refactor under primary review; source reviewed |
-| [`b50d0c3bee50b637a673d1ccb64b5413af4ba518`](https://github.com/interest-protocol/blast-v2-contracts/commit/b50d0c3bee50b637a673d1ccb64b5413af4ba518) | Incremental follow-up and LOW-01 sealed-cap remediation; final assessed source |
-| [`ea43dbaa`](https://github.com/interest-protocol/blast-v2-contracts/commit/ea43dbaa) | Main pointer when the report was written; documentation-only change, not source reviewed |
+| [`b50d0c3bee50b637a673d1ccb64b5413af4ba518`](https://github.com/interest-protocol/blast-v2-contracts/commit/b50d0c3bee50b637a673d1ccb64b5413af4ba518) | Incremental follow-up and LOW-01 sealed-cap remediation; final full-assessment source |
+| [`af0765dab18de741b130c52831c859717134f2c1`](https://github.com/interest-protocol/blast-v2-contracts/commit/af0765dab18de741b130c52831c859717134f2c1) | Targeted remediation review of fixes and affected callers |
 
-Subsequent project remediation is recorded at
+The remediation review includes changes at
 [`d80f2834468ba798df66f36d01fd64eec9d4df91`](https://github.com/interest-protocol/blast-v2-contracts/commit/d80f2834468ba798df66f36d01fd64eec9d4df91)
 ([#222](https://github.com/interest-protocol/blast-v2-contracts/pull/222)) and
 [`af0765dab18de741b130c52831c859717134f2c1`](https://github.com/interest-protocol/blast-v2-contracts/commit/af0765dab18de741b130c52831c859717134f2c1)
 ([#225](https://github.com/interest-protocol/blast-v2-contracts/pull/225), merged
-6 November 2026). These later commits are **outside the PDF's reviewed revisions**.
-Their dispositions below are the project's follow-up, not a GiveRep re-audit.
+6 November 2026). Both are covered by the final PDF's targeted remediation
+review through `af0765da`; the full assessment ends at `b50d0c3b`.
 
 ### Scope and methodology
 
@@ -248,37 +245,38 @@ are excluded. The review trusts the Sui framework, pinned venue behavior and
 authorized root/role administration, including the documented multisig plan;
 it does not independently attest operational key custody.
 
-### Original findings and project follow-up
+### Findings and reviewed remediation
 
 The report records **0 critical, 0 high, 0 medium, 5 low, and 15 informational**
 items. It establishes no confirmed Critical, High or Medium vulnerability.
 The Low count includes potential-authority, economic-exposure, trust and
 operational observations; it is not a count of five proven fund-theft exploits.
 
-The following tables preserve every finding ID. The original status refers to
-the PDF at `b50d0c3b`; follow-up refers to the merged project record in #222 and
-#225, not a new execution of those tests for this documentation addition.
+The following tables preserve every finding ID and distinguish the original
+observation from its disposition. The final PDF reviews the relevant fixes in
+#222 and #225. Additional project context is identified separately below; no
+contract tests were rerun for this file replacement.
 
-| Low item | Original assessment | Later project disposition |
+| Low item | Original assessment | Final report status and context |
 | --- | --- | --- |
-| LOW-01: publisher receives raw TreasuryCap before venue preparation | Resolved in the report at `b50d0c3b` / [#219](https://github.com/interest-protocol/blast-v2-contracts/pull/219). A malicious publisher could attempt pool pre-creation; exact supply and Cetus unwind dust already blocked the proposed buyer-stranding chain. | [ADR 0138](../docs/decisions/0138-sealed-treasury-caps-and-venue-admissions.md) seals mint authority under the product. #225 records a passing pre-creation regression. |
-| LOW-02: permissionless auto-LP compounding lacks price bounds | Open, inherited exposure limited to the auto-LP fee share; a profitable trading sequence was not established. | #225 hardens both venues with a live `AutoLpAdmin`, inclusive keeper-approved sqrt-price bounds, private entry, and pool consumption/re-sharing as its last PTB use. [ADR 0139](../docs/decisions/0139-admin-bounded-auto-lp-compounding.md) records the decision. Keeper integrity and independent pricing remain trust assumptions. |
-| LOW-03: upgradeable LP custody is not permanent custody | Open trust/documentation boundary; a privileged compatible migrators upgrade could change principal custody after its delay. | #225 corrects custody claims. There is no exposed withdrawal in the existing code, but upgrades remain trusted. Making the vault immutable alone does not freeze migrators; [#195](https://github.com/interest-protocol/blast-v2-contracts/issues/195) remains relevant. |
+| LOW-01: publisher receives raw TreasuryCap before venue preparation | GiveRep identified the mint-authority exposure. Exact supply and Cetus unwind dust already blocked the proposed buyer-stranding chain. | **Resolved** at `b50d0c3b` / [#219](https://github.com/interest-protocol/blast-v2-contracts/pull/219). [ADR 0138](../docs/decisions/0138-sealed-treasury-caps-and-venue-admissions.md) seals mint authority under the product; the final review confirms sealed custody remains present. |
+| LOW-02: permissionless auto-LP compounding lacks price bounds | Exposure limited to the auto-LP fee share; a profitable trading sequence was not established. | **Resolved** at `af0765da`. #225 hardens both venues with a live `AutoLpAdmin`, inclusive keeper-approved sqrt-price bounds, private entry, and pool consumption/re-sharing as its last PTB use. [ADR 0139](../docs/decisions/0139-admin-bounded-auto-lp-compounding.md) records the decision. Keeper integrity and independent pricing remain trust assumptions. |
+| LOW-03: upgradeable LP custody is not permanent custody | Open trust/documentation boundary; a privileged compatible migrators upgrade could change principal custody after its delay. | **Documentation clarified** at `af0765da`; upgrade trust remains. There is no exposed withdrawal in the existing code, but upgrades remain trusted. Making the vault immutable alone does not freeze migrators; [#195](https://github.com/interest-protocol/blast-v2-contracts/issues/195) remains relevant. |
 | LOW-04: ignored funded presale can be settled and cancelled at the LP deadline | Open, documented operational behavior after a week of inaction; full buyer refunds through claims, creator allocations remain locked; no theft. | Retained policy in #225. No early-cancellation exploit was demonstrated; operators must act within the liquidity window. |
 | LOW-05: an authorized proposal can reduce future notice to zero | Open administrative trust, by design. The current wait still applies before the new zero delay takes effect. | Retained policy in #225, including zero-notice bootstrap. A permanent minimum would require a separate governance decision. |
 
-| Informational item | Original observation | Later project disposition |
+| Informational item | Original observation | Final report status and project context |
 | --- | --- | --- |
-| INFO-01 | Five creator-authority signature fixtures use `0xc` while the manifest uses `0x0`. | #225 repairs fixtures for both addresses; all 19 creator-authority tests are recorded passing at `0x0`, without weakening production signature checks. |
+| INFO-01 | Five creator-authority signature fixtures use `0xc` while the manifest uses `0x0`. | **Resolved** at `af0765da`; GiveRep records all 19 creator-authority tests passing at both `0x0` and `0xc`, without weakening production signature checks. |
 | INFO-02 | Mutable sealed-cap borrowing gives admitted venues mint/burn authority during preparation. | Retained admitted-venue trust surface; no arbitrary-caller path established. |
 | INFO-03 | The report describes unchecked `u64` addition for extreme opening-round Quote amounts. | #225 clarifies that Move VM addition is checked: an extreme amount aborts the caller's transaction and rolls back; no wrapping or conservation defect established. |
-| INFO-04 | Launchpad lacks presale's seedable-price check and has no cancellation from `MigrationReady`. | #225 adds seedable-price preflight at finalization. Cancellation was not added; venue availability remains a dependency. |
+| INFO-04 | Launchpad lacks presale's seedable-price check and has no cancellation from `MigrationReady`. | **Missing guard resolved** at `af0765da`; the final review records passing seedable-price rejection coverage. Cancellation was not added; venue availability remains a dependency. |
 | INFO-05 | Public generic sealing does not itself establish product provenance. | Retained typed authority: exact product-witness checks prevent a generic seal from becoming a product-issued sale token. Integrators must not infer admission from its wrapper type alone. |
 | INFO-06 | Creator can consume its own one-time migration ticket. | Retained self-griefing behavior; no unrelated caller can consume that owned ticket. |
-| INFO-07 | Raw-cap presale testkit constructors are incompatible with sealing. | #225 removes obsolete constructors and documents the presale coin-template route. |
+| INFO-07 | Raw-cap presale testkit constructors are incompatible with sealing. | Obsolete constructors **retired** at `af0765da`; the final review records passing faucet and template tests and the documented presale coin-template route. |
 | INFO-08 | Protocol-share application does not settle first, unlike fee-split changes. | Retained documented policy: the new share applies on the next collection. |
 | INFO-09 | `destroy_cap` lacks a generation check. | Retained cleanup of the caller-owned inert cancelled-sale cap; no asset-protection benefit established for a new gate. |
-| INFO-10 | Frozen `venue_fork` test fails during sealed-cap setup before migration assertions. | Not reproduced on later main: #225 records all 11 venue-fork tests passing before its changes and again afterward. The frozen failure remains part of the PDF's evidence limits. |
+| INFO-10 | Frozen `venue_fork` test fails during sealed-cap setup before migration assertions. | **Execution coverage restored**: GiveRep's fresh rebuild at `af0765da` passes all 11 venue-fork tests. The earlier setup failure was not reproduced; no separate fixture-lookup source repair is attributed to the project. |
 | INFO-11 | `blast_sui` imports deleted admin modules and does not compile. | Remains open in [#223](https://github.com/interest-protocol/blast-v2-contracts/issues/223). Outside #225's launch-stack fixes; no current native liquid-staking coverage claimed. |
 | INFO-12 | Boosts' Aftermath adapter has the same stale-admin compile break. | Also tracked in [#223](https://github.com/interest-protocol/blast-v2-contracts/issues/223); not fixed by #225. |
 | INFO-13 | Single-validator concentration and monotone-rate assumptions can stop redemptions after a slash. | Retained liquid-staking design concern; no deployed slash or exploitable current state established. |
@@ -286,12 +284,12 @@ the PDF at `b50d0c3b`; follow-up refers to the merged project record in #222 and
 | INFO-15 | Near-full liquid-staking redemption fails closed at a residual of at most 3 MIST. | Retained bounded rounding observation, not evidence of inflation or lost conservation; the compile break prevents release assurance. |
 
 REP-01 is a **third-party/maintainer report**, not a GiveRep discovery or an
-additional severity-rated finding. The PDF leaves repeated
-`vault::share_with_position` calls unresolved: a caller-defined venue might
-attach unrelated objects or cause duplicate `VaultCreated` events. #222 binds
-the exact venue during construction and checks it before attachment/emission;
-#225 records a passing rogue-venue regression. This later project fix does not
-change the original PDF's unresolved status.
+additional severity-rated finding. The final PDF marks repeated
+`vault::share_with_position` calls **resolved at `d80f2834`**, with remediation
+reviewed through `af0765da`. #222 binds the exact venue during construction and
+checks it before attachment/emission; the existing position key prevents repeat
+attachment under the bound venue. GiveRep records five passing Move regressions
+and the native rogue-venue regression, including rollback of objects and events.
 
 The report separately refutes five candidates: buyer-stranding through Cetus
 pre-creation (REF-01), an unreachable holder-round close based on shared-object
@@ -305,45 +303,66 @@ adversarial compounding states remain tracked in
 
 ### Verification evidence and limits
 
-The PDF reports the following frozen-revision unit-suite results:
+The final PDF reports **1,333 / 1,333 distinct Move tests** at `af0765da`:
 
 | Suite | Reported result |
 | --- | --- |
-| `blast_core` | 85 / 85 |
-| `blast_presale` | 287 / 287 |
 | `blast_admin` | 198 / 198 |
+| `blast_core` | 85 / 85 |
+| `blast_vault` | 127 / 127 |
+| `blast_fun` (launchpad) | 449 / 449 |
+| `blast_presale` | 287 / 287 |
 | `blast_migrators` | 40 / 40 |
-| `blast_vault` | 122 / 122 |
+| `blast_partners` | 74 / 74 |
+| `blast_presale_testkit` | 2 / 2 |
 | `blast_fun_vesting` | 53 / 53 |
-| `blast_fun` | 443 / 448; five fixture failures (INFO-01) |
+| Presale coin template | 1 / 1 |
+| Aftermath DAO presale adapter | 17 / 17 |
 
-It also records two Cetus rounding-reproduction tests across coin orderings and
-seed sizes, and a native shared-object argument probe. The flagship venue-fork
-test was red at `b50d0c3b`; it did not establish end-to-end migration or
-holder-round recovery there. No current native `blast_sui` coverage was produced.
+Some suites exhausted the initial 10-million-instruction budget. Launchpad
+passed with a ten-billion limit; presale, migrators and partners passed with a
+one-billion limit. Production source, named addresses and assertions were not
+changed to obtain these results. The 19 creator-authority tests also passed at
+`0xc`; repeated address runs are excluded from the distinct-test total.
 
-For later remediation evidence, #225 records **1,279 Move tests** across nine
-launch-stack packages and **11 native venue-fork tests**, plus source/style/error
-and generated-reference gates. Its final lifecycle-context follow-up records
-903 affected-package Move tests and eight native PTB tests. These are the PR's
-reported runs at its documented stages, not tests of the PDF's frozen source or
-newly rerun results for adding this file. SDK integration of the changed
-compounding ABI is tracked separately in
+The native PTB targets were rebuilt from the remediation source and passed
+**35 / 35 tests**:
+
+| Native target | Reported result |
+| --- | --- |
+| `venue_fork` | 11 / 11 |
+| `presale_venue_fork` | 11 / 11 |
+| `atomic_migration` | 12 / 12 |
+| `bootstrap` | 1 / 1 |
+
+These cover auto-LP authorization, revocation, price bounds, wrong-pool rejection,
+rollback and consumed-input reuse; vault venue binding; migration; holder-reward
+close and recovery; and relevant upgrade paths. The earlier `b50d0c3b` setup
+failure was not reproduced. The historical Cetus pre-creation reproduction,
+across two coin orderings and two seed sizes, is separate from these totals.
+
+All results above are **reported by GiveRep**, not newly rerun for this file
+replacement. Execution used offline simulation, deterministic fixture keys and
+fictitious balances. Venue bytecode came from the committed mainnet snapshot at
+checkpoint `339033808`, with framework linkage adapted for simulation; it was
+not current-mainnet replay. `blast_sui` and Boosts' Aftermath adapter still fail
+compilation on stale administration APIs; no passing coverage is claimed for
+them. SDK integration of the changed compounding ABI is tracked separately in
 [SDK #104](https://github.com/interest-protocol/blast-v2-sdk/issues/104).
 
 Neither the report nor this record establishes deployed-source parity, current
 on-chain value at risk, or certification of a deployed system. Public audits of
 comparable liquid-staking and venue products cited in the PDF provide reference
-material, not assurance of Blast's implementation. The original assessment,
-later project remediation, and still-open follow-ups must be evaluated at their
-respective revisions.
+material, not assurance of Blast's implementation. The full assessment,
+targeted remediation review, and still-open follow-ups must be evaluated at
+their respective revisions.
 
 ### File integrity
 
 SHA-256 of the original supplied PDF and the identical repository copy:
 
 ```text
-860fb2b2299af31fa19226cffb24fb069d5c8fa57e5a02278bcfda3c3f62fa51
+7adf231963d6d6f9f4ec5ca43d027a93e7438ae2716c6bf8f010b382812e0f1b
 ```
 
 ## Claude (Fable 5.1) using the Cloudflare security-audit skill — Blast launch stack, November 2026
