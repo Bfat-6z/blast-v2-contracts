@@ -207,7 +207,7 @@ fun security_pause_blocks_share() {
     destroy(registry);
     pause(&mut version, constants::create_pause_bit!());
     let clock = clock::create_for_testing(&mut ctx);
-    sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
+    sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock, &mut ctx);
     destroy(cap);
     destroy(clock);
     destroy(currency);
@@ -240,7 +240,7 @@ fun security_partial_unpause_keeps_share_paused() {
     pause(&mut version, constants::valid_pause_bits!());
     clear_pause_bits(&mut version, constants::commit_pause_bit!());
     let clock = clock::create_for_testing(&mut ctx);
-    sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock);
+    sale.share(&version, COMMITMENT_STARTS_AT_MS, &clock, &mut ctx);
     destroy(cap);
     destroy(clock);
     destroy(currency);
@@ -416,7 +416,7 @@ fun security_fully_paused_unlaunched_cancellation_preserves_refund() {
     pause(&mut version, constants::valid_pause_bits!());
     fixture.next_tx!(KEEPER, |f| {
         let mut sale = f.take_presale();
-        sale.cancel_unlaunched(&version, &f.clock);
+        sale.cancel_unlaunched(&version, &f.clock, f.scenario.ctx());
         sale.claim(&version, ALICE, &f.clock, f.ctx!());
         f.return_presale(sale);
     });
@@ -437,7 +437,7 @@ fun pause_keeps_settlement_and_refunds_open() {
     pause(&mut version, constants::valid_pause_bits!());
     fixture.next_tx!(KEEPER, |f| {
         let mut sale = f.take_presale();
-        sale.settle(&version, &f.clock);
+        sale.settle(&version, &f.clock, f.scenario.ctx());
         sale.claim(&version, ALICE, &f.clock, f.ctx!());
         f.return_presale(sale);
     });
@@ -2452,7 +2452,7 @@ fun an_unshared_sales_rates_can_change_before_its_share() {
         vector[9_001, LIQUIDITY_TOKENS, RECIPIENT_TOKENS, 1_000],
     );
 
-    sale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock);
+    sale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock, &mut ctx);
     assert_opened_event(presale_id, COMMITMENT_ENDS_AT_MS, option::none());
 
     destroy(cap);
@@ -2608,7 +2608,7 @@ fun a_raise_share_cut_that_seeds_an_unpoolable_price_is_rejected() {
         scenario.ctx(),
     );
     let presale_id = object::id(&presale);
-    presale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock);
+    presale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock, scenario.ctx());
     destroy(cap);
     destroy(currency);
     destroy(creation_policy);
@@ -3389,7 +3389,7 @@ fun stale_version_rejects_settle_before_lifecycle_or_amount_checks() {
             .ctx());
         package_version.set_version_for_testing(2);
         let mut sale = fixture.take_presale();
-        sale.settle(&package_version, &fixture.clock);
+        sale.settle(&package_version, &fixture.clock, fixture.scenario.ctx());
         destroy(sale);
         destroy(package_version);
     });
@@ -3409,7 +3409,7 @@ fun stale_version_rejects_cancel_before_lifecycle_or_amount_checks() {
             .ctx());
         package_version.set_version_for_testing(2);
         let mut sale = fixture.take_presale();
-        sale.cancel_unlaunched(&package_version, &fixture.clock);
+        sale.cancel_unlaunched(&package_version, &fixture.clock, fixture.scenario.ctx());
         destroy(sale);
         destroy(package_version);
     });
@@ -3567,7 +3567,7 @@ fun an_open_sale_cannot_be_shared_again() {
 
     fixture.next_tx!(ADMIN, |f| {
         let sale = f.take_presale();
-        sale.share(&version, COMMITMENT_STARTS_AT_MS, &f.clock);
+        sale.share(&version, COMMITMENT_STARTS_AT_MS, &f.clock, f.scenario.ctx());
     });
 
     destroy(version);
@@ -3963,7 +3963,7 @@ fun share_new_sale(commitment_starts_at_ms: u64, now_at_ms: u64): ID {
         );
         let presale_id = object::id(&sale);
 
-        sale.share(&package_version, commitment_starts_at_ms, &clock);
+        sale.share(&package_version, commitment_starts_at_ms, &clock, &mut ctx);
 
         destroy(cap);
         destroy(currency);
@@ -4071,7 +4071,7 @@ fun start_configured(
         creation_rates.do!(|rates| {
             presale.override_protocol_fees(&mut fee_policy, rates, &clock, scenario.ctx())
         });
-        presale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock);
+        presale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock, scenario.ctx());
         assert_opened_event(
             presale_id,
             if (uncapped.is_some()) UNCAPPED_STARTS_AT_MS else COMMITMENT_ENDS_AT_MS,
@@ -4138,7 +4138,7 @@ fun share_partnered_sale(partner: &Partner, created_at_ms: u64, protocol_raise_b
         let (sale, cap) = initializer.finalize(&package_version, &mut registry, &mut currency, scenario.ctx());
         destroy(registry);
         let presale_id = object::id(&sale);
-        sale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock);
+        sale.share(&package_version, COMMITMENT_STARTS_AT_MS, &clock, scenario.ctx());
 
         let opened = only_event<PresaleOpened<BLAST_PRESALE_TESTS, QUOTE>>();
         assert_eq!(opened.opened_partner_id(), option::some(object::id(partner)));
@@ -4992,7 +4992,7 @@ fun settle(self: &mut Fixture, sender: address) {
         .ctx());
     self.next_tx!(sender, |fixture| {
         let mut sale = fixture.take_presale();
-        sale.settle(&package_version, &fixture.clock);
+        sale.settle(&package_version, &fixture.clock, fixture.scenario.ctx());
         fixture.return_presale(sale);
     });
 
@@ -5094,7 +5094,7 @@ fun cancel_unlaunched(self: &mut Fixture, sender: address) {
         .ctx());
     self.next_tx!(sender, |fixture| {
         let mut sale = fixture.take_presale();
-        sale.cancel_unlaunched(&package_version, &fixture.clock);
+        sale.cancel_unlaunched(&package_version, &fixture.clock, fixture.scenario.ctx());
         fixture.return_presale(sale);
     });
 

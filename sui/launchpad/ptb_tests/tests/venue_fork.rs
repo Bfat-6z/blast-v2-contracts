@@ -59,7 +59,7 @@ use sui_types::{
     effects::TransactionEffectsAPI,
     object::{MoveObject, OBJECT_START_VERSION, Object, Owner},
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{Argument, Command, ObjectArg, ProgrammableTransaction},
+    transaction::{Argument, CallArg, Command, ObjectArg, ProgrammableTransaction},
 };
 
 /// The one spacing Cetus's live allowlist admits for both SUI and USDC, at its registered 1%.
@@ -98,11 +98,12 @@ const INVALID_COIN_ORDER: u64 = 0;
 const POSITION_POOL_MISMATCH: u64 = 1;
 const WRONG_COIN_PAIR: u64 = 2;
 const INVALID_TIER: u64 = 3;
+const INVALID_AUTO_LP_PRICE: u64 = 5;
 
 /// The `blast_core::blast_domain` roles this world's one `AdminCap` holds, for the launchpad and
 /// the vault alike.
-const CORE_ROLES: [&str; 7] =
-    ["ListingAdmin", "VenueAdmin", "FeeAdmin", "TreasuryAdmin", "CreatorAdmin", "BuybackAdmin", "RewardsAdmin"];
+const CORE_ROLES: [&str; 8] =
+    ["ListingAdmin", "VenueAdmin", "FeeAdmin", "TreasuryAdmin", "CreatorAdmin", "BuybackAdmin", "RewardsAdmin", "AutoLpAdmin"];
 
 /// Blast's LP-fee share of new vaults from the launch config, then per-vault overrides.
 const DEFAULT_SHARES: (u64, u64) = (1_000, 500);
@@ -369,6 +370,7 @@ fn run(case: Case) -> Result<()> {
     w.graduate(&launch)?;
     w.migration_failures_commit_nothing(&launch)?;
     let mut m = w.migrate(&launch)?;
+    w.compounding_guards(&launch, &m)?;
 
     // One-sided: only Quote fees exist, so auto-LP waits. The launch config's share applies.
     w.swap(&launch, &m, Side::QuoteIn, w.case.quote_unit())?;
@@ -1603,10 +1605,16 @@ impl World {
     /// Swaps `amount` into the pool from a fresh coin, all the way through.
     fn swap(&mut self, launch: &Launch, m: &Migration, side: Side, amount: u64) -> Result<()> {
         let mut b = ProgrammableTransactionBuilder::new();
+        self.append_swap(&mut b, launch, m, side, amount)?;
+        self.h.execute(b.finish())?.assert_success();
+        Ok(())
+    }
+
+    fn append_swap(&mut self, b: &mut ProgrammableTransactionBuilder, launch: &Launch, m: &Migration, side: Side, amount: u64) -> Result<()> {
         let pool_pair = self.pool_pair(launch);
         let input_is_a = matches!(side, Side::MemeIn) == self.case.meme_is_a();
         let source = match side {
-            Side::QuoteIn => self.quote_coin(&mut b, amount)?,
+            Side::QuoteIn => self.quote_coin(b, amount)?,
             Side::MemeIn => {
                 let coin = b.obj(self.h.owned(self.meme_coin(launch)?))?;
                 let amount = b.pure(amount)?;
@@ -1616,8 +1624,8 @@ impl World {
                 Argument::NestedResult(split, 0)
             }
         };
-        let pool = self.shared(&mut b, m.pool, true)?;
-        let clock = self.clock(&mut b)?;
+        let pool = self.shared(b, m.pool, true)?;
+        let clock = self.clock(b)?;
         let a2b = b.pure(input_is_a)?;
         let by_amount_in = b.pure(true)?;
         let amount_arg = b.pure(amount)?;
@@ -1626,14 +1634,14 @@ impl World {
         } else {
             (pool_pair[1].clone(), pool_pair[0].clone())
         };
-        let input = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "into_balance", vec![input_type], vec![source]);
-        let zero = call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "balance", "zero", vec![other_type], vec![]);
+        let input = call(b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "into_balance", vec![input_type], vec![source]);
+        let zero = call(b, SUI_FRAMEWORK_PACKAGE_ID, "balance", "zero", vec![other_type], vec![]);
         let (balance_a, balance_b) = if input_is_a { (input, zero) } else { (zero, input) };
         let outputs = if self.case.is_cetus() {
-            let config = self.shared(&mut b, self.venue("cetus_global_config"), false)?;
+            let config = self.shared(b, self.venue("cetus_global_config"), false)?;
             let limit = b.pure(if input_is_a { CETUS_MIN_SQRT_PRICE } else { CETUS_MAX_SQRT_PRICE })?;
             let Argument::Result(flash) = call(
-                &mut b,
+                b,
                 id(CETUS),
                 "pool",
                 "flash_swap",
@@ -1643,7 +1651,7 @@ impl World {
                 unreachable!()
             };
             call(
-                &mut b,
+                b,
                 id(CETUS),
                 "pool",
                 "repay_flash_swap",
@@ -1652,11 +1660,11 @@ impl World {
             );
             vec![Argument::NestedResult(flash, 0), Argument::NestedResult(flash, 1)]
         } else {
-            let config = self.shared(&mut b, self.venue("bluefin_global_config"), false)?;
+            let config = self.shared(b, self.venue("bluefin_global_config"), false)?;
             let limit = b.pure(if input_is_a { BLUEFIN_MIN_SQRT_PRICE + 1 } else { BLUEFIN_MAX_SQRT_PRICE - 1 })?;
             let zero_limit = b.pure(0u64)?;
             let Argument::Result(swapped) = call(
-                &mut b,
+                b,
                 id(BLUEFIN),
                 "pool",
                 "swap",
@@ -1669,10 +1677,9 @@ impl World {
         };
         let mut coins = Vec::new();
         for (output, coin_type) in outputs.into_iter().zip(pool_pair) {
-            coins.push(call(&mut b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "from_balance", vec![coin_type], vec![output]));
+            coins.push(call(b, SUI_FRAMEWORK_PACKAGE_ID, "coin", "from_balance", vec![coin_type], vec![output]));
         }
         b.transfer_args(self.h.sender, coins);
-        self.h.execute(b.finish())?.assert_success();
 
         Ok(())
     }
@@ -1692,7 +1699,7 @@ impl World {
         let treasury = self.shared(&mut b, self.treasury, false)?;
         let mut args = vec![vault, migrators_version, vault_version, treasury];
         args.push(self.shared(&mut b, launch.currency, true)?);
-        let venue_config = if self.case.is_cetus() {
+        let _venue_config = if self.case.is_cetus() {
             let config = self.shared(&mut b, self.venue("cetus_global_config"), false)?;
             args.push(config);
             args.push(self.shared(&mut b, self.venue("cetus_burn_manager"), false)?);
@@ -1714,19 +1721,68 @@ impl World {
             args.push(clock);
         }
         call(&mut b, self.migrators, self.case.module(), function, self.route_types(launch), args);
-        // Collection leaves the auto-LP share waiting; compounding is its own permissionless route,
-        // appended here so one PTB collects and adds, as a collection worker would, and the auto-LP
-        // assertions read the same outcome.
-        call(
-            &mut b,
-            self.migrators,
-            self.case.module(),
-            "compound_auto_lp",
-            self.route_types(launch),
-            vec![vault, migrators_version, vault_version, venue_config, pool, clock],
-        );
-
         Ok(b.finish())
+    }
+
+    fn append_compound(&self, b: &mut ProgrammableTransactionBuilder, launch: &Launch, m: &Migration, pool: ObjectID, min: u128, max: u128) -> Result<()> {
+        let args = vec![
+            self.shared(b, m.vault, true)?, self.shared(b, self.migrators_version, false)?,
+            self.vault_version(b)?, self.shared(b, self.acl, false)?, b.obj(self.h.owned(self.admin_cap))?,
+            self.shared(b, self.venue(if self.case.is_cetus() { "cetus_global_config" } else { "bluefin_global_config" }), false)?,
+            self.shared(b, pool, true)?, b.pure(min)?, b.pure(max)?, self.clock(b)?,
+        ];
+        call(b, self.migrators, self.case.module(), "compound_auto_lp", self.route_types(launch), args);
+        Ok(())
+    }
+
+    /// Both bytecode venues enforce bounds before custody, even with no waiting balance.
+    fn compounding_guards(&mut self, launch: &Launch, m: &Migration) -> Result<()> {
+        let price = expected_sqrt_price(LP_MEME, self.lp_quote(), self.case.meme_is_a());
+        for (min, max) in [(0, price), (price + 1, price), (1, price - 1), (price + 1, u128::MAX)] {
+            let mut b = ProgrammableTransactionBuilder::new();
+            self.append_compound(&mut b, launch, m, m.pool, min, max)?;
+            self.h.assert_rolled_back(b.finish(), Expected::Abort { package: self.migrators, module: self.case.module(), code: INVALID_AUTO_LP_PRICE }, &[m.vault, m.pool, self.admin_cap], &[])?;
+        }
+        let mut b = ProgrammableTransactionBuilder::new();
+        self.append_compound(&mut b, launch, m, m.pool, price, price)?;
+        self.h.execute(b.finish())?.assert_success();
+
+        // The live role is checked inside entry, before even malformed economic parameters.
+        for grant in [false, true] {
+            let mut b = ProgrammableTransactionBuilder::new();
+            let acl = self.shared(&mut b, self.acl, true)?;
+            let root = b.obj(self.h.owned(self.root))?;
+            let cap_id = b.pure(self.admin_cap)?;
+            call(&mut b, self.admin, "blast_acl", if grant { "grant_role" } else { "revoke_role" },
+                vec![tag(&format!("{}::blast_domain::AutoLpAdmin", self.core))], vec![acl, root, cap_id]);
+            self.h.impersonate_cap_owner(self.root, b.finish())?.assert_success();
+            if !grant {
+                let mut b = ProgrammableTransactionBuilder::new();
+                self.append_compound(&mut b, launch, m, m.pool, 0, 0)?;
+                self.h.assert_rolled_back(b.finish(), Expected::Abort { package: self.admin, module: "blast_acl", code: 5 }, &[m.vault, m.pool, self.admin_cap], &[])?;
+                let collect = self.collect_pt(launch, m, m.pool, None)?;
+                self.h.execute(collect)?.assert_success();
+            }
+        }
+        // A completed swap can precede private entry. Trusted bounds reject the changed price
+        // and roll the swap back too; entry visibility does not supply an oracle.
+        let mut b = ProgrammableTransactionBuilder::new();
+        self.append_swap(&mut b, launch, m, Side::QuoteIn, self.case.quote_unit())?;
+        self.append_compound(&mut b, launch, m, m.pool, price, price)?;
+        let mut watched = vec![m.vault, m.pool, self.admin_cap];
+        let pt = b.finish();
+        watched.extend(pt.inputs.iter().filter_map(|a| match a {
+            CallArg::Object(ObjectArg::ImmOrOwnedObject((id, _, _))) => Some(*id),
+            _ => None,
+        }));
+        self.h.assert_rolled_back(pt, Expected::Abort { package: self.migrators, module: self.case.module(), code: INVALID_AUTO_LP_PRICE }, &watched, &[])?;
+        // By-value consumption blocks every later use of this pool input, including a getter.
+        let mut b = ProgrammableTransactionBuilder::new();
+        self.append_compound(&mut b, launch, m, m.pool, price, price)?;
+        let pool = self.shared(&mut b, m.pool, false)?;
+        call(&mut b, if self.case.is_cetus() { id(CETUS) } else { id(BLUEFIN) }, "pool", "current_sqrt_price", self.pool_pair(launch), vec![pool]);
+        self.h.assert_rolled_back(b.finish(), Expected::Error("ArgumentWithoutValue"), &[m.vault, m.pool, self.admin_cap], &[])?;
+        Ok(())
     }
 
     /// Appends `launch::prove_owner` with the curve-fee cap `cap`, returning the owner proof.
@@ -1792,7 +1848,7 @@ impl World {
             self.h.sim.advance_clock(std::time::Duration::from_millis(before.delay_ms));
             // A later failing command must roll back the ready application, venue collection,
             // payouts, and proposal consumption together.
-            // The apply is the PTB's first command; compounding follows it. A second apply finds
+            // The apply is the PTB's first command. A second apply finds
             // no pending proposal.
             let mut rollback = self.collect_pt(launch, m, m.pool, update)?;
             rollback.commands.push(rollback.commands.first().expect("apply").clone());
@@ -1852,11 +1908,18 @@ impl World {
         for (payee, (meme, quote)) in payees {
             ensure!(outcome.coins_created_for(&self.h, payee) == self.coins(launch, meme, quote), "{payee} paid");
         }
+        // Fixture trades stay within these broad bounds around the seed price.
+        // Production keepers must use a trusted external quote and their max slippage.
+        let seed_price = expected_sqrt_price(LP_MEME, self.lp_quote(), self.case.meme_is_a());
+        let mut b = ProgrammableTransactionBuilder::new();
+        self.append_compound(&mut b, launch, m, m.pool, seed_price / 2, seed_price * 2)?;
+        let compounded = self.h.execute(b.finish())?;
+        compounded.assert_success();
         let after = self.vault(m)?;
         ensure!((after.protocol.meme, after.protocol.quote) == (0, 0), "the ledger pays out at once");
 
         // Auto-LP: added amounts are what the venue took; the rest waits.
-        let added: Vec<AutoLiquidityAdded> = self.vault_events(&outcome, "AutoLiquidityAdded");
+        let added: Vec<AutoLiquidityAdded> = self.vault_events(&compounded, "AutoLiquidityAdded");
         ensure!(added.len() <= 1);
         let added = added.into_iter().next();
         let auto_lp = part(&Destination::AutoLp);
@@ -1873,7 +1936,7 @@ impl World {
             (after.rewards_meme, after.rewards_quote) == (before.rewards_meme + rewards.0, before.rewards_quote + rewards.1)
         );
         ensure!(after.burn_quote == before.burn_quote + burn.1, "the burn Quote waits for a buyback");
-        let opened: Vec<AutoLpPositionOpened> = self.vault_events(&outcome, "AutoLpPositionOpened");
+        let opened: Vec<AutoLpPositionOpened> = self.vault_events(&compounded, "AutoLpPositionOpened");
         let liquidity_after = self.position_liquidity(m.position)?;
         if let Some(added) = &added {
             ensure!((added.auto_lp_meme_pending, added.auto_lp_quote_pending) == (after.auto_lp_meme, after.auto_lp_quote));
@@ -1883,18 +1946,18 @@ impl World {
                 if m.auto_lp_position.is_none() {
                     ensure!(opened.len() == 1, "the first add opens the auto-LP position");
                     let position = opened[0].position_id;
-                    ensure!(outcome.created(&self.h, "position", "Position") == vec![position]);
+                    ensure!(compounded.created(&self.h, "position", "Position") == vec![position]);
                     let Owner::ObjectOwner(field) = self.h.object(position).owner().clone() else { bail!("child") };
                     ensure!(*self.h.object(field.into()).owner() == Owner::ObjectOwner(m.vault.into()));
                     m.auto_lp_position = Some(position);
                 } else {
                     ensure!(
-                        opened.is_empty() && outcome.created(&self.h, "position", "Position").is_empty(),
+                        opened.is_empty() && compounded.created(&self.h, "position", "Position").is_empty(),
                         "later adds reuse it"
                     );
                 }
                 ensure!(liquidity_after == liquidity_before, "the burned position never changes");
-                let provided: Vec<CetusAddLiquidity> = venue_events(&outcome, "pool", "AddLiquidityV2Event");
+                let provided: Vec<CetusAddLiquidity> = venue_events(&compounded, "pool", "AddLiquidityV2Event");
                 ensure!(provided.len() == 1 && Some(provided[0].position) == m.auto_lp_position);
                 let (meme, quote) = if self.case.meme_is_a() {
                     (provided[0].amount_a, provided[0].amount_b)
@@ -1910,7 +1973,7 @@ impl World {
                 position
             } else {
                 // Bluefin: auto-LP grows the migration position.
-                let provided: Vec<LiquidityProvided> = venue_events(&outcome, "events", "LiquidityProvided");
+                let provided: Vec<LiquidityProvided> = venue_events(&compounded, "events", "LiquidityProvided");
                 ensure!(provided.len() == 1 && provided[0].position_id == m.position);
                 ensure!(
                     (provided[0].coin_a_amount, provided[0].coin_b_amount) == (added.meme_amount, added.quote_amount)
@@ -2257,6 +2320,10 @@ impl World {
 
         let module = self.case.module();
         let code = POSITION_POOL_MISMATCH;
+        let mut b = ProgrammableTransactionBuilder::new();
+        self.append_compound(&mut b, launch, m, other, 1, u128::MAX)?;
+        self.h.assert_rolled_back(b.finish(), Expected::Abort { package: self.migrators, module, code },
+            &[m.vault, other, self.admin_cap], &[self.h.sender])?;
         let expected = Expected::Abort { package: self.migrators, module, code };
         let pt = self.collect_pt(launch, m, other, None)?;
         let watched = [m.vault, other, launch.currency];
@@ -2274,7 +2341,7 @@ impl World {
         let watched = [m.vault, other, launch.currency, self.admin_cap];
         self.h.assert_rolled_back(pt, expected, &watched, &[self.h.sender, SuiAddress::ZERO])?;
         self.report(format!(
-            "collect and buyback against another {} pool {other}: EPositionPoolMismatch, rolled back",
+            "collect, compound, and buyback against another {} pool {other}: EPositionPoolMismatch, rolled back",
             if self.case.is_cetus() { "Cetus Pool<A, B> at tick spacing 60" } else { "Bluefin Pool<Meme, SUI>" }
         ));
 

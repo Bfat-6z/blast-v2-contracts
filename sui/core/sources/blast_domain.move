@@ -30,6 +30,9 @@ public struct RewardsAdmin()
 /// Swaps a vault's burn Quote for Meme to burn.
 public struct BuybackAdmin()
 
+/// Reinvests waiting auto-LP fees under price bounds from a trusted off-chain quote.
+public struct AutoLpAdmin()
+
 /// Revokes and reissues a launch's creator capabilities.
 public struct CreatorAdmin()
 

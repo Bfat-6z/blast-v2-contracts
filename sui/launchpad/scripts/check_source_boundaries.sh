@@ -958,7 +958,7 @@ if [[ ! -f sources/launch/launch.move ]] \
   || [[ "$launch_finalize_body" != *'ticket.destroy(treasury_cap, currency, atomic_supply);'* ]] \
   || rg -q '\b(Witness|migration_witness|MigrationWitness|pool_tick_spacing|pool_fee_rate|pool_tier|treasury_cap_mut|invalid_migration_witness)\b' \
     <<<"$launch_source$(move_normalized_source <<<"$events_facts")" \
-  || [[ "$(move_production_function_contract finalize <<<"$launch_facts")" != 'public:0:0:fun finalize<Meme, Quote>( self: LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, registry: &mut LaunchRegistry, currency: &mut Currency<Meme>, config: &LaunchConfig, creation_fee: Coin<SUI>, ): Launch<Meme, Quote>' ]] \
+  || [[ "$(move_production_function_contract finalize <<<"$launch_facts")" != 'public:0:0:fun finalize<Meme, Quote>( self: LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, registry: &mut LaunchRegistry, currency: &mut Currency<Meme>, config: &LaunchConfig, creation_fee: Coin<SUI>, _: &mut TxContext, ): Launch<Meme, Quote>' ]] \
   || [[ "$(move_production_function_contract set_partner <<<"$launch_facts")" != 'public:0:0:fun set_partner<Meme, Quote>( self: &mut LaunchInitializer<Meme, Quote>, package_version: &PackageVersion<BLAST_FUN>, config: &LaunchConfig, partner: &Partner, clock: &Clock, )' ]] \
   || ! in_order 'config.assert_partner(' 'self.partner_id = option::some(partner_id);' \
     <<<"$(move_production_body set_partner <<<"$launch_facts")" \
@@ -969,9 +969,10 @@ if [[ ! -f sources/launch/launch.move ]] \
     'let graduation_target = graduation_target.destroy_some();' \
     'allocation_plan.destroy_some().add_protocol(config.protocol_allocation());' \
     'invalid_opening_round!()' \
-    'invalid_graduation_target!()' \
+    'assert!(lp_quote > 0, blast_fun::errors::invalid_graduation_target!());' \
     'let atomic_supply = launch_ticket::atomic_supply(ticket.decimals());' \
     'allocation_plan.apportion_meme(atomic_supply)' \
+    'assert!( migration::is_seedable_price(migration::sqrt_price_x64(lp_meme, lp_quote, true)), blast_fun::errors::invalid_graduation_target!(), );' \
     'ticket.destroy(treasury_cap, currency, atomic_supply);' \
     'Launch {' \
     'lp_fee_split: lp_fee_split.destroy_some(),' \

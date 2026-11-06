@@ -52,7 +52,7 @@ const EInvalidMemeQuotePair: u64 = 9;
 const EInvalidOpeningRound: u64 = 10;
 
 #[test_only]
-/// The pool's Quote share of the graduation target rounds to zero.
+/// The pool's Quote share rounds to zero or its allocation price cannot seed a venue.
 const EInvalidGraduationTarget: u64 = 11;
 
 #[test_only]

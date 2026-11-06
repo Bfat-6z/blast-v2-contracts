@@ -3,8 +3,12 @@
 
 // Package error macros preserve the vault's abort location.
 #[allow(lint(abort_without_constant))]
-/// The one LP vault every Blast sale migrates into: permanent custody of a venue position, and the
-/// split of every fee collection it earns.
+/// The LP vault every Blast sale migrates into: custody of a venue position with no exposed
+/// withdrawal path, and the split of every fee collection it earns.
+///
+/// While the vault or its venue package remains upgradeable, authorized upgrades can change
+/// custody behavior. Cetus separately burns the migration position through its LP Burn contract;
+/// the vault holds that burn proof and any unburned auto-LP position.
 ///
 /// An admitted venue builds the vault from the terms it redeemed from a sale's migration, attaches
 /// the position under its sealed `Venue` key, and shares it. Every
@@ -124,6 +128,7 @@ public fun new<Meme, Quote, Venue>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     terms: VaultTerms,
     pool_id: ID,
+    _: &mut TxContext,
 ): Vault<Meme, Quote> {
     package_version.assert_current(constants::version!());
     registry.assert_venue<Venue>();

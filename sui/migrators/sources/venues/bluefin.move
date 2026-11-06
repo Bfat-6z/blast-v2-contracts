@@ -43,6 +43,7 @@ public fun prepare<Meme, Quote>(
     currency: &Currency<Meme>,
     tick_spacing: u32,
     fee_rate: u64,
+    _: &mut TxContext,
 ): VenueTicket<Meme, Quote> {
     migrators_version.assert_current(constants::version!());
     assert!(
@@ -122,7 +123,7 @@ public fun migrate<Meme, Quote>(
 
     let pool_id = position.pool_id();
     let liquidity = position.liquidity();
-    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id)
+    vault::new<Meme, Quote, _>(registry, &Venue(), vault_version, terms, pool_id, ctx)
         .share_with_position(
             &Venue(),
             treasury,
@@ -136,7 +137,7 @@ public fun migrate<Meme, Quote>(
 }
 
 /// Collects the custodied position's fees, splits them, and burns the burn share's Meme.
-/// The auto-LP share waits in the vault for `compound_auto_lp`. Anyone may call either operation.
+/// Anyone may collect; the auto-LP share waits in the vault for the separate `AutoLpAdmin` entry.
 public fun collect_fees<Meme, Quote>(
     self: &mut Vault<Meme, Quote>,
     migrators_version: &PackageVersion<BLAST_MIGRATORS>,
@@ -171,23 +172,6 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
     self.settle_fees(vault_version, treasury, currency, bluefin_config, pool, clock, ctx);
 
     self.apply_fee_split(&Venue(), vault_version, clock);
-}
-
-/// Adds the vault's waiting auto-LP Meme and Quote to its position in `pool` at the current price
-/// and keeps the rest for the next call. Anyone may call it, apart from collection, so a Bluefin
-/// refusal of the add never blocks collecting fees.
-public fun compound_auto_lp<Meme, Quote>(
-    self: &mut Vault<Meme, Quote>,
-    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
-    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
-    bluefin_config: &GlobalConfig,
-    pool: &mut Pool<Meme, Quote>,
-    clock: &Clock,
-) {
-    migrators_version.assert_current(constants::version!());
-    assert!(self.pool_id() == object::id(pool), blast_migrators::errors::position_pool_mismatch!());
-
-    self.compound(vault_version, bluefin_config, pool, clock);
 }
 
 /// Swaps `quote_in` of the vault's burn Quote for Meme in its pool and burns it, under a buyback
@@ -228,6 +212,45 @@ public fun buyback_and_burn<Meme, Quote>(
 }
 
 // === Private Functions ===
+
+/// Reinvests waiting auto-LP fees under a live `AutoLpAdmin` capability. The admin derives
+/// inclusive Q64.64 sqrt-price bounds from a trusted off-chain quote, in the pool's coin order.
+/// Invalid bounds or a price outside them abort before taking any vault balances. Collection
+/// stays permissionless and independent, so a refused add never blocks fee collection.
+///
+/// Taking the pool by value and re-sharing it prevents later PTB reuse.
+/// Private entry restricts Move callers and runtime-sensitive PTB compositions; it does not
+/// isolate swaps earlier in the transaction. Authorization and price bounds are required together.
+entry fun compound_auto_lp<Meme, Quote>(
+    self: &mut Vault<Meme, Quote>,
+    migrators_version: &PackageVersion<BLAST_MIGRATORS>,
+    vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
+    acl: &ACL,
+    admin_cap: &AdminCap,
+    bluefin_config: &GlobalConfig,
+    mut pool: Pool<Meme, Quote>,
+    min_sqrt_price: u128,
+    max_sqrt_price: u128,
+    clock: &Clock,
+    _: &mut TxContext,
+) {
+    migrators_version.assert_current(constants::version!());
+    acl.sign_in<AutoLpAdmin>(admin_cap);
+    assert!(
+        min_sqrt_price > 0 && min_sqrt_price <= max_sqrt_price,
+        blast_migrators::errors::invalid_auto_lp_price!(),
+    );
+    assert!(self.pool_id() == object::id(&pool), blast_migrators::errors::position_pool_mismatch!());
+
+    let sqrt_price = pool.current_sqrt_price();
+    assert!(
+        min_sqrt_price <= sqrt_price && sqrt_price <= max_sqrt_price,
+        blast_migrators::errors::invalid_auto_lp_price!(),
+    );
+
+    self.compound(vault_version, bluefin_config, &mut pool, clock);
+    transfer::public_share_object(pool);
+}
 
 /// Aligns Bluefin's configured tick bounds to `tick_spacing`, giving the widest range a position
 /// at that spacing can open.
@@ -471,10 +494,10 @@ public fun auto_lp_fixed_side_for_testing(
 
 // === Imports ===
 
-use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};
+use blast_admin::{blast_acl::{ACL, AdminCap, AdminWitness}, package_version::PackageVersion};
 
 use blast_core::{
-    blast_domain::BuybackAdmin,
+    blast_domain::{AutoLpAdmin, BuybackAdmin},
     blast_treasury::Treasury,
     migration::{Self, Migration, VenueTicket},
     sealed_treasury_cap::SealedTreasuryCap
@@ -501,6 +524,7 @@ use sui::{
     clock::Clock,
     coin::Coin,
     coin_registry::Currency,
+    transfer,
     sui::SUI
 };
 

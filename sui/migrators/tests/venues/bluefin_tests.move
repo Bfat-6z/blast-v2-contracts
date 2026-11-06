@@ -335,6 +335,7 @@ fun prepare(
         &self.currency,
         tick_spacing,
         fee_rate,
+        self.scenario.ctx(),
     )
 }
 

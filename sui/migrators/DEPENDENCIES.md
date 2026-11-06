@@ -52,9 +52,14 @@ venue package over `blast_core` that creates no vault.
   venue's permissionless collection hands both collected balances to
   `blast_vault::vault::split_fees`, which pays Blast's share and the address
   routes and credits the owner, auto-LP, holder-reward, and burn balances.
-  Auto-LP balances wait in the vault until anyone calls the venue's separate
-  `compound_auto_lp`; an add-liquidity refusal never blocks collection. The
-  owner schedules or cancels a split change on the vault with an owner
+  Auto-LP balances wait in the vault until a live `AutoLpAdmin` keeper separately
+  reinvests them through the venue's private `compound_auto_lp` entry, using inclusive
+  pool-order Q64.64 sqrt-price bounds derived from a trusted off-chain quote and
+  maximum slippage. Private entry restricts composition but does not isolate preceding
+  completed swaps. The entry consumes and re-shares the pool, preventing its reuse by
+  later commands in the same PTB. Collection needs no keeper capability; an
+  add-liquidity refusal never blocks collection. The owner schedules or cancels a
+  split change on the vault with an owner
   proof from the sale's product; the notice is a fixed 48 hours. Ready
   application is permissionless: the venue checks readiness, runs the same
   settlement under the old split, then applies the stored split with
@@ -438,7 +443,7 @@ disassemble`); the dev-inspect fixtures re-confirm it end to end:
 | `prepare` | Records the creator's tick spacing for a coin in `Quote`, reserves the pair's Cetus pool creation, and returns the ticket; the product's `new` then aborts unless its venue list admits `cetus::Venue` and the Quote |
 | `migrate` | Permissionless; takes the product's `Migration` first; type arguments `<Meme, Quote, CoinA, CoinB>` with the pool's coins in Cetus order (ADR 0100); burns the position through the shared `BurnManager` |
 | `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and leaves the auto-LP share in the vault for `compound_auto_lp` |
-| `compound_auto_lp` | Permissionless; adds waiting auto-LP balances at the pool's current price and retains unused balances in the vault; creates the separate auto-LP position on Cetus's first add |
+| `compound_auto_lp` | Private entry requiring live `AutoLpAdmin` and inclusive keeper-approved sqrt-price bounds; consumes and re-shares the pool, adds waiting auto-LP balances, and retains unused balances in the vault; creates the separate auto-LP position on Cetus's first add |
 | `settle_and_apply_fee_split` | Permissionless ready stored proposal; settles under the applied split, then activates the accepted split and notice |
 | `buyback_and_burn` | Under the core `BuybackAdmin` role (ADR 0091); swaps the administrator's `quote_in` of the vault's burn Quote for Meme in its own pool through `flash_swap` / `swap_pay_amount` / `repay_flash_swap` at the widest sqrt-price limit, then burns the Meme if it reaches the administrator's minimum |
 
@@ -479,7 +484,7 @@ Each Cetus fixture must show:
 | `prepare` | Records the creator's tier for a coin in `Quote` and returns the ticket; aborts with `EInvalidTier` outside tick spacing 1–400 and fee rate 1–20,000 and with `ESymbolTooLong` above a 32-byte Meme symbol, and the product's `new` then aborts unless its venue list admits `bluefin::Venue` and the Quote |
 | `migrate` | Permissionless; takes the product's `Migration` first; creates `Pool<Meme, Quote>` with Meme as coin A |
 | `collect_fees` | Permissionless; splits the collection, burns the burn part's Meme, and leaves the auto-LP share in the vault for `compound_auto_lp` |
-| `compound_auto_lp` | Permissionless; adds waiting auto-LP balances at the pool's current price and retains unused balances in the vault; adds to the existing migration position |
+| `compound_auto_lp` | Private entry requiring live `AutoLpAdmin` and inclusive keeper-approved sqrt-price bounds; consumes and re-shares the pool, adds waiting auto-LP balances, and retains unused balances in the vault; adds to the existing migration position |
 | `settle_and_apply_fee_split` | Permissionless ready stored proposal; settles under the applied split, then activates the accepted split and notice |
 | `buyback_and_burn` | Under the core `BuybackAdmin` role (ADR 0091); swaps the administrator's `quote_in` of the vault's burn Quote for Meme in its own pool through `swap` at the widest sqrt-price limit, then burns the Meme if it reaches the administrator's minimum |
 

@@ -291,6 +291,7 @@ public fun close_round<Meme, Quote>(
     package_version: &PackageVersion<BLAST_VAULT_PACKAGE>,
     vault: &mut Vault<Meme, Quote>,
     clock: &Clock,
+    _: &mut TxContext,
 ) {
     package_version.assert_current(constants::version!());
     assert!(self.vault_id == object::id(vault), blast_vault::errors::wrong_vault!());

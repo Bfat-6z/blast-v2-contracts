@@ -27,6 +27,10 @@ const EInvalidTier: u64 = 3;
 /// A Bluefin Meme symbol must be at most 32 bytes.
 const ESymbolTooLong: u64 = 4;
 
+#[test_only]
+/// Auto-LP needs positive ordered bounds containing the current pool sqrt price.
+const EInvalidAutoLpPrice: u64 = 5;
+
 macro public(package) fun invalid_coin_order(): u64 { 0 }
 
 macro public(package) fun position_pool_mismatch(): u64 { 1 }
@@ -36,3 +40,5 @@ macro public(package) fun wrong_coin_pair(): u64 { 2 }
 macro public(package) fun invalid_tier(): u64 { 3 }
 
 macro public(package) fun symbol_too_long(): u64 { 4 }
+
+macro public(package) fun invalid_auto_lp_price(): u64 { 5 }

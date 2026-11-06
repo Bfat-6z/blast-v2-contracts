@@ -62,6 +62,15 @@ Dependencies point inward only. Both products and the vault depend on `blast_cor
 on `blast_core` and `blast_vault`; vendor migrators depend on `blast_core` and `blast_presale`. No
 product imports the vault or a venue, and no venue imports a product.
 
+### Transaction context in upgradeable lifecycle APIs
+
+Reserve a trailing mutable `TxContext` in the upgradeable products' construction, sharing and
+settlement transitions, venue preparation, vault construction and reward-round closure, even
+when the implementation does not use it yet. Compatible upgrades cannot add an argument to an
+existing public function. Direct Move callers forward their context; Sui injects it into PTB
+calls. An unused context adds no authorization or PTB isolation. This decision applies to the
+unpublished launch stack; published Blast SUI and Boosts are outside its scope.
+
 ### One implementation per money concept
 
 - **Basis points and apportionment.** One `Bps` and one exact largest-remainder apportionment with an
@@ -376,3 +385,13 @@ vault functions, so migration and fee collection abort until the relink lands.
   `blast_migrators::events`, and a two-call migration PTB.
 - Implementation steps 5 and 6 above are replaced by this amendment: there is no `blast_venues`
   package, no standalone vault creation, and the vendor redeems the hand-off as a venue.
+
+## 2026-11-06: Reject unseedable launch allocations before finalization
+
+The launchpad applies the same shared seedable-price preflight as the presale to its final LP
+Meme and Quote allocation, before consuming the creation ticket and fixing the currency supply. A creator-selected
+extreme configuration must fail during construction rather than receive buyer funds and become
+stuck `MigrationReady`. This does not introduce cancellation after graduation or promise venue
+operator availability; those lifecycle decisions remain unchanged. The regression admits a
+10-decimal coin and proves that a nonzero one-atom LP Quote allocation at an unseedable price is
+refused at finalization.

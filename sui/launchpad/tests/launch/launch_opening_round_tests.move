@@ -408,7 +408,12 @@ fun settle_before_share_is_rejected() {
     let mut launch = fixture.new_launch(MIN_ROUND_DURATION_MS);
     fixture.set_time(ROUND_ENDS_AT_MS);
 
-    launch.settle_opening_round(&fixture.package_version, &fixture.runtime_config, &fixture.clock);
+    launch.settle_opening_round(
+        &fixture.package_version,
+        &fixture.runtime_config,
+        &fixture.clock,
+        fixture.ctx!(),
+    );
     destroy(launch);
     fixture.end();
 }
@@ -915,6 +920,7 @@ fun intake(
         &mut currency,
         &self.config,
         creation_fee,
+        self.scenario.ctx(),
     );
     test_scenario::return_to_address(COIN_REGISTRY, currency);
 
@@ -945,8 +951,8 @@ fun open(self: &mut OpeningRoundFixture, opening_round_duration_ms: u64): ID {
 }
 
 /// Shares the launch at the fixture clock's current time.
-fun share(self: &OpeningRoundFixture, launch: Launch<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>) {
-    launch.share(&self.package_version, &self.clock);
+fun share(self: &mut OpeningRoundFixture, launch: Launch<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE>) {
+    launch.share(&self.package_version, &self.clock, self.scenario.ctx());
 }
 
 fun take_launch(self: &OpeningRoundFixture): Launch<LAUNCH_OPENING_ROUND_TESTS, TEST_QUOTE> {
@@ -984,7 +990,12 @@ fun settle(self: &mut OpeningRoundFixture, sender: address) {
     self.scenario.next_tx(sender);
     let mut launch = self.take_launch();
 
-    launch.settle_opening_round(&self.package_version, &self.runtime_config, &self.clock);
+    launch.settle_opening_round(
+        &self.package_version,
+        &self.runtime_config,
+        &self.clock,
+        self.scenario.ctx(),
+    );
     launch.put_back();
 }
 

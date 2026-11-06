@@ -193,7 +193,7 @@ public fun share_vault(
     residual_meme: u64,
     residual_quote: u64,
 ) {
-    let vault = self.new_vault(terms);
+    let vault = self.new_vault(terms, scenario.ctx());
     let residual_meme = self.meme(residual_meme);
     vault.share_with_position(
         &TestVenue(),
@@ -208,8 +208,12 @@ public fun share_vault(
 }
 
 /// Builds an unshared vault for `terms` through the admitted test venue.
-public fun new_vault(self: &mut VaultFixture, terms: VaultTerms): Vault<VAULT_FIXTURE, QUOTE> {
-    self.new_vault_through(&TestVenue(), terms)
+public fun new_vault(
+    self: &mut VaultFixture,
+    terms: VaultTerms,
+    ctx: &mut TxContext,
+): Vault<VAULT_FIXTURE, QUOTE> {
+    self.new_vault_through(&TestVenue(), terms, ctx)
 }
 
 /// Builds an unshared vault for `terms` through `venue`.
@@ -217,8 +221,9 @@ public fun new_vault_through<Venue>(
     self: &mut VaultFixture,
     venue: &Venue,
     terms: VaultTerms,
+    ctx: &mut TxContext,
 ): Vault<VAULT_FIXTURE, QUOTE> {
-    vault::new(&mut self.registry, venue, &self.version, terms, pool_id())
+    vault::new(&mut self.registry, venue, &self.version, terms, pool_id(), ctx)
 }
 
 /// The ID the registry derives for the vault of terms sealed by `Issuer` for the sale `origin`.

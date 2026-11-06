@@ -15,8 +15,9 @@ fun error_registry_is_stable() {
         errors::wrong_coin_pair!(),
         errors::invalid_tier!(),
         errors::symbol_too_long!(),
+        errors::invalid_auto_lp_price!(),
     ];
-    assert_eq!(codes.length(), 5);
+    assert_eq!(codes.length(), 6);
     codes.length().do!(|i| assert_eq!(codes[i], i));
 }
 
