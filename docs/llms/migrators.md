@@ -63,7 +63,7 @@ vaults), which must also list each product's package witness, for launches
 | `blast_migrators::cetus::migrate`, `blast_migrators::bluefin::migrate` | anyone, with the `Migration` the product's `migrate` returned in the same PTB |
 | `blast_migrators::cetus::collect_fees`, `blast_migrators::bluefin::collect_fees` | anyone |
 | `blast_migrators::cetus::settle_and_apply_fee_split`, `blast_migrators::bluefin::settle_and_apply_fee_split` | anyone, once the vault's proposed split is ready |
-| `blast_migrators::cetus::compound_auto_lp`, `blast_migrators::bluefin::compound_auto_lp` | anyone |
+| `blast_migrators::cetus::compound_auto_lp`, `blast_migrators::bluefin::compound_auto_lp` | Blast admin: `AutoLpAdmin` |
 | `blast_migrators::cetus::buyback_and_burn`, `blast_migrators::bluefin::buyback_and_burn` | Blast admin: `blast_core::blast_domain::BuybackAdmin` |
 | `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance`, `blast_admin::package_admin::schedule_make_immutable`, `blast_admin::package_admin::make_immutable`, `blast_admin::package_admin::schedule_upgrade_delay`, typed `<BLAST_MIGRATORS>` | Blast admin: `blast_admin::package_admin::UpgradeAdmin<BLAST_MIGRATORS>` |
 | `blast_admin::package_admin::cancel_upgrade_action<BLAST_MIGRATORS>` | Blast admin: `blast_admin::package_admin::CancelAdmin<BLAST_MIGRATORS>` |
@@ -103,7 +103,8 @@ admin signs in with `blast_acl::sign_in` on the shared `blast_acl::ACL` to get t
    dropped or stored, so a PTB that does not redeem it aborts, and a failed venue migration aborts the
    whole transaction, product step included: the sale stays ready to migrate.
 4. **Collect**: any number of fee collections, fee-split changes, and buybacks through the venue.
-   The vault never closes and its positions are never removed.
+   The current code exposes no position withdrawal; vault and venue upgrades can change custody
+   behavior while those packages remain upgradeable.
 
 ### Flows
 
@@ -231,19 +232,32 @@ Order of operations:
 Collection never adds liquidity: the auto-LP share waits in the vault for `compound_auto_lp`
 below, so a venue refusing an add can never block collecting fees.
 
-#### Compound auto-LP (anyone)
+#### Compound auto-LP (Blast admin: `AutoLpAdmin`)
 
-Anyone may compound, as often as they like, in the same PTB as a collection or apart from it. A
-call that finds nothing the pool takes is valid and adds nothing.
+A keeper supplies its owned `AdminCap` and the shared `ACL`. Each private `entry` checks the
+live `AutoLpAdmin` role internally. The keeper supplies positive, ordered, inclusive minimum and
+maximum Q64.64 sqrt prices in the pool's coin order, derived from a trusted off-chain quote and
+its maximum slippage. A spot read from the same pool alone is not a trusted reference. Convert
+price slippage to sqrt-price bounds with outward rounding; do not apply price BPS directly to
+the sqrt price. A call that finds nothing the pool takes is valid and adds nothing.
+
+Each endpoint takes the shared pool by value and re-shares it as its final operation. The input
+cannot be used by later PTB commands; the same pool remains available to later transactions.
+Private entry prevents cross-package Move wrappers and restricts compositions involving live hot
+potatoes. It does not isolate preceding completed swaps in a PTB. The live role and bounds
+remain the economic guard. Revoking the role stops compounding immediately. Fee collection and
+settled split application remain permissionless; keeper downtime leaves auto-LP balances waiting.
 
 - Cetus: `blast_migrators::cetus::compound_auto_lp`, type arguments `<Meme, Quote, CoinA, CoinB>`,
   with the `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`,
-  Cetus `GlobalConfig`, the vault's Cetus `Pool<CoinA, CoinB>` (mutable), and `Clock`.
+  the `ACL`, `AdminCap`, Cetus `GlobalConfig`, the vault's Cetus `Pool<CoinA, CoinB>` (by value),
+  sqrt-price bounds, and `Clock`.
 - Bluefin: `blast_migrators::bluefin::compound_auto_lp`, type arguments `<Meme, Quote>`, with the
-  `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`, Bluefin
-  `GlobalConfig`, the vault's `Pool<Meme, Quote>` (mutable), and `Clock`.
+  `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`, the `ACL`, `AdminCap`, Bluefin
+  `GlobalConfig`, the vault's `Pool<Meme, Quote>` (by value), sqrt-price bounds, and `Clock`.
 
-It checks the pool is the vault's own (`blast_migrators::errors::EPositionPoolMismatch`), takes every
+It rejects malformed bounds or an out-of-range spot price with
+`blast_migrators::errors::EInvalidAutoLpPrice` before taking vault balances. It checks the pool is the vault's own (`blast_migrators::errors::EPositionPoolMismatch`), takes every
 waiting auto-LP Meme and Quote (every collection's part plus anything left from earlier calls), adds
 what the pool takes at its current price, and keeps the rest in the vault
 (`blast_vault_events::AutoLiquidityAdded`).
@@ -455,8 +469,8 @@ balances between the two orders.
 `Treasury` or held for the partner payout, or the owner, held in the vault.
 
 **How often should LP fees be collected?** As often as useful; collection is permissionless and
-cheap to retry. Compound as often, with `compound_auto_lp`; frequent compounding keeps the auto-LP
-price-move exposure small.
+cheap to retry. An `AutoLpAdmin` keeper separately calls `compound_auto_lp` under trusted price
+bounds. Collection frequency alone does not protect compounding from manipulated prices.
 
 **How does the creator change the LP-fee split?** With an owner proof from the product (for a
 launch, the curve-fee cap and `launch::prove_owner`), call `blast_vault::vault::schedule_fee_split`

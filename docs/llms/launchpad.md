@@ -163,6 +163,11 @@ cancel, expiry, or refund path.
 The package is published with every pause bit set. `launch_config::unpause` clears bits only once
 every policy notice is guarded (see Emergency pause).
 
+Finalization checks that the apportioned LP Meme and Quote imply a price in the common seedable
+venue range. A nonzero LP Quote share alone is insufficient. An extreme target or allocation
+aborts with `blast_fun::errors::EInvalidGraduationTarget` before consuming the ticket and fixing
+the supply; choose a seedable target, allocation and admitted coin precision.
+
 ### Flows
 
 Creating a launch takes three transactions, because each step needs an object the previous one
@@ -834,7 +839,7 @@ fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partner
 | prepare, start | 10 `blast_core::errors::EWrongPackageWitness`, 14 `blast_core::errors::EVenueNotAdmitted` (`blast_core::sealed_treasury_cap`) | borrow the sealed cap only with the launchpad's admission of the preparing venue; open it only through `launch::new` |
 | building values | 0 `blast_core::errors::EInvalidBps` (`blast_core::bps`); 3 `blast_core::errors::EInvalidRoute`, 4 `blast_core::errors::EInvalidFeeSplit` (`blast_core::fee_split`); 12 `blast_core::errors::EInvalidRecipient` (`blast_core::payout`); 2 `blast_core::errors::EInvalidVestingTerms` (`blast_core::payout`); 5 `blast_fun::errors::EInvalidShares` (`allocation`) | rates at most 10,000; positive route shares and non-zero addresses; at most 20 distinct routes summing to 10,000; positive vesting periods; curve Meme and pool Meme/Quote positive |
 | finalize | `std::option` `EOPTION_NOT_SET` | set the virtual Quote, target, plan, and LP-fee split |
-| finalize | 30 `blast_fun::errors::EInvalidCreationFee`, 28 `blast_fun::errors::EInvalidVirtualQuote`, 10 `blast_fun::errors::EInvalidOpeningRound`, 11 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; target big enough that the pool's Quote share is at least 1 |
+| finalize | 30 `blast_fun::errors::EInvalidCreationFee`, 28 `blast_fun::errors::EInvalidVirtualQuote`, 10 `blast_fun::errors::EInvalidOpeningRound`, 11 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; positive LP Quote share and a seedable LP allocation price |
 | finalize | 5 `blast_fun::errors::EInvalidShares`, 6 `blast_fun::errors::ERecipientCapacityReached` (`allocation`) | plan plus Blast's allocation must sum to 10,000 per asset; at most 16 recipients |
 | finalize | 8 `blast_fun::errors::EInvalidInitialMemeSupply`, 7 (`launch_ticket`) | an untouched supply (an admitted venue minted or burned nothing through the sealed `TreasuryCap`); sell-burn at most 5,000 |
 | set partner | 4 `blast_partners::errors::EPartnerNotAccepted` (`blast_partners::partner_list`) | name a partner `LaunchConfig` accepts now |

@@ -52,8 +52,11 @@ venue package over `blast_core` that creates no vault.
   venue's permissionless collection hands both collected balances to
   `blast_vault::vault::split_fees`, which pays Blast's share and the address
   routes and credits the owner, auto-LP, holder-reward, and burn balances; the
-  venue then adds the auto-LP balances back with the venue's own add-liquidity
-  call. The owner schedules or cancels a split change on the vault with an owner
+  venue leaves auto-LP waiting. A live `AutoLpAdmin` keeper separately reinvests it through
+  a private entry, using inclusive pool-order Q64.64 sqrt-price bounds derived from a trusted
+  off-chain quote and maximum slippage. Private entry restricts composition but does not isolate
+  preceding completed swaps. The entry consumes and re-shares the pool, preventing its reuse
+  by later commands in the same PTB. Collection needs no keeper capability. The owner schedules or cancels a split change on the vault with an owner
   proof from the sale's product; the notice is a fixed 48 hours. Ready
   application is permissionless: the venue checks readiness, runs the same
   settlement under the old split, then applies the stored split with

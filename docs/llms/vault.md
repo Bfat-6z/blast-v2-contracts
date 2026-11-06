@@ -48,7 +48,8 @@ the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 3. Each fee collection through the venue calls `blast_vault::vault::split_fees`.
 4. Holder-reward rounds are scheduled, published, claimed, and closed (see Flows).
 
-A vault never closes; its position cannot be removed.
+The current code exposes no vault closure or position withdrawal. Upgrade authorities can
+change this behavior while the vault or venue package remains upgradeable.
 
 ### Flows
 
@@ -208,6 +209,9 @@ the `UpgradeCap`; no later upgrade or repair is possible.
 
 **Can anyone withdraw the liquidity?** No. The position is held under the venue's key with no
 removal path; only the venue's code can borrow it to collect fees or add auto-LP.
+While the vault or venue package remains upgradeable, its authorized upgrades can
+change that custody behavior. Cetus burns the migration position separately;
+its auto-LP position remains under the vault and venue upgrade authorities.
 
 **Who receives the burn route's Meme?** Nobody: it is burned when the supply is burn-only, or sent
 to `0x0` when it is fixed.

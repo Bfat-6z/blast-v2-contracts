@@ -267,7 +267,11 @@ public fun finalize<Meme, Quote>(
 
     let ticket_id = ticket.id();
     let atomic_supply = launch_ticket::atomic_supply(ticket.decimals());
-    let (curve_meme, _, _, _) = allocation_plan.apportion_meme(atomic_supply);
+    let (curve_meme, lp_meme, _, _) = allocation_plan.apportion_meme(atomic_supply);
+    assert!(
+        migration::is_seedable_price(migration::sqrt_price_x64(lp_meme, lp_quote, true)),
+        blast_fun::errors::invalid_graduation_target!(),
+    );
     let creation_fee_amount = creation_fee.value();
     let (mut meme, metadata_cap, creator, sell_burn_bps) = ticket.destroy(treasury_cap, currency, atomic_supply);
     let id = derived_object::claim(&mut registry.id, LaunchKey<Meme>());

@@ -372,3 +372,13 @@ vault functions, so migration and fee collection abort until the relink lands.
   `blast_migrators::events`, and a two-call migration PTB.
 - Implementation steps 5 and 6 above are replaced by this amendment: there is no `blast_venues`
   package, no standalone vault creation, and the vendor redeems the hand-off as a venue.
+
+## 2026-11-06: Reject unseedable launch allocations before finalization
+
+The launchpad applies the same shared seedable-price preflight as the presale to its final LP
+Meme and Quote allocation, before consuming the creation ticket and fixing the currency supply. A creator-selected
+extreme configuration must fail during construction rather than receive buyer funds and become
+stuck `MigrationReady`. This does not introduce cancellation after graduation or promise venue
+operator availability; those lifecycle decisions remain unchanged. The regression admits a
+10-decimal coin and proves that a nonzero one-atom LP Quote allocation at an unseedable price is
+refused at finalization.

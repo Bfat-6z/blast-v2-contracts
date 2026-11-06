@@ -337,7 +337,8 @@ Pending --share--> Open --settle (total >= raise)--> Funded --migrate--> Migrate
 `blast_presale::blast_presale::prove_owner` works in every state, but only a migrated sale has a
 vault to present the proof to. Migration and cancellation race once the LP deadline passes:
 whichever transaction lands first wins. Nobody can withdraw a commitment while the sale is `Open`
-or `Funded`. The vault never closes and its position is never removed.
+or `Funded`. The current vault and venue code expose no position withdrawal. Their upgrade authorities can
+change custody behavior while those packages remain upgradeable.
 
 ### Flows
 
@@ -1340,6 +1341,8 @@ LP share changes only through the vault's own 48-hour delayed call.
 Cetus LP-burn and the vault keeps only its fee-claiming proof. A Bluefin position sits in the
 vault under the venue's key, which only borrows it to collect fees and never removes it. The
 Aftermath DAO-pool vendor sends its LP coin, the pool's whole liquidity, to `0x0`.
+Vault and venue upgrade authorities can change the custody behavior of positions they still
+control; the Cetus migration burn is a separate venue mechanism, and its auto-LP position is unburned.
 
 ## Launchpad
 
@@ -1507,6 +1510,11 @@ cancel, expiry, or refund path.
 
 The package is published with every pause bit set. `launch_config::unpause` clears bits only once
 every policy notice is guarded (see Emergency pause).
+
+Finalization checks that the apportioned LP Meme and Quote imply a price in the common seedable
+venue range. A nonzero LP Quote share alone is insufficient. An extreme target or allocation
+aborts with `blast_fun::errors::EInvalidGraduationTarget` before consuming the ticket and fixing
+the supply; choose a seedable target, allocation and admitted coin precision.
 
 ### Flows
 
@@ -2179,7 +2187,7 @@ fee-payout aborts from `blast_core`, and partner-list aborts from `blast_partner
 | prepare, start | 10 `blast_core::errors::EWrongPackageWitness`, 14 `blast_core::errors::EVenueNotAdmitted` (`blast_core::sealed_treasury_cap`) | borrow the sealed cap only with the launchpad's admission of the preparing venue; open it only through `launch::new` |
 | building values | 0 `blast_core::errors::EInvalidBps` (`blast_core::bps`); 3 `blast_core::errors::EInvalidRoute`, 4 `blast_core::errors::EInvalidFeeSplit` (`blast_core::fee_split`); 12 `blast_core::errors::EInvalidRecipient` (`blast_core::payout`); 2 `blast_core::errors::EInvalidVestingTerms` (`blast_core::payout`); 5 `blast_fun::errors::EInvalidShares` (`allocation`) | rates at most 10,000; positive route shares and non-zero addresses; at most 20 distinct routes summing to 10,000; positive vesting periods; curve Meme and pool Meme/Quote positive |
 | finalize | `std::option` `EOPTION_NOT_SET` | set the virtual Quote, target, plan, and LP-fee split |
-| finalize | 30 `blast_fun::errors::EInvalidCreationFee`, 28 `blast_fun::errors::EInvalidVirtualQuote`, 10 `blast_fun::errors::EInvalidOpeningRound`, 11 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; target big enough that the pool's Quote share is at least 1 |
+| finalize | 30 `blast_fun::errors::EInvalidCreationFee`, 28 `blast_fun::errors::EInvalidVirtualQuote`, 10 `blast_fun::errors::EInvalidOpeningRound`, 11 `blast_fun::errors::EInvalidGraduationTarget` (`launch`) | exact fee coin; virtual Quote above 0; round 0 or 60,000 to 300,000; positive LP Quote share and a seedable LP allocation price |
 | finalize | 5 `blast_fun::errors::EInvalidShares`, 6 `blast_fun::errors::ERecipientCapacityReached` (`allocation`) | plan plus Blast's allocation must sum to 10,000 per asset; at most 16 recipients |
 | finalize | 8 `blast_fun::errors::EInvalidInitialMemeSupply`, 7 (`launch_ticket`) | an untouched supply (an admitted venue minted or burned nothing through the sealed `TreasuryCap`); sell-burn at most 5,000 |
 | set partner | 4 `blast_partners::errors::EPartnerNotAccepted` (`blast_partners::partner_list`) | name a partner `LaunchConfig` accepts now |
@@ -2356,7 +2364,7 @@ vaults), which must also list each product's package witness, for launches
 | `blast_migrators::cetus::migrate`, `blast_migrators::bluefin::migrate` | anyone, with the `Migration` the product's `migrate` returned in the same PTB |
 | `blast_migrators::cetus::collect_fees`, `blast_migrators::bluefin::collect_fees` | anyone |
 | `blast_migrators::cetus::settle_and_apply_fee_split`, `blast_migrators::bluefin::settle_and_apply_fee_split` | anyone, once the vault's proposed split is ready |
-| `blast_migrators::cetus::compound_auto_lp`, `blast_migrators::bluefin::compound_auto_lp` | anyone |
+| `blast_migrators::cetus::compound_auto_lp`, `blast_migrators::bluefin::compound_auto_lp` | Blast admin: `AutoLpAdmin` |
 | `blast_migrators::cetus::buyback_and_burn`, `blast_migrators::bluefin::buyback_and_burn` | Blast admin: `blast_core::blast_domain::BuybackAdmin` |
 | `blast_admin::package_admin::schedule_upgrade`, `blast_admin::package_admin::authorize_upgrade`, `blast_admin::package_admin::commit_upgrade_and_advance`, `blast_admin::package_admin::schedule_make_immutable`, `blast_admin::package_admin::make_immutable`, `blast_admin::package_admin::schedule_upgrade_delay`, typed `<BLAST_MIGRATORS>` | Blast admin: `blast_admin::package_admin::UpgradeAdmin<BLAST_MIGRATORS>` |
 | `blast_admin::package_admin::cancel_upgrade_action<BLAST_MIGRATORS>` | Blast admin: `blast_admin::package_admin::CancelAdmin<BLAST_MIGRATORS>` |
@@ -2396,7 +2404,8 @@ admin signs in with `blast_acl::sign_in` on the shared `blast_acl::ACL` to get t
    dropped or stored, so a PTB that does not redeem it aborts, and a failed venue migration aborts the
    whole transaction, product step included: the sale stays ready to migrate.
 4. **Collect**: any number of fee collections, fee-split changes, and buybacks through the venue.
-   The vault never closes and its positions are never removed.
+   The current code exposes no position withdrawal; vault and venue upgrades can change custody
+   behavior while those packages remain upgradeable.
 
 ### Flows
 
@@ -2524,19 +2533,32 @@ Order of operations:
 Collection never adds liquidity: the auto-LP share waits in the vault for `compound_auto_lp`
 below, so a venue refusing an add can never block collecting fees.
 
-#### Compound auto-LP (anyone)
+#### Compound auto-LP (Blast admin: `AutoLpAdmin`)
 
-Anyone may compound, as often as they like, in the same PTB as a collection or apart from it. A
-call that finds nothing the pool takes is valid and adds nothing.
+A keeper supplies its owned `AdminCap` and the shared `ACL`. Each private `entry` checks the
+live `AutoLpAdmin` role internally. The keeper supplies positive, ordered, inclusive minimum and
+maximum Q64.64 sqrt prices in the pool's coin order, derived from a trusted off-chain quote and
+its maximum slippage. A spot read from the same pool alone is not a trusted reference. Convert
+price slippage to sqrt-price bounds with outward rounding; do not apply price BPS directly to
+the sqrt price. A call that finds nothing the pool takes is valid and adds nothing.
+
+Each endpoint takes the shared pool by value and re-shares it as its final operation. The input
+cannot be used by later PTB commands; the same pool remains available to later transactions.
+Private entry prevents cross-package Move wrappers and restricts compositions involving live hot
+potatoes. It does not isolate preceding completed swaps in a PTB. The live role and bounds
+remain the economic guard. Revoking the role stops compounding immediately. Fee collection and
+settled split application remain permissionless; keeper downtime leaves auto-LP balances waiting.
 
 - Cetus: `blast_migrators::cetus::compound_auto_lp`, type arguments `<Meme, Quote, CoinA, CoinB>`,
   with the `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`,
-  Cetus `GlobalConfig`, the vault's Cetus `Pool<CoinA, CoinB>` (mutable), and `Clock`.
+  the `ACL`, `AdminCap`, Cetus `GlobalConfig`, the vault's Cetus `Pool<CoinA, CoinB>` (by value),
+  sqrt-price bounds, and `Clock`.
 - Bluefin: `blast_migrators::bluefin::compound_auto_lp`, type arguments `<Meme, Quote>`, with the
-  `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`, Bluefin
-  `GlobalConfig`, the vault's `Pool<Meme, Quote>` (mutable), and `Clock`.
+  `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`, the `ACL`, `AdminCap`, Bluefin
+  `GlobalConfig`, the vault's `Pool<Meme, Quote>` (by value), sqrt-price bounds, and `Clock`.
 
-It checks the pool is the vault's own (`blast_migrators::errors::EPositionPoolMismatch`), takes every
+It rejects malformed bounds or an out-of-range spot price with
+`blast_migrators::errors::EInvalidAutoLpPrice` before taking vault balances. It checks the pool is the vault's own (`blast_migrators::errors::EPositionPoolMismatch`), takes every
 waiting auto-LP Meme and Quote (every collection's part plus anything left from earlier calls), adds
 what the pool takes at its current price, and keeps the rest in the vault
 (`blast_vault_events::AutoLiquidityAdded`).
@@ -2748,8 +2770,8 @@ balances between the two orders.
 `Treasury` or held for the partner payout, or the owner, held in the vault.
 
 **How often should LP fees be collected?** As often as useful; collection is permissionless and
-cheap to retry. Compound as often, with `compound_auto_lp`; frequent compounding keeps the auto-LP
-price-move exposure small.
+cheap to retry. An `AutoLpAdmin` keeper separately calls `compound_auto_lp` under trusted price
+bounds. Collection frequency alone does not protect compounding from manipulated prices.
 
 **How does the creator change the LP-fee split?** With an owner proof from the product (for a
 launch, the curve-fee cap and `launch::prove_owner`), call `blast_vault::vault::schedule_fee_split`
@@ -4880,7 +4902,7 @@ an empty tree, an index outside it, or a proof of the wrong depth return false i
 ### Roles
 
 `blast_domain` declares Blast's product roles for the shared ACL: `TreasuryAdmin`, `FeeAdmin`,
-`ListingAdmin`, `VenueAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`,
+`ListingAdmin`, `VenueAdmin`, `RewardsAdmin`, `BuybackAdmin`, `AutoLpAdmin`, `CreatorAdmin`,
 `ClaimSignerAdmin`, and `CancelAdmin`. Only Blast admins hold them.
 
 ### Errors
@@ -4940,7 +4962,8 @@ the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 3. Each fee collection through the venue calls `blast_vault::vault::split_fees`.
 4. Holder-reward rounds are scheduled, published, claimed, and closed (see Flows).
 
-A vault never closes; its position cannot be removed.
+The current code exposes no vault closure or position withdrawal. Upgrade authorities can
+change this behavior while the vault or venue package remains upgradeable.
 
 ### Flows
 
@@ -5100,6 +5123,9 @@ the `UpgradeCap`; no later upgrade or repair is possible.
 
 **Can anyone withdraw the liquidity?** No. The position is held under the venue's key with no
 removal path; only the venue's code can borrow it to collect fees or add auto-LP.
+While the vault or venue package remains upgradeable, its authorized upgrades can
+change that custody behavior. Cetus burns the migration position separately;
+its auto-LP position remains under the vault and venue upgrade authorities.
 
 **Who receives the burn route's Meme?** Nobody: it is burned when the supply is burn-only, or sent
 to `0x0` when it is fixed.
@@ -5169,7 +5195,7 @@ or with different type arguments, are different roles.
 | Declared in | Roles | Used by |
 | --- | --- | --- |
 | `blast_admin::package_admin` | `blast_admin::package_admin::UpgradeAdmin<OTW>` (schedule, authorize and commit upgrades, schedule and execute immutability, change the upgrade notice), `blast_admin::package_admin::PauseAdmin<OTW>` (set pause bits), `blast_admin::package_admin::UnpauseAdmin<OTW>` (clear pause bits through the package's own unpause), `blast_admin::package_admin::CancelAdmin<OTW>` (cancel the pending upgrade action or notice change) | every upgradeable package, typed by its one-time witness `OTW` |
-| `blast_core::blast_domain` | `blast_domain::TreasuryAdmin`, `blast_domain::FeeAdmin`, `blast_domain::ListingAdmin`, `blast_domain::VenueAdmin`, `blast_domain::RewardsAdmin`, `blast_domain::BuybackAdmin`, `blast_domain::CreatorAdmin`, `blast_domain::ClaimSignerAdmin`, `blast_domain::CancelAdmin` | the launch products, the vault and the migrators |
+| `blast_core::blast_domain` | `blast_domain::TreasuryAdmin`, `blast_domain::FeeAdmin`, `blast_domain::ListingAdmin`, `blast_domain::VenueAdmin`, `blast_domain::RewardsAdmin`, `blast_domain::BuybackAdmin`, `blast_domain::AutoLpAdmin`, `blast_domain::CreatorAdmin`, `blast_domain::ClaimSignerAdmin`, `blast_domain::CancelAdmin` | the launch products, the vault and the migrators |
 | `blast_partners` | `blast_partners::blast_partners::PartnerAdmin` (register partners, schedule shares and caps) | partners |
 | `blast_boosts_core` | `blast_boosts_core::blast_boosts_core::VaultIssuer`, `blast_boosts_core::blast_boosts_core::RiskAdmin`, `blast_boosts_core::blast_boosts_core::ShutdownAdmin`, `blast_boosts_core::blast_boosts_core::UpgradeAdmin` | Boosts |
 
@@ -6631,7 +6657,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 8 | `EInvalidInitialMemeSupply` | The ticket's supply is not the canonical one billion tokens. |
 | 9 | `EInvalidMemeQuotePair` | Meme and Quote are the same type. |
 | 10 | `EInvalidOpeningRound` | The opening round is neither zero nor within its bounds. |
-| 11 | `EInvalidGraduationTarget` | The pool's Quote share of the graduation target rounds to zero. |
+| 11 | `EInvalidGraduationTarget` | The pool's Quote share rounds to zero or its allocation price cannot seed a venue. |
 | 12 | `EInvalidLaunchLifecycle` | The launch is not in the state this operation needs. |
 | 13 | `ESlippageExceeded` | The output is below the caller's minimum. |
 | 14 | `EZeroTradeOutput` | The trade's net output is zero. |
@@ -7827,6 +7853,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 | 2 | `EWrongCoinPair` | `CoinA` and `CoinB` must be exactly the sale's Meme and Quote. |
 | 3 | `EInvalidTier` | A Bluefin tier needs a tick spacing in 1..=400 and a fee rate in 1..=20,000. |
 | 4 | `ESymbolTooLong` | A Bluefin Meme symbol must be at most 32 bytes. |
+| 5 | `EInvalidAutoLpPrice` | Auto-LP needs positive ordered bounds containing the current pool sqrt price. |
 
 ### `blast_migrators::blast_migrators`
 
@@ -7941,18 +7968,6 @@ public fun settle_and_apply_fee_split<Meme, Quote>(
     ctx: &mut TxContext,
 )
 
-/// Adds the vault's waiting auto-LP Meme and Quote to its position in `pool` at the current price
-/// and keeps the rest for the next call. Anyone may call it, apart from collection, so a Bluefin
-/// refusal of the add never blocks collecting fees.
-public fun compound_auto_lp<Meme, Quote>(
-    self: &mut blast_vault::vault::Vault<Meme, Quote>,
-    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    bluefin_config: &config::GlobalConfig,
-    pool: &mut pool::Pool<Meme, Quote>,
-    clock: &Clock,
-)
-
 /// Swaps `quote_in` of the vault's burn Quote for Meme in its pool and burns it, under a buyback
 /// admin. Aborts unless `quote_in` is positive and at most the burn Quote held, and unless the swap
 /// returns at least `min_meme_out`; the admin sets it from an off-chain price, since anyone can move
@@ -7969,6 +7984,27 @@ public fun buyback_and_burn<Meme, Quote>(
     min_meme_out: u64,
     clock: &Clock,
     ctx: &mut TxContext,
+)
+
+/// Reinvests waiting auto-LP fees under a live `AutoLpAdmin` capability. The admin derives
+/// inclusive Q64.64 sqrt-price bounds from a trusted off-chain quote, in the pool's coin order.
+/// Invalid bounds or a price outside them abort before taking any vault balances. Collection
+/// stays permissionless and independent, so a refused add never blocks fee collection.
+///
+/// Taking the pool by value and re-sharing it prevents later PTB reuse.
+/// Private entry restricts Move callers and runtime-sensitive PTB compositions; it does not
+/// isolate swaps earlier in the transaction. Authorization and price bounds are required together.
+entry fun compound_auto_lp<Meme, Quote>(
+    self: &mut blast_vault::vault::Vault<Meme, Quote>,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
+    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
+    acl: &blast_admin::blast_acl::ACL,
+    admin_cap: &blast_admin::blast_acl::AdminCap,
+    bluefin_config: &config::GlobalConfig,
+    pool: pool::Pool<Meme, Quote>,
+    min_sqrt_price: u128,
+    max_sqrt_price: u128,
+    clock: &Clock,
 )
 ```
 
@@ -8074,20 +8110,6 @@ public fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>(
     ctx: &mut TxContext,
 )
 
-/// Adds the vault's waiting auto-LP Meme and Quote to its auto-LP position in `pool` at the
-/// current price and keeps the rest for the next call. Anyone may call it, apart from collection,
-/// so a Cetus refusal of the add never blocks collecting fees. `CoinA` and `CoinB` are the pool's
-/// coin order.
-public fun compound_auto_lp<Meme, Quote, CoinA, CoinB>(
-    self: &mut blast_vault::vault::Vault<Meme, Quote>,
-    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
-    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
-    cetus_config: &config::GlobalConfig,
-    pool: &mut pool::Pool<CoinA, CoinB>,
-    clock: &Clock,
-    ctx: &mut TxContext,
-)
-
 /// Swaps `quote_in` of the vault's burn Quote for Meme in its pool and burns it, under a buyback
 /// admin. Aborts unless `quote_in` is positive and at most the burn Quote held, and unless the swap
 /// returns at least `min_meme_out`; the admin sets it from an off-chain price, since anyone can move
@@ -8103,6 +8125,28 @@ public fun buyback_and_burn<Meme, Quote, CoinA, CoinB>(
     pool: &mut pool::Pool<CoinA, CoinB>,
     quote_in: u64,
     min_meme_out: u64,
+    clock: &Clock,
+    ctx: &mut TxContext,
+)
+
+/// Reinvests waiting auto-LP fees under a live `AutoLpAdmin` capability. The admin derives
+/// inclusive Q64.64 sqrt-price bounds from a trusted off-chain quote, in the pool's coin order.
+/// Invalid bounds or a price outside them abort before taking any vault balances. Collection
+/// stays permissionless and independent, so a refused add never blocks fee collection.
+///
+/// Taking the pool by value and re-sharing it prevents later PTB reuse.
+/// Private entry restricts Move callers and runtime-sensitive PTB compositions; it does not
+/// isolate swaps earlier in the transaction. Authorization and price bounds are required together.
+entry fun compound_auto_lp<Meme, Quote, CoinA, CoinB>(
+    self: &mut blast_vault::vault::Vault<Meme, Quote>,
+    migrators_version: &blast_admin::package_version::PackageVersion<blast_migrators::BLAST_MIGRATORS>,
+    vault_version: &blast_admin::package_version::PackageVersion<blast_vault::blast_vault_package::BLAST_VAULT_PACKAGE>,
+    acl: &blast_admin::blast_acl::ACL,
+    admin_cap: &blast_admin::blast_acl::AdminCap,
+    cetus_config: &config::GlobalConfig,
+    pool: pool::Pool<CoinA, CoinB>,
+    min_sqrt_price: u128,
+    max_sqrt_price: u128,
     clock: &Clock,
     ctx: &mut TxContext,
 )
@@ -11269,6 +11313,9 @@ public struct RewardsAdmin {}
 /// Swaps a vault's burn Quote for Meme to burn.
 public struct BuybackAdmin {}
 
+/// Reinvests waiting auto-LP fees under price bounds from a trusted off-chain quote.
+public struct AutoLpAdmin {}
+
 /// Revokes and reissues a launch's creator capabilities.
 public struct CreatorAdmin {}
 
@@ -12345,7 +12392,7 @@ public fun close_round<Meme, Quote>(
 
 ### `blast_vault::vault`
 
-The one LP vault every Blast sale migrates into: permanent custody of a venue position, and the split of every fee collection it earns.  An admitted venue builds the vault from the terms it redeemed from a sale's migration, attaches the position under its sealed `Venue` key, and shares it. Every collection then pays Blast its per-vault share through the core protocol ledger, at once or held for the sale's partner, and divides the rest by the vault's fee split: address routes are paid at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with an `OwnerProof` from the sale's product; Blast acts through its roles; venue-only operations require the venue's witness, which only the venue module constructs.
+The LP vault every Blast sale migrates into: custody of a venue position with no exposed withdrawal path, and the split of every fee collection it earns.  While the vault or its venue package remains upgradeable, authorized upgrades can change custody behavior. Cetus separately burns the migration position through its LP Burn contract; the vault holds that burn proof and any unburned auto-LP position.  An admitted venue builds the vault from the terms it redeemed from a sale's migration, attaches the position under its sealed `Venue` key, and shares it. Every collection then pays Blast its per-vault share through the core protocol ledger, at once or held for the sale's partner, and divides the rest by the vault's fee split: address routes are paid at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with an `OwnerProof` from the sale's product; Blast acts through its roles; venue-only operations require the venue's witness, which only the venue module constructs.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/vault.move
 

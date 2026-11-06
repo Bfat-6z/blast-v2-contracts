@@ -116,7 +116,7 @@ require_text() {
 #
 # The package is exactly these modules, and each file declares only its own, so any new module (a
 # future venue included) fails here until it extends this gate explicitly. No module declares an
-# `entry` function, and every module's public and package functions are pinned below with their
+# unpinned `entry` function, and every module's callable functions are pinned below with their
 # exact signatures, so no helper or type parameter can lend a venue witness, the reserved creation
 # cap, or a vault's position to a new caller. Vault custody, LP-fee collection, and holder rewards
 # belong to `blast_vault`; the retired migrator vault, LP-fee policy, holder rewards, and Merkle
@@ -131,9 +131,11 @@ for source in "${source_files[@]}"; do
     [[ "$(awk -F'\t' '$1 == "NORM" { print $2 }' <<<"$facts" | rg -o '\bmodule [^ ;{]+')" \
         == "module blast_migrators::${module}" ]] || \
         fail "${module}.move must declare exactly its own module"
-    if awk -F'\t' '$1 == "FN" && $4 == 1 { found = 1 } END { exit !found }' <<<"$facts"; then
-        fail "${module}.move must not declare an entry function; every route is a pinned public function"
-    fi
+    entries="$(awk -F'\t' '$1 == "FN" && $4 == 1 { print $2 ":" $3 }' <<<"$facts")"
+    case "$module" in
+        bluefin|cetus) [[ "$entries" == 'compound_auto_lp:private' ]] || fail "${module} must have only the private compounding entry" ;;
+        *) [[ -z "$entries" ]] || fail "${module} must not declare an entry function" ;;
+    esac
     # Production checks skip `#[test_only]` declarations, so the attribute and the test-only
     # marker must agree in both directions.
     if awk -F'\t' '($1 == "FN" && $6 != $7) || ($1 == "TYPE" && $5 != $6) { found = 1 }
@@ -141,26 +143,26 @@ for source in "${source_files[@]}"; do
         fail "${module}.move must keep every #[test_only] declaration, and only those, below its test-only marker"
     fi
 done
-# The non-private production functions of every module are pinned with their exact signatures:
+# The public, package and entry production functions of every module are pinned with their exact signatures:
 # visibility, type parameters and their abilities, parameters, and return type. A new public or
 # package function, an added type parameter or return value (a generic `Lent: key + store` that
 # lends the reserved creation cap), or a changed parameter fails here until this pin is extended
 # deliberately.
 package_surface="$(for source in "${source_files[@]}"; do
     move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" \
-        '$1 == "FN" && $6 == 0 && $7 == 0 && $3 != "private" { print module ":" $3 ":" $9 }'
+        '$1 == "FN" && $6 == 0 && $7 == 0 && ($3 != "private" || $4 == 1) { print module ":" $3 ":" $9 }'
 done | LC_ALL=C sort)"
 require_text "$package_surface" \
-    "the package's public and package functions must have exactly the pinned signatures" <<'EOF'
+    "the package's public, package and entry functions must have exactly the pinned signatures" <<'EOF'
+bluefin:private:fun compound_auto_lp<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, acl: &ACL, admin_cap: &AdminCap, bluefin_config: &GlobalConfig, mut pool: Pool<Meme, Quote>, min_sqrt_price: u128, max_sqrt_price: u128, clock: &Clock, )
 bluefin:public:fun buyback_and_burn<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
 bluefin:public:fun collect_fees<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
-bluefin:public:fun compound_auto_lp<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, )
 bluefin:public:fun migrate<Meme, Quote>( migration: Migration<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &VenueConfig, currency: &Currency<Meme>, quote_currency: &Currency<Quote>, bluefin_config: &mut GlobalConfig, registry: &mut VaultRegistry, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, creation_fee: Coin<SUI>, clock: &Clock, ctx: &mut TxContext, )
 bluefin:public:fun prepare<Meme, Quote>( migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &mut VenueConfig, _: &SealedTreasuryCap<Meme>, currency: &Currency<Meme>, tick_spacing: u32, fee_rate: u64, ): VenueTicket<Meme, Quote>
 bluefin:public:fun settle_and_apply_fee_split<Meme, Quote>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, bluefin_config: &GlobalConfig, pool: &mut Pool<Meme, Quote>, clock: &Clock, ctx: &mut TxContext, )
+cetus:private:fun compound_auto_lp<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, acl: &ACL, admin_cap: &AdminCap, cetus_config: &GlobalConfig, mut pool: Pool<CoinA, CoinB>, min_sqrt_price: u128, max_sqrt_price: u128, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun buyback_and_burn<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, pool: &mut Pool<CoinA, CoinB>, quote_in: u64, min_meme_out: u64, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun collect_fees<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, ctx: &mut TxContext, )
-cetus:public:fun compound_auto_lp<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, cetus_config: &GlobalConfig, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun migrate<Meme, Quote, CoinA, CoinB>( migration: Migration<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, burn_manager: &mut BurnManager, registry: &mut VaultRegistry, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, clock: &Clock, ctx: &mut TxContext, )
 cetus:public:fun prepare<Meme, Quote>( migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &mut VenueConfig, cetus_config: &GlobalConfig, pools: &mut Pools, sealed_treasury_cap: &mut SealedTreasuryCap<Meme>, admission: VenueAdmission, tick_spacing: u32, ctx: &mut TxContext, ): VenueTicket<Meme, Quote>
 cetus:public:fun settle_and_apply_fee_split<Meme, Quote, CoinA, CoinB>( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>, cetus_config: &GlobalConfig, burn_manager: &BurnManager, pool: &mut Pool<CoinA, CoinB>, clock: &Clock, ctx: &mut TxContext, )
@@ -173,6 +175,7 @@ constants:package:fun min_swap_sqrt_price(): u128
 constants:package:fun q128_shift(): u8
 constants:package:fun q64_shift(): u8
 constants:package:fun version(): u64
+errors:package:fun invalid_auto_lp_price(): u64
 errors:package:fun invalid_coin_order(): u64
 errors:package:fun invalid_tier(): u64
 errors:package:fun position_pool_mismatch(): u64
@@ -220,7 +223,7 @@ EOF
 # of the package each route checks: this package's own for the guard, the vault package's for the vault calls.
 for module in bluefin cetus; do
     [[ "$(move_norm "$SOURCE_DIR/venues/${module}.move" | rg -o 'use blast_admin::[^;]*;')" \
-        == 'use blast_admin::{blast_acl::AdminWitness, package_version::PackageVersion};' ]] || \
+        == 'use blast_admin::{blast_acl::{ACL, AdminCap, AdminWitness}, package_version::PackageVersion};' ]] || \
         fail "${module}.move must import blast_admin's generic PackageVersion once, unaliased"
 done
 # Every abort the package raises is a numeric code of the one registry, renumbered from zero, and
@@ -229,8 +232,8 @@ if rg -q '#\[error|\bconst E\w*' "$SOURCE_DIR" --glob '!errors.move'; then
     fail "errors must come from the package registry, never a module-local constant"
 fi
 [[ "$(move_facts "$ERRORS_SOURCE" | awk -F'\t' '$1 == "FN" { gsub(/[[:space:]]/, "", $10); print $2 ":" $10 }' | tr '\n' ' ')" \
-    == 'invalid_coin_order:0 position_pool_mismatch:1 wrong_coin_pair:2 invalid_tier:3 symbol_too_long:4 ' ]] || \
-    fail "the error registry must be exactly coin order 0, vault pool 1, coin pair 2, Bluefin tier 3, and symbol 4"
+    == 'invalid_coin_order:0 position_pool_mismatch:1 wrong_coin_pair:2 invalid_tier:3 symbol_too_long:4 invalid_auto_lp_price:5 ' ]] || \
+    fail "the error registry must be exactly coin order 0, vault pool 1, coin pair 2, Bluefin tier 3, symbol 4, and auto-LP price 5"
 
 # === Release venue matrix ===
 #
@@ -474,8 +477,8 @@ bluefin_facts="$(move_facts "$BLUEFIN_SOURCE")"
 [[ "$bluefin_facts" != *MALFORMED* ]] || fail "the Move reader rejected bluefin.move"
 bluefin_public="$(awk -F'\t' '$1 == "FN" && $3 == "public" && $6 == 0 { print $2 }' <<<"$bluefin_facts" \
     | LC_ALL=C sort | tr '\n' ' ')"
-[[ "$bluefin_public" == 'buyback_and_burn collect_fees compound_auto_lp migrate prepare settle_and_apply_fee_split ' ]] || \
-    fail "Bluefin must expose exactly prepare, migrate, collect_fees, settle_and_apply_fee_split, compound_auto_lp, and buyback_and_burn"
+[[ "$bluefin_public" == 'buyback_and_burn collect_fees migrate prepare settle_and_apply_fee_split ' ]] || \
+    fail "Bluefin public routes must be exactly prepare, migrate, collect_fees, settle_and_apply_fee_split, and buyback_and_burn"
 bluefin_body() {
     awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name { print $10 }' <<<"$bluefin_facts" \
         | tr -d '[:space:]' | sed 's/,)/)/g'
@@ -517,10 +520,10 @@ bluefin_migrate_body="$(bluefin_body migrate)"
 [[ "$(bluefin_body settle_fees)" == 'let(meme_fee,quote_fee)=self.collect_position_fees(vault_version,bluefin_config,pool,clock);self.split_fees(&Venue(),vault_version,treasury,currency,meme_fee,quote_fee,ctx);' ]] \
     && [[ "$(bluefin_body collect_fees)" == 'migrators_version.assert_current(constants::version!());self.settle_fees(vault_version,treasury,currency,bluefin_config,pool,clock,ctx);' ]] || \
     fail "Bluefin collection must split the collected position's fees through the vault and never add liquidity"
-# Compounding is its own permissionless route: it checks the version and the vault's pool, then
+# Compounding is its own admin entry: it checks the live role, bounds, and vault pool, then
 # adds the waiting auto-LP share, so a venue refusal of the add never blocks collection.
-[[ "$(bluefin_body compound_auto_lp)" == 'migrators_version.assert_current(constants::version!());assert!(self.pool_id()==object::id(pool),blast_migrators::errors::position_pool_mismatch!());self.compound(vault_version,bluefin_config,pool,clock);' ]] || \
-    fail "Bluefin compounding must check the version and the vault's pool, then add the waiting auto-LP share apart from collection"
+[[ "$(bluefin_body compound_auto_lp)" == 'migrators_version.assert_current(constants::version!());acl.sign_in<AutoLpAdmin>(admin_cap);assert!(min_sqrt_price>0&&min_sqrt_price<=max_sqrt_price,blast_migrators::errors::invalid_auto_lp_price!());assert!(self.pool_id()==object::id(&pool),blast_migrators::errors::position_pool_mismatch!());letsqrt_price=pool.current_sqrt_price();assert!(min_sqrt_price<=sqrt_price&&sqrt_price<=max_sqrt_price,blast_migrators::errors::invalid_auto_lp_price!());self.compound(vault_version,bluefin_config,&mutpool,clock);transfer::public_share_object(pool);' ]] || \
+    fail "Bluefin compounding must check the version, live role, bounds, and vault pool, then add the waiting auto-LP share apart from collection"
 [[ "$(bluefin_body settle_and_apply_fee_split)" == 'migrators_version.assert_current(constants::version!());self.assert_fee_split_ready(clock);self.settle_fees(vault_version,treasury,currency,bluefin_config,pool,clock,ctx);self.apply_fee_split(&Venue(),vault_version,clock);' ]] || \
     fail "Bluefin settled application must check stored proposal readiness before collecting, then split the accrued fees under the current split before committing a new one"
 [[ "$(bluefin_body buyback_and_burn)" == 'migrators_version.assert_current(constants::version!());assert!(self.pool_id()==object::id(pool),blast_migrators::errors::position_pool_mismatch!());let(quote,receipt)=self.take_buyback_quote(&Venue(),admin_witness,vault_version,quote_in);let(meme,quote)=pool::swap(clock,bluefin_config,pool,balance::zero(),quote,false,true,quote_in,0,constants::max_swap_sqrt_price!());self.burn_buyback(&Venue(),vault_version,receipt,currency,meme,quote,min_meme_out,ctx);' ]] || \
@@ -546,7 +549,7 @@ for entry in prepare migrate collect_fees settle_and_apply_fee_split compound_au
         prepare) expected="( migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &mut VenueConfig," ;;
         migrate) expected="( migration: Migration<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &VenueConfig," ;;
         collect_fees|settle_and_apply_fee_split) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>," ;;
-        compound_auto_lp) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, bluefin_config: &GlobalConfig," ;;
+        compound_auto_lp) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, acl: &ACL, admin_cap: &AdminCap, bluefin_config: &GlobalConfig," ;;
         buyback_and_burn) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>," ;;
         *) fail "unhandled venue entry ${entry}" ;;
     esac
@@ -602,8 +605,8 @@ cetus_facts="$(move_facts "$CETUS_SOURCE")"
 [[ "$cetus_facts" != *MALFORMED* ]] || fail "the Move reader rejected cetus.move"
 cetus_public="$(awk -F'\t' '$1 == "FN" && $3 == "public" && $6 == 0 { print $2 }' <<<"$cetus_facts" \
     | LC_ALL=C sort | tr '\n' ' ')"
-[[ "$cetus_public" == 'buyback_and_burn collect_fees compound_auto_lp migrate prepare settle_and_apply_fee_split ' ]] || \
-    fail "Cetus must expose exactly prepare and one migrate, collect, settled-update, compounding, and buyback route for both coin orders"
+[[ "$cetus_public" == 'buyback_and_burn collect_fees migrate prepare settle_and_apply_fee_split ' ]] || \
+    fail "Cetus public routes must be exactly prepare, migrate, collect, settled-update, and buyback for both coin orders"
 cetus_body() {
     awk -F'\t' -v name="$1" '$1 == "FN" && $2 == name && $6 == 0 { print $10 }' <<<"$cetus_facts" \
         | tr -d '[:space:]' | sed 's/,)/)/g'
@@ -637,8 +640,8 @@ pair_proof='letmeme_is_a=is_meme_coin_a<Meme,Quote,CoinA,CoinB>();'
     fail "cetus::collect_fees must check the version and the pair, then split the collected fees through the vault and never add liquidity"
 [[ "$(cetus_body settle_and_apply_fee_split)" == "migrators_version.assert_current(constants::version!());${pair_proof}self.assert_fee_split_ready(clock);self.settle_fees(vault_version,treasury,currency,cetus_config,burn_manager,pool,meme_is_a,ctx);self.apply_fee_split(&Venue(),vault_version,clock);" ]] || \
     fail "cetus::settle_and_apply_fee_split must check the pair and stored proposal readiness before collecting, then split the accrued fees under the current split before committing a new one"
-[[ "$(cetus_body compound_auto_lp)" == "migrators_version.assert_current(constants::version!());${pair_proof}assert!(self.pool_id()==object::id(pool),blast_migrators::errors::position_pool_mismatch!());self.compound(vault_version,cetus_config,pool,meme_is_a,clock,ctx);" ]] || \
-    fail "cetus::compound_auto_lp must check the version, the pair, and the vault's pool, then add the waiting auto-LP share apart from collection"
+[[ "$(cetus_body compound_auto_lp)" == 'migrators_version.assert_current(constants::version!());acl.sign_in<AutoLpAdmin>(admin_cap);assert!(min_sqrt_price>0&&min_sqrt_price<=max_sqrt_price,blast_migrators::errors::invalid_auto_lp_price!());letmeme_is_a=is_meme_coin_a<Meme,Quote,CoinA,CoinB>();assert!(self.pool_id()==object::id(&pool),blast_migrators::errors::position_pool_mismatch!());letsqrt_price=pool.current_sqrt_price();assert!(min_sqrt_price<=sqrt_price&&sqrt_price<=max_sqrt_price,blast_migrators::errors::invalid_auto_lp_price!());self.compound(vault_version,cetus_config,&mutpool,meme_is_a,clock,ctx);transfer::public_share_object(pool);' ]] || \
+    fail "cetus::compound_auto_lp must check the version, live role, bounds, pair, and vault pool, then add the waiting auto-LP share apart from collection"
 [[ "$(cetus_body buyback_and_burn)" == "migrators_version.assert_current(constants::version!());${pair_proof}assert!(self.pool_id()==object::id(pool),blast_migrators::errors::position_pool_mismatch!());let(quote,receipt)=self.take_buyback_quote(&Venue(),admin_witness,vault_version,quote_in);let(meme,quote)=pool.swap_quote_for_meme(cetus_config,quote,meme_is_a,clock,ctx);self.burn_buyback(&Venue(),vault_version,receipt,currency,meme,quote,min_meme_out,ctx);" ]] \
     && [[ "$(cetus_body swap_quote_for_meme)" == 'let(a,b)=reorder(balance::zero<Meme>(),quote,meme_is_a,ctx);let(a,b)=pool.swap(cetus_config,a,b,!meme_is_a,clock);reorder(a,b,meme_is_a,ctx)' ]] || \
     fail "cetus::buyback_and_burn must check the pair and the vault's pool, take the admin's quote_in of the burn Quote under the buyback admin, swap all of it Quote-to-Meme, and let the vault check and burn"
@@ -703,7 +706,7 @@ for entry in prepare migrate collect_fees settle_and_apply_fee_split compound_au
         prepare) expected="( migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &mut VenueConfig," ;;
         migrate) expected="( migration: Migration<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, venue_config: &VenueConfig," ;;
         collect_fees|settle_and_apply_fee_split) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, treasury: &Treasury, currency: &mut Currency<Meme>," ;;
-        compound_auto_lp) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, cetus_config: &GlobalConfig," ;;
+        compound_auto_lp) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, acl: &ACL, admin_cap: &AdminCap, cetus_config: &GlobalConfig," ;;
         buyback_and_burn) expected="( self: &mut Vault<Meme, Quote>, migrators_version: &PackageVersion<BLAST_MIGRATORS>, vault_version: &PackageVersion<BLAST_VAULT_PACKAGE>, admin_witness: &AdminWitness<BuybackAdmin>, currency: &mut Currency<Meme>," ;;
         *) fail "unhandled venue entry ${entry}" ;;
     esac
@@ -818,8 +821,8 @@ fi
 # `package_version::new_publication` with no pause bits and keeps the publication for the
 # publisher, who wraps it with the package's UpgradeCap through `package_admin::wrap`. The package
 # declares no local custody, version, pause, or upgrade copy, no role of its own, and no
-# unpause; its only administrator action is the buyback, under the core domain's `BuybackAdmin`,
-# the role `blast_vault` checks.
+# unpause; the vault checks the core domain's `BuybackAdmin` witness, and private compounding
+# checks the live `AutoLpAdmin` role inside the migrators entry.
 
 for forbidden in acl.move blast_acl.move package_admin.move package_version.move; do
     [[ -e "$SOURCE_DIR/$forbidden" ]] && \
@@ -861,7 +864,7 @@ CORE_ROLES="$(move_facts "$PACKAGE_DIR/../core/sources/blast_domain.move" \
 if rg -n "^public struct (${CORE_ROLES})\\b" "$SOURCE_DIR"; then
     fail "Migrators must take core's roles, never declare a same-named copy"
 fi
-# The witness type is each administrator action's role check, so every witness a source names is
+# The witness type is each witness-taking action's role check, so every witness a source names is
 # borrowed and names one concrete core role; a generic or foreign role fails here.
 admin_witness_violations="$(for source in "${source_files[@]}"; do
     move_norm "$source" | { rg -o '&?AdminWitness<[^>]*>' || true; } \
@@ -871,11 +874,11 @@ done)"
 [[ -z "$admin_witness_violations" ]] || \
     fail "every administrator witness must be a borrowed AdminWitness of one concrete role: ${admin_witness_violations}"
 for module in bluefin cetus; do
-    move_norm "$SOURCE_DIR/venues/${module}.move" | rg -q 'use blast_core::\{ blast_domain::BuybackAdmin,' || \
+    move_norm "$SOURCE_DIR/venues/${module}.move" | rg -q 'use blast_core::\{ blast_domain::\{AutoLpAdmin, BuybackAdmin\},' || \
         fail "${module} buybacks must take the core domain's BuybackAdmin, the role blast_vault checks"
 done
-# Every administrator action takes exactly one role, the one pinned here. The buybacks hand their
-# witness to `blast_vault`'s `take_buyback_quote`, whose calls are pinned above.
+# Every witness-taking action takes exactly one role, the one pinned here. The buybacks hand their
+# witness to `blast_vault`'s `take_buyback_quote`; private compounding's live ACL check is pinned above.
 admin_roles="$(for source in "${source_files[@]}"; do
     move_facts "$source" | awk -F'\t' -v module="$(basename "$source" .move)" '
         $1 == "FN" && $6 == 0 && index($9, "AdminWitness<") > 0 {
@@ -890,7 +893,7 @@ admin_roles="$(for source in "${source_files[@]}"; do
     '
 done | LC_ALL=C sort)"
 require_text "$admin_roles" \
-    "every administrator action must take exactly its pinned role witness" <<'ROLES'
+    "every witness-taking action must take exactly its pinned role witness" <<'ROLES'
 bluefin:buyback_and_burn:BuybackAdmin
 cetus:buyback_and_burn:BuybackAdmin
 ROLES

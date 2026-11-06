@@ -969,9 +969,10 @@ if [[ ! -f sources/launch/launch.move ]] \
     'let graduation_target = graduation_target.destroy_some();' \
     'allocation_plan.destroy_some().add_protocol(config.protocol_allocation());' \
     'invalid_opening_round!()' \
-    'invalid_graduation_target!()' \
+    'assert!(lp_quote > 0, blast_fun::errors::invalid_graduation_target!());' \
     'let atomic_supply = launch_ticket::atomic_supply(ticket.decimals());' \
     'allocation_plan.apportion_meme(atomic_supply)' \
+    'assert!( migration::is_seedable_price(migration::sqrt_price_x64(lp_meme, lp_quote, true)), blast_fun::errors::invalid_graduation_target!(), );' \
     'ticket.destroy(treasury_cap, currency, atomic_supply);' \
     'Launch {' \
     'lp_fee_split: lp_fee_split.destroy_some(),' \

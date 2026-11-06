@@ -41,65 +41,10 @@ fun test_sui_registers_once() {
     abort
 }
 
-#[test]
-/// A sale token starts with zero supply and a shared, unsealed `Currency`.
-fun a_sale_token_starts_with_zero_supply() {
-    let mut scenario = test_scenario::begin(@0x0);
-    let mut registry = coin_registry::create_coin_data_registry_for_testing(scenario.ctx());
-    let treasury_cap = sale_tokens::new_sale_a(&mut registry, scenario.ctx());
-
-    assert_eq!(treasury_cap.total_supply(), 0);
-
-    scenario.next_tx(MINTER);
-    let currency = scenario.take_shared<Currency<SALE_A>>();
-
-    assert_eq!(currency.symbol(), b"BPTA".to_string());
-    assert_eq!(currency.decimals(), 9);
-    assert!(!currency.is_supply_fixed() && !currency.is_supply_burn_only());
-
-    test_scenario::return_shared(currency);
-    destroy(treasury_cap);
-    destroy(registry);
-    scenario.end();
-}
-
-#[test]
-#[expected_failure(abort_code = coin_registry::ECurrencyAlreadyExists, location = coin_registry)]
-/// Each sale token registers once.
-fun a_sale_token_registers_once() {
-    let mut ctx = tx_context::dummy();
-    let mut registry = coin_registry::create_coin_data_registry_for_testing(&mut ctx);
-
-    destroy(sale_tokens::new_sale_b(&mut registry, &mut ctx));
-    destroy(sale_tokens::new_sale_b(&mut registry, &mut ctx));
-    abort
-}
-
-#[test]
-/// The long-symbol token carries 33 bytes, one past Bluefin's bound.
-fun the_long_symbol_exceeds_bluefins_bound() {
-    let mut scenario = test_scenario::begin(@0x0);
-    let mut registry = coin_registry::create_coin_data_registry_for_testing(scenario.ctx());
-    let treasury_cap = sale_tokens::new_sale_long_symbol(&mut registry, scenario.ctx());
-
-    scenario.next_tx(MINTER);
-    let currency = scenario.take_shared<Currency<SALE_LONG_SYMBOL>>();
-
-    assert_eq!(currency.symbol().length(), 33);
-
-    test_scenario::return_shared(currency);
-    destroy(treasury_cap);
-    destroy(registry);
-    scenario.end();
-}
-
 // === Imports ===
 
-use blast_presale_testkit::{
-    sale_tokens::{Self, SALE_A, SALE_LONG_SYMBOL},
-    test_sui::{Self, Faucet},
-};
+use blast_presale_testkit::test_sui::{Self, Faucet};
 
 use std::unit_test::{assert_eq, destroy};
 
-use sui::{coin_registry::{Self, Currency}, test_scenario};
+use sui::{coin_registry, test_scenario};

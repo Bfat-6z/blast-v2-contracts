@@ -60,6 +60,11 @@ def mask_rust(source):
 # These venue objects require the transaction runtime and captured venue bytecode.
 # Pin the existing native oracles instead of pretending link-stub unit tests cover them.
 NATIVE_TESTS = {
+    ('blast_migrators::errors', 'EInvalidAutoLpPrice'): (
+        'venue_fork.rs', 'compounding_guards',
+        'Expected::Abort { package: self.migrators, module: self.case.module(), code: INVALID_AUTO_LP_PRICE }',
+        'const INVALID_AUTO_LP_PRICE: u64 = 5;', 5,
+    ),
     ('blast_migrators::errors', 'EInvalidCoinOrder'): (
         'venue_fork.rs', 'migration_failures_commit_nothing',
         'Expected::Abort { package: self.migrators, module: "cetus", code: INVALID_COIN_ORDER }',

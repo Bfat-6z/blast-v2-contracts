@@ -452,7 +452,7 @@ for path in migrators_sources.rglob('*.move'):
     assert not re.search(r'\b(OperationalVersion|UpgradeCustody|DelayedAction|operational_version|upgrade_custody)\b', production), path
     assert 'PackageWitness()' not in production.replace('public struct PackageWitness() has drop;', ''), path
 for venue in ('bluefin', 'cetus'):
-    routes = [row for row in facts('migrators', venue) if row[0] == 'FN' and row[2] == 'public' and row[5] == '0']
+    routes = [row for row in facts('migrators', venue) if row[0] == 'FN' and (row[2] == 'public' or row[3] == '1') and row[5] == '0']
     assert sorted(row[1] for row in routes) == [
         'buyback_and_burn', 'collect_fees', 'compound_auto_lp', 'migrate', 'prepare', 'settle_and_apply_fee_split',
     ], (venue, routes)

@@ -327,7 +327,7 @@ an empty tree, an index outside it, or a proof of the wrong depth return false i
 ### Roles
 
 `blast_domain` declares Blast's product roles for the shared ACL: `TreasuryAdmin`, `FeeAdmin`,
-`ListingAdmin`, `VenueAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`,
+`ListingAdmin`, `VenueAdmin`, `RewardsAdmin`, `BuybackAdmin`, `AutoLpAdmin`, `CreatorAdmin`,
 `ClaimSignerAdmin`, and `CancelAdmin`. Only Blast admins hold them.
 
 ### Errors
@@ -412,6 +412,9 @@ public struct RewardsAdmin {}
 
 /// Swaps a vault's burn Quote for Meme to burn.
 public struct BuybackAdmin {}
+
+/// Reinvests waiting auto-LP fees under price bounds from a trusted off-chain quote.
+public struct AutoLpAdmin {}
 
 /// Revokes and reissues a launch's creator capabilities.
 public struct CreatorAdmin {}

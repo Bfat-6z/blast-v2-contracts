@@ -152,7 +152,8 @@ Pending --share--> Open --settle (total >= raise)--> Funded --migrate--> Migrate
 `blast_presale::blast_presale::prove_owner` works in every state, but only a migrated sale has a
 vault to present the proof to. Migration and cancellation race once the LP deadline passes:
 whichever transaction lands first wins. Nobody can withdraw a commitment while the sale is `Open`
-or `Funded`. The vault never closes and its position is never removed.
+or `Funded`. The current vault and venue code expose no position withdrawal. Their upgrade authorities can
+change custody behavior while those packages remain upgradeable.
 
 ### Flows
 
@@ -1155,3 +1156,5 @@ LP share changes only through the vault's own 48-hour delayed call.
 Cetus LP-burn and the vault keeps only its fee-claiming proof. A Bluefin position sits in the
 vault under the venue's key, which only borrows it to collect fees and never removes it. The
 Aftermath DAO-pool vendor sends its LP coin, the pool's whole liquidity, to `0x0`.
+Vault and venue upgrade authorities can change the custody behavior of positions they still
+control; the Cetus migration burn is a separate venue mechanism, and its auto-LP position is unburned.

@@ -225,7 +225,8 @@ the burn route's Quote on buybacks; `CancelAdmin` cancels any pending change.
 3. Each fee collection through the venue calls `blast_vault::vault::split_fees`.
 4. Holder-reward rounds are scheduled, published, claimed, and closed (see Flows).
 
-A vault never closes; its position cannot be removed.
+The current code exposes no vault closure or position withdrawal. Upgrade authorities can
+change this behavior while the vault or venue package remains upgradeable.
 
 ### Flows
 
@@ -385,6 +386,9 @@ the `UpgradeCap`; no later upgrade or repair is possible.
 
 **Can anyone withdraw the liquidity?** No. The position is held under the venue's key with no
 removal path; only the venue's code can borrow it to collect fees or add auto-LP.
+While the vault or venue package remains upgradeable, its authorized upgrades can
+change that custody behavior. Cetus burns the migration position separately;
+its auto-LP position remains under the vault and venue upgrade authorities.
 
 **Who receives the burn route's Meme?** Nobody: it is burned when the supply is burn-only, or sent
 to `0x0` when it is fixed.
@@ -553,7 +557,7 @@ an empty tree, an index outside it, or a proof of the wrong depth return false i
 ### Roles
 
 `blast_domain` declares Blast's product roles for the shared ACL: `TreasuryAdmin`, `FeeAdmin`,
-`ListingAdmin`, `VenueAdmin`, `RewardsAdmin`, `BuybackAdmin`, `CreatorAdmin`,
+`ListingAdmin`, `VenueAdmin`, `RewardsAdmin`, `BuybackAdmin`, `AutoLpAdmin`, `CreatorAdmin`,
 `ClaimSignerAdmin`, and `CancelAdmin`. Only Blast admins hold them.
 
 ### Errors
@@ -976,7 +980,7 @@ public fun close_round<Meme, Quote>(
 
 ### `blast_vault::vault`
 
-The one LP vault every Blast sale migrates into: permanent custody of a venue position, and the split of every fee collection it earns.  An admitted venue builds the vault from the terms it redeemed from a sale's migration, attaches the position under its sealed `Venue` key, and shares it. Every collection then pays Blast its per-vault share through the core protocol ledger, at once or held for the sale's partner, and divides the rest by the vault's fee split: address routes are paid at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with an `OwnerProof` from the sale's product; Blast acts through its roles; venue-only operations require the venue's witness, which only the venue module constructs.
+The LP vault every Blast sale migrates into: custody of a venue position with no exposed withdrawal path, and the split of every fee collection it earns.  While the vault or its venue package remains upgradeable, authorized upgrades can change custody behavior. Cetus separately burns the migration position through its LP Burn contract; the vault holds that burn proof and any unburned auto-LP position.  An admitted venue builds the vault from the terms it redeemed from a sale's migration, attaches the position under its sealed `Venue` key, and shares it. Every collection then pays Blast its per-vault share through the core protocol ledger, at once or held for the sale's partner, and divides the rest by the vault's fee split: address routes are paid at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with an `OwnerProof` from the sale's product; Blast acts through its roles; venue-only operations require the venue's witness, which only the venue module constructs.
 
 Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/vault.move
 
@@ -1357,6 +1361,9 @@ public struct RewardsAdmin {}
 
 /// Swaps a vault's burn Quote for Meme to burn.
 public struct BuybackAdmin {}
+
+/// Reinvests waiting auto-LP fees under price bounds from a trusted off-chain quote.
+public struct AutoLpAdmin {}
 
 /// Revokes and reissues a launch's creator capabilities.
 public struct CreatorAdmin {}
