@@ -1,6 +1,6 @@
 # Security audits
 
-This directory preserves four reports, each tied to its reviewed source:
+This directory preserves five reports, each tied to its reviewed source:
 
 | Report | Reviewed revision | Coverage |
 | --- | --- | --- |
@@ -8,9 +8,12 @@ This directory preserves four reports, each tied to its reviewed source:
 | [Claude (Fable 5.1) - November 2026](blast-launch-stack-claude-nov-2026.pdf) | `4fe8d739` | AI security review of the shared launch stack; findings remediated in #217 |
 | [Astra using Trail of Bits skills - November 2026](blast-launch-stack-astra-nov-2026.pdf) | `d80f2834` | AI security review of the shared launch stack; one informational documentation finding corrected in the accompanying documentation changes |
 | [GiveRep / Eason Chen - November 2026](blast-launch-stack-giverep-nov-2026.pdf) | `850d8227`, `8c04789d`, `b50d0c3b` | Final delivered launch-stack assessment and remediation review; original PDF preserved, with later project dispositions below |
+| [Claude (Fable 5.1) using the Cloudflare security-audit skill - November 2026](blast-launch-stack-claude-cloudflare-nov-2026.pdf) | `d80f2834` | AI source-only security review of the shared launch stack's production Move code; no confirmed findings, one operational upgrade-sequencing lead with an owner-defined mitigation |
 
 The Claude and Astra reports are AI-conducted reviews. The Astra review applies
 Trail of Bits' public skills; it was not performed or endorsed by Trail of Bits.
+The second Claude review applies Cloudflare's public security-audit skill; it was
+not performed or endorsed by Cloudflare.
 The seven packages of
 [ADR 0137](../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md),
 the templates and the vendors are a fresh lineage with external-audit and
@@ -341,4 +344,88 @@ SHA-256 of the original supplied PDF and the identical repository copy:
 
 ```text
 860fb2b2299af31fa19226cffb24fb069d5c8fa57e5a02278bcfda3c3f62fa51
+```
+
+## Claude (Fable 5.1) using the Cloudflare security-audit skill — Blast launch stack, November 2026
+
+[Download the complete report](blast-launch-stack-claude-cloudflare-nov-2026.pdf) (24 pages).
+An AI-conducted, source-only security review by Claude Fable 5.1
+(`claude-fable-5-1`), Anthropic's model, completed on 6 November 2026. It applies
+Cloudflare's public security-audit skill, which is coverage-ledger driven: hunters
+review each unit, coverage critics check for gaps, and every candidate is then
+validated and its final record verified by fresh, independent reviewers. This is
+not a Cloudflare company audit or endorsement. Effort was `xhigh` for
+reconnaissance and the first 12 hunters, then `high` for the remaining hunters,
+both coverage critics, all verifiers and the reports. Fable made every security
+judgement; Codex and then Claude Code (Claude Opus 5.5) only orchestrated the run
+and rendered the PDF. Run evidence, transcripts and the Markdown sources of the
+PDF are retained separately by Blast, not included in this repository.
+
+### Reviewed source
+
+- Repository: [interest-protocol/blast-v2-contracts](https://github.com/interest-protocol/blast-v2-contracts), branch `main`.
+- Reviewed commit: [`d80f2834468ba798df66f36d01fd64eec9d4df91`](https://github.com/interest-protocol/blast-v2-contracts/commit/d80f2834468ba798df66f36d01fd64eec9d4df91), an unmodified source snapshot with an integrity manifest.
+- Methodology: [Cloudflare security-audit skill at `c1c8a8c1471069fb0e188eeaff69b8e8db6564a8`](https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8), `standard` profile, scoped.
+
+Later production changes, including the auto-LP compounding hardening in
+[#225](https://github.com/interest-protocol/blast-v2-contracts/pull/225), are
+**outside the reviewed revision**.
+
+### Scope
+
+Production Move contract code in `sui/admin`, `sui/core`, `sui/migrators`,
+`sui/vault`, `sui/launchpad` and `sui/presale`: their `sources/**/*.move`, the
+Cetus and Bluefin interface stubs the migrators link against, and linked
+dependency behaviour, including the pinned Sui framework `coin_registry` at
+`06734f6f`. Tests, the PTB harness, fixtures, scripts, CI and publishing tooling
+were not audit targets, at Blast's direction; they were read only as supporting
+evidence for a contract claim.
+
+Coverage closed 55 in-scope contract units across 24 hunter reviews; both the
+post-wave and the final-clean coverage critics found no gaps. The review was
+**source-only**: no sandbox was provisioned, so nothing was built, tested, run or
+probed on chain, and no record could reach `confirmed`. Runtime, venue bytecode
+and deployment behaviour are untested.
+
+### Findings and disposition
+
+The report records **0 confirmed findings**, **1 lead needing validation**
+(no severity) and **1 rejected candidate**.
+
+- **NV-1: vault version advance is uncoupled from the migrators relink.** After a
+  vault upgrade advances the vault's `PackageVersion`, migrators calls into the
+  vault (migration, fee collection, compounding, buyback) abort until a relinked
+  migrators upgrade commits. A Funded presale cannot migrate during that window
+  and its liquidity deadline cannot be extended, so once the deadline passes any
+  sender can call `cancel_unlaunched`: participants are refunded in full, while
+  raise and token recipients receive nothing. It requires an operator-initiated
+  vault upgrade and is an availability hazard, not a theft path. It overlaps
+  GiveRep's LOW-04.
+
+  **Project disposition: accepted operational risk with a release procedure.**
+  Before any vault upgrade, Blast pauses presale creation and waits until no
+  presale is Pending, Open or Funded. Only then does it upgrade the vault and
+  land the migrators relink. The vault is to be
+  made immutable once it has been battle-tested on mainnet
+  ([#195](https://github.com/interest-protocol/blast-v2-contracts/issues/195)),
+  which retires this hazard. No code change is made for NV-1.
+- **Rejected: Bluefin symbol bound checked only at preparation.** The pinned Sui
+  `coin_registry` has no `MetadataCap` symbol setter, so the symbol
+  `bluefin::migrate` reads is the one `prepare` bounded.
+
+The report's hardening notes, such as the unbounded Quote symbol and icon URL
+passed to Bluefin pool creation and the zero-delay floor on per-launch cap
+reassignment, are recommendations, not findings. They are not addressed by this
+record.
+
+No new actionable security vulnerability was confirmed. This does not prove the
+absence of defects or replace the fresh lineage's external audit, quiet period
+and release-matrix obligations.
+
+### File integrity
+
+SHA-256 of the PDF:
+
+```text
+b87022751801701f797db0295ddc1f21a9677c4394127a7c3b9b59cff37f8145
 ```
