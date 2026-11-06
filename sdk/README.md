@@ -12,6 +12,13 @@ Both IDs ship as `mainnet` in `@interest-protocol/blast-util-sdk/deployments`.
 The packages can never be upgraded, so each ID is also its original ID and never
 changes.
 
+Install the compiled ESM package and its peer dependency:
+
+```sh
+npm install @interest-protocol/blast-util-sdk@0.1.0 @mysten/sui@^2.26.2
+```
+
+The package includes JavaScript and TypeScript declarations for every entry point.
 All amounts are atomic coin units as `bigint`; all times are Unix milliseconds.
 `@mysten/sui` 2.x is a peer dependency.
 
