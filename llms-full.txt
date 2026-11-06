@@ -2548,6 +2548,7 @@ Private entry prevents cross-package Move wrappers and restricts compositions in
 potatoes. It does not isolate preceding completed swaps in a PTB. The live role and bounds
 remain the economic guard. Revoking the role stops compounding immediately. Fee collection and
 settled split application remain permissionless; keeper downtime leaves auto-LP balances waiting.
+Sui supplies `TxContext` for both entries; PTB callers omit it.
 
 - Cetus: `blast_migrators::cetus::compound_auto_lp`, type arguments `<Meme, Quote, CoinA, CoinB>`,
   with the `Vault<Meme, Quote>` (mutable), migrators `PackageVersion`, vault `PackageVersion`,
@@ -8005,6 +8006,7 @@ entry fun compound_auto_lp<Meme, Quote>(
     min_sqrt_price: u128,
     max_sqrt_price: u128,
     clock: &Clock,
+    _: &mut TxContext,
 )
 ```
 

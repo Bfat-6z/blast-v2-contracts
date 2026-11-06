@@ -231,6 +231,7 @@ entry fun compound_auto_lp<Meme, Quote>(
     min_sqrt_price: u128,
     max_sqrt_price: u128,
     clock: &Clock,
+    _: &mut TxContext,
 ) {
     migrators_version.assert_current(constants::version!());
     acl.sign_in<AutoLpAdmin>(admin_cap);
