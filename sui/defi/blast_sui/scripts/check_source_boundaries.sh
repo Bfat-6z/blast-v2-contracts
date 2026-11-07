@@ -5,14 +5,14 @@ set -euo pipefail
 package_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
-# 1. The manifest declares exactly two dependencies: the immutable shared
-#    administration package and the pinned SuiSystem framework.
+# 1. The manifest declares exactly two dependencies: the pre-fold
+#    administration source and the pinned SuiSystem framework.
 pinned_rev="06734f6ff0af45d8632a14a4dc4b100197f6b1a2"
 deps="$(sed -n '/^\[dependencies\]/,/^\[/p' "$package_dir/Move.toml" | grep -E '^[A-Za-z]' || true)"
 [ "$(wc -l <<<"$deps")" -eq 2 ] || fail "Move.toml must declare exactly two dependencies."
 grep -q '^SuiSystem = ' <<<"$deps" || fail "Move.toml must depend on SuiSystem."
-grep -Fq 'blast_admin = { local = "../../governance/admin" }' <<<"$deps" \
-  || fail "Move.toml must depend on the immutable shared administration package."
+grep -Eq '^blast_admin = \{ git = "https://github\.com/interest-protocol/blast-v2-contracts\.git", subdir = "sui/admin", rev = "[0-9a-f]{40}" \}$' <<<"$deps" \
+  || fail "Move.toml must pin the pre-fold blast_admin source by commit."
 grep -q "rev = \"$pinned_rev\"" "$package_dir/Move.toml" || fail "SuiSystem must stay pinned to $pinned_rev."
 
 # 2. This package must not reference the launchpad package.

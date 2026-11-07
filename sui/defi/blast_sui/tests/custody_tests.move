@@ -422,7 +422,7 @@ fun advance_epoch_with_rewards(self: &mut CustodyFixture, computation_charge: u6
 
 // === Imports ===
 
-use blast_sui::{constants, custody::{Self, Custody}, errors};
+use blast_sui::{custody::{Self, Custody}, errors};
 
 use std::unit_test::{assert_eq, destroy};
 

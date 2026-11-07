@@ -61,9 +61,8 @@ jobs:
         run: python3 scripts/test_gen_llms.py
       - name: Check llms-full.txt and llms/ are current
         run: python3 scripts/gen_llms.py --check
-      # Boosts is outside the launch-stack scope and does not yet build against the folded
-      # blast_admin (#205), so its fill-proof compile runs only when a change touches sui/defi/boosts,
-      # the posture blast-sui.yml takes for blast_sui. An unknown base runs it.
+      # Boosts pins its own admin source, so only changes under Boosts need this compile gate.
+      # An unknown base still runs the gate.
       - name: Reject omitted fill proofs with the pinned compiler
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -71,7 +70,7 @@ jobs:
           if [ -n "$BASE_SHA" ] && [ -n "${BASE_SHA//0/}" ] \
             && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null \
             && git diff --quiet "$BASE_SHA" HEAD -- sui/defi/boosts; then
-            echo "No change under sui/defi/boosts (#205): skipping the Boosts fill-proof compile."
+            echo "No change under sui/defi/boosts: skipping the Boosts fill-proof compile."
             exit 0
           fi
           bash sui/defi/boosts/aftermath_adapter/scripts/verify.sh fill-proof
