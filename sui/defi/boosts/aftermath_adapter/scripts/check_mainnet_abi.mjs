@@ -12,6 +12,8 @@ const ENDPOINT = 'https://graphql.mainnet.sui.io/graphql';
 const CHAIN_IDENTIFIER = '4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S';
 const AFTERMATH_GIT = 'https://github.com/AftermathFinance/move-interfaces.git';
 const AFTERMATH_REV = 'f62e74aa862ef65b8950a70d83aac8cb71c19837';
+const BLAST_CONTRACTS_GIT = 'https://github.com/interest-protocol/blast-v2-contracts.git';
+const BLAST_PRE_FOLD_REV = 'c4b86a9f3b1fcfb0d4a7b4e9a3d07e2fa78901f3';
 const SUI_GIT = 'https://github.com/MystenLabs/sui.git';
 const SUI_REV = '06734f6ff0af45d8632a14a4dc4b100197f6b1a2';
 const STD_ADDRESS = `0x${'0'.repeat(63)}1`;
@@ -158,9 +160,9 @@ const ABI = {
 // The Aftermath interfaces are vendored verbatim from AFTERMATH_GIT at AFTERMATH_REV under
 // interfaces/aftermath (see its README); the module hashes below still gate them against mainnet.
 const DIRECT_DEPENDENCIES = {
-    blast_admin: { local: '../../../governance/admin' },
+    blast_admin: { git: BLAST_CONTRACTS_GIT, subdir: 'sui/admin', rev: BLAST_PRE_FOLD_REV },
     blast_boosts_core: { local: '../core' },
-    blast_partners: { local: '../../../launch/partners' },
+    blast_partners: { git: BLAST_CONTRACTS_GIT, subdir: 'sui/partners', rev: BLAST_PRE_FOLD_REV },
     perpetuals: { local: 'interfaces/aftermath/iperps/perpetuals' },
     position: { local: 'interfaces/aftermath/iperps/position' },
     authority_cap: { local: 'interfaces/aftermath/authority-cap/authority-cap' },
@@ -174,12 +176,9 @@ const LOCK_SOURCES = {
     MoveStdlib: { git: SUI_GIT, subdir: 'crates/sui-framework/packages/move-stdlib', rev: SUI_REV },
     Sui: { git: SUI_GIT, subdir: 'crates/sui-framework/packages/sui-framework', rev: SUI_REV },
     authority_cap: DIRECT_DEPENDENCIES.authority_cap,
-    // The immutable shared administration package is a local, inward-only edge:
-    // it pins the same framework revision and adds no venue dependency.
     blast_admin: DIRECT_DEPENDENCIES.blast_admin,
     blast_boosts_aftermath: { root: true },
     blast_boosts_core: DIRECT_DEPENDENCIES.blast_boosts_core,
-    // The immutable shared partner-code package is the same kind of inward-only edge.
     blast_partners: DIRECT_DEPENDENCIES.blast_partners,
     ifixed: DIRECT_DEPENDENCIES.ifixed,
     oracle_aggregator: DIRECT_DEPENDENCIES.oracle_aggregator,
@@ -578,6 +577,8 @@ function goodFunction(name) {
 }
 
 function selfTest() {
+    const manifestSource = readFileSync(join(PACKAGE_DIR, 'Move.toml'), 'utf8');
+    const lockSource = readFileSync(join(PACKAGE_DIR, 'Move.lock'), 'utf8');
     const expected = PACKAGES[0];
     const module = { name: 'fixture', sha256: null, functions: ['f'] };
     const bytes = Buffer.alloc(5); bytes.writeUInt32BE(0xa11ceb0b);
@@ -585,6 +586,8 @@ function selfTest() {
     const tests = [];
     const accept = (name, run) => tests.push({ name, run, message: null });
     const reject = (name, message, run) => tests.push({ name, run, message });
+    accept('checked-in Move.toml', () => validateManifestSource(manifestSource));
+    accept('checked-in Move.lock', () => validateLockSource(lockSource));
     accept('correct chain identifier', () => validateChainData({ chainIdentifier: CHAIN_IDENTIFIER }));
     reject('wrong original package id', `${expected.label}: original package id does not resolve`, () => validatePackageData(expected, { latest: null, pinned: null }));
     const wrongCurrent = goodPackageData(expected); wrongCurrent.latest.address = `0x${'a'.repeat(64)}`;
@@ -599,19 +602,19 @@ function selfTest() {
         equal(observed, 'public fun f(): u64', `${expected.label}: fixture::f signature drift`);
     });
     const publishedAt = `0x${'b'.repeat(64)}`;
-    const publishedManifest = readFileSync(join(PACKAGE_DIR, 'Move.toml'), 'utf8').replace(
+    const publishedManifest = manifestSource.replace(
         '[dependencies]',
         `published-at = "${publishedAt}"\n\n[dependencies]`,
     );
     reject('unexpected published-at', `Move.toml: published-at drift\n    expected: null\n    actual:   ${publishedAt}`, () => validateManifestSource(publishedManifest));
-    const manifest = readFileSync(join(PACKAGE_DIR, 'Move.toml'), 'utf8').replace(
+    const manifest = manifestSource.replace(
         'perpetuals = { local = "interfaces/aftermath/iperps/perpetuals" }',
         `perpetuals = { git = "${AFTERMATH_GIT}", subdir = "packages/iperps/perpetuals", rev = "main" }`,
     );
     reject('mutable Git revision', 'Move.toml: perpetuals must pin an immutable 40-hex commit, got "main"', () => validateManifestSource(manifest));
-    const lock = `${readFileSync(join(PACKAGE_DIR, 'Move.lock'), 'utf8')}\n[pinned.mainnet.Rogue]\nsource = { root = true }\nuse_environment = "mainnet"\nmanifest_digest = "${'A'.repeat(64)}"\ndeps = {}\n`;
+    const lock = `${lockSource}\n[pinned.mainnet.Rogue]\nsource = { root = true }\nuse_environment = "mainnet"\nmanifest_digest = "${'A'.repeat(64)}"\ndeps = {}\n`;
     reject('unexpected lock node', 'Move.lock: unexpected pinned node pinned.mainnet.Rogue', () => validateLockSource(lock));
-    const testnetLock = `${readFileSync(join(PACKAGE_DIR, 'Move.lock'), 'utf8')}\n[pinned.testnet.Sui]\nsource = { git = "${SUI_GIT}", subdir = "crates/sui-framework/packages/sui-framework", rev = "${SUI_REV}" }\nuse_environment = "testnet"\nmanifest_digest = "${'A'.repeat(64)}"\ndeps = { MoveStdlib = "MoveStdlib" }\n`;
+    const testnetLock = `${lockSource}\n[pinned.testnet.Sui]\nsource = { git = "${SUI_GIT}", subdir = "crates/sui-framework/packages/sui-framework", rev = "${SUI_REV}" }\nuse_environment = "testnet"\nmanifest_digest = "${'A'.repeat(64)}"\ndeps = { MoveStdlib = "MoveStdlib" }\n`;
     reject('testnet lock environment', 'Move.lock: unexpected pinned node pinned.testnet.Sui', () => validateLockSource(testnetLock));
     reject('malformed GraphQL response', 'GraphQL response: expected an object, got null', () => expectObject(null, 'GraphQL response', ['data']));
     let passed = 0;
