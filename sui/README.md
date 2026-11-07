@@ -1,8 +1,30 @@
 # Sui Move workspace
 
-This directory contains independently deployed or dependency-isolated Move
-packages. Build and verify from the directory containing the target
-`Move.toml`; use that package's scripts when present.
+## Find a package
+
+| If you’re looking for | Start here |
+| --- | --- |
+| Bonding-curve launches or overflow presales | [Launchpad](launchpad/) · [Presale](presale/) |
+| Shared launch logic, partner fees, or liquidity after migration | [Core](core/) · [Partners](partners/) · [LP vault](vault/) |
+| DEX integrations or a partner-specific venue | [Migrators (Cetus and Bluefin)](migrators/) · [Vendor contracts](vendors/) |
+| Access control, package versions, or upgrade custody | [Admin](admin/) · [Delayed UpgradeCap manager](upgrade_cap_manager/) |
+| Liquid staking or leveraged coins | [Blast SUI](blast_sui/) · [Boosts](boosts/) |
+| A coin template | [Standalone coin](coin_template/) · [Launch ticket](launch_ticket_template/) · [Presale coin](presale_coin_template/) |
+| Standalone immutable utilities | [OTC](otc/) · [Vesting](vesting/) · [Utility integration guide](../docs/utilities.md) |
+| Test assets for presale | [Presale testkit](presale_testkit/) |
+
+## Find source, tests, and deployment records
+
+- For implementation, open `sources/` in the package directory. For examples
+  and behavior checks, look in `tests/` and any `ptb_tests/` directory.
+- Build and verify from the directory containing the target `Move.toml`. Use
+  that package’s scripts when present. For Boosts and vendor contracts, open
+  the individual package first.
+- For package IDs, custody, and publish order, see the
+  [deployment records](../deployments/README.md). For public functions, types,
+  events, and abort codes, see the [integrator references](../llms/).
+
+## Package layout and boundaries
 
 Within a package, group related modules by responsibility and keep the layout
 shallow. Launch construction, configuration, accounting, pure math, package
@@ -23,14 +45,5 @@ smallest required core surface. In the launch stack the products (`launchpad`,
 `presale`) and the venues (`migrators`, `vendors/*`) never import each other:
 they depend inward on `core`, the shared venues also on `vault`, and they meet
 only through `blast_core` values passed in the transaction (ADR 0137).
-[`deployments/README.md`](../deployments/README.md) gives the publish order.
 See the repository [architecture](../docs/architecture.md) and
 [decision index](../docs/decisions/README.md) for the durable boundaries.
-
-One-off partner packages live under [`vendors/`](vendors/README.md), one
-directory per contract.
-
-Immutable utilities live in [`otc/`](otc/README.md) and
-[`vesting/`](vesting/README.md).
-Their source, deployment provenance, and SDK are maintained here; see the
-[utility integration guide](../docs/utilities.md).
