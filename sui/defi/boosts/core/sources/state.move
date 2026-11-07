@@ -2264,7 +2264,7 @@ use blast_boosts_core::{
     accounting_math,
     constants,
     lifecycle::{Self, Lifecycle},
-    observation::{Self, FundingSettlement, PositionObservation, PriceObservation},
+    observation::{FundingSettlement, PositionObservation, PriceObservation},
     policy::{ExecutionBound, PositionSide, PricePolicy, VaultPolicy},
     rebalance_math,
     blast_boosts_core::VaultIssuer,

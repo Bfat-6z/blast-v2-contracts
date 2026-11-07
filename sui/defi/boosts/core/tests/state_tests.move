@@ -3552,9 +3552,7 @@ fun with_mark_price(mut self: ObservationSpec, mark_price: u64): ObservationSpec
 use blast_admin::blast_acl::{Self, AdminWitness};
 
 use blast_boosts_core::{
-    accounting_math,
     errors,
-    lifecycle,
     observation::{Self, FundingSettlement, PositionObservation, PriceObservation},
     policy::{Self, PositionSide, VaultPolicy},
     blast_boosts_core::VaultIssuer,
