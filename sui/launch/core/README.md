@@ -2,8 +2,8 @@
 
 Blast's shared money vocabulary, below every launch product, vault, and venue (ADR 0137). It
 depends only on `blast_admin`, `blast_partners`, and `blast_fun_vesting`, imports no product,
-vault, or venue. Its canonical publication retains a native compatible
-UpgradeCap at the multisig until final audit; immutability is deferred. The only state it
+vault, or venue. The shared UpgradeCap manager holds its compatible cap with a
+fixed 48-hour wait per request. Immutability awaits the final audit. The only state it
 creates is the shared `blast_treasury::Treasury`, whose genesis address is the `blast_treasury`
 named address in `Move.toml` and must be set before publication.
 

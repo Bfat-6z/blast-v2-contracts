@@ -33,19 +33,29 @@ scripts.
 The canonical launch stack was published on 2026-11-06 and remains paused:
 [`2026-11-06-canonical-launch-stack.json`](sui/mainnet/2026-11-06-canonical-launch-stack.json).
 That record owns the package IDs, source verification, genesis objects and
-capability custody. Bootstrap administrators, quote coins, Cetus and Bluefin
+custody at publication. Bootstrap administrators, quote coins, Cetus and Bluefin
 admissions, the creator claim signer and 48-hour configurable notices are
 confirmed. The record also identifies outstanding release gates; publication is not an
 unpause or a completed final audit.
 
-The owner explicitly deferred immutability until the final audit. The canonical
-admin, partners and core native UpgradeCaps are held by the recorded multisig;
-the other four packages' caps are sealed in shared PackageAdmins. Those three
-raw caps have no on-chain upgrade notice. Preserve all seven upgrade authorities
-until the owner authorizes the post-audit immutability step. The intended
-immutable packages are admin, partners, core and vault; vault additionally
-requires its quiet period. No immutability transaction is scheduled. The earlier partial
-publication from the same day was superseded before any MVR package assignment.
+On 2026-11-07, Blast published the immutable
+[UpgradeCap manager](sui/mainnet/2026-11-07-upgrade-cap-manager.json) and
+enrolled the compatible UpgradeCaps for admin, partners and core. The
+[Aftermath DAO presale adapter](sui/mainnet/2026-11-07-aftermath-dao-presale.json)
+published separately and enrolled its compatible cap in the same manager
+later that day. The manager holds all four caps in its ObjectTable. The Blast
+multisig holds the manager's controller. Each upgrade or immutability request
+has a fixed 48-hour wait. The vault, launchpad, presale and migrators retain
+their own shared PackageAdmins and 48-hour upgrade notices.
+
+The owner deferred making admin, partners, core and vault immutable until
+the final audit. Vault also requires its quiet period. Preserve all seven
+upgrade authorities until the owner authorizes that step. The earlier partial
+launch-stack publication was superseded before any MVR package assignment.
+
+The presale testkit remains at its original version 1 package ID. Its
+UpgradeCap was destroyed on 2026-10-30 in
+[transaction `7Zky8KcJ…`](https://suiscan.xyz/mainnet/tx/7Zky8KcJHCXpFYsCGuPxifH4fNsAQ7KSWZFuBXvgGCNG).
 
 Records for older retired launch lineages were deleted on 2026-11-05 and remain
 in Git history.
@@ -142,10 +152,10 @@ reductions wait the old notice.
   PTB.
 - Every release bumps the package's `constants::version`;
   `commit_upgrade_and_advance` advances the stored version in the same call.
-- `make_immutable` ends upgrades for good. It needs the package's own witness
-  and live `PackageVersion`, so only a package with its own wrapper can take
-  it: today the vault (see [Vault immutability](#vault-immutability)). Another
-  package gains one only through an upgrade.
+- The shared UpgradeCap manager can destroy an enrolled cap after its
+  immutability request matures. The vault uses its own witness and live
+  `PackageVersion` to destroy its cap through its PackageAdmin (see
+  [Vault immutability](#vault-immutability)).
 
 ## Boosts adapter upgrades
 

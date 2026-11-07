@@ -98,6 +98,37 @@ class FrozenPackageTests(unittest.TestCase):
 
 
 class PublicationPathTests(unittest.TestCase):
+    def test_dependency_does_not_override_its_own_publication(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / 'sui/example'
+            package.mkdir(parents=True)
+            (package / 'Published.toml').write_text(
+                '[published.mainnet]\npublished-at = "0x42"\noriginal-id = "0x42"\n'
+            )
+            records = root / 'deployments/sui/mainnet'
+            records.mkdir(parents=True)
+            (records / '01-example.json').write_text(json.dumps({
+                'recordKind': 'deployment',
+                'status': 'success',
+                'repository': {'commit': 'example-revision'},
+                'packages': {'example': {'packageId': '0x42'}},
+            }))
+            (records / '02-vendor.json').write_text(json.dumps({
+                'recordKind': 'deployment',
+                'status': 'success',
+                'repository': {'commit': 'vendor-revision'},
+                'packageId': '0x43',
+                'dependencies': {'example': '0x42'},
+            }))
+            self.addCleanup(gen_llms.deployment.cache_clear)
+            with (
+                patch.object(gen_llms, 'ROOT', root),
+                patch.object(gen_llms, 'matches_publication', return_value=True) as matches,
+            ):
+                self.assertTrue(gen_llms.deployment('sui/example')['matches'])
+                matches.assert_called_once_with('sui/example', 'example-revision')
+
     def test_moved_package_matches_its_publication_only_with_the_same_sources_and_edges(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

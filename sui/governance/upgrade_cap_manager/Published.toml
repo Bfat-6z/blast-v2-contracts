@@ -1,0 +1,8 @@
+# Mainnet publication and native cap destruction in transaction 8mJd2ph8DZWZ5J4UgWXrHjMTrm8V91dWJ3bDTzrqNqzS.
+[published.mainnet]
+chain-id = "35834a8a"
+published-at = "0x6a00f462d690add7632ab159280474c3e2176c05e42f3494e37ce451de472958"
+original-id = "0x6a00f462d690add7632ab159280474c3e2176c05e42f3494e37ce451de472958"
+version = 1
+toolchain-version = "1.77.2"
+build-config = { flavor = "sui", edition = "2024" }

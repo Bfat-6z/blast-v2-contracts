@@ -1,0 +1,9 @@
+# Confirmed mainnet publication, 2026-11-07.
+[published.mainnet]
+chain-id = "35834a8a"
+published-at = "0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f"
+original-id = "0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f"
+version = 1
+toolchain-version = "1.77.2"
+build-config = { flavor = "sui", edition = "2024" }
+upgrade-capability = "0x04e3d05be39a269ab26c0bc64623c759aceff826838bca27865105a4e03a7dc5"

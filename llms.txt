@@ -3,6 +3,10 @@
 The canonical launch stack is published on Sui mainnet and remains paused.
 [Deployment records](deployments/README.md) own its IDs, custody and release
 gates; admin, partners, core and vault immutability awaits the final audit.
+The immutable UpgradeCap manager holds the compatible caps for admin, partners,
+core and the separately published Aftermath DAO presale adapter. The Blast
+multisig holds its controller, and each request has a 48-hour wait. Vault,
+launchpad, presale and migrators each keep a separate shared PackageAdmin.
 
 > Sui Move contracts behind Blast (blast.fun): a bonding-curve launchpad whose graduated coins migrate into Cetus or Bluefin pools, standalone overflow presales, partner fee codes, Boost leverage coins on Aftermath perpetuals, and the funSUI/blastSUI staking vault. Sui mainnet only.
 
@@ -14,7 +18,7 @@ Rules that hold on every branch:
 
 - **Authority order.** Move source and tests decide behavior. `Move.toml`, `Move.lock`, and `Published.toml` decide dependencies and addresses. An ADR explains a decision; its status is in the [decision index](docs/decisions/README.md): accepted binds, proposed may already be implemented (confirm in source), superseded is history. Prose explains and never overrides source.
 - **One package per `Move.toml`.** `sui/` is a workspace. Build, test, and verify from the package directory, through its `scripts/verify.sh` when it has one.
-- **Live means `Published.toml`.** A first-party package has a canonical mainnet deployment only when its directory commits a `Published.toml`: call `published-at`, and name types and filter events by `original-id`. Publication records live under `deployments/sui/mainnet/`. A package without one is unpublished greenfield work whose ABI changes with its callers.
+- **Mainnet bindings.** Read the `[published.mainnet]` table in a package's `Published.toml`. Use `published-at` for calls and `original-id` for type and event identities. See the [deployment records](deployments/README.md) for publication evidence and current custody.
 - **Mainnet only.** No testnet build, address, or rehearsal exists ([ADR 0103](docs/decisions/0103-mainnet-only.md)). Prove behavior with mainnet dev-inspect or real transactions.
 - **Chain facts win.** Contract state and emitted events are canonical. The SDK derives previews and builds transactions from them; its output is never a contract input.
 - **Compose in the PTB.** The launchpad, the presale, and Boosts core import no venue. Venues depend inward and hand core's non-droppable values back inside one programmable transaction block: a sale's `migrate` returns a `blast_core::migration::Migration` and the next command passes it to the sale's venue.
@@ -71,4 +75,4 @@ Outside the product surface: `scratch-sui/` (parked native DEX), every `interfac
 - [Leverage terminal record](docs/leverage-terminal-local.md): Boost shutdown, cash claims, and replay.
 - [Research](docs/research/): dated research and audits behind earlier decisions. Background only; accepted ADRs and source supersede it.
 
-- [Delayed UpgradeCap manager](sui/governance/upgrade_cap_manager/README.md): framework-only native cap custody with a fixed 48-hour notice for digest-bound upgrades or terminal immutability. Independently verify the manager publication is immutable before enrollment; no publication is recorded.
+- [Delayed UpgradeCap manager](sui/governance/upgrade_cap_manager/README.md): framework-only native cap custody with a fixed 48-hour notice for digest-bound upgrades or terminal immutability. See the [mainnet publication and enrollments](deployments/sui/mainnet/2026-11-07-upgrade-cap-manager.json).

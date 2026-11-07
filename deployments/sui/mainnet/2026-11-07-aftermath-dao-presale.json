@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "network": "sui:mainnet",
+  "chainId": "35834a8a",
+  "environment": "mainnet",
+  "timestampUtc": "2026-11-07T14:49:05.353Z",
+  "repository": {
+    "url": "https://github.com/interest-protocol/blast-v2-contracts",
+    "commit": "a9f3f18cd25b31eac95e65787a45c97b40091b56",
+    "dirty": false
+  },
+  "sourceCommit": "a9f3f18cd25b31eac95e65787a45c97b40091b56",
+  "sourceDirtyAtPublication": false,
+  "toolchain": "sui 1.77.2-51d177ad7d65",
+  "deployer": "0x52ecee5e58e2f3a7461cc604f4efcc3b68031e4715456d821e3a2719b0593600",
+  "status": "success",
+  "packageName": "blast_aftermath_dao_presale",
+  "packageId": "0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f",
+  "originalPackageId": "0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f",
+  "version": 1,
+  "canonicalLaunchStackRecord": "2026-11-06-canonical-launch-stack.json",
+  "dependencies": {
+    "blastCore": "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+    "aftermathAmm": "0xf948935b111990c2b604900c9b2eeb8f24dcf9868a45d1ea1653a5f282c10e29",
+    "aftermathDaoFee": "0x5ad6890968efcf3d20899e0cec735214f1067b96e77e77d86408989998468bb2",
+    "onChainLinkage": [
+      {
+        "originalId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "upgradedId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "version": 26
+      },
+      {
+        "originalId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "upgradedId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "version": 61
+      },
+      {
+        "originalId": "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54",
+        "upgradedId": "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54",
+        "version": 1
+      },
+      {
+        "originalId": "0x2d9316f1f1a95f6d7c85a4e690ef7c359e6649773ef2c37ad7d9857adb6bef06",
+        "upgradedId": "0xaead64e3b3cc7972ba86396df07066c90176f42c6aea53b6df0d8ab11007ece2",
+        "version": 2
+      },
+      {
+        "originalId": "0x64213b0e4a52bac468d4ac3f140242f70714381653a1919a6d57cd49c628207a",
+        "upgradedId": "0x64213b0e4a52bac468d4ac3f140242f70714381653a1919a6d57cd49c628207a",
+        "version": 1
+      },
+      {
+        "originalId": "0x6f60a091637054e23915b8745c0c0d47b1d49618ee3435b5f68eccf6a44fb53d",
+        "upgradedId": "0x5ad6890968efcf3d20899e0cec735214f1067b96e77e77d86408989998468bb2",
+        "version": 2
+      },
+      {
+        "originalId": "0x712579292f80c11a0c9de4ff553d6e5c4757105e83a8a3129823d2b39e65d062",
+        "upgradedId": "0xbc7b2c577ad9362fbb0dba397d17f3bcc81bf7aa916559f99a77eaee05d0947c",
+        "version": 2
+      },
+      {
+        "originalId": "0x73baa782c55003b3a359dec04b189312565d18e7309d4a51f5f112f891e3b2ab",
+        "upgradedId": "0x73baa782c55003b3a359dec04b189312565d18e7309d4a51f5f112f891e3b2ab",
+        "version": 1
+      },
+      {
+        "originalId": "0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c",
+        "upgradedId": "0x85fdb7e3d28162b99e0df758069a3d23cff874c400b2160fc0d4618aefd3ec5c",
+        "version": 1
+      },
+      {
+        "originalId": "0xa6baab1e668c7868991c1c3c11e144100f5734c407d020f72a01b9d1a8bcb97f",
+        "upgradedId": "0xa6baab1e668c7868991c1c3c11e144100f5734c407d020f72a01b9d1a8bcb97f",
+        "version": 1
+      },
+      {
+        "originalId": "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+        "upgradedId": "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+        "version": 1
+      },
+      {
+        "originalId": "0xc66fabf1a9253e43c70f1cc02d40a1d18db183140ecaae2a3f58fa6b66c55acf",
+        "upgradedId": "0xc66fabf1a9253e43c70f1cc02d40a1d18db183140ecaae2a3f58fa6b66c55acf",
+        "version": 1
+      },
+      {
+        "originalId": "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+        "upgradedId": "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+        "version": 1
+      },
+      {
+        "originalId": "0xefe170ec0be4d762196bedecd7a065816576198a6527c99282a2551aaa7da38c",
+        "upgradedId": "0xf948935b111990c2b604900c9b2eeb8f24dcf9868a45d1ea1653a5f282c10e29",
+        "version": 3
+      }
+    ]
+  },
+  "publication": {
+    "digest": "1vj2jpjFpup1ezU18uGq1Dh14te2SX3tSYDRvrnte5h",
+    "checkpoint": 342673613,
+    "status": "success"
+  },
+  "upgradeCap": {
+    "objectId": "0x04e3d05be39a269ab26c0bc64623c759aceff826838bca27865105a4e03a7dc5",
+    "owner": {
+      "ObjectOwner": "0x47274c6510e1156953d8768a82923772cedfa463fd6387ed55760e9c880d08e4"
+    },
+    "nativeVersion": 1,
+    "policy": "compatible",
+    "custody": "shared UpgradeCapManager",
+    "upgradeNoticeMs": 172800000,
+    "custodyRecord": "2026-11-07-upgrade-cap-manager.json"
+  },
+  "adminCap": {
+    "objectId": "0x4b7d3778a2a12cdf5c3a944bfdd927e301640b2abdb534081bef7dca4b675362",
+    "initialOwner": "deployer",
+    "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2",
+    "authority": "prepare vendor presales",
+    "handoff": {
+      "digest": "2HnnTmS5tWRyVwR1fuU6QtToQx6gtJsvriJvjm6KZiRA",
+      "checkpoint": 342673646,
+      "timestampUtc": "2026-11-07T14:49:13.496Z",
+      "status": "success"
+    }
+  },
+  "publisherId": null,
+  "packageAdminId": null,
+  "packageVersionId": null,
+  "genesisSharedObjects": [],
+  "compiledTerms": {
+    "daoFeeBps": 200,
+    "daoFeeRecipient": "0x37cf46b499f740e653644bd2f7a8ed97f248e8b3c69d5d12c97d7845a54c0cd8",
+    "aftermathPoolRegistry": "0xfcc774493db2c45c79f688f88d28023a3e7d98e4ee9f48bbf5c7990f651577ae",
+    "aftermathDaoFeeVersion": "0xb4bfb0f917f12ad2a772bea9b4f22431f6f5f9653162c3ae6fae5b99b21392b7"
+  },
+  "presaleVenueAdmission": {
+    "status": "scheduled, awaiting application",
+    "venueType": "0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f::blast_aftermath_dao_presale::Venue",
+    "creationPolicyId": "0x5e61581b1bb526dbe914e972d32c5253e8bff0ebec6acf3570ab228d7f6841af",
+    "noticeMs": 172800000,
+    "schedule": {
+      "digest": "Atb6hyZc9XYBMkX8HWFMuTwjRr8TtfQ22gw3mDpfAf7J",
+      "checkpoint": 342796756,
+      "timestampUtc": "2026-11-07T22:53:38.495Z",
+      "status": "success",
+      "readyAtMs": 1794264818495
+    }
+  },
+  "verification": {
+    "build": "passed",
+    "lint": "passed",
+    "unitTestsPassed": 17,
+    "liveAbiPackagesPassed": 2,
+    "sourceAndLinkage": "verified",
+    "capOwnership": "verified on-chain"
+  },
+  "releaseGatesRemaining": [
+    "apply the scheduled venue admission",
+    "mainnet migration simulation for both coin orders",
+    "canonical SDK and indexer route configuration",
+    "presale release and unpause"
+  ],
+  "recordKind": "aftermath-dao-presale-deployment"
+}

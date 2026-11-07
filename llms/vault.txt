@@ -131,8 +131,8 @@ Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
-| Deferred immutability | `blast_admin`, `blast_partners`, `blast_core` | The canonical publication retains raw compatible UpgradeCaps at the multisig until final audit. These caps have no enforced upgrade notice. Consult the deployment record before assuming immutability. |
-| Immutable | `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
+| Shared UpgradeCap manager | `blast_admin`, `blast_partners`, `blast_core`, `blast_aftermath_dao_presale` | The manager holds the compatible UpgradeCaps. Each upgrade or immutability request waits 48 hours. The Blast multisig holds the controller. |
+| Immutable | `blast_boosts_core`, `blast_upgrade_cap_manager` | The code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use a version object. |
 | Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<OTW>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |

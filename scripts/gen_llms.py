@@ -517,11 +517,15 @@ def deployment(path: str) -> dict:
         return {"live": False}
     info = {"live": True, "published_at": entry["published-at"], "original_id": entry["original-id"], "matches": None}
     for record in sorted((ROOT / "deployments/sui/mainnet").glob("*.json")):
-        text = record.read_text()
-        data = json.loads(text)
-        if entry["published-at"] not in text or "deployment" not in str(data.get("recordKind", "")):
+        data = json.loads(record.read_text())
+        kind = str(data.get("recordKind", ""))
+        if "deployment" not in kind or "rehearsal" in kind or data.get("status") != "success":
             continue
-        if "rehearsal" in str(data.get("recordKind")) or data.get("status") != "success":
+        packages = [data, *data.get("packages", {}).values()]
+        if not any(
+            package.get("currentPackageId", package.get("packageId")) == entry["published-at"]
+            for package in packages
+        ):
             continue
         commit = (data.get("repository") or {}).get("commit")
         if not commit:

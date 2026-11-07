@@ -129,7 +129,8 @@ on Boosts and 8% on another product.
   naming those deals meanwhile.
 - **At launch,** bind the canonical `blast_partners` and `blast_admin`
   publication records. Their immutability is deferred until final audit; native
-  compatible UpgradeCaps remain at the multisig. Commit `Published.toml` so the
+  compatible UpgradeCaps are held by the shared manager with a 48-hour wait
+  per request. Commit `Published.toml` so the
   adapter's mainnet build links to the intended lineage. Then publish the Boosts adapter fresh,
   grant `PartnerAdmin` on the Blast ACL, and add each Boosts deal. Also set each
   vault's admin share: while it is zero, as it is at activation, Blast earns
