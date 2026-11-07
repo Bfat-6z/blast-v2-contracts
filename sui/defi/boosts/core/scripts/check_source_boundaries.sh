@@ -9,6 +9,8 @@
 # gate, which covers both packages.
 set -euo pipefail
 
+# Pipe consumers must read to EOF so a match cannot SIGPIPE the producer.
+
 package_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
@@ -167,7 +169,7 @@ grep -q '^use blast_admin::blast_acl::AdminWitness;$' "$state_file" \
   || fail "State must import the shared AdminWitness without an alias."
 grep -qx '    _: &AdminWitness<VaultIssuer>,' <<<"$(sed -n '/^public fun issue<Product>($/,/^)/p' "$state_file")" \
   || fail "Issuance must take the Vault issuer's witness."
-if production_lines "$state_file" | grep -Eq 'AdminWitness[[:space:]]+as[[:space:]]'; then
+if production_lines "$state_file" | grep -E 'AdminWitness[[:space:]]+as[[:space:]]' >/dev/null; then
   fail "State must not alias AdminWitness around the function scanner."
 fi
 state_admin_witness_violations="$(
@@ -321,11 +323,11 @@ for source_file in $(find "$package_dir/sources" -type f -name '*.move' | sort);
   if [[ "$source_file" != "$lifecycle_file" ]]; then
     count="$(production_lines "$source_file" | grep -Ec 'lifecycle::active\(\)' || true)"
     lifecycle_creations=$((lifecycle_creations + count))
-    if production_lines "$source_file" | grep -Eq 'Lifecycle::(Active|Unwinding|Settled)'; then
+    if production_lines "$source_file" | grep -E 'Lifecycle::(Active|Unwinding|Settled)' >/dev/null; then
       fail "Only lifecycle.move may construct a production Lifecycle variant."
     fi
   fi
-  if production_lines "$source_file" | grep -Eq '\.lifecycle[[:space:]]*='; then
+  if production_lines "$source_file" | grep -E '\.lifecycle[[:space:]]*=' >/dev/null; then
     fail "Stored lifecycle fields may change only through lifecycle transitions."
   fi
 done

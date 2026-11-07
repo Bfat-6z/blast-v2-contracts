@@ -122,8 +122,12 @@ edit 's/sui::package::claim(otw, ctx)/sui::package::test_claim(otw, ctx)/' "$cas
 expect_rejected "$case_dir"
 
 case_dir="$(new_case adds_activation_path)"
-printf '\nfun activate<OTW: drop>(self: &mut PackageVersion<OTW>) {}\n' \
-  >> "$case_dir/sources/package/package_version.move"
+# Leave more than a pipe buffer after the match to exercise pipefail.
+{
+  printf '\nfun activate<OTW: drop>(self: &mut PackageVersion<OTW>) {\n'
+  awk 'BEGIN { for (i = 0; i < 16384; i++) print "    let _ = 0;" }'
+  printf '}\n'
+} >> "$case_dir/sources/package/package_version.move"
 expect_rejected "$case_dir"
 
 case_dir="$(new_case skips_versions)"

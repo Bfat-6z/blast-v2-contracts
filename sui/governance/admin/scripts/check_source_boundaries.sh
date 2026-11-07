@@ -2,6 +2,8 @@
 # Mechanical boundary gate for the immutable shared administration package.
 set -euo pipefail
 
+# Pipe consumers must read to EOF so a match cannot SIGPIPE the producer.
+
 default_package_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 package_dir="${1:-$default_package_dir}"
 publication_script="$package_dir/scripts/publish_immutable.sh"
@@ -210,7 +212,7 @@ fi
 if function_declarations "$package_admin_file" \
   | sed -nE 's/.*\)[[:space:]]*:[[:space:]]*([^{}]*)\{.*/\1/p' \
   | sed -E 's/&(mut[[:space:]]+)?Publisher//g' \
-  | grep -Eq '(UpgradeCap|Publisher)([^A-Za-z0-9_]|$)'; then
+  | grep -E '(UpgradeCap|Publisher)([^A-Za-z0-9_]|$)' >/dev/null; then
   fail "PackageAdmin APIs may return the Publisher only by reference and never an UpgradeCap."
 fi
 if grep -nE 'transfer::(public_)?transfer|burn_publisher' "$package_admin_file"; then
@@ -279,7 +281,7 @@ expected_acl_public="$(printf '%s\n' \
 
 for delayed_module in delayed delayed_action delayed_set delayed_map; do
   if production_lines "$(module_file "$delayed_module")" \
-    | grep -Eq 'fun[[:space:]]+(set|force|replace|bypass)[a-z_]*[[:space:]]*[<(]'; then
+    | grep -E 'fun[[:space:]]+(set|force|replace|bypass)[a-z_]*[[:space:]]*[<(]' >/dev/null; then
     fail "Delayed values must expose no immediate setter or bypass ($delayed_module)."
   fi
 done
@@ -341,7 +343,7 @@ grep -Fqx 'public struct Publication<phantom OTW: drop> has key {' "$package_ver
   || fail "Clearing pause bits and borrowing the Publisher must each require the exact package witness."
 grep -Fq 'sui::package::claim(otw, ctx)' "$package_version_file" \
   || fail "A publication must be claimable only with the consumer package's one-time witness."
-if production_lines "$package_version_file" | grep -Eq 'fun[[:space:]]+(activate|set_version|set_version)'; then
+if production_lines "$package_version_file" | grep -E 'fun[[:space:]]+(activate|set_version|set_version)' >/dev/null; then
   fail "The version must expose no separate activation or arbitrary setter."
 fi
 [[ "$(non_test_lines "$package_version_file" | grep -cE 'self\.version[[:space:]]*=[^=]')" -eq 1 ]] \
@@ -389,7 +391,7 @@ grep -Fq 'package_version.assert_unpause_witness<_, PackageWitness>();' "$packag
 [[ "$(grep -Fc 'package_version.assert_package_witness<_, PackageWitness>();' "$package_admin_file")" -eq 3 ]] \
   || fail "publisher, publisher_mut and make_immutable must each check the pinned package witness."
 sed -n '/^public fun make_immutable</,/^}/p' "$package_admin_file" \
-  | grep -Fq 'package_version.assert_package_witness<_, PackageWitness>();' \
+  | grep -F 'package_version.assert_package_witness<_, PackageWitness>();' >/dev/null \
   || fail "make_immutable must check the pinned package witness before ending upgrades."
 for role in UpgradeAdmin PauseAdmin UnpauseAdmin CancelAdmin; do
   grep -Fqx "public struct $role<phantom OTW>()" "$package_admin_file" \

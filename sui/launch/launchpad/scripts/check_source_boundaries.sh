@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+# Pipe consumers must read to EOF so a match cannot SIGPIPE the producer.
+
 cd "$(dirname "$0")/.."
 
 failures=0
@@ -156,7 +158,7 @@ move_balance_operations() {
 }
 
 for move_file in "${move_files[@]}"; do
-  if move_facts "$move_file" | rg -q '^MALFORMED'; then
+  if move_facts "$move_file" | rg '^MALFORMED' >/dev/null; then
     move_facts "$move_file" | rg '^MALFORMED'
     echo "${move_file}: the boundary reader could not parse this source; every body-bound check fails closed." >&2
     failures=$((failures + 1))
@@ -292,7 +294,7 @@ fi
 # operand order; stricter policy bounds stay allowed.
 for move_file in "${source_files[@]}"; do
   if move_facts "$move_file" | move_normalized_source \
-    | rg -q '<= *constants::basis_points_denominator|constants::basis_points_denominator!\(\) *>='; then
+    | rg '<= *constants::basis_points_denominator|constants::basis_points_denominator!\(\) *>=' >/dev/null; then
     echo "${move_file}: the inclusive basis-points range must be validated only by bps::new; owners may add stricter policy checks." >&2
     failures=$((failures + 1))
   fi
@@ -1186,7 +1188,7 @@ for move_file in "${source_files[@]}"; do
   # ADR 0098 keeps the accepted partners as dynamic fields of LaunchConfig.
   [[ "$move_file" == sources/launch/launch.move || "$move_file" == sources/config/launch_config.move ]] && continue
 
-  if move_facts "$move_file" | move_normalized_source | rg -q '\bdynamic_field\b'; then
+  if move_facts "$move_file" | move_normalized_source | rg '\bdynamic_field\b' >/dev/null; then
     launch_authority_violations+="  ADR 0093 ${move_file} must not name dynamic_field; only launch.move and launch_config.move keep records"$'\n'
   fi
 done
@@ -1343,7 +1345,7 @@ if rg -n '\b[a-z_]*claimed:[[:space:]]*bool|\bissue_creator_cap\b|\btransfer::' 
   || rg -q '\bMetadataCap\b|\bcoin_registry\b' <<<"$creator_authority_source" \
   || rg -q '\b(AdminWitness|blast_fun_domain|PackageVersion|package_version)\b' \
     <<<"$creator_authority_source" \
-  || rg -v -Fx 'use blast_fun::constants;' sources/launch/creator_authority.move | rg -q '^use blast_fun::' \
+  || rg -v -Fx 'use blast_fun::constants;' sources/launch/creator_authority.move | rg '^use blast_fun::' >/dev/null \
   || [[ "$(move_production_function_contract claim_creator_caps <<<"$creator_authority_facts")" != 'package:0:0:fun claim_creator_caps<Meme>( recipient: CreatorRecipient, signer_public_keys: &vector<vector<u8>>, attestation: Option<vector<u8>>, clock: &Clock, ctx: &mut TxContext, ): (CurveFeeCap<Meme>, CreatorMetadataCap<Meme>)' ]] \
   || [[ "$(move_production_function_contract new_curve_fee_cap <<<"$creator_authority_facts")" \
     != 'package:0:0:fun new_curve_fee_cap<Meme>(ctx: &mut TxContext): CurveFeeCap<Meme>' ]] \

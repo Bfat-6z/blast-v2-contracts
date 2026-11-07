@@ -36,7 +36,12 @@ boundaries_only=0
 if [ "${1:-}" = --boundaries-only ]; then boundaries_only=1; shift; fi
 coverage_args=()
 if [ "${1:-}" = --coverage ]; then coverage_args=(--coverage); shift; fi
-if [ "$#" -eq 0 ]; then set -- admin partners core vault launchpad presale migrators presale_testkit vendors/aftermath_dao_presale; fi
+if [ "$#" -eq 0 ]; then
+ set -- admin partners core vault launchpad presale migrators
+ if [ "$boundaries_only" -eq 0 ]; then
+  set -- "$@" presale_testkit vendors/aftermath_dao_presale
+ fi
+fi
 for package in "$@"; do
  case "$package" in
   admin) package_dir=sui/governance/admin ;;
