@@ -1,6 +1,6 @@
 # Security audits
 
-This directory preserves six reports, each tied to its reviewed source:
+This directory preserves seven reports, each tied to its reviewed source:
 
 | Report | Reviewed revision | Coverage |
 | --- | --- | --- |
@@ -10,11 +10,12 @@ This directory preserves six reports, each tied to its reviewed source:
 | [GiveRep / Eason Chen - November 2026](blast-launch-stack-giverep-nov-2026.pdf) | `850d8227`, `8c04789d`, `b50d0c3b` | Final launch-stack assessment with targeted remediation review through `af0765da`; supplied final PDF preserved unchanged |
 | [Claude (Fable 5.1) using the Cloudflare security-audit skill - November 2026](blast-launch-stack-claude-cloudflare-nov-2026.pdf) | `d80f2834` | AI source-only security review of the shared launch stack's production Move code; no confirmed findings, one operational upgrade-sequencing lead with an owner-defined mitigation |
 | [Claude (Fable 5.1) targeted review of #225 - November 2026](blast-launch-stack-claude-pr225-nov-2026.pdf) | `af0765da` (deployed source, identical to `86ee8cf9`) | AI targeted security review of the auto-LP compounding hardening, launchpad seed-price check and context reservations in #225, cross-checked against the GiveRep remediation review; no release blocker, two informational notes, one operational gap; F-1 recorded in ADR 0139 by owner decision |
+| [Claude (Fable 5.1) using the Cloudflare security-audit skill, UpgradeCap manager - November 2026](blast-upgrade-cap-manager-claude-cloudflare-nov-2026.pdf) | `b049ef72` (PR #232 head), hardening merged in `6adf41b9` | AI source-only security review of the standalone `blast_upgrade_cap_manager` module; no confirmed findings, no leads; hardening notes implemented on the PR branch and delta-reviewed |
 
 The Claude and Astra reports are AI-conducted reviews. The Astra review applies
 Trail of Bits' public skills; it was not performed or endorsed by Trail of Bits.
-The second Claude review applies Cloudflare's public security-audit skill; it was
-not performed or endorsed by Cloudflare.
+The second and third Claude reviews apply Cloudflare's public security-audit skill;
+they were not performed or endorsed by Cloudflare.
 The seven packages of
 [ADR 0137](../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md),
 the templates and the vendors are a fresh lineage with external-audit and
@@ -499,3 +500,81 @@ Checks run and passing: launchpad 449, migrators 40, vault 127, presale 287 and 
 tests; the 11 native venue-fork tests; the style, error-registry, llms and all six source-boundary
 gates. The GiveRep remediation review agrees with this review on every point it covers and does
 not record F-1 or F-3.
+## Claude (Fable 5.1) using the Cloudflare security-audit skill — UpgradeCap manager, November 2026
+
+[Download the complete report](blast-upgrade-cap-manager-claude-cloudflare-nov-2026.pdf) (8 pages).
+An AI-conducted, source-only security review by Claude Fable 5.1
+(`claude-fable-5-1`), Anthropic's model, completed on 7 November 2026 at effort
+`high` for every call. It applies Cloudflare's public security-audit skill
+(coverage-ledger driven: hunters review each unit, coverage critics check for
+gaps, candidates are validated by fresh reviewers). This is not a Cloudflare
+company audit or endorsement. Fable made every security judgement and also
+coordinated the run inside Claude Code; each reconnaissance, hunter and critic
+call was a read-only `claude-fable-5-1` subagent whose transcript was checked for
+its model. Run evidence, prompts, returned JSON and the Markdown sources of the
+PDF are retained separately by Blast, not included in this repository.
+
+### Reviewed source
+
+- Repository: [interest-protocol/blast-v2-contracts](https://github.com/interest-protocol/blast-v2-contracts), pull request [#232](https://github.com/interest-protocol/blast-v2-contracts/pull/232).
+- Reviewed commit: [`b049ef7277fa4965a3a1d1511cc0d1c3168c1659`](https://github.com/interest-protocol/blast-v2-contracts/commit/b049ef7277fa4965a3a1d1511cc0d1c3168c1659), the PR head, as an unmodified source snapshot with a SHA-256 manifest.
+- Methodology: [Cloudflare security-audit skill at `c1c8a8c1471069fb0e188eeaff69b8e8db6564a8`](https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8), `standard` profile, scoped.
+
+### Scope
+
+The production Move code of
+`sui/upgrade_cap_manager/sources/blast_upgrade_cap_manager.move` only, with the
+pinned Sui framework (`06734f6f`) read as linked dependency behaviour. The Move
+test module, the Rust simulator, the upgrade-target fixture, documentation and
+CI were not audit targets, at Blast's direction; they were read only as context.
+
+Coverage closed 12 in-scope units (access control on enrolment and controller
+actions, request and execution state machine, native ticket/receipt/digest/policy
+binding, manager-package trust boundary and controller object model, custody
+capacity and stranding, stale authorization after controller transfer or
+destruction, the event notice channel, wildcard and obvious-things sweeps) with
+88 source checks across five hunters in two waves. Two consecutive coverage
+critics (post-wave and final-clean) accepted no further work. The review was
+**source-only**: nothing was built, tested, run or probed on chain, so no record
+could reach `confirmed`; the PR's own 46 Move tests and 16 simulator tests were
+not reproduced.
+
+### Findings and disposition
+
+The report records **0 confirmed findings, 0 leads needing validation and 0
+rejected candidates**: no hunter proposed a candidate. Everything surfaced is a
+documented design limit or an operational dependency, recorded as hardening
+notes: the manager package's own `UpgradeCap` must be destroyed before valuable
+enrolment and nothing on chain proves it (ADR 0140 deliberately has no gate);
+`ManagerCap` has `store`, so a frozen or wrapped controller becomes permanently
+public or undestroyable; requests never expire and the controller has no
+execution priority at maturity; `destroy_cap` emits no event; request events
+carry the cap ID rather than the target package ID; on-chain Move consumers
+cannot read a pending digest; and several controller-object-model paths are
+untested. The permissionless `authorize_upgrade` was examined specifically and
+needs no guard: the caller controls neither digest, policy, target cap nor
+timing before maturity, and the hot-potato ticket means a third party can only
+produce exactly the committed upgrade or no effect.
+
+**Project disposition: hardening applied, audit result unchanged.** After the
+report, Blast implemented its code-level hardening notes on the PR #232 branch
+(squash-merged into `main` as
+[`6adf41b9`](https://github.com/interest-protocol/blast-v2-contracts/commit/6adf41b91269079d98fee40afb0e7d5ebb51f18a)): `ManagerCap` lost `store` and gained
+`transfer_cap` as its only transfer path; enrollment rejects the manager
+package's own cap (`ESelfEnrollment`, exact only while the package is at its
+original publication, so native destruction stays the guarantee); `destroy_cap`
+emits `ControllerDestroyed`; request-side events carry the target `package_id`;
+production readers replace test-only seams; tests cover the previously untested
+paths. The three ADR-level items (sealing gate, request expiry, controller grace
+window) stay as ADR 0140 decides. A fresh Fable delta review found no weakened
+invariant and one documentation overclaim, corrected. The report's section 8
+records this. None of it proves the absence of defects or establishes any live
+publication or custody fact.
+
+### File integrity
+
+SHA-256 of the PDF:
+
+```text
+03765f9f6cb7187b8fb6b32e73a1a2d68be3f84a6c754bf14812698ad2553717
+```
