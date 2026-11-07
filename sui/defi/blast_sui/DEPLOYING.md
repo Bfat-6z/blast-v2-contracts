@@ -3,6 +3,10 @@
 Use this runbook only for a new Blast SUI deployment. Store the normalized
 result in the format required by [`deployments/README.md`](../../../deployments/README.md).
 
+The current source builds against the pinned pre-fold administration source.
+Before publication, resolve its on-chain admin binding under
+[#223](https://github.com/interest-protocol/blast-v2-contracts/issues/223).
+
 1. Publish the package. Preserve the original `UpgradeCap`; upgrading it before
    package-admin intake changes its package ID and makes intake fail.
 2. Finalize Coin Registry registration for the `funSUI` and `blastSUI`
