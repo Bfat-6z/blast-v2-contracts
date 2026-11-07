@@ -147,14 +147,16 @@ must use 127.0.0.1. The runner sets its private CLI environment; it never uses t
 operator's default client configuration. Stop the task-owned node and remove its
 private genesis keys when done.
 
-It copies full first-party source, changes only the copied ACL root recipient
-and successor generation constants, and disables the three copied venue-interface
-initializers solely for local publication. No venue operation executes. Actual
-partner administration exercises the adapter's operational gate; this does not
-replace live redemption and dependency verification before deployment. Every
-transaction result, version transition, rollback and source hash is recorded in
-the output directory. The compile-only publication file uses mainnet's dependency
-environment label with localnet package IDs; it is never used to broadcast.
+The runner archives admin and partners from the shared Git revision pinned in the
+Boosts manifests. Run from a checkout containing that revision. It rewrites the
+copied Boosts manifests to use those local copies and publishes one admin package
+for core, partners and the adapter. It sets the copied ACL root recipient to the
+local signer and disables the three copied venue-interface initializers for local
+publication. Actual partner administration exercises the adapter's operational
+gate. Live redemption and dependency verification are separate deployment gates.
+Every transaction result, version transition, rollback, dependency revision and
+source hash is recorded in the output directory. The compile-only publication
+file uses mainnet's dependency environment label with localnet package IDs.
 
 ## Margin recovery
 
