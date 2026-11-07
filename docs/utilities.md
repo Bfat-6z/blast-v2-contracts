@@ -1,10 +1,8 @@
 # Immutable utility contracts
 
-OTC and vesting are maintained in `blast-v2-contracts`, alongside
-[`sdk/`](../sdk/README.md), the unchanged `@interest-protocol/blast-util-sdk`
-package for OTC and vesting. Each Move package remains independently deployed
-and imports only the Sui framework. Consolidation changes no package ID, ABI,
-SDK import name, or on-chain state.
+OTC and vesting are maintained in `blast-v2-contracts`. Each Move package
+remains independently deployed and imports only the Sui framework.
+Consolidation changes no package ID, ABI, or on-chain state.
 
 - [OTC](../sui/otc/README.md): fixed-rate coin offers.
 - [Vesting](../sui/vesting/README.md): stepped-linear and checkpoint schedules.
@@ -57,11 +55,9 @@ use the consolidated repository or same-repository local paths.
 ## Development and licensing
 
 Run `sui move test --path sui/<package>` and that package's
-`scripts/check_coverage.sh`. The SDK's check scripts are in
-[`sdk/package.json`](../sdk/package.json). No deployment is part of repository
-consolidation.
+`scripts/check_coverage.sh`. No deployment is part of repository consolidation.
 
-The imported packages, SDK, documentation, vectors, and release records remain
-MIT-licensed. Each package and the SDK carry the original license notice.
+The imported packages, documentation, vectors, and release records remain
+MIT-licensed. Each package carries the original license notice.
 [ADR 0135](decisions/0135-utility-contracts-consolidation.md) records the move
 and the exact imported paths.

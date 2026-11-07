@@ -3,9 +3,9 @@ name: Immutable utilities
 on:
   push:
     branches: [main]
-    paths: ['sui/otc/**', 'sui/vesting/**', 'sdk/**', '.github/workflows/utilities.yml']
+    paths: ['sui/otc/**', 'sui/vesting/**', '.github/workflows/utilities.yml']
   pull_request:
-    paths: ['sui/otc/**', 'sui/vesting/**', 'sdk/**', '.github/workflows/utilities.yml']
+    paths: ['sui/otc/**', 'sui/vesting/**', '.github/workflows/utilities.yml']
 
 jobs:
   verify:
@@ -17,11 +17,6 @@ jobs:
       RAYON_NUM_THREADS: 1
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: sdk/package-lock.json
       - name: Install pinned Sui CLI
         run: |
           curl -fsSL -o sui.tgz \
@@ -34,12 +29,3 @@ jobs:
           for package in otc vesting; do
             sui move test --path "sui/$package" --threads 1
           done
-      - name: Check utility SDK
-        working-directory: sdk
-        run: |
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run check:abi
-          npm run format:check
-          npm run lint
-          npm run typecheck
-          node --test --test-concurrency=1 test/*.test.ts

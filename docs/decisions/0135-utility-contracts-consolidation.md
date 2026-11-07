@@ -4,10 +4,17 @@
 - Date: 2026-11-03
 - Amended: 2026-11-03 — the timelock source is removed once `blast_partners`, its last
   consumer, moves to `blast_admin`'s delayed modules; its records and archival tag remain
+- Amended: 2026-11-07 — remove the embedded utility SDK and its CI steps;
+  OTC and vesting contracts, publication records, and imported Git history remain
 
 ## Decision
 
-Maintain OTC, vesting, timelock, and their utility SDK in `blast-v2-contracts`.
+Maintain OTC and vesting contracts in `blast-v2-contracts`. The original
+consolidation included timelock and the utility SDK; both have since been
+removed from the current tree as recorded above.
+
+### Original import
+
 Import `blast-util-contracts` main at
 `8049353ec356f659e2d53ee535f6881b2d703308` as a second Git parent, retaining the original commits,
 published-source revisions, and release provenance. Merge this change with a
