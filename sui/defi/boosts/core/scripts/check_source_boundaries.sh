@@ -48,15 +48,16 @@ grep -q '^name = "blast_boosts_core"$' "$package_dir/Move.toml" \
   || fail "Move.toml must name blast_boosts_core."
 grep -q '^edition = "2024"$' "$package_dir/Move.toml" \
   || fail "Move.toml must use edition 2024."
-# The immutable shared administration package is the only permitted dependency
-# beyond the implicit framework: the core imports the ACL rather than copying it.
+# The pinned pre-fold administration source is the only permitted dependency
+# beyond the implicit framework.
 declared_dependencies="$(
   sed -n '/^\[dependencies\]$/,/^\[/p' "$package_dir/Move.toml" \
     | grep -E '^[A-Za-z_][A-Za-z0-9_]* *=' \
     || true
 )"
-[[ "$declared_dependencies" == 'blast_admin = { local = "../../../governance/admin" }' ]] \
-  || fail "The core may depend only on the local blast_admin package."
+admin_dependency_pattern='^blast_admin = \{ git = "https://github\.com/interest-protocol/blast-v2-contracts\.git", subdir = "sui/admin", rev = "[0-9a-f]{40}" \}$'
+[[ "$declared_dependencies" =~ $admin_dependency_pattern ]] \
+  || fail "The core may depend only on blast_admin pinned by commit."
 
 for required in \
   "$domain_file" \
