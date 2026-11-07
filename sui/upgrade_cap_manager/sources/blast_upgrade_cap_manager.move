@@ -8,7 +8,8 @@ module blast_upgrade_cap_manager::blast_upgrade_cap_manager;
 
 /// Key-only custody for at most MAX_CAPS native caps, discoverable through the object table.
 /// Each cap ID has at most one pending Request in a dynamic field on this manager.
-/// This package's own cap is never accepted: destroy it natively before valuable enrollment.
+/// This package's own cap is rejected while the package is at its original publication; native
+/// destruction with verified effects remains the only guarantee.
 public struct UpgradeCapManager has key {
     id: UID,
     caps: ObjectTable<ID, UpgradeCap>,
@@ -94,8 +95,8 @@ public fun cancel_request(self: &mut UpgradeCapManager, cap: &ManagerCap, upgrad
     self.assert_managed(upgrade_cap_id);
     assert!(dynamic_field::exists<ID>(&self.id, upgrade_cap_id), ENoRequest);
 
-    let Request { action, ready_at_ms } = dynamic_field::remove<ID, Request>(&mut self.id, upgrade_cap_id);
     let package_id = self.caps[upgrade_cap_id].package();
+    let Request { action, ready_at_ms } = dynamic_field::remove<ID, Request>(&mut self.id, upgrade_cap_id);
 
     event::emit(RequestCancelled { manager_id: self.id.to_inner(), upgrade_cap_id, package_id, action, ready_at_ms });
 }
@@ -234,7 +235,10 @@ fun assert_managed(self: &UpgradeCapManager, upgrade_cap_id: ID) {
 
 /// Native authorization clears the package address until its receipt commits; this
 /// package's own cap must be destroyed natively instead of enrolled. The package ID
-/// comes from a type defined here because address literals stay 0x0 after publication.
+/// comes from a type defined here because address literals stay 0x0 after publication,
+/// so the comparison is exact only while this package is at its original publication.
+/// Keep the sentinel check first: under the 0x0 build address the self check would
+/// also match an authorized cap.
 fun assert_enrollable(upgrade_cap: &UpgradeCap) {
     assert!(upgrade_cap.package().to_address() != @0x0, EAlreadyAuthorized);
     assert!(upgrade_cap.package().to_address() != std::type_name::original_id<ManagerCap>(), ESelfEnrollment);

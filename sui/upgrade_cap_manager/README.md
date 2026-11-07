@@ -49,8 +49,11 @@ UpgradeCap with Sui's native make_immutable operation. Publish its transaction
 digest and verify the actual effects against the expected original cap and package,
 exact reviewed bytecode and single-generation history. A digest alone is not
 verification. No proof object or custom sealing function is needed. The manager
-rejects its own package's cap at enrollment, because one noticed manager upgrade
-would rewrite the rules for every other cap; destroy that cap natively.
+rejects its own package's cap at enrollment while the package is at its original
+publication (the cap's current package ID is compared with the ManagerCap type's
+original package ID), because one noticed manager upgrade would rewrite the rules
+for every other cap; the single-generation verification above is what makes that
+check exact, and native destruction remains the only guarantee.
 
 ## Prepared flow
 

@@ -211,8 +211,9 @@ digest as an evidence locator. No proof object or enrollment gate enforces this.
    `blast_upgrade_cap_manager::UpgradeCapAdded` with cap ID, package and policy.
    No Blast Publication, OTW or target package import is needed. A cap with an
    outstanding native ticket is rejected, and so is the manager package's own
-   cap: destroy that one natively. Burning a cap frees an enrollment slot; even
-   a manager whose last cap was burned can enroll again.
+   cap while the package is at its original publication: destroy that one
+   natively. Burning a cap frees an enrollment slot; even a manager whose last
+   cap was burned can enroll again.
 
 ### Independent requests and cancellation
 
@@ -317,7 +318,8 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/up
 ```move
 /// Key-only custody for at most MAX_CAPS native caps, discoverable through the object table.
 /// Each cap ID has at most one pending Request in a dynamic field on this manager.
-/// This package's own cap is never accepted: destroy it natively before valuable enrollment.
+/// This package's own cap is rejected while the package is at its original publication; native
+/// destruction with verified effects remains the only guarantee.
 public struct UpgradeCapManager has key {
     id: UID,
     caps: object_table::ObjectTable<ID, UpgradeCap>,

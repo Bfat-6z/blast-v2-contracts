@@ -34,10 +34,13 @@ Each shared key-only manager owns up to 256 native caps in an ObjectTable and
 issues one key-only, instance-bound controller for enrollment, requests and
 cancellation across those caps; the controller moves only through the module's
 own transfer function, so it cannot be shared, frozen or wrapped into a public
-authority. Every original cap ID stays discoverable. Any native cap except the
-manager package's own is supported; self-enrollment is rejected because one
-noticed manager upgrade would rewrite the rules for every other cap. No Blast
-ACL, OTW, Publication or target package import is needed.
+authority. Every original cap ID stays discoverable. Any native cap is supported
+except the manager package's own while the package is at its original publication
+(the cap's current package ID is compared with the `ManagerCap` type's original
+package ID), because one noticed manager upgrade would rewrite the rules for every
+other cap; the required single-generation verification is what makes that check
+exact, and native destruction remains the only guarantee. No Blast ACL, OTW,
+Publication or target package import is needed.
 
 Each original cap ID independently holds at most one pending Request as a dynamic
 field on the manager UID. Several requests can coexist, including in one PTB;
@@ -75,7 +78,9 @@ the target package are evented, and production readers replace test-only seams.
 
 ## Consequences and verification
 
-Keep controllers in intended address-owned custody. A transferred controller
+Keep controllers in intended address-owned custody; without `store`, custody by
+another object (vault, DAO object, dynamic field) is no longer possible, so use a
+multisig address when control must be shared. A transferred controller
 retains authority over the pending action. A lost or destroyed controller blocks
 enrollment, new requests and cancellation for every managed cap; pending actions
 remain permissionlessly executable. Destroying the sole controller strands idle

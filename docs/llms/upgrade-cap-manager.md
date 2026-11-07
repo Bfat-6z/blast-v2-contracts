@@ -36,8 +36,9 @@ digest as an evidence locator. No proof object or enrollment gate enforces this.
    `blast_upgrade_cap_manager::UpgradeCapAdded` with cap ID, package and policy.
    No Blast Publication, OTW or target package import is needed. A cap with an
    outstanding native ticket is rejected, and so is the manager package's own
-   cap: destroy that one natively. Burning a cap frees an enrollment slot; even
-   a manager whose last cap was burned can enroll again.
+   cap while the package is at its original publication: destroy that one
+   natively. Burning a cap frees an enrollment slot; even a manager whose last
+   cap was burned can enroll again.
 
 ### Independent requests and cancellation
 
