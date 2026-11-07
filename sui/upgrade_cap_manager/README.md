@@ -10,8 +10,9 @@ stable when its target's package ID changes.
 ## Authority and custody
 
 The shared, key-only manager owns an ObjectTable of native caps, preserving their
-original object IDs and discoverability. Its transferable ManagerCap authorizes
-additional enrollment, requests and cancellation for every cap in that manager.
+original object IDs and discoverability. Its key-only ManagerCap authorizes
+additional enrollment, requests and cancellation for every cap in that manager;
+it moves only through transfer_cap, so it can never be shared, frozen or wrapped.
 Mature actions are executable by anyone. A manager supports at most 256 active
 caps, with at most one pending request per cap. Operations use individual lookups
 and never iterate over the collection. Burning a cap frees an enrollment slot.
@@ -32,12 +33,13 @@ Native immutability permanently ends target upgrades; it does not freeze
 application objects or migrate them. Check required exits and dependency routes
 before requesting it.
 
-Keep the controller address-owned by its intended custodian; sharing or freezing
-it exposes its borrowed authority. Transfer preserves all pending requests. Its
-holder may destroy it to renounce enrollment, request and cancellation authority
-for every managed cap. Pending actions remain executable after maturity. Idle
-caps become inaccessible if the sole controller is lost or destroyed; this does
-not perform native cap destruction.
+Keep the controller address-owned by its intended custodian; transfer_cap is its
+only transfer path. Transfer preserves all pending requests. Its holder may
+destroy it to renounce enrollment, request and cancellation authority for every
+managed cap; destruction emits ControllerDestroyed so observers can mark that
+manager's pending actions irrevocable. Pending actions remain executable after
+maturity. Idle caps become inaccessible if the sole controller is lost or
+destroyed; this does not perform native cap destruction.
 
 ## Manager package immutability
 
@@ -46,8 +48,9 @@ Before enrolling valuable caps, destroy the manager package's own original
 UpgradeCap with Sui's native make_immutable operation. Publish its transaction
 digest and verify the actual effects against the expected original cap and package,
 exact reviewed bytecode and single-generation history. A digest alone is not
-verification. No proof object or custom sealing function is needed. Enrolling
-the manager's own cap into itself is not a substitute for destroying it.
+verification. No proof object or custom sealing function is needed. The manager
+rejects its own package's cap at enrollment, because one noticed manager upgrade
+would rewrite the rules for every other cap; destroy that cap natively.
 
 ## Prepared flow
 
@@ -55,12 +58,13 @@ This procedure records no publication, transaction or live-cap selection.
 
 1. Review the exact manager package, publish it, and destroy its own native cap.
    Verify and publish the immutable publication's identities and deletion evidence.
-2. Call new with the first raw target cap, share the returned manager, and transfer
-   its controller to the intended custodian. That controller can add more caps
-   through add_upgrade_cap. Verify original cap IDs and custody below the embedded
-   ObjectTable UID. No Blast Publication is needed.
+2. Call new with the first raw target cap, share the returned manager, and deliver
+   its controller to the intended custodian with transfer_cap in the same PTB. That
+   controller can add more caps through add_upgrade_cap. Verify original cap IDs
+   and custody below the embedded ObjectTable UID. No Blast Publication is needed.
 3. Request an exact native 32-byte upgrade digest for a chosen cap ID, or request
-   that cap's target immutability. Each emits its own request timestamp and deadline.
+   that cap's target immutability. Each emits the target package, its own request
+   timestamp and deadline.
    Publish reproducible upgrade artifacts for observers; a Git hash is not the
    native upgrade digest. Repeat for other caps without waiting for earlier requests.
 4. At or after a cap's deadline, authorize its upgrade, consume the ticket in the

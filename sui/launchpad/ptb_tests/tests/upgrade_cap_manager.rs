@@ -19,6 +19,7 @@ use sui_types::{
 
 const DELAY: u64 = 172_800_000;
 const MODULE: &str = "blast_upgrade_cap_manager";
+const SELF_ENROLLMENT: u64 = 10;
 
 struct World {
     h: Harness,
@@ -85,7 +86,8 @@ fn world() -> Result<World> {
     let enrolled = call(&mut b, wrapper, MODULE, "new", vec![], vec![cap]);
     let Argument::Result(index) = enrolled else { panic!("enrollment result") };
     call(&mut b, wrapper, MODULE, "share", vec![], vec![Argument::NestedResult(index, 0)]);
-    b.transfer_arg(h.sender, Argument::NestedResult(index, 1));
+    let custodian = b.pure(h.sender)?;
+    call(&mut b, wrapper, MODULE, "transfer_cap", vec![], vec![Argument::NestedResult(index, 1), custodian]);
     let enrolled = h.execute(b.finish())?;
     enrolled.assert_success();
     let lock = enrolled.created(&h, MODULE, "UpgradeCapManager")[0];
@@ -153,6 +155,48 @@ impl World {
         Ok(b.finish())
     }
 
+    /// The manager package's own native cap must be destroyed natively; enrolling it anywhere aborts.
+    fn enrolling_own_cap_is_rejected(&mut self) -> Result<()> {
+        let (wrapper_code, _) = packages();
+        let (fresh_wrapper, published) = self.h.publish(wrapper_code.clone())?;
+        let own_cap = published.created(&self.h, "package", "UpgradeCap")[0];
+        let (_, target_publication) = self.h.publish(self.code.clone())?;
+        let target_cap = target_publication.created(&self.h, "package", "UpgradeCap")[0];
+        let mut b = ProgrammableTransactionBuilder::new();
+        let cap = b.obj(self.h.owned(own_cap))?;
+        let result = call(&mut b, fresh_wrapper, MODULE, "new", vec![], vec![cap]);
+        let Argument::Result(index) = result else { panic!("enrollment result") };
+        call(&mut b, fresh_wrapper, MODULE, "share", vec![], vec![Argument::NestedResult(index, 0)]);
+        let custodian = b.pure(self.h.sender)?;
+        call(&mut b, fresh_wrapper, MODULE, "transfer_cap", vec![], vec![Argument::NestedResult(index, 1), custodian]);
+        self.h.assert_rolled_back(
+            b.finish(),
+            Expected::Abort { package: fresh_wrapper, module: MODULE, code: SELF_ENROLLMENT },
+            &[own_cap],
+            &[self.h.sender],
+        )?;
+        let mut b = ProgrammableTransactionBuilder::new();
+        let cap = b.obj(self.h.owned(target_cap))?;
+        let result = call(&mut b, fresh_wrapper, MODULE, "new", vec![], vec![cap]);
+        let Argument::Result(index) = result else { panic!("enrollment result") };
+        let own = b.obj(self.h.owned(own_cap))?;
+        call(&mut b, fresh_wrapper, MODULE, "add_upgrade_cap", vec![], vec![
+            Argument::NestedResult(index, 0),
+            Argument::NestedResult(index, 1),
+            own,
+        ]);
+        call(&mut b, fresh_wrapper, MODULE, "share", vec![], vec![Argument::NestedResult(index, 0)]);
+        let custodian = b.pure(self.h.sender)?;
+        call(&mut b, fresh_wrapper, MODULE, "transfer_cap", vec![], vec![Argument::NestedResult(index, 1), custodian]);
+        self.h.assert_rolled_back(
+            b.finish(),
+            Expected::Abort { package: fresh_wrapper, module: MODULE, code: SELF_ENROLLMENT },
+            &[own_cap, target_cap],
+            &[self.h.sender],
+        )?;
+        Ok(())
+    }
+
     fn reject(&mut self, tx: ProgrammableTransaction, expected: Expected) -> Result<Outcome> {
         self.h.assert_rolled_back(tx, expected, &[self.lock, self.native_cap, self.controller], &[self.h.sender])
     }
@@ -211,7 +255,7 @@ fn exact_deadline_native_upgrade_and_replay() -> Result<()> {
     requested.assert_success();
     assert_eq!(
         requested.events_of(MODULE, "UpgradeRequested"),
-        [bcs::to_bytes(&(w.lock, w.native_cap, digest(&code), now, now + DELAY))?.as_slice()]
+        [bcs::to_bytes(&(w.lock, w.native_cap, w.target, digest(&code), now, now + DELAY))?.as_slice()]
     );
     assert_eq!(
         w.pending()?,
@@ -226,14 +270,17 @@ fn exact_deadline_native_upgrade_and_replay() -> Result<()> {
     let recipient = sui_types::base_types::SuiAddress::from(ObjectID::from_hex_literal("0xbeef")?);
     let mut b = ProgrammableTransactionBuilder::new();
     let controller = b.obj(w.h.owned(w.controller))?;
-    b.transfer_arg(recipient, controller);
-    w.h.execute(b.finish())?.assert_success();
+    let recipient_arg = b.pure(recipient)?;
+    call(&mut b, w.wrapper, MODULE, "transfer_cap", vec![], vec![controller, recipient_arg]);
+    let moved = w.h.execute(b.finish())?;
+    moved.assert_success();
+    assert_eq!(w.h.object(w.controller).owner(), &Owner::AddressOwner(recipient));
     let applied = w.h.execute(w.upgrade(&code, true)?)?;
     applied.assert_success();
     let new_package = applied.effects.published_packages()[0];
     assert_eq!(
         applied.events_of(MODULE, "UpgradeAuthorized"),
-        [bcs::to_bytes(&(w.lock, w.native_cap, digest(&code), now + DELAY))?.as_slice()]
+        [bcs::to_bytes(&(w.lock, w.native_cap, w.target, digest(&code), now + DELAY))?.as_slice()]
     );
     assert_eq!(
         applied.events_of(MODULE, "UpgradeCommitted"),
@@ -279,7 +326,7 @@ fn cancellation_restarts_full_delay_and_next_upgrade_waits_again() -> Result<()>
     assert!(cancelled_at > ready_at_ms);
     assert_eq!(
         cancelled.events_of(MODULE, "RequestCancelled"),
-        [bcs::to_bytes(&(w.lock, w.native_cap, Action::Upgrade { digest: digest(&code) }, ready_at_ms))?.as_slice()],
+        [bcs::to_bytes(&(w.lock, w.native_cap, w.target, Action::Upgrade { digest: digest(&code) }, ready_at_ms))?.as_slice()],
     );
     w.abort(w.upgrade(&code, true)?, 5)?;
     w.h.execute(w.request(digest(&code))?)?.assert_success();
@@ -294,6 +341,11 @@ fn cancellation_restarts_full_delay_and_next_upgrade_waits_again() -> Result<()>
     w.h.execute(w.upgrade(&code, true)?)?.assert_success();
     assert_eq!(w.native_state()?.2, 3);
     Ok(())
+}
+
+#[test]
+fn manager_package_own_cap_cannot_be_enrolled() -> Result<()> {
+    world()?.enrolling_own_cap_is_rejected()
 }
 
 #[test]
@@ -314,7 +366,8 @@ fn enrollment_cannot_launder_a_pre_authorized_ticket() -> Result<()> {
     let receipt = b.upgrade(target, ticket, code.dependencies, code.modules);
     call(&mut b, w.wrapper, MODULE, "commit_upgrade", vec![], vec![new_lock, receipt]);
     call(&mut b, w.wrapper, MODULE, "share", vec![], vec![new_lock]);
-    b.transfer_arg(w.h.sender, Argument::NestedResult(index, 1));
+    let custodian = b.pure(w.h.sender)?;
+    call(&mut b, w.wrapper, MODULE, "transfer_cap", vec![], vec![Argument::NestedResult(index, 1), custodian]);
     w.h.assert_rolled_back(
         b.finish(),
         Expected::Abort { package: w.wrapper, module: MODULE, code: 0 },
@@ -334,7 +387,8 @@ fn controller_and_receipt_cannot_cross_timelocks() -> Result<()> {
     let result = call(&mut b, w.wrapper, MODULE, "new", vec![], vec![cap]);
     let Argument::Result(index) = result else { panic!("enrollment result") };
     call(&mut b, w.wrapper, MODULE, "share", vec![], vec![Argument::NestedResult(index, 0)]);
-    b.transfer_arg(w.h.sender, Argument::NestedResult(index, 1));
+    let custodian = b.pure(w.h.sender)?;
+    call(&mut b, w.wrapper, MODULE, "transfer_cap", vec![], vec![Argument::NestedResult(index, 1), custodian]);
     let enrolled = w.h.execute(b.finish())?;
     enrolled.assert_success();
     let other_lock = enrolled.created(&w.h, MODULE, "UpgradeCapManager")[0];
@@ -414,7 +468,7 @@ fn target_immutability_destroys_only_native_cap_field_and_request() -> Result<()
     requested.assert_success();
     assert_eq!(
         requested.events_of(MODULE, "ImmutabilityRequested"),
-        [bcs::to_bytes(&(w.lock, w.native_cap, now, now + DELAY))?.as_slice()],
+        [bcs::to_bytes(&(w.lock, w.native_cap, w.target, now, now + DELAY))?.as_slice()],
     );
     assert_eq!(w.pending()?, Some(Request { action: Action::MakeImmutable, ready_at_ms: now + DELAY }));
     w.abort(w.request(digest(&w.code))?, 2)?;
@@ -461,6 +515,7 @@ fn target_immutability_destroys_only_native_cap_field_and_request() -> Result<()
     let cleaned = w.h.execute(b.finish())?;
     cleaned.assert_success();
     assert!(cleaned.effects.deleted().iter().any(|(deleted, _, _)| *deleted == w.controller));
+    assert_eq!(cleaned.events_of(MODULE, "ControllerDestroyed"), [bcs::to_bytes(&(w.lock, w.controller))?.as_slice()]);
     Ok(())
 }
 
@@ -515,7 +570,7 @@ fn cancelling_immutability_preserves_original_deadline_and_switching_actions_res
     cancelled.assert_success();
     assert_eq!(
         cancelled.events_of(MODULE, "RequestCancelled"),
-        [bcs::to_bytes(&(w.lock, w.native_cap, Action::MakeImmutable, original_deadline))?.as_slice()],
+        [bcs::to_bytes(&(w.lock, w.native_cap, w.target, Action::MakeImmutable, original_deadline))?.as_slice()],
     );
     let code = upgraded(&w.code)?;
     w.h.execute(w.request(digest(&code))?)?.assert_success();
@@ -669,15 +724,15 @@ fn several_upgrades_and_immutability_requests_queue_and_execute_together() -> Re
     assert_eq!(
         queued.events_of(MODULE, "UpgradeRequested"),
         [
-            bcs::to_bytes(&(w.lock, w.native_cap, &hash, now, now + DELAY))?.as_slice(),
-            bcs::to_bytes(&(w.lock, third, &third_hash, now, now + DELAY))?.as_slice()
+            bcs::to_bytes(&(w.lock, w.native_cap, w.target, &hash, now, now + DELAY))?.as_slice(),
+            bcs::to_bytes(&(w.lock, third, third_target, &third_hash, now, now + DELAY))?.as_slice()
         ]
     );
     assert_eq!(
         queued.events_of(MODULE, "ImmutabilityRequested"),
         [
-            bcs::to_bytes(&(w.lock, second, now, now + DELAY))?.as_slice(),
-            bcs::to_bytes(&(w.lock, fourth, now, now + DELAY))?.as_slice()
+            bcs::to_bytes(&(w.lock, second, second_target, now, now + DELAY))?.as_slice(),
+            bcs::to_bytes(&(w.lock, fourth, fourth_target, now, now + DELAY))?.as_slice()
         ]
     );
     for cap in [w.native_cap, second, third, fourth] {

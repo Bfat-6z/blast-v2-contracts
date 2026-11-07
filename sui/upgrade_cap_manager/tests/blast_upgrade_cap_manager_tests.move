@@ -26,7 +26,7 @@ public struct UpgradeFixture {
 fun fresh_custody_and_exact_deadline() {
     let UpgradeFixture { ctx, mut clock, mut manager, controller, upgrade_cap_id } = start_upgrade_fixture(123);
 
-    let target_cap = &manager.caps_for_testing()[upgrade_cap_id];
+    let target_cap = manager.upgrade_cap(upgrade_cap_id);
     assert!(target_cap.package() == object::id_from_address(@0xa));
     assert!(target_cap.version() == 1 && target_cap.policy() == package::compatible_policy());
     assert!(manager.pending_request(upgrade_cap_id).is_none());
@@ -34,7 +34,7 @@ fun fresh_custody_and_exact_deadline() {
     manager.request_upgrade(&controller, upgrade_cap_id, digest_a(), &clock);
 
     let request = manager.pending_request(upgrade_cap_id).destroy_some();
-    assert!(request.action().upgrade_digest_for_testing() == option::some(digest_a()));
+    assert!(request.upgrade_digest() == option::some(digest_a()));
     assert!(request.ready_at_ms() == 123 + DELAY_MS);
 
     clock.increment_for_testing(DELAY_MS);
@@ -42,7 +42,7 @@ fun fresh_custody_and_exact_deadline() {
     complete_upgrade(&mut manager, upgrade_cap_id, &clock);
 
     assert!(manager.pending_request(upgrade_cap_id).is_none());
-    let target_cap = &manager.caps_for_testing()[upgrade_cap_id];
+    let target_cap = manager.upgrade_cap(upgrade_cap_id);
     assert!(target_cap.version() == 2 && target_cap.package().to_address() != @0xa);
 
     end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
@@ -65,7 +65,7 @@ fun late_execution_and_second_upgrade_each_require_a_request() {
 
     complete_upgrade(&mut manager, upgrade_cap_id, &clock);
 
-    let target_cap = &manager.caps_for_testing()[upgrade_cap_id];
+    let target_cap = manager.upgrade_cap(upgrade_cap_id);
     assert!(target_cap.version() == 3);
 
     end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
@@ -87,7 +87,7 @@ fun cancellation_after_maturity_and_replacement_restart_delay() {
 
     let request = manager.pending_request(upgrade_cap_id).destroy_some();
     assert!(
-        request.action().upgrade_digest_for_testing() == option::some(digest_b())
+        request.upgrade_digest() == option::some(digest_b())
             && request.ready_at_ms() == DELAY_MS * 2,
     );
 
@@ -349,7 +349,7 @@ fun immutability_at_exact_deadline_preserves_manager() {
     manager.request_make_immutable(&controller, upgrade_cap_id, &clock);
 
     let request = manager.pending_request(upgrade_cap_id).destroy_some();
-    assert!(request.action().upgrade_digest_for_testing().is_none());
+    assert!(request.upgrade_digest().is_none());
     assert!(request.ready_at_ms() == 123 + DELAY_MS);
 
     clock.increment_for_testing(DELAY_MS);
@@ -612,13 +612,13 @@ fun different_caps_have_independent_actions_deadlines_and_cancellation() {
 
     manager.make_immutable(second_cap_id, &clock);
 
-    assert!(!manager.caps_for_testing().contains(second_cap_id));
+    assert!(!manager.is_managed(second_cap_id));
     assert!(manager.pending_request(second_cap_id).is_none());
     assert!(manager.pending_request(upgrade_cap_id).destroy_some().ready_at_ms() == 1_123 + DELAY_MS);
 
     complete_upgrade(&mut manager, upgrade_cap_id, &clock);
 
-    assert!(manager.caps_for_testing().length() == 1);
+    assert!(manager.cap_count() == 1);
 
     end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
 }
@@ -639,8 +639,8 @@ fun simultaneous_tickets_commit_in_reverse_order_to_their_native_caps() {
     manager.commit_upgrade(package::test_upgrade(first_ticket));
 
     assert!(
-        manager.caps_for_testing()[upgrade_cap_id].version() == 2
-            && manager.caps_for_testing()[second_cap_id].version() == 2,
+        manager.upgrade_cap(upgrade_cap_id).version() == 2
+            && manager.upgrade_cap(second_cap_id).version() == 2,
     );
     assert!(manager.pending_request(upgrade_cap_id).is_none() && manager.pending_request(second_cap_id).is_none());
 
@@ -664,7 +664,7 @@ fun outstanding_ticket_does_not_block_other_caps_requests_or_burns() {
     manager.commit_upgrade(package::test_upgrade(ticket));
 
     assert!(manager.pending_request(third_cap_id).destroy_some().ready_at_ms() == DELAY_MS * 2);
-    assert!(manager.caps_for_testing().length() == 2 && manager.caps_for_testing()[upgrade_cap_id].version() == 2);
+    assert!(manager.cap_count() == 2 && manager.upgrade_cap(upgrade_cap_id).version() == 2);
 
     end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
 }
@@ -675,7 +675,7 @@ fun full_capacity_accepts_requests_and_burning_frees_an_enrollment_slot() {
 
     fill_manager(&mut manager, &controller, &mut ctx);
 
-    assert!(manager.caps_for_testing().length() == MAX_CAPS);
+    assert!(manager.cap_count() == MAX_CAPS);
 
     manager.request_make_immutable(&controller, upgrade_cap_id, &clock);
 
@@ -683,13 +683,13 @@ fun full_capacity_accepts_requests_and_burning_frees_an_enrollment_slot() {
 
     manager.make_immutable(upgrade_cap_id, &clock);
 
-    assert!(manager.caps_for_testing().length() == MAX_CAPS - 1);
+    assert!(manager.cap_count() == MAX_CAPS - 1);
 
     let replacement_cap_id = enroll_target(&mut manager, &controller, &mut ctx);
 
     manager.request_upgrade(&controller, replacement_cap_id, digest_a(), &clock);
 
-    assert!(manager.caps_for_testing().length() == MAX_CAPS);
+    assert!(manager.cap_count() == MAX_CAPS);
 
     end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
 }
@@ -704,7 +704,7 @@ fun empty_manager_can_enroll_again_after_its_last_target_becomes_immutable() {
 
     manager.make_immutable(upgrade_cap_id, &clock);
 
-    assert!(manager.caps_for_testing().is_empty());
+    assert!(manager.cap_count() == 0);
 
     let replacement_cap_id = enroll_target(&mut manager, &controller, &mut ctx);
 
@@ -820,6 +820,145 @@ fun removed_cap_cannot_be_made_immutable_again() {
     end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
 }
 
+#[test]
+fun dep_only_policy_and_prior_native_version_are_preserved_through_custody() {
+    let UpgradeFixture { mut ctx, mut clock, mut manager, controller, upgrade_cap_id } = start_upgrade_fixture(0);
+    let mut target_cap = package::test_publish(object::id_from_address(@0xd), &mut ctx);
+    target_cap.only_dep_upgrades();
+    let first_ticket = target_cap.authorize(package::dep_only_policy(), digest_a());
+    target_cap.commit(package::test_upgrade(first_ticket));
+    let seasoned_cap_id = object::id(&target_cap);
+
+    manager.add_upgrade_cap(&controller, target_cap);
+
+    let seasoned_cap = manager.upgrade_cap(seasoned_cap_id);
+    assert!(seasoned_cap.version() == 2 && seasoned_cap.policy() == package::dep_only_policy());
+
+    manager.request_upgrade(&controller, seasoned_cap_id, digest_b(), &clock);
+
+    clock.increment_for_testing(DELAY_MS);
+
+    let ticket = manager.authorize_upgrade(seasoned_cap_id, &clock);
+
+    assert!(ticket.policy() == package::dep_only_policy() && ticket.digest() == digest_b());
+
+    manager.commit_upgrade(package::test_upgrade(ticket));
+
+    assert!(manager.upgrade_cap(seasoned_cap_id).version() == 3 && manager.cap_count() == 2);
+
+    end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
+}
+
+#[test]
+fun readers_distinguish_idle_managed_caps_from_unknown_ids() {
+    let UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id } = start_upgrade_fixture(0);
+    let unknown_id = object::id_from_address(@0xdead);
+
+    assert!(manager.is_managed(upgrade_cap_id) && !manager.is_managed(unknown_id));
+    assert!(manager.cap_count() == 1);
+    assert!(manager.pending_request(upgrade_cap_id).is_none() && manager.pending_request(unknown_id).is_none());
+    assert!(controller.manager_id() == object::id(&manager));
+
+    end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
+}
+
+#[test, expected_failure(
+    abort_code = cap_manager::EUnknownCap,
+    location = cap_manager,
+)]
+fun unknown_cap_has_no_readable_native_cap() {
+    let UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id } = start_upgrade_fixture(0);
+
+    manager.upgrade_cap(object::id_from_address(@0xdead));
+
+    end_upgrade_fixture(UpgradeFixture { ctx, clock, manager, controller, upgrade_cap_id });
+}
+
+#[test]
+fun transferred_controller_keeps_its_binding_for_the_recipient() {
+    let UpgradeFixture { ctx, mut clock, mut manager, controller, upgrade_cap_id } = start_upgrade_fixture(0);
+    let recipient = @0xbeef;
+    let mut scenario = test_scenario::begin(recipient);
+
+    manager.request_upgrade(&controller, upgrade_cap_id, digest_a(), &clock);
+    cap_manager::transfer_cap(controller, recipient);
+
+    scenario.next_tx(recipient);
+
+    let received = scenario.take_from_sender<ManagerCap>();
+
+    manager.cancel_request(&received, upgrade_cap_id);
+    manager.request_make_immutable(&received, upgrade_cap_id, &clock);
+
+    clock.increment_for_testing(DELAY_MS);
+
+    manager.make_immutable(upgrade_cap_id, &clock);
+
+    assert!(manager.cap_count() == 0);
+
+    cap_manager::destroy_cap(received);
+    scenario.end();
+    destroy(manager);
+    destroy(clock);
+    destroy(ctx);
+}
+
+#[test]
+fun events_name_the_target_package_and_controller_destruction() {
+    let UpgradeFixture { ctx, mut clock, mut manager, controller, upgrade_cap_id } = start_upgrade_fixture(5);
+    let manager_id = object::id(&manager);
+    let controller_id = object::id(&controller);
+    let package_id = object::id_from_address(@0xa);
+
+    manager.request_upgrade(&controller, upgrade_cap_id, digest_a(), &clock);
+    manager.cancel_request(&controller, upgrade_cap_id);
+    manager.request_make_immutable(&controller, upgrade_cap_id, &clock);
+    manager.cancel_request(&controller, upgrade_cap_id);
+    manager.request_upgrade(&controller, upgrade_cap_id, digest_b(), &clock);
+
+    clock.increment_for_testing(DELAY_MS);
+
+    let ticket = manager.authorize_upgrade(upgrade_cap_id, &clock);
+    manager.commit_upgrade(package::test_upgrade(ticket));
+    cap_manager::destroy_cap(controller);
+
+    let requested = event::events_by_type<UpgradeRequested>();
+    let immutability_requested = event::events_by_type<ImmutabilityRequested>();
+    let cancelled = event::events_by_type<RequestCancelled>();
+    let authorized = event::events_by_type<UpgradeAuthorized>();
+    let destroyed = event::events_by_type<ControllerDestroyed>();
+    assert!(requested.length() == 2 && immutability_requested.length() == 1 && cancelled.length() == 2);
+
+    let (requested_manager, requested_cap, requested_package, requested_digest, requested_at_ms, ready_at_ms) =
+        requested[0].upgrade_requested_fields();
+    assert!(requested_manager == manager_id && requested_cap == upgrade_cap_id && requested_package == package_id);
+    assert!(requested_digest == digest_a() && requested_at_ms == 5 && ready_at_ms == 5 + DELAY_MS);
+
+    let (burn_manager, burn_cap, burn_package, burn_requested_at_ms, burn_ready_at_ms) =
+        immutability_requested[0].immutability_requested_fields();
+    assert!(burn_manager == manager_id && burn_cap == upgrade_cap_id && burn_package == package_id);
+    assert!(burn_requested_at_ms == 5 && burn_ready_at_ms == 5 + DELAY_MS);
+
+    let (_, cancelled_cap, cancelled_package, cancelled_digest, cancelled_ready_at_ms) =
+        cancelled[0].request_cancelled_fields();
+    assert!(cancelled_cap == upgrade_cap_id && cancelled_package == package_id);
+    assert!(cancelled_digest == option::some(digest_a()) && cancelled_ready_at_ms == 5 + DELAY_MS);
+    let (_, _, _, cancelled_burn_digest, _) = cancelled[1].request_cancelled_fields();
+    assert!(cancelled_burn_digest.is_none());
+
+    let (authorized_manager, authorized_cap, authorized_package, authorized_digest, authorized_ready_at_ms) =
+        authorized[0].upgrade_authorized_fields();
+    assert!(authorized_manager == manager_id && authorized_cap == upgrade_cap_id && authorized_package == package_id);
+    assert!(authorized_digest == digest_b() && authorized_ready_at_ms == 5 + DELAY_MS);
+
+    let (destroyed_manager, destroyed_controller) = destroyed[0].controller_destroyed_fields();
+    assert!(destroyed_manager == manager_id && destroyed_controller == controller_id);
+
+    destroy(manager);
+    destroy(clock);
+    destroy(ctx);
+}
+
 // === Test Helpers ===
 
 fun enroll_target(manager: &mut UpgradeCapManager, controller: &ManagerCap, ctx: &mut TxContext): ID {
@@ -831,7 +970,7 @@ fun enroll_target(manager: &mut UpgradeCapManager, controller: &ManagerCap, ctx:
 }
 
 fun fill_manager(manager: &mut UpgradeCapManager, controller: &ManagerCap, ctx: &mut TxContext) {
-    while (manager.caps_for_testing().length() < MAX_CAPS) {
+    while (manager.cap_count() < MAX_CAPS) {
         enroll_target(manager, controller, ctx);
     };
 }
@@ -873,5 +1012,14 @@ fun digest_b(): vector<u8> {
 // === Imports ===
 
 use std::unit_test::destroy;
-use sui::{clock::Clock, package};
-use blast_upgrade_cap_manager::blast_upgrade_cap_manager::{Self as cap_manager, ManagerCap, UpgradeCapManager};
+use sui::{clock::Clock, event, package, test_scenario};
+use blast_upgrade_cap_manager::blast_upgrade_cap_manager::{
+    Self as cap_manager,
+    ControllerDestroyed,
+    ImmutabilityRequested,
+    ManagerCap,
+    RequestCancelled,
+    UpgradeAuthorized,
+    UpgradeCapManager,
+    UpgradeRequested,
+};

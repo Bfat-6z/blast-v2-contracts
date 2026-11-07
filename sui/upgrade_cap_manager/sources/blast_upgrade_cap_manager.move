@@ -8,13 +8,15 @@ module blast_upgrade_cap_manager::blast_upgrade_cap_manager;
 
 /// Key-only custody for at most MAX_CAPS native caps, discoverable through the object table.
 /// Each cap ID has at most one pending Request in a dynamic field on this manager.
+/// This package's own cap is never accepted: destroy it natively before valuable enrollment.
 public struct UpgradeCapManager has key {
     id: UID,
     caps: ObjectTable<ID, UpgradeCap>,
 }
 
-/// Transferable request, cancellation and enrollment authority for exactly one manager.
-public struct ManagerCap has key, store {
+/// Request, cancellation and enrollment authority for exactly one manager.
+/// Key-only: it moves only through transfer_cap, so it cannot be shared, frozen or wrapped.
+public struct ManagerCap has key {
     id: UID,
     manager_id: ID,
 }
@@ -34,10 +36,10 @@ public enum Action has copy, drop, store {
 // === Public Functions ===
 
 /// Creates a manager with its first native cap and an instance-bound controller.
+/// Transfer the controller with transfer_cap in the same transaction.
 /// Before valuable enrollment, independently verify destruction of this package's own cap.
 public fun new(upgrade_cap: UpgradeCap, ctx: &mut TxContext): (UpgradeCapManager, ManagerCap) {
-    // Native authorization clears this address until its receipt commits.
-    assert!(upgrade_cap.package().to_address() != @0x0, EAlreadyAuthorized);
+    assert_enrollable(&upgrade_cap);
 
     let mut manager = UpgradeCapManager { id: object::new(ctx), caps: object_table::new(ctx) };
     let cap = ManagerCap { id: object::new(ctx), manager_id: manager.id.to_inner() };
@@ -58,7 +60,7 @@ public fun share(self: UpgradeCapManager) {
 /// The key is the original cap ID. No withdrawal path exists; native policy is preserved.
 public fun add_upgrade_cap(self: &mut UpgradeCapManager, cap: &ManagerCap, upgrade_cap: UpgradeCap) {
     self.assert_controller(cap);
-    assert!(upgrade_cap.package().to_address() != @0x0, EAlreadyAuthorized);
+    assert_enrollable(&upgrade_cap);
     assert!(self.caps.length() < MAX_CAPS, ECapacityReached);
 
     self.insert_cap(upgrade_cap);
@@ -93,8 +95,9 @@ public fun cancel_request(self: &mut UpgradeCapManager, cap: &ManagerCap, upgrad
     assert!(dynamic_field::exists<ID>(&self.id, upgrade_cap_id), ENoRequest);
 
     let Request { action, ready_at_ms } = dynamic_field::remove<ID, Request>(&mut self.id, upgrade_cap_id);
+    let package_id = self.caps[upgrade_cap_id].package();
 
-    event::emit(RequestCancelled { manager_id: self.id.to_inner(), upgrade_cap_id, action, ready_at_ms });
+    event::emit(RequestCancelled { manager_id: self.id.to_inner(), upgrade_cap_id, package_id, action, ready_at_ms });
 }
 
 /// Anyone: consumes this cap's mature request and authorizes its exact digest and native policy.
@@ -117,10 +120,11 @@ public fun authorize_upgrade(
 
     dynamic_field::remove<ID, Request>(&mut self.id, upgrade_cap_id);
     let upgrade_cap = &mut self.caps[upgrade_cap_id];
+    let package_id = upgrade_cap.package();
     let policy = upgrade_cap.policy();
     let ticket = upgrade_cap.authorize(policy, digest);
 
-    event::emit(UpgradeAuthorized { manager_id: self.id.to_inner(), upgrade_cap_id, digest, ready_at_ms });
+    event::emit(UpgradeAuthorized { manager_id: self.id.to_inner(), upgrade_cap_id, package_id, digest, ready_at_ms });
 
     ticket
 }
@@ -158,12 +162,42 @@ public fun make_immutable(self: &mut UpgradeCapManager, upgrade_cap_id: ID, cloc
     event::emit(PackageMadeImmutable { manager_id: self.id.to_inner(), upgrade_cap_id, package_id, ready_at_ms });
 }
 
+/// Holder only: delivers the controller to recipient. This is its only transfer path.
+public fun transfer_cap(cap: ManagerCap, recipient: address) {
+    transfer::transfer(cap, recipient);
+}
+
 /// Holder only: permanently renounces enrollment, request and cancellation authority.
 /// All pending actions remain executable; this does not cancel them or destroy native caps.
 public fun destroy_cap(cap: ManagerCap) {
-    let ManagerCap { id, manager_id: _ } = cap;
+    let ManagerCap { id, manager_id } = cap;
+    let controller_id = id.to_inner();
 
     id.delete();
+
+    event::emit(ControllerDestroyed { manager_id, controller_id });
+}
+
+/// The manager this controller is bound to.
+public fun manager_id(cap: &ManagerCap): ID {
+    cap.manager_id
+}
+
+/// Whether this manager currently holds the cap with this original ID.
+public fun is_managed(self: &UpgradeCapManager, upgrade_cap_id: ID): bool {
+    self.caps.contains(upgrade_cap_id)
+}
+
+/// The number of caps currently in custody, at most MAX_CAPS.
+public fun cap_count(self: &UpgradeCapManager): u64 {
+    self.caps.length()
+}
+
+/// Read-only access to a custodied native cap: its package, version and policy.
+public fun upgrade_cap(self: &UpgradeCapManager, upgrade_cap_id: ID): &UpgradeCap {
+    self.assert_managed(upgrade_cap_id);
+
+    &self.caps[upgrade_cap_id]
 }
 
 /// This cap's pending action and deadline, or none when idle or no longer managed.
@@ -175,9 +209,12 @@ public fun pending_request(self: &UpgradeCapManager, upgrade_cap_id: ID): Option
     }
 }
 
-/// The exact upgrade digest or terminal immutability action authorized by the request.
-public fun action(self: &Request): &Action {
-    &self.action
+/// The exact digest an upgrade request authorizes; none for an immutability request.
+public fun upgrade_digest(self: &Request): Option<vector<u8>> {
+    match (&self.action) {
+        Action::Upgrade { digest } => option::some(*digest),
+        Action::MakeImmutable => option::none(),
+    }
 }
 
 /// Inclusive Clock timestamp when the request becomes executable.
@@ -193,6 +230,14 @@ fun assert_controller(self: &UpgradeCapManager, cap: &ManagerCap) {
 
 fun assert_managed(self: &UpgradeCapManager, upgrade_cap_id: ID) {
     assert!(self.caps.contains(upgrade_cap_id), EUnknownCap);
+}
+
+/// Native authorization clears the package address until its receipt commits; this
+/// package's own cap must be destroyed natively instead of enrolled. The package ID
+/// comes from a type defined here because address literals stay 0x0 after publication.
+fun assert_enrollable(upgrade_cap: &UpgradeCap) {
+    assert!(upgrade_cap.package().to_address() != @0x0, EAlreadyAuthorized);
+    assert!(upgrade_cap.package().to_address() != std::type_name::original_id<ManagerCap>(), ESelfEnrollment);
 }
 
 fun insert_cap(self: &mut UpgradeCapManager, upgrade_cap: UpgradeCap) {
@@ -215,7 +260,8 @@ fun request(
     self.assert_controller(cap);
     self.assert_managed(upgrade_cap_id);
     assert!(!dynamic_field::exists<ID>(&self.id, upgrade_cap_id), ERequestPending);
-    assert!(self.caps[upgrade_cap_id].package().to_address() != @0x0, EAlreadyAuthorized);
+    let package_id = self.caps[upgrade_cap_id].package();
+    assert!(package_id.to_address() != @0x0, EAlreadyAuthorized);
     match (&action) {
         Action::Upgrade { digest } => assert!(digest.length() == DIGEST_LENGTH, EInvalidDigest),
         Action::MakeImmutable => (),
@@ -230,29 +276,45 @@ fun request(
 
     match (action) {
         Action::Upgrade { digest } => event::emit(UpgradeRequested {
-            manager_id: self.id.to_inner(), upgrade_cap_id, digest, requested_at_ms, ready_at_ms,
+            manager_id: self.id.to_inner(), upgrade_cap_id, package_id, digest, requested_at_ms, ready_at_ms,
         }),
         Action::MakeImmutable => event::emit(ImmutabilityRequested {
-            manager_id: self.id.to_inner(), upgrade_cap_id, requested_at_ms, ready_at_ms,
+            manager_id: self.id.to_inner(), upgrade_cap_id, package_id, requested_at_ms, ready_at_ms,
         }),
     };
 }
 
 // === Test-Only Functions ===
 
-/// Read-only custody access for tests; excluded from production bytecode.
+/// Event payload snapshots for exact-content tests; excluded from production bytecode.
 #[test_only]
-public(package) fun caps_for_testing(self: &UpgradeCapManager): &ObjectTable<ID, UpgradeCap> {
-    &self.caps
+public(package) fun upgrade_requested_fields(self: &UpgradeRequested): (ID, ID, ID, vector<u8>, u64, u64) {
+    (self.manager_id, self.upgrade_cap_id, self.package_id, self.digest, self.requested_at_ms, self.ready_at_ms)
 }
 
-/// Snapshots an upgrade action's digest; immutability has no digest.
 #[test_only]
-public(package) fun upgrade_digest_for_testing(self: &Action): Option<vector<u8>> {
-    match (self) {
+public(package) fun immutability_requested_fields(self: &ImmutabilityRequested): (ID, ID, ID, u64, u64) {
+    (self.manager_id, self.upgrade_cap_id, self.package_id, self.requested_at_ms, self.ready_at_ms)
+}
+
+#[test_only]
+public(package) fun request_cancelled_fields(self: &RequestCancelled): (ID, ID, ID, Option<vector<u8>>, u64) {
+    let digest = match (&self.action) {
         Action::Upgrade { digest } => option::some(*digest),
         Action::MakeImmutable => option::none(),
-    }
+    };
+
+    (self.manager_id, self.upgrade_cap_id, self.package_id, digest, self.ready_at_ms)
+}
+
+#[test_only]
+public(package) fun upgrade_authorized_fields(self: &UpgradeAuthorized): (ID, ID, ID, vector<u8>, u64) {
+    (self.manager_id, self.upgrade_cap_id, self.package_id, self.digest, self.ready_at_ms)
+}
+
+#[test_only]
+public(package) fun controller_destroyed_fields(self: &ControllerDestroyed): (ID, ID) {
+    (self.manager_id, self.controller_id)
 }
 
 // === Events ===
@@ -272,6 +334,7 @@ public struct UpgradeCapAdded has copy, drop {
 public struct UpgradeRequested has copy, drop {
     manager_id: ID,
     upgrade_cap_id: ID,
+    package_id: ID,
     digest: vector<u8>,
     requested_at_ms: u64,
     ready_at_ms: u64,
@@ -280,6 +343,7 @@ public struct UpgradeRequested has copy, drop {
 public struct RequestCancelled has copy, drop {
     manager_id: ID,
     upgrade_cap_id: ID,
+    package_id: ID,
     action: Action,
     ready_at_ms: u64,
 }
@@ -287,6 +351,7 @@ public struct RequestCancelled has copy, drop {
 public struct UpgradeAuthorized has copy, drop {
     manager_id: ID,
     upgrade_cap_id: ID,
+    package_id: ID,
     digest: vector<u8>,
     ready_at_ms: u64,
 }
@@ -301,6 +366,7 @@ public struct UpgradeCommitted has copy, drop {
 public struct ImmutabilityRequested has copy, drop {
     manager_id: ID,
     upgrade_cap_id: ID,
+    package_id: ID,
     requested_at_ms: u64,
     ready_at_ms: u64,
 }
@@ -310,6 +376,11 @@ public struct PackageMadeImmutable has copy, drop {
     upgrade_cap_id: ID,
     package_id: ID,
     ready_at_ms: u64,
+}
+
+public struct ControllerDestroyed has copy, drop {
+    manager_id: ID,
+    controller_id: ID,
 }
 
 // === Constants ===
@@ -342,6 +413,8 @@ const ETooEarly: vector<u8> = b"The request's full 48-hour delay has not elapsed
 const EUnknownCap: vector<u8> = b"This UpgradeCap is not held by this manager";
 #[error(code = 9)]
 const ECapacityReached: vector<u8> = b"This manager already holds the maximum number of UpgradeCaps";
+#[error(code = 10)]
+const ESelfEnrollment: vector<u8> = b"Destroy this package's own UpgradeCap natively instead of enrolling it";
 
 // === Imports ===
 

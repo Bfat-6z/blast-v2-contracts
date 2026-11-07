@@ -31,10 +31,13 @@ digest as an evidence locator. Enrollment deliberately has no proof-object gate.
 Until its own cap is destroyed, manager-package upgrades remain a trust boundary.
 
 Each shared key-only manager owns up to 256 native caps in an ObjectTable and
-issues one transferable, instance-bound controller for enrollment, requests and
-cancellation across those caps. Every original cap ID stays discoverable. Any
-native cap is supported; no Blast ACL, OTW, Publication or target package import
-is needed.
+issues one key-only, instance-bound controller for enrollment, requests and
+cancellation across those caps; the controller moves only through the module's
+own transfer function, so it cannot be shared, frozen or wrapped into a public
+authority. Every original cap ID stays discoverable. Any native cap except the
+manager package's own is supported; self-enrollment is rejected because one
+noticed manager upgrade would rewrite the rules for every other cap. No Blast
+ACL, OTW, Publication or target package import is needed.
 
 Each original cap ID independently holds at most one pending Request as a dynamic
 field on the manager UID. Several requests can coexist, including in one PTB;
@@ -60,9 +63,15 @@ its custody field and pending request. The manager, ObjectTable, controller and
 other caps survive, and burning a cap frees an enrollment slot. Even an empty
 manager can accept new caps. The bounded collection is never iterated; requests
 are bounded by the cap count. A separate controller may be deleted
-by its holder. There is no withdrawal, mutable cap borrow, raw-cap loan, delay
-setter, emergency bypass or policy setter. No target business-version activation
-or state migration is inferred.
+by its holder; destruction is evented so observers can mark pending actions
+irrevocable. Request-side events name the cap's current target package. There is
+no withdrawal, mutable cap borrow, raw-cap loan, delay setter, emergency bypass
+or policy setter. No target business-version activation or state migration is
+inferred.
+
+Amended 2026-11-07 after the Fable Cloudflare-skill review (0 findings): the
+controller lost `store`, self-enrollment is rejected, controller destruction and
+the target package are evented, and production readers replace test-only seams.
 
 ## Consequences and verification
 

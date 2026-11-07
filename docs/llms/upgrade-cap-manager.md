@@ -13,11 +13,12 @@ remain discoverable below the embedded table UID. Requests are dynamic fields
 on the manager UID, keyed by that same cap ID. A package ID changes on upgrade;
 the original cap ID used to select actions does not.
 
-Its transferable `blast_upgrade_cap_manager::ManagerCap` authorizes enrollment,
-requests and cancellation for every cap in that manager. Keep it address-owned;
-sharing or freezing it exposes that borrowed authority publicly. Losing or
-destroying it prevents further enrollment, requests and cancellation across all
-managed caps. Already pending actions remain permissionlessly executable.
+Its key-only `blast_upgrade_cap_manager::ManagerCap` authorizes enrollment,
+requests and cancellation for every cap in that manager. It moves only through
+`blast_upgrade_cap_manager::transfer_cap`, so it cannot be shared, frozen or
+wrapped. Losing or destroying it prevents further enrollment, requests and
+cancellation across all managed caps. Already pending actions remain
+permissionlessly executable.
 
 Independently verify the manager publication immutable before valuable enrollment:
 destroy its own original native cap directly through Sui, verify its actual effects,
@@ -26,15 +27,17 @@ digest as an evidence locator. No proof object or enrollment gate enforces this.
 
 1. First cap holder: call `blast_upgrade_cap_manager::new` with a native cap,
    share its returned manager through `blast_upgrade_cap_manager::share`, and
-   transfer its returned controller to the custodian in the same PTB.
+   deliver its returned controller to the custodian with
+   `blast_upgrade_cap_manager::transfer_cap` in the same PTB.
    `blast_upgrade_cap_manager::ManagerCreated` identifies manager and controller.
 2. Matching controller holder: call `blast_upgrade_cap_manager::add_upgrade_cap`
    with manager, controller and an additional native cap. The original cap ID is
    derived from the supplied object. Each enrollment, including the first, emits
    `blast_upgrade_cap_manager::UpgradeCapAdded` with cap ID, package and policy.
    No Blast Publication, OTW or target package import is needed. A cap with an
-   outstanding native ticket is rejected. Burning a cap frees an enrollment slot;
-   even a manager whose last cap was burned can enroll again.
+   outstanding native ticket is rejected, and so is the manager package's own
+   cap: destroy that one natively. Burning a cap frees an enrollment slot; even
+   a manager whose last cap was burned can enroll again.
 
 ### Independent requests and cancellation
 
@@ -45,17 +48,17 @@ Matching controller holder:
   Compute the digest from actual modules and dependency package IDs through Sui
   tooling. Publish reproducible artifacts for observers; a source commit is not
   the native digest. `blast_upgrade_cap_manager::UpgradeRequested` records the
-  cap ID, digest, request timestamp and deadline.
+  cap ID, its current target package, digest, request timestamp and deadline.
 - Alternatively call `blast_upgrade_cap_manager::request_make_immutable` with
   manager, controller, selected cap ID and Clock. Its
   `blast_upgrade_cap_manager::ImmutabilityRequested` event records that cap's
-  timestamp and deadline. Check required application exits and dependency routes
+  target package, timestamp and deadline. Check required application exits and dependency routes
   before permanently ending native upgrades.
 - Call `blast_upgrade_cap_manager::cancel_request` with manager, controller and
   cap ID to cancel only that cap's action. Cancellation is allowed after maturity
   until execution wins transaction ordering; it has no priority over execution.
-  `blast_upgrade_cap_manager::RequestCancelled` preserves cap ID, original action
-  and original deadline. Explicit cancellation is required before replacement,
+  `blast_upgrade_cap_manager::RequestCancelled` preserves cap ID, target package,
+  original action and original deadline. Explicit cancellation is required before replacement,
   which starts a fresh full delay. Other caps' deadlines never reset.
 
 ### Upgrade execution
@@ -72,7 +75,8 @@ Anyone, without a controller, may execute a mature upgrade:
    The native receipt determines the cap ID; callers cannot redirect it. The
    `blast_upgrade_cap_manager::UpgradeAuthorized` and
    `blast_upgrade_cap_manager::UpgradeCommitted` events identify the cap and
-   consumed digest/deadline or new package/version, respectively.
+   pre-upgrade package, consumed digest and deadline, or new package and version,
+   respectively.
 
 Several caps may have native tickets outstanding in one PTB and commit in any
 order. Every ticket and receipt must be consumed in that PTB. Any failure rolls
@@ -92,9 +96,11 @@ native upgrades for the selected target; application objects retain their own
 rules. An upgrade request cannot authorize immutability, or vice versa.
 
 The controller holder may call `blast_upgrade_cap_manager::destroy_cap` to
-renounce enrollment, request and cancellation authority for the entire manager.
-All pending actions remain executable. Idle native caps become inaccessible if
-the sole controller is destroyed; controller destruction does not burn those caps.
+renounce enrollment, request and cancellation authority for the entire manager;
+it emits `blast_upgrade_cap_manager::ControllerDestroyed`, after which every
+pending action of that manager is irrevocable. All pending actions remain
+executable. Idle native caps become inaccessible if the sole controller is
+destroyed; controller destruction does not burn those caps.
 
 ### Time, state and failures
 
@@ -103,14 +109,18 @@ allowed inclusively at that deadline and has no expiry. Overflow is rejected.
 Independent deadlines still use Sui's ordering on the shared manager.
 
 `blast_upgrade_cap_manager::pending_request` takes manager and cap ID and returns
-that cap's optional request (none when idle or no longer managed).
-`blast_upgrade_cap_manager::action` and `blast_upgrade_cap_manager::ready_at_ms`
-read its action and deadline. Outside code cannot extract or mutably borrow a
-managed cap. Individual actions perform bounded lookups without iterating caps;
+that cap's optional request (none when idle or no longer managed);
+`blast_upgrade_cap_manager::is_managed` tells the two apart and
+`blast_upgrade_cap_manager::cap_count` reports custody size.
+`blast_upgrade_cap_manager::upgrade_digest` returns a request's exact digest
+(none for immutability) and `blast_upgrade_cap_manager::ready_at_ms` its deadline.
+`blast_upgrade_cap_manager::upgrade_cap` reads a custodied cap's package, version
+and policy, and `blast_upgrade_cap_manager::manager_id` reads a controller's
+binding. Outside code cannot extract or mutably borrow a managed cap. Individual actions perform bounded lookups without iterating caps;
 pending requests cannot exceed the number of enrolled caps.
 
 Wrong controllers, unknown or removed caps, duplicate/absent requests, wrong
-actions, malformed digests, overflow, early execution and excess enrollment
-abort. Native digest, policy and receipt checks remain enforced. There is no
+actions, malformed digests, overflow, early execution, excess enrollment and
+enrollment of the manager package's own cap abort. Native digest, policy and receipt checks remain enforced. There is no
 raw-cap withdrawal, loan, delay setter, policy setter or emergency bypass. The
 package charges no protocol fee; ordinary Sui costs apply.
