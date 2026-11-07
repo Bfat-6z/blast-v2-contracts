@@ -1,7 +1,7 @@
 # Leverage coins: implementation lessons and required rules
 
 Status: required reading. Read this file completely before implementing or
-changing `sui/boosts/core/`, the `blast_boosts_aftermath`
+changing `sui/defi/boosts/core/`, the `blast_boosts_aftermath`
 adapter, or any SDK code that mirrors their math.
 
 This file collects the rules that the pure Series1 accounting library cannot
@@ -151,7 +151,7 @@ and is a release gate on the seed slice.
 
 ### 1.10 Run every price gate at the one operation checkpoint
 
-The `PricePolicy` type in `sui/boosts/core/sources/policy.move` owns the freshness,
+The `PricePolicy` type in `sui/defi/boosts/core/sources/policy.move` owns the freshness,
 confidence, and mark-divergence rules, but it cannot see how many times or
 against what a caller applies them. The Series and adapter must:
 
@@ -184,7 +184,7 @@ that rule: construct the lifecycle once during Vault issuance and change it
 only through `lifecycle.move`. Because a package upgrade adds modules to the
 same package, raw upgrade authority must not remain address-owned once a Vault
 can hold value. Series1 is therefore published with
-`sui/boosts/core/scripts/publish_immutable.sh`, which consumes the returned
+`sui/defi/boosts/core/scripts/publish_immutable.sh`, which consumes the returned
 `UpgradeCap` through `0x2::package::make_immutable` in the same PTB. It has no
 Publisher, package administrator, version cutover, or post-publication upgrade
 path. Series2 is a new immutable package and coin family.

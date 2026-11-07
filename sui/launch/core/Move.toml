@@ -1,0 +1,16 @@
+[package]
+name = "blast_core"
+edition = "2024"
+license = "BUSL-1.1"
+authors = ["Jose Cerqueira (jose@interestprotocol.com)"]
+
+[dependencies]
+blast_admin = { local = "../../governance/admin" }
+blast_partners = { local = "../partners" }
+blast_fun_vesting = { local = "../../utilities/vesting" }
+
+[addresses]
+blast_core = "0x0"
+
+# Receives every Blast fee from publication; init aborts while this is 0x0.
+blast_treasury = "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"

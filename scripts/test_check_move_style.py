@@ -42,7 +42,7 @@ public fun limit(): u64 { LIMIT }
             root = Path(directory)
             with patch("check_move_style.ROOT", root):
                 for package in ("vesting", "launchpad"):
-                    path = root / "sui" / package / "sources" / "vesting.move"
+                    path = root / "sui/utilities" / package / "sources" / "vesting.move"
                     path.parent.mkdir(parents=True)
                     path.write_text(source)
                     if package == "vesting":
@@ -247,11 +247,11 @@ public fun make(): payout::Recipient { abort }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             with patch("check_move_style.ROOT", root):
-                for package in ("sui/blast_sui", "sui/boosts/core", "scratch-sui/dex", "sui/launchpad"):
+                for package in ("sui/defi/blast_sui", "sui/defi/boosts/core", "scratch-sui/dex", "sui/launch/launchpad"):
                     path = root / package / "sources" / "value.move"
                     path.parent.mkdir(parents=True)
                     path.write_text(source)
-                    if package == "sui/launchpad":
+                    if package == "sui/launch/launchpad":
                         with self.assertRaisesRegex(ValueError, "import types"):
                             check(path)
                     else:

@@ -76,8 +76,8 @@ stored venue's `migrate`, which locks the liquidity in a
 Use the presale guide for presale calls.
 
 `blast_fun_vesting` (used by `blast_core` for vesting payouts) lives in this repository at
-`sui/vesting` and is immutable on mainnet. The standalone
-OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
+`sui/utilities/vesting` and is immutable on mainnet. The standalone
+OTC package lives at `sui/utilities/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values
 
@@ -5903,7 +5903,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 Standalone presales with capped commitments, proportional fills or a first-come hard cap, migration-gated claims, full refunds when a sale does not migrate, the migration hand-off to the sale's venue, and the owner proof its vault accepts.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/blast_presale.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/presale/sources/blast_presale.move
 
 #### Types
 
@@ -6423,7 +6423,7 @@ public struct PresaleCreated<phantom SaleToken, phantom Quote> has copy, drop {
 
 The presale's publication and the one constructor of its package witness.  Publication hands the deployer an owned `Publication<BLAST_PRESALE_PACKAGE>`, which `blast_admin::package_admin::wrap` turns into the shared `PackageAdmin<BLAST_PRESALE_PACKAGE>` and the shared `PackageVersion<BLAST_PRESALE_PACKAGE>`, fully paused. Pausing, upgrades, and immutability go through `blast_admin::package_admin` under the package-scoped roles `PauseAdmin<BLAST_PRESALE_PACKAGE>`, `UpgradeAdmin<BLAST_PRESALE_PACKAGE>`, and `CancelAdmin<BLAST_PRESALE_PACKAGE>`.  The fee and creation policies start with zero delays so Blast configures them while the package is paused; `creation_policy::unpause` refuses until every delay is guarded, then clears bits with the package witness. It lives beside the policies it reads because they name `BLAST_PRESALE_PACKAGE`, so this module cannot import them.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/blast_presale_package.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/presale/sources/blast_presale_package.move
 
 #### Types
 
@@ -6442,7 +6442,7 @@ public struct PackageWitness() has drop;
 
 Package-wide presale constants exposed as zero-cost macros. The basis-points denominator and Blast's LP-fee share maximum come from `blast_core::constants`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/presale/sources/lib/constants.move
 
 #### Constants
 
@@ -6463,7 +6463,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/pr
 
 Blast's allowlists for new presales: the Quote coins a sale may raise, the venues whose tickets may start a sale, and the Blast partners a sale may name; and the presale's `unpause`, which reads these and the fee policy's delays.  A presale is checked once, when it is created. Later changes apply only to later sales, so a delisting never strands a live sale's commitments, blocks its migration, or stops paying its partner.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/config/creation_policy.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/presale/sources/config/creation_policy.move
 
 #### Types
 
@@ -6596,7 +6596,7 @@ public fun venue_admission<Venue: drop>(
 
 Presale event payloads and their package-only emitters. Pauses and versions emit from `blast_admin`, delayed settings from its delayed modules, partner acceptance from `blast_partners::partner_list`, and Blast's fee payments from `blast_core`. `PresaleCreated` stays beside the sale terms it records in `blast_presale`, which would otherwise form a module cycle.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/lib/events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/presale/sources/lib/events.move
 
 #### Events
 
@@ -6708,7 +6708,7 @@ public struct Claimed<phantom SaleToken, phantom Quote> has copy, drop {
 
 Blast's fees on presales: a share of every successful raise, of every token supply, and of every collected LP fee.  Each presale snapshots the rates when it is created. Until the sale's window starts, the `FeeAdmin` may change that sale's rates, so its economics are fixed before commitments open; the LP-fee rates then pass to the sale's vault in its migration terms, which changes them per vault after delay. Blast's fees are paid to the one `blast_core::blast_treasury::Treasury`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/config/fee_policy.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/presale/sources/config/fee_policy.move
 
 #### Types
 
@@ -6768,7 +6768,7 @@ public fun cancel_fees(
 
 One-time-witness creation of a sale token whose `TreasuryCap` is sealed under the presale's witness from birth, so no one mints before the sale's `finalize` mints the whole supply.  A generated sale-token package's initializer calls `new` with its witness and delivers the sealed cap to the publisher, beside whatever it does with the currency's `MetadataCap`. The publisher hands the sealed cap to an admitted venue's `prepare`, which borrows it to reserve the pair's pool creation, and then to `blast_presale::new`, the only call that opens it.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/presale/sources/sale_token.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/presale/sources/sale_token.move
 
 #### Functions
 
@@ -6837,7 +6837,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 Migration allocation plans and their exact apportionment.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/math/allocation.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/math/allocation.move
 
 #### Types
 
@@ -6893,7 +6893,7 @@ public fun plan(
 
 The launchpad's publication and its package witness.  Publication hands the deployer an owned `Publication<BLAST_FUN>`, which `blast_admin::package_admin::wrap` turns into the shared `PackageAdmin<BLAST_FUN>` and the shared `PackageVersion<BLAST_FUN>`, fully paused. Pausing, upgrades, and immutability go through `blast_admin::package_admin` under the package-scoped roles `PauseAdmin<BLAST_FUN>`, `UpgradeAdmin<BLAST_FUN>`, and `CancelAdmin<BLAST_FUN>`.  The publication pins `PackageWitness`, the one witness the package passes wherever a sealed call must name the launchpad: the launch fee ledger, migration hand-off, vault terms and owner proofs, and the generic administration's pause release. `launch_config::unpause` releases pause bits once every launchpad delay is guarded; it lives beside the configurations it reads, which name `BLAST_FUN`, so this module cannot import them.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/blast_fun.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/blast_fun.move
 
 #### Types
 
@@ -6911,7 +6911,7 @@ public struct PackageWitness() has drop;
 
 Package-wide protocol constants exposed as zero-cost macros.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/lib/constants.move
 
 #### Constants
 
@@ -6937,7 +6937,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/la
 
 Creator recipients, the one-time claim they authorize, and the revocable caps it issues.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/launch/creator_authority.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/launch/creator_authority.move
 
 #### Types
 
@@ -6991,7 +6991,7 @@ public fun destroy_creator_metadata_cap<Meme>(self: CreatorMetadataCap<Meme>)
 
 Launchpad event payloads and their package-only emitters. Pauses and versions emit from `blast_admin`, delayed settings from its delayed modules, and Blast's fee payments from `blast_core`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/lib/events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/lib/events.move
 
 #### Events
 
@@ -7161,7 +7161,7 @@ public struct ProtocolFeesAccrued<phantom Meme, phantom Quote> has copy, drop {
 
 Launch construction, the bonding curve, the migration hand-off, and the owner proof.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/launch/launch.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/launch/launch.move
 
 #### Types
 
@@ -7565,7 +7565,7 @@ public fun prove_owner<Meme, Quote>(
 
 Launch policy each new launch snapshots.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/config/launch_config.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/config/launch_config.move
 
 #### Types
 
@@ -7842,7 +7842,7 @@ public fun venue_admission<Venue: drop>(
 
 One-time-witness currency creation and custody of its inventory until a launch starts.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/launch/launch_ticket.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/launch/launch_ticket.move
 
 #### Types
 
@@ -7886,7 +7886,7 @@ public fun new<Meme: drop>(
 
 Settings every curve trade and creator claim reads live.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launchpad/sources/config/runtime_config.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/launchpad/sources/config/runtime_config.move
 
 #### Types
 
@@ -8013,7 +8013,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 The migrators package's publication.  `init` turns the one-time witness into `blast_admin`'s owned `Publication`, which the publisher wraps with the package's `UpgradeCap` through `blast_admin::package_admin::wrap`; that shares `PackageVersion<BLAST_MIGRATORS>` and `PackageAdmin<BLAST_MIGRATORS>`. Venues define no pause bits, so the version starts unpaused and the package has no unpause. Residual risk: the package has no emergency stop of its own. Migration stops with each product's migration pause bit and `buyback_and_burn` with the vault's admin bit, but `prepare`, `collect_fees`, and `settle_and_apply_fee_split` can be stopped only by advancing this package's version through a delayed upgrade, which retires every call to the old bytecode. Upgrades are scheduled, authorized and committed through the generic `package_admin` under this package's own `UpgradeAdmin<BLAST_MIGRATORS>` role. The products never import this package: each venue redeems the `Migration` its product's own `migrate` returned earlier in the transaction.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/blast_migrators.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/migrators/sources/blast_migrators.move
 
 #### Types
 
@@ -8031,7 +8031,7 @@ public struct PackageWitness() has drop;
 
 Bluefin coin preparation, migration into `blast_vault` custody, fee collection, separate auto-LP compounding, settled fee-split updates, and buybacks over custodied concentrated-liquidity principal, for launches and presales alike.  Bluefin pools are keyed by their exact type-parameter order, so this module always creates and expects `Pool<Meme, Quote>` with Meme as coin A.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/venues/bluefin.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/migrators/sources/venues/bluefin.move
 
 #### Types
 
@@ -8168,7 +8168,7 @@ entry fun compound_auto_lp<Meme, Quote>(
 
 Cetus coin preparation, pool-creation reservation, migration into `blast_vault` custody, and collection, for launches and presales alike.  Anyone holding Meme can create a Cetus pool, and Cetus allows one pool per pair and tick spacing, so a buyer could pre-create the migration pool at a price of their choosing. Preparing the coin therefore mints the Meme type's single Cetus `PoolCreationCap` from its treasury capability, borrowed from the product's seal with that product's admission of this venue, before any Meme can leave the sale's custody, registers the pair at the creator's tick spacing, and returns a `VenueTicket` for that pair the sale redeems; afterwards only that capability or Cetus's pool-manager role can create the pair's pool there. Trusting that role is a venue-operator assumption: a pool it creates first makes the pair's migration abort, and only a migrators upgrade could recover the sale. The capability stays in `VenueConfig` under a key only this module constructs, with no extraction or unregistration path.  Migration redeems the `Migration` the sale's own `migrate` returned earlier in the transaction and burns the full-range position through Cetus LP Burn, so Cetus itself records the sale's liquidity as permanently locked; the `blast_vault` vault keeps the `CetusLPBurnProof`, which can only collect fees. A burned position cannot receive liquidity, so auto-LP adds to a second full-range position the vault opens on first use and keeps with no removal path.  Cetus orders a pool's coin types by type name. Each route after `prepare` takes the pool's coin types as `CoinA` and `CoinB` beside the sale's `Meme` and `Quote`, proves they are the same pair, and retypes balances between the two orders through a checked dynamic-field round trip (ADR 0100).
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/venues/cetus.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/migrators/sources/venues/cetus.move
 
 #### Types
 
@@ -8312,7 +8312,7 @@ entry fun compound_auto_lp<Meme, Quote, CoinA, CoinB>(
 
 Package-wide migrator constants exposed as zero-cost macros.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/migrators/sources/lib/constants.move
 
 #### Constants
 
@@ -8330,7 +8330,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/mi
 
 Event payloads and their package-only emitters for `blast_migrators`: the pool tier each venue records while preparing a pair. Vault creation, LP-fee collection, auto-LP, buybacks, and holder rewards emit from `blast_vault`; versions and upgrades from `blast_admin`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/lib/events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/migrators/sources/lib/events.move
 
 #### Events
 
@@ -8353,7 +8353,7 @@ public struct BluefinPoolTierRecorded<phantom Meme, phantom Quote> has copy, dro
 
 Shared venue state: write-once entries only their venue module can key.  Venue modules add authority-bearing objects (the Meme type's Cetus `PoolCreationCap`) as dynamic object fields, so each object keeps its ID and stays readable by it, and plain records (a prepared coin's pool tier) as dynamic fields, while preparing a coin. No entry is ever removed, replaced, or borrowed mutably. New venue modules add entries without changing this object's layout.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/migrators/sources/venues/venue_config.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/migrators/sources/venues/venue_config.move
 
 #### Types
 
@@ -8384,7 +8384,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 Blast partner codes, shared by every Blast product.  A partner is one deal: it is paid a share of the fee Blast charges on every trade that names it, in the same transaction. A company holds one `PartnerCap` for all its deals, each a separate partner with its own share. Blast's partner administrator registers partners under a cap, proposes each one's share, and can propose moving a partner to another cap; the cap's holder sets where each of its partners is paid. Initial terms apply at registration. A later share or cap applies only when someone applies it, no sooner than `PARTNER_CHANGE_DELAY_MS` after it was proposed. That delay is fixed: this module never changes it, and the package is published immutable. The recipient the cap holder sets applies at once.  Products call `pay` with Blast's own fee on a trade. `pay` emits `PartnerPaid` for what the partner received; the product records the trade and the amount in its own event. Share and cap lifecycle events come from `blast_admin::delayed`, keyed by `ShareKey` and `CapKey` and owned by the partner.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/blast_partners.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/partners/sources/blast_partners.move
 
 #### Types
 
@@ -8540,7 +8540,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 The partners one Blast product accepts, one list per product.  A product embeds a `PartnerList` in the object holding its policy and alone decides who may change it: the list has `store` and no authority of its own, so only the embedding module can reach it mutably. Adding a partner accepts it at once. Removing one keeps it accepted for the fixed delay Blast gives for every change to a partner, `blast_partners::delay_ms()`, so anything built to name it keeps working that long. Sales and trades that already name a removed partner keep paying it; the list only gates naming it anew. Destroying the list ends every acceptance at once, without the delay, so a product destroys it only with the object that embeds it.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/partner_list.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/partners/sources/partner_list.move
 
 #### Types
 
@@ -8705,7 +8705,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 Boosts administration roles in the shared Blast ACL, used by every leverage adapter.  A role is a type. An `AdminCap` holding `Role` signs in to `AdminWitness<Role>`, and a function's witness parameter names the one role it accepts, so a role from any other package is a different type and cannot reach these operations.  The core package is published immutably, so `UpgradeAdmin` governs adapter package custody rather than any transition in this package.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/core/sources/blast_boosts_core.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/core/sources/blast_boosts_core.move
 
 #### Types
 
@@ -8727,7 +8727,7 @@ public struct UpgradeAdmin {}
 
 Package-wide immutable core numeric constants.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/core/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/core/sources/lib/constants.move
 
 #### Constants
 
@@ -8742,7 +8742,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/bo
 
 Irreversible lifecycle and operation permissions for one Vault.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/core/sources/lifecycle.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/core/sources/lifecycle.move
 
 #### Types
 
@@ -8780,7 +8780,7 @@ public fun observed_venue_change_reason(): ShutdownReason
 
 Operation-scoped observations supplied by a venue adapter.  These values prove neither source identity nor caller authority. The adapter authenticates its venue and oracle sources before it constructs them; the core reads them during the enclosing operation and never stores one.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/core/sources/observation.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/core/sources/observation.move
 
 #### Types
 
@@ -8847,7 +8847,7 @@ public fun funding_cost(amount: u64): FundingSettlement
 
 Immutable core policy values and pure policy gates.  This slice selects no production value, authenticates no price source, and owns no Vault or venue state.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/core/sources/policy.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/core/sources/policy.move
 
 #### Types
 
@@ -9037,7 +9037,7 @@ public fun assert_execution(self: &ExecutionBound, reference_price: u64, execute
 
 Venue-neutral state for one core leveraged product.  The selected adapter stores this value inside its own shared Vault. Only functions in this module can inspect or change the private core fields. Currency, venue custody, ACL routing, and versioning belong to the adapter. The core reads no clock: every `now_ms` is the adapter's `Clock::timestamp_ms()` for the transaction, and oracle freshness is judged against it.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/core/sources/state.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/core/sources/state.move
 
 #### Types
 
@@ -9599,7 +9599,7 @@ Events: payload structs are emitted directly, each under its own type.
 
 Blast-owned product tags for Series1 Boost currencies.  A Boost currency is `blast_boost::BlastBoost<Product>` in the issuing adapter, and its `Product` argument is what a holder reads inside the coin type. Declaring every tag in this module keeps that inner type under the Blast name: `blast_boosts_products::NVDA_BULL_2X`.  Each product is one empty struct with no abilities named `<TICKER>_<SIDE>_<LEVERAGE>`, for example `public struct NVDA_BULL_2X {}`. `BULL` tracks the perp long and `BEAR` the inverse; the ticker is the Aftermath base asset without its USD suffix. A tag carries no authority and no state: Coin Registry admits one currency per tag type, and the Series1 issuer role is the only authority that can issue it. Adding a tag is a compatible upgrade of this package; nothing here is ever removed. A declared tag is not a live product until an adapter issues its currency.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/products/sources/blast_boosts_products.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/products/sources/blast_boosts_products.move
 
 #### Types
 
@@ -9812,7 +9812,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 The share currency type of every Boost this adapter issues.  Wallets, explorers, and indexers identify a coin by its type argument, so `Coin<BlastBoost<Product>>` is the name a holder reads. The shared `vault::Vault<Product>` custodies the product; it is not the currency.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/blast_boost.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/blast_boost.move
 
 #### Types
 
@@ -9832,7 +9832,7 @@ public struct BlastBoost<phantom Product> has key {
 
 Canonical package marker for this adapter, its operational generation, and the partners Boosts accepts.  The generation value, its checked arithmetic, and its replay event belong to `blast_admin::operational_version`; `init` seeds the value from the one-time witness before claiming the Publisher with it, so no other package can create this adapter's generation. This module owns the shared container, the compiled generation that identifies this bytecode, and the list of accepted Blast partners, one dynamic field per partner so the container's layout never changes.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/blast_boosts_aftermath.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/blast_boosts_aftermath.move
 
 #### Types
 
@@ -9859,7 +9859,7 @@ public struct PartnerKey(ID) has copy, drop, store;
 
 Stable event envelope for the Aftermath adapter package.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/lib/blast_events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/lib/blast_events.move
 
 #### Types
 
@@ -9872,7 +9872,7 @@ public struct Event<T: copy + drop>(T) has copy, drop;
 
 The raw venue checkpoint the adapter proves every venue mutation against: how one is read, what may change between two, and what each operation must leave behind.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/checkpoint.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/checkpoint.move
 
 #### Types
 
@@ -9914,7 +9914,7 @@ public enum CheckpointChange has drop {
 
 Package-wide immutable adapter constants.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/lib/constants.move
 
 #### Constants
 
@@ -9934,7 +9934,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/bo
 
 Replay-complete Aftermath adapter events.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/events.move
 
 #### Events
 
@@ -10206,7 +10206,7 @@ public struct AdminFeesWithdrawn<phantom Product> has copy, drop {
 
 Atomic Aftermath operations for adapter-owned leverage Vaults.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/operations.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/operations.move
 
 #### Functions
 
@@ -10499,7 +10499,7 @@ entry fun unwind<Product, Collateral>(
 
 Order placement for one operation: the sealed terms, the whole-lot sizing, the price limit of each order, each venue session, and the proof of every fill against the checkpoint.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/orders.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/orders.move
 
 #### Types
 
@@ -10532,7 +10532,7 @@ public struct FillReceipt {
 
 Permanent shared custody for the adapter Publisher and UpgradeCap.  Authorization, activation and immutability take `AdminWitness<UpgradeAdmin>`, the upgrade role the core declares for every adapter. Receipt commit carries the native authorization proof instead. Custody itself stays package-local: this adapter's generation advances without touching the core, which is immutable and has no generation of its own.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/package_admin.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/package_admin.move
 
 #### Types
 
@@ -10590,7 +10590,7 @@ public fun make_immutable(
 
 Authenticated Aftermath capture: proves every source is the bound one, reads the raw checkpoint, and normalizes prices and equity into the adapter's units.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/snapshot.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/snapshot.move
 
 #### Types
 
@@ -10631,7 +10631,7 @@ public struct CashLiquidity has copy, drop {
 
 Adapter-owned Vault: custody of the core state, the venue account, the share currency and the retained cash, plus the public surface that needs no venue object (issuance, shutdown begin and claim, administration). Every venue-touching operation is driven by `operations`; this module never reads the venue, advances a checkpoint or completes a core plan.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/vault.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/vault.move
 
 #### Types
 
@@ -10781,7 +10781,7 @@ public fun withdraw_admin_fees<Product, Collateral>(
 
 Exact Aftermath account custody under its immutable venue binding: every deposit, allocation, order and withdrawal the Vault makes goes through here.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/boosts/aftermath_adapter/sources/venue_account.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/boosts/aftermath_adapter/sources/venue_account.move
 
 #### Types
 
@@ -10844,7 +10844,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 ### `blast_sui::blast_events`
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/lib/blast_events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/lib/blast_events.move
 
 #### Types
 
@@ -10857,7 +10857,7 @@ public struct Event<T: copy + drop>(T) has copy, drop;
 
 The unrestricted residual-share LST that receives all vault staking rewards.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/blast_sui.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/blast_sui.move
 
 #### Types
 
@@ -10870,7 +10870,7 @@ public struct BLAST_SUI() has drop;
 
 Blast SUI's administration roles in the shared Blast ACL.  A role is a type. An `AdminCap` holding `Role` signs in to `AdminWitness<Role>`, and a function's witness parameter names the one role it accepts, so a role from any other package is a different type and cannot reach these operations.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/blast_sui_domain.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/blast_sui_domain.move
 
 #### Types
 
@@ -10886,7 +10886,7 @@ public struct FeeAdmin {}
 
 Canonical package provenance witness and the shared cutover that prevents stale package generations from mutating protocol state.  The generation value, its checked arithmetic, and its replay event belong to `blast_admin::operational_version`; `init` seeds the value from the one-time witness before claiming the Publisher with it, so no other package can create this package's generation. This module owns only the canonical shared container and the two compiled constants that identify this bytecode and the bytecode a governed upgrade cuts over to.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/blast_sui_package.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/blast_sui_package.move
 
 #### Types
 
@@ -10908,7 +10908,7 @@ public struct PackageVersion has key {
 
 ### `blast_sui::constants`
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/lib/constants.move
 
 #### Constants
 
@@ -10926,7 +10926,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/bl
 
 One ledger of native SUI custody delegated to the vault's fixed staking pool.  A ledger holds liquid SUI, up to `max_pending_stakes` pending `StakedSui` receipts — each worth exactly its principal until conversion, ordered by strictly increasing activation epoch because same-epoch requests join — and at most one active `FungibleStakedSui` of the fixed pool. `active_sui` is the conservative SUI valuation of the active tokens: the floor value at the last applied pool exchange rate, reduced by exact native output between refreshes. The vault owns the applied rate; a ledger never reads the pool.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/custody.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/custody.move
 
 #### Types
 
@@ -10944,7 +10944,7 @@ public struct Custody has store {
 
 Self-custodial native stake waiting to enter blast custody after activation.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/deposit_receipt.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/deposit_receipt.move
 
 #### Types
 
@@ -10990,7 +10990,7 @@ public fun create_display(
 
 ### `blast_sui::events`
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/lib/events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/lib/events.move
 
 #### Types
 
@@ -11142,7 +11142,7 @@ public struct NativeStakeUnwound has copy, drop {
 
 The unrestricted 1:1 SUI quote coin used by Blast liquidity.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/fun_sui.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/fun_sui.move
 
 #### Types
 
@@ -11155,7 +11155,7 @@ public struct FUN_SUI() has drop;
 
 Permanent shared custody for package capabilities.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/package_admin.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/package_admin.move
 
 #### Types
 
@@ -11243,7 +11243,7 @@ public fun has_upgrade_cap(self: &PackageAdmin): bool
 
 Single-validator custody of the 1:1 funSUI ledger and the blastSUI share ledger.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/blast_sui/sources/vault.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/defi/blast_sui/sources/vault.move
 
 #### Types
 
@@ -11421,7 +11421,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 Event payloads and their package-only emitters for `blast_core`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/lib/blast_core_events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/lib/blast_core_events.move
 
 #### Events
 
@@ -11446,7 +11446,7 @@ public struct ProtocolFeesPaid<phantom Meme, phantom Quote> has copy, drop {
 
 Blast's product administration roles in the shared Blast ACL, one set for the launchpad, the presale, the vault, and the venues (ADR 0137). Package-infrastructure roles (upgrade, pause, unpause) are generic over each package's one-time witness (OTW) in `blast_admin`.  A role is a type. An `AdminCap` holding `Role` signs in to `AdminWitness<Role>`, and a function's witness parameter names the one role it accepts, so no role authorizes another's actions.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/blast_domain.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/blast_domain.move
 
 #### Types
 
@@ -11486,7 +11486,7 @@ public struct CancelAdmin {}
 
 The one address every Blast fee is paid to, for every product and vault. A `TreasuryAdmin` schedules a change behind the applied delay, a `CancelAdmin` cancels it, and anyone applies a ready one.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/blast_treasury.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/blast_treasury.move
 
 #### Types
 
@@ -11544,7 +11544,7 @@ public fun is_guarded(self: &Treasury): bool
 
 Validated basis-points rates, their rounded application, and the one exact apportionment every Blast split uses.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/accounting/bps.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/accounting/bps.move
 
 #### Types
 
@@ -11575,7 +11575,7 @@ public fun apportion(rates: vector<Bps>, total: u64, rounded_up: Option<u64>): v
 
 Core constants exposed as zero-cost macros. The basis-points denominator, Blast's LP-fee share maximum, and the bounds of core's public constructors are public, so every launch package uses the one value.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/lib/constants.move
 
 #### Functions
 
@@ -11607,7 +11607,7 @@ public fun max_vesting_duration_ms(): u64
 
 How every LP-fee collection is divided after Blast's share: typed routes to addresses, the vault's owner, auto-LP, holder rewards, and burn, summing to exactly 10,000 basis points.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/accounting/fee_split.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/accounting/fee_split.move
 
 #### Types
 
@@ -11693,7 +11693,7 @@ public fun is_burn(self: &Destination): bool
 
 Positional Blake2b-256 proofs. Leaves hash under a `0x00` prefix and a consumer's domain string, internal nodes under `0x01`, so no internal node can pass as a leaf.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/merkle.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/merkle.move
 
 #### Functions
 
@@ -11721,7 +11721,7 @@ public fun verify(
 
 The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.  The module also derives the price a concentrated-liquidity venue seeds the pool at, and whether both such venues can seed it, so a product can refuse a sale that could never migrate.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration/migration.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/migration/migration.move
 
 #### Types
 
@@ -11867,7 +11867,7 @@ public fun is_seedable_price(sqrt_price_x64: u128): bool
 
 A package's sealed statement that the caller holds its creator authority over one sale, so a vault can serve the sale's owner without importing either product. Each product keeps its own authority (a curve-fee cap, a presale cap) and issues the proof after checking it; the proof cannot be dropped, copied, or stored, so it authorizes exactly the one call that consumes it.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration/owner_proof.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/migration/owner_proof.move
 
 #### Types
 
@@ -11900,7 +11900,7 @@ public fun origin(self: &OwnerProof): ID
 
 The one way Blast sends coins to people: an amount paid outright, or locked in an irrevocable linear vesting schedule. A `Recipient` says which of the two a destination gets; each product keeps its own recipient lists and shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/accounting/payout.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/accounting/payout.move
 
 #### Types
 
@@ -11976,7 +11976,7 @@ public fun pay_all<Asset>(balance: Balance<Asset>, destination: address, ctx: &m
 
 Blast's fees held by one launch, presale, or vault, and their one payout path: to the treasury, and, when the sale named a partner, the partner's cut of every asset first.  Only the module that defines the `PackageWitness` can create a ledger, and the payout event names that witness's original type, so a fee payment's origin is attributable to the product or vault that holds it. The embedding object owns the ledger, so only its module can accrue into it or pay it out; each product wraps the payout in its own permissionless call.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/accounting/protocol_fees.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/accounting/protocol_fees.move
 
 #### Types
 
@@ -12063,7 +12063,7 @@ public fun partner_id<Meme, Quote>(self: &Ledger<Meme, Quote>): Option<ID>
 
 A coin's `TreasuryCap` sealed by the product that created the currency, from publication until that product's `new` opens it.  The seal closes the window in which a coin's creator could mint before a sale starts: between publication and the venue's preparation of the coin, which borrows the cap to reserve the pair's pool creation, the holder of a sealed cap can only hand it to a venue the sealing product admits. The product checks its own venue allowlist and issues a `VenueAdmission` under its package witness; the venue presents the admission with its own witness to borrow the cap. Only the sealing product's witness opens the seal, so the raw cap never reaches a creator's transaction, and a venue reaches it only through code the product admitted.  Every witness is identified by `type_name::with_original_ids`, as in `migration`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration/sealed_treasury_cap.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/migration/sealed_treasury_cap.move
 
 #### Types
 
@@ -12183,7 +12183,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 Event payloads and their package-only emitters for `blast_vault`. Delayed settings, venue admission, pauses, and versions emit from `blast_admin`; Blast's fee payments emit from `blast_core`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/lib/blast_vault_events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/vault/sources/lib/blast_vault_events.move
 
 #### Events
 
@@ -12296,7 +12296,7 @@ public struct RoundClosed<phantom Meme, phantom Quote> has copy, drop {
 
 The vault package's publication, its witness admission, and its unpause.  One list of admitted witness types decides who may create a vault: the venue whose witness calls `vault::new`, and the issuer whose witness sealed the vault's terms, must both be on it. Each witness is the one its module alone can construct. The launchpad and presale witnesses are issuers and the venue witnesses are venues. The list does not distinguish the two roles, so an admitted product witness would also pass the venue check; both are Blast-reviewed code, and products never call `vault::new`. Gating venues binds every position key to venue code Blast reviewed; gating issuers keeps a stranger's terms, with a Blast share and partner of its choosing, out of Blast vaults.  An admitted venue obtains `VaultTerms` only from `migration::redeem`; it never accepts `VaultTerms` from its caller. Terms are `copy`, so a venue that took them as an argument would let anyone who obtained a sale's terms create a second vault claiming that sale.  An `VenueAdmin` schedules an admission, anyone applies it once its delay has passed, a `CancelAdmin` cancels it, and an `VenueAdmin` removes a witness at once. Removing a venue stops it creating vaults; removing an issuer stops every vault for its sales, so a migration sealed by it can no longer complete. Existing vaults keep working either way.  The admission delay starts at zero and admissions ignore the pause, so Blast lists the launchpad, presale, and venue witnesses and raises the delay while publication keeps the package paused; `unpause` refuses until that delay is guarded. The product and venue packages must therefore be published before the vault is unpaused.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/blast_vault_package.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/vault/sources/blast_vault_package.move
 
 #### Types
 
@@ -12402,7 +12402,7 @@ public fun make_immutable(
 
 Package-wide vault constants exposed as zero-cost macros.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/vault/sources/lib/constants.move
 
 #### Constants
 
@@ -12421,7 +12421,7 @@ Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/va
 
 Holder rewards: rounds funded from a vault's holder-reward route and paid by Merkle proof.  Blast's off-chain system turns checkpointed holder balances into a Merkle allocation, and a `RewardsAdmin` schedules it as a round on the vault. Once the vault's round delay has elapsed, anyone publishes it, reserving its Meme and Quote budget from the vault. Anyone can relay a proof afterwards; each leaf pays its committed beneficiary once, and anyone closes the round at its deadline, returning what is left to the vault.  A claim pays by transfer, so a leaf's beneficiary must be an account: a coin sent to an object's address (a pool, a vesting schedule, another vault) has no recovery path, and the claimed leaf never returns to the vault. Nothing on chain tells the two apart, so the allocation leaves object-held balances out.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/holder_rewards.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/vault/sources/holder_rewards.move
 
 #### Types
 
@@ -12551,7 +12551,7 @@ public fun close_round<Meme, Quote>(
 
 The LP vault every Blast sale migrates into: custody of a venue position with no exposed withdrawal path, and the split of every fee collection it earns.  While the vault or its venue package remains upgradeable, authorized upgrades can change custody behavior. Cetus separately burns the migration position through its LP Burn contract; the vault holds that burn proof and any unburned auto-LP position.  An admitted venue builds the vault from the terms it redeemed from a sale's migration, attaches the position under its sealed `Venue` key, and shares it. Every collection then pays Blast its per-vault share through the core protocol ledger, at once or held for the sale's partner, and divides the rest by the vault's fee split: address routes are paid at once, and the owner, auto-LP, holder-reward, and burn routes accrue here. The owner acts with an `OwnerProof` from the sale's product; Blast acts through its roles; venue-only operations require the venue's witness, which only the venue module constructs.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vault/sources/vault.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/vault/sources/vault.move
 
 #### Types
 
@@ -12896,7 +12896,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 The one access-control list for every Blast package: one cold root and role-typed admins.  A role is a type that its consumer package declares. `AdminWitness<Role>` in a function signature is that function's role check, and a role from one package can never satisfy another package's signature.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/blast_acl.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/blast_acl.move
 
 #### Types
 
@@ -13009,7 +13009,7 @@ public fun super_admin_transfer_delay_ms(): u64
 
 Replay-complete typed facts for shared administration transitions.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/lib/blast_admin_events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/lib/blast_admin_events.move
 
 #### Events
 
@@ -13123,7 +13123,7 @@ public struct Unpaused<phantom OTW: drop> has copy, drop {
 
 Settings that change only after their applied delay, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied delay, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries a module-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Embedding modules use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `parent`; embedding modules emit only their own side effects.  Every change, a shorter delay included, waits the delay applied when it was scheduled. A delay can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No delay exceeds `max_delay_ms`, so a delay can always be changed again. Readers need no Clock.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed.move
 
 #### Types
 
@@ -13319,7 +13319,7 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
 
 One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied delay. The slot also governs its own delay. See `delayed` for the rules every delayed type shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_action.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_action.move
 
 #### Types
 
@@ -13480,7 +13480,7 @@ public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + s
 
 Keyed values under one shared delay, such as per-coin overrides. Every entry change, setting or clearing, waits the delay applied when it was scheduled, and its deadline is fixed then; a later delay change never moves it. See `delayed` for the shared rules.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_map.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_map.move
 
 #### Types
 
@@ -13723,7 +13723,7 @@ public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 Allowlists whose members join only after the applied delay and leave at once. See `delayed` for the rules every delayed type shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_set.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_set.move
 
 #### Types
 
@@ -13936,7 +13936,7 @@ public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 One package's sealed Publisher and UpgradeCap, its delayed upgrade decisions, and the role-gated pause controls of its `PackageVersion`, typed by the package's one-time witness.  The native capabilities never leave the shared `PackageAdmin`: only the package itself, with its package witness, borrows the Publisher by immutable reference, nothing lends the UpgradeCap, and the cap acts only through a scheduled upgrade or the one terminal `make_immutable`. Each role is generic over the package's OTW, so the ACL stores `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator never reaches another's PackageAdmin. This package is immutable: no consumer bytecode version gates these calls, and a consumer whose new bytecode compiles the wrong version can still schedule a repair.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package/package_admin.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/package/package_admin.move
 
 #### Types
 
@@ -14143,7 +14143,7 @@ public fun initial_upgrade_delay_ms(): u64
 
 One package's publication proof, version and pause bits, typed by its one-time witness.  The consumer's initializer turns its one-time witness into an owned `Publication`, which `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused at version one. The consumer compiles its own version constant and checks it with `assert_current`; it also chooses which pause bits exist and pins its package witness, the one type whose value its own code passes to clear pause bits or to borrow its Publisher. Setting and clearing bits and advancing the version are sealed here and reached only through `package_admin`'s role-gated calls, so no package can build a second version or move a version by any other path.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package/package_version.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/package/package_version.move
 
 #### Types
 
@@ -14238,7 +14238,7 @@ Events: payload structs are emitted directly, each under its own type.
 
 Native UpgradeCap custody with an independent 48-hour notice per cap and action.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/upgrade_cap_manager/sources/blast_upgrade_cap_manager.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/upgrade_cap_manager/sources/blast_upgrade_cap_manager.move
 
 #### Types
 
@@ -14455,7 +14455,7 @@ Events: payload structs are emitted directly, each under its own type.
 
 A one-off presale venue built for a partner, over `blast_core` alone. The `AdminCap` prepares each sale token with the Aftermath pool-creation capability of its LP coin and receives the `VenueTicket` that `blast_presale::new` redeems, so the sale can migrate only here. Anyone may then migrate the funded sale: the PTB passes the `Migration` the presale's own `migrate` returned, and this module seeds a 50/50 Aftermath weighted pool wrapped in Aftermath's DAO-fee pool, which pays a 2% fee on every swap, deposit, and withdrawal straight to the partner treasury. The treasury also receives each DAO-fee pool's owner cap, with which it may change that pool's fee or recipient; the sale's LP is locked forever.  The package never imports a product, so a presale upgrade never strands it.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/vendors/aftermath_dao_presale/sources/blast_aftermath_dao_presale.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/vendors/aftermath_dao_presale/sources/blast_aftermath_dao_presale.move
 
 #### Types
 

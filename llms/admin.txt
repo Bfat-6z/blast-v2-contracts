@@ -64,8 +64,8 @@ stored venue's `migrate`, which locks the liquidity in a
 Use the presale guide for presale calls.
 
 `blast_fun_vesting` (used by `blast_core` for vesting payouts) lives in this repository at
-`sui/vesting` and is immutable on mainnet. The standalone
-OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
+`sui/utilities/vesting` and is immutable on mainnet. The standalone
+OTC package lives at `sui/utilities/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values
 
@@ -777,7 +777,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 The one access-control list for every Blast package: one cold root and role-typed admins.  A role is a type that its consumer package declares. `AdminWitness<Role>` in a function signature is that function's role check, and a role from one package can never satisfy another package's signature.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/blast_acl.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/blast_acl.move
 
 #### Types
 
@@ -890,7 +890,7 @@ public fun super_admin_transfer_delay_ms(): u64
 
 Replay-complete typed facts for shared administration transitions.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/lib/blast_admin_events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/lib/blast_admin_events.move
 
 #### Events
 
@@ -1004,7 +1004,7 @@ public struct Unpaused<phantom OTW: drop> has copy, drop {
 
 Settings that change only after their applied delay, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied delay, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries a module-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Embedding modules use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `parent`; embedding modules emit only their own side effects.  Every change, a shorter delay included, waits the delay applied when it was scheduled. A delay can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No delay exceeds `max_delay_ms`, so a delay can always be changed again. Readers need no Clock.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed.move
 
 #### Types
 
@@ -1200,7 +1200,7 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
 
 One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied delay. The slot also governs its own delay. See `delayed` for the rules every delayed type shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_action.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_action.move
 
 #### Types
 
@@ -1361,7 +1361,7 @@ public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + s
 
 Keyed values under one shared delay, such as per-coin overrides. Every entry change, setting or clearing, waits the delay applied when it was scheduled, and its deadline is fixed then; a later delay change never moves it. See `delayed` for the shared rules.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_map.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_map.move
 
 #### Types
 
@@ -1604,7 +1604,7 @@ public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 Allowlists whose members join only after the applied delay and leave at once. See `delayed` for the rules every delayed type shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_set.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_set.move
 
 #### Types
 
@@ -1817,7 +1817,7 @@ public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 One package's sealed Publisher and UpgradeCap, its delayed upgrade decisions, and the role-gated pause controls of its `PackageVersion`, typed by the package's one-time witness.  The native capabilities never leave the shared `PackageAdmin`: only the package itself, with its package witness, borrows the Publisher by immutable reference, nothing lends the UpgradeCap, and the cap acts only through a scheduled upgrade or the one terminal `make_immutable`. Each role is generic over the package's OTW, so the ACL stores `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator never reaches another's PackageAdmin. This package is immutable: no consumer bytecode version gates these calls, and a consumer whose new bytecode compiles the wrong version can still schedule a repair.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package/package_admin.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/package/package_admin.move
 
 #### Types
 
@@ -2024,7 +2024,7 @@ public fun initial_upgrade_delay_ms(): u64
 
 One package's publication proof, version and pause bits, typed by its one-time witness.  The consumer's initializer turns its one-time witness into an owned `Publication`, which `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused at version one. The consumer compiles its own version constant and checks it with `assert_current`; it also chooses which pause bits exist and pins its package witness, the one type whose value its own code passes to clear pause bits or to borrow its Publisher. Setting and clearing bits and advancing the version are sealed here and reached only through `package_admin`'s role-gated calls, so no package can build a second version or move a version by any other path.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package/package_version.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/package/package_version.move
 
 #### Types
 

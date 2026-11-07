@@ -103,7 +103,7 @@ records below it decide what 0137 does not restate.
 | [0100](0100-single-cetus-route-with-checked-retype.md) | One Cetus route per operation, generic over the pool's coin order, with a checked dynamic-field retype | **accepted** |
 | [0102](0102-presale-creation-allowlists.md) | Admin-set allowlists of the Quote types and migration witnesses new presales may use | **proposed; amended by 0104 and 0106** |
 | [0103](0103-mainnet-only.md) | Mainnet only: no testnet builds, pins, scripts, harness environment, or rehearsals | **accepted** |
-| [0104](0104-external-presale-migrators-and-vendor-packages.md) | Public presale creation and migration for external migrators; partner one-off packages under `sui/vendors` | **proposed; amended by 0110; amended by 0137** |
+| [0104](0104-external-presale-migrators-and-vendor-packages.md) | Public presale creation and migration for external migrators; partner one-off packages under `sui/launch/vendors` | **proposed; amended by 0110; amended by 0137** |
 | [0105](0105-permissionless-launch-fee-claims.md) | Permissionless launch fee claims paying the partner and a `RuntimeConfig` treasury the `TreasuryAdmin` rotates | **proposed** |
 | [0106](0106-presale-partners.md) | One partner per presale, named at creation, earns a share of Blast's raise share, paid permissionlessly after migration | **proposed; amended by 0110 and 0137** |
 | [0108](0108-standalone-coin-template.md) | A standalone coin template with creator-chosen supply, supply mode, and capability recipients; `meme_template` becomes `launch_ticket_template` | **proposed** |

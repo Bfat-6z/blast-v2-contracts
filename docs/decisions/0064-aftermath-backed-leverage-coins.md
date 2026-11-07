@@ -968,7 +968,7 @@ is introduced. Failed transactions still cost gas.
 
 Policy excludes a one-lot minimum. The two-lot structural floor is deliberately
 separate from each product's calibrated minimum. For a future NVDA 2x issuance,
-[`nvda-mint-drift.json`](../../sui/boosts/core/scripts/fixtures/nvda-mint-drift.json)
+[`nvda-mint-drift.json`](../../sui/defi/boosts/core/scripts/fixtures/nvda-mint-drift.json)
 selects **65 lots**, using the historical recorded seed quantities (998,147
 USDC atoms NAV, 8,810,000 base, 10,000 base per lot) and a 1,000,000,000-atom NAV
 cap. Historical deployment evidence is not rewritten or claimed to be current
@@ -992,7 +992,7 @@ atoms (about $0.073643 gross, before fees/costs). Move tests pin both thresholds
 and the existing flat-redemption exception. Later minimum dollar amounts vary
 with the position and share price.
 
-Run `bash sui/boosts/core/scripts/verify.sh simulation` to reproduce selection
+Run `bash sui/defi/boosts/core/scripts/verify.sh simulation` to reproduce selection
 and stress evidence. The read-only activation tool requires the calibration
 profile in its live configuration, checks band/minimum/cap inputs and observable
 seed NAV/lot/exposure, and explicitly leaves the starting-leverage premise

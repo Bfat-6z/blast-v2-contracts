@@ -34,43 +34,43 @@ REPO_URL = "https://github.com/interest-protocol/blast-v2-contracts/blob/main"
 
 # Reference order: what an integrator reaches for first.
 PACKAGES = [
-    ("sui/presale", "Presale"),
-    ("sui/launchpad", "Launchpad"),
-    ("sui/migrators", "Cetus and Bluefin venues"),
-    ("sui/partners", "Partner codes"),
-    ("sui/boosts/core", "Boosts core"),
-    ("sui/boosts/products", "Boost product tags"),
-    ("sui/boosts/aftermath_adapter", "Boosts Aftermath adapter"),
-    ("sui/blast_sui", "blastSUI and funSUI"),
-    ("sui/core", "Shared core"),
-    ("sui/vault", "LP vault"),
-    ("sui/admin", "Administration"),
-    ("sui/upgrade_cap_manager", "Delayed UpgradeCap manager"),
-    ("sui/vendors/aftermath_dao_presale", "Aftermath DAO-pool presale migrator"),
+    ("sui/launch/presale", "Presale"),
+    ("sui/launch/launchpad", "Launchpad"),
+    ("sui/launch/migrators", "Cetus and Bluefin venues"),
+    ("sui/launch/partners", "Partner codes"),
+    ("sui/defi/boosts/core", "Boosts core"),
+    ("sui/defi/boosts/products", "Boost product tags"),
+    ("sui/defi/boosts/aftermath_adapter", "Boosts Aftermath adapter"),
+    ("sui/defi/blast_sui", "blastSUI and funSUI"),
+    ("sui/launch/core", "Shared core"),
+    ("sui/launch/vault", "LP vault"),
+    ("sui/governance/admin", "Administration"),
+    ("sui/governance/upgrade_cap_manager", "Delayed UpgradeCap manager"),
+    ("sui/launch/vendors/aftermath_dao_presale", "Aftermath DAO-pool presale migrator"),
 ]
 # Packages kept out of regeneration, with the issue that brings each back. blast_sui (#191) and
 # Boosts (#205) are outside the launch-stack scope and do not yet build against the folded
-# blast_admin, so they are neither built nor regenerated: every committed section and product file
-# made only of them is kept verbatim, and guide names pointing into them are not checked.
+# blast_admin, so they are neither built nor regenerated. Their committed references keep their
+# content, with source paths updated for the workspace layout. Their guide names are not checked.
 FROZEN = {
-    "sui/blast_sui": "#191",
-    "sui/boosts/core": "#205",
-    "sui/boosts/products": "#205",
-    "sui/boosts/aftermath_adapter": "#205",
+    "sui/defi/blast_sui": "#191",
+    "sui/defi/boosts/core": "#205",
+    "sui/defi/boosts/products": "#205",
+    "sui/defi/boosts/aftermath_adapter": "#205",
 }
 # Each guide with the packages whose deployment status it opens with.
 GUIDES = [
     ("basics.md", []),
-    ("presale.md", ["sui/presale", "sui/vendors/aftermath_dao_presale"]),
-    ("launchpad.md", ["sui/launchpad"]),
-    ("migrators.md", ["sui/migrators"]),
-    ("partners.md", ["sui/partners"]),
-    ("boosts.md", ["sui/boosts/core", "sui/boosts/products", "sui/boosts/aftermath_adapter"]),
-    ("blast-sui.md", ["sui/blast_sui"]),
-    ("core.md", ["sui/core"]),
-    ("vault.md", ["sui/vault"]),
-    ("admin.md", ["sui/admin"]),
-    ("upgrade-cap-manager.md", ["sui/upgrade_cap_manager"]),
+    ("presale.md", ["sui/launch/presale", "sui/launch/vendors/aftermath_dao_presale"]),
+    ("launchpad.md", ["sui/launch/launchpad"]),
+    ("migrators.md", ["sui/launch/migrators"]),
+    ("partners.md", ["sui/launch/partners"]),
+    ("boosts.md", ["sui/defi/boosts/core", "sui/defi/boosts/products", "sui/defi/boosts/aftermath_adapter"]),
+    ("blast-sui.md", ["sui/defi/blast_sui"]),
+    ("core.md", ["sui/launch/core"]),
+    ("vault.md", ["sui/launch/vault"]),
+    ("admin.md", ["sui/governance/admin"]),
+    ("upgrade-cap-manager.md", ["sui/governance/upgrade_cap_manager"]),
 ]
 
 
@@ -92,7 +92,7 @@ PRODUCTS = [
         "Delayed UpgradeCap manager",
         "native UpgradeCap custody with a fixed 48-hour notice for digest-bound upgrades and terminal immutability",
         ["upgrade-cap-manager.md"],
-        ["sui/upgrade_cap_manager"],
+        ["sui/governance/upgrade_cap_manager"],
     ),
     Product(
         "presale",
@@ -101,8 +101,8 @@ PRODUCTS = [
         "refunds, migrate into Cetus, Bluefin, or Aftermath, and collect LP fees and holder rewards "
         "from the LP vault",
         ["presale.md", "migrators.md", "vault.md", "core.md", "partners.md"],
-        ["sui/presale", "sui/migrators", "sui/vendors/aftermath_dao_presale"],
-        ["sui/core", "sui/vault", "sui/partners", "sui/admin"],
+        ["sui/launch/presale", "sui/launch/migrators", "sui/launch/vendors/aftermath_dao_presale"],
+        ["sui/launch/core", "sui/launch/vault", "sui/launch/partners", "sui/governance/admin"],
     ),
     Product(
         "launchpad",
@@ -110,8 +110,8 @@ PRODUCTS = [
         "bonding-curve coin launches on Sui: launch a coin, trade it on the curve, graduate it into a "
         "Cetus or Bluefin pool, and collect LP fees and holder rewards from the LP vault",
         ["launchpad.md", "migrators.md", "vault.md", "core.md", "partners.md"],
-        ["sui/launchpad", "sui/migrators"],
-        ["sui/core", "sui/vault", "sui/partners", "sui/admin"],
+        ["sui/launch/launchpad", "sui/launch/migrators"],
+        ["sui/launch/core", "sui/launch/vault", "sui/launch/partners", "sui/governance/admin"],
     ),
     Product(
         "partners",
@@ -119,8 +119,8 @@ PRODUCTS = [
         "partner codes on Sui: an app registers a code and earns a share of Blast's fee on the "
         "launchpad, presale, and Boost flow it brings",
         ["partners.md"],
-        ["sui/partners"],
-        ["sui/admin"],
+        ["sui/launch/partners"],
+        ["sui/governance/admin"],
     ),
     Product(
         "boosts",
@@ -128,8 +128,8 @@ PRODUCTS = [
         "Boost leverage coins on Sui: mint and redeem leveraged long or short coins backed by "
         "Aftermath perpetuals",
         ["boosts.md", "partners.md"],
-        ["sui/boosts/core", "sui/boosts/products", "sui/boosts/aftermath_adapter"],
-        ["sui/partners", "sui/admin"],
+        ["sui/defi/boosts/core", "sui/defi/boosts/products", "sui/defi/boosts/aftermath_adapter"],
+        ["sui/launch/partners", "sui/governance/admin"],
     ),
     Product(
         "blast-sui",
@@ -137,8 +137,8 @@ PRODUCTS = [
         "the funSUI/blastSUI liquid-staking vault on Sui: stake SUI with one validator, hold funSUI, "
         "and convert between funSUI and blastSUI",
         ["blast-sui.md"],
-        ["sui/blast_sui"],
-        ["sui/admin"],
+        ["sui/defi/blast_sui"],
+        ["sui/governance/admin"],
     ),
     Product(
         "core",
@@ -147,8 +147,8 @@ PRODUCTS = [
         "vested payouts, LP-fee splits, the protocol-fee ledger with partner cuts, the treasury, Merkle "
         "proofs, and the sealed migration hand-off between a sale and its venue",
         ["core.md"],
-        ["sui/core"],
-        ["sui/partners", "sui/admin"],
+        ["sui/launch/core"],
+        ["sui/launch/partners", "sui/governance/admin"],
     ),
     Product(
         "vault",
@@ -157,8 +157,8 @@ PRODUCTS = [
         "auto-LP, holder rewards, burn, and address routes, owner claims, and Merkle holder-reward "
         "rounds",
         ["vault.md", "core.md"],
-        ["sui/vault"],
-        ["sui/core", "sui/partners", "sui/admin"],
+        ["sui/launch/vault"],
+        ["sui/launch/core", "sui/launch/partners", "sui/governance/admin"],
     ),
     Product(
         "admin",
@@ -166,7 +166,7 @@ PRODUCTS = [
         "Blast's administration on Sui: the shared ACL with typed roles, versions, and "
         "the PackageAdmin that Blast's operators use",
         ["admin.md"],
-        ["sui/admin"],
+        ["sui/governance/admin"],
     ),
 ]
 
@@ -458,6 +458,54 @@ def constants(source: str) -> list[tuple[str, str, str, str]]:
 # --- Deployment status ------------------------------------------------------------------------------
 
 
+def legacy_package_path(path: str) -> str:
+    """Path in publication commits before the Sui workspace gained purpose folders."""
+    parts = path.split("/", 2)
+    return f"{parts[0]}/{parts[2]}" if len(parts) == 3 else path
+
+
+def matches_publication(path: str, commit: str) -> bool | None:
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+
+    manifest = git("show", f"{commit}:{path}/Move.toml")
+    if manifest.returncode == 0:
+        diff = git("diff", "--quiet", commit, "--", f"{path}/sources", f"{path}/Move.toml")
+        return diff.returncode == 0 if diff.returncode in (0, 1) else None
+
+    if git("cat-file", "-e", f"{commit}^{{commit}}").returncode:
+        return None
+    old = legacy_package_path(path)
+    manifest = git("show", f"{commit}:{old}/Move.toml")
+    if manifest.returncode:
+        return False
+
+    # Resolve local edges relative to each checkout's layout before comparing them.
+    def normalize_manifest(text: str, directory: str, relocated: bool) -> str:
+        def local_path(match: re.Match) -> str:
+            target = (ROOT / directory / match[2]).resolve().relative_to(ROOT).as_posix()
+            if relocated and target.startswith("sui/"):
+                target = legacy_package_path(target)
+            return f'{match[1]}"{target}"'
+
+        return re.sub(r'(\blocal\s*=\s*)"([^"]+)"', local_path, text)
+
+    current = (ROOT / path / "Move.toml").read_text()
+    if normalize_manifest(manifest.stdout, old, False) != normalize_manifest(current, path, True):
+        return False
+
+    old_sources = git("ls-tree", "-r", "--name-only", f"{commit}:{old}/sources")
+    sources = ROOT / path / "sources"
+    files = sorted(file.relative_to(sources).as_posix() for file in sources.rglob("*") if file.is_file())
+    if old_sources.returncode or sorted(old_sources.stdout.splitlines()) != files:
+        return False
+    for file in files:
+        blob = subprocess.run(["git", "show", f"{commit}:{old}/sources/{file}"], cwd=ROOT, capture_output=True)
+        if blob.returncode or blob.stdout != (sources / file).read_bytes():
+            return False
+    return True
+
+
 @cache
 def deployment(path: str) -> dict:
     published = ROOT / path / "Published.toml"
@@ -478,13 +526,9 @@ def deployment(path: str) -> dict:
         commit = (data.get("repository") or {}).get("commit")
         if not commit:
             continue
-        diff = subprocess.run(
-            ["git", "diff", "--quiet", commit, "--", f"{path}/sources", f"{path}/Move.toml"],
-            cwd=ROOT,
-            capture_output=True,
-        )
-        if diff.returncode in (0, 1):
-            info["matches"] = diff.returncode == 0
+        matches = matches_publication(path, commit)
+        if matches is not None:
+            info["matches"] = matches
     return info
 
 
@@ -683,6 +727,16 @@ def committed_sections(text: str) -> dict[str, list[str]]:
     return {lines[a]: lines[a:b] for a, b in zip(starts, starts[1:])}
 
 
+def relocate_frozen_paths(text: str) -> str:
+    paths = [path for path, _ in PACKAGES] + ["sui/utilities/otc", "sui/utilities/vesting"]
+    for path in paths:
+        if path.count("/") >= 2:
+            old = legacy_package_path(path)
+            text = text.replace(f"{REPO_URL}/{old}/", f"{REPO_URL}/{path}/")
+            text = text.replace(f"`{old}`", f"`{path}`")
+    return text
+
+
 def frozen_guides() -> set[str]:
     return {g for g, paths in GUIDES if paths and all(p in FROZEN for p in paths)}
 
@@ -735,7 +789,7 @@ def generate(summaries: Path) -> dict[Path, str]:
     if problems:
         sys.exit("guides name members that do not resolve:\n  " + "\n  ".join(problems))
     guides = {g: with_status(raw[g], [pkgs[p] for p in paths]) for g, paths in GUIDES}
-    committed = committed_sections(OUTPUT.read_text()) if OUTPUT.exists() else {}
+    committed = committed_sections(relocate_frozen_paths(OUTPUT.read_text())) if OUTPUT.exists() else {}
     unknown = [p for product in PRODUCTS for p in product.packages + product.depends if p not in pkgs]
     unknown += [g for product in PRODUCTS for g in product.guides if g not in guides]
     if unknown:
@@ -752,7 +806,7 @@ def generate(summaries: Path) -> dict[Path, str]:
     for product in PRODUCTS:
         path = PRODUCT_DIR / f"{product.slug}.txt"
         if all(p in FROZEN for p in product.packages):
-            files[path] = path.read_text()
+            files[path] = relocate_frozen_paths(path.read_text())
             continue
         depends = [f"`{pkgs[p].name}`" for p in product.depends]
         header = PRODUCT_HEADER.format(

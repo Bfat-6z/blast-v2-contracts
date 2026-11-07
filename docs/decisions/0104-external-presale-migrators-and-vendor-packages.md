@@ -41,7 +41,7 @@ allowing a primitive, a vector, or any type defined at `0x1` or `0x2`, with
 any other struct, the administrator verifies its module keeps the constructor
 private and is the reviewed migrator.
 
-**Vendor packages.** One-off partner contracts live under `sui/vendors/<name>/`,
+**Vendor packages.** One-off partner contracts live under `sui/launch/vendors/<name>/`,
 each its own package with its own interface stubs, gates, and publish script, and
 each depending inward on Blast packages.
 

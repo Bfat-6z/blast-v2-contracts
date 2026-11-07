@@ -39,7 +39,7 @@ it is not a field of `UpgradeManager`
 [`display.move:43-86`](https://github.com/MystenLabs/walrus/blob/3c1cacc11c9292ed498f01f798cf790f02ea5062/contracts/walrus/sources/display.move#L43-L86)).
 
 This differs from Blast's final design in ownership concern, not in provenance
-semantics. Blast's [`blast.move`](../../sui/launchpad/sources/blast.move) uses
+semantics. Blast's [`blast.move`](https://github.com/interest-protocol/blast-v2-contracts/blob/1b3861757f34a295a2c9ae107c7dc2f90a83ae41/sui/launchpad/sources/blast.move) uses
 `claim_and_keep`, so the publishing sender owns the retained Publisher only
 until the deployment-time `package_admin::wrap` call moves it into the shared
 package-administration object. Walrus gives Publisher to its concrete display
@@ -122,9 +122,9 @@ custody; do not repeat a Publisher/cap equality check after every upgrade.
 
 Blast already has the two prerequisites:
 
-- [`blast.move`](../../sui/launchpad/sources/blast.move) claims and keeps the package
+- [`blast.move`](https://github.com/interest-protocol/blast-v2-contracts/blob/1b3861757f34a295a2c9ae107c7dc2f90a83ae41/sui/launchpad/sources/blast.move) claims and keeps the package
   Publisher separately; and
-- [`acl.move`](../../sui/launchpad/sources/acl.move) exposes `sign_in`, which validates a
+- [`acl.move`](https://github.com/interest-protocol/blast-v2-contracts/blob/1b3861757f34a295a2c9ae107c7dc2f90a83ae41/sui/launchpad/sources/acl.move) exposes `sign_in`, which validates a
   live registered `AdminCap` and returns a non-copyable, non-storable,
   drop-only `AdminWitness`.
 

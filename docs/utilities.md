@@ -4,8 +4,8 @@ OTC and vesting are maintained in `blast-v2-contracts`. Each Move package
 remains independently deployed and imports only the Sui framework.
 Consolidation changes no package ID, ABI, or on-chain state.
 
-- [OTC](../sui/otc/README.md): fixed-rate coin offers.
-- [Vesting](../sui/vesting/README.md): stepped-linear and checkpoint schedules.
+- [OTC](../sui/utilities/otc/README.md): fixed-rate coin offers.
+- [Vesting](../sui/utilities/vesting/README.md): stepped-linear and checkpoint schedules.
 
 Both packages are immutable on mainnet. Their `Published.toml` files
 identify the deployed packages. The original deployment records preserve the
@@ -54,7 +54,7 @@ use the consolidated repository or same-repository local paths.
 
 ## Development and licensing
 
-Run `sui move test --path sui/<package>` and that package's
+Run `sui move test --path sui/utilities/<package>` and that package's
 `scripts/check_coverage.sh`. No deployment is part of repository consolidation.
 
 The imported packages, documentation, vectors, and release records remain

@@ -94,7 +94,7 @@ reading mutable state.
 
 ### The rule is mechanically gated
 
-`sui/launchpad/scripts/check_source_boundaries.sh` fails if any `init` under
+`sui/launch/launchpad/scripts/check_source_boundaries.sh` fails if any `init` under
 `sources/` calls an `events::` helper, or if any of the four removed launchpad
 payload names reappears in `sources` or `tests`.
 

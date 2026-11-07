@@ -12,8 +12,8 @@ Licensor:             Jose Manuel Vasconcelos Cerqueira
 Licensed Work:        Blast V2 contracts: first-party code and associated
                       documentation in this repository, excluding third-party
                       dependencies and venue interfaces under
-                      sui/migrators/interfaces/ and
-                      sui/boosts/aftermath_adapter/interfaces/.
+                      sui/launch/migrators/interfaces/ and
+                      sui/defi/boosts/aftermath_adapter/interfaces/.
                       The Licensed Work is (c) 2026
                       Jose Manuel Vasconcelos Cerqueira
 Additional Use Grant: None

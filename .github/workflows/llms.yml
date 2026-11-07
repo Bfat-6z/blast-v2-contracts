@@ -62,7 +62,7 @@ jobs:
       - name: Check llms-full.txt and llms/ are current
         run: python3 scripts/gen_llms.py --check
       # Boosts is outside the launch-stack scope and does not yet build against the folded
-      # blast_admin (#205), so its fill-proof compile runs only when a change touches sui/boosts,
+      # blast_admin (#205), so its fill-proof compile runs only when a change touches sui/defi/boosts,
       # the posture blast-sui.yml takes for blast_sui. An unknown base runs it.
       - name: Reject omitted fill proofs with the pinned compiler
         env:
@@ -70,8 +70,8 @@ jobs:
         run: |
           if [ -n "$BASE_SHA" ] && [ -n "${BASE_SHA//0/}" ] \
             && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null \
-            && git diff --quiet "$BASE_SHA" HEAD -- sui/boosts; then
-            echo "No change under sui/boosts (#205): skipping the Boosts fill-proof compile."
+            && git diff --quiet "$BASE_SHA" HEAD -- sui/defi/boosts; then
+            echo "No change under sui/defi/boosts (#205): skipping the Boosts fill-proof compile."
             exit 0
           fi
-          bash sui/boosts/aftermath_adapter/scripts/verify.sh fill-proof
+          bash sui/defi/boosts/aftermath_adapter/scripts/verify.sh fill-proof

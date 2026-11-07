@@ -18,7 +18,7 @@ sui/**/coverage/
 
 # Rust programmable-transaction harness output; each run relinks the fixture lockfiles
 sui/**/target/
-sui/launchpad/ptb_tests/fixture/*/Move.lock
+sui/launch/launchpad/ptb_tests/fixture/*/Move.lock
 
 # Local reports; normalized public deployment records belong in deployments/
 coverage/

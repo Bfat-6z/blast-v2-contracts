@@ -66,8 +66,8 @@ stored venue's `migrate`, which locks the liquidity in a
 Use the presale guide for presale calls.
 
 `blast_fun_vesting` (used by `blast_core` for vesting payouts) lives in this repository at
-`sui/vesting` and is immutable on mainnet. The standalone
-OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
+`sui/utilities/vesting` and is immutable on mainnet. The standalone
+OTC package lives at `sui/utilities/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values
 
@@ -366,7 +366,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 Event payloads and their package-only emitters for `blast_core`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/lib/blast_core_events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/lib/blast_core_events.move
 
 #### Events
 
@@ -391,7 +391,7 @@ public struct ProtocolFeesPaid<phantom Meme, phantom Quote> has copy, drop {
 
 Blast's product administration roles in the shared Blast ACL, one set for the launchpad, the presale, the vault, and the venues (ADR 0137). Package-infrastructure roles (upgrade, pause, unpause) are generic over each package's one-time witness (OTW) in `blast_admin`.  A role is a type. An `AdminCap` holding `Role` signs in to `AdminWitness<Role>`, and a function's witness parameter names the one role it accepts, so no role authorizes another's actions.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/blast_domain.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/blast_domain.move
 
 #### Types
 
@@ -431,7 +431,7 @@ public struct CancelAdmin {}
 
 The one address every Blast fee is paid to, for every product and vault. A `TreasuryAdmin` schedules a change behind the applied delay, a `CancelAdmin` cancels it, and anyone applies a ready one.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/blast_treasury.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/blast_treasury.move
 
 #### Types
 
@@ -489,7 +489,7 @@ public fun is_guarded(self: &Treasury): bool
 
 Validated basis-points rates, their rounded application, and the one exact apportionment every Blast split uses.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/accounting/bps.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/accounting/bps.move
 
 #### Types
 
@@ -520,7 +520,7 @@ public fun apportion(rates: vector<Bps>, total: u64, rounded_up: Option<u64>): v
 
 Core constants exposed as zero-cost macros. The basis-points denominator, Blast's LP-fee share maximum, and the bounds of core's public constructors are public, so every launch package uses the one value.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/lib/constants.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/lib/constants.move
 
 #### Functions
 
@@ -552,7 +552,7 @@ public fun max_vesting_duration_ms(): u64
 
 How every LP-fee collection is divided after Blast's share: typed routes to addresses, the vault's owner, auto-LP, holder rewards, and burn, summing to exactly 10,000 basis points.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/accounting/fee_split.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/accounting/fee_split.move
 
 #### Types
 
@@ -638,7 +638,7 @@ public fun is_burn(self: &Destination): bool
 
 Positional Blake2b-256 proofs. Leaves hash under a `0x00` prefix and a consumer's domain string, internal nodes under `0x01`, so no internal node can pass as a leaf.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/merkle.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/merkle.move
 
 #### Functions
 
@@ -666,7 +666,7 @@ public fun verify(
 
 The sealed contract between a sale and the venue that migrates it.  Before supply leaves the sale's `TreasuryCap`, a venue prepares the coin and returns a `VenueTicket` sealed by its witness; the product admits and stores the ticket's venue. At migration the product creates a `Migration` sealed by its own witness, carrying the pool's balances and the new vault's terms, and only the stored venue's witness can redeem it. Neither the ticket nor the migration can be dropped, copied, or stored, so a transaction completes the migration whole or aborts.  Every witness is identified by `type_name::with_original_ids`, which stays fixed across upgrades of the venue or product package; allowlists that admit these names must use the same form.  The module also derives the price a concentrated-liquidity venue seeds the pool at, and whether both such venues can seed it, so a product can refuse a sale that could never migrate.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration/migration.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/migration/migration.move
 
 #### Types
 
@@ -812,7 +812,7 @@ public fun is_seedable_price(sqrt_price_x64: u128): bool
 
 A package's sealed statement that the caller holds its creator authority over one sale, so a vault can serve the sale's owner without importing either product. Each product keeps its own authority (a curve-fee cap, a presale cap) and issues the proof after checking it; the proof cannot be dropped, copied, or stored, so it authorizes exactly the one call that consumes it.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration/owner_proof.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/migration/owner_proof.move
 
 #### Types
 
@@ -845,7 +845,7 @@ public fun origin(self: &OwnerProof): ID
 
 The one way Blast sends coins to people: an amount paid outright, or locked in an irrevocable linear vesting schedule. A `Recipient` says which of the two a destination gets; each product keeps its own recipient lists and shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/accounting/payout.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/accounting/payout.move
 
 #### Types
 
@@ -921,7 +921,7 @@ public fun pay_all<Asset>(balance: Balance<Asset>, destination: address, ctx: &m
 
 Blast's fees held by one launch, presale, or vault, and their one payout path: to the treasury, and, when the sale named a partner, the partner's cut of every asset first.  Only the module that defines the `PackageWitness` can create a ledger, and the payout event names that witness's original type, so a fee payment's origin is attributable to the product or vault that holds it. The embedding object owns the ledger, so only its module can accrue into it or pay it out; each product wraps the payout in its own permissionless call.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/accounting/protocol_fees.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/accounting/protocol_fees.move
 
 #### Types
 
@@ -1008,7 +1008,7 @@ public fun partner_id<Meme, Quote>(self: &Ledger<Meme, Quote>): Option<ID>
 
 A coin's `TreasuryCap` sealed by the product that created the currency, from publication until that product's `new` opens it.  The seal closes the window in which a coin's creator could mint before a sale starts: between publication and the venue's preparation of the coin, which borrows the cap to reserve the pair's pool creation, the holder of a sealed cap can only hand it to a venue the sealing product admits. The product checks its own venue allowlist and issues a `VenueAdmission` under its package witness; the venue presents the admission with its own witness to borrow the cap. Only the sealing product's witness opens the seal, so the raw cap never reaches a creator's transaction, and a venue reaches it only through code the product admitted.  Every witness is identified by `type_name::with_original_ids`, as in `migration`.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/core/sources/migration/sealed_treasury_cap.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/core/sources/migration/sealed_treasury_cap.move
 
 #### Types
 
@@ -1098,7 +1098,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 Blast partner codes, shared by every Blast product.  A partner is one deal: it is paid a share of the fee Blast charges on every trade that names it, in the same transaction. A company holds one `PartnerCap` for all its deals, each a separate partner with its own share. Blast's partner administrator registers partners under a cap, proposes each one's share, and can propose moving a partner to another cap; the cap's holder sets where each of its partners is paid. Initial terms apply at registration. A later share or cap applies only when someone applies it, no sooner than `PARTNER_CHANGE_DELAY_MS` after it was proposed. That delay is fixed: this module never changes it, and the package is published immutable. The recipient the cap holder sets applies at once.  Products call `pay` with Blast's own fee on a trade. `pay` emits `PartnerPaid` for what the partner received; the product records the trade and the amount in its own event. Share and cap lifecycle events come from `blast_admin::delayed`, keyed by `ShareKey` and `CapKey` and owned by the partner.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/blast_partners.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/partners/sources/blast_partners.move
 
 #### Types
 
@@ -1254,7 +1254,7 @@ public struct PartnerPaid<phantom T> has copy, drop {
 
 The partners one Blast product accepts, one list per product.  A product embeds a `PartnerList` in the object holding its policy and alone decides who may change it: the list has `store` and no authority of its own, so only the embedding module can reach it mutably. Adding a partner accepts it at once. Removing one keeps it accepted for the fixed delay Blast gives for every change to a partner, `blast_partners::delay_ms()`, so anything built to name it keeps working that long. Sales and trades that already name a removed partner keep paying it; the list only gates naming it anew. Destroying the list ends every acceptance at once, without the delay, so a product destroys it only with the object that embeds it.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/partners/sources/partner_list.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/launch/partners/sources/partner_list.move
 
 #### Types
 
@@ -1373,7 +1373,7 @@ Abort codes: this package aborts with the numeric codes below from whichever mod
 
 The one access-control list for every Blast package: one cold root and role-typed admins.  A role is a type that its consumer package declares. `AdminWitness<Role>` in a function signature is that function's role check, and a role from one package can never satisfy another package's signature.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/blast_acl.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/blast_acl.move
 
 #### Types
 
@@ -1486,7 +1486,7 @@ public fun super_admin_transfer_delay_ms(): u64
 
 Replay-complete typed facts for shared administration transitions.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/lib/blast_admin_events.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/lib/blast_admin_events.move
 
 #### Events
 
@@ -1600,7 +1600,7 @@ public struct Unpaused<phantom OTW: drop> has copy, drop {
 
 Settings that change only after their applied delay, and the deadline rules every delayed type shares.  A timelock in the Compound/OpenZeppelin sense: schedule, wait the applied delay, then apply; cancellable until applied. Settings live here; one-shot actions in `delayed_action`, allowlists in `delayed_set` and keyed values in `delayed_map`.  Every value carries a module-defined key `K` and the ID of the object that stores it. Constructors take that object's `&UID`, which only the code creating or holding the object has, so no package can attribute a value or its events to another's object. Embedding modules use a struct without a public constructor as `K`, so only their module can pack it. Each delayed module emits every lifecycle fact of its type, generic in `K` and carrying `parent`; embedding modules emit only their own side effects.  Every change, a shorter delay included, waits the delay applied when it was scheduled. A delay can start at zero, so a schedule and its apply in one transaction then act as a setter; there is no other mutation path. No delay exceeds `max_delay_ms`, so a delay can always be changed again. Readers need no Clock.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed.move
 
 #### Types
 
@@ -1796,7 +1796,7 @@ public struct DelayedDestroyed<K: copy + drop + store, phantom T: copy + drop + 
 
 One-shot actions, such as an upgrade or a capability reassignment, that run only after their slot's applied delay. The slot also governs its own delay. See `delayed` for the rules every delayed type shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_action.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_action.move
 
 #### Types
 
@@ -1957,7 +1957,7 @@ public struct ActionDestroyed<K: copy + drop + store, phantom A: copy + drop + s
 
 Keyed values under one shared delay, such as per-coin overrides. Every entry change, setting or clearing, waits the delay applied when it was scheduled, and its deadline is fixed then; a later delay change never moves it. See `delayed` for the shared rules.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_map.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_map.move
 
 #### Types
 
@@ -2200,7 +2200,7 @@ public struct MapDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 Allowlists whose members join only after the applied delay and leave at once. See `delayed` for the rules every delayed type shares.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/delayed/delayed_set.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/delayed/delayed_set.move
 
 #### Types
 
@@ -2413,7 +2413,7 @@ public struct SetDestroyed<K: copy + drop + store, phantom E: copy + drop + stor
 
 One package's sealed Publisher and UpgradeCap, its delayed upgrade decisions, and the role-gated pause controls of its `PackageVersion`, typed by the package's one-time witness.  The native capabilities never leave the shared `PackageAdmin`: only the package itself, with its package witness, borrows the Publisher by immutable reference, nothing lends the UpgradeCap, and the cap acts only through a scheduled upgrade or the one terminal `make_immutable`. Each role is generic over the package's OTW, so the ACL stores `UpgradeAdmin<A>` and `UpgradeAdmin<B>` as distinct grants and one package's administrator never reaches another's PackageAdmin. This package is immutable: no consumer bytecode version gates these calls, and a consumer whose new bytecode compiles the wrong version can still schedule a repair.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package/package_admin.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/package/package_admin.move
 
 #### Types
 
@@ -2620,7 +2620,7 @@ public fun initial_upgrade_delay_ms(): u64
 
 One package's publication proof, version and pause bits, typed by its one-time witness.  The consumer's initializer turns its one-time witness into an owned `Publication`, which `package_admin::wrap` later converts into the shared `PackageVersion`, fully paused at version one. The consumer compiles its own version constant and checks it with `assert_current`; it also chooses which pause bits exist and pins its package witness, the one type whose value its own code passes to clear pause bits or to borrow its Publisher. Setting and clearing bits and advancing the version are sealed here and reached only through `package_admin`'s role-gated calls, so no package can build a second version or move a version by any other path.
 
-Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/admin/sources/package/package_version.move
+Source: https://github.com/interest-protocol/blast-v2-contracts/blob/main/sui/governance/admin/sources/package/package_version.move
 
 #### Types
 

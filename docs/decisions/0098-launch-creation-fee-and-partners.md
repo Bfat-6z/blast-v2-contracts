@@ -213,6 +213,6 @@ from the timelock.
   the new `finalize` arguments and decodes the new fields. `atomic_migration`,
   `launch_measurements` and the venue fork against mainnet Cetus and Bluefin
   bytecode all pass.
-- `sui/launchpad/scripts/check_source_boundaries.sh` pins the new dependency,
+- `sui/launch/launchpad/scripts/check_source_boundaries.sh` pins the new dependency,
   roles, the `LaunchConfig` fee and partner writers, and the partner never
   changing after creation.

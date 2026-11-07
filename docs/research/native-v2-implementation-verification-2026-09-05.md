@@ -2,8 +2,8 @@
 
 The contracts, design text and SDK adapters are implemented locally. The authoritative
 policy is [ADR 0076](../decisions/0076-native-v2-and-auto-lp.md); usage is in the
-[DEX README](../../sui/dex/README.md) and
-[AutoLP README](../../sui/auto_lp/README.md). Changes remain uncommitted and
+[DEX README](https://github.com/interest-protocol/blast-v2-contracts/blob/24208715ae9f783f4e83b98a3cdc35d55b77ae72/sui/dex/README.md) and
+[AutoLP README](https://github.com/interest-protocol/blast-v2-contracts/blob/24208715ae9f783f4e83b98a3cdc35d55b77ae72/sui/auto_lp/README.md). Changes remain uncommitted and
 unpublished.
 
 ## Implemented behavior

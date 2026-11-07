@@ -39,12 +39,12 @@ source-available license with a time-limited production-use restriction, not a
 permanent prohibition on all business use.
 
 Third-party dependencies and the venue interfaces under
-`sui/migrators/interfaces/` and
-`sui/boosts/aftermath_adapter/interfaces/` retain their own licensing terms and
+`sui/launch/migrators/interfaces/` and
+`sui/defi/boosts/aftermath_adapter/interfaces/` retain their own licensing terms and
 are excluded from this license grant. This change does not revoke rights in
 copies previously distributed under MIT or another license.
 
-The imported `sui/otc/` and `sui/vesting/` retain
+The imported `sui/utilities/otc/` and `sui/utilities/vesting/` retain
 their MIT license, with the original notice in each directory. Their imported
 documentation, vectors, and deployment records retain the same terms; see
 [ADR 0135](docs/decisions/0135-utility-contracts-consolidation.md).

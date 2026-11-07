@@ -24,7 +24,7 @@ presale escrow, eligibility, and proportional settlement, without importing or
 mutating launchpad state, and it contains no venue. Its public `new` redeems the
 ticket of any venue whose witness the `CreationPolicy` admits, and its `migrate`
 seals the hand-off for that venue, so the shared venues in `blast_migrators` and
-one-off partner venues under `sui/vendors` serve it without importing it. See
+one-off partner venues under `sui/launch/vendors` serve it without importing it. See
 [ADR 0099](decisions/0099-standalone-overflow-presale.md),
 [ADR 0104](decisions/0104-external-presale-migrators-and-vendor-packages.md), and
 [ADR 0106](decisions/0106-presale-partners.md).
@@ -66,7 +66,7 @@ authorizes enrollment, requests and cancellation across all of them. The manager
 publication's own cap must be destroyed
 and independently verified before valuable enrollment; enrollment has no on-chain
 proof gate. This source records no change to live deployment custody; see the
-[package procedure](../sui/upgrade_cap_manager/README.md).
+[package procedure](../sui/governance/upgrade_cap_manager/README.md).
 
 ### Dependency direction
 

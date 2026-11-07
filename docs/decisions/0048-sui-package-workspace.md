@@ -3,6 +3,8 @@
 - Status: accepted
 - Date: 2026-08-29
 
+For current package locations, see the [Sui workspace](../../sui/README.md).
+
 ## Context
 
 The `blast_fun` launchpad package previously occupied the `sui/` root. Blast

@@ -72,7 +72,7 @@ which are the costly part for the frozen ABI and every consumer.
 
 ## Verification
 
-- `sui/migrators/tests/cetus_route_tests.move` covers the pair proof for both
+- `sui/launch/migrators/tests/cetus_route_tests.move` covers the pair proof for both
   orders, a foreign pair, the same coin twice, and a retype to another type
   aborting in the framework.
 - The launchpad venue fork runs both coin orders through the single routes

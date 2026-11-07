@@ -18,6 +18,6 @@ jobs:
       - run: python3 scripts/check_move_style.py
       - run: python3 scripts/check_move_errors.py
       - name: Check M7 oracle routing regressions
-        run: python3 sui/boosts/aftermath_adapter/scripts/test_oracle_routing.py
+        run: python3 sui/defi/boosts/aftermath_adapter/scripts/test_oracle_routing.py
       - name: Check A5 required fill proof routing
-        run: python3 sui/boosts/aftermath_adapter/scripts/test_a5_routing.py
+        run: python3 sui/defi/boosts/aftermath_adapter/scripts/test_a5_routing.py

@@ -38,7 +38,7 @@ prove old-delay updates, same-PTB ordering/rollback and unauthorized rejection.
 Cargo runs the native PTB tests from their crate root. The harness resolves
 fixtures from that directory at runtime, so checkouts can share a Cargo target.
 If running a test binary directly, first change to the intended checkout’s
-`sui/launchpad/ptb_tests` directory. Run the pause matrices there under the same
+`sui/launch/launchpad/ptb_tests` directory. Run the pause matrices there under the same
 memory guard:
 
 ```bash
@@ -79,7 +79,7 @@ and `patch`.
 ```bash
 export BLAST_FORK_COVERAGE_DIR="$(mktemp -d)"
 (
-  cd sui/launchpad/ptb_tests
+  cd sui/launch/launchpad/ptb_tests
   python3 fork/coverage_cargo.py test --locked --features fork-coverage --test venue_fork --test presale_venue_fork -- --test-threads=1
 )
 bash scripts/test_admin_delay.sh --coverage presale migrators
@@ -115,7 +115,7 @@ type compatibility only. Before release:
 
 1. Run its offline ABI self-test and live mainnet ABI check.
 2. Run the replacement Cetus and Bluefin dev-inspect matrix in
-   [`sui/migrators/DEPENDENCIES.md`](../sui/migrators/DEPENDENCIES.md).
+   [`sui/launch/migrators/DEPENDENCIES.md`](../sui/launch/migrators/DEPENDENCIES.md).
 3. Record the reviewed venue revisions, module fingerprints, normalized ABI,
    route results, residual bounds, and fee-collection results.
 4. Describe LP custody using the current upgrade state. While upgradeable,
@@ -125,10 +125,10 @@ type compatibility only. Before release:
 
 ## Blast SUI gate
 
-Run the complete `sui/blast_sui/scripts/verify.sh` gate. Publishing and
+Run the complete `sui/defi/blast_sui/scripts/verify.sh` gate. Publishing and
 upgrading additionally follow the package's
-[deployment](../sui/blast_sui/DEPLOYING.md) or
-[upgrade](../sui/blast_sui/UPGRADING.md) runbook.
+[deployment](../sui/defi/blast_sui/DEPLOYING.md) or
+[upgrade](../sui/defi/blast_sui/UPGRADING.md) runbook.
 
 ## Evidence
 

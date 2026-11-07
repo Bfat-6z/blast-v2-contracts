@@ -25,7 +25,7 @@ ERROR_NAME = r"E[A-Z](?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]*"
 # blast_sui and boosts are out of the one-way stack scope and adopt the type
 # import rule with their own administration rework (#191, #205); scratch-sui is
 # parked, out of scope.
-QUALIFIED_TYPES_EXEMPT = ("sui/blast_sui", "sui/boosts", "scratch-sui")
+QUALIFIED_TYPES_EXEMPT = ("sui/defi/blast_sui", "sui/defi/boosts", "scratch-sui")
 # A lowercase module segment followed by a type segment: `module::Type`,
 # `pkg::module::Type`, `module::Type::Variant`. Calls through a module
 # (`payout::pay_or_vest`, `errors::x!`) and `Enum::Variant` stay allowed.
@@ -188,7 +188,7 @@ def check(path):
     # A module with an Events section keeps every struct it emits there.
     events = set(re.findall(r"event::emit\(\s*(\w+)", mask(source))) if "Events" in names else set()
     utility_layout = any(
-        path.resolve().is_relative_to(ROOT / "sui" / package)
+        path.resolve().is_relative_to(ROOT / "sui/utilities" / package)
         for package in ("otc", "vesting")
     ) and in_order(UTILITY_SECTIONS)
     if not (in_order(SECTIONS) or in_order(TAIL_SECTIONS) or utility_layout):
