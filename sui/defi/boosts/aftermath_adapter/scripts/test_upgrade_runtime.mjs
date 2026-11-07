@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Run under the workspace heavy-job guard against a disposable, task-owned localnet.
 // Required: M3_LOCALNET_CONFIG (directory), M3_OUTPUT_DIR, M3_SDK_PATH (@mysten/sui 2.35.0).
-// Uses complete copied first-party packages; only the copied ACL root recipient and
-// successor PACKAGE_VERSION constants change. Copied interface initializers are
-// disabled for local publication. No venue interface operation executes.
+// Stages complete first-party packages with admin and partners from the Boosts Git pins.
+// Rewrites the copied dependency paths and ACL root for local publication, disables
+// copied interface initializers, and changes successor PACKAGE_VERSION constants.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -97,17 +97,41 @@ const version = command('toolchain', ['--version']).trim();
 assert.equal(version, 'sui 1.77.2-51d177ad7d65');
 save('protocol-config', await client.getProtocolConfig());
 
-// Keep the local dependency layout while excluding build products and deployment IDs.
-for (const path of ['sui/governance/admin', 'sui/launch/partners', 'sui/defi/boosts/core', 'sui/defi/boosts/aftermath_adapter']) {
+// Keep the Boosts layout while excluding build products and deployment IDs.
+for (const path of ['sui/defi/boosts/core', 'sui/defi/boosts/aftermath_adapter']) {
   cpSync(join(repo, path), join(packageRoot, path), {
     recursive: true,
     filter: (path) => !/(?:^|\/)(?:build|tests|scripts|node_modules|release|Published\.toml)(?:\/|$)/.test(path),
   });
 }
-const adminPath = join(packageRoot, 'sui/governance/admin');
+const adminPath = join(packageRoot, 'sui/admin');
 const corePath = join(packageRoot, 'sui/defi/boosts/core');
-const partnersPath = join(packageRoot, 'sui/launch/partners');
+const partnersPath = join(packageRoot, 'sui/partners');
 const adapterPath = join(packageRoot, 'sui/defi/boosts/aftermath_adapter');
+
+function localizeDependency(packagePath, name, subdir) {
+  const manifestPath = join(packagePath, 'Move.toml');
+  const manifest = readFileSync(manifestPath, 'utf8');
+  const pin = manifest.match(new RegExp(
+    `^${name} = \\{ git = "([^"]+)", subdir = "${subdir}", rev = "([0-9a-f]{40})" \\}$`, 'm',
+  ));
+  assert.equal(pin?.[1], 'https://github.com/interest-protocol/blast-v2-contracts.git',
+    `Expected a commit pin for ${name} in ${manifestPath}`);
+  const local = relative(packagePath, join(packageRoot, subdir));
+  writeFileSync(manifestPath, manifest.replace(pin[0], `${name} = { local = "${local}" }`));
+  return pin[2];
+}
+
+// Archive the pinned sources with partners' ../admin path intact, so every
+// consumer resolves the same admin package and its localnet publication.
+const dependencyRevision = localizeDependency(corePath, 'blast_admin', 'sui/admin');
+assert.equal(localizeDependency(adapterPath, 'blast_admin', 'sui/admin'), dependencyRevision);
+assert.equal(localizeDependency(adapterPath, 'blast_partners', 'sui/partners'), dependencyRevision);
+const archive = spawnSync('git', ['-C', repo, 'archive', dependencyRevision, 'sui/admin', 'sui/partners']);
+assert.equal(archive.status, 0, `Cannot archive Boosts dependency pin ${dependencyRevision}: ${archive.stderr}`);
+const extract = spawnSync('tar', ['-x', '-C', packageRoot, '--exclude=Published.toml'], { input: archive.stdout });
+assert.equal(extract.status, 0, `Cannot extract Boosts dependency sources: ${extract.stderr}`);
+
 // Upstream link stubs intentionally abort publication. Disable only their three
 // initializers in the disposable copy; preserve all first-party logic and ABI.
 for (const path of ['vendor/vendor/sources/init.move',
@@ -178,7 +202,10 @@ async function ordinaryOperation(name, packageId, abort) {
   await execute(name, add, abort);
   if (abort) assert.deepEqual(await fields(protocol), before, 'Failed operation preserves Protocol.');
 }
-const mismatch = /name: Identifier\("operational_version"\).*}, 13\)/s;
+// These exact aborts come from the pinned blast_admin error registry.
+const mismatch = /name: Identifier\("operational_version"\).*}, 9\)/s;
+const noRole = /name: Identifier\("blast_acl"\).*}, 5\)/s;
+const unavailableCap = /name: Identifier\("upgrade_custody"\).*}, 14\)/s;
 await ordinaryOperation('initial-operation', original);
 let latest = original;
 let nativeCount = 1;
@@ -222,7 +249,7 @@ async function activate(name, packageId, abort) {
     assert.equal(Number(advanced.previous_generation), Number(before.generation.fields.generation));
     assert.equal(Number(advanced.new_generation), await activeGeneration());
     assert.equal(advanced.container_id, protocol);
-    assert.equal(advanced.package_id, original);
+    assert.equal(advanced.original_package_id, original);
   }
 }
 await upgrade('wrong-version-upgrade', 1);
@@ -248,7 +275,6 @@ await execute('stale-code-cannot-burn-repair', tx, mismatch);
 tx = new Transaction();
 roleChange(tx, 'revoke_role', upgradeRole);
 await execute('revoke-upgrade-role', tx);
-const noRole = /name: Identifier\("blast_acl"\).*}, 6\)/s;
 await activate('revoked-role-cannot-activate', next, noRole);
 await upgrade('revoked-role-cannot-authorize-old-code', 3, original, noRole);
 tx = new Transaction();
@@ -260,7 +286,7 @@ tx = new Transaction();
 tx.moveCall({ target: `${next}::package_admin::make_immutable`, arguments: [tx.object(custody), tx.object(protocol), witness(tx)] });
 await execute('current-code-makes-immutable', tx);
 await ordinaryOperation('operations-survive-immutability', next);
-await upgrade('burned-cap-prevents-repair', 4, original, /name: Identifier\("upgrade_custody"\).*}, 18\)/s);
-save('summary', { version, sdk: '2.35.0', original, latest, nativeCount, activeGeneration: await activeGeneration(),
+await upgrade('burned-cap-prevents-repair', 4, original, unavailableCap);
+save('summary', { version, sdk: '2.35.0', dependencyRevision, original, latest, nativeCount, activeGeneration: await activeGeneration(),
   transactions: results.length, scope: 'Complete adapter production bytecode and real ACL. Partner administration exercises the operational gate. No venue trades or user-fund exits executed.' });
 console.log(`PASS: ${results.length} runtime transactions; native ${nativeCount}, operational ${await activeGeneration()}.`);
