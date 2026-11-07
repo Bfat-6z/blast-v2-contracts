@@ -89,7 +89,7 @@ def native_oracle(root, module, error):
     if not spec:
         return False
     filename, function, oracle, number, expected_code = spec
-    path = root / 'sui/launchpad/ptb_tests/tests' / filename
+    path = root / 'sui/launch/launchpad/ptb_tests/tests' / filename
     if not path.exists() or error['code'] != expected_code:
         return False
     source = path.read_text()

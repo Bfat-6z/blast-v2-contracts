@@ -82,11 +82,11 @@ Load only the branch the task changes:
   `docs/vectors/`.
 - Leverage contracts: `docs/leverage-implementation-lessons.md` and the
   applicable accepted ADR.
-- Venue dependency or live ABI: `sui/migrators/DEPENDENCIES.md`.
+- Venue dependency or live ABI: `sui/launch/migrators/DEPENDENCIES.md`.
 - Package publication: `deployments/README.md`; for Blast SUI, also use
-  `sui/blast_sui/DEPLOYING.md`.
-- Blast SUI upgrade: `sui/blast_sui/UPGRADING.md`.
-- Partner one-off contract: `sui/vendors/README.md` and ADR 0104.
+  `sui/defi/blast_sui/DEPLOYING.md`.
+- Blast SUI upgrade: `sui/defi/blast_sui/UPGRADING.md`.
+- Partner one-off contract: `sui/launch/vendors/README.md` and ADR 0104.
 
 ## Unrelated issues found during a task
 

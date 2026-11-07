@@ -283,7 +283,7 @@ depend inward. Every boundary of the 2026-11-04 package review stays: everything
 exceeds Sui's 100 KiB package limit, and the vault stays apart from the venues so a DEX bump never
 upgrades custody.
 
-**`blast_migrators`, not `blast_venues`.** The one venue package is the existing `sui/migrators`
+**`blast_migrators`, not `blast_venues`.** The one venue package is the existing `sui/launch/migrators`
 directory under the name `blast_migrators`, the repository's own term (owner decision, 2026-11-04). The
 earlier `blast_fun_migrators` name claimed one product and goes.
 

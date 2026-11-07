@@ -147,5 +147,5 @@ payment.
   - a vendor sale naming a partner before its `share`;
   - a sale without a partner paying Blast at migration with `partner_quote`
     zero and its `PresaleOpened` naming none.
-- `sui/presale/scripts/check_source_boundaries.sh` pins that only
+- `sui/launch/presale/scripts/check_source_boundaries.sh` pins that only
   `set_partner`, on an unshared sale, writes a sale's partner.

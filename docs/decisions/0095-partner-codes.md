@@ -94,7 +94,7 @@ depends on.
 `blast_admin`. Boosts and the launchpad are independently
 deployed peers, and the Boosts core is immutable, so no existing package can hold
 a type both read. It is published and made immutable in one transaction
-(`sui/partners/scripts/publish_immutable.sh`): the delay is only as credible as
+(`sui/launch/partners/scripts/publish_immutable.sh`): the delay is only as credible as
 the packages that enforce it. It has its own `blast_admin` domain,
 `BLAST_PARTNERS`, with one role, the partner administrator. One role covers
 registering, scheduling shares and moving partners between caps: a registration
@@ -288,7 +288,7 @@ partner itself can apply a raise.
   `PartnerPaid` agree; the event reducer replays `PartnerFeePaid` after `Minted`
   and `Redeemed` and matches the vault's admin cash.
 - Gates: `scripts/check_admin_delay.py` (fixed notice, no notice-changing call,
-  Clock-free payment), `sui/partners/scripts/verify.sh`, the adapter's
+  Clock-free payment), `sui/launch/partners/scripts/verify.sh`, the adapter's
   `verify.sh local` and boundary gate, the composition tests, the style check.
 - Still to run before release: a live rehearsal of a partnered mint and redeem
   that verifies the recipient's transferred coins,

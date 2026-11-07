@@ -121,7 +121,7 @@ fn migration_failures_commit_nothing() {
 '''
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            path = root / 'sui/launchpad/ptb_tests/tests/venue_fork.rs'
+            path = root / 'sui/launch/launchpad/ptb_tests/tests/venue_fork.rs'
             path.parent.mkdir(parents=True)
             error = {'name': 'EInvalidCoinOrder', 'code': 0}
             for text, valid in ((source, True), (source.replace('code: INVALID_COIN_ORDER', 'code: 99'), False),

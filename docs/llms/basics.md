@@ -40,8 +40,8 @@ stored venue's `migrate`, which locks the liquidity in a
 Use the presale guide for presale calls.
 
 `blast_fun_vesting` (used by `blast_core` for vesting payouts) lives in this repository at
-`sui/vesting` and is immutable on mainnet. The standalone
-OTC package lives at `sui/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
+`sui/utilities/vesting` and is immutable on mainnet. The standalone
+OTC package lives at `sui/utilities/otc`. See the [utility integration guide](https://github.com/interest-protocol/blast-v2-contracts/blob/main/docs/utilities.md).
 
 ### Time values
 

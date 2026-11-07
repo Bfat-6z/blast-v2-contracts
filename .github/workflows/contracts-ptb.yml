@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 120
     defaults:
       run:
-        working-directory: sui/launchpad/ptb_tests
+        working-directory: sui/launch/launchpad/ptb_tests
     env:
       SUI_RELEASE: mainnet-v1.77.2
       CC: gcc-13
@@ -42,6 +42,6 @@ jobs:
         run: rustup show
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sui/launchpad/ptb_tests
+          workspaces: sui/launch/launchpad/ptb_tests
       - name: Run all PTB suites
         run: cargo test --locked --tests -- --test-threads=1

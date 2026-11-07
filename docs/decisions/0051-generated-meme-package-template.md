@@ -79,7 +79,7 @@ not copy or edit that source and do not invoke a compiler. The package ID gives
 the Meme type its consensus identity; patched names make the resulting type path
 recognizable to users and indexers.
 
-The source template depends inward on the local `sui/launchpad/` package for
+The source template depends inward on the local `sui/launch/launchpad/` package for
 workspace builds. Its compiled bytecode contains one Blast dependency slot.
 Production generation replaces that slot with Blast's original package ID and
 uses the active package version in the publish dependency list. It does not

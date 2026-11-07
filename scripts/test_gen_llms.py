@@ -1,6 +1,7 @@
 """Summary identities must survive the zero-valued genesis address placeholders."""
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -54,13 +55,13 @@ class FrozenPackageTests(unittest.TestCase):
     def test_frozen_packages_are_the_out_of_scope_products(self):
         self.assertEqual(
             set(gen_llms.FROZEN),
-            {'sui/blast_sui', 'sui/boosts/core', 'sui/boosts/products', 'sui/boosts/aftermath_adapter'},
+            {'sui/defi/blast_sui', 'sui/defi/boosts/core', 'sui/defi/boosts/products', 'sui/defi/boosts/aftermath_adapter'},
         )
         self.assertEqual(gen_llms.frozen_guides(), {'blast-sui.md', 'boosts.md'})
 
     def test_summaries_skip_frozen_packages(self):
         with (
-            patch.object(gen_llms, 'PACKAGES', [('sui/blast_sui', 'Frozen'), ('sui/example', 'Example')]),
+            patch.object(gen_llms, 'PACKAGES', [('sui/defi/blast_sui', 'Frozen'), ('sui/example', 'Example')]),
             patch.object(gen_llms, 'package_name', return_value='example'),
             patch.object(gen_llms.subprocess, 'run') as run,
         ):
@@ -72,7 +73,7 @@ class FrozenPackageTests(unittest.TestCase):
         self.assertTrue(command[command.index('-p') + 1].endswith('sui/example'))
 
     def test_frozen_guide_and_reference_sections_are_copied_verbatim(self):
-        frozen = gen_llms.Package(path='sui/blast_sui', title='blastSUI and funSUI', name='blast_sui')
+        frozen = gen_llms.Package(path='sui/defi/blast_sui', title='blastSUI and funSUI', name='blast_sui')
         guide_heading = gen_llms.guide_heading('blast-sui.md')
         committed_text = '\n'.join([
             '# header', '',
@@ -94,6 +95,38 @@ class FrozenPackageTests(unittest.TestCase):
         sections = gen_llms.committed_sections('# top\n## A\na\n### sub\n## B\nb\n')
         self.assertEqual(sections['## A'], ['## A', 'a', '### sub'])
         self.assertEqual(sections['## B'], ['## B', 'b', ''])
+
+
+class PublicationPathTests(unittest.TestCase):
+    def test_moved_package_matches_its_publication_only_with_the_same_sources_and_edges(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = root / 'sui/core'
+            (old / 'sources').mkdir(parents=True)
+            source = 'sources/core.move'
+            (old / source).write_text('module example::core;\n')
+            (old / 'Move.toml').write_text('[dependencies]\nAdmin = { local = "../admin" }\n')
+
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=root, text=True)
+
+            git('init', '-q')
+            git('add', '.')
+            git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'publication')
+            commit = git('rev-parse', 'HEAD').strip()
+            current = root / 'sui/launch/core'
+            current.parent.mkdir()
+            old.rename(current)
+            manifest = current / 'Move.toml'
+            manifest.write_text('[dependencies]\nAdmin = { local = "../../governance/admin" }\n')
+
+            with patch.object(gen_llms, 'ROOT', root):
+                self.assertTrue(gen_llms.matches_publication('sui/launch/core', commit))
+                manifest.write_text(manifest.read_text().replace('/admin', '/other'))
+                self.assertFalse(gen_llms.matches_publication('sui/launch/core', commit))
+                manifest.write_text(manifest.read_text().replace('/other', '/admin'))
+                (current / source).write_text('module example::changed;\n')
+                self.assertFalse(gen_llms.matches_publication('sui/launch/core', commit))
 
 
 if __name__ == '__main__':

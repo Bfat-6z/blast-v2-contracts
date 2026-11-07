@@ -5,12 +5,14 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-READER = ROOT / 'sui/launchpad/scripts/move_facts.awk'
+LAUNCH = ROOT / 'sui/launch'
+READER = LAUNCH / 'launchpad/scripts/move_facts.awk'
 
 
 def module_path(package, module):
     """The one source file declaring `module`, at any depth under the package's sources."""
-    paths = list((ROOT / 'sui' / package / 'sources').rglob(f'{module}.move'))
+    package_dir = ROOT / 'sui/governance/admin' if package == 'admin' else LAUNCH / package
+    paths = list((package_dir / 'sources').rglob(f'{module}.move'))
     assert len(paths) == 1, (package, module, paths)
     return paths[0]
 
@@ -64,8 +66,8 @@ governed('launchpad', 'runtime_config', {'protocol_fee_share': 'FeeAdmin'}, curr
 governed('launchpad', 'launch_config', {'creation_fee': 'FeeAdmin', 'trade_fees': 'FeeAdmin', 'protocol_allocation': 'TreasuryAdmin', 'protocol_lp_fees': 'FeeAdmin'}, current=LAUNCHPAD_CURRENT)
 assert 'treasury' not in functions('launchpad', 'runtime_config') and 'schedule_treasury' not in functions('launchpad', 'runtime_config')
 for name in ('package_admin', 'blast_fun_domain', 'fees', 'blast_events'):
-    assert not list((ROOT / 'sui/launchpad/sources').rglob(f'{name}.move')), name
-otw_source = (ROOT / 'sui/launchpad/sources/blast_fun.move').read_text()
+    assert not list((ROOT / 'sui/launch/launchpad/sources').rglob(f'{name}.move')), name
+otw_source = (ROOT / 'sui/launch/launchpad/sources/blast_fun.move').read_text()
 require(otw_source, 'public struct BLAST_FUN() has drop;', 'public struct PackageWitness() has drop;',
         'package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)')
 otw_fs = functions('launchpad', 'blast_fun')
@@ -73,11 +75,11 @@ assert set(otw_fs) == {'init', 'package_witness'}, otw_fs
 assert otw_fs['package_witness'][1] == 'PackageWitness()', otw_fs['package_witness']
 # The package witness is constructed only by its module; no launchpad function stores it, takes it,
 # or returns it except the package-only constructor.
-for path in (ROOT / 'sui/launchpad/sources').rglob('*.move'):
+for path in (ROOT / 'sui/launch/launchpad/sources').rglob('*.move'):
     for name, (signature, _) in functions('launchpad', path.stem).items():
         assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_fun', 'package_witness'), (path, name)
 # Only the launchpad's unpause clears bits, after checking every launchpad delay.
-callers = [(path, name) for path in (ROOT / 'sui/launchpad/sources').rglob('*.move')
+callers = [(path, name) for path in (ROOT / 'sui/launch/launchpad/sources').rglob('*.move')
            for name, (_, body) in functions('launchpad', path.stem).items()
            if 'clear_pause_bits(' in body]
 assert [(path.stem, name) for path, name in callers] == [('launch_config', 'unpause')], callers
@@ -96,18 +98,18 @@ PRESALE_CURRENT = '(constants::version!());'
 governed('presale', 'fee_policy', {'fees': 'FeeAdmin'}, current=PRESALE_CURRENT)
 assert not any('destination' in name for name in functions('presale', 'fee_policy'))
 for name in ('package_admin', 'blast_presale_domain', 'cetus', 'bluefin', 'aftermath', 'venue_config', 'migration_math'):
-    assert not list((ROOT / 'sui/presale/sources').rglob(f'{name}.move')), name
-presale_otw_source = (ROOT / 'sui/presale/sources/blast_presale_package.move').read_text()
+    assert not list((ROOT / 'sui/launch/presale/sources').rglob(f'{name}.move')), name
+presale_otw_source = (ROOT / 'sui/launch/presale/sources/blast_presale_package.move').read_text()
 require(presale_otw_source, 'public struct BLAST_PRESALE_PACKAGE() has drop;', 'public struct PackageWitness() has drop;',
         'package_version::new_publication<_, PackageWitness>(otw, constants::valid_pause_bits!(), ctx)')
 presale_otw_fs = functions('presale', 'blast_presale_package')
 assert set(presale_otw_fs) == {'init', 'package_witness'}, presale_otw_fs
 assert presale_otw_fs['package_witness'][1] == 'PackageWitness()', presale_otw_fs['package_witness']
-for path in (ROOT / 'sui/presale/sources').rglob('*.move'):
+for path in (ROOT / 'sui/launch/presale/sources').rglob('*.move'):
     for name, (signature, _) in functions('presale', path.stem).items():
         assert 'PackageWitness' not in signature or (path.stem, name) == ('blast_presale_package', 'package_witness'), (path, name)
 # Only the presale's unpause clears bits, after checking every presale delay.
-presale_callers = [(path.stem, name) for path in (ROOT / 'sui/presale/sources').rglob('*.move')
+presale_callers = [(path.stem, name) for path in (ROOT / 'sui/launch/presale/sources').rglob('*.move')
                    for name, (_, body) in functions('presale', path.stem).items() if 'clear_pause_bits(' in body]
 assert presale_callers == [('creation_policy', 'unpause')], presale_callers
 signature, body = functions('presale', 'creation_policy')['unpause']
@@ -119,7 +121,7 @@ assert signature.split('(', 1)[1].replace(' ', '').replace('\n', '') == (
 assert body.startswith(f'package_version.assert_current{PRESALE_CURRENT}'), body
 assert body.index('self.is_guarded() && fee_policy.is_guarded() && treasury.is_guarded()') < body.index('clear_pause_bits('), body
 require(body, 'package_admin.clear_pause_bits(unpause_admin, package_witness(), package_version, bits)')
-for path in (ROOT / 'sui/presale/sources').rglob('*.move'):
+for path in (ROOT / 'sui/launch/presale/sources').rglob('*.move'):
     production = path.read_text().split('// === Test-Only Functions ===')[0]
     assert 'Bootstrap' not in production and 'set_now' not in production, path
     if path.stem != 'blast_presale_package':
@@ -158,7 +160,7 @@ for package, module in [('launchpad', 'launch_config'), ('presale', 'creation_po
     assert 'set_venue_allowed' not in fs
 
 fs = functions('launchpad', 'launch')
-source = (ROOT / 'sui/launchpad/sources/launch/launch.move').read_text()
+source = (ROOT / 'sui/launch/launchpad/sources/launch/launch.move').read_text()
 assert 'apply_cap_reassignment_delay' not in fs and '_delay_ms: u64,' not in source.split('public struct Launch<')[1].split('\n}')[0]
 for cap in ['curve_fee_cap', 'creator_metadata_cap']:
     require(fs[f'schedule_{cap}_reassignment'][0], '&AdminWitness<CreatorAdmin>', 'clock: &Clock')
@@ -203,7 +205,7 @@ for package, module, current, actions in [
 # The generic package administration every upgradeable package shares: role-gated, waits the
 # package's own upgrade delay, and keeps the native capabilities sealed.
 generic = functions('admin', 'package_admin')
-generic_source = (ROOT / 'sui/admin/sources/package/package_admin.move').read_text()
+generic_source = (ROOT / 'sui/governance/admin/sources/package/package_admin.move').read_text()
 require(generic_source, 'upgrade: DelayedAction<UpgradeKey<OTW>, UpgradeAction>,',
         'upgrade_cap: Option<UpgradeCap>,', 'const INITIAL_UPGRADE_DELAY_MS: u64 = 48 * 60 * 60 * 1_000;')
 for name in ('schedule_upgrade', 'schedule_make_immutable', 'authorize_upgrade', 'make_immutable', 'schedule_upgrade_delay'):
@@ -229,7 +231,7 @@ assert body.startswith('package_version.assert_current(constants::version!());')
 require(body, 'package_admin.make_immutable(upgrade_admin, PackageWitness(), package_version, clock)')
 # The vault's unpause runs on its live version only and, like the products', refuses while its
 # own admission delay or the core treasury's delay is unguarded.
-vault_callers = [(path.stem, name) for path in (ROOT / 'sui/vault/sources').rglob('*.move')
+vault_callers = [(path.stem, name) for path in (ROOT / 'sui/launch/vault/sources').rglob('*.move')
                  for name, (_, body) in functions('vault', path.stem).items() if 'clear_pause_bits(' in body]
 assert vault_callers == [('blast_vault_package', 'unpause')], vault_callers
 signature, body = functions('vault', 'blast_vault_package')['unpause']
@@ -242,7 +244,7 @@ assert body.startswith('package_version.assert_current(constants::version!());')
 assert body.index('self.witnesses.is_guarded() && treasury.is_guarded()') < body.index('clear_pause_bits('), body
 require(body, 'package_admin.clear_pause_bits(unpause_admin, PackageWitness(), package_version, bits)')
 for package in ('launchpad', 'presale', 'migrators'):
-    for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
+    for path in (LAUNCH / package / 'sources').rglob('*.move'):
         assert '.make_immutable(' not in path.read_text(), path
 require(generic['cancel_upgrade_action'][0], '&AdminWitness<CancelAdmin<OTW>>')
 require(generic['cancel_upgrade_action'][1], 'self.upgrade.cancel()')
@@ -271,7 +273,7 @@ assert {name for name, (signature, _) in generic.items() if re.search(r'\):\s*&\
 assert {name for name, (signature, _) in generic.items() if re.search(r'\):\s*&Publisher', signature)} == {'publisher'}
 assert not any(word in generic_source for word in ('only_additive_upgrades', 'only_dep_upgrades', 'restrict_to'))
 
-acl = (ROOT / 'sui/admin/sources/blast_acl.move').read_text()
+acl = (ROOT / 'sui/governance/admin/sources/blast_acl.move').read_text()
 require(acl, 'admins: Table<ID, VecSet<TypeName>>,', 'super_admin_transfer: DelayedAction<SuperAdminTransfer, address>,')
 assert 'MAX_ADMINS' not in acl and 'Timelocked' not in acl
 print('ADR 0134 administration boundaries: OK')
@@ -285,7 +287,7 @@ for package, otw_module in [('launchpad', 'blast_fun')]:
     require(otw_fs['init'][1], '.keep(ctx)')
     assert 'share_object' not in otw_fs['init'][1] and 'public struct Publication' not in source
     assert otw_fs['init'][0].startswith('fun init(')
-    for path in (ROOT / 'sui' / package / 'sources').rglob('*.move'):
+    for path in (LAUNCH / package / 'sources').rglob('*.move'):
         production = path.read_text().split('// === Test-Only Functions ===')[0]
         assert 'Bootstrap' not in production, path
         assert 'set_now' not in production, path
@@ -411,7 +413,7 @@ if True:
 
 # Signer admission waits the set's delay and is capped; revocation stays immediate.
 signer = functions('launchpad', 'runtime_config')
-require((ROOT / 'sui/launchpad/sources/config/runtime_config.move').read_text(),
+require((ROOT / 'sui/launch/launchpad/sources/config/runtime_config.move').read_text(),
         'creator_claim_signers: DelayedSet<ClaimSignerKey, vector<u8>>,')
 for name in signer:
     if name.endswith(('_creator_claim_signer', '_creator_claim_signer_delay')):
@@ -442,7 +444,7 @@ assert 'set_creator_claim_signer' not in signer
 # The migrators adopt blast_admin's generic administration: the publication defines no pause bits
 # and pins a package witness nothing constructs, no local custody or version copy exists, and
 # every public venue route checks this package's compiled version before anything else.
-migrators_sources = ROOT / 'sui/migrators/sources'
+migrators_sources = ROOT / 'sui/launch/migrators/sources'
 assert not (migrators_sources / 'package_admin.move').exists()
 otw_fs = functions('migrators', 'blast_migrators')
 assert set(otw_fs) == {'init'}, set(otw_fs)
@@ -471,7 +473,7 @@ require(partners_source, 'share_bps: Delayed<ShareKey, u64>,', 'cap_id: Delayed<
 for forbidden in (r'\bschedule_delay\b', r'\.schedule\(', r'\bdelayed::schedule\b', r'\bapply_delay\b',
                   r'\bcancel_delay\b', r'\bTimelocked\b', r'\bblast_fun_timelock\b'):
     assert not re.search(forbidden, partners_production), ('blast_partners', forbidden)
-assert 'timelock' not in (ROOT / 'sui/partners/Move.toml').read_text()
+assert 'timelock' not in (ROOT / 'sui/launch/partners/Move.toml').read_text()
 partner_fs = functions('partners', 'blast_partners')
 require(partner_fs['new'][1], 'delayed::new(ShareKey(), &id, share_bps, PARTNER_CHANGE_DELAY_MS)',
         'delayed::new(CapKey(), &id, cap_id, PARTNER_CHANGE_DELAY_MS)')

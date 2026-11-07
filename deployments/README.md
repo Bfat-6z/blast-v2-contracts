@@ -15,7 +15,7 @@ Every record must contain at least:
   and its `SuperAdminCap`; each `AdminCap` granted with its holder and roles;
 - constructor/init parameters and post-deploy verification results;
 - for `blast_admin`, the `sourceDigest` printed by
-  `sui/admin/scripts/source_digest.sh` at the published commit, beside the
+  `scripts/source_digest.sh` in the admin package at the published commit, beside the
   package's `packageId`; its boundary gate refuses a `Published.toml` entry that
   no record carries or whose recorded digest differs from the current source.
 
@@ -23,8 +23,8 @@ Raw simulator or broadcast output stays generated and ignored. Public
 normalized records must not contain secrets.
 
 Package-specific procedures are loaded only for the operation being performed.
-Blast SUI uses its [deployment](../sui/blast_sui/DEPLOYING.md) and
-[upgrade](../sui/blast_sui/UPGRADING.md) runbooks. Other packages record the
+Blast SUI uses its [deployment](../sui/defi/blast_sui/DEPLOYING.md) and
+[upgrade](../sui/defi/blast_sui/UPGRADING.md) runbooks. Other packages record the
 same normalized evidence while following their accepted ADRs and verification
 scripts.
 

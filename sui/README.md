@@ -2,16 +2,14 @@
 
 ## Find a package
 
-| If you’re looking for | Start here |
+| Directory | What you’ll find |
 | --- | --- |
-| Bonding-curve launches or overflow presales | [Launchpad](launchpad/) · [Presale](presale/) |
-| Shared launch logic, partner fees, or liquidity after migration | [Core](core/) · [Partners](partners/) · [LP vault](vault/) |
-| DEX integrations or a partner-specific venue | [Migrators (Cetus and Bluefin)](migrators/) · [Vendor contracts](vendors/) |
-| Access control, package versions, or upgrade custody | [Admin](admin/) · [Delayed UpgradeCap manager](upgrade_cap_manager/) |
-| Liquid staking or leveraged coins | [Blast SUI](blast_sui/) · [Boosts](boosts/) |
-| A coin template | [Standalone coin](coin_template/) · [Launch ticket](launch_ticket_template/) · [Presale coin](presale_coin_template/) |
-| Standalone immutable utilities | [OTC](otc/) · [Vesting](vesting/) · [Utility integration guide](../docs/utilities.md) |
-| Test assets for presale | [Presale testkit](presale_testkit/) |
+| [`launch/`](launch/) | [Launchpad](launch/launchpad/), [presale](launch/presale/), [shared core](launch/core/), [partner fees](launch/partners/), [LP vault](launch/vault/), [Cetus and Bluefin migrators](launch/migrators/), and [partner-specific venues](launch/vendors/) |
+| [`governance/`](governance/) | [Access control and package administration](governance/admin/) and the [delayed UpgradeCap manager](governance/upgrade_cap_manager/) |
+| [`defi/`](defi/) | [Blast SUI liquid staking](defi/blast_sui/) and [Boosts leveraged coins](defi/boosts/) |
+| [`templates/`](templates/) | Templates for [standalone coins](templates/coin_template/), [launch tickets](templates/launch_ticket_template/), and [presale coins](templates/presale_coin_template/) |
+| [`utilities/`](utilities/) | Immutable [OTC](utilities/otc/) and [vesting](utilities/vesting/) packages. See the [utility integration guide](../docs/utilities.md). |
+| [`testing/`](testing/) | The [presale testkit](testing/presale_testkit/) for disposable Quote balances |
 
 ## Find source, tests, and deployment records
 

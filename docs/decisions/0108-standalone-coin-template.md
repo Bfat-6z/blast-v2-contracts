@@ -25,12 +25,12 @@ does for the launch ticket.
 
 ## Decision
 
-**Rename.** `sui/meme_template` becomes `sui/launch_ticket_template`, package
+**Rename.** `sui/meme_template` becomes `sui/templates/launch_ticket_template`, package
 and named address `launch_ticket_template`. Its module `meme` and witness `MEME`
 are unchanged, so its compiled bytecode is byte-identical and the SDK's embedded
 template stays valid.
 
-**New package.** `sui/coin_template` (`coin_template`) depends only on the Sui
+**New package.** `sui/templates/coin_template` (`coin_template`) depends only on the Sui
 framework. Its module `my_coin` defines the one-time witness `MY_COIN`, which
 the SDK renames per coin, and exposes no public functions. Its initializer
 passes eleven constants to one private function that:
@@ -93,7 +93,7 @@ plain coin depend on Blast and fix its supply at one billion tokens.
 
 ## Verification
 
-From `sui/coin_template/`:
+From `sui/templates/coin_template/`:
 
 ```bash
 sui move build
@@ -104,6 +104,6 @@ bash scripts/check_source_boundaries.sh
 
 Tests cover the template defaults through `init`, each supply mode, zero
 supply, both metadata choices, and the invalid-mode and empty-supply aborts.
-From `sui/launch_ticket_template/`, the same build, lint, and boundary script
+From `sui/templates/launch_ticket_template/`, the same build, lint, and boundary script
 pass, and `build/launch_ticket_template/bytecode_modules/meme.mv` matches the
 `meme_template` build byte for byte.

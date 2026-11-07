@@ -164,7 +164,7 @@ longer compounds auto-LP balances, and product venue delisting does not change
 the venue selected by an existing sale.
 
 I-1 is **remediated in the documentation accompanying this record**:
-[`sui/migrators/DEPENDENCIES.md`](../sui/migrators/DEPENDENCIES.md) and Bluefin's
+[`sui/launch/migrators/DEPENDENCIES.md`](../sui/launch/migrators/DEPENDENCIES.md) and Bluefin's
 API comments now describe separate collection and `compound_auto_lp` calls;
 [ADR 0137](../docs/decisions/0137-shared-launch-stack-core-vault-and-venues.md)
 distinguishes product admission during preparation/creation from the live vault
