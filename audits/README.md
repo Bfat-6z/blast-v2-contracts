@@ -10,7 +10,7 @@ This directory preserves seven reports, each tied to its reviewed source:
 | [GiveRep / Eason Chen - November 2026](blast-launch-stack-giverep-nov-2026.pdf) | `850d8227`, `8c04789d`, `b50d0c3b` | Final launch-stack assessment with targeted remediation review through `af0765da`; supplied final PDF preserved unchanged |
 | [Claude (Fable 5.1) using the Cloudflare security-audit skill - November 2026](blast-launch-stack-claude-cloudflare-nov-2026.pdf) | `d80f2834` | AI source-only security review of the shared launch stack's production Move code; no confirmed findings, one operational upgrade-sequencing lead with an owner-defined mitigation |
 | [Claude (Fable 5.1) targeted review of #225 - November 2026](blast-launch-stack-claude-pr225-nov-2026.pdf) | `af0765da` (deployed source, identical to `86ee8cf9`) | AI targeted security review of the auto-LP compounding hardening, launchpad seed-price check and context reservations in #225, cross-checked against the GiveRep remediation review; no release blocker, two informational notes, one operational gap; F-1 recorded in ADR 0139 by owner decision |
-| [Claude (Fable 5.1) using the Cloudflare security-audit skill, UpgradeCap manager - November 2026](blast-upgrade-cap-manager-claude-cloudflare-nov-2026.pdf) | `b049ef72` (PR #232), hardening `935bb0f8`, `3357162b` | AI source-only security review of the standalone `blast_upgrade_cap_manager` module; no confirmed findings, no leads; hardening notes implemented on the PR branch and delta-reviewed |
+| [Claude (Fable 5.1) using the Cloudflare security-audit skill, UpgradeCap manager - November 2026](blast-upgrade-cap-manager-claude-cloudflare-nov-2026.pdf) | `b049ef72` (PR #232 head), hardening merged in `6adf41b9` | AI source-only security review of the standalone `blast_upgrade_cap_manager` module; no confirmed findings, no leads; hardening notes implemented on the PR branch and delta-reviewed |
 
 The Claude and Astra reports are AI-conducted reviews. The Astra review applies
 Trail of Bits' public skills; it was not performed or endorsed by Trail of Bits.
@@ -558,7 +558,8 @@ produce exactly the committed upgrade or no effect.
 
 **Project disposition: hardening applied, audit result unchanged.** After the
 report, Blast implemented its code-level hardening notes on the PR #232 branch
-(`935bb0f8`, docs follow-up `3357162b`): `ManagerCap` lost `store` and gained
+(squash-merged into `main` as
+[`6adf41b9`](https://github.com/interest-protocol/blast-v2-contracts/commit/6adf41b91269079d98fee40afb0e7d5ebb51f18a)): `ManagerCap` lost `store` and gained
 `transfer_cap` as its only transfer path; enrollment rejects the manager
 package's own cap (`ESelfEnrollment`, exact only while the package is at its
 original publication, so native destruction stays the guarantee); `destroy_cap`
@@ -575,5 +576,5 @@ publication or custody fact.
 SHA-256 of the PDF:
 
 ```text
-12cac1f04d3f144ef19bb73d51934dbd240685fcaa7f3d929a0c5bc0e2900f51
+03765f9f6cb7187b8fb6b32e73a1a2d68be3f84a6c754bf14812698ad2553717
 ```
