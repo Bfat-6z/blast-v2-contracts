@@ -36,7 +36,7 @@ Rules that hold on every branch:
 - [Domain language](CONTEXT.md): launcher, creator recipient, Blast account, and claimant.
 - Stating a guarantee or trust assumption to a user: take the custody, upgrade, and authority wording from the package README and [architecture](docs/architecture.md#upgrade-posture). Describe vault-held LP as held by upgradeable packages (`blast_vault`, and `blast_migrators`, whose venues borrow the position) with no withdrawal path, never as permanently locked ([release verification](docs/testing.md)).
 
-- [Utility contracts and SDK](docs/utilities.md): immutable OTC and vesting packages, their mainnet provenance, and the utility TypeScript SDK.
+- [Utility contracts](docs/utilities.md): immutable OTC and vesting packages and their mainnet provenance.
 
 ## Packages
 
