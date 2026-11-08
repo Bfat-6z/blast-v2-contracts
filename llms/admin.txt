@@ -128,8 +128,8 @@ Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
-| Deferred immutability | `blast_admin`, `blast_partners`, `blast_core` | The canonical publication retains raw compatible UpgradeCaps at the multisig until final audit. These caps have no enforced upgrade notice. Consult the deployment record before assuming immutability. |
-| Immutable | `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
+| Shared UpgradeCap manager | `blast_admin`, `blast_partners`, `blast_core`, `blast_aftermath_dao_presale` | The manager holds the compatible UpgradeCaps. Each upgrade or immutability request waits 48 hours. The Blast multisig holds the controller. |
+| Immutable | `blast_boosts_core`, `blast_upgrade_cap_manager` | The code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use a version object. |
 | Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<OTW>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
@@ -183,15 +183,15 @@ and a Table of administrator capabilities with no inline cardinality limit. Each
 administrator holds roles, and a role is a Move type that a consumer package
 declares, so a role from one package can never act in another. The package also
 provides the delayed-notice primitives Blast's settings embed, and one generic
-package administration that every upgradeable Blast package uses: a shared
+package administration for version-gated Blast packages: a shared
 `PackageVersion<OTW>` that rejects calls into outdated bytecode and holds the
 package's pause bits, and a shared `PackageAdmin<OTW>` that seals the package's
 `Publisher` and `UpgradeCap` so upgrades happen only through role-gated,
 48-hour-notice calls and only the package itself can borrow its `Publisher`. No package can build a second version or PackageAdmin:
 both are created only by `blast_admin::package_admin::wrap` from the package's
-own publication. The canonical deployment defers admin immutability until
-final audit; its native compatible UpgradeCap remains at the multisig with
-no on-chain upgrade notice. The intended immutable posture is not yet applied.
+own publication. The shared UpgradeCap manager holds admin's compatible cap
+and enforces a 48-hour wait for each request. The canonical deployment defers
+admin immutability until the final audit.
 
 ### Objects and authority
 
@@ -711,15 +711,16 @@ function names its role type in its signature, and a role type from another
 package, or the same generic role with another package's OTW, is a different
 type, so the transaction does not type-check.
 
-**How much notice is there before an upgrade?** The package's applied upgrade
-notice, 48 hours from wrap. A notice change itself waits the applied notice, and
-the package cannot be unpaused while any upgrade notice still to come could be zero.
+**How much notice is there before an upgrade?** The shared UpgradeCap manager
+enforces a fixed 48-hour wait for each request. A wrapped package uses its
+applied notice, initially 48 hours. A notice change itself waits the applied
+notice, and unpause requires a nonzero applied notice.
 
-**Which Blast packages can still be upgraded?** Those whose `PackageAdmin`
-still holds an `UpgradeCap`, plus admin, partners and core whose native
-compatible UpgradeCaps remain at the multisig pending final audit. The latter
-three have no on-chain upgrade delay. The intended immutable set also includes
-vault, after its audit and quiet period.
+**Which launch packages can still be upgraded?** Vault, launchpad, presale and
+migrators each have a shared `PackageAdmin`. The shared UpgradeCap manager
+holds the compatible caps for admin, partners, core and the separately
+published Aftermath DAO presale adapter. Immutability for admin, partners,
+core and vault awaits the final audit. Vault also requires a quiet period.
 
 **What stops a stale package version from moving funds?** Every protected call
 checks the shared version against the version compiled into the bytecode,

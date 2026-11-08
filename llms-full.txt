@@ -31,8 +31,8 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | `blast_core` | Shared core | live | `0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc` | `0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc` |
 | `blast_vault` | LP vault | live | `0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd` | `0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd` |
 | `blast_admin` | Administration | live | `0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd` | `0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd` |
-| `blast_upgrade_cap_manager` | Delayed UpgradeCap manager | not yet published | — | — |
-| `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | not yet published | — | — |
+| `blast_upgrade_cap_manager` | Delayed UpgradeCap manager | live | `0x6a00f462d690add7632ab159280474c3e2176c05e42f3494e37ce451de472958` | `0x6a00f462d690add7632ab159280474c3e2176c05e42f3494e37ce451de472958` |
+| `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | live | `0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f` | `0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f` |
 
 ## Calling Blast contracts
 
@@ -140,8 +140,8 @@ Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
-| Deferred immutability | `blast_admin`, `blast_partners`, `blast_core` | The canonical publication retains raw compatible UpgradeCaps at the multisig until final audit. These caps have no enforced upgrade notice. Consult the deployment record before assuming immutability. |
-| Immutable | `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
+| Shared UpgradeCap manager | `blast_admin`, `blast_partners`, `blast_core`, `blast_aftermath_dao_presale` | The manager holds the compatible UpgradeCaps. Each upgrade or immutability request waits 48 hours. The Blast multisig holds the controller. |
+| Immutable | `blast_boosts_core`, `blast_upgrade_cap_manager` | The code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use a version object. |
 | Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<OTW>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
@@ -185,7 +185,7 @@ run) before signing it.
 
 ## Presale
 
-> **Deployment status:** `blast_presale` is live on mainnet. `blast_aftermath_dao_presale` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_presale` and `blast_aftermath_dao_presale` are live on mainnet.
 
 ### What it is
 
@@ -1214,8 +1214,9 @@ refunds, LP deadline, the seed-price check) applies unchanged.
 
 #### `blast_aftermath_dao_presale`
 
-A one-off, immutable package for one partner: a plain venue over `blast_core` that imports no
-product, so a presale upgrade never strands it. Its sales migrate into a new 50/50 Aftermath
+A one-off package for one partner, built as a plain venue over `blast_core`.
+The published package's compatible UpgradeCap is held by the shared UpgradeCap
+manager, with a 48-hour wait for each request. Its sales migrate into a new 50/50 Aftermath
 weighted pool wrapped in Aftermath's DAO-fee pool, which charges 2% (200 BPS) on every swap,
 deposit, and withdrawal and sends it straight to the partner treasury compiled into the module. It
 creates no vault.
@@ -5167,15 +5168,15 @@ and a Table of administrator capabilities with no inline cardinality limit. Each
 administrator holds roles, and a role is a Move type that a consumer package
 declares, so a role from one package can never act in another. The package also
 provides the delayed-notice primitives Blast's settings embed, and one generic
-package administration that every upgradeable Blast package uses: a shared
+package administration for version-gated Blast packages: a shared
 `PackageVersion<OTW>` that rejects calls into outdated bytecode and holds the
 package's pause bits, and a shared `PackageAdmin<OTW>` that seals the package's
 `Publisher` and `UpgradeCap` so upgrades happen only through role-gated,
 48-hour-notice calls and only the package itself can borrow its `Publisher`. No package can build a second version or PackageAdmin:
 both are created only by `blast_admin::package_admin::wrap` from the package's
-own publication. The canonical deployment defers admin immutability until
-final audit; its native compatible UpgradeCap remains at the multisig with
-no on-chain upgrade notice. The intended immutable posture is not yet applied.
+own publication. The shared UpgradeCap manager holds admin's compatible cap
+and enforces a 48-hour wait for each request. The canonical deployment defers
+admin immutability until the final audit.
 
 ### Objects and authority
 
@@ -5695,15 +5696,16 @@ function names its role type in its signature, and a role type from another
 package, or the same generic role with another package's OTW, is a different
 type, so the transaction does not type-check.
 
-**How much notice is there before an upgrade?** The package's applied upgrade
-notice, 48 hours from wrap. A notice change itself waits the applied notice, and
-the package cannot be unpaused while any upgrade notice still to come could be zero.
+**How much notice is there before an upgrade?** The shared UpgradeCap manager
+enforces a fixed 48-hour wait for each request. A wrapped package uses its
+applied notice, initially 48 hours. A notice change itself waits the applied
+notice, and unpause requires a nonzero applied notice.
 
-**Which Blast packages can still be upgraded?** Those whose `PackageAdmin`
-still holds an `UpgradeCap`, plus admin, partners and core whose native
-compatible UpgradeCaps remain at the multisig pending final audit. The latter
-three have no on-chain upgrade delay. The intended immutable set also includes
-vault, after its audit and quiet period.
+**Which launch packages can still be upgraded?** Vault, launchpad, presale and
+migrators each have a shared `PackageAdmin`. The shared UpgradeCap manager
+holds the compatible caps for admin, partners, core and the separately
+published Aftermath DAO presale adapter. Immutability for admin, partners,
+core and vault awaits the final audit. Vault also requires a quiet period.
 
 **What stops a stale package version from moving funds?** Every protected call
 checks the shared version against the version compiled into the bytecode,
@@ -5721,7 +5723,7 @@ advances it.
 
 ## Delayed UpgradeCap manager
 
-> **Deployment status:** `blast_upgrade_cap_manager` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_upgrade_cap_manager` is live on mainnet.
 
 A framework-only manager holds several native UpgradeCaps. Each cap can have
 one pending exact-digest upgrade or terminal immutability request. Both wait a
@@ -14230,7 +14232,7 @@ public fun publication_package_witness<OTW: drop>(self: &Publication<OTW>): Type
 
 ## API reference: `blast_upgrade_cap_manager` (Delayed UpgradeCap manager)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
@@ -14447,7 +14449,7 @@ public struct ControllerDestroyed has copy, drop {
 
 ## API reference: `blast_aftermath_dao_presale` (Aftermath DAO-pool presale migrator)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 

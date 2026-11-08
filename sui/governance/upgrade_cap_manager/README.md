@@ -57,7 +57,9 @@ check exact, and native destruction remains the only guarantee.
 
 ## Prepared flow
 
-This procedure records no publication, transaction or live-cap selection.
+See the [mainnet deployment record](../../../deployments/sui/mainnet/2026-11-07-upgrade-cap-manager.json)
+for the immutable publication, shared manager, multisig controller and the
+enrolled admin, partners, core and Aftermath DAO presale adapter caps.
 
 1. Review the exact manager package, publish it, and destroy its own native cap.
    Verify and publish the immutable publication's identities and deletion evidence.

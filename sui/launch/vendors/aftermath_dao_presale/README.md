@@ -21,10 +21,10 @@ caller chooses them.
 
 ## Authority and fees
 
-Publication sends the package's only `AdminCap` to the publisher, and
-`scripts/publish_immutable.sh` makes the package immutable in the same
-transaction, so no one can change how a funded sale migrates. The `AdminCap`'s
-one power is preparing sale tokens: `prepare<Lp, SaleToken, Quote, PackageWitness>`
+The Blast multisig holds the published package's `AdminCap`. The shared
+UpgradeCap manager holds its compatible UpgradeCap and enforces a 48-hour
+wait for each request. See the [mainnet deployment record](../../../../deployments/sui/mainnet/2026-11-07-aftermath-dao-presale.json).
+The `AdminCap` authorizes `prepare<Lp, SaleToken, Quote, PackageWitness>`, which
 takes it with the LP coin's `CreatePoolCapV2`, shares a
 `PoolCreation<Lp, SaleToken>` holding that cap and the issuer type, and returns
 the `VenueTicket` that `blast_presale::new` redeems, so the sale can migrate
@@ -76,7 +76,7 @@ at their LP deadline, and new sales need a new vendor package. A
 the migration, so `prepare` must bind the cap its `Lp` coin minted; a sale that
 cannot migrate becomes refundable at its LP deadline.
 
-## Deployment order
+## Deployment order for a fresh immutable lineage
 
 1. Publish `blast_core` ([deployments](../../../../deployments/README.md)); the
    presale may be published before or after this package.

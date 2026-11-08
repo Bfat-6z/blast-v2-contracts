@@ -20,7 +20,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 
 | Package | Product | Status | Package ID (`published-at`) | Type origin (`original-id`) |
 | --- | --- | --- | --- | --- |
-| `blast_upgrade_cap_manager` | Delayed UpgradeCap manager | not yet published | — | — |
+| `blast_upgrade_cap_manager` | Delayed UpgradeCap manager | live | `0x6a00f462d690add7632ab159280474c3e2176c05e42f3494e37ce451de472958` | `0x6a00f462d690add7632ab159280474c3e2176c05e42f3494e37ce451de472958` |
 
 ## Calling Blast contracts
 
@@ -128,8 +128,8 @@ Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
-| Deferred immutability | `blast_admin`, `blast_partners`, `blast_core` | The canonical publication retains raw compatible UpgradeCaps at the multisig until final audit. These caps have no enforced upgrade notice. Consult the deployment record before assuming immutability. |
-| Immutable | `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
+| Shared UpgradeCap manager | `blast_admin`, `blast_partners`, `blast_core`, `blast_aftermath_dao_presale` | The manager holds the compatible UpgradeCaps. Each upgrade or immutability request waits 48 hours. The Blast multisig holds the controller. |
+| Immutable | `blast_boosts_core`, `blast_upgrade_cap_manager` | The code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use a version object. |
 | Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<OTW>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
@@ -173,7 +173,7 @@ run) before signing it.
 
 ## Delayed UpgradeCap manager
 
-> **Deployment status:** `blast_upgrade_cap_manager` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_upgrade_cap_manager` is live on mainnet.
 
 A framework-only manager holds several native UpgradeCaps. Each cap can have
 one pending exact-digest upgrade or terminal immutability request. Both wait a
@@ -303,7 +303,7 @@ package charges no protocol fee; ordinary Sui costs apply.
 
 ## API reference: `blast_upgrade_cap_manager` (Delayed UpgradeCap manager)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "network": "sui:mainnet",
+  "chainId": "35834a8a",
+  "environment": "mainnet",
+  "timestampUtc": "2026-11-07T16:19:32.963Z",
+  "repository": {
+    "url": "https://github.com/interest-protocol/blast-v2-contracts",
+    "commit": "c5c3c19b7e1099334ea438427701c26d76cb9f1c",
+    "dirty": false
+  },
+  "toolchain": "sui 1.77.2-51d177ad7d65",
+  "deployer": "0x52ecee5e58e2f3a7461cc604f4efcc3b68031e4715456d821e3a2719b0593600",
+  "status": "success",
+  "checkpoint": 342696305,
+  "gasUsedMist": 43397200,
+  "packages": {
+    "upgradeCapManager": {
+      "packageId": "0x6a00f462d690add7632ab159280474c3e2176c05e42f3494e37ce451de472958",
+      "version": 1,
+      "publicationDigest": "8mJd2ph8DZWZ5J4UgWXrHjMTrm8V91dWJ3bDTzrqNqzS",
+      "publicationStatus": "success",
+      "dependencies": [
+        "0x1",
+        "0x2"
+      ],
+      "sourceVerification": {
+        "method": "sui client verify-source",
+        "status": "success"
+      },
+      "genesisSharedObjects": [],
+      "upgradeCap": {
+        "immutable": true,
+        "custody": "destroyed during publication",
+        "evidence": "The finalized PTB consumed the UpgradeCap returned by Publish in 0x2::package::make_immutable. Its only created object was the version 1 package. The transient cap did not persist."
+      }
+    }
+  },
+  "recordKind": "upgrade-cap-manager-deployment",
+  "upgradeCustody": {
+    "managerId": "0x33ec87fcf63be41e2ce0c608f2ab5462adf7c22f742629206b873144d56ef3e8",
+    "initialSharedVersion": 1063892793,
+    "capTableId": "0x8d2e565ce7702e18462f5c0217e37135c5efcc72a6b782d0e711c95dc94c1f1b",
+    "controller": {
+      "objectId": "0x79d9a5a4ae50b5239cd0eefcd0ea54f0bb20531a568fa534bb2a4d56f8d91b60",
+      "owner": "0x818d6d7026632f82367a9ca2413a5bb28aeec2a1b8dedca919ef812577b4d0a2"
+    },
+    "nativePolicy": "compatible",
+    "noticeMs": 172800000,
+    "enrollments": [
+      {
+        "digest": "8BuFN2D2NQ7WD94LhcVWX8WdvQ5QMDdNomXwb8FxLcFB",
+        "checkpoint": 342698783,
+        "timestampUtc": "2026-11-07T16:29:20.665Z",
+        "status": "success",
+        "packagesEnrolled": {
+          "admin": {
+            "packageId": "0xb4c52669d7a07ce26d8fc91ba577b0a05f1f3d0cb9b1ba230c6419fb7ddd55fd",
+            "upgradeCapId": "0x86c81e1f1836abe7bb033d52cfc300ce9cdd4a5811d024773f70182eb28fa9d8"
+          },
+          "partners": {
+            "packageId": "0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54",
+            "upgradeCapId": "0x10b30b77d3327e233df6fd6dca55da097099b16773fbbf6338b9978a1ceb695c"
+          },
+          "core": {
+            "packageId": "0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc",
+            "upgradeCapId": "0x4e5a5d4751bbbca171ee6539721490295f3e0555911b2e45d0e6dbd0470e2822"
+          }
+        }
+      },
+      {
+        "digest": "8E7YZWYwFMWgZojradE1DkRRCttQkoyF74X8sCNQq2iH",
+        "checkpoint": 342709093,
+        "timestampUtc": "2026-11-07T17:10:24.905Z",
+        "status": "success",
+        "packagesEnrolled": {
+          "aftermathDaoPresale": {
+            "packageId": "0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f",
+            "upgradeCapId": "0x04e3d05be39a269ab26c0bc64623c759aceff826838bca27865105a4e03a7dc5"
+          }
+        }
+      }
+    ]
+  }
+}

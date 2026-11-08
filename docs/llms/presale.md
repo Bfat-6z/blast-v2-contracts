@@ -1027,8 +1027,9 @@ refunds, LP deadline, the seed-price check) applies unchanged.
 
 #### `blast_aftermath_dao_presale`
 
-A one-off, immutable package for one partner: a plain venue over `blast_core` that imports no
-product, so a presale upgrade never strands it. Its sales migrate into a new 50/50 Aftermath
+A one-off package for one partner, built as a plain venue over `blast_core`.
+The published package's compatible UpgradeCap is held by the shared UpgradeCap
+manager, with a 48-hour wait for each request. Its sales migrate into a new 50/50 Aftermath
 weighted pool wrapped in Aftermath's DAO-fee pool, which charges 2% (200 BPS) on every swap,
 deposit, and withdrawal and sends it straight to the partner treasury compiled into the module. It
 creates no vault.

@@ -44,8 +44,9 @@ recorded by ADR 0137 is
 amended 2026-11-05).
 
 The canonical November deployment defers those terminal actions until final
-audit. Its raw admin, partners and core UpgradeCaps remain at the multisig;
-the four other caps are wrapped. See the [deployment record](../deployments/README.md)
+audit. The shared UpgradeCap manager holds the admin, partners and core
+UpgradeCaps. Vault, launchpad, presale and migrators each hold their cap in a
+separate shared PackageAdmin. See the [deployment records](../deployments/README.md)
 for current authority, the post-audit vault immutability plan and paused release
 gates.
 
@@ -63,10 +64,10 @@ lent. Upgrades use native tickets and matching receipts; terminal execution
 destroys only the selected cap and its pending request. Each manager holds up to
 256 native caps with independent pending actions and deadlines; its controller
 authorizes enrollment, requests and cancellation across all of them. The manager
-publication's own cap must be destroyed
-and independently verified before valuable enrollment; enrollment has no on-chain
-proof gate. This source records no change to live deployment custody; see the
-[package procedure](../sui/governance/upgrade_cap_manager/README.md).
+publication's own cap must be destroyed and independently verified before
+valuable enrollment. On mainnet, Blast destroyed the manager's cap at
+publication and enrolled admin, partners, core and the separately published
+Aftermath DAO presale adapter. See the [publication and enrollment record](../deployments/sui/mainnet/2026-11-07-upgrade-cap-manager.json).
 
 ### Dependency direction
 

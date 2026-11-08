@@ -22,7 +22,7 @@ Call a live package at its package ID (`published-at`). Types and events are nam
 | --- | --- | --- | --- | --- |
 | `blast_presale` | Presale | live | `0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4` | `0x1f44a8e9fab4380228fe9c1bcc27d99b7f6ea76a8e18b5c178ca18cd46fb33c4` |
 | `blast_migrators` | Cetus and Bluefin venues | live | `0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4` | `0xb8146388d5098524e767a8708354e5390d69ebb2840835d4426cd180df898df4` |
-| `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | not yet published | — | — |
+| `blast_aftermath_dao_presale` | Aftermath DAO-pool presale migrator | live | `0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f` | `0x58f45e1b3057be882ebd991e67cb81e9543acf123f0013c5011b918413525d1f` |
 | `blast_core` | Shared core | live | `0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc` | `0xd70a8d11582fd1997380bc59bfd56a2f9028ebe11da74514ea3d386258d932fc` |
 | `blast_vault` | LP vault | live | `0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd` | `0xe99278bb86aa754d9a0496b2842d0fb9ac14a7ddec075d472baa069671efdecd` |
 | `blast_partners` | Partner codes | live | `0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54` | `0x2998c10c91e46082548b2f3205f84f09377bbbedf2b0f617f70575a09ec69a54` |
@@ -134,8 +134,8 @@ Upgrade rules depend on the package lineage.
 
 | Posture | Packages | What callers do |
 | --- | --- | --- |
-| Deferred immutability | `blast_admin`, `blast_partners`, `blast_core` | The canonical publication retains raw compatible UpgradeCaps at the multisig until final audit. These caps have no enforced upgrade notice. Consult the deployment record before assuming immutability. |
-| Immutable | `blast_boosts_core`, `blast_aftermath_dao_presale` | Nothing: the code never changes. |
+| Shared UpgradeCap manager | `blast_admin`, `blast_partners`, `blast_core`, `blast_aftermath_dao_presale` | The manager holds the compatible UpgradeCaps. Each upgrade or immutability request waits 48 hours. The Blast multisig holds the controller. |
+| Immutable | `blast_boosts_core`, `blast_upgrade_cap_manager` | The code never changes. |
 | Dependency-only | Historical presale publications | These older lineages can relink venue packages and do not use a version object. |
 | Version-gated | `blast_presale`, `blast_fun`, `blast_vault`, `blast_migrators`, `blast_sui`, `blast_boosts_aftermath` | Mutating calls take the package's shared version object (for the launch packages, `blast_admin::package_version::PackageVersion<OTW>`). After an upgrade advances it, calls through an older package ID abort with a version mismatch, so always call the current ID. `blast_vault` is made immutable after its audit. |
 | Additive | `blast_boosts_products` | Upgrades only add product tags; it holds no state. |
@@ -179,7 +179,7 @@ run) before signing it.
 
 ## Presale
 
-> **Deployment status:** `blast_presale` is live on mainnet. `blast_aftermath_dao_presale` is not yet published on mainnet; its interface may change before publication.
+> **Deployment status:** `blast_presale` and `blast_aftermath_dao_presale` are live on mainnet.
 
 ### What it is
 
@@ -1208,8 +1208,9 @@ refunds, LP deadline, the seed-price check) applies unchanged.
 
 #### `blast_aftermath_dao_presale`
 
-A one-off, immutable package for one partner: a plain venue over `blast_core` that imports no
-product, so a presale upgrade never strands it. Its sales migrate into a new 50/50 Aftermath
+A one-off package for one partner, built as a plain venue over `blast_core`.
+The published package's compatible UpgradeCap is held by the shared UpgradeCap
+manager, with a 48-hour wait for each request. Its sales migrate into a new 50/50 Aftermath
 weighted pool wrapped in Aftermath's DAO-fee pool, which charges 2% (200 BPS) on every swap,
 deposit, and withdrawal and sends it straight to the partner treasury compiled into the module. It
 creates no vault.
@@ -3938,7 +3939,7 @@ public struct VenueConfig has key {
 
 ## API reference: `blast_aftermath_dao_presale` (Aftermath DAO-pool presale migrator)
 
-Not yet published on mainnet. Its interface may change before publication.
+Live on mainnet. This reference matches the published source.
 
 Events: payload structs are emitted directly, each under its own type.
 
