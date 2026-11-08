@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Pipe consumers must read to EOF so a match cannot SIGPIPE the producer.
 python3 "$(dirname "$0")/../../../../scripts/check_admin_delay.py"
 
 PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -253,8 +255,8 @@ for source in "${source_files[@]}"; do
     if awk -F'\t' '$1 == "TYPE" && $2 == "Venue" { found = 1 } END { exit !found }' <<<"$facts"; then
         matrix_venue_modules+="$module"$'\n'
     fi
-    if awk -F'\t' '$1 == "NORM" { print $2 }' <<<"$facts" | rg -q \
-        '\b(issue_ticket|redeem_ticket)\b|\.redeem\(|\bMigration<|\bvault::new\b'; then
+    if awk -F'\t' '$1 == "NORM" { print $2 }' <<<"$facts" | rg \
+        '\b(issue_ticket|redeem_ticket)\b|\.redeem\(|\bMigration<|\bvault::new\b' >/dev/null; then
         matrix_seam_modules+="$module"$'\n'
     fi
 done
@@ -446,7 +448,7 @@ package:fun value<Key: copy + drop + store, Value: store>( self: &VenueConfig, k
 private:fun init(ctx: &mut TxContext)
 EOF
 # Venue entries are write-once: no function borrows, replaces, or removes an entry.
-if move_norm "$VENUE_CONFIG_SOURCE" | rg -q '\bborrow_mut\b|_field_mut\b|\bremove(_if_exists|_opt)?\b|\breplace\b' \
+if move_norm "$VENUE_CONFIG_SOURCE" | rg '\bborrow_mut\b|_field_mut\b|\bremove(_if_exists|_opt)?\b|\breplace\b' >/dev/null \
     || rg -q '#\[error' "$VENUE_CONFIG_SOURCE" \
     || rg -q '\b(TierKey|ReservationKey|set_tier|has_tier|effective_tier|reserved_tick_spacing|add_policy|has_policy)\b' \
         "$SOURCE_DIR"; then
@@ -786,7 +788,7 @@ fi
 # dynamic field module or imports its members, so none reaches a field function under another
 # name.
 for source in "${source_files[@]}"; do
-    if move_norm "$source" | rg -q '\bdynamic_(object_)?field( as |::\{)'; then
+    if move_norm "$source" | rg '\bdynamic_(object_)?field( as |::\{)' >/dev/null; then
         fail "$(basename "$source") must import dynamic field modules by name only"
     fi
 done
@@ -874,7 +876,7 @@ done)"
 [[ -z "$admin_witness_violations" ]] || \
     fail "every administrator witness must be a borrowed AdminWitness of one concrete role: ${admin_witness_violations}"
 for module in bluefin cetus; do
-    move_norm "$SOURCE_DIR/venues/${module}.move" | rg -q 'use blast_core::\{ blast_domain::\{AutoLpAdmin, BuybackAdmin\},' || \
+    move_norm "$SOURCE_DIR/venues/${module}.move" | rg 'use blast_core::\{ blast_domain::\{AutoLpAdmin, BuybackAdmin\},' >/dev/null || \
         fail "${module} buybacks must take the core domain's BuybackAdmin, the role blast_vault checks"
 done
 # Every witness-taking action takes exactly one role, the one pinned here. The buybacks hand their
