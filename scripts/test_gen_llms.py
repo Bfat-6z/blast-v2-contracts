@@ -285,6 +285,26 @@ print("ok")
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_stale_references_diff_survives_legacy_stdout_encoding(self):
+        unicode_line = "formula: price \u2212 fee \u2264 max\n"
+        buffer = io.BytesIO()
+        wrapper = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            reference = root / "llms-full.txt"
+            reference.write_bytes(unicode_line.encode("utf-8"))
+            with (
+                patch.object(gen_llms, "ROOT", root),
+                patch("sys.stdout", wrapper),
+            ):
+                stale = gen_llms.stale_references({reference: "changed\n"}, [])
+            self.assertEqual(stale, ["llms-full.txt"])
+            wrapper.flush()
+            output = buffer.getvalue().decode("cp1252")
+            self.assertIn("--- llms-full.txt (committed)", output)
+            self.assertIn("+++ llms-full.txt (generated)", output)
+            self.assertIn("?", output)
+
 
 if __name__ == '__main__':
     unittest.main()

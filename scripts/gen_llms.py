@@ -842,6 +842,15 @@ def generate(summaries: Path) -> dict[Path, str]:
     return files
 
 
+def safe_print(text: str) -> None:
+    """Print text safely across platforms, falling back to replacement characters if stdout cannot encode."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.encode(encoding, errors="replace").decode(encoding))
+
+
 def stale_references(files: dict[Path, str], extra: list[Path]) -> list[str]:
     stale = []
     for path, text in files.items():
@@ -851,13 +860,18 @@ def stale_references(files: dict[Path, str], extra: list[Path]) -> list[str]:
             diff = difflib.unified_diff(
                 current.splitlines(), text.splitlines(), f"{name} (committed)", f"{name} (generated)", lineterm=""
             )
-            print("\n".join(list(diff)[:200]))
+            safe_print("\n".join(list(diff)[:200]))
             stale.append(name)
     stale += [f"{repo_path(p)} (no longer generated)" for p in extra]
     return stale
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(errors="replace")
+        except Exception:
+            pass
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="fail when a committed reference is stale")
     parser.add_argument("--summaries", type=Path, help="reuse `sui move summary` output from this directory")
