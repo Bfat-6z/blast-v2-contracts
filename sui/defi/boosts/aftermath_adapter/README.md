@@ -143,9 +143,10 @@ with the pinned Sui CLI and `@mysten/sui` 2.35.0. Run it under the shared heavy-
 guard. Set `M3_LOCALNET_CONFIG` to a task-owned genesis directory,
 `M3_OUTPUT_DIR` to a fresh evidence directory, and `M3_SDK_PATH` to that SDK's
 installed package directory. `M3_RPC` defaults to `http://127.0.0.1:52421` and
-must use 127.0.0.1. The runner sets its private CLI environment; it never uses the
-operator's default client configuration. Stop the task-owned node and remove its
-private genesis keys when done.
+must use 127.0.0.1. Once the localnet RPC is ready, run the rehearsal. It creates a
+temporary CLI wallet in the genesis directory with that endpoint and the genesis
+signer already active. Stop the task-owned node and remove its private genesis
+keys when done.
 
 The runner archives admin and partners from the shared Git revision pinned in the
 Boosts manifests. Run from a checkout containing that revision. It rewrites the

@@ -6,7 +6,7 @@
 // copied interface initializers, and changes successor PACKAGE_VERSION constants.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -25,12 +25,12 @@ const { SuiJsonRpcClient } = await load('jsonRpc');
 const { Ed25519Keypair } = await load('keypairs/ed25519');
 const { Transaction } = await load('transactions');
 // Generated localnet keys stay private and are never written into evidence.
-const key = Buffer.from(JSON.parse(readFileSync(join(config, 'sui.keystore')))[0], 'base64');
+const keystore = resolve(config, 'sui.keystore');
+const key = Buffer.from(JSON.parse(readFileSync(keystore))[0], 'base64');
 assert.equal(key[0], 0, 'Expected the local genesis Ed25519 key.');
 const signer = Ed25519Keypair.fromSecretKey(key.subarray(1));
 const address = signer.toSuiAddress();
 const client = new SuiJsonRpcClient({ url: rpc, network: 'localnet' });
-const cli = ['client', '--client.config', join(config, 'client.yaml')];
 const pubfile = join(output, 'Published.toml');
 const packageRoot = join(output, 'source');
 const results = [];
@@ -90,12 +90,22 @@ function event(response, suffix) {
   return events[0].parsedJson;
 }
 
-const alias = `m3-runtime-${Date.now()}`;
-command('new-env', [...cli, 'new-env', '--alias', alias, '--rpc', rpc]);
-command('switch-env', [...cli, 'switch', '--env', alias, '--address', address]);
 const version = command('toolchain', ['--version']).trim();
 assert.equal(version, 'sui 1.77.2-51d177ad7d65');
 save('protocol-config', await client.getProtocolConfig());
+
+// sui start can update the genesis wallet after RPC starts accepting requests.
+// Give the CLI its own wallet with the rehearsal endpoint already active.
+const wallet = mkdtempSync(join(config, 'm3-wallet-'));
+process.once('exit', () => rmSync(wallet, { recursive: true, force: true }));
+const walletConfig = join(wallet, 'client.yaml');
+writeFileSync(walletConfig, JSON.stringify({
+  keystore: { File: keystore },
+  envs: [{ alias: 'localnet', rpc }],
+  active_env: 'localnet',
+  active_address: address,
+}), { mode: 0o600 });
+const cli = ['client', '--client.config', walletConfig];
 
 // Keep the Boosts layout while excluding build products and deployment IDs.
 for (const path of ['sui/defi/boosts/core', 'sui/defi/boosts/aftermath_adapter']) {
