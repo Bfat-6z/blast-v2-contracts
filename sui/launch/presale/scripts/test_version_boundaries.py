@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prove the surface gate detects removal of every public mutation guard."""
 import ast
+import sys
 from pathlib import Path
 import shutil
 import subprocess
@@ -19,7 +20,7 @@ class VersionBoundaryTests(unittest.TestCase):
             shutil.copyfile(package / 'scripts' / check.name, check)
             rogue = root / 'sources/config/rogue.move'
             rogue.write_text('module blast_presale::rogue;\npublic struct PackageAdmin() has drop;\n')
-            result = subprocess.run(['python3', str(check)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, str(check)], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('public struct PackageAdmin', result.stderr)
 
@@ -37,7 +38,7 @@ class VersionBoundaryTests(unittest.TestCase):
             (root / 'scripts').mkdir()
             check = root / 'scripts' / script.name
             shutil.copyfile(script, check)
-            baseline = subprocess.run(['python3', str(check)], capture_output=True)
+            baseline = subprocess.run([sys.executable, str(check)], capture_output=True)
             self.assertEqual(baseline.returncode, 0, baseline.stderr)
             for module, functions in guarded.items():
                 paths = list((root / 'sources').rglob(module + '.move'))
@@ -50,7 +51,7 @@ class VersionBoundaryTests(unittest.TestCase):
                         statement = 'package_version.assert_current(constants::version!());'
                         offset = original.index(statement, start)
                         path.write_text(original[:offset] + original[offset + len(statement):])
-                        result = subprocess.run(['python3', str(check)], capture_output=True)
+                        result = subprocess.run([sys.executable, str(check)], capture_output=True)
                         self.assertNotEqual(result.returncode, 0, f'{module}::{name}')
                         path.write_text(original)
 

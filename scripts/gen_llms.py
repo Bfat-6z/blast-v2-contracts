@@ -501,7 +501,7 @@ def matches_publication(path: str, commit: str) -> bool | None:
         return False
     for file in files:
         blob = subprocess.run(["git", "show", f"{commit}:{old}/sources/{file}"], cwd=ROOT, capture_output=True)
-        if blob.returncode or blob.stdout != (sources / file).read_bytes():
+        if blob.returncode or blob.stdout.replace(b"\r\n", b"\n") != (sources / file).read_bytes().replace(b"\r\n", b"\n"):
             return False
     return True
 

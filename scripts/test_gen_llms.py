@@ -70,7 +70,7 @@ class FrozenPackageTests(unittest.TestCase):
 
         self.assertEqual(run.call_count, 1)
         command = run.call_args.args[0]
-        self.assertTrue(command[command.index('-p') + 1].endswith('sui/example'))
+        self.assertTrue(Path(command[command.index('-p') + 1]).as_posix().endswith('sui/example'))
 
     def test_frozen_guide_and_reference_sections_are_copied_verbatim(self):
         frozen = gen_llms.Package(path='sui/defi/blast_sui', title='blastSUI and funSUI', name='blast_sui')
